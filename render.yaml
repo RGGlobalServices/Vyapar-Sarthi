@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: kirana-backend
+    runtime: docker
+    repo: https://github.com/RGGlobalServices/kirana-manager
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kirana-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: LANDING_URL
+        value: https://your-landing.onrender.com
+      - key: APP_URL
+        value: https://your-frontend.onrender.com
+      - key: BACKEND_URL
+        value: https://kirana-backend.onrender.com
+
+databases:
+  - name: kirana-db
+    databaseName: kirana
+    plan: free
