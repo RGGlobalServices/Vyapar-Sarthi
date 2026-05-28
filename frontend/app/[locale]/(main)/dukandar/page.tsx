@@ -113,7 +113,7 @@ export default function DukandarPage() {
               </p>
             </div>
             <a
-              href="http://localhost:5173/payment.html?plan=business"
+              href={`${process.env.NEXT_PUBLIC_LANDING_URL || 'http://localhost:5173'}/payment.html?plan=business`}
               className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               Upgrade to Wholesale

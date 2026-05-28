@@ -84,7 +84,7 @@ export default function SignupPage() {
   const [referralCode, setReferralCode] = useState('');
 
   useEffect(() => {
-    window.location.href = 'http://localhost:5173/payment.html';
+    window.location.href = `${process.env.NEXT_PUBLIC_LANDING_URL || 'http://localhost:5173'}/payment.html`;
     setMounted(true);
     const ref = new URLSearchParams(window.location.search).get('ref')?.trim().toUpperCase();
     if (ref) setReferralCode(ref);

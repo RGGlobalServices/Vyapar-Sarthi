@@ -178,7 +178,7 @@ export default function BillingPage() {
 
     if (profile.subscriptionPlan === 'starter') {
       alert('WhatsApp bill sharing is available from Dukaan plan. Please upgrade your plan.');
-      window.open('http://localhost:5173/payment.html', '_blank');
+      window.open(`${process.env.NEXT_PUBLIC_LANDING_URL || 'http://localhost:5173'}/payment.html`, '_blank');
       return;
     }
 

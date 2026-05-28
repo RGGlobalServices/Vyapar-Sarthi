@@ -266,7 +266,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-slate-500">
             New to Vyapar Sarthi?{' '}
-            <button onClick={() => window.location.href = `http://localhost:5173/payment.html`}
+            <button onClick={() => window.location.href = `${process.env.NEXT_PUBLIC_LANDING_URL || 'http://localhost:5173'}/payment.html`}
               className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors">
               Create account
             </button>
