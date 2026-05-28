@@ -14,10 +14,11 @@ class BaseUnit(str, enum.Enum):
 class Shop(Base):
     __tablename__ = "shops"
     id = Column(Integer, primary_key=True, index=True)
-    owner_id = Column(Integer, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)
     name = Column(String, index=True)
     address = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    owner = relationship("User", backref="shops")
     products = relationship("Product", back_populates="shop")
     sales = relationship("Sale", back_populates="shop")
     customers = relationship("Customer", back_populates="shop")
@@ -60,6 +61,17 @@ class Sale(Base):
     shop = relationship("Shop", back_populates="sales")
     customer = relationship("Customer", back_populates="sales")
     items = relationship("SaleItem", back_populates="sale")
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    name = Column(String)
+    mobile = Column(String, nullable=True)
+    password = Column(String)
+    store_name = Column(String, nullable=True)
+    business_type = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class SaleItem(Base):
     __tablename__ = "sale_items"

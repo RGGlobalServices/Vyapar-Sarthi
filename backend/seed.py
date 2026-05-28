@@ -1,15 +1,31 @@
 from sqlalchemy.orm import Session
-from .database.database import SessionLocal, engine, Base
-from .models import models
+from database.database import SessionLocal, engine, Base
+from models import models
+from app.api.auth_utils import get_password_hash
 
 def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+
+    # Create default user if not exists
+    user = db.query(models.User).filter(models.User.email == "admin@vyapar.io").first()
+    if not user:
+        user = models.User(
+            email="admin@vyapar.io",
+            password=get_password_hash("admin123"),
+            name="Admin",
+            store_name="Mauli Kirana Store",
+            business_type="kirana",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        print("User created: admin@vyapar.io / admin123")
     
     # Check if shop exists
     shop = db.query(models.Shop).first()
     if not shop:
-        shop = models.Shop(name="Mauli Kirana Store", address="Pune, Maharashtra")
+        shop = models.Shop(name="Mauli Kirana Store", address="Pune, Maharashtra", owner_id=user.id)
         db.add(shop)
         db.commit()
         db.refresh(shop)
