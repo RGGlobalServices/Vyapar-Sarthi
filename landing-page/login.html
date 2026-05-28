@@ -156,7 +156,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         target = decodeURIComponent(nextTarget);
       } else {
         const locale = (typeof ksGetLocale === 'function' ? ksGetLocale() : 'en');
-        const frontend = (window.KS_CONFIG?.FRONTEND_URL || 'http://localhost:3000');
+        const frontend = (window.KS_CONFIG?.FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com');
         const isRegistered = Boolean(localStorage.getItem('ks_user'));
         if (isRegistered) target = `${frontend}/${locale}`;
       }
@@ -250,7 +250,7 @@ async function handleGoogleCredential(response) {
       if (nextTarget) target = decodeURIComponent(nextTarget);
       else {
         const locale = (typeof ksGetLocale === 'function' ? ksGetLocale() : 'en');
-        const frontend = (window.KS_CONFIG?.FRONTEND_URL || 'http://localhost:3000');
+        const frontend = (window.KS_CONFIG?.FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com');
         const isRegistered = Boolean(localStorage.getItem('ks_user'));
         if (isRegistered) target = `${frontend}/${locale}`;
       }

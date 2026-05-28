@@ -179,7 +179,7 @@ async def create_order(req: CreateOrderRequest):
     init_str     = f"{TRIAL_INIT_AMOUNT}.00"
     full_str     = f"{amount}.00"
     productinfo  = PLAN_LABELS.get(plan, plan)
-    backend_base = os.getenv('BACKEND_URL', 'http://localhost:8000')
+    backend_base = os.getenv('BACKEND_URL', 'https://kirana-backend.onrender.com')
     trial_end    = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
     trial_end_str = trial_end.strftime('%Y-%m-%d')
 
@@ -248,7 +248,7 @@ async def payu_success(request: Request):
         udf1=plan, udf2=full_amount
     )
 
-    landing_url = os.getenv('LANDING_URL', 'http://localhost:5173')
+    landing_url = os.getenv('LANDING_URL', 'https://kirana-manager-1.onrender.com')
 
     # ── Hash mismatch or non-success status ──────────────────────
     if received_hash != expected_hash or status.lower() != 'success':
@@ -285,7 +285,7 @@ async def payu_success(request: Request):
     finally:
         db.close()
 
-    app_url = os.getenv('APP_URL', 'http://localhost:3000')
+    app_url = os.getenv('APP_URL', 'https://kirana-manager-fronend.onrender.com')
     qs = urlencode({
         'plan':      plan,
         'trial_end': trial_end.strftime('%Y-%m-%d'),
@@ -302,7 +302,7 @@ async def payu_success(request: Request):
 @router.post("/payu-failure")
 async def payu_failure(request: Request):
     form        = dict(await request.form())
-    landing_url = os.getenv('LANDING_URL', 'http://localhost:5173')
+    landing_url = os.getenv('LANDING_URL', 'https://kirana-manager-1.onrender.com')
     error_msg   = form.get('error_Message', 'Payment failed. Please try again.')
     plan        = form.get('udf1', '')
     qs          = urlencode({'error': error_msg, 'plan': plan, 'refund': 'none'})

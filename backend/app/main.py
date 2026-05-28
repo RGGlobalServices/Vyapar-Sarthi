@@ -25,7 +25,7 @@ app.add_middleware(
     allow_origins=[
         os.getenv("FRONTEND_URL", ""),
         os.getenv("LANDING_URL", ""),
-        "https://kirana-manager-frontend.onrender.com",
+        "https://kirana-manager-fronend.onrender.com",
         "https://kirana-manager.onrender.com",
         "https://kirana-manager-1.onrender.com",
         "http://localhost:3000",

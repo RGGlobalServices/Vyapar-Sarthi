@@ -38,10 +38,10 @@ function renderTopAuthCta() {
           <span class="dropdown-plan-label">Current Plan</span>
           <span class="dropdown-plan-name">${planLabel}</span>
         </div>
-        <a href="${(window.KS_CONFIG?.FRONTEND_URL || 'http://localhost:3000')}/${locale}/settings" class="dropdown-item">
+        <a href="${(window.KS_CONFIG?.FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com')}/${locale}/settings" class="dropdown-item">
           <span>⚙️</span> Manage Plan
         </a>
-        <a href="${(window.KS_CONFIG?.FRONTEND_URL || 'http://localhost:3000')}/${locale}" class="dropdown-item">
+        <a href="${(window.KS_CONFIG?.FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com')}/${locale}" class="dropdown-item">
           <span>📊</span> Open Dashboard
         </a>
         <div class="dropdown-divider"></div>
@@ -186,7 +186,7 @@ if (dashMockup) statsObserver.observe(dashMockup);
 // Auth-aware pricing CTAs
 function initPriceCtas() {
   const locale = (typeof ksGetLocale === 'function' ? ksGetLocale() : 'en');
-  const frontendUrl = (window.KS_CONFIG?.FRONTEND_URL || 'http://localhost:3000');
+  const frontendUrl = (window.KS_CONFIG?.FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com');
   const isLoggedIn = Boolean(localStorage.getItem('ks_auth'));
 
   document.querySelectorAll('.price-cta').forEach(el => {

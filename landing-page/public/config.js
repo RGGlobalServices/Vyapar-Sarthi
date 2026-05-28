@@ -5,8 +5,8 @@
    ================================================================ */
 
 const KS_CONFIG = {
-  API_BASE:         window.KS_API_BASE || 'https://kirana-manager.onrender.com/api/v1',
-  FRONTEND_URL:     window.KS_FRONTEND_URL || 'https://kirana-manager-frontend.onrender.com',
+  API_BASE:         window.KS_API_BASE || 'https://kirana-backend.onrender.com/api/v1',
+  FRONTEND_URL:     window.KS_FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com',
   LANDING_URL:      window.KS_LANDING_URL || window.location.origin,
   GOOGLE_CLIENT_ID: window.KS_GOOGLE_CLIENT_ID || '730675030887-3vsmtjo02gvk8b25m6fq9pkk83092p9m.apps.googleusercontent.com',
 };
