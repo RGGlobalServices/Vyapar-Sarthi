@@ -5,7 +5,7 @@
    ================================================================ */
 
 const KS_CONFIG = {
-  API_BASE:         window.KS_API_BASE || 'https://kirana-backend.onrender.com/api/v1',
+  API_BASE:         window.KS_API_BASE || 'https://kirana-manager.onrender.com/api/v1',
   FRONTEND_URL:     window.KS_FRONTEND_URL || 'https://kirana-manager-fronend.onrender.com',
   LANDING_URL:      window.KS_LANDING_URL || window.location.origin,
   GOOGLE_CLIENT_ID: window.KS_GOOGLE_CLIENT_ID || '730675030887-3vsmtjo02gvk8b25m6fq9pkk83092p9m.apps.googleusercontent.com',
@@ -64,11 +64,11 @@ async function ksPost(path, body) {
 
     if (res.ok) return { ok: true, data };
 
-    // Normalise FastAPI / Pydantic error shapes
     const detail = data.detail;
     let error = 'Something went wrong. Please try again.';
     if (typeof detail === 'string') error = detail;
     else if (Array.isArray(detail) && detail[0]?.msg) error = detail[0].msg;
+    else console.error('[ksPost] Unhandled error shape:', res.status, data);
 
     return { ok: false, error, status: res.status };
   } catch (err) {

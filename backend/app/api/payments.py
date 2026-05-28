@@ -179,7 +179,7 @@ async def create_order(req: CreateOrderRequest):
     init_str     = f"{TRIAL_INIT_AMOUNT}.00"
     full_str     = f"{amount}.00"
     productinfo  = PLAN_LABELS.get(plan, plan)
-    backend_base = os.getenv('BACKEND_URL', 'https://kirana-backend.onrender.com')
+    backend_base = os.getenv('BACKEND_URL', 'https://kirana-manager.onrender.com')
     trial_end    = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
     trial_end_str = trial_end.strftime('%Y-%m-%d')
 
