@@ -5,9 +5,14 @@
  * Simplified and robust to avoid Webpack module evaluation issues.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
-
-const getBaseUrl = () => BASE_URL;
+const getBaseUrl = () => {
+  // In browser: use relative path so Next.js rewrites proxy handles it (no CORS issues).
+  if (typeof window !== 'undefined') {
+    return '/api/v1';
+  }
+  // SSR / server actions: call backend directly
+  return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
+};
 
 const API_BASE_URL = getBaseUrl();
 
