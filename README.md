@@ -223,18 +223,22 @@ Both apps run inside a single container. The frontend (Next.js on port 3000) and
 const { spawn } = require('child_process');
 const path = require('path');
 
-// Start backend on port 10000
+// The frontend (Next.js) should be on the externally-exposed port
+// because it handles page routes and proxies /api/v1/* to the backend
+const EXPOSED_PORT = process.env.PORT || '3000';
+
+// Start backend internally on port 10000
 const backend = spawn('node', ['src/index.js'], {
   cwd: path.join(__dirname, 'backend-node'),
   stdio: 'inherit',
   env: { ...process.env, PORT: '10000' },
 });
 
-// Start frontend on port 3000
-const frontend = spawn('npx', ['next', 'start', '-p', '3000'], {
+// Start frontend on the exposed port
+const frontend = spawn('npx', ['next', 'start', '-p', EXPOSED_PORT], {
   cwd: path.join(__dirname, 'frontend'),
   stdio: 'inherit',
-  env: { ...process.env, PORT: '3000' },
+  env: { ...process.env, PORT: EXPOSED_PORT },
 });
 
 function cleanup() {
@@ -357,8 +361,10 @@ services:
         generateValue: true
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3000
       - key: BACKEND_URL
-        value: https://vyapar-sarthi-api.onrender.com
+        value: http://localhost:10000
       - key: FRONTEND_URL
         value: https://vyapar-sarthi-api.onrender.com
       - key: APP_URL
