@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useLocale } from 'next-intl';
+import { useLocale } from 'next-intl';
+import { useParams } from 'next/navigation';
 import api from '@/lib/api';
 import { Shield, ArrowLeft, RefreshCw, Ban, CheckCircle, Trash2, Package, Users, Phone, Calendar, Store, Globe, Gift, Ticket, IndianRupee, Mail, Clock, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
