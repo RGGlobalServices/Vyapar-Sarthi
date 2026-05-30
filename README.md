@@ -191,6 +191,9 @@ npm run dev          # Starts on port 3001
 
 ## Deployment
 
+> A reference file `.env.production` is in the repo root with all the variables you need.
+> Replace `YOUR-SERVICE` and `YOUR-LANDING` with your actual Render URLs after creating the services.
+
 ### Option 1: Deploy on Render (Recommended)
 
 You need **2 services** on Render:
