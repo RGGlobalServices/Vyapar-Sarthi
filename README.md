@@ -191,56 +191,206 @@ npm run dev          # Starts on port 3001
 
 ## Deployment
 
-### Option 1: Deploy on Render
+### Option 1: Deploy on Render (Recommended)
 
-Render is the recommended platform for easy deployment. You need **3 services**:
+You need **2 services** on Render:
+1. **Combined Service** — Frontend + Backend together (single Web Service)
+2. **Landing Page** — Separate Static Site
 
-#### 1. Backend (Node.js + Docker)
-- **Type**: Web Service
-- **Runtime**: Docker
-- **Build**: Uses `backend-node/Dockerfile`
-- **Health Check**: `GET /`
-- **Environment Variables** (all required):
-  ```
-  DATABASE_URL=<your-postgres-connection-string>
-  SECRET_KEY=<generate-a-random-secret>
-  FRONTEND_URL=https://your-frontend.onrender.com
-  LANDING_URL=https://your-landing-page.onrender.com
-  BACKEND_URL=https://your-backend.onrender.com
-  APP_URL=https://your-frontend.onrender.com
-  ADMIN_SECRET_KEY=<your-admin-secret>
-  ```
-- **Start Command**: `node src/index.js` (already in Dockerfile)
+---
 
-#### 2. Frontend (Next.js SSR)
-- **Type**: Web Service
-- **Runtime**: Node
-- **Build Command**: `cd frontend && npm install && npm run build`
-- **Start Command**: `cd frontend && npm start`
-- **Environment Variables** (all required):
-  ```
-  NODE_ENV=production
-  NEXT_PUBLIC_API_URL=https://your-backend.onrender.com/api/v1
-  NEXT_PUBLIC_FRONTEND_URL=https://your-frontend.onrender.com
-  NEXT_PUBLIC_LANDING_URL=https://your-landing-page.onrender.com
-  BACKEND_URL=https://your-backend.onrender.com
-  ```
+#### Service 1: Frontend + Backend (Combined)
 
-#### 3. Landing Page (Next.js Static Site)
-- **Type**: Static Site
-- **Build Command**: `cd landing-page && npm install && npm run build`
-- **Publish Directory**: `landing-page/out`
-- **Environment Variables**:
-  ```
-  NEXT_PUBLIC_API_URL=https://your-backend.onrender.com/api/v1
-  NEXT_PUBLIC_FRONTEND_URL=https://your-frontend.onrender.com
-  NEXT_PUBLIC_LANDING_URL=https://your-landing-page.onrender.com
-  ```
+Both apps run inside a single container. The frontend (Next.js on port 3000) and backend (Express on port 10000) start together. The frontend proxies `/api/v1/*` requests to the backend internally, so from the outside everything appears on one port.
 
-Or use the provided `render.yaml` (one-click deploy):
+##### Step 1: Create root config files
+
+**`package.json`** (root of your repo):
+```json
+{
+  "name": "vyapar-sarthi",
+  "private": true,
+  "scripts": {
+    "install:all": "cd backend-node && npm install && cd ../frontend && npm install",
+    "build": "cd backend-node && npx prisma generate && cd ../frontend && npm run build",
+    "start": "node start.js"
+  }
+}
+```
+
+**`start.js`** (root of your repo):
+```javascript
+const { spawn } = require('child_process');
+const path = require('path');
+
+// Start backend on port 10000
+const backend = spawn('node', ['src/index.js'], {
+  cwd: path.join(__dirname, 'backend-node'),
+  stdio: 'inherit',
+  env: { ...process.env, PORT: '10000' },
+});
+
+// Start frontend on port 3000
+const frontend = spawn('npx', ['next', 'start', '-p', '3000'], {
+  cwd: path.join(__dirname, 'frontend'),
+  stdio: 'inherit',
+  env: { ...process.env, PORT: '3000' },
+});
+
+function cleanup() {
+  backend.kill();
+  frontend.kill();
+  process.exit();
+}
+process.on('SIGINT', cleanup);
+process.on('SIGTERM', cleanup);
+```
+
+##### Step 2: Deploy on Render
+
+| Setting | Value |
+|---------|-------|
+| **Type** | Web Service |
+| **Repo** | `https://github.com/YOUR_USERNAME/Vyapar-Sarthi` |
+| **Branch** | `main` |
+| **Runtime** | Node |
+| **Build Command** | `npm run install:all && npm run build` |
+| **Start Command** | `npm start` |
+| **Health Check** | `GET /` |
+
+**Environment Variables** (set all of these):
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | `postgresql://...` (your Render PostgreSQL connection string) |
+| `SECRET_KEY` | Generate a random secret (Render can auto-generate) |
+| `ADMIN_SECRET_KEY` | Your admin registration secret |
+| `NODE_ENV` | `production` |
+| `PORT` | `3000` (the exposed port, Next.js handles incoming requests) |
+| `BACKEND_URL` | `http://localhost:10000` (Next.js server-side rewrite proxies API calls internally) |
+| `FRONTEND_URL` | `https://your-service.onrender.com` (for CORS) |
+| `APP_URL` | `https://your-service.onrender.com` |
+| `LANDING_URL` | `https://your-landing-page.onrender.com` (URL of Service 2) |
+| `NEXT_PUBLIC_API_URL` | `https://your-service.onrender.com/api/v1` (browser-side API base URL) |
+| `NEXT_PUBLIC_FRONTEND_URL` | `https://your-service.onrender.com` |
+| `NEXT_PUBLIC_LANDING_URL` | `https://your-landing-page.onrender.com` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | (optional) Google OAuth client ID |
+| `SMTP_HOST` / `SMTP_PORT` | (optional) SMTP config |
+| `SMTP_USER` / `SMTP_PASSWORD` | (optional) SMTP credentials |
+| `SUPPORT_EMAIL` | (optional) Support email |
+| `PAYU_KEY` / `PAYU_SALT` | (optional) PayU payment keys |
+
+> The frontend's `next.config.ts` already rewrites `/api/v1/*` to `BACKEND_URL`, so API calls from the browser automatically route to the Express backend.
+
+---
+
+#### Service 2: Landing Page (Separate Static Site)
+
+Deploy the marketing site separately so it can scale independently.
+
+| Setting | Value |
+|---------|-------|
+| **Type** | Static Site |
+| **Repo** | `https://github.com/YOUR_USERNAME/Vyapar-Sarthi` |
+| **Branch** | `main` |
+| **Root Directory** | `landing-page` |
+| **Build Command** | `npm install && npm run build` |
+| **Publish Directory** | `out` |
+
+**Environment Variables**:
+
+| Variable | Value |
+|----------|-------|
+| `NEXT_PUBLIC_API_URL` | `https://your-service.onrender.com/api/v1` |
+| `NEXT_PUBLIC_FRONTEND_URL` | `https://your-service.onrender.com` |
+| `NEXT_PUBLIC_LANDING_URL` | `https://your-landing-page.onrender.com` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | (optional) Same as Service 1 |
+
+---
+
+#### How It Works
+
+```
+User Browser
+     │
+     ├── https://your-service.onrender.com ───► Combined Web Service
+     │       │                                       │
+     │       │  Request arrives at Next.js (port 3000, externally exposed)
+     │       │       │
+     │       │       ├── /api/v1/*  ──► Next.js rewrite proxy
+     │       │       │                     └──► http://localhost:10000/api/v1/*  (Express backend)
+     │       │       │
+     │       │       └── /* (pages)  ──► Next.js renders & responds directly
+     │       │
+     └── https://your-landing-page.onrender.com ──► Static Site
+```
+
+- The **Next.js frontend** runs on **port 3000** (the externally-exposed port).
+- The **Express backend** runs on **port 10000** internally — not directly accessible from outside.
+- When the browser navigates to a page (e.g. `/en/billing`), Next.js renders it directly.
+- When the browser calls an API (e.g. `POST /api/v1/products`), it hits the Next.js server, which **rewrites** (server-side proxies) the request to `http://localhost:10000/api/v1/products` — this is configured in `frontend/next.config.ts`.
+- The backend's CORS is configured via `FRONTEND_URL` and `LANDING_URL` env vars so both the frontend and landing page can make API calls.
+- The landing page is a static site deployed separately — it makes API calls directly to the backend's public URL.
+
+---
+
+#### One-Click Deploy with render.yaml
+
+Alternatively, edit the provided `render.yaml` with your service names and use Render's Blueprint feature:
+
 ```yaml
-# Edit render.yaml with your repo URL and service names
-# Then connect your GitHub repo to Render and it auto-detects the config
+services:
+  - type: web
+    name: vyapar-sarthi-api
+    runtime: node
+    repo: https://github.com/YOUR_USERNAME/Vyapar-Sarthi
+    branch: main
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vyapar-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      - key: BACKEND_URL
+        value: https://vyapar-sarthi-api.onrender.com
+      - key: FRONTEND_URL
+        value: https://vyapar-sarthi-api.onrender.com
+      - key: APP_URL
+        value: https://vyapar-sarthi-api.onrender.com
+      - key: LANDING_URL
+        value: https://vyapar-sarthi-landing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://vyapar-sarthi-api.onrender.com/api/v1
+      - key: NEXT_PUBLIC_FRONTEND_URL
+        value: https://vyapar-sarthi-api.onrender.com
+      - key: NEXT_PUBLIC_LANDING_URL
+        value: https://vyapar-sarthi-landing.onrender.com
+
+  - type: web
+    name: vyapar-sarthi-landing
+    runtime: static
+    repo: https://github.com/YOUR_USERNAME/Vyapar-Sarthi
+    branch: main
+    buildCommand: cd landing-page && npm install && npm run build
+    staticPublishPath: landing-page/out
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://vyapar-sarthi-api.onrender.com/api/v1
+      - key: NEXT_PUBLIC_FRONTEND_URL
+        value: https://vyapar-sarthi-api.onrender.com
+      - key: NEXT_PUBLIC_LANDING_URL
+        value: https://vyapar-sarthi-landing.onrender.com
+
+databases:
+  - name: vyapar-db
+    databaseName: vyapar
+    plan: free
 ```
 
 ### Option 2: Deploy on AWS
