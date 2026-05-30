@@ -236,15 +236,15 @@ export default function BillingPage() {
 
   const addToCart = useCallback((product: any) => {
     const defaultQty = product.is_loose ? 0.5 : 1;
-    const price = product.selling_price || Number(product.price);
+    const price = product.sellingPrice || Number(product.price);
     addItem({
       id: product.id || Math.random(),
       name: product.name,
-      unit: product.base_unit || product.unit,
+      unit: product.baseUnit || product.unit,
       quantity: defaultQty,
-      price,
-      profit: price - (product.wholesale_cost || 0),
-      total: price * defaultQty,
+      price: price || 0,
+      profit: (price || 0) - (product.wholesaleCost || 0),
+      total: (price || 0) * defaultQty,
       is_loose: !!product.is_loose,
     });
     setSearch('');
@@ -260,7 +260,7 @@ export default function BillingPage() {
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;
-    addToCart({ name: manualProduct.name, selling_price: Number(manualProduct.price), base_unit: manualProduct.unit, wholesale_cost: 0 });
+    addToCart({ name: manualProduct.name, sellingPrice: Number(manualProduct.price), baseUnit: manualProduct.unit, wholesaleCost: 0 });
     setManualProduct({ name: '', price: '', unit: 'Unit' });
     setShowManualAdd(false);
   };

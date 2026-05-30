@@ -88,8 +88,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.shopName !== undefined) apiUpdates.name = updates.shopName;
       if (updates.address !== undefined) apiUpdates.address = updates.address;
       if (updates.mobile !== undefined) apiUpdates.mobile = updates.mobile;
-      if (updates.logoUrl !== undefined) apiUpdates.logo_url = updates.logoUrl;
-      if (updates.businessType !== undefined) apiUpdates.business_type = updates.businessType;
+      if (updates.logoUrl !== undefined) apiUpdates.logoUrl = updates.logoUrl;
+      if (updates.businessType !== undefined) apiUpdates.businessType = updates.businessType;
 
       await api.patch('/shop/profile', apiUpdates);
       set(state => ({ profile: { ...state.profile, ...updates } }));

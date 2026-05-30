@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Eye, EyeOff, ShoppingBag, Loader2, AlertCircle, ArrowLeft, CheckCircle2, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLocale } from 'next-intl';
@@ -12,12 +12,7 @@ type View = 'login' | 'forgot' | 'forgot-sent';
 
 export default function LoginPage() {
   const locale = useLocale();
-  const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<View>('login');
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const [form, setForm]       = useState({ email: '', password: '' });
   const [show, setShow]       = useState(false);
@@ -62,7 +57,7 @@ export default function LoginPage() {
         window.location.href = next || `/${locale}/`;
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Invalid email or password.');
+      setError(err.response?.data?.detail || 'Wrong user ID or password. Please try again or create a new account.');
     } finally {
       setLoading(false);
     }
@@ -123,16 +118,10 @@ export default function LoginPage() {
     </div>
   );
 
-  if (!mounted) {
-    return <div suppressHydrationWarning className="min-h-screen bg-slate-950 flex items-center justify-center">
-      <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-    </div>;
-  }
-
   /* ── Forgot sent ── */
   if (view === 'forgot-sent') {
     return (
-      <div className="min-h-screen flex">
+      <div suppressHydrationWarning className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm text-center space-y-6">
@@ -160,7 +149,7 @@ export default function LoginPage() {
   /* ── Forgot form ── */
   if (view === 'forgot') {
     return (
-      <div className="min-h-screen flex">
+      <div suppressHydrationWarning className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -208,7 +197,7 @@ export default function LoginPage() {
 
   /* ── Login form ── */
   return (
-    <div className="min-h-screen flex">
+    <div suppressHydrationWarning className="min-h-screen flex">
       {leftPanel}
       <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
         <div className="w-full max-w-sm space-y-8">

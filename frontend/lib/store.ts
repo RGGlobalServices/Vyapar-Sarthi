@@ -276,16 +276,16 @@ export const useStockStore = create<StockStore>((set, get) => ({
         id: p.id,
         name: p.name,
         category: p.category,
-        current: p.current_stock,
-        min: p.min_stock,
-        unit: p.base_unit || 'Unit',
+        current: p.currentStock,
+        min: p.minStock,
+        unit: p.baseUnit || 'Unit',
         archived: p.archived || false,
         mrp: p.mrp || 0,
-        sellingPrice: p.selling_price || 0,
-        cost: p.wholesale_cost || 0,
+        sellingPrice: p.sellingPrice || 0,
+        cost: p.wholesaleCost || 0,
         model_number: p.model_number || null,
         warranty_months: p.warranty_months || null,
-        expiry_date: p.expiry_date || null,
+        expiry_date: p.expiryDate || null,
         batch_number: p.batch_number || null,
         drug_schedule: p.drug_schedule || null,
         gender: p.gender || null,
@@ -297,12 +297,12 @@ export const useStockStore = create<StockStore>((set, get) => ({
       const logRes = await api.get('/products/logs/all');
       const log = (logRes.data || []).map((l: any) => ({
         id: l.id,
-        itemName: l.product_name || 'Product',
+        itemName: l.product_name || l.products?.name || 'Product',
         type: l.type,
         qty: l.quantity,
         note: l.note,
-        time: new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        date: new Date(l.created_at).toLocaleDateString()
+        time: l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+        date: l.createdAt ? new Date(l.createdAt).toLocaleDateString() : ''
       }));
 
       set({ items, log, loading: false });

@@ -9,7 +9,7 @@ import SizeVariantGrid, { serializeSizeVariants, totalFromSizes } from '@/compon
 import {
   Search, ArrowDownLeft, ArrowUpRight, AlertTriangle,
   Plus, Trash2, X, Check, Package, Archive, ArchiveRestore,
-  Pencil, ShieldCheck, Trash,
+  Pencil, ShieldCheck, Trash, Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStockStore, StockItem } from '@/lib/store';
@@ -54,6 +54,7 @@ export default function StockPage() {
   const [menuId, setMenuId]   = useState<number | string | null>(null);
 
   const [modal, setModal]     = useState<'in' | 'out' | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [isNew, setIsNew]     = useState(false);
   const [selId, setSelId]     = useState<number | string | ''>('');
   const [qty, setQty]         = useState('');
@@ -116,10 +117,11 @@ export default function StockPage() {
 
   async function handleStockIn(e: React.FormEvent) {
     e.preventDefault();
+    setSubmitting(true);
     const q = bizConfig.hasSizes ? totalFromSizes(newForm.size_variants) : Number(qty);
     if (isNew) {
-      if (!newForm.name.trim()) { setError(t('nameRequired') ?? 'Name required'); return; }
-      if (!bizConfig.hasSizes && (!q || q <= 0)) { setError(t('validAmount') ?? 'Enter a valid quantity.'); return; }
+      if (!newForm.name.trim()) { setError(t('nameRequired') ?? 'Name required'); setSubmitting(false); return; }
+      if (!bizConfig.hasSizes && (!q || q <= 0)) { setError(t('validAmount') ?? 'Enter a valid quantity.'); setSubmitting(false); return; }
       try {
         await addItem({
           name: newForm.name.trim(),
@@ -143,10 +145,10 @@ export default function StockPage() {
       } catch (err: any) {
         const msg = err?.response?.data?.detail || err?.response?.data?.message || 'Failed to add product. Please try again.';
         setError(typeof msg === 'string' ? msg : 'Failed to add product. Please try again.');
-      }
+      } finally { setSubmitting(false); }
     } else {
-      if (selId === '') { setError(t('selectProduct')); return; }
-      if (!Number(qty) || Number(qty) <= 0) { setError(t('validAmount') ?? 'Enter a valid quantity.'); return; }
+      if (selId === '') { setError(t('selectProduct')); setSubmitting(false); return; }
+      if (!Number(qty) || Number(qty) <= 0) { setError(t('validAmount') ?? 'Enter a valid quantity.'); setSubmitting(false); return; }
       try {
         await adjustStock(selId, Number(qty), note, {
           mrp: pricing.mrp ? Number(pricing.mrp) : undefined,
@@ -157,19 +159,25 @@ export default function StockPage() {
       } catch (err: any) {
         const msg = err?.response?.data?.detail || err?.response?.data?.message || 'Failed to adjust stock. Please try again.';
         setError(typeof msg === 'string' ? msg : 'Failed to adjust stock. Please try again.');
-      }
+      } finally { setSubmitting(false); }
     }
   }
 
-  function handleStockOut(e: React.FormEvent) {
+  async function handleStockOut(e: React.FormEvent) {
     e.preventDefault();
-    if (selId === '') { setError(t('selectProduct')); return; }
+    setSubmitting(true);
+    if (selId === '') { setError(t('selectProduct')); setSubmitting(false); return; }
     const q = Number(qty);
-    if (!q || q <= 0) { setError(t('validAmount') ?? 'Enter a valid quantity.'); return; }
+    if (!q || q <= 0) { setError(t('validAmount') ?? 'Enter a valid quantity.'); setSubmitting(false); return; }
     const item = items.find(i => i.id === selId)!;
-    if (q > item.current) { setError(`${t('remaining')}: ${item.current} ${item.unit}`); return; }
-    adjustStock(selId, -q, note);
-    closeModal();
+    if (q > item.current) { setError(`${t('remaining')}: ${item.current} ${item.unit}`); setSubmitting(false); return; }
+    try {
+      await adjustStock(selId, -q, note);
+      closeModal();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || 'Failed to adjust stock.';
+      setError(typeof msg === 'string' ? msg : 'Failed to adjust stock.');
+    } finally { setSubmitting(false); }
   }
 
   const selectedItem = items.find(i => i.id === selId);
@@ -338,7 +346,9 @@ export default function StockPage() {
               </thead>
               <tbody className="divide-y divide-slate-800" onClick={e => e.stopPropagation()}>
                 {renderRows(activeItems)}
-                {activeItems.length === 0 && (
+                {loading ? (
+                  <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
+                ) : activeItems.length === 0 && (
                   <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">{t('noItems')}</td></tr>
                 )}
               </tbody>
@@ -635,9 +645,10 @@ export default function StockPage() {
                 className="flex-1 bg-slate-800 text-slate-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-slate-200 transition-all active:scale-95">
                 {t('cancel')}
               </button>
-              <button type="submit"
-                className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 text-slate-900 py-3 rounded-xl font-black hover:from-emerald-500 hover:to-emerald-400 shadow-lg shadow-emerald-500/20 transition-all active:scale-95">
-                {t('addStock')}
+              <button type="submit" disabled={submitting}
+                className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 text-slate-900 py-3 rounded-xl font-black hover:from-emerald-500 hover:to-emerald-400 shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-60 disabled:active:scale-100 flex items-center justify-center gap-2">
+                {submitting ? <Loader2 className="animate-spin" size={18} /> : null}
+                {submitting ? 'Updating...' : t('addStock')}
               </button>
             </div>
             </form>
@@ -690,7 +701,10 @@ export default function StockPage() {
               {error && <p className="text-red-400 text-sm">{error}</p>}
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={closeModal} className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">{t('cancel')}</button>
-                <button type="submit" className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors">{t('removeStock')}</button>
+                <button type="submit" disabled={submitting} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                  {submitting ? <Loader2 className="animate-spin" size={18} /> : null}
+                  {submitting ? 'Updating...' : t('removeStock')}
+                </button>
               </div>
             </form>
           </div>

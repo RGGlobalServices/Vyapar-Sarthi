@@ -64,7 +64,7 @@ export default function DukandarPage() {
   async function loadMyAccessCode() {
     try {
       const res = await api.get('/dukandar/my-access-code');
-      setMyAccessCode(res.data.access_code || '');
+      setMyAccessCode(res.data.accessCode || '');
     } catch (err) {
       console.error('Failed to load dukandar access code', err);
     }

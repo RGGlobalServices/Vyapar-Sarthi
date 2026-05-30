@@ -76,7 +76,6 @@ function getCookie(name: string): string | null {
 
 export default function SignupPage() {
   const locale = useLocale();
-  const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<Form>(INITIAL);
   const [showPw, setShowPw] = useState(false);
@@ -86,7 +85,6 @@ export default function SignupPage() {
 
   useEffect(() => {
     window.location.href = PAYMENT_URL;
-    setMounted(true);
     const ref = new URLSearchParams(window.location.search).get('ref')?.trim().toUpperCase();
     if (ref) setReferralCode(ref);
   }, []);
@@ -161,14 +159,8 @@ export default function SignupPage() {
     }
   }
 
-  if (!mounted) {
-    return <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-      <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-    </div>;
-  }
-
   return (
-    <div className="min-h-screen flex bg-slate-950">
+    <div suppressHydrationWarning className="min-h-screen flex bg-slate-950">
       {/* ── Left branding ── */}
       <div className={cn(
         "hidden lg:flex lg:w-4/12 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 flex-col items-center justify-center p-12 relative overflow-hidden border-r border-slate-800 transition-all duration-700",

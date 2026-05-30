@@ -1,12 +1,30 @@
 {
-  "name": "kirana-smart-landing",
+  "name": "vyapar-sarthi-landing",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "npx dotenv-cli -e ../.env.local -- next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
+    "@tailwindcss/postcss": "^4.3.0",
+    "framer-motion": "^12.0.0",
+    "next": "^15.2.0",
+    "next-intl": "^3.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.170.0"
   },
   "devDependencies": {
-    "vite": "^5.4.0"
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.170.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
   }
 }

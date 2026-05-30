@@ -1,13 +1,29 @@
 'use client';
 
 import { useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { usePathname } from '@/i18n/routing';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
 import AIFloatingButton from '@/components/AIFloatingButton';
 import NotificationBell from '@/components/NotificationBell';
-import Sidebar from '@/components/Sidebar';
 import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAccess';
+
+const Sidebar = dynamic(() => import('@/components/Sidebar'), {
+  ssr: false,
+  loading: () => (
+    <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-screen sticky top-0 z-30">
+      <div className="p-6 border-b border-slate-800">
+        <div className="w-10 h-10 bg-slate-800 rounded-xl animate-pulse" />
+      </div>
+      <div className="flex-1 px-4 py-6 space-y-3">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
+        ))}
+      </div>
+    </aside>
+  ),
+});
 
 export default function MainLayoutClient({ 
   locale, 
@@ -46,8 +62,8 @@ export default function MainLayoutClient({
           {children}
         </main>
         <footer className="border-t border-slate-800 px-8 py-3 flex items-center justify-between flex-shrink-0 bg-slate-900/50">
-          <p className="text-xs text-slate-600">
-            © <span suppressHydrationWarning>{new Date().getFullYear()}</span>{' '}
+          <p className="text-xs text-slate-600" suppressHydrationWarning>
+            © {new Date().getFullYear()}{' '}
             <span className="text-slate-400 font-semibold">{profile.shopName || 'Vyapar Sarthi'}</span>. All rights reserved.
           </p>
           <p className="text-xs text-slate-700">Vyapar Sarthi v2.0</p>

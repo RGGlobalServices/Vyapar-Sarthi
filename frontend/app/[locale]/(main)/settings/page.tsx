@@ -70,7 +70,7 @@ function SettingsPageInner() {
     const load = async () => {
       try {
         const res = await api.get('/notifications/settings');
-        setSettings(res.data);
+        setSettings(prev => ({ ...prev, ...res.data }));
         
         if ('Notification' in window) {
           setPermission(Notification.permission);

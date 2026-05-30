@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   serverExternalPackages: ['pdf-parse', 'xlsx'],
   async rewrites() {
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:10000';
     return [
       {
         source: '/api/v1/:path*',

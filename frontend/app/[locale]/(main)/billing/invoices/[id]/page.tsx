@@ -118,7 +118,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const billData = {
     items: invoice.items.map((i: any) => ({
       id: i.id,
-      name: i.product_name,
+      name: i.name,
       unit: i.unit,
       quantity: i.quantity,
       price: i.price_per_unit,
@@ -209,7 +209,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     {invoice.items.map((item: any) => (
                       <tr key={item.id} className="hover:bg-slate-800/20 transition-colors">
                         <td className="px-6 py-4">
-                          <div className="font-bold">{item.product_name}</div>
+                          <div className="font-bold">{item.name}</div>
                           <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
                         </td>
                         <td className="px-6 py-4 text-center font-black">{item.quantity}</td>

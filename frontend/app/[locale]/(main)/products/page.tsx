@@ -155,10 +155,10 @@ export default function ProductsPage() {
       const res = await api.get('/products');
       setProducts(res.data.map((p: any) => ({
         id: p.id, name: p.name, category: p.category,
-        stock: p.current_stock, minStock:p.min_stock,
-        mrp: p.mrp, sellingPrice: p.selling_price, cost: p.wholesale_cost,
-        unit: p.base_unit || 'Unit',
-        expiry_date: p.expiry_date, batch_number: p.batch_number,
+        stock: p.currentStock, minStock: p.minStock,
+        mrp: p.mrp, sellingPrice: p.sellingPrice, cost: p.wholesaleCost,
+        unit: p.baseUnit || 'Unit',
+        expiry_date: p.expiryDate, batch_number: p.batch_number,
         drug_schedule: p.drug_schedule, model_number: p.model_number,
         warranty_months: p.warranty_months, gender: p.gender,
         shade: p.shade, size_variants: p.size_variants,

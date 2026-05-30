@@ -12,20 +12,33 @@ export default function middleware(request: NextRequest) {
   // Strip locale prefix to get bare path e.g. /en/products → /products
   const pathnameWithoutLocale = pathname.replace(/^\/(en|hi|mr)/, '') || '/';
 
-  const isPublic  = PUBLIC_PATHS.some(p => pathnameWithoutLocale.startsWith(p));
-  const isAuthed  = request.cookies.has('ks_auth');
-  const localeMatch = pathname.match(/^\/(en|hi|mr)/);
+  const isPublic       = PUBLIC_PATHS.some(p => pathnameWithoutLocale.startsWith(p));
+  const isAdminRoute   = pathnameWithoutLocale.startsWith('/admin');
+  const isAuthed       = request.cookies.has('ks_auth');
+  const localeMatch    = pathname.match(/^\/(en|hi|mr)/);
   const locale = localeMatch ? localeMatch[1] : 'mr';
 
+  // Localize admin paths (no locale prefix → add one)
+  if (!localeMatch && isAdminRoute) {
+    const localizedUrl = request.nextUrl.clone();
+    localizedUrl.pathname = `/${locale}${pathname}`;
+    return NextResponse.redirect(localizedUrl);
+  }
+
+  // Localize other public paths
   if (!localeMatch && isPublic) {
     const localizedUrl = request.nextUrl.clone();
     localizedUrl.pathname = `/${locale}${pathname}`;
     return NextResponse.redirect(localizedUrl);
   }
 
+  // Admin routes bypass user auth (admin uses separate localStorage token)
+  if (isAdminRoute) {
+    return intlMiddleware(request);
+  }
+
   // Not logged in & trying to access a protected page → redirect to login
   if (!isAuthed && !isPublic) {
-    // Detect locale from path, default to 'mr'
     return NextResponse.redirect(new URL(`/${locale}/login`, request.url));
   }
 
@@ -44,5 +57,5 @@ export default function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/login', '/signup', '/(hi|en|mr)/:path*'],
+  matcher: ['/', '/login', '/signup', '/(hi|en|mr)/:path*', '/admin/:path*'],
 };

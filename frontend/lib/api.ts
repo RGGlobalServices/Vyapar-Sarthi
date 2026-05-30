@@ -5,27 +5,21 @@
  * Simplified and robust to avoid Webpack module evaluation issues.
  */
 
-const BACKEND_API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
-
-const getBaseUrl = () => {
-  if (typeof window !== 'undefined') {
-    // In production, the Next.js rewrite doesn't work as a proxy (sends 307 redirect).
-    // Use the backend URL directly — CORS is already configured on the backend.
-    if (window.location.hostname !== 'localhost') {
-      return 'https://kirana-manager.onrender.com/api/v1';
-    }
-    return '/api/v1';
-  }
-  return BACKEND_API;
-};
-
-const API_BASE_URL = getBaseUrl();
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:10000/api/v1';
 
 async function request(url: string, options: RequestInit = {}) {
   // Extract token from localStorage safely
   const getAuthToken = () => {
     if (typeof window === 'undefined') return null;
     try {
+      // Admin routes use separate admin token
+      if (url.startsWith('/admin/')) {
+        const adminRaw = localStorage.getItem('ks_admin_auth');
+        if (adminRaw) {
+          const parsed = JSON.parse(adminRaw);
+          return parsed.access_token || null;
+        }
+      }
       const raw = localStorage.getItem('ks_auth');
       if (!raw) return null;
       const parsed = JSON.parse(raw);
@@ -55,12 +49,20 @@ async function request(url: string, options: RequestInit = {}) {
       headers,
     });
 
-    // Handle Unauthenticated
-    if (response.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('ks_auth');
-      document.cookie = 'ks_auth=; path=/; max-age=0';
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = `/${window.location.pathname.split('/')[1] || 'en'}/login`;
+    // Handle Unauthenticated — skip for auth endpoints (login, register, forgot)
+    if (response.status === 401 && typeof window !== 'undefined' && !url.startsWith('/auth/')) {
+      if (url.startsWith('/admin/')) {
+        localStorage.removeItem('ks_admin_auth');
+        const loc = window.location.pathname.split('/')[1] || 'en';
+        if (!window.location.pathname.includes('/admin/login')) {
+          window.location.href = `/${loc}/admin/login`;
+        }
+      } else {
+        localStorage.removeItem('ks_auth');
+        document.cookie = 'ks_auth=; path=/; max-age=0';
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = `/${window.location.pathname.split('/')[1] || 'en'}/login`;
+        }
       }
       throw new Error('Unauthorized');
     }

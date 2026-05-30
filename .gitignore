@@ -1,5 +1,7 @@
 node_modules/
 .next/
+out/
+dist/
 coverage/
 .DS_Store
 *.log
@@ -9,3 +11,5 @@ __pycache__/
 *.db
 .claude/
 .vite/
+next-env.d.ts
+*.mjs

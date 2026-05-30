@@ -5,7 +5,7 @@ import { Link, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { 
   LayoutDashboard, IndianRupee, Package, Box, Users, 
-  BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw,   Gift, Store, HelpCircle
+  BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PAYMENT_URL, SUPPORT_URL } from '@/lib/config';
@@ -19,6 +19,7 @@ export default function Sidebar({ locale }: { locale: string }) {
   const { profile, fetchProfile } = useBusinessStore();
   const t = useTranslations('Nav');
   const ended = isSubscriptionEnded(profile);
+
   useEffect(() => {
     loadFromStorage();
     fetchProfile();
@@ -45,7 +46,6 @@ export default function Sidebar({ locale }: { locale: string }) {
 
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-screen sticky top-0 z-30">
-      {/* Branding */}
       <div className="p-6 border-b border-slate-800 flex items-center gap-3">
         <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 overflow-hidden">
           {profile.logoUrl ? (
@@ -80,7 +80,6 @@ export default function Sidebar({ locale }: { locale: string }) {
         </div>
       </div>
 
-      {/* Upgrade Prompt for Starter / Free users */}
       {(!profile.subscriptionPlan || profile.subscriptionPlan === 'starter') && (
         <div className="px-4 py-3 mx-4 mt-4 bg-gradient-to-br from-emerald-500/20 to-teal-500/5 border border-emerald-500/30 rounded-xl">
           <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">Free Plan</p>
@@ -94,7 +93,6 @@ export default function Sidebar({ locale }: { locale: string }) {
         </div>
       )}
 
-      {/* Navigation */}
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto custom-scrollbar">
         {visibleMenuItems.map((item) => {
           const Icon = item.icon;
@@ -122,7 +120,6 @@ export default function Sidebar({ locale }: { locale: string }) {
         })}
       </nav>
 
-      {/* Footer Actions */}
       <div className="p-4 border-t border-slate-800 space-y-4 bg-slate-900/50">
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-2 text-slate-500">

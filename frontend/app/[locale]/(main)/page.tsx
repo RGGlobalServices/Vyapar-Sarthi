@@ -195,6 +195,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     initData();
+    const onFocus = () => initData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [initData]);
 
   if (loading) {

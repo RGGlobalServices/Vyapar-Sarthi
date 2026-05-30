@@ -1,241 +1,404 @@
-# Kirana Smart Dashboard
+# Vyapar Sarthi
 
-Production-ready POS and store management system for Indian Kirana stores.
+A comprehensive shop management platform for Kirana (small retail) stores in India. Provides billing, inventory tracking, credit (Udhar) management, AI-powered insights, and multi-language support.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Vyapar Sarthi Platform                        │
+├─────────────────┬──────────────────────┬────────────────────────────┤
+│   Landing Page  │    Frontend App      │      Backend (Node.js)     │
+│   (Next.js SSG) │   (Next.js SSR)      │      (Express + Prisma)    │
+│   Port 3001     │   Port 3000          │      Port 10000            │
+│                 │                      │                            │
+│   Marketing /   │   Shop Management    │   REST API                 │
+│   Blog /        │   Admin Panel        │   PostgreSQL DB            │
+│   Pricing       │   Dashboard          │   Auth (JWT)               │
+│   Documentation │   Billing UI         │   PayU Payments            │
+└─────────────────┴──────────────────────┴────────────────────────────┘
+```
+
+## Project Structure
+
+```
+├── frontend/                    # Main Next.js app (shop management UI)
+│   ├── app/
+│   │   ├── [locale]/
+│   │   │   ├── (auth)/          # Login, Signup, Forgot/Reset password
+│   │   │   ├── (main)/          # Authenticated routes
+│   │   │   │   ├── billing/     # Invoice creation, listing, detail
+│   │   │   │   ├── dukandar/    # Customer management (Udhar book)
+│   │   │   │   ├── products/    # Product CRUD, stock in/out
+│   │   │   │   ├── stock/       # Stock logs
+│   │   │   │   ├── reports/     # Sales reports & analytics
+│   │   │   │   ├── settings/    # Shop profile, subscription
+│   │   │   │   ├── referral/    # Referral program
+│   │   │   │   ├── returns/     # Return management
+│   │   │   │   ├── import/      # Bulk product import
+│   │   │   │   ├── profile/     # User profile
+│   │   │   │   ├── udhar/       # Credit/debt tracking
+│   │   │   │   └── support/     # Help & support
+│   │   │   └── admin/           # Admin panel
+│   │   │       ├── login/       # Admin login
+│   │   │       ├── page.tsx     # Dashboard
+│   │   │       └── users/       # User management
+│   │   ├── not-found.tsx        # Custom 404 page
+│   │   └── globals.css
+│   ├── components/              # Shared UI components
+│   ├── lib/                     # API client, config, stores
+│   ├── i18n/                    # Internationalization (en/hi/mr)
+│   └── middleware.ts            # Auth routing, admin route handling
+│
+├── landing-page/                # Next.js static site (marketing)
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── blog/           # Blog with [slug] detail pages
+│   │   │   ├── about/
+│   │   │   ├── contact/        # Contact form + FAQ
+│   │   │   ├── download/
+│   │   │   ├── payment/
+│   │   │   ├── success/
+│   │   │   └── legal/          # Terms, Privacy, Refund
+│   │   ├── components/
+│   │   │   ├── Navbar.tsx       # Header with auth-aware nav
+│   │   │   ├── Footer.tsx       # Footer with links
+│   │   │   ├── HeroSection.tsx  # Video background hero
+│   │   │   ├── Features.tsx     # Feature cards with SVGs
+│   │   │   ├── Pricing.tsx      # Plan comparison
+│   │   │   ├── HowItWorks.tsx   # Step-by-step guide
+│   │   │   ├── FinalCTA.tsx     # Call-to-action section
+│   │   │   └── FAQ.tsx          # FAQ accordion
+│   │   └── lib/config.ts       # Environment config
+│   └── next.config.ts          # Static export config
+│
+├── backend-node/                # Node.js + Express API
+│   ├── src/
+│   │   ├── index.js            # Server entry, middleware, routes
+│   │   ├── config.js           # Environment config, CORS, PayU
+│   │   ├── db.js               # Prisma client
+│   │   ├── middleware/
+│   │   │   └── auth.js         # JWT authentication middleware
+│   │   ├── routes/
+│   │   │   ├── auth.js         # Register, login, forgot/reset password
+│   │   │   ├── shop.js         # Shop profile CRUD
+│   │   │   ├── products.js     # Product CRUD, stock adjustments
+│   │   │   ├── billing.js      # Invoice CRUD, returns
+│   │   │   ├── customers.js    # Customer management
+│   │   │   ├── dukandar.js     # Udhar book (credit/debt)
+│   │   │   ├── reports.js      # Sales reports & analytics
+│   │   │   ├── payments.js     # PayU payment integration
+│   │   │   ├── referrals.js    # Referral system
+│   │   │   ├── notifications.js # Notification management
+│   │   │   ├── support.js      # Support ticket system
+│   │   │   └── admin.js        # Admin analytics, user mgmt
+│   │   └── utils/
+│   │       ├── email.js        # Email sending (SMTP)
+│   │       └── helpers.js      # Utility functions
+│   ├── prisma/
+│   │   └── schema.prisma       # Database schema
+│   └── Dockerfile               # Production Docker image
+│
+├── .env.example                 # Environment variable template
+├── render.yaml                  # Render deployment config
+└── README.md
+```
 
 ## Features
-- Fast POS Billing (<10s)
-- QR/Barcode Scanning
-- Multilingual (English, Hindi, Marathi)
-- Udhar (Credit) Management
-- Inventory & Low Stock Alerts
-- Sales & Profit Reports
+
+### For Shop Owners
+- **Smart Billing** — Create GST-compliant invoices with auto-calculation, discounts, and partial payments
+- **Inventory Management** — Track stock levels, get low-stock alerts, manage stock in/out
+- **Udhar Book** — Digital credit management with WhatsApp payment reminders
+- **AI Insights** — Sales analytics, demand prediction, pricing recommendations
+- **Customer Management** — Track purchase history, credit, and contact details
+- **Reports** — Daily/weekly/monthly sales reports, profit analysis
+- **Multi-language** — English, Hindi, Marathi interface
+- **Bulk Import** — Import products from Excel/CSV
+- **Returns Management** — Handle product returns and exchanges
+- **Referral Program** — Earn rewards by referring other shop owners
+- **Offline Mode** — Works without internet, syncs when connected
+
+### For Admin
+- **Dashboard** — Platform analytics, revenue, user growth, plan distribution
+- **User Management** — Search, filter, block/activate/delete users
+- **User Detail** — View user info, subscription, products, customers, referrals
+- **Subscription Management** — Change user plans, cancel/manage subscriptions
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | Required |
+| `SECRET_KEY` | JWT signing secret | Required |
+| `PORT` | Backend server port | `10000` |
+| `FRONTEND_URL` | Frontend app URL (for CORS) | `http://localhost:3000` |
+| `LANDING_URL` | Landing page URL (for CORS) | `http://localhost:3001` |
+| `BACKEND_URL` | Backend API URL (for CORS) | `http://localhost:10000` |
+| `APP_URL` | Application URL | `http://localhost:3000` |
+| `NEXT_PUBLIC_API_URL` | API URL for frontend clients | `http://localhost:10000/api/v1` |
+| `NEXT_PUBLIC_FRONTEND_URL` | Frontend URL (public) | `http://localhost:3000` |
+| `NEXT_PUBLIC_LANDING_URL` | Landing URL (public) | `http://localhost:3001` |
+| `ADMIN_SECRET_KEY` | Admin account registration key | — |
+| `GEMINI_API_KEY` | Google Gemini AI API key | — |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
+| `PAYU_KEY` | PayU merchant key | — |
+| `PAYU_SALT` | PayU merchant salt | — |
+| `SMTP_HOST` / `SMTP_PORT` | SMTP server config | `smtp.gmail.com:587` |
+| `SMTP_USER` / `SMTP_PASSWORD` | SMTP credentials | — |
+| `SUPPORT_EMAIL` | Support email address | — |
+
+## Local Development
+
+### Prerequisites
+- Node.js 20+
+- PostgreSQL database
+- npm
+
+### Setup
+
+```bash
+# 1. Clone and install dependencies
+git clone <repo-url>
+cd Vyapar-Sarthi
+
+# Backend
+cd backend-node
+cp .env.example .env
+# Edit .env with your DATABASE_URL and other settings
+npm install
+npx prisma db push
+npm run dev          # Starts on port 10000
+
+# Frontend (new terminal)
+cd frontend
+cp ../.env.example .env.local
+# Edit .env.local with your settings
+npm install
+npm run dev          # Starts on port 3000
+
+# Landing page (new terminal)
+cd landing-page
+npm install
+npm run dev          # Starts on port 3001
+```
+
+### Access
+- Frontend app: `http://localhost:3000`
+- Landing page: `http://localhost:3001`
+- Backend API: `http://localhost:10000`
+- Admin panel: `http://localhost:3000/en/admin/login`
+
+## Deployment
+
+### Option 1: Deploy on Render
+
+Render is the recommended platform for easy deployment. You need **3 services**:
+
+#### 1. Backend (Node.js + Docker)
+- **Type**: Web Service
+- **Runtime**: Docker
+- **Build**: Uses `backend-node/Dockerfile`
+- **Health Check**: `GET /`
+- **Environment Variables** (all required):
+  ```
+  DATABASE_URL=<your-postgres-connection-string>
+  SECRET_KEY=<generate-a-random-secret>
+  FRONTEND_URL=https://your-frontend.onrender.com
+  LANDING_URL=https://your-landing-page.onrender.com
+  BACKEND_URL=https://your-backend.onrender.com
+  APP_URL=https://your-frontend.onrender.com
+  ADMIN_SECRET_KEY=<your-admin-secret>
+  ```
+- **Start Command**: `node src/index.js` (already in Dockerfile)
+
+#### 2. Frontend (Next.js SSR)
+- **Type**: Web Service
+- **Runtime**: Node
+- **Build Command**: `cd frontend && npm install && npm run build`
+- **Start Command**: `cd frontend && npm start`
+- **Environment Variables** (all required):
+  ```
+  NODE_ENV=production
+  NEXT_PUBLIC_API_URL=https://your-backend.onrender.com/api/v1
+  NEXT_PUBLIC_FRONTEND_URL=https://your-frontend.onrender.com
+  NEXT_PUBLIC_LANDING_URL=https://your-landing-page.onrender.com
+  BACKEND_URL=https://your-backend.onrender.com
+  ```
+
+#### 3. Landing Page (Next.js Static Site)
+- **Type**: Static Site
+- **Build Command**: `cd landing-page && npm install && npm run build`
+- **Publish Directory**: `landing-page/out`
+- **Environment Variables**:
+  ```
+  NEXT_PUBLIC_API_URL=https://your-backend.onrender.com/api/v1
+  NEXT_PUBLIC_FRONTEND_URL=https://your-frontend.onrender.com
+  NEXT_PUBLIC_LANDING_URL=https://your-landing-page.onrender.com
+  ```
+
+Or use the provided `render.yaml` (one-click deploy):
+```yaml
+# Edit render.yaml with your repo URL and service names
+# Then connect your GitHub repo to Render and it auto-detects the config
+```
+
+### Option 2: Deploy on AWS
+
+#### Backend (ECS Fargate or EC2)
+1. Build the Docker image:
+   ```bash
+   cd backend-node
+   docker build -t vyapar-backend .
+   docker tag vyapar-backend <your-ecr-repo>:latest
+   docker push <your-ecr-repo>:latest
+   ```
+2. Deploy to ECS Fargate with the environment variables from above
+3. Set up an Application Load Balancer and Route 53 domain
+
+#### Frontend (Elastic Beanstalk or ECS)
+1. Create a `Dockerfile` in `frontend/`:
+   ```dockerfile
+   FROM node:20-alpine
+   WORKDIR /app
+   COPY package*.json ./
+   RUN npm ci
+   COPY . .
+   RUN npm run build
+   EXPOSE 3000
+   CMD ["npm", "start"]
+   ```
+2. Deploy to Elastic Beanstalk (Node.js platform) or ECS
+3. Add a PostgreSQL database (RDS) and set the connection string
+
+#### Landing Page (S3 + CloudFront)
+1. Build the static site:
+   ```bash
+   cd landing-page
+   npm install
+   NEXT_PUBLIC_API_URL=https://your-api.com/api/v1 \
+   NEXT_PUBLIC_FRONTEND_URL=https://your-frontend.com \
+   npm run build
+   ```
+2. Upload `out/` directory to S3 bucket
+3. Enable static website hosting on S3
+4. Optionally add CloudFront CDN and custom domain
+
+### Database Setup (All Platforms)
+```bash
+# After deploying the backend, run:
+npx prisma db push    # Creates all tables
+# Or for production migrations:
+npx prisma migrate deploy
+```
+
+### Admin Account Setup
+```bash
+# Register the first admin via API:
+curl -X POST https://your-backend.onrender.com/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Admin",
+    "email": "admin@example.com",
+    "password": "secure-password",
+    "isAdmin": true,
+    "adminKey": "<your-admin-secret-key>"
+  }'
+```
+
+## API Endpoints
+
+### Auth
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/auth/register` | Register new user or admin |
+| POST | `/api/v1/auth/login` | Login, returns JWT token |
+| POST | `/api/v1/auth/forgot-password` | Send password reset email |
+| POST | `/api/v1/auth/reset-password` | Reset password with token |
+
+### Shop
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/shop/profile` | Get shop profile |
+| PATCH | `/api/v1/shop/profile` | Update shop profile |
+| DELETE | `/api/v1/shop/profile` | Delete shop |
+
+### Products
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/products` | List products |
+| POST | `/api/v1/products` | Create product |
+| GET | `/api/v1/products/:id` | Get product detail |
+| PATCH | `/api/v1/products/:id` | Update product |
+| DELETE | `/api/v1/products/:id` | Delete product |
+| POST | `/api/v1/products/stock` | Add stock (in) |
+| POST | `/api/v1/products/stock/out` | Remove stock (out) |
+| GET | `/api/v1/products/stock/logs` | Stock adjustment history |
+
+### Billing
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/billing` | List invoices |
+| POST | `/api/v1/billing` | Create invoice |
+| GET | `/api/v1/billing/:identifier` | Get invoice by ID or number |
+| DELETE | `/api/v1/billing/:id` | Delete invoice |
+| POST | `/api/v1/billing/:id/return` | Process return |
+
+### Customers
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/customers` | List customers |
+| POST | `/api/v1/customers` | Create customer |
+| PATCH | `/api/v1/customers/:id` | Update customer |
+| DELETE | `/api/v1/customers/:id` | Delete customer |
+
+### Reports
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/reports/daily` | Daily sales report |
+| GET | `/api/v1/reports/monthly` | Monthly sales report |
+| GET | `/api/v1/reports/profit` | Profit analysis |
+
+### Admin
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/admin/login` | Admin login |
+| GET | `/api/v1/admin/analytics` | Platform analytics |
+| GET | `/api/v1/admin/users` | List all users (paginated) |
+| GET | `/api/v1/admin/users/:id` | User detail |
+| DELETE | `/api/v1/admin/users/:id` | Delete user |
+| POST | `/api/v1/admin/users/:id/deactivate` | Block user |
+| POST | `/api/v1/admin/users/:id/activate` | Unblock user |
+| POST | `/api/v1/admin/users/:id/change-plan` | Change user plan |
+| GET | `/api/v1/admin/referrals` | All referrals |
+
+### Payments
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/payments/create-order` | Create PayU order |
+| POST | `/api/v1/payments/verify` | Verify payment |
+| GET | `/api/v1/payments/plans` | List subscription plans |
 
 ## Tech Stack
-- **Frontend**: Next.js 15, TypeScript, Tailwind CSS, Shadcn/UI, Zustand, Recharts
-- **Backend**: FastAPI (Python), PostgreSQL, SQLAlchemy, Redis, Celery
-- **Infrastructure**: Docker, Nginx
 
-## Setup Instructions
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 15, React, TypeScript, Tailwind CSS |
+| Landing Page | Next.js 15 (static export), Tailwind CSS, Framer Motion |
+| Backend | Node.js, Express, Prisma ORM |
+| Database | PostgreSQL (Supabase) |
+| Auth | JWT tokens, bcryptjs |
+| Payments | PayU India |
+| AI | Google Gemini API |
+| Email | Nodemailer (SMTP) |
+| Icons | Lucide React |
+| Internationalization | next-intl (en, hi, mr) |
+| Animation | Framer Motion |
 
-### 1. Environment Variables
-Copy `.env.example` to `.env` and fill in the details.
+## Use Cases
 
-### 2. Docker Deployment
-```bash
-docker-compose up --build
-```
-
-### 3. Database Migrations & Seeding
-```bash
-# Run migrations
-docker-compose exec backend alembic upgrade head
-
-# Seed initial data
-docker-compose exec backend python seed.py
-```
-
-### 4. Manual Development
-**Backend**:
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-**Frontend**:
-```bash
-npm install
-npm run dev
-```
-
----
-
-## Render Deployment (Recommended for MVP)
-
-> **Quick start:** Use **New + → Blueprint** and connect your repo — `render.yaml` at repo root will auto-create the backend service + PostgreSQL database. Then manually add the Landing Page and Frontend as described below.
-
-### Landing Page (Vite — static site)
-
-1. Go to https://dashboard.render.com → **New + → Static Site**
-2. Connect your GitHub repo `RGGlobalServices/kirana-manager`
-3. Fill in:
-   - **Name:** `kirana-landing`
-   - **Root Directory:** `landing-page`
-   - **Build Command:** `npm install && npm run build`
-   - **Publish Directory:** `dist`
-4. Click **Create Static Site**
-5. Your landing page will be live at `https://kirana-landing.onrender.com`
-
-> **Note:** The landing page is a standalone Vite site (`landing-page/`). It does not require a server — Render serves the built static files directly.
-
-### Backend (FastAPI — Docker)
-
-> **Important:** Use **Docker** runtime (not Python buildpack) to avoid Python 3.14 compatibility issues.
-
-1. **New + → Web Service**
-2. Connect the same repo
-3. Fill in:
-   - **Name:** `kirana-backend`
-   - **Runtime:** `Docker`
-   - **Root Directory:** `backend`
-   - **Dockerfile Path:** `./Dockerfile`
-   - **Docker Context:** `./backend`
-4. Add environment variables (under **Environment**):
-   - `DATABASE_URL` — use Render's free PostgreSQL (see below)
-   - `SECRET_KEY` — generate a random string
-   - `LANDING_URL` — `https://kirana-landing.onrender.com`
-   - `APP_URL` — your frontend URL (Next.js, see below)
-   - `BACKEND_URL` — `https://kirana-backend.onrender.com`
-   - `KS_GOOGLE_CLIENT_ID` — your Google OAuth client ID
-5. Click **Create Web Service**
-
-**Or use `render.yaml` (Infrastructure as Code):**  
-Commit `render.yaml` at repo root and connect your repo via **New + → Blueprint**. Render will auto-create the backend service + PostgreSQL database.
-
-### Database (Render PostgreSQL)
-
-1. **New + → PostgreSQL**
-2. **Name:** `kirana-db`
-3. Choose **Free** plan (1 GB storage, expires after 90 days)
-4. After creation, copy the **Internal Database URL** and set it as `DATABASE_URL` in your backend web service
-
-### Frontend (Next.js — web service or static)
-
-**Option 1 — Web Service (recommended for SSR):**
-1. **New + → Web Service**
-2. **Name:** `kirana-frontend`
-3. **Root Directory:** `frontend`
-4. **Runtime:** `Node`
-5. **Build Command:** `npm install && npm run build`
-6. **Start Command:** `npm start`
-7. Add env vars:
-   - `NODE_ENV=production`
-   - (other vars are read from the backend API at runtime)
-
-**Option 2 — Static Site (if using `next export`):**
-1. **New + → Static Site**
-2. **Root Directory:** `frontend`
-3. **Build Command:** `npm install && npm run build && npx next export`
-4. **Publish Directory:** `out`
-
-### Separate Domains (Custom)
-
-After deployment, each service gets its own `*.onrender.com` URL. To use custom domains:
-- Go to each service's **Settings → Custom Domain**
-- Add your domain (e.g., `vyaparsarthi.com` for landing, `api.vyaparsarthi.com` for backend)
-- Update your DNS with the provided CNAME records
-
----
-
-## AWS Deployment
-
-### Option A — Backend on EC2 + Frontend on S3/CloudFront
-
-**Backend (FastAPI on EC2):**
-```bash
-# SSH into your EC2 instance (Amazon Linux 2023)
-sudo yum update -y
-sudo yum install -y python3-pip nginx
-
-# Clone the repo
-git clone https://github.com/RGGlobalServices/kirana-manager.git /app
-cd /app/backend
-
-# Install deps & start
-pip install -r requirements.txt
-pip install uvicorn gunicorn
-
-# Run with systemd or screen
-screen -S backend
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-**Nginx reverse proxy (for HTTPS & domain):**
-```nginx
-server {
-    listen 80;
-    server_name api.yourdomain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-**Frontend (Next.js on S3 + CloudFront):**
-```bash
-cd frontend
-npm install
-npm run build
-
-# Sync the .next/static & public folders to S3
-aws s3 sync out/ s3://your-bucket/ --delete
-
-# Point CloudFront distribution to the S3 bucket
-```
-
-**Database (RDS PostgreSQL):**
-- Create a free-tier PostgreSQL instance in AWS RDS
-- Set `DATABASE_URL` in your EC2 environment
-
-### Option B — Elastic Beanstalk (simpler)
-
-```bash
-# Install EB CLI
-pip install awsebcli
-
-# Deploy backend
-cd backend
-eb init -p python-3.10 kirana-manager --region ap-south-1
-eb create production
-
-# Set environment variables via EB console or CLI:
-eb setenv SECRET_KEY=... DATABASE_URL=postgres://... ...
-```
-
-### Option C — ECS / Fargate (Docker)
-
-```bash
-# Build and push image to ECR
-aws ecr create-repository --repository-name kirana-backend
-docker tag kirana-backend:latest <account>.dkr.ecr.ap-south-1.amazonaws.com/kirana-backend
-docker push <account>.dkr.ecr.ap-south-1.amazonaws.com/kirana-backend
-
-# Deploy via ECS Fargate with the task definition in docker-compose.yml
-# or use AWS Copilot:
-copilot init --app kirana --name backend --type 'Load Balanced Web Service' --dockerfile ./backend/Dockerfile
-copilot deploy
-```
-
-### Required AWS Resources Summary
-
-| Service    | Purpose                  | Approx Cost (ap-south-1) |
-|------------|--------------------------|--------------------------|
-| EC2 t4g.nano  | Backend API (FastAPI)    | ~₹450/month            |
-| RDS db.t4g.micro | PostgreSQL database   | ~₹650/month            |
-| S3 + CloudFront | Frontend hosting     | ~₹200/month            |
-| Route 53   | Domain (optional)        | ~₹400/month            |
-| **Total**  |                          | **~₹1,700/month**      |
-
-Set these env vars on your EC2/EB/ECS environment:
-```
-DATABASE_URL=postgresql://user:pass@your-rds-endpoint:5432/kirana
-SECRET_KEY=<random-secret>
-APP_URL=https://your-frontend-domain.com
-LANDING_URL=https://your-landing-domain.com
-BACKEND_URL=https://api.yourdomain.com
-KS_GOOGLE_CLIENT_ID=...
-SMTP_USER=...
-SMTP_PASSWORD=...
-```
-
----
-
-## Folder Structure
-- `/app`: Next.js App Router (Frontend)
-- `/backend`: FastAPI Application
-- `/messages`: i18n Translation files
-- `/components`: Reusable UI components
-- `/lib`: Utilities and State management
+1. **Kirana / Grocery Stores** — Replace manual billing and udhar books with digital management
+2. **General Stores** — Track inventory across hundreds of products with automated low-stock alerts
+3. **Mobile Shops / Small Retail** — Manage customer credit, send WhatsApp payment reminders
+4. **Wholesale Distributors** — Handle bulk invoices, track payments from multiple retailers
+5. **Multi-location Shops** — Manage multiple shops from a single admin panel
