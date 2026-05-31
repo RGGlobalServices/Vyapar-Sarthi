@@ -65,7 +65,7 @@ router.post('/create-order', async (req, res) => {
   try {
     const { plan, firstname, email, phone, trialDays } = req.body;
 
-    if (!plan || !config.planAmounts[plan]) {
+    if (!plan || !(plan in config.planAmounts)) {
       return res.status(400).json({ detail: 'Invalid plan' });
     }
 
@@ -218,7 +218,7 @@ router.post('/activate-plan', authenticateUser, getCurrentUser, getCurrentShop, 
     const { plan, txnid, trial_end } = req.body;
     const shop = req.shop;
 
-    if (plan && !config.planAmounts[plan]) {
+    if (plan && !(plan in config.planAmounts)) {
       return res.status(400).json({ detail: 'Invalid plan' });
     }
 
