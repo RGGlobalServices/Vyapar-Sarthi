@@ -1,9 +1,37 @@
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { config } from './config.js';
 import prisma from './db.js';
 
 const app = express();
+
+// Seed default admin from env vars on startup
+async function seedAdmin() {
+  if (!config.adminEmail || !config.adminPassword) {
+    console.log('[seed] ADMIN_EMAIL or ADMIN_PASSWORD not set, skipping admin seed');
+    return;
+  }
+  try {
+    const existing = await prisma.adminUser.findUnique({ where: { email: config.adminEmail } });
+    const hashedPassword = await bcrypt.hash(config.adminPassword, 10);
+    if (existing) {
+      await prisma.adminUser.update({
+        where: { email: config.adminEmail },
+        data: { hashedPassword, fullName: config.adminName || existing.fullName, isActive: 1 },
+      });
+      console.log(`[seed] Updated admin: ${config.adminEmail}`);
+    } else {
+      await prisma.adminUser.create({
+        data: { email: config.adminEmail, hashedPassword, fullName: config.adminName, role: 'superadmin', isActive: 1 },
+      });
+      console.log(`[seed] Created admin: ${config.adminEmail}`);
+    }
+  } catch (err) {
+    console.error('[seed] Admin seed error:', err.message);
+  }
+}
 
 app.use(cors({ origin: config.corsOrigins, credentials: true, methods: ['*'], allowedHeaders: ['*'] }));
 app.use(express.json());
@@ -65,6 +93,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ detail: err.message || 'Internal server error' });
 });
 
-app.listen(config.port, () => console.log(`Backend running on port ${config.port}`));
+seedAdmin().then(() => {
+  app.listen(config.port, () => console.log(`Backend running on port ${config.port}`));
+});
 
 export default app;

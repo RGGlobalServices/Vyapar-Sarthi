@@ -7,7 +7,6 @@ coverage/
 *.log
 .env*
 !.env.example
-!.env.production
 __pycache__/
 *.db
 .claude/
