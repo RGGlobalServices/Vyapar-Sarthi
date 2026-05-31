@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { isLoggedIn, getToken, getUser, apiPost } from '@/lib/auth';
+import { config } from '@/lib/config';
 
 const plans = [
   {
@@ -43,7 +44,10 @@ export default function Payment() {
         phone: user?.mobile || '',
       };
       const data = await apiPost('/payments/create-order', payload, token || undefined);
-      window.location.href = '/login?upgraded=1';
+      // Activate the plan directly (test mode — no real payment)
+      await apiPost('/payments/activate-plan', { plan: planKey, txnid: data.txnid || '' }, token || undefined);
+      // Redirect to the app with success flag
+      window.location.href = `${config.FRONTEND_URL}/en/settings?payment_success=1&plan=${planKey}`;
     } catch (err) {
       console.error('Payment error:', err);
       alert(err instanceof Error ? err.message : 'Activation failed. Please try again.');
