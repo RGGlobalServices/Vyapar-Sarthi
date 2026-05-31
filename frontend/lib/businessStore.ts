@@ -34,7 +34,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   mobile: '',
   logoUrl: '',
   setupComplete: false,
-  subscriptionPlan: 'starter',
+  subscriptionPlan: 'shop',
   subscriptionStatus: 'active',
   subscriptionExpiry: null,
 };
@@ -70,7 +70,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         mobile: data.mobile ?? '',
         logoUrl: data.logo_url ?? '',
         setupComplete: data.setup_complete ?? false,
-        subscriptionPlan: data.subscription_plan ?? 'starter',
+        subscriptionPlan: data.subscription_plan ?? 'shop',
         subscriptionStatus: data.subscription_status ?? 'active',
         subscriptionExpiry: data.subscription_expiry ?? null,
       };

@@ -9,7 +9,6 @@ import {useTranslations} from 'next-intl';
 import { exportReportPDF } from '@/lib/pdfExport';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
-import { canExportReports, planLabel, UPGRADE_URL } from '@/lib/planGates';
 
 const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieChart'), { ssr: false });
 const ReportsChart = dynamic(() => import('@/components/ReportsChart'), {
@@ -77,11 +76,6 @@ export default function ReportsPage() {
   };
 
   const handleExportCSV = async () => {
-    if (!canExportReports(profile.subscriptionPlan)) {
-      alert(`CSV export is available on Vyapar plan and above.\nYou are on ${planLabel(profile.subscriptionPlan)} plan. Upgrade to unlock.`);
-      window.open(UPGRADE_URL, '_blank');
-      return;
-    }
     try {
       const res = await api.get('/reports/export', { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -98,11 +92,6 @@ export default function ReportsPage() {
   };
 
   const handleExportPDF = async () => {
-    if (!canExportReports(profile.subscriptionPlan)) {
-      alert(`PDF export is available on Vyapar plan and above.\nYou are on ${planLabel(profile.subscriptionPlan)} plan. Upgrade to unlock.`);
-      window.open(UPGRADE_URL, '_blank');
-      return;
-    }
     setExportingPDF(true);
     try {
       await exportReportPDF({

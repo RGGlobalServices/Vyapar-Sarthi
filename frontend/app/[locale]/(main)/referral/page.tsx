@@ -210,8 +210,8 @@ ${referralLink}`;
                       <td className="p-3">
                         <span className={cn(
                           "px-2 py-1 rounded text-xs font-bold",
-                          member.package === 'business' ? 'bg-purple-500/20 text-purple-300' :
-                          member.package === 'professional' ? 'bg-sky-500/20 text-sky-300' :
+                          member.package === 'wholesale' ? 'bg-purple-500/20 text-purple-300' :
+                          member.package === 'shop' ? 'bg-sky-500/20 text-sky-300' :
                           'bg-slate-700 text-slate-400'
                         )}>
                           {member.package}

@@ -89,7 +89,7 @@ router.post('/apply', async (req, res) => {
       where: { ownerId: referrerCode.userId },
     });
 
-    if (referrerShop && referrerShop.subscriptionStatus === 'active' && referrerShop.subscriptionPlan !== 'starter') {
+    if (referrerShop && referrerShop.subscriptionStatus === 'active') {
       const newExpiry = referrerShop.subscriptionExpiry ? new Date(referrerShop.subscriptionExpiry) : new Date();
       newExpiry.setDate(newExpiry.getDate() + 30);
 

@@ -23,7 +23,7 @@ export default function DukandarPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (profile.subscriptionPlan === 'business') {
+    if (profile.subscriptionPlan === 'wholesale') {
       loadDukandar();
     } else {
       loadMyAccessCode();
@@ -85,7 +85,7 @@ export default function DukandarPage() {
     );
   }
 
-  if (profile.subscriptionPlan !== 'business') {
+  if (profile.subscriptionPlan !== 'wholesale') {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-white">Dukandar Management</h1>
@@ -114,7 +114,7 @@ export default function DukandarPage() {
               </p>
             </div>
             <a
-              href={`${PAYMENT_URL}?plan=business`}
+              href={`${PAYMENT_URL}?plan=wholesale`}
               className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               Upgrade to Wholesale
@@ -171,7 +171,7 @@ export default function DukandarPage() {
                   <div className="text-right">
                     <span className={cn(
                       "px-2 py-1 rounded text-xs font-bold",
-                      d.subscription_plan === 'business' ? 'bg-purple-500/20 text-purple-300' :
+                      d.subscription_plan === 'wholesale' ? 'bg-purple-500/20 text-purple-300' :
                       d.subscription_plan === 'professional' ? 'bg-sky-500/20 text-sky-300' :
                       d.subscription_plan === 'basic' ? 'bg-emerald-700 text-white' :
                       'bg-slate-700 text-slate-400'

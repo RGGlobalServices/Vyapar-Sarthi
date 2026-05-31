@@ -1,23 +1,19 @@
 import { PAYMENT_URL } from './config';
 
-export type PlanKey = 'starter' | 'basic' | 'professional' | 'business';
+export type PlanKey = 'shop' | 'wholesale';
 
 export const PLAN_DISPLAY: Record<string, string> = {
-  starter:      'Free',
-  basic:        'Small Store',
-  professional: 'Big Store',
-  business:     'Wholesale',
+  shop:       'Shop',
+  wholesale:  'Wholesale',
 };
 
 export const PLAN_LIMITS: Record<string, { maxProducts: number; maxUdharCustomers: number }> = {
-  starter:      { maxProducts: 50,       maxUdharCustomers: 10       },
-  basic:        { maxProducts: 200,      maxUdharCustomers: 50       },
-  professional: { maxProducts: Infinity, maxUdharCustomers: Infinity },
-  business:     { maxProducts: Infinity, maxUdharCustomers: Infinity },
+  shop:       { maxProducts: Infinity, maxUdharCustomers: Infinity },
+  wholesale:  { maxProducts: Infinity, maxUdharCustomers: Infinity },
 };
 
 export function getPlanLimits(plan: string) {
-  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.starter;
+  return PLAN_LIMITS[plan] ?? { maxProducts: Infinity, maxUdharCustomers: Infinity };
 }
 
 export function planLabel(plan: string): string {
@@ -34,17 +30,15 @@ export function canAddUdharCustomer(plan: string, currentCount: number): boolean
 }
 
 export function canExportReports(plan: string): boolean {
-  return plan === 'basic' || plan === 'professional' || plan === 'business';
+  return true;
 }
 
 export function productLimitDisplay(plan: string): string {
-  const max = getPlanLimits(plan).maxProducts;
-  return max === Infinity ? 'Unlimited' : max.toLocaleString('en-IN');
+  return 'Unlimited';
 }
 
 export function udharLimitDisplay(plan: string): string {
-  const max = getPlanLimits(plan).maxUdharCustomers;
-  return max === Infinity ? 'Unlimited' : max.toLocaleString('en-IN');
+  return 'Unlimited';
 }
 
 export const UPGRADE_URL = PAYMENT_URL;

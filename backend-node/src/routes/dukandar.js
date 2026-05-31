@@ -37,7 +37,7 @@ router.post('/add-dukandar', authenticateUser, getCurrentUser, async (req, res) 
     if (!retailerEmail) return res.status(400).json({ detail: 'Retailer email is required' });
 
     const shop = await prisma.shop.findFirst({ where: { ownerId: req.user.uuid } });
-    if (!shop || shop.subscriptionPlan !== 'business') {
+    if (!shop || shop.subscriptionPlan !== 'wholesale') {
       return res.status(403).json({ detail: 'Business plan required to add dukandar' });
     }
 
@@ -66,7 +66,7 @@ router.post('/add-dukandar-by-code', authenticateUser, getCurrentUser, async (re
     if (!accessCode) return res.status(400).json({ detail: 'Access code is required' });
 
     const shop = await prisma.shop.findFirst({ where: { ownerId: req.user.uuid } });
-    if (!shop || shop.subscriptionPlan !== 'business') {
+    if (!shop || shop.subscriptionPlan !== 'wholesale') {
       return res.status(403).json({ detail: 'Business plan required to add dukandar' });
     }
 

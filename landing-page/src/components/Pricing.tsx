@@ -1,53 +1,33 @@
 'use client';
 
-import { useState } from 'react';
-import { useScrollReveal } from '@/hooks/useScrollReveal';
 import { motion } from 'framer-motion';
 
 const plans = [
   {
-    name: 'Small Store',
-    monthly: 699,
-    yearly: 599,
-    desc: 'For small Kirana shops',
-    features: [
-      'Up to 500 products',
-      'Basic billing & invoices',
-      'Udhar management',
-      'Daily sales reports',
-      'Email support',
-    ],
-    popular: false,
-  },
-  {
-    name: 'Big Store',
-    monthly: 1199,
-    yearly: 999,
-    desc: 'For medium to large stores',
+    name: 'Shop',
+    key: 'shop',
+    desc: 'For retail Kirana & general stores',
     features: [
       'Unlimited products',
-      'Advanced billing & GST invoices',
-      'Udhar management with reminders',
+      'Smart billing & GST invoices',
+      'Udhar book with WhatsApp reminders',
       'AI insights & predictions',
+      'Sales reports & analytics',
       'Bulk import via Excel',
       'Multi-language support',
-      'Priority support',
     ],
     popular: true,
   },
   {
     name: 'Wholesale',
-    monthly: 1799,
-    yearly: 1499,
-    desc: 'For wholesale businesses',
+    key: 'wholesale',
+    desc: 'For wholesale & distribution businesses',
     features: [
-      'Everything in Big Store',
+      'Everything in Shop',
+      'Dukandar (retailer) management',
       'Wholesale pricing tiers',
-      'Multi-branch management',
-      'API access',
-      'Custom integrations',
-      'Dedicated account manager',
-      '24/7 phone support',
+      'Bulk import/export',
+      'Priority support',
     ],
     popular: false,
   },
@@ -64,51 +44,28 @@ const item = {
 };
 
 export default function Pricing() {
-  const [annual, setAnnual] = useState(true);
-  const { ref, visible } = useScrollReveal(0.1);
-
   return (
     <section id="pricing" className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <div className="mx-auto mb-16 max-w-2xl text-center">
           <h2 className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-            Simple Pricing
+            Choose Your Plan
           </h2>
           <p className="mt-4 text-lg text-slate-400">
-            Choose the plan that fits your business. No hidden fees.
+            Both plans are completely free during testing. No credit card required.
           </p>
         </div>
 
-        <div className="mb-10 flex items-center justify-center gap-4">
-          <span className={`text-sm ${!annual ? 'text-white' : 'text-slate-500'}`}>Monthly</span>
-          <button
-            onClick={() => setAnnual(!annual)}
-            className={`relative h-7 w-14 rounded-full transition-colors ${
-              annual ? 'bg-indigo-500' : 'bg-slate-700'
-            }`}
-          >
-            <div
-              className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                annual ? 'translate-x-7' : 'translate-x-0.5'
-              }`}
-            />
-          </button>
-          <span className={`text-sm ${annual ? 'text-white' : 'text-slate-500'}`}>
-            Annual{' '}
-            <span className="text-xs text-emerald-400">(Save 15%)</span>
-          </span>
-        </div>
-
         <motion.div
-          ref={ref}
           variants={container}
           initial="hidden"
-          animate={visible ? 'show' : 'hidden'}
-          className="grid gap-8 lg:grid-cols-3"
+          whileInView="show"
+          viewport={{ once: true, margin: '-80px' }}
+          className="grid gap-8 lg:grid-cols-2 max-w-4xl mx-auto"
         >
           {plans.map((plan, i) => (
             <motion.div
-              key={i}
+              key={plan.key}
               variants={item}
               className="relative flex flex-col rounded-2xl border border-slate-700/50 bg-slate-800/40 p-8 transition-all duration-300 hover:-translate-y-1 hover:border-slate-600/50"
             >
@@ -117,13 +74,8 @@ export default function Pricing() {
                 <p className="mb-4 text-sm text-slate-400">{plan.desc}</p>
 
                 <div className="mb-6">
-                  <span className="text-4xl font-bold text-white">
-                    ₹{annual ? plan.yearly.toLocaleString() : plan.monthly.toLocaleString()}
-                  </span>
+                  <span className="text-4xl font-bold text-emerald-400">Free</span>
                   <span className="ml-1 text-sm text-slate-400">/mo</span>
-                  {annual && (
-                    <p className="mt-1 text-xs text-slate-500">billed annually</p>
-                  )}
                 </div>
 
                 <ul className="mb-8 flex flex-col gap-3">
@@ -138,10 +90,10 @@ export default function Pricing() {
                 </ul>
 
                 <a
-                  href="/register?redirect=/payment"
-                  className="mt-auto block w-full rounded-xl border border-slate-600 py-3 text-center text-sm font-semibold text-slate-300 transition-all hover:border-emerald-500/50 hover:text-white"
+                  href={`/register?redirect=/payment&plan=${plan.key}`}
+                  className="mt-auto block w-full rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02]"
                 >
-                  Get Started
+                  Get Started Free
                 </a>
               </div>
             </motion.div>

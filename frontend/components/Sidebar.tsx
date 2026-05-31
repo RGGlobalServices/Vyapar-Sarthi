@@ -66,21 +66,18 @@ export default function Sidebar({ locale }: { locale: string }) {
             </span>
             <span className={cn(
               "text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter",
-              profile.subscriptionPlan === 'business'     ? "bg-purple-500 text-white" :
-              profile.subscriptionPlan === 'professional' ? "bg-sky-500 text-white" :
-              profile.subscriptionPlan === 'basic'        ? "bg-emerald-700 text-white" :
-              "bg-slate-700 text-slate-400"
+              profile.subscriptionPlan === 'wholesale' ? "bg-purple-500 text-white" :
+              "bg-sky-500 text-white"
             )}>
-              {profile.subscriptionPlan === 'basic'        ? 'Dukaan' :
-               profile.subscriptionPlan === 'professional' ? 'Vyapar' :
-               profile.subscriptionPlan === 'business'     ? 'Wholesale' :
-               profile.subscriptionPlan || 'Free'}
+              {profile.subscriptionPlan === 'wholesale' ? 'Wholesale' :
+               profile.subscriptionPlan === 'shop'     ? 'Shop' :
+               profile.subscriptionPlan || 'Shop'}
             </span>
           </div>
         </div>
       </div>
 
-      {(!profile.subscriptionPlan || profile.subscriptionPlan === 'starter') && (
+      {false && (
         <div className="px-4 py-3 mx-4 mt-4 bg-gradient-to-br from-emerald-500/20 to-teal-500/5 border border-emerald-500/30 rounded-xl">
           <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">Free Plan</p>
           <p className="text-[11px] text-slate-300 leading-tight mb-2">Upgrade to Dukaan, Vyapar or Udyog for full features.</p>

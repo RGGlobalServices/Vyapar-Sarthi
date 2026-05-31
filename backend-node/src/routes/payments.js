@@ -163,7 +163,7 @@ router.post('/payu-success', async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { email: payuData.email } });
     if (user) {
-      const plan = payuData.udf1 || 'basic';
+      const plan = payuData.udf1 || 'shop';
       const trialDays = parseInt(payuData.udf2) || config.trialDays;
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + trialDays);

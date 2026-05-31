@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 import { useUdharStore, UdharCustomer, UdharTransaction } from '@/lib/store';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { canAddUdharCustomer, getPlanLimits, planLabel, udharLimitDisplay, UPGRADE_URL } from '@/lib/planGates';
 import dynamic from 'next/dynamic';
 
 const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieChart'), { ssr: false });
@@ -77,12 +76,6 @@ export default function UdharPage() {
   function handleAddCustomer(e: React.FormEvent) {
     e.preventDefault();
     if (!custForm.name.trim()) { setCustError(t('nameRequired')); return; }
-    if (!canAddUdharCustomer(profile.subscriptionPlan, customers.length)) {
-      const limits = getPlanLimits(profile.subscriptionPlan);
-      setCustError(`Customer limit reached (${limits.maxUdharCustomers} on ${planLabel(profile.subscriptionPlan)} plan). Upgrade for unlimited customers.`);
-      window.open(UPGRADE_URL, '_blank');
-      return;
-    }
     addCustomer(custForm.name.trim(), custForm.mobile.trim());
     setModal(null);
   }
@@ -278,21 +271,11 @@ export default function UdharPage() {
         </div>
         <div className="flex items-center gap-3">
           {(() => {
-            const limits = getPlanLimits(profile.subscriptionPlan);
-            const pct = limits.maxUdharCustomers === Infinity ? null : customers.length / limits.maxUdharCustomers;
             return (
               <div className="text-right">
                 <p className="text-xs font-bold text-slate-400">
-                  {customers.length} / {udharLimitDisplay(profile.subscriptionPlan)} customers
+                  {customers.length} / Unlimited customers
                 </p>
-                {pct !== null && (
-                  <div className="w-32 h-1.5 bg-slate-800 rounded-full mt-1 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${pct >= 0.9 ? 'bg-red-500' : pct >= 0.7 ? 'bg-orange-400' : 'bg-emerald-500'}`}
-                      style={{ width: `${Math.min(pct * 100, 100)}%` }}
-                    />
-                  </div>
-                )}
               </div>
             );
           })()}

@@ -14,7 +14,7 @@ import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
 import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes } from '@/components/SizeVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
-import { canAddProduct, getPlanLimits, planLabel, productLimitDisplay, UPGRADE_URL } from '@/lib/planGates';
+
 import { QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -194,12 +194,6 @@ export default function ProductsPage() {
 
   async function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canAddProduct(profile.subscriptionPlan, products.length)) {
-      const limits = getPlanLimits(profile.subscriptionPlan);
-      alert(`Product limit reached (${limits.maxProducts} on ${planLabel(profile.subscriptionPlan)} plan).\nUpgrade to add more products.`);
-      window.open(UPGRADE_URL, '_blank');
-      return;
-    }
     const sizeVariantsJson = bizConfig.hasSizes ? serializeSizeVariants(form.size_variants) : undefined;
     const stockQty = bizConfig.hasSizes ? totalFromSizes(form.size_variants) : Number(form.stock);
     try {
@@ -278,25 +272,11 @@ export default function ProductsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {(() => {
-            const limits = getPlanLimits(profile.subscriptionPlan);
-            const pct = limits.maxProducts === Infinity ? null : products.length / limits.maxProducts;
-            return (
-              <div className="text-right">
-                <p className="text-xs font-bold text-slate-400">
-                  {products.length.toLocaleString('en-IN')} / {productLimitDisplay(profile.subscriptionPlan)} products
-                </p>
-                {pct !== null && (
-                  <div className="w-32 h-1.5 bg-slate-800 rounded-full mt-1 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${pct >= 0.9 ? 'bg-red-500' : pct >= 0.7 ? 'bg-orange-400' : 'bg-emerald-500'}`}
-                      style={{ width: `${Math.min(pct * 100, 100)}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <div className="text-right">
+            <p className="text-xs font-bold text-slate-400">
+              {products.length.toLocaleString('en-IN')} / Unlimited products
+            </p>
+          </div>
           <button onClick={() => setShowAddModal(true)}
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}

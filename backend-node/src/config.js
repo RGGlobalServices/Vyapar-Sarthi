@@ -30,15 +30,14 @@ export const config = {
   payuTestUrl: 'https://test.payu.in/_payment',
   payuRefundUrl: 'https://info.payu.in/merchant/postservice?form=2',
 
-  // Plan amounts (INR)
-  planAmounts: { basic: 599, professional: 999, business: 1499 },
+  // Plan amounts (INR) — all ₹0 for testing
+  planAmounts: { shop: 0, wholesale: 0 },
   planLabels: {
-    basic: 'Vyapar Sarthi Small Store Plan',
-    professional: 'Vyapar Sarthi Big Store Plan',
-    business: 'Vyapar Sarthi Wholesale Plan',
+    shop: 'Vyapar Sarthi Shop Plan',
+    wholesale: 'Vyapar Sarthi Wholesale Plan',
   },
-  trialInitAmount: 2,
-  trialDays: 14,
+  trialInitAmount: 0,
+  trialDays: 0,
 
   // Email / SMTP
   smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',

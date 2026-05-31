@@ -4,16 +4,7 @@ export interface SubscriptionProfileLike {
   subscriptionExpiry?: string | null;
 }
 
-export function isSubscriptionEnded(profile: SubscriptionProfileLike): boolean {
-  const status = (profile.subscriptionStatus || '').toLowerCase();
-  if (status === 'expired') return true;
-
-  const expiry = profile.subscriptionExpiry ? new Date(profile.subscriptionExpiry) : null;
-  const hasValidExpiry = expiry && !Number.isNaN(expiry.getTime());
-  const now = new Date();
-
-  if (status === 'cancelled' && hasValidExpiry && expiry < now) return true;
-  if (hasValidExpiry && expiry < now && (profile.subscriptionPlan || '').toLowerCase() !== 'starter') return true;
+export function isSubscriptionEnded(_profile: SubscriptionProfileLike): boolean {
   return false;
 }
 

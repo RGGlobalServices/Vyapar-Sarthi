@@ -294,7 +294,7 @@ function SettingsPageInner() {
       </div>
 
       {/* ── Subscription Management ── */}
-      {profile.subscriptionPlan && profile.subscriptionPlan !== 'starter' && (
+      {profile.subscriptionPlan && (
         <Card className={cn(
           'border',
           profile.subscriptionStatus === 'cancelled'

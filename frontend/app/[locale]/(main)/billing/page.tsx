@@ -11,7 +11,6 @@ import {
   AlertCircle, CheckCircle, Zap, MessageCircle, ShieldCheck, Loader2
 } from 'lucide-react';
 import api from '@/lib/api';
-import { PAYMENT_URL } from '@/lib/config';
 import {cn} from '@/lib/utils';
 import {BillSlip, generateWhatsAppText} from '@/components/BillSlip';
 import {uploadInvoiceToSupabase} from '@/lib/supabaseStorage';
@@ -176,12 +175,6 @@ export default function BillingPage() {
 
   const handleWhatsAppPDF = async () => {
     if (isSharing) return;
-
-    if (profile.subscriptionPlan === 'starter') {
-      alert('WhatsApp bill sharing is available from Dukaan plan. Please upgrade your plan.');
-      window.open(PAYMENT_URL, '_blank');
-      return;
-    }
 
     setIsSharing(true);
     const fileName = `bill-${lastBill?.billNumber || Date.now()}.pdf`;
