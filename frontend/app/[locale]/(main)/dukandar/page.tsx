@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Store, Package, AlertTriangle, Plus, Eye, Clock, Hash, Users, Search, Copy, Check } from 'lucide-react';
+import { Store, Package, AlertTriangle, Plus, Eye, Clock, Hash, Users, Search, Copy, Check, Send, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { PAYMENT_URL } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,7 @@ export default function DukandarPage() {
   const [addStatus, setAddStatus] = useState<{ type: string; msg: string } | null>(null);
   const [myAccessCode, setMyAccessCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [alertSending, setAlertSending] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile.subscriptionPlan === 'wholesale') {
@@ -34,7 +35,7 @@ export default function DukandarPage() {
   async function loadDukandar() {
     try {
       const res = await api.get('/dukandar/my-dukandar');
-      setDukandar(res.data.dukandar);
+      setDukandar(res.data || []);
     } catch (err) {
       console.error('Failed to load dukandar', err);
     } finally {
@@ -75,6 +76,18 @@ export default function DukandarPage() {
     await navigator.clipboard.writeText(myAccessCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function sendStockAlert(retailerId: string) {
+    setAlertSending(retailerId);
+    try {
+      await api.post('/dukandar/send-stock-alert', { retailerId });
+      alert('Stock alert sent to dukandar successfully!');
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to send stock alert');
+    } finally {
+      setAlertSending(null);
+    }
   }
 
   if (loading) {
@@ -164,86 +177,68 @@ export default function DukandarPage() {
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-white">{d.retailer_name}</h3>
-                    <p className="text-sm text-slate-400">{d.retailer_shop}</p>
-                    <p className="text-xs text-slate-500">{d.retailer_email}</p>
+                    <h3 className="text-lg font-bold text-white">{d.shopName || d.name}</h3>
+                    <p className="text-sm text-slate-400">{d.name || d.email}</p>
+                    <p className="text-xs text-slate-500">{d.email}</p>
                   </div>
-                  <div className="text-right">
-                    <span className={cn(
-                      "px-2 py-1 rounded text-xs font-bold",
-                      d.subscription_plan === 'wholesale' ? 'bg-purple-500/20 text-purple-300' :
-                      d.subscription_plan === 'professional' ? 'bg-sky-500/20 text-sky-300' :
-                      d.subscription_plan === 'basic' ? 'bg-emerald-700 text-white' :
-                      'bg-slate-700 text-slate-400'
-                    )}>
-                      {d.subscription_plan}
-                    </span>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {d.subscription_expiry
-                        ? `Exp: ${new Date(d.subscription_expiry).toLocaleDateString()}`
-                        : 'No expiry'}
-                    </p>
-                  </div>
+                  {d.mobile && (
+                    <span className="text-xs text-slate-500">{d.mobile}</span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="p-3 bg-slate-800 rounded-xl">
-                    <p className="text-xs text-slate-400">Total Products</p>
-                    <p className="text-lg font-bold text-white">{d.total_products}</p>
+                    <p className="text-xs text-slate-400">Low Stock Products</p>
+                    <p className="text-lg font-bold text-red-400">{d.stockAlerts?.length || 0}</p>
                   </div>
-                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-                    <p className="text-xs text-red-400">Low Stock</p>
-                    <p className="text-lg font-bold text-red-400">{d.stock_alerts.low_stock.length}</p>
-                  </div>
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                    <p className="text-xs text-amber-400">Out of Stock</p>
-                    <p className="text-lg font-bold text-amber-400">{d.stock_alerts.out_of_stock.length}</p>
+                  <div className="p-3 bg-slate-800 rounded-xl">
+                    <p className="text-xs text-slate-400">Status</p>
+                    <p className="text-lg font-bold text-emerald-400">{d.isActive ? 'Active' : 'Inactive'}</p>
                   </div>
                 </div>
 
-                {/* Stock Alerts */}
-                {d.stock_alerts.low_stock.length > 0 && (
-                  <div className="mb-3">
+                {d.stockAlerts && d.stockAlerts.length > 0 && (
+                  <div className="mb-4">
                     <p className="text-xs font-bold text-red-400 mb-2 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" /> LOW STOCK ALERTS
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      {d.stock_alerts.low_stock.map((item: any, i: number) => (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {d.stockAlerts.map((item: any, i: number) => (
                         <span key={i} className="px-2 py-1 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-300">
-                          {item.name} ({item.current}/{item.min})
+                          {item.productName} ({item.currentStock ?? 0}/{item.minStock ?? 0} {item.unit || 'pcs'})
                         </span>
                       ))}
                     </div>
+                    <button
+                      onClick={() => sendStockAlert(d.id)}
+                      disabled={alertSending === d.id}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-slate-900 font-bold rounded-xl hover:bg-orange-400 transition-all disabled:opacity-50 text-sm"
+                    >
+                      {alertSending === d.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      Send Restock Alert
+                    </button>
                   </div>
                 )}
 
-                {d.stock_alerts.out_of_stock.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-xs font-bold text-amber-400 mb-2 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> OUT OF STOCK
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {d.stock_alerts.out_of_stock.map((item: any, i: number) => (
-                        <span key={i} className="px-2 py-1 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-300">
-                          {item.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {d.stock_alerts.expiring_soon.length > 0 && (
-                  <div>
-                    <p className="text-xs font-bold text-purple-400 mb-2 flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> EXPIRING SOON
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {d.stock_alerts.expiring_soon.map((item: any, i: number) => (
-                        <span key={i} className="px-2 py-1 bg-purple-500/10 border border-purple-500/20 rounded text-xs text-purple-300">
-                          {item.name} (Exp: {item.expiry})
-                        </span>
-                      ))}
-                    </div>
+                {(!d.stockAlerts || d.stockAlerts.length === 0) && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-slate-500">No low stock alerts</p>
+                    <button
+                      onClick={() => sendStockAlert(d.id)}
+                      disabled={alertSending === d.id}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 transition-all disabled:opacity-50 text-xs"
+                    >
+                      {alertSending === d.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Send className="w-3 h-3" />
+                      )}
+                      Check & Alert
+                    </button>
                   </div>
                 )}
               </CardContent>
@@ -252,7 +247,6 @@ export default function DukandarPage() {
         </div>
       )}
 
-      {/* Add Dukandar Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full">

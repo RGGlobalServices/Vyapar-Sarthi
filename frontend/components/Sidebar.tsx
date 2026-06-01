@@ -5,7 +5,7 @@ import { Link, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { 
   LayoutDashboard, IndianRupee, Package, Box, Users, 
-  BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle
+  BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PAYMENT_URL, SUPPORT_URL } from '@/lib/config';
@@ -36,6 +36,7 @@ export default function Sidebar({ locale }: { locale: string }) {
     { key: 'import',    icon: FolderUp,        href: '/import' },
     { key: 'referral',  icon: Gift,            href: '/referral' },
     { key: 'dukandar',  icon: Store,           href: '/dukandar' },
+    { key: 'dukandarAlerts', icon: Bell,        href: '/dukandar-alerts' },
     { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
     { key: 'settings',  icon: Settings,        href: '/settings' },
     { key: 'returns',   icon: RotateCcw,       href: '/returns' },

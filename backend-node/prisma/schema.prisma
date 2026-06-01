@@ -256,10 +256,29 @@ model DukandarRelationship {
   retailerId   String    @map("retailer_id") @db.Uuid
   status       String?   @db.VarChar
   createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  alerts       DukandarStockAlert[]
 
   @@index([retailerId], map: "dukandar_retailer_idx")
   @@index([wholesalerId], map: "dukandar_wholesaler_idx")
   @@map("dukandar_relationships")
+}
+
+model DukandarStockAlert {
+  id             String    @id @default(uuid()) @db.Uuid
+  relationshipId String    @map("relationship_id") @db.Uuid
+  wholesalerId   String    @map("wholesaler_id") @db.Uuid
+  retailerId     String    @map("retailer_id") @db.Uuid
+  message        String    @db.VarChar
+  products       String    @db.VarChar
+  status         String    @default("pending") @db.VarChar
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  respondedAt    DateTime? @map("responded_at") @db.Timestamptz(6)
+  relationship   DukandarRelationship @relation(fields: [relationshipId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([retailerId])
+  @@index([wholesalerId])
+  @@index([relationshipId])
+  @@map("dukandar_stock_alerts")
 }
 
 model AdminUser {
