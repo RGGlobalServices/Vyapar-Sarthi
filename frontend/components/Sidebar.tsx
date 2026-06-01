@@ -37,6 +37,7 @@ export default function Sidebar({ locale }: { locale: string }) {
     { key: 'referral',  icon: Gift,            href: '/referral' },
     { key: 'dukandar',  icon: Store,           href: '/dukandar' },
     { key: 'dukandarAlerts', icon: Bell,        href: '/dukandar-alerts' },
+    { key: 'dukandarCredit', icon: IndianRupee, href: '/dukandar-credit' },
     { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
     { key: 'settings',  icon: Settings,        href: '/settings' },
     { key: 'returns',   icon: RotateCcw,       href: '/returns' },

@@ -62,6 +62,7 @@ import referralRoutes from './routes/referrals.js';
 import supportRoutes from './routes/support.js';
 import dukandarRoutes from './routes/dukandar.js';
 import dukandarAlertRoutes from './routes/dukandarAlerts.js';
+import dukandarCreditRoutes from './routes/dukandarCredit.js';
 import adminRoutes from './routes/admin.js';
 
 app.use('/api/v1/auth', authRoutes);
@@ -76,6 +77,7 @@ app.use('/api/v1/referrals', referralRoutes);
 app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/dukandar', dukandarRoutes);
 app.use('/api/v1/dukandar', dukandarAlertRoutes);
+app.use('/api/v1/dukandar', dukandarCreditRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 app.get('/', (req, res) => res.json({ message: 'Kirana Smart Dashboard API is running' }));
