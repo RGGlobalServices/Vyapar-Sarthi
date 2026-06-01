@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Search, UserPlus, Phone, Calendar, ArrowRight,
   X, Check, Pencil, Trash2, Plus, Minus,
-  ArrowDownLeft, ArrowUpRight, ChevronLeft, Trash,
+  ArrowDownLeft, ArrowUpRight, ChevronLeft, Trash, Send
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUdharStore, UdharCustomer, UdharTransaction } from '@/lib/store';
@@ -117,6 +117,88 @@ export default function UdharPage() {
     setTxDeleteId(null);
   }
 
+  async function sendWhatsAppReminder(customer: UdharCustomer) {
+    const { default: jsPDF } = await import('jspdf');
+    const { default: html2canvas } = await import('html2canvas-pro');
+    const due = totalDue(customer);
+    const div = document.createElement('div');
+    div.style.width = '320px';
+    div.style.backgroundColor = '#ffffff';
+    div.style.color = '#000000';
+    div.style.fontFamily = 'monospace';
+    div.style.padding = '20px';
+    div.style.position = 'absolute';
+    div.style.left = '-9999px';
+    const storeName = profile.shopName || 'My Store';
+    const sorted = [...(customer.transactions || [])].reverse().slice(0, 20);
+    div.innerHTML = `
+      <div style="text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px">
+        <h1 style="font-size:17px;font-weight:900">${storeName}</h1>
+        <p style="font-size:9px">UDHAR STATEMENT</p>
+      </div>
+      <div style="font-size:9px;margin-bottom:4px">Customer: <strong>${customer.name}</strong></div>
+      ${customer.mobile ? `<div style="font-size:9px;margin-bottom:10px">Mobile: ${customer.mobile}</div>` : ''}
+      <p style="font-size:9px;font-weight:bold;margin-bottom:4px">Recent Transactions:</p>
+      <table style="width:100%;border-top:1px dashed #000;border-bottom:1px dashed #000;margin-bottom:10px">
+        <thead><tr style="font-size:9px"><th style="text-align:left;padding:4px 0">DATE</th><th style="text-align:left;padding:4px 0">TYPE</th><th style="text-align:right;padding:4px 0">AMOUNT</th></tr></thead>
+        <tbody style="border-top:1px dotted #000">
+          ${sorted.slice(0, 10).map((tx: UdharTransaction) => `
+            <tr><td style="padding:2px 0;font-size:9px">${new Date(tx.date).toLocaleDateString()}</td><td style="padding:2px 0;font-size:9px">${tx.type === 'udhar' ? 'Credit' : 'Payment'}</td><td style="text-align:right;padding:2px 0;font-size:9px">${tx.type === 'udhar' ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}</td></tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div style="display:flex;justify-content:space-between;font-weight:900;font-size:14px;border-top:1px solid #000;padding-top:4px">
+        <span>OUTSTANDING</span><span>₹${due.toLocaleString('en-IN')}</span>
+      </div>
+      <div style="text-align:center;margin-top:16px;padding-top:8px;border-top:1px dashed #000;font-size:9px">
+        <p>Please clear your outstanding at the earliest.</p>
+        <p style="margin-top:4px;font-size:8px">Powered by Vyapar Sarthi</p>
+      </div>
+    `;
+    document.body.appendChild(div);
+    const canvas = await html2canvas(div, { scale: 3, useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
+    const imgHeight = (canvas.height * 80) / canvas.width;
+    const pdf = new jsPDF({ format: [80, imgHeight], unit: 'mm' });
+    pdf.addImage(imgData, 'PNG', 0, 0, 80, imgHeight);
+    document.body.removeChild(div);
+    const blob = pdf.output('blob');
+    const file = new File([blob], `Udhar_Statement_${customer.name.replace(/\s+/g, '_')}.pdf`, { type: 'application/pdf' });
+    if (navigator.share && navigator.canShare({ files: [file] })) {
+      const text = [
+        `*Udhar Statement Reminder*`,
+        `From: ${storeName}`,
+        `Customer: ${customer.name}`,
+        `Outstanding Amount: *₹${due.toLocaleString('en-IN')}*`,
+        '',
+        'Please clear your outstanding at the earliest.',
+        '',
+        '_Powered by Vyapar Sarthi_',
+      ].filter(Boolean).join('\n');
+      try {
+        await navigator.share({ files: [file], title: 'Udhar Statement', text });
+        return;
+      } catch {}
+    }
+    const phone = customer.mobile ? customer.mobile.replace(/[^0-9]/g, '') : '';
+    const waNumber = phone.length === 10 ? `91${phone}` : phone.length > 10 ? phone : '';
+    const text = encodeURIComponent([
+      `*Udhar Statement Reminder*`,
+      `From: ${storeName}`,
+      `Customer: ${customer.name}`,
+      `Outstanding Amount: *₹${due.toLocaleString('en-IN')}*`,
+      '',
+      'Please clear your outstanding at the earliest.',
+      '',
+      '_Powered by Vyapar Sarthi_',
+    ].filter(Boolean).join('\n'));
+    if (waNumber) {
+      window.open(`https://api.whatsapp.com/send?phone=${waNumber}&text=${text}`, '_blank');
+    } else {
+      window.open(`https://wa.me/?text=${text}`, '_blank');
+    }
+  }
+
   // Detail view
   if (selected) {
     const customer = customers.find(c => c.id === selected.id) ?? selected;
@@ -163,6 +245,12 @@ export default function UdharPage() {
               className="flex-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl py-4 font-bold flex items-center justify-center gap-2 hover:bg-emerald-500/20 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed">
               <Minus size={18} />{t('recordPayment')}
             </button>
+            {due > 0 && (
+              <button onClick={() => sendWhatsAppReminder(customer)}
+                className="flex-1 bg-sky-500/10 border border-sky-500/30 text-sky-400 rounded-xl py-4 font-bold flex items-center justify-center gap-2 hover:bg-sky-500/20 transition-colors text-sm">
+                <Send size={18} /> WhatsApp
+              </button>
+            )}
           </div>
         </div>
 
