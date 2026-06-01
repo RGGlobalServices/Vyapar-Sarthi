@@ -23,6 +23,11 @@ function SettingsPageInner() {
   const [status, setStatus] = useState<any>(null);
   const [activatingPlan, setActivatingPlan] = useState(false);
 
+  // Refresh profile on mount to get latest plan
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
   // Handle return from PayU payment — activate plan automatically
   useEffect(() => {
     const paymentSuccess = searchParams.get('payment_success');
