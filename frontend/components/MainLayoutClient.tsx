@@ -45,6 +45,24 @@ export default function MainLayoutClient({
     fetchProfile();
   }, [fetchProfile]);
 
+  // Refresh profile on tab focus/visibility to pick up plan changes from landing page
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        fetchProfile();
+      }
+    }
+    function onFocus() {
+      fetchProfile();
+    }
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [fetchProfile]);
+
   useEffect(() => {
     if (!isSubscriptionEnded(profile)) return;
     if (isAllowedWhenEnded(pathname)) return;

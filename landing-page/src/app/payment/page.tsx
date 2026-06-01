@@ -22,6 +22,8 @@ const plans = [
 
 export default function Payment() {
   const [checking, setChecking] = useState(true);
+  const [activatedPlan, setActivatedPlan] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -33,6 +35,7 @@ export default function Payment() {
 
   const handlePlanSelect = async (planKey: string, planName: string) => {
     setChecking(true);
+    setError('');
     try {
       const token = getToken();
       const user = getUser();
@@ -44,21 +47,65 @@ export default function Payment() {
         phone: user?.mobile || '',
       };
       const data = await apiPost('/payments/create-order', payload, token || undefined);
-      // Activate the plan directly (test mode — no real payment)
       await apiPost('/payments/activate-plan', { plan: planKey, txnid: data.txnid || '' }, token || undefined);
-      // Redirect to the app with success flag
-      window.location.href = `${config.FRONTEND_URL}/en/settings?payment_success=1&plan=${planKey}`;
+      setActivatedPlan(planKey);
     } catch (err) {
       console.error('Payment error:', err);
-      alert(err instanceof Error ? err.message : 'Activation failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Activation failed. Please try again.');
       setChecking(false);
     }
   };
+
+  if (activatedPlan) {
+    const plan = plans.find(p => p.key === activatedPlan);
+    const appUrl = config.FRONTEND_URL || '';
+    return (
+      <div className="min-h-screen pt-24 pb-16 px-4 flex items-center justify-center">
+        <div className="max-w-md w-full text-center">
+          <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-2">{plan?.name || activatedPlan} Plan Activated!</h1>
+          <p className="text-slate-400 mb-8">Your plan has been updated successfully. Open the app to start using new features.</p>
+          {appUrl ? (
+            <a href={appUrl}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-bold rounded-xl hover:opacity-90 transition-all">
+              Go to Dashboard
+            </a>
+          ) : (
+            <p className="text-slate-500 text-sm">Switch to your app tab and refresh to see the updated plan.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (checking) {
     return (
       <div className="min-h-screen pt-24 pb-16 px-4 flex items-center justify-center">
         <div className="text-slate-400 text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen pt-24 pb-16 px-4 flex items-center justify-center">
+        <div className="max-w-md w-full text-center">
+          <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Activation Failed</h1>
+          <p className="text-red-400 mb-4">{error}</p>
+          <button onClick={() => { setError(''); setChecking(false); }}
+            className="px-6 py-3 bg-slate-700 text-white font-bold rounded-xl hover:bg-slate-600 transition-all">
+            Try Again
+          </button>
+        </div>
       </div>
     );
   }
