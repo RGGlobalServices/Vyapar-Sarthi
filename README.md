@@ -192,9 +192,352 @@ npm run dev          # Starts on port 3001
 ## Deployment
 
 > A reference file `.env.production` is in the repo root with all the variables you need.
-> Replace `YOUR-SERVICE` and `YOUR-LANDING` with your actual Render URLs after creating the services.
+> Replace `YOUR-SERVICE` and `YOUR-LANDING` with your actual URLs after creating the services.
 
-### Option 1: Deploy on Render (Recommended)
+> **Current architecture (after migration):** there are now only **two** deployable parts —
+> 1. **`app/`** — a single Next.js server that serves both the dashboard UI **and** the API (`/api/v1/*` native Route Handlers). Runs as a long-lived Node process on **port 3000**. Needs PostgreSQL.
+> 2. **`landing-page/`** — a Next.js **static export** (`output: "export"`). `npm run build` produces a plain `out/` folder of HTML/CSS/JS that any web server (Nginx) serves directly — no Node process needed.
+>
+> The old separate `backend-node` Express server no longer exists.
+
+### Option 1: Deploy on Hostinger VPS (Recommended)
+
+This is a full self-hosted setup on a Hostinger **VPS** (KVM plan) running Ubuntu, using **Nginx** as a reverse proxy + static file server, **PM2** to keep the app alive, and **Let's Encrypt** for free HTTPS.
+
+> ⚠️ You need a **VPS** plan (KVM 1 or higher), **not** shared/web hosting — shared hosting cannot run a Node.js server. In hPanel this is under **VPS**, not **Hosting**.
+
+#### What you'll set up
+
+| Domain | Serves | How |
+|--------|--------|-----|
+| `yourdomain.com` | Landing page (marketing/pricing) | Nginx serves static `landing-page/out` |
+| `app.yourdomain.com` | Dashboard **+ API** (`/api/v1/*`) | Nginx reverse-proxies to Node on `127.0.0.1:3000` |
+
+Database: either keep using **Supabase** (managed Postgres — nothing to install) or install **PostgreSQL on the VPS**. Both are covered below.
+
+---
+
+#### Step 1 — Create the VPS & point your domain
+
+1. In Hostinger hPanel → **VPS** → buy a KVM plan → choose **Ubuntu 24.04** (or 22.04) as the OS template.
+2. Note the VPS **public IP** and the **root password** (or add your SSH key).
+3. In your DNS (Hostinger → **Domains → DNS / Nameservers**), add two **A records** pointing to the VPS IP:
+   - `@`   → `YOUR_VPS_IP`   (this is `yourdomain.com`)
+   - `app` → `YOUR_VPS_IP`   (this is `app.yourdomain.com`)
+4. Wait for DNS to propagate (usually minutes, up to a few hours).
+
+---
+
+#### Step 2 — Connect and harden the server
+
+From your computer:
+
+```bash
+ssh root@YOUR_VPS_IP
+```
+
+Then on the server:
+
+```bash
+# Update everything
+apt update && apt upgrade -y
+
+# Create a non-root user (run the app as this user, not root)
+adduser deploy
+usermod -aG sudo deploy
+
+# Basic firewall: allow SSH + HTTP + HTTPS only
+apt install -y ufw
+ufw allow OpenSSH
+ufw allow 'Nginx Full'
+ufw --force enable
+
+# Switch to the deploy user for everything below
+su - deploy
+```
+
+---
+
+#### Step 3 — Install Node.js 20, Git, Nginx, PM2
+
+```bash
+# Node.js 20 LTS (NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs git nginx
+
+# PM2 process manager (keeps the app running + restarts on reboot)
+sudo npm install -g pm2
+
+# Verify
+node -v    # v20.x
+npm -v
+```
+
+---
+
+#### Step 4 — (Option A) Use Supabase  OR  (Option B) Install PostgreSQL locally
+
+**Option A — Supabase (easiest):** skip installing a database. Just use your existing Supabase `DATABASE_URL` (the pooled connection string, port `6543`) in the env file below.
+
+**Option B — PostgreSQL on the VPS:**
+
+```bash
+sudo apt install -y postgresql
+sudo -u postgres psql <<'SQL'
+CREATE DATABASE vyapar;
+CREATE USER vyapar_user WITH ENCRYPTED PASSWORD 'CHANGE_ME_STRONG_PASSWORD';
+GRANT ALL PRIVILEGES ON DATABASE vyapar TO vyapar_user;
+ALTER DATABASE vyapar OWNER TO vyapar_user;
+SQL
+```
+
+Your `DATABASE_URL` then becomes:
+`postgresql://vyapar_user:CHANGE_ME_STRONG_PASSWORD@localhost:5432/vyapar`
+
+---
+
+#### Step 5 — Clone the repository
+
+```bash
+cd ~
+git clone https://github.com/RGGlobalServices/Vyapar-Sarthi.git
+cd Vyapar-Sarthi
+```
+
+> The repo does **not** contain any `.env` secrets (they're gitignored). You create them on the server in the next step.
+
+---
+
+#### Step 6 — Configure environment variables
+
+`NEXT_PUBLIC_*` values are **baked in at build time**, so the env files must exist **before** you build.
+
+**6a. App env** — create `app/.env.production`:
+
+```bash
+nano app/.env.production
+```
+
+```env
+# --- Database ---
+DATABASE_URL="postgresql://vyapar_user:PASSWORD@localhost:5432/vyapar"
+
+# --- Auth ---
+SECRET_KEY="generate-a-long-random-string"
+ADMIN_SECRET_KEY="another-random-string"
+
+# --- Public URLs (baked into the browser bundle) ---
+NEXT_PUBLIC_API_URL="https://app.yourdomain.com/api/v1"
+NEXT_PUBLIC_FRONTEND_URL="https://app.yourdomain.com"
+NEXT_PUBLIC_LANDING_URL="https://yourdomain.com"
+
+# --- Server-side URLs (used for CORS / links / emails) ---
+FRONTEND_URL="https://app.yourdomain.com"
+APP_URL="https://app.yourdomain.com"
+LANDING_URL="https://yourdomain.com"
+
+# --- AI assistant (OpenRouter) ---
+OPENROUTER_API_KEY=""
+OPENROUTER_MODEL="nvidia/nemotron-3-nano-30b-a3b:free"
+
+# --- SMTP (password reset / support email) ---
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_USER=""
+SMTP_PASSWORD=""
+SUPPORT_EMAIL=""
+
+# --- PayU (subscriptions) ---
+PAYU_KEY=""
+PAYU_SALT=""
+
+# --- Subscription cron guard (see Step 10) ---
+CRON_SECRET="generate-a-long-random-string"
+
+# --- Supabase storage (optional, for image uploads) ---
+NEXT_PUBLIC_SUPABASE_URL=""
+NEXT_PUBLIC_SUPABASE_ANON_KEY=""
+```
+
+Generate strong random secrets with: `openssl rand -hex 32`
+
+**6b. Landing-page env** — create `landing-page/.env.production`:
+
+```bash
+nano landing-page/.env.production
+```
+
+```env
+NEXT_PUBLIC_API_URL="https://app.yourdomain.com/api/v1"
+NEXT_PUBLIC_FRONTEND_URL="https://app.yourdomain.com"
+NEXT_PUBLIC_LANDING_URL="https://yourdomain.com"
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
+```
+
+---
+
+#### Step 7 — Build both apps & push the database schema
+
+```bash
+# --- App (dashboard + API) ---
+cd ~/Vyapar-Sarthi/app
+npm install                 # also runs `prisma generate` (postinstall)
+npx prisma db push          # creates all tables in your database
+npm run build               # production build of the Next.js server
+
+# --- Landing page (static export) ---
+cd ~/Vyapar-Sarthi/landing-page
+npm install
+npm run build               # outputs static files to landing-page/out
+```
+
+> If `npm run build` is killed on a small VPS (out of memory), add swap:
+> `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`
+
+---
+
+#### Step 8 — Start the app with PM2
+
+```bash
+cd ~/Vyapar-Sarthi/app
+pm2 start npm --name vyapar-app -- start    # runs `next start` on port 3000
+
+# Keep it running after reboot
+pm2 save
+pm2 startup            # run the command it prints (sets up a systemd service)
+```
+
+Check it's up: `pm2 status` and `curl http://localhost:3000` should return HTML.
+
+---
+
+#### Step 9 — Configure Nginx (reverse proxy + static site)
+
+Create the site config:
+
+```bash
+sudo nano /etc/nginx/sites-available/vyapar
+```
+
+```nginx
+# --- App + API: app.yourdomain.com -> Node on port 3000 ---
+server {
+    listen 80;
+    server_name app.yourdomain.com;
+
+    client_max_body_size 20M;   # allow image/Excel uploads
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+# --- Landing page: yourdomain.com -> static files ---
+server {
+    listen 80;
+    server_name yourdomain.com www.yourdomain.com;
+
+    root /home/deploy/Vyapar-Sarthi/landing-page/out;
+    index index.html;
+
+    location / {
+        try_files $uri $uri.html $uri/ /index.html;
+    }
+}
+```
+
+Enable it and reload:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/vyapar /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t          # test config
+sudo systemctl reload nginx
+```
+
+> Nginx needs execute permission on the home dir to read the static files:
+> `chmod o+x /home/deploy`
+
+---
+
+#### Step 10 — Enable HTTPS (free SSL)
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com -d app.yourdomain.com
+```
+
+Certbot edits the Nginx config to add SSL and sets up auto-renewal. Choose "redirect HTTP → HTTPS" when asked.
+
+---
+
+#### Step 11 — Schedule the subscription cron
+
+The app exposes `GET /api/v1/cron/process-subscriptions` (sends renewal reminders + expires lapsed subscriptions), protected by `CRON_SECRET`. Run it once a day with the server's crontab:
+
+```bash
+crontab -e
+```
+
+Add (runs daily at 2 AM):
+
+```cron
+0 2 * * * curl -s -H "Authorization: Bearer YOUR_CRON_SECRET" https://app.yourdomain.com/api/v1/cron/process-subscriptions > /dev/null 2>&1
+```
+
+---
+
+#### Step 12 — Create the first admin account
+
+```bash
+curl -X POST https://app.yourdomain.com/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Admin",
+    "email": "admin@yourdomain.com",
+    "password": "a-strong-password",
+    "isAdmin": true,
+    "adminKey": "YOUR_ADMIN_SECRET_KEY"
+  }'
+```
+
+Then log in at `https://app.yourdomain.com/en/admin/login`.
+
+---
+
+#### Updating after you push new code
+
+```bash
+cd ~/Vyapar-Sarthi
+git pull origin main
+
+# Rebuild whichever app changed:
+cd app && npm install && npx prisma db push && npm run build && pm2 restart vyapar-app
+cd ../landing-page && npm install && npm run build   # static — Nginx serves new files instantly
+```
+
+#### Quick troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `502 Bad Gateway` on app domain | App isn't running — `pm2 status`, `pm2 logs vyapar-app` |
+| Landing shows 403 / blank | Nginx can't read `out/` — run `chmod o+x /home/deploy` |
+| Build gets "Killed" | Out of RAM — add swap (see Step 7 note) |
+| API calls blocked by CORS | Check `FRONTEND_URL` / `LANDING_URL` match your real domains, then `pm2 restart vyapar-app` |
+| `NEXT_PUBLIC_*` change not taking effect | These are baked at build — you must **rebuild** after changing them |
+| DB connection errors | Verify `DATABASE_URL`; for Supabase use the **pooled** string (port 6543) |
+
+---
+
+### Option 2: Deploy on Render
 
 You need **2 services** on Render:
 1. **Combined Service** — Frontend + Backend together (single Web Service)
@@ -402,7 +745,7 @@ databases:
     plan: free
 ```
 
-### Option 2: Deploy on AWS
+### Option 3: Deploy on AWS
 
 #### Backend (ECS Fargate or EC2)
 1. Build the Docker image:
