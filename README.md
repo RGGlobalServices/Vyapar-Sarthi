@@ -1,204 +1,263 @@
 # Vyapar Sarthi
 
-A comprehensive shop management platform for Kirana (small retail) stores in India. Provides billing, inventory tracking, credit (Udhar) management, AI-powered insights, and multi-language support.
+A comprehensive shop management platform for Kirana (small retail), medical, cosmetics, footwear, apparel, electronics and wholesale businesses in India. Provides smart billing, inventory tracking, credit (Udhar) management, multi-shop & godown control, AI-powered insights, subscriptions, and multi-language support.
 
 ## Architecture
 
+The platform is **two deployable parts** plus a database:
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Vyapar Sarthi Platform                        │
-├─────────────────┬──────────────────────┬────────────────────────────┤
-│   Landing Page  │    Frontend App      │      Backend (Node.js)     │
-│   (Next.js SSG) │   (Next.js SSR)      │      (Express + Prisma)    │
-│   Port 3001     │   Port 3000          │      Port 10000            │
-│                 │                      │                            │
-│   Marketing /   │   Shop Management    │   REST API                 │
-│   Blog /        │   Admin Panel        │   PostgreSQL DB            │
-│   Pricing       │   Dashboard          │   Auth (JWT)               │
-│   Documentation │   Billing UI         │   PayU Payments            │
-└─────────────────┴──────────────────────┴────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Vyapar Sarthi Platform                         │
+├────────────────────────────────┬─────────────────────────────────────┤
+│           landing-page/         │                 app/                 │
+│      (Next.js static export)    │     (Next.js — UI + API together)    │
+│           dev: port 3001        │            dev: port 3000            │
+│                                 │                                      │
+│   Marketing / Pricing /         │   Dashboard, Billing, Inventory,     │
+│   Blog / Legal / Auth pages /   │   Udhar, Reports, Admin panel        │
+│   Subscription checkout         │        +                             │
+│                                 │   /api/v1/*  Route Handlers          │
+│   Builds to static `out/`,      │   (auth, shop, products, billing,    │
+│   served by any web server      │    payments, AI, cron …)             │
+│                                 │        │                             │
+│                                 │        ▼                             │
+│                                 │   Prisma ORM ──► PostgreSQL (Supabase)│
+└────────────────────────────────┴─────────────────────────────────────┘
 ```
+
+> **Note:** there is no separate backend server anymore. The API lives **inside** `app/` as native Next.js Route Handlers under `app/app/api/v1/*`. A single `next start` process serves both the dashboard UI and the API.
 
 ## Project Structure
 
 ```
-├── frontend/                    # Main Next.js app (shop management UI)
+├── app/                              # Unified Next.js app (UI + API)
 │   ├── app/
-│   │   ├── [locale]/
-│   │   │   ├── (auth)/          # Login, Signup, Forgot/Reset password
-│   │   │   ├── (main)/          # Authenticated routes
-│   │   │   │   ├── billing/     # Invoice creation, listing, detail
-│   │   │   │   ├── dukandar/    # Customer management (Udhar book)
-│   │   │   │   ├── products/    # Product CRUD, stock in/out
-│   │   │   │   ├── stock/       # Stock logs
-│   │   │   │   ├── reports/     # Sales reports & analytics
-│   │   │   │   ├── settings/    # Shop profile, subscription
-│   │   │   │   ├── referral/    # Referral program
-│   │   │   │   ├── returns/     # Return management
-│   │   │   │   ├── import/      # Bulk product import
-│   │   │   │   ├── profile/     # User profile
-│   │   │   │   ├── udhar/       # Credit/debt tracking
-│   │   │   │   └── support/     # Help & support
-│   │   │   └── admin/           # Admin panel
-│   │   │       ├── login/       # Admin login
-│   │   │       ├── page.tsx     # Dashboard
-│   │   │       └── users/       # User management
-│   │   ├── not-found.tsx        # Custom 404 page
-│   │   └── globals.css
-│   ├── components/              # Shared UI components
-│   ├── lib/                     # API client, config, stores
-│   ├── i18n/                    # Internationalization (en/hi/mr)
-│   └── middleware.ts            # Auth routing, admin route handling
+│   │   ├── [locale]/                 # Locale-prefixed routes (en / hi / mr)
+│   │   │   ├── (auth)/               # login, signup
+│   │   │   ├── (main)/               # Authenticated dashboard routes
+│   │   │   │   ├── billing/          #   Invoices (create, list, detail)
+│   │   │   │   ├── products/         #   Product CRUD + detail
+│   │   │   │   ├── stock/            #   Stock logs / adjustments
+│   │   │   │   ├── udhar/            #   Credit / Udhar book
+│   │   │   │   ├── dukandar/         #   Retailer (dukandar) management
+│   │   │   │   ├── godowns/          #   Warehouse / godown inventory
+│   │   │   │   ├── reports/          #   Sales reports & analytics
+│   │   │   │   ├── returns/          #   Returns / exchanges
+│   │   │   │   ├── import/           #   Bulk product import (Excel)
+│   │   │   │   ├── calendar/         #   Reminders / events
+│   │   │   │   ├── referral/         #   Refer & earn
+│   │   │   │   ├── settings/         #   Shop profile & subscription
+│   │   │   │   ├── profile/          #   User profile
+│   │   │   │   └── support/          #   Help & support
+│   │   │   ├── admin/                # Admin panel (login, users, detail)
+│   │   │   ├── dukandar-alerts/      # Stock alerts to/from retailers
+│   │   │   ├── dukandar-credit/      # Credit given to retailers
+│   │   │   └── payment/              # In-app PayU checkout / plan switch
+│   │   │
+│   │   └── api/v1/                   # ◄── THE BACKEND (Route Handlers)
+│   │       ├── auth/                 #   register, login, OTP, reset
+│   │       ├── shop/                 #   profile, create, my-shops, switch-plan
+│   │       ├── products/             #   CRUD, stock adjust, logs
+│   │       ├── billing/              #   invoices, returns, send-bill
+│   │       ├── customers/            #   customers + transactions
+│   │       ├── dukandar/             #   retailers, credit, stock alerts
+│   │       ├── godowns/              #   warehouses, inventory, transfers
+│   │       ├── reports/              #   summary, trends, exports, AI context
+│   │       ├── payments/             #   PayU order / success / cancel / refund
+│   │       ├── referrals/            #   referral codes & team
+│   │       ├── notifications/        #   in-app + push notifications
+│   │       ├── support/              #   support tickets (+ admin)
+│   │       ├── admin/                #   analytics, user & plan management
+│   │       ├── ai/                   #   chat assistant, insights
+│   │       └── cron/                 #   subscription reminders & expiry
+│   │
+│   ├── components/                   # Shared UI (Sidebar, BillSlip, charts…)
+│   ├── lib/
+│   │   ├── server/                   # Server-only: prisma, auth, payu, ai,
+│   │   │                             #   billing, email, whatsapp, godowns…
+│   │   ├── api.ts                    # Browser API client (JWT, x-shop-id)
+│   │   ├── businessConfig.ts         # 7 business-type presets
+│   │   ├── businessStore.ts          # Multi-shop state (zustand)
+│   │   ├── subscriptionAccess.ts     # Access gating when subscription ends
+│   │   └── …                         # planGates, pdfExport, smartSearch…
+│   ├── prisma/schema.prisma          # Database schema (24 models)
+│   ├── i18n/                         # next-intl config
+│   ├── messages/                     # en / hi / mr translations
+│   └── next.config.ts                # serverExternalPackages (prisma, bcrypt…)
 │
-├── landing-page/                # Next.js static site (marketing)
+├── landing-page/                     # Marketing site (Next.js static export)
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── blog/           # Blog with [slug] detail pages
-│   │   │   ├── about/
-│   │   │   ├── contact/        # Contact form + FAQ
-│   │   │   ├── download/
-│   │   │   ├── payment/
-│   │   │   ├── success/
-│   │   │   └── legal/          # Terms, Privacy, Refund
-│   │   ├── components/
-│   │   │   ├── Navbar.tsx       # Header with auth-aware nav
-│   │   │   ├── Footer.tsx       # Footer with links
-│   │   │   ├── HeroSection.tsx  # Video background hero
-│   │   │   ├── Features.tsx     # Feature cards with SVGs
-│   │   │   ├── Pricing.tsx      # Plan comparison
-│   │   │   ├── HowItWorks.tsx   # Step-by-step guide
-│   │   │   ├── FinalCTA.tsx     # Call-to-action section
-│   │   │   └── FAQ.tsx          # FAQ accordion
-│   │   └── lib/config.ts       # Environment config
-│   └── next.config.ts          # Static export config
+│   │   ├── app/                      # home, about, blog, contact, legal,
+│   │   │                             #   login, register, payment, success…
+│   │   ├── components/               # Navbar, Pricing, Hero, FAQ, Footer…
+│   │   └── lib/config.ts             # Runtime API/app URL resolution
+│   └── next.config.ts                # output: "export"  →  builds to out/
 │
-├── backend-node/                # Node.js + Express API
-│   ├── src/
-│   │   ├── index.js            # Server entry, middleware, routes
-│   │   ├── config.js           # Environment config, CORS, PayU
-│   │   ├── db.js               # Prisma client
-│   │   ├── middleware/
-│   │   │   └── auth.js         # JWT authentication middleware
-│   │   ├── routes/
-│   │   │   ├── auth.js         # Register, login, forgot/reset password
-│   │   │   ├── shop.js         # Shop profile CRUD
-│   │   │   ├── products.js     # Product CRUD, stock adjustments
-│   │   │   ├── billing.js      # Invoice CRUD, returns
-│   │   │   ├── customers.js    # Customer management
-│   │   │   ├── dukandar.js     # Udhar book (credit/debt)
-│   │   │   ├── reports.js      # Sales reports & analytics
-│   │   │   ├── payments.js     # PayU payment integration
-│   │   │   ├── referrals.js    # Referral system
-│   │   │   ├── notifications.js # Notification management
-│   │   │   ├── support.js      # Support ticket system
-│   │   │   └── admin.js        # Admin analytics, user mgmt
-│   │   └── utils/
-│   │       ├── email.js        # Email sending (SMTP)
-│   │       └── helpers.js      # Utility functions
-│   ├── prisma/
-│   │   └── schema.prisma       # Database schema
-│   └── Dockerfile               # Production Docker image
+├── supabase/                         # SQL schema + RLS + storage + migrations
+│   ├── 01_schema.sql … 08_godowns_and_multishop.sql
 │
-├── .env.example                 # Environment variable template
-├── render.yaml                  # Render deployment config
+├── .env.example                      # Environment variable template
+├── render.yaml                       # Render blueprint
+├── SUBSCRIPTIONS.md                  # Subscription / trial / billing flow docs
 └── README.md
 ```
 
 ## Features
 
 ### For Shop Owners
-- **Smart Billing** — Create GST-compliant invoices with auto-calculation, discounts, and partial payments
-- **Inventory Management** — Track stock levels, get low-stock alerts, manage stock in/out
-- **Udhar Book** — Digital credit management with WhatsApp payment reminders
-- **AI Insights** — Sales analytics, demand prediction, pricing recommendations
-- **Customer Management** — Track purchase history, credit, and contact details
-- **Reports** — Daily/weekly/monthly sales reports, profit analysis
-- **Multi-language** — English, Hindi, Marathi interface
+- **Smart Billing** — GST-ready invoices with auto-calculation, discounts, partial payments, PDF bills + WhatsApp sharing
+- **Inventory Management** — Stock in/out, low-stock alerts, expiry tracking, barcode/QR support
+- **Udhar Book** — Digital credit ledger with WhatsApp/PDF payment reminders
+- **Multi-Shop & Godowns** — Run multiple shops and warehouses, transfer stock between godowns
+- **Dukandar (Retailer) Management** — Wholesalers track credit given to retailers, send stock alerts, handle quotations
+- **AI Assistant & Insights** — Chat assistant, sales analytics, demand & pricing hints (OpenRouter / Gemini)
+- **Reports** — Daily/monthly sales, profit analysis, top products, trends, Excel export
+- **Calendar & Reminders** — Schedule follow-ups and payment reminders
 - **Bulk Import** — Import products from Excel/CSV
-- **Returns Management** — Handle product returns and exchanges
-- **Referral Program** — Earn rewards by referring other shop owners
-- **Offline Mode** — Works without internet, syncs when connected
+- **Returns Management** — Handle returns and exchanges
+- **Referral Program** — Earn rewards (and longer trials) by referring other shops
+- **Multi-language** — English, Hindi, Marathi
+- **7 Business Types** — Kirana, Medical, Cosmetics, Shoes, Clothes, Electronics, General — each with tailored fields
 
 ### For Admin
-- **Dashboard** — Platform analytics, revenue, user growth, plan distribution
+- **Dashboard** — Platform analytics: revenue, user growth, plan distribution
 - **User Management** — Search, filter, block/activate/delete users
-- **User Detail** — View user info, subscription, products, customers, referrals
-- **Subscription Management** — Change user plans, cancel/manage subscriptions
+- **Subscription Control** — Change plans, run subscription actions, view payment history
+- **Broadcast Notifications** — Push announcements to all users
+- **Referral Oversight** — View all referral relationships
+
+## Subscriptions & Pricing
+
+New users get a **free trial automatically at signup** — no card required. After the trial they renew manually via PayU (with reminders before expiry; no silent auto-charges). See [SUBSCRIPTIONS.md](SUBSCRIPTIONS.md) for the full flow.
+
+| Plan | Key | Price | For |
+|------|-----|-------|-----|
+| **Dukaan** | `shop` | ₹299/mo | Small kirana, grocery & retail stores |
+| **Vyapar** | `vyapar` | ₹499/mo | Growing shops with multiple branches |
+| **Udyog** | `wholesale` | ₹999/mo | Wholesalers, distributors & large businesses |
+
+- **Free trial:** 7 days standard, **14 days** if signed up with a referral code
+- **Plan switching is free during an active trial** (keeps remaining days); after the trial, switching requires payment
+- **30-day money-back guarantee** on the first paid charge
+- Subscription statuses: `trial` → `active` → `expired` / `cancelled`. When ended, access is gated to core read-only pages (see [app/lib/subscriptionAccess.ts](app/lib/subscriptionAccess.ts))
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| App (UI + API) | Next.js 15 (App Router + Route Handlers), React 19, TypeScript |
+| Landing Page | Next.js 15 (static export), Tailwind CSS, Framer Motion, three.js |
+| Styling | Tailwind CSS v4 |
+| Database | PostgreSQL (Supabase) |
+| ORM | Prisma 6 |
+| Auth | JWT (jsonwebtoken), bcryptjs |
+| Payments | PayU India (one-time, hash-verified) |
+| AI | OpenRouter (default) / Google Gemini |
+| Email | Nodemailer (SMTP) |
+| State | Zustand |
+| Internationalization | next-intl (en, hi, mr) |
+| Docs / PDF | jsPDF, html2canvas-pro, xlsx |
+
+## Data Model (Prisma)
+
+Core models in [app/prisma/schema.prisma](app/prisma/schema.prisma):
+
+`User`, `Shop`, `PaymentTransaction`, `Product`, `Customer`, `Sale`, `SaleItem`,
+`StockLog`, `Godown`, `GodownProduct`, `customer_transactions`, `CalendarEvent`,
+`ReferralCode`, `Referral`, `DukandarRelationship`, `DukandarStockAlert`,
+`DukandarCredit`, `SupportTicket`, `ToolUsage`, `PushSubscription`,
+`NotificationSetting`, `UserNotification`, `AdminNotification`, `AdminUser`.
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `SECRET_KEY` | JWT signing secret | Required |
-| `PORT` | Backend server port | `10000` |
-| `FRONTEND_URL` | Frontend app URL (for CORS) | `http://localhost:3000` |
-| `LANDING_URL` | Landing page URL (for CORS) | `http://localhost:3001` |
-| `BACKEND_URL` | Backend API URL (for CORS) | `http://localhost:10000` |
-| `APP_URL` | Application URL | `http://localhost:3000` |
-| `NEXT_PUBLIC_API_URL` | API URL for frontend clients | `http://localhost:10000/api/v1` |
-| `NEXT_PUBLIC_FRONTEND_URL` | Frontend URL (public) | `http://localhost:3000` |
-| `NEXT_PUBLIC_LANDING_URL` | Landing URL (public) | `http://localhost:3001` |
-| `ADMIN_SECRET_KEY` | Admin account registration key | — |
-| `GEMINI_API_KEY` | Google Gemini AI API key | — |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
-| `PAYU_KEY` | PayU merchant key | — |
-| `PAYU_SALT` | PayU merchant salt | — |
-| `SMTP_HOST` / `SMTP_PORT` | SMTP server config | `smtp.gmail.com:587` |
-| `SMTP_USER` / `SMTP_PASSWORD` | SMTP credentials | — |
-| `SUPPORT_EMAIL` | Support email address | — |
+Full template is in [.env.example](.env.example). Key variables:
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | PostgreSQL connection string | ✅ |
+| `SECRET_KEY` | JWT signing secret | ✅ |
+| `ADMIN_SECRET_KEY` | Key required to register an admin account | ✅ |
+| `NEXT_PUBLIC_API_URL` | API base URL for the browser (e.g. `https://app.example.com/api/v1`) | ✅ |
+| `NEXT_PUBLIC_FRONTEND_URL` | App (dashboard) public URL | ✅ |
+| `NEXT_PUBLIC_LANDING_URL` | Landing page public URL | ✅ |
+| `FRONTEND_URL` / `APP_URL` / `LANDING_URL` | Server-side URLs for CORS, links, emails | ✅ |
+| `OPENROUTER_API_KEY` | Powers the AI assistant — [openrouter.ai/keys](https://openrouter.ai/keys) | optional |
+| `OPENROUTER_MODEL` | Model id (default: `nvidia/nemotron-3-nano-30b-a3b:free`) | optional |
+| `GEMINI_API_KEY` | Alternative AI provider (Google Gemini) | optional |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | Email (password reset, support) | optional |
+| `SUPPORT_EMAIL` | Support inbox address | optional |
+| `PAYU_KEY` / `PAYU_SALT` | PayU merchant credentials for subscriptions | optional |
+| `CRON_SECRET` | Bearer secret guarding `/api/v1/cron/process-subscriptions` | optional |
+| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase storage (image uploads) | optional |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth client id | optional |
+
+> ⚠️ `NEXT_PUBLIC_*` values are **baked into the browser bundle at build time** — set them before `npm run build`, and rebuild after any change.
 
 ## Local Development
 
 ### Prerequisites
 - Node.js 20+
-- PostgreSQL database
+- A PostgreSQL database (Supabase, or local Postgres)
 - npm
 
 ### Setup
 
 ```bash
-# 1. Clone and install dependencies
-git clone <repo-url>
+# 1. Clone
+git clone https://github.com/RGGlobalServices/Vyapar-Sarthi.git
 cd Vyapar-Sarthi
 
-# Backend
-cd backend-node
-cp .env.example .env
-# Edit .env with your DATABASE_URL and other settings
-npm install
-npx prisma db push
-npm run dev          # Starts on port 10000
+# 2. Create the env file used by the app in dev (read from repo root)
+cp .env.example .env.local
+#    → edit .env.local: set DATABASE_URL, SECRET_KEY, and the URLs.
+#    For pure local dev you can use:
+#      NEXT_PUBLIC_API_URL="/api/v1"
+#      NEXT_PUBLIC_FRONTEND_URL="http://localhost:3000"
+#      NEXT_PUBLIC_LANDING_URL="http://localhost:3001"
 
-# Frontend (new terminal)
-cd frontend
-cp ../.env.example .env.local
-# Edit .env.local with your settings
-npm install
-npm run dev          # Starts on port 3000
+# 3. App (UI + API)  ── terminal 1
+cd app
+npm install              # also runs `prisma generate`
+npx prisma db push       # create tables
+cd ..
+npm run dev              # from repo root → app on http://localhost:3000
 
-# Landing page (new terminal)
+# 4. Landing page  ── terminal 2
 cd landing-page
 npm install
-npm run dev          # Starts on port 3001
+npm run dev              # → http://localhost:3001
 ```
 
+> The root `package.json` scripts (`dev`, `build`, `start`) delegate to `app/`.
+> The app's dev server reads env from the repo-root `.env.local` (via dotenv-cli).
+> The landing page reads its own `landing-page/.env.local` (or env passed at build).
+
 ### Access
-- Frontend app: `http://localhost:3000`
+- Dashboard app: `http://localhost:3000`
+- API: `http://localhost:3000/api/v1/...`
 - Landing page: `http://localhost:3001`
-- Backend API: `http://localhost:10000`
 - Admin panel: `http://localhost:3000/en/admin/login`
+
+### Useful scripts (in `app/`)
+```bash
+npm run dev          # dev server on port 3000
+npm run build        # production build
+npm start            # start production build
+npm run db:push      # prisma db push
+npm run db:generate  # prisma generate
+npm run db:migrate   # prisma migrate dev
+npm run lint         # eslint
+```
 
 ## Deployment
 
-> A reference file `.env.production` is in the repo root with all the variables you need.
-> Replace `YOUR-SERVICE` and `YOUR-LANDING` with your actual URLs after creating the services.
+> A reference file `.env.production` template lives in the repo (gitignored on real machines).
+> Replace `yourdomain.com` / `app.yourdomain.com` with your real domains.
 
-> **Current architecture (after migration):** there are now only **two** deployable parts —
-> 1. **`app/`** — a single Next.js server that serves both the dashboard UI **and** the API (`/api/v1/*` native Route Handlers). Runs as a long-lived Node process on **port 3000**. Needs PostgreSQL.
-> 2. **`landing-page/`** — a Next.js **static export** (`output: "export"`). `npm run build` produces a plain `out/` folder of HTML/CSS/JS that any web server (Nginx) serves directly — no Node process needed.
->
-> The old separate `backend-node` Express server no longer exists.
+> **You only deploy two things:**
+> 1. **`app/`** — a long-lived Node process (`next start`, port 3000) serving the dashboard **and** the API (`/api/v1/*`). Needs PostgreSQL.
+> 2. **`landing-page/`** — `npm run build` produces a static `out/` folder that any web server (Nginx, S3, a static host) serves directly — no Node process needed.
 
 ### Option 1: Deploy on Hostinger VPS (Recommended)
 
@@ -351,7 +410,7 @@ SUPPORT_EMAIL=""
 PAYU_KEY=""
 PAYU_SALT=""
 
-# --- Subscription cron guard (see Step 10) ---
+# --- Subscription cron guard (see Step 11) ---
 CRON_SECRET="generate-a-long-random-string"
 
 # --- Supabase storage (optional, for image uploads) ---
@@ -498,14 +557,13 @@ Add (runs daily at 2 AM):
 #### Step 12 — Create the first admin account
 
 ```bash
-curl -X POST https://app.yourdomain.com/api/v1/auth/register \
+curl -X POST https://app.yourdomain.com/api/v1/admin/register \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Admin",
+    "fullName": "Admin",
     "email": "admin@yourdomain.com",
     "password": "a-strong-password",
-    "isAdmin": true,
-    "adminKey": "YOUR_ADMIN_SECRET_KEY"
+    "secretKey": "YOUR_ADMIN_SECRET_KEY"
   }'
 ```
 
@@ -539,368 +597,144 @@ cd ../landing-page && npm install && npm run build   # static — Nginx serves n
 
 ### Option 2: Deploy on Render
 
-You need **2 services** on Render:
-1. **Combined Service** — Frontend + Backend together (single Web Service)
-2. **Landing Page** — Separate Static Site
+Two services on Render:
 
----
-
-#### Service 1: Frontend + Backend (Combined)
-
-Both apps run inside a single container. The frontend (Next.js on port 3000) and backend (Express on port 10000) start together. The frontend proxies `/api/v1/*` requests to the backend internally, so from the outside everything appears on one port.
-
-##### Step 1: Create root config files
-
-**`package.json`** (root of your repo):
-```json
-{
-  "name": "vyapar-sarthi",
-  "private": true,
-  "scripts": {
-    "install:all": "cd backend-node && npm install && cd ../frontend && npm install",
-    "build": "cd backend-node && npx prisma generate && cd ../frontend && npm run build",
-    "start": "node start.js"
-  }
-}
-```
-
-**`start.js`** (root of your repo):
-```javascript
-const { spawn } = require('child_process');
-const path = require('path');
-
-// The frontend (Next.js) should be on the externally-exposed port
-// because it handles page routes and proxies /api/v1/* to the backend
-const EXPOSED_PORT = process.env.PORT || '3000';
-
-// Start backend internally on port 10000
-const backend = spawn('node', ['src/index.js'], {
-  cwd: path.join(__dirname, 'backend-node'),
-  stdio: 'inherit',
-  env: { ...process.env, PORT: '10000' },
-});
-
-// Start frontend on the exposed port
-const frontend = spawn('npx', ['next', 'start', '-p', EXPOSED_PORT], {
-  cwd: path.join(__dirname, 'frontend'),
-  stdio: 'inherit',
-  env: { ...process.env, PORT: EXPOSED_PORT },
-});
-
-function cleanup() {
-  backend.kill();
-  frontend.kill();
-  process.exit();
-}
-process.on('SIGINT', cleanup);
-process.on('SIGTERM', cleanup);
-```
-
-##### Step 2: Deploy on Render
-
+**Service 1 — App (Web Service)**
 | Setting | Value |
 |---------|-------|
-| **Type** | Web Service |
-| **Repo** | `https://github.com/YOUR_USERNAME/Vyapar-Sarthi` |
-| **Branch** | `main` |
-| **Runtime** | Node |
-| **Build Command** | `npm run install:all && npm run build` |
-| **Start Command** | `npm start` |
-| **Health Check** | `GET /` |
+| Type | Web Service |
+| Root Directory | `app` |
+| Build Command | `npm install && npx prisma generate && npm run build` |
+| Start Command | `npm start` |
+| Health Check | `/` |
 
-**Environment Variables** (set all of these):
+Add a Render PostgreSQL instance and set `DATABASE_URL`, `SECRET_KEY`, `ADMIN_SECRET_KEY`, the `NEXT_PUBLIC_*` URLs, and any optional keys (PayU, OpenRouter, SMTP, `CRON_SECRET`). Run `npx prisma db push` once (Render Shell) to create tables. Use **Render Cron Jobs** to hit `/api/v1/cron/process-subscriptions` daily with the `CRON_SECRET` bearer header.
 
-| Variable | Value |
-|----------|-------|
-| `DATABASE_URL` | `postgresql://...` (your Render PostgreSQL connection string) |
-| `SECRET_KEY` | Generate a random secret (Render can auto-generate) |
-| `ADMIN_SECRET_KEY` | Your admin registration secret |
-| `NODE_ENV` | `production` |
-| `PORT` | `3000` (the exposed port, Next.js handles incoming requests) |
-| `BACKEND_URL` | `http://localhost:10000` (Next.js server-side rewrite proxies API calls internally) |
-| `FRONTEND_URL` | `https://your-service.onrender.com` (for CORS) |
-| `APP_URL` | `https://your-service.onrender.com` |
-| `LANDING_URL` | `https://your-landing-page.onrender.com` (URL of Service 2) |
-| `NEXT_PUBLIC_API_URL` | `https://your-service.onrender.com/api/v1` (browser-side API base URL) |
-| `NEXT_PUBLIC_FRONTEND_URL` | `https://your-service.onrender.com` |
-| `NEXT_PUBLIC_LANDING_URL` | `https://your-landing-page.onrender.com` |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | (optional) Google OAuth client ID |
-| `SMTP_HOST` / `SMTP_PORT` | (optional) SMTP config |
-| `SMTP_USER` / `SMTP_PASSWORD` | (optional) SMTP credentials |
-| `SUPPORT_EMAIL` | (optional) Support email |
-| `PAYU_KEY` / `PAYU_SALT` | (optional) PayU payment keys |
-
-> The frontend's `next.config.ts` already rewrites `/api/v1/*` to `BACKEND_URL`, so API calls from the browser automatically route to the Express backend.
-
----
-
-#### Service 2: Landing Page (Separate Static Site)
-
-Deploy the marketing site separately so it can scale independently.
-
+**Service 2 — Landing page (Static Site)**
 | Setting | Value |
 |---------|-------|
-| **Type** | Static Site |
-| **Repo** | `https://github.com/YOUR_USERNAME/Vyapar-Sarthi` |
-| **Branch** | `main` |
-| **Root Directory** | `landing-page` |
-| **Build Command** | `npm install && npm run build` |
-| **Publish Directory** | `out` |
+| Type | Static Site |
+| Root Directory | `landing-page` |
+| Build Command | `npm install && npm run build` |
+| Publish Directory | `out` |
 
-**Environment Variables**:
+Set the landing site's `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_FRONTEND_URL` / `NEXT_PUBLIC_LANDING_URL` to the deployed URLs.
 
-| Variable | Value |
-|----------|-------|
-| `NEXT_PUBLIC_API_URL` | `https://your-service.onrender.com/api/v1` |
-| `NEXT_PUBLIC_FRONTEND_URL` | `https://your-service.onrender.com` |
-| `NEXT_PUBLIC_LANDING_URL` | `https://your-landing-page.onrender.com` |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | (optional) Same as Service 1 |
+### Option 3: Any Node host / Docker
 
----
+The app is a standard Next.js server, so it runs on any Node 20 host (Railway, Fly.io, a bare VM, or Docker). Build with `npm run build`, run with `npm start` (port 3000), point a reverse proxy at it, and serve `landing-page/out` as static files. A `Dockerfile` is included in the repo root for containerized deploys.
 
-#### How It Works
-
-```
-User Browser
-     │
-     ├── https://your-service.onrender.com ───► Combined Web Service
-     │       │                                       │
-     │       │  Request arrives at Next.js (port 3000, externally exposed)
-     │       │       │
-     │       │       ├── /api/v1/*  ──► Next.js rewrite proxy
-     │       │       │                     └──► http://localhost:10000/api/v1/*  (Express backend)
-     │       │       │
-     │       │       └── /* (pages)  ──► Next.js renders & responds directly
-     │       │
-     └── https://your-landing-page.onrender.com ──► Static Site
-```
-
-- The **Next.js frontend** runs on **port 3000** (the externally-exposed port).
-- The **Express backend** runs on **port 10000** internally — not directly accessible from outside.
-- When the browser navigates to a page (e.g. `/en/billing`), Next.js renders it directly.
-- When the browser calls an API (e.g. `POST /api/v1/products`), it hits the Next.js server, which **rewrites** (server-side proxies) the request to `http://localhost:10000/api/v1/products` — this is configured in `frontend/next.config.ts`.
-- The backend's CORS is configured via `FRONTEND_URL` and `LANDING_URL` env vars so both the frontend and landing page can make API calls.
-- The landing page is a static site deployed separately — it makes API calls directly to the backend's public URL.
-
----
-
-#### One-Click Deploy with render.yaml
-
-Alternatively, edit the provided `render.yaml` with your service names and use Render's Blueprint feature:
-
-```yaml
-services:
-  - type: web
-    name: vyapar-sarthi-api
-    runtime: node
-    repo: https://github.com/YOUR_USERNAME/Vyapar-Sarthi
-    branch: main
-    buildCommand: npm run install:all && npm run build
-    startCommand: npm start
-    healthCheckPath: /
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: vyapar-db
-          property: connectionString
-      - key: SECRET_KEY
-        generateValue: true
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 3000
-      - key: BACKEND_URL
-        value: http://localhost:10000
-      - key: FRONTEND_URL
-        value: https://vyapar-sarthi-api.onrender.com
-      - key: APP_URL
-        value: https://vyapar-sarthi-api.onrender.com
-      - key: LANDING_URL
-        value: https://vyapar-sarthi-landing.onrender.com
-      - key: NEXT_PUBLIC_API_URL
-        value: https://vyapar-sarthi-api.onrender.com/api/v1
-      - key: NEXT_PUBLIC_FRONTEND_URL
-        value: https://vyapar-sarthi-api.onrender.com
-      - key: NEXT_PUBLIC_LANDING_URL
-        value: https://vyapar-sarthi-landing.onrender.com
-
-  - type: web
-    name: vyapar-sarthi-landing
-    runtime: static
-    repo: https://github.com/YOUR_USERNAME/Vyapar-Sarthi
-    branch: main
-    buildCommand: cd landing-page && npm install && npm run build
-    staticPublishPath: landing-page/out
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://vyapar-sarthi-api.onrender.com/api/v1
-      - key: NEXT_PUBLIC_FRONTEND_URL
-        value: https://vyapar-sarthi-api.onrender.com
-      - key: NEXT_PUBLIC_LANDING_URL
-        value: https://vyapar-sarthi-landing.onrender.com
-
-databases:
-  - name: vyapar-db
-    databaseName: vyapar
-    plan: free
-```
-
-### Option 3: Deploy on AWS
-
-#### Backend (ECS Fargate or EC2)
-1. Build the Docker image:
-   ```bash
-   cd backend-node
-   docker build -t vyapar-backend .
-   docker tag vyapar-backend <your-ecr-repo>:latest
-   docker push <your-ecr-repo>:latest
-   ```
-2. Deploy to ECS Fargate with the environment variables from above
-3. Set up an Application Load Balancer and Route 53 domain
-
-#### Frontend (Elastic Beanstalk or ECS)
-1. Create a `Dockerfile` in `frontend/`:
-   ```dockerfile
-   FROM node:20-alpine
-   WORKDIR /app
-   COPY package*.json ./
-   RUN npm ci
-   COPY . .
-   RUN npm run build
-   EXPOSE 3000
-   CMD ["npm", "start"]
-   ```
-2. Deploy to Elastic Beanstalk (Node.js platform) or ECS
-3. Add a PostgreSQL database (RDS) and set the connection string
-
-#### Landing Page (S3 + CloudFront)
-1. Build the static site:
-   ```bash
-   cd landing-page
-   npm install
-   NEXT_PUBLIC_API_URL=https://your-api.com/api/v1 \
-   NEXT_PUBLIC_FRONTEND_URL=https://your-frontend.com \
-   npm run build
-   ```
-2. Upload `out/` directory to S3 bucket
-3. Enable static website hosting on S3
-4. Optionally add CloudFront CDN and custom domain
-
-### Database Setup (All Platforms)
+### Database setup (all platforms)
 ```bash
-# After deploying the backend, run:
-npx prisma db push    # Creates all tables
-# Or for production migrations:
-npx prisma migrate deploy
+cd app
+npx prisma db push        # create/update tables from schema
+# Optional one-off SQL (RLS, storage policies, seed migrations) is in supabase/*.sql
 ```
 
-### Admin Account Setup
-```bash
-# Register the first admin via API:
-curl -X POST https://your-backend.onrender.com/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Admin",
-    "email": "admin@example.com",
-    "password": "secure-password",
-    "isAdmin": true,
-    "adminKey": "<your-admin-secret-key>"
-  }'
-```
+## API Reference
 
-## API Endpoints
+All endpoints are under `/api/v1`. Auth uses a JWT `Authorization: Bearer <token>` header; multi-shop requests include an `x-shop-id` header (handled automatically by the client).
 
 ### Auth
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/auth/register` | Register new user or admin |
-| POST | `/api/v1/auth/login` | Login, returns JWT token |
-| POST | `/api/v1/auth/forgot-password` | Send password reset email |
-| POST | `/api/v1/auth/reset-password` | Reset password with token |
+| POST | `/auth/register` | Register a user (auto-starts free trial) |
+| POST | `/auth/login` | Login → JWT |
+| POST | `/auth/verify-otp` | Verify OTP |
+| POST | `/auth/forgot-password` | Send reset email |
+| POST | `/auth/reset-password` | Reset password |
 
 ### Shop
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/shop/profile` | Get shop profile |
-| PATCH | `/api/v1/shop/profile` | Update shop profile |
-| DELETE | `/api/v1/shop/profile` | Delete shop |
+| GET / PATCH | `/shop/profile` | Get / update active shop |
+| POST | `/shop/create` | Create a new shop (name, type, address, contact) |
+| GET | `/shop/my-shops` | List the user's shops |
+| POST | `/shop/switch-plan` | Free plan switch during active trial |
+| GET | `/shop/today-profit` | Today's profit |
 
-### Products
+### Products & Stock
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/products` | List products |
-| POST | `/api/v1/products` | Create product |
-| GET | `/api/v1/products/:id` | Get product detail |
-| PATCH | `/api/v1/products/:id` | Update product |
-| DELETE | `/api/v1/products/:id` | Delete product |
-| POST | `/api/v1/products/stock` | Add stock (in) |
-| POST | `/api/v1/products/stock/out` | Remove stock (out) |
-| GET | `/api/v1/products/stock/logs` | Stock adjustment history |
+| GET / POST | `/products` | List / create products |
+| GET / PATCH / DELETE | `/products/[productId]` | Product detail |
+| POST | `/products/[productId]/adjust` | Stock in/out adjustment |
+| GET | `/products/logs/all` | Stock adjustment history |
 
-### Billing
+### Billing & Customers
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/billing` | List invoices |
-| POST | `/api/v1/billing` | Create invoice |
-| GET | `/api/v1/billing/:identifier` | Get invoice by ID or number |
-| DELETE | `/api/v1/billing/:id` | Delete invoice |
-| POST | `/api/v1/billing/:id/return` | Process return |
+| GET / POST | `/billing` | List / create invoices |
+| GET | `/billing/[identifier]` | Invoice by id or number |
+| POST | `/billing/returns` | Process a return |
+| POST | `/billing/send-bill` | Send bill (PDF / WhatsApp / email) |
+| GET / POST | `/customers` | List / create customers |
+| GET/PATCH/DELETE | `/customers/[id]` | Customer detail |
+| GET / POST | `/customers/[id]/transactions` | Udhar transactions |
 
-### Customers
+### Godowns (warehouses)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/customers` | List customers |
-| POST | `/api/v1/customers` | Create customer |
-| PATCH | `/api/v1/customers/:id` | Update customer |
-| DELETE | `/api/v1/customers/:id` | Delete customer |
+| GET / POST | `/godowns` | List / create godowns |
+| GET/PATCH/DELETE | `/godowns/[id]` | Godown detail |
+| GET / POST | `/godowns/[id]/inventory` | Godown inventory |
+| POST | `/godowns/transfer` | Transfer stock between godowns |
 
-### Reports
+### Dukandar (retailer relationships)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/reports/daily` | Daily sales report |
-| GET | `/api/v1/reports/monthly` | Monthly sales report |
-| GET | `/api/v1/reports/profit` | Profit analysis |
+| POST | `/dukandar/add-dukandar` / `add-dukandar-by-code` | Link a retailer |
+| GET | `/dukandar/my-dukandar` / `my-access-code` | Retailers / access code |
+| POST/GET | `/dukandar/credit/*` | Credit add / list / pay / summary / dues |
+| POST/GET | `/dukandar/send-stock-alert`, `my-alerts`, `respond-alert`, `quotation/[alertId]` | Stock alerts & quotations |
+
+### Reports & AI
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/reports/summary` | Sales summary |
+| GET | `/reports/sales-trend` | Trend over time |
+| GET | `/reports/top-products` | Best sellers |
+| GET | `/reports/low-stock` | Low-stock list |
+| GET | `/reports/business-report` / `export` | Full report / Excel export |
+| POST | `/ai/chat` | AI assistant chat |
+| GET | `/ai/insights` | AI-generated insights |
+
+### Payments & Subscriptions
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/payments/create-order` | Create PayU one-time order |
+| POST | `/payments/payu-success` / `payu-failure` | PayU callbacks (hash-verified) |
+| POST | `/payments/cancel-subscription` | Cancel (refund if within money-back window) |
+| POST | `/payments/refund` | Issue a refund |
+| GET | `/cron/process-subscriptions` | Reminders + expiry (CRON_SECRET protected) |
+
+### Referrals, Notifications, Support
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/referrals/my-code`, `my-team`, `my-referrer` | Referral data |
+| POST | `/referrals/apply` | Apply a referral code (extends trial) |
+| GET/POST | `/notifications/in-app`, `subscribe`, `settings` | Notifications |
+| GET/POST | `/support/tickets`, `/support/contact` | Support tickets |
 
 ### Admin
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/admin/login` | Admin login |
-| GET | `/api/v1/admin/analytics` | Platform analytics |
-| GET | `/api/v1/admin/users` | List all users (paginated) |
-| GET | `/api/v1/admin/users/:id` | User detail |
-| DELETE | `/api/v1/admin/users/:id` | Delete user |
-| POST | `/api/v1/admin/users/:id/deactivate` | Block user |
-| POST | `/api/v1/admin/users/:id/activate` | Unblock user |
-| POST | `/api/v1/admin/users/:id/change-plan` | Change user plan |
-| GET | `/api/v1/admin/referrals` | All referrals |
-
-### Payments
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/v1/payments/create-order` | Create PayU order |
-| POST | `/api/v1/payments/verify` | Verify payment |
-| GET | `/api/v1/payments/plans` | List subscription plans |
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 15, React, TypeScript, Tailwind CSS |
-| Landing Page | Next.js 15 (static export), Tailwind CSS, Framer Motion |
-| Backend | Node.js, Express, Prisma ORM |
-| Database | PostgreSQL (Supabase) |
-| Auth | JWT tokens, bcryptjs |
-| Payments | PayU India |
-| AI | Google Gemini API |
-| Email | Nodemailer (SMTP) |
-| Icons | Lucide React |
-| Internationalization | next-intl (en, hi, mr) |
-| Animation | Framer Motion |
+| POST | `/admin/login`, `/admin/register` | Admin auth (register needs `adminKey`) |
+| GET | `/admin/analytics` | Platform analytics |
+| GET | `/admin/users`, `/admin/users/[userId]` | Users list / detail |
+| PATCH | `/admin/users/[userId]/plan`, `/status`, `/subscription-action` | Manage a user |
+| POST | `/admin/broadcast-notification` | Broadcast to all users |
+| GET | `/admin/referrals` | All referrals |
 
 ## Use Cases
 
 1. **Kirana / Grocery Stores** — Replace manual billing and udhar books with digital management
-2. **General Stores** — Track inventory across hundreds of products with automated low-stock alerts
-3. **Mobile Shops / Small Retail** — Manage customer credit, send WhatsApp payment reminders
-4. **Wholesale Distributors** — Handle bulk invoices, track payments from multiple retailers
-5. **Multi-location Shops** — Manage multiple shops from a single admin panel
+2. **Medical / Pharmacy** — Track expiry dates, batch stock, and low-stock alerts
+3. **Cosmetics / Footwear / Apparel** — Size/variant grids and category-specific fields
+4. **Electronics** — EMI billing and high-value inventory tracking
+5. **Wholesale / Distribution** — Multi-godown stock, retailer (dukandar) credit, stock alerts
+6. **Multi-location Businesses** — Run several shops and warehouses from one account
+
+---
+
+See [SUBSCRIPTIONS.md](SUBSCRIPTIONS.md) for the detailed subscription, trial, and billing flow.
