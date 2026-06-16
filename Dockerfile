@@ -1,47 +1,34 @@
 FROM node:20-alpine AS base
-WORKDIR /app
+WORKDIR /srv
 
-# ── Install backend dependencies ──
-FROM base AS backend-deps
-COPY backend-node/package*.json ./backend-node/
-RUN cd backend-node && npm ci
-
-# ── Install frontend dependencies ──
-FROM base AS frontend-deps
-COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm ci
+# ── Install dependencies (postinstall runs `prisma generate`) ──
+FROM base AS deps
+COPY app/package*.json ./app/
+COPY app/prisma ./app/prisma
+RUN cd app && npm ci
 
 # ── Build ──
 FROM base AS build
-COPY --from=backend-deps /app/backend-node/node_modules ./backend-node/node_modules
-COPY --from=frontend-deps /app/frontend/node_modules ./frontend/node_modules
-COPY backend-node/ ./backend-node/
-COPY frontend/ ./frontend/
-RUN cd backend-node && npx prisma generate
-RUN cd frontend && npm run build
+COPY --from=deps /srv/app/node_modules ./app/node_modules
+COPY app/ ./app/
+RUN cd app && npx prisma generate && npm run build
 
 # ── Runtime ──
 FROM node:20-alpine AS runtime
-WORKDIR /app
+WORKDIR /srv
 
-# Copy Prisma generated client + backend source
-COPY --from=build /app/backend-node/node_modules ./backend-node/node_modules
-COPY --from=build /app/backend-node/prisma ./backend-node/prisma
-COPY --from=build /app/backend-node/src ./backend-node/src
-COPY --from=build /app/backend-node/package*.json ./backend-node/
-
-# Copy built frontend
-COPY --from=build /app/frontend/.next ./frontend/.next
-COPY --from=build /app/frontend/node_modules ./frontend/node_modules
-COPY --from=build /app/frontend/package*.json ./frontend/
-COPY --from=build /app/frontend/public ./frontend/public
-COPY --from=build /app/frontend/next.config.ts ./frontend/
-COPY --from=build /app/frontend/i18n ./frontend/i18n
-COPY --from=build /app/frontend/middleware.ts ./frontend/
-
-# Copy start script
-COPY start.js ./
-COPY package.json ./
+# Built Next.js app (which now also serves the API under /api/v1)
+COPY --from=build /srv/app/.next ./app/.next
+COPY --from=build /srv/app/node_modules ./app/node_modules
+COPY --from=build /srv/app/package*.json ./app/
+COPY --from=build /srv/app/public ./app/public
+COPY --from=build /srv/app/next.config.ts ./app/
+COPY --from=build /srv/app/i18n ./app/i18n
+COPY --from=build /srv/app/messages ./app/messages
+COPY --from=build /srv/app/middleware.ts ./app/
+COPY --from=build /srv/app/instrumentation.ts ./app/
+COPY --from=build /srv/app/prisma ./app/prisma
 
 EXPOSE 3000
-CMD ["node", "start.js"]
+WORKDIR /srv/app
+CMD ["npm", "start"]

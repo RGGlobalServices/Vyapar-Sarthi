@@ -11,10 +11,11 @@ const stats = [
 
 const team = [
   { name: "Rahul Gosavi", role: "Product Research & Development Head", initials: "RG" },
-  { name: "Ashish Gosavi", role: "Marketing Team Head", initials: "AG" },
+  { name: "Ashish Gosavi", role: "Research And Marketing Team Head", initials: "AG" },
   { name: "Adarsh More", role: "Marketing Team", initials: "AM" },
   { name: "Harsh Dharnkar", role: "Marketing Team", initials: "HD" },
   { name: "Sai Kale", role: "Marketing Team", initials: "SK" },
+  { name: "Ketan Vishwakarma", role: "Marketing Team", initials: "KV" },
 ];
 
 function CountUp({ target, suffix, format }: { target: number; suffix: string; format?: boolean }) {

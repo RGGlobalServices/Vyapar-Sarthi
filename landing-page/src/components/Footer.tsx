@@ -39,12 +39,12 @@ const paymentPartners = ["Google Pay", "PhonePe", "Paytm", "Razorpay"];
 export default function Footer() {
   return (
     <footer className="bg-slate-900 border-t border-transparent relative">
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-500" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-linear-to-r from-indigo-500 via-cyan-500 to-emerald-500" />
       <div className="max-w-6xl mx-auto px-4 py-16">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
           <div>
             <h3 className="text-xl font-bold text-slate-100 mb-4">
-              <span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+              <span className="bg-linear-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
                 Vyapar Sarthi
               </span>
             </h3>
@@ -103,7 +103,7 @@ export default function Footer() {
             <div className="mt-6 pt-4 border-t border-slate-800">
               <a
                 href={`${config.FRONTEND_URL}/admin`}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500/20 to-cyan-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold hover:from-indigo-500/30 hover:to-cyan-500/30 transition"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-linear-to-r from-indigo-500/20 to-cyan-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold hover:from-indigo-500/30 hover:to-cyan-500/30 transition"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 Admin Panel

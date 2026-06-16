@@ -2,8 +2,9 @@
   "name": "vyapar-sarthi",
   "private": true,
   "scripts": {
-    "install:all": "cd backend-node && npm install && cd ../frontend && npm install",
-    "build": "cd backend-node && npx prisma generate && cd ../frontend && npm run build",
-    "start": "node start.js"
+    "dev": "cd app && npm run dev",
+    "install:all": "cd app && npm install",
+    "build": "cd app && npm run build",
+    "start": "cd app && npm start"
   }
 }

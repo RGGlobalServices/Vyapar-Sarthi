@@ -5,6 +5,7 @@ import Testimonials from "@/components/Testimonials";
 import Pricing from "@/components/Pricing";
 import FAQ from "@/components/FAQ";
 import FinalCTA from "@/components/FinalCTA";
+import StatsSection from "@/components/StatsSection";
 
 export default function Home() {
   return (
@@ -57,6 +58,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <StatsSection />
 
       <Features />
       <HowItWorks />

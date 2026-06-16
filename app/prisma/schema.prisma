@@ -1,0 +1,432 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider             = "postgresql"
+  url                  = env("DATABASE_URL")
+  relationMode         = "foreignKeys"
+}
+
+model User {
+  id                  Int         @id @default(autoincrement())
+  uuid                String?     @unique @db.Uuid
+  email               String      @unique @db.VarChar
+  name                String      @default("") @db.VarChar
+  mobile              String?     @db.VarChar
+  password            String      @db.VarChar
+  storeName           String?     @map("store_name") @db.VarChar
+  businessType        String?     @map("business_type") @db.VarChar
+  createdAt           DateTime?   @default(now()) @map("created_at") @db.Timestamptz(6)
+  fullName            String?     @map("full_name") @db.VarChar
+  isActive            Int?        @default(1) @map("is_active")
+  passwordResetToken  String?     @map("password_reset_token") @db.VarChar
+  passwordResetExpiry DateTime?   @map("password_reset_expiry") @db.Timestamptz(6)
+  profitViewPassword  String?     @map("profit_view_password") @db.VarChar
+  toolUsages          ToolUsage[]
+
+  @@map("users")
+}
+
+model ToolUsage {
+  id       String   @id @default(uuid()) @db.Uuid
+  userId   Int      @map("user_id")
+  tool     String   @db.VarChar
+  count    Int      @default(1)
+  lastUsed DateTime @default(now()) @map("last_used") @db.Timestamptz(6)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, tool])
+  @@map("tool_usage")
+}
+
+model Shop {
+  id                      String     @id @default(uuid()) @db.Uuid
+  ownerId                 String?    @map("owner_id") @db.Uuid
+  name                    String?    @db.VarChar
+  address                 String?    @db.VarChar
+  createdAt               DateTime?  @default(now()) @map("created_at") @db.Timestamptz(6)
+  businessType            String?    @default("kirana") @map("business_type") @db.VarChar
+  setupComplete           Boolean?   @default(false) @map("setup_complete")
+  mobile                  String?
+  logoUrl                 String?    @map("logo_url")
+  shopCode                String?    @unique @map("shop_code") @db.VarChar
+  subscriptionPlan        String?    @default("starter") @map("subscription_plan") @db.VarChar
+  subscriptionStatus      String?    @default("active") @map("subscription_status") @db.VarChar
+  subscriptionExpiry      DateTime?  @map("subscription_expiry") @db.Timestamptz(6)
+  subscriptionCancelledAt DateTime?  @map("subscription_cancelled_at") @db.Timestamptz(6)
+  cancellationReason      String?    @map("cancellation_reason")
+  // Free trial + auto-debit (PayU Standing Instruction / eMandate)
+  subscriptionTrialEnds   DateTime?  @map("subscription_trial_ends") @db.Timestamptz(6)
+  trialPaused             Boolean?   @default(false) @map("trial_paused")
+  trialPauseStart         DateTime?  @map("trial_pause_start") @db.Timestamptz(6)
+  mandateToken            String?    @map("mandate_token") @db.VarChar
+  mandateStatus           String?    @map("mandate_status") @db.VarChar
+  nextBillingDate         DateTime?  @map("next_billing_date") @db.Timestamptz(6)
+  billingAmount           Float?     @map("billing_amount")
+  lastTxnId               String?    @map("last_txn_id") @db.VarChar
+  firstChargeDate         DateTime?  @map("first_charge_date") @db.Timestamptz(6)
+  customers               Customer[]
+  products                Product[]
+  sales                   Sale[]
+  stockLogs               StockLog[]
+  godowns                 Godown[]
+  paymentTransactions     PaymentTransaction[]
+
+  @@index([name], map: "ix_shops_name")
+  @@map("shops")
+}
+
+model PaymentTransaction {
+  id          String    @id @default(uuid()) @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  txnid       String    @db.VarChar
+  mihpayid    String?   @db.VarChar
+  plan        String?   @db.VarChar
+  amount      Float
+  // mandate_registration | recurring | trial | refund
+  type        String    @db.VarChar
+  // success | failed | pending | refunded
+  status      String    @db.VarChar
+  mode        String?   @db.VarChar
+  payuResponse String?  @map("payu_response") @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  shop        Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([txnid])
+  @@map("payment_transactions")
+}
+
+model Product {
+  id               String     @id @default(uuid()) @db.Uuid
+  shopId           String?    @map("shop_id") @db.Uuid
+  name             String?    @db.VarChar
+  category         String?    @db.VarChar
+  baseUnit         String?    @map("base_unit") @db.VarChar
+  mrp              Float?
+  sellingPrice     Float?     @map("selling_price")
+  wholesaleCost    Float?     @map("wholesale_cost")
+  conversionFactor Float?     @map("conversion_factor")
+  minStock         Float?     @map("min_stock")
+  currentStock     Float?     @map("current_stock")
+  barcode          String?    @unique(map: "ix_products_barcode") @db.VarChar
+  expiryDate       String?    @map("expiry_date") @db.VarChar
+  batch_number     String?    @db.VarChar
+  drug_schedule    String?    @db.VarChar
+  model_number     String?    @db.VarChar
+  warranty_months  Int?
+  gender           String?    @db.VarChar
+  size_variants    String?
+  shade            String?    @db.VarChar
+  archived         Boolean?   @default(false)
+  is_loose         Boolean?   @default(false)
+  shop             Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  saleItems        SaleItem[]
+  stock_logs       StockLog[]
+  godownProducts   GodownProduct[]
+
+  @@index([category], map: "ix_products_category")
+  @@index([name], map: "ix_products_name")
+  @@map("products")
+}
+
+model Customer {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  shopId                String?                 @map("shop_id") @db.Uuid
+  name                  String?                 @db.VarChar
+  mobile                String?                 @db.VarChar
+  email                 String?                 @db.VarChar
+  totalDue              Float?                  @map("total_due")
+  customer_transactions customer_transactions[]
+  shop                  Shop?                   @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sales                 Sale[]
+
+  @@index([mobile], map: "ix_customers_mobile")
+  @@index([name], map: "ix_customers_name")
+  @@map("customers")
+}
+
+model Sale {
+  id             String     @id @default(uuid()) @db.Uuid
+  shopId         String?    @map("shop_id") @db.Uuid
+  customerId     String?    @map("customer_id") @db.Uuid
+  totalAmount    Float?     @map("total_amount")
+  totalProfit    Float?     @map("total_profit")
+  paymentType    String?    @map("payment_type") @db.VarChar
+  createdAt      DateTime?  @default(now()) @map("created_at") @db.Timestamptz(6)
+  invoice_number String?    @unique @db.VarChar
+  items          SaleItem[]
+  customer       Customer?  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shop           Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  saleId        String?  @map("sale_id") @db.Uuid
+  productId     String?  @map("product_id") @db.Uuid
+  unit          String?  @db.VarChar
+  quantity      Float?
+  pricePerUnit  Float?   @map("price_per_unit")
+  marginPerUnit Float?   @map("margin_per_unit")
+  product       Product? @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sale          Sale?    @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("sale_items")
+}
+
+model StockLog {
+  id        String    @id @default(uuid()) @db.Uuid
+  shopId    String?   @map("shop_id") @db.Uuid
+  productId String?   @map("product_id") @db.Uuid
+  type      String?   @db.VarChar
+  quantity  Float?
+  note      String?   @db.VarChar
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  products  Product?  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shop      Shop?     @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("stock_logs")
+}
+
+model PushSubscription {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String?   @map("user_id") @db.Uuid
+  endpoint  String?   @unique(map: "ix_push_subscriptions_endpoint") @db.VarChar
+  p256dh    String?   @db.VarChar
+  auth      String?   @db.VarChar
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("push_subscriptions")
+}
+
+model NotificationSetting {
+  userId               String   @id @map("user_id") @db.Uuid
+  dailySummaryEnabled  Boolean? @map("daily_summary_enabled")
+  lowStockAlertEnabled Boolean? @map("low_stock_alert_enabled")
+  alertTime            String?  @map("alert_time") @db.VarChar
+
+  @@map("notification_settings")
+}
+
+model UserNotification {
+  id                  String             @id @default(uuid()) @db.Uuid
+  userId              String             @map("user_id") @db.Uuid
+  adminNotificationId String?            @map("admin_notification_id") @db.Uuid
+  title               String             @db.VarChar
+  message             String             @db.VarChar
+  notificationType    String?            @map("notification_type") @db.VarChar
+  isRead              Boolean?           @map("is_read")
+  link                String?            @db.VarChar
+  createdAt           DateTime?          @default(now()) @map("created_at") @db.Timestamptz(6)
+  adminNotification   AdminNotification? @relation(fields: [adminNotificationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId, createdAt(sort: Desc)], map: "user_notif_created_idx")
+  @@index([userId, isRead], map: "user_notif_read_idx")
+  @@index([userId], map: "user_notif_user_id_idx")
+  @@map("user_notifications")
+}
+
+model AdminNotification {
+  id                String             @id @default(uuid()) @db.Uuid
+  adminId           String             @map("admin_id") @db.Uuid
+  title             String             @db.VarChar
+  message           String             @db.VarChar
+  notificationType  String?            @map("notification_type") @db.VarChar
+  targetAudience    String?            @map("target_audience") @db.VarChar
+  targetPlan        String?            @map("target_plan") @db.VarChar
+  createdAt         DateTime?          @default(now()) @map("created_at") @db.Timestamptz(6)
+  admin             AdminUser          @relation(fields: [adminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  userNotifications UserNotification[]
+
+  @@index([adminId], map: "admin_notif_admin_idx")
+  @@map("admin_notifications")
+}
+
+model ReferralCode {
+  userId              String    @id @map("user_id") @db.Uuid
+  code                String    @unique(map: "ix_referral_codes_code") @db.VarChar
+  totalReferrals      Int?      @map("total_referrals")
+  successfulReferrals Int?      @map("successful_referrals")
+  createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([code])
+  @@index([userId])
+  @@map("referral_codes")
+}
+
+model Referral {
+  id               String    @id @default(uuid()) @db.Uuid
+  referrerId       String    @map("referrer_id") @db.Uuid
+  referredId       String?   @map("referred_id") @db.Uuid
+  referralCode     String    @map("referral_code") @db.VarChar
+  referredEmail    String?   @map("referred_email") @db.VarChar
+  status           String?   @db.VarChar
+  discountApplied  Boolean?  @map("discount_applied")
+  referrerRewarded Boolean?  @map("referrer_rewarded")
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  @@index([referralCode], map: "ix_referrals_referral_code")
+  @@index([referralCode], map: "referrals_code_idx")
+  @@index([referredId])
+  @@index([referrerId])
+  @@map("referrals")
+}
+
+model SupportTicket {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String?   @map("user_id") @db.Uuid
+  name         String    @db.VarChar
+  email        String    @db.VarChar
+  phone        String?   @db.VarChar
+  shopName     String?   @map("shop_name") @db.VarChar
+  type         String    @db.VarChar
+  priority     String?   @db.VarChar
+  subject      String?   @db.VarChar
+  message      String    @db.VarChar
+  status       String?   @db.VarChar
+  adminNotes   String?   @map("admin_notes") @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updated_at   DateTime? @db.Timestamptz(6)
+  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz(6)
+  refundAmount String?   @map("refund_amount")
+  refundReason String?   @map("refund_reason")
+  txnId        String?   @map("txn_id")
+  displayId    String?   @map("display_id") @db.VarChar(12)
+
+  @@index([status], map: "tickets_status_idx")
+  @@index([userId], map: "tickets_user_id_idx")
+  @@map("support_tickets")
+}
+
+model DukandarRelationship {
+  id           String    @id @default(uuid()) @db.Uuid
+  wholesalerId String    @map("wholesaler_id") @db.Uuid
+  retailerId   String    @map("retailer_id") @db.Uuid
+  status       String?   @default("active") @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  alerts       DukandarStockAlert[]
+  credits      DukandarCredit[]
+
+  @@index([retailerId], map: "dukandar_retailer_idx")
+  @@index([wholesalerId], map: "dukandar_wholesaler_idx")
+  @@map("dukandar_relationships")
+}
+
+model DukandarStockAlert {
+  id             String    @id @default(uuid()) @db.Uuid
+  relationshipId String    @map("relationship_id") @db.Uuid
+  wholesalerId   String    @map("wholesaler_id") @db.Uuid
+  retailerId     String    @map("retailer_id") @db.Uuid
+  message        String    @db.VarChar
+  products       String    @db.VarChar
+  status         String    @default("pending") @db.VarChar
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  respondedAt    DateTime? @map("responded_at") @db.Timestamptz(6)
+  relationship   DukandarRelationship @relation(fields: [relationshipId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([retailerId])
+  @@index([wholesalerId])
+  @@index([relationshipId])
+  @@map("dukandar_stock_alerts")
+}
+
+model DukandarCredit {
+  id             String    @id @default(uuid()) @db.Uuid
+  relationshipId String    @map("relationship_id") @db.Uuid
+  wholesalerId   String    @map("wholesaler_id") @db.Uuid
+  retailerId     String    @map("retailer_id") @db.Uuid
+  amount         Float
+  description    String?   @db.VarChar
+  items          String    @db.VarChar
+  status         String    @default("pending") @db.VarChar
+  dueDate        DateTime? @map("due_date") @db.Timestamptz(6)
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  paidAt         DateTime? @map("paid_at") @db.Timestamptz(6)
+  relationship   DukandarRelationship @relation(fields: [relationshipId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([wholesalerId])
+  @@index([retailerId])
+  @@index([relationshipId])
+  @@map("dukandar_credits")
+}
+
+model AdminUser {
+  id                 String              @id @default(uuid()) @db.Uuid
+  email              String              @unique(map: "ix_admin_users_email") @db.VarChar
+  hashedPassword     String              @map("hashed_password") @db.VarChar
+  fullName           String              @map("full_name") @db.VarChar
+  role               String?             @db.VarChar
+  isActive           Int?                @map("is_active")
+  createdAt          DateTime?           @default(now()) @map("created_at") @db.Timestamptz(6)
+  adminNotifications AdminNotification[]
+
+  @@index([email])
+  @@map("admin_users")
+}
+
+model Godown {
+  id          String          @id @default(uuid()) @db.Uuid
+  shopId      String          @map("shop_id") @db.Uuid
+  ownerId     String          @map("owner_id") @db.Uuid
+  name        String          @db.VarChar
+  location    String?         @db.VarChar
+  godownCode  String          @unique @map("godown_code") @db.VarChar
+  createdAt   DateTime?       @default(now()) @map("created_at") @db.Timestamptz(6)
+  shop        Shop            @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory   GodownProduct[]
+
+  @@index([shopId])
+  @@index([ownerId])
+  @@map("godowns")
+}
+
+model GodownProduct {
+  id        String   @id @default(uuid()) @db.Uuid
+  godownId  String   @map("godown_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  quantity  Float    @default(0)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  godown    Godown   @relation(fields: [godownId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([godownId, productId])
+  @@index([godownId])
+  @@index([productId])
+  @@map("godown_products")
+}
+
+model customer_transactions {
+  id          String    @id @default(uuid()) @db.Uuid
+  customer_id String?   @db.Uuid
+  type        String?   @db.VarChar
+  amount      Float?
+  note        String?   @db.VarChar
+  bill_number String?   @db.VarChar
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  customers   Customer? @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model CalendarEvent {
+  id           String    @id @default(uuid()) @db.Uuid
+  shopId       String    @map("shop_id") @db.Uuid
+  ownerId      String?   @map("owner_id") @db.Uuid
+  title        String    @db.VarChar
+  description  String?   @db.VarChar
+  eventDate    DateTime  @map("event_date") @db.Timestamptz(6)
+  eventType    String    @default("event") @map("event_type") @db.VarChar
+  amount       Float?
+  customerName String?   @map("customer_name") @db.VarChar
+  status       String    @default("pending") @db.VarChar
+  reminderDays Int       @default(1) @map("reminder_days")
+  notified     Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([shopId, eventDate])
+  @@map("calendar_events")
+}

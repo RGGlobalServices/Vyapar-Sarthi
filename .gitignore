@@ -13,3 +13,12 @@ __pycache__/
 .vite/
 next-env.d.ts
 *.mjs
+
+# IDE / tool local state
+.vscode/
+.kilocode/
+.roo/
+.idea/
+
+# Build info
+*.tsbuildinfo

@@ -3,6 +3,16 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { register, isLoggedIn, redirectAfterAuth, getRedirectParam } from "@/lib/auth";
+import { config } from "@/lib/config";
+
+// Resolve the app (dashboard) URL at runtime so it never depends on baked-in
+// env vars (which point to the wrong port on the landing page).
+function resolveAppUrl(): string {
+  if (typeof window !== "undefined" && window.location.port === "3000") {
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
+  }
+  return config.FRONTEND_URL;
+}
 
 const businessTypes = ["Kirana", "Pharmacy", "Clothing", "Electronics", "Cosmetics", "General Store"];
 const languages = ["EN", "HI", "MR"];
@@ -22,7 +32,8 @@ export default function RegisterPage() {
     referralCode: "",
     agreedToTerms: false,
   });
-  const [error, setError] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
   const [redirect, setRedirect] = useState("");
 
@@ -68,7 +79,9 @@ export default function RegisterPage() {
         storeName: form.shopName,
         businessType: form.businessType,
       });
-      redirectAfterAuth("/");
+      // Every new account starts a free trial — redirect to plan selection
+      // so the user picks a plan before accessing the app.
+      window.location.href = `/payment`;
     } catch (err: any) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
@@ -156,13 +169,33 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
-                  <input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) => update("password", e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
-                    placeholder="Min. 8 characters"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPwd ? "text" : "password"}
+                      value={form.password}
+                      onChange={(e) => update("password", e.target.value)}
+                      className="w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                      placeholder="Min. 8 characters"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwd(v => !v)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition"
+                      tabIndex={-1}
+                      aria-label={showPwd ? "Hide password" : "Show password"}
+                    >
+                      {showPwd ? (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </>
             )}

@@ -6,6 +6,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { isLoggedIn, getUser, logout, getToken, apiGet } from '@/lib/auth';
 import { config } from '@/lib/config';
 
+// Map the raw subscription plan key to the display name used in the pricing
+// section, so the navbar and pricing cards stay consistent.
+const PLAN_DISPLAY: Record<string, string> = {
+  shop: 'Dukaan',
+  starter: 'Dukaan',
+  vyapar: 'Vyapar',
+  wholesale: 'Udyog',
+};
+
 const navLinks = [
   { label: 'Home', href: '/' },
   { label: 'Features', href: '/#features' },
@@ -23,6 +32,7 @@ export default function Navbar() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [plan, setPlan] = useState('Free');
+  const [planStatus, setPlanStatus] = useState('');
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -48,7 +58,9 @@ export default function Navbar() {
     (async () => {
       try {
         const shop = await apiGet('/shop/profile', token);
-        if (shop?.subscriptionPlan) setPlan(shop.subscriptionPlan);
+        const raw = (shop?.subscriptionPlan ?? shop?.subscription_plan ?? '').toLowerCase();
+        if (raw) setPlan(PLAN_DISPLAY[raw] || raw);
+        setPlanStatus((shop?.subscriptionStatus ?? shop?.subscription_status ?? '').toLowerCase());
       } catch {}
     })();
   }, [loggedIn]);
@@ -65,9 +77,16 @@ export default function Navbar() {
     ? user.name.split(' ').map(s => s[0]).join('').toUpperCase().slice(0, 2)
     : '?';
 
+  // Resolve app URL at render time from window.location so it never depends
+  // on baked-in env vars (which point to the wrong port on the landing page).
+  const appUrl = (typeof window !== 'undefined' && window.location.port === '3000')
+    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    : config.FRONTEND_URL;
+
   const dropdownItems = [
-    { label: 'Dashboard', href: config.FRONTEND_URL },
-    { label: 'View Profile', href: `${config.FRONTEND_URL}/en/profile` },
+    { label: 'My Account', href: '/profile' },
+    { label: 'Dashboard', href: appUrl },
+    { label: 'App Profile', href: `${appUrl}/en/profile` },
   ];
 
   return (
@@ -80,7 +99,7 @@ export default function Navbar() {
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 text-sm font-bold text-white">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-indigo-500 to-cyan-500 text-sm font-bold text-white">
             VS
           </div>
           <span className="text-lg font-bold text-white">Vyapar Sarthi</span>
@@ -105,7 +124,7 @@ export default function Navbar() {
                 onClick={() => setProfileOpen(!profileOpen)}
                 className="flex items-center gap-2 rounded-full bg-slate-800/80 border border-slate-700 p-1.5 pr-3 hover:bg-slate-700/50 transition"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-sm font-bold text-white">
+                <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-sm font-bold text-white">
                   {initials}
                 </div>
                 <span className="text-sm text-slate-200 hidden lg:block">{user?.name?.split(' ')[0]}</span>
@@ -131,7 +150,15 @@ export default function Navbar() {
                       </div>
                       <div className="px-4 py-2 border-b border-slate-700">
                         <span className="text-xs text-slate-400">Current Plan</span>
-                        <p className="text-sm font-semibold text-emerald-400 capitalize">{plan}</p>
+                        <p className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+                          {plan}
+                          {planStatus === 'trial' && (
+                            <span className="text-[9px] font-bold uppercase tracking-wide bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30 px-1.5 py-0.5 rounded">On Trial</span>
+                          )}
+                          {planStatus === 'expired' && (
+                            <span className="text-[9px] font-bold uppercase tracking-wide bg-red-500/15 text-red-400 ring-1 ring-red-500/30 px-1.5 py-0.5 rounded">Expired</span>
+                          )}
+                        </p>
                       </div>
                       <div className="py-1">
                         {dropdownItems.map((item) => (
@@ -166,7 +193,7 @@ export default function Navbar() {
               </Link>
               <Link
                 href="/register"
-                className="rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-transform hover:scale-105"
+                className="rounded-xl bg-linear-to-r from-indigo-500 to-cyan-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-transform hover:scale-105"
               >
                 Start Free Trial
               </Link>
@@ -220,7 +247,9 @@ export default function Navbar() {
                   <div className="px-4 py-2">
                     <p className="text-sm font-medium text-white">{user?.name || 'User'}</p>
                     <p className="text-xs text-slate-400">{user?.email || ''}</p>
-                    <p className="text-xs text-emerald-400 mt-1 capitalize">Plan: {plan}</p>
+                    <p className="text-xs text-emerald-400 mt-1">
+                      Plan: {plan}{planStatus === 'trial' ? ' (On Trial)' : planStatus === 'expired' ? ' (Expired)' : ''}
+                    </p>
                   </div>
                   {dropdownItems.map((item) => (
                     <a
@@ -251,7 +280,7 @@ export default function Navbar() {
                   <Link
                     href="/register"
                     onClick={() => setMenuOpen(false)}
-                    className="mt-2 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 px-4 py-3 text-center text-base font-semibold text-white"
+                    className="mt-2 rounded-xl bg-linear-to-r from-indigo-500 to-cyan-500 px-4 py-3 text-center text-base font-semibold text-white"
                   >
                     Start Free Trial
                   </Link>

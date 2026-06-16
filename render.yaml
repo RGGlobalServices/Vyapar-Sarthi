@@ -1,13 +1,13 @@
 services:
-  # ── Combined Service: Frontend (Next.js) + Backend (Express) ──
+  # ── Main App: Next.js app + API (Route Handlers under /api/v1) ──
   - type: web
     name: vyapar-sarthi-api
     runtime: node
     repo: https://github.com/RGGlobalServices/Vyapar-Sarthi
     branch: main
-    buildCommand: cd backend-node && npm install && npx prisma generate && cd ../frontend && npm install && npm run build
-    startCommand: node start.js
-    healthCheckPath: /
+    buildCommand: cd app && npm install && npm run build
+    startCommand: cd app && npm start
+    healthCheckPath: /api/v1/auth/ping
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -19,16 +19,15 @@ services:
         value: production
       - key: PORT
         value: 3000
-      - key: BACKEND_URL
-        value: http://localhost:10000
       - key: FRONTEND_URL
         value: https://vyapar-sarthi-api.onrender.com
       - key: APP_URL
         value: https://vyapar-sarthi-api.onrender.com
       - key: LANDING_URL
         value: https://vyapar-sarthi-landing.onrender.com
+      # Same-origin API — the app serves /api/v1 itself
       - key: NEXT_PUBLIC_API_URL
-        value: https://vyapar-sarthi-api.onrender.com/api/v1
+        value: /api/v1
       - key: NEXT_PUBLIC_FRONTEND_URL
         value: https://vyapar-sarthi-api.onrender.com
       - key: NEXT_PUBLIC_LANDING_URL

@@ -1,2 +1,0 @@
-# Node.js backend for Render
-web: node src/index.js
