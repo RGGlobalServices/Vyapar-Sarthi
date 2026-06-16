@@ -592,6 +592,7 @@ cd ../landing-page && npm install && npm run build   # static — Nginx serves n
 | API calls blocked by CORS | Check `FRONTEND_URL` / `LANDING_URL` match your real domains, then `pm2 restart vyapar-app` |
 | `NEXT_PUBLIC_*` change not taking effect | These are baked at build — you must **rebuild** after changing them |
 | DB connection errors | Verify `DATABASE_URL`; for Supabase use the **pooled** string (port 6543) |
+| `No prebuild or local build of @parcel/watcher found` / `Failed to load next.config.ts` | The committed `package-lock.json` was generated on Windows, so npm skips the **Linux** native binary. Fix per app: `rm -rf node_modules package-lock.json && npm install && npm run build`. Ensure nothing omits optional deps (`npm config get optional` must not be `false`; install command must not use `--omit=optional` / `--no-optional`). |
 
 ---
 
