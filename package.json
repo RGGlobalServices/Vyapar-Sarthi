@@ -3,9 +3,10 @@
   "private": true,
   "scripts": {
     "dev": "cd app && npm run dev",
-    "install:all": "cd app && npm install",
-    "postinstall": "cd app && npm install",
+    "dev:landing": "cd landing-page && npm run dev",
+    "install:all": "cd app && npm install && cd ../landing-page && npm install",
     "build": "cd app && npm install && npm run build",
+    "build:landing": "cd landing-page && npm install && npm run build",
     "start": "cd app && npm start"
   }
 }
