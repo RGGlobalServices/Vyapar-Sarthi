@@ -22,3 +22,7 @@ next-env.d.ts
 
 # Build info
 *.tsbuildinfo
+
+# Lockfiles — generated per-platform; committing a Windows lock breaks Linux
+# native deps (e.g. @parcel/watcher) on the VPS. Let each machine resolve its own.
+package-lock.json
