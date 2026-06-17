@@ -48,7 +48,6 @@ export default function middleware(request: NextRequest) {
 
   const isPublic       = PUBLIC_PATHS.some(p => pathnameWithoutLocale.startsWith(p));
   const isAdminRoute   = pathnameWithoutLocale.startsWith('/admin');
-  const isPaymentPage  = pathnameWithoutLocale.startsWith('/payment');
   const isAuthed       = request.cookies.has('ks_auth');
   const localeMatch    = pathname.match(/^\/(en|hi|mr)/);
   const locale = localeMatch ? localeMatch[1] : 'mr';
@@ -82,20 +81,12 @@ export default function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(`/${locale}`, request.url));
   }
 
-  // ── Plan gate: user is authenticated but hasn't selected a real plan ──
-  // The ks_plan cookie is set by MainLayoutClient after fetching the shop
-  // profile. If it's missing or still 'starter' (the default from DB),
-  // the user hasn't completed plan selection yet.
-  const LANDING_PAYMENT = process.env.NEXT_PUBLIC_LANDING_URL
-    ? `${process.env.NEXT_PUBLIC_LANDING_URL}/payment`
-    : 'http://localhost:3001/payment';
-  const planCookie = request.cookies.get('ks_plan')?.value || '';
-  const isDev = process.env.NODE_ENV === 'development';
-  const needsPlan = !isDev && isAuthed && !isPublic && !isAdminRoute && !isPaymentPage
-    && (!planCookie || planCookie === 'starter');
-  if (needsPlan) {
-    return NextResponse.redirect(LANDING_PAYMENT);
-  }
+  // NOTE: No "pick a plan" gate here. Every account starts with an auto free
+  // trial, so authenticated users always have access. Subscription enforcement
+  // (expired / cancelled) is handled client-side in MainLayoutClient via
+  // isSubscriptionEnded() → /billing, and server-side in requireShop(). A
+  // middleware redirect to the separate landing domain broke auth (cookies
+  // don't cross origins) and caused a login loop.
 
   // Handle legacy /setup route
   if (pathnameWithoutLocale === '/setup') {

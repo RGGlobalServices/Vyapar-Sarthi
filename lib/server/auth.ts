@@ -19,7 +19,19 @@ type UserRecord = {
   mobile: string | null;
 };
 
+// Fail closed in production if the JWT secret was never configured (or is the
+// public dev default committed to this repo) — otherwise tokens could be forged.
+function assertJwtSecret() {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (!process.env.SECRET_KEY || process.env.SECRET_KEY === 'your-secret-key-for-dev-only')
+  ) {
+    throw new ApiError(500, 'Server misconfigured: SECRET_KEY must be set to a strong, unique value.');
+  }
+}
+
 export function buildTokenResponse(user: UserRecord) {
+  assertJwtSecret();
   const access_token = jwt.sign({ sub: user.uuid }, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn,
   } as jwt.SignOptions);

@@ -33,3 +33,6 @@ next-env.d.ts
 # Lockfiles — generated per-platform; committing a Windows lock breaks Linux
 # native deps (e.g. @parcel/watcher) on the VPS. Let each machine resolve its own.
 package-lock.json
+
+# Stray copy of the landing repo (it lives in its own repo, not here)
+/vyapar-landing-page/

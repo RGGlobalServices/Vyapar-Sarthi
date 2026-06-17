@@ -8,7 +8,6 @@ import { useAuthStore } from '@/lib/store';
 import AIFloatingButton from '@/components/AIFloatingButton';
 import NotificationBell from '@/components/NotificationBell';
 import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAccess';
-import { LANDING_URL } from '@/lib/config';
 import api from '@/lib/api';
 import { Menu, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -148,18 +147,15 @@ export default function MainLayoutClient({
     };
   }, [fetchProfile]);
 
-  // ── Plan gate: sync ks_plan cookie and redirect if no plan selected ──
+  // Sync the ks_plan cookie so other UI (navbar, etc.) can read the plan.
+  // No forced redirect: every account has an auto free trial, so authenticated
+  // users keep full access. Expired/cancelled users are handled by the
+  // isSubscriptionEnded() gate below (→ /billing on this same domain). The old
+  // redirect to the separate landing /payment broke auth across origins.
   useEffect(() => {
     if (!profile.id) return; // profile not loaded yet
     const plan = (profile.subscriptionPlan || '').toLowerCase();
-    // Sync cookie so middleware can gate without a DB call
     document.cookie = `ks_plan=${plan}; path=/; max-age=${60 * 60 * 24 * 7}`;
-    const isDev = process.env.NODE_ENV === 'development';
-    if (!isDev && (plan === 'starter' || !plan)) {
-      // User never selected a plan — send to plan selection on the landing page
-      const paymentUrl = LANDING_URL ? `${LANDING_URL}/payment` : 'http://localhost:3001/payment';
-      window.location.href = paymentUrl;
-    }
   }, [profile.id, profile.subscriptionPlan]);
 
   useEffect(() => {
