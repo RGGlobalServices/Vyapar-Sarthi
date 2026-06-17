@@ -7,20 +7,27 @@ const intlMiddleware = createMiddleware(routing);
 const PUBLIC_PATHS = ['/login', '/signup'];
 
 // Origins allowed to call the /api/v1 endpoints cross-origin (the landing page
-// is deployed on a separate origin). Mirrors the former Express CORS config.
+// is deployed on a separate origin). Built from env vars, plus the known
+// production domains as a safety net, plus localhost for dev. Trailing slashes
+// are stripped so values like "https://site.com/" still match the browser's
+// Origin header (which never has a trailing slash).
+const stripSlash = (s: string) => s.replace(/\/+$/, '');
 const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL,
   process.env.LANDING_URL,
   process.env.APP_URL,
   process.env.NEXT_PUBLIC_FRONTEND_URL,
   process.env.NEXT_PUBLIC_LANDING_URL,
+  'https://vyaparsarthii.com',
+  'https://www.vyaparsarthii.com',
+  'https://app.vyaparsarthii.com',
   'http://localhost:3000',
   'http://localhost:3001',
-].filter(Boolean) as string[];
+].filter(Boolean).map((o) => stripSlash(o as string));
 
 function applyCors(request: NextRequest, response: NextResponse) {
   const origin = request.headers.get('origin');
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+  if (origin && ALLOWED_ORIGINS.includes(stripSlash(origin))) {
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Credentials', 'true');
     response.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
