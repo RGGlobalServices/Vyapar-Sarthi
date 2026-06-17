@@ -5,8 +5,8 @@
     "dev": "cd app && npm run dev",
     "dev:landing": "cd landing-page && npm run dev",
     "install:all": "cd app && npm install && cd ../landing-page && npm install",
-    "build": "cd app && npm install && npm run build",
-    "build:landing": "cd landing-page && npm install && npm run build",
+    "build": "cd app && npm install --include=optional && npm run build",
+    "build:landing": "cd landing-page && npm install --include=optional && npm run build",
     "start": "cd app && npm start"
   }
 }
