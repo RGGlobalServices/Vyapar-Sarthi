@@ -12,7 +12,14 @@ __pycache__/
 .claude/
 .vite/
 next-env.d.ts
-*.mjs
+
+# Local one-off dev/db scripts at repo root (NOT config .mjs files —
+# postcss.config.mjs / eslint.config.mjs must stay tracked)
+/bench.mjs
+/check_passwords.mjs
+/list_users.mjs
+/test_pg.mjs
+/test_pooler.mjs
 
 # IDE / tool local state
 .vscode/
