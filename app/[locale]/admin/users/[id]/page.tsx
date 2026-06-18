@@ -90,8 +90,11 @@ export default function AdminUserDetailPage() {
     fetchUser();
   }, [userId]);
 
+  const [loadError, setLoadError] = useState('');
+
   async function fetchUser() {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await api.get(`/admin/users/${userId}`);
       setUser(res.data);
@@ -99,7 +102,9 @@ export default function AdminUserDetailPage() {
       if (err.response?.status === 401) {
         localStorage.removeItem('ks_admin_auth');
         window.location.href = `/${locale}/admin/login`;
+        return;
       }
+      setLoadError(err.response?.data?.detail || err.message || 'Failed to load user');
     } finally {
       setLoading(false);
     }
@@ -165,8 +170,18 @@ export default function AdminUserDetailPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">User not found</p>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-slate-300">{loadError || 'User not found'}</p>
+        <div className="flex gap-3">
+          <button onClick={fetchUser}
+            className="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 text-sm font-semibold">
+            Retry
+          </button>
+          <a href={`/${locale}/admin/users`}
+            className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-sm font-semibold">
+            Back to Users
+          </a>
+        </div>
       </div>
     );
   }

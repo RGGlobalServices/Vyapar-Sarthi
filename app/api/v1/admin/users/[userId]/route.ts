@@ -9,23 +9,30 @@ type Ctx = { params: Promise<{ userId: string }> };
 
 export const GET = handle<Ctx>(async (req, { params }) => {
   await requireAdmin(req);
-  const userId = parseInt((await params).userId);
+  const userId = parseInt((await params).userId, 10);
+  if (!Number.isFinite(userId)) throw new ApiError(400, 'Invalid user id');
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, 'User not found');
 
-  const [shop, referralCode, supportTicketCount, referralsGivenRaw, referralsReceivedRaw] = await Promise.all([
-    prisma.shop.findFirst({
-      where: { ownerId: user.uuid! },
-      include: {
-        products: { select: { id: true, name: true, currentStock: true, minStock: true } },
-        customers: { select: { id: true, name: true, mobile: true, totalDue: true } },
-      },
-    }),
-    prisma.referralCode.findFirst({ where: { userId: user.uuid! } }),
-    prisma.supportTicket.count({ where: { userId: user.uuid! } }),
-    prisma.referral.findMany({ where: { referrerId: user.uuid! } }),
-    prisma.referral.findMany({ where: { referredId: user.uuid! } }),
-  ]);
+  // Users with incomplete data (no uuid — e.g. legacy/test accounts) have no
+  // shop or referrals. Skip the uuid-keyed lookups so we never pass null into a
+  // non-nullable uuid filter, which would throw a Prisma validation error.
+  const uuid = user.uuid;
+  const [shop, referralCode, supportTicketCount, referralsGivenRaw, referralsReceivedRaw] = uuid
+    ? await Promise.all([
+        prisma.shop.findFirst({
+          where: { ownerId: uuid },
+          include: {
+            products: { select: { id: true, name: true, currentStock: true, minStock: true } },
+            customers: { select: { id: true, name: true, mobile: true, totalDue: true } },
+          },
+        }),
+        prisma.referralCode.findFirst({ where: { userId: uuid } }),
+        prisma.supportTicket.count({ where: { userId: uuid } }),
+        prisma.referral.findMany({ where: { referrerId: uuid } }),
+        prisma.referral.findMany({ where: { referredId: uuid } }),
+      ])
+    : [null, null, 0, [] as Awaited<ReturnType<typeof prisma.referral.findMany>>, [] as Awaited<ReturnType<typeof prisma.referral.findMany>>];
 
   // Map referred users for referralsGiven
   const referredUuids = referralsGivenRaw.map(r => r.referredId).filter(Boolean) as string[];
@@ -97,10 +104,17 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   const admin = await requireAdmin(req);
   if (admin.role !== 'superadmin') throw new ApiError(403, 'Only superadmin can delete users');
 
-  const userId = parseInt((await params).userId);
+  const userId = parseInt((await params).userId, 10);
+  if (!Number.isFinite(userId)) throw new ApiError(400, 'Invalid user id');
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, 'User not found');
-  const uuid = user.uuid!;
+
+  // No uuid → no related data; just remove the user record.
+  if (!user.uuid) {
+    await prisma.user.delete({ where: { id: userId } });
+    return json({ detail: 'User deleted successfully' });
+  }
+  const uuid = user.uuid;
 
   await prisma.$transaction([
     prisma.saleItem.deleteMany({ where: { sale: { shop: { ownerId: uuid } } } }),
