@@ -692,7 +692,14 @@ export default function UdharPage() {
               );
             })}
             {filtered.length === 0 && (
-              <div className="col-span-3 py-16 text-center text-slate-500 text-sm">{t('noCustomers')}</div>
+              loading ? (
+                <div className="col-span-full flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+                  <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
+                  <span className="text-sm">Loading khata…</span>
+                </div>
+              ) : (
+                <div className="col-span-3 py-16 text-center text-slate-500 text-sm">{t('noCustomers')}</div>
+              )
             )}
           </div>
         </>
