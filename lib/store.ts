@@ -131,6 +131,7 @@ interface UdharStore {
   customers: UdharCustomer[];
   loading: boolean;
   fetchCustomers: () => Promise<void>;
+  silentRefresh: () => Promise<void>;
   addCustomer: (name: string, mobile: string, email?: string) => Promise<string | number>;
   updateCustomer: (customerId: number | string, name: string, mobile: string, email?: string) => Promise<void>;
   deleteCustomer: (customerId: number | string) => Promise<void>;
@@ -150,35 +151,106 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
       const res = await api.get('/customers');
       const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '' }));
       set({ customers, loading: false });
-    } catch (err) {
+    } catch {
       set({ loading: false });
     }
   },
 
+  // Silent background reconcile — refreshes from the server WITHOUT toggling the
+  // loading spinner, so optimistic updates stay instant while eventually syncing
+  // server-truth (ids, server-computed fields, other devices).
+  silentRefresh: async () => {
+    try {
+      const res = await api.get('/customers');
+      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '' }));
+      set({ customers });
+    } catch { /* keep optimistic state */ }
+  },
+
+  // Optimistic: show the new customer immediately, then sync. Returns the real
+  // server id (awaited) so chained flows (bill/import) can add a transaction.
   addCustomer: async (name, mobile, email = '') => {
-    const res = await api.post('/customers', { name, mobile, email });
-    await get().fetchCustomers();
-    return res.data.id;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const optimistic: UdharCustomer = { id: tempId, name, mobile, email, transactions: [] };
+    set((state) => ({ customers: [optimistic, ...state.customers] }));
+    try {
+      const res = await api.post('/customers', { name, mobile, email });
+      const realId = res.data.id;
+      set((state) => ({
+        customers: state.customers.map((c) => (c.id === tempId ? { ...c, id: realId } : c)),
+      }));
+      return realId;
+    } catch (err) {
+      set((state) => ({ customers: state.customers.filter((c) => c.id !== tempId) }));
+      throw err;
+    }
   },
 
   updateCustomer: async (customerId, name, mobile, email = '') => {
-    await api.put(`/customers/${customerId}`, { name, mobile, email });
-    await get().fetchCustomers();
+    const prev = get().customers;
+    set((state) => ({
+      customers: state.customers.map((c) => (c.id === customerId ? { ...c, name, mobile, email } : c)),
+    }));
+    try {
+      await api.put(`/customers/${customerId}`, { name, mobile, email });
+    } catch (err) {
+      set({ customers: prev });
+      throw err;
+    }
   },
 
   deleteCustomer: async (customerId) => {
-    await api.delete(`/customers/${customerId}`);
-    await get().fetchCustomers();
+    const prev = get().customers;
+    set((state) => ({ customers: state.customers.filter((c) => c.id !== customerId) }));
+    try {
+      await api.delete(`/customers/${customerId}`);
+    } catch (err) {
+      set({ customers: prev });
+      throw err;
+    }
   },
 
+  // Optimistic: the amount + updated due appear instantly (due is derived from
+  // transactions), then the server confirms in the background.
   addTransaction: async (customerId, tx) => {
-    await api.post(`/customers/${customerId}/transactions`, tx);
-    await get().fetchCustomers();
+    const tempTx: UdharTransaction = { ...tx, id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` };
+    const prev = get().customers;
+    set((state) => ({
+      customers: state.customers.map((c) =>
+        c.id === customerId ? { ...c, transactions: [...(c.transactions || []), tempTx] } : c,
+      ),
+    }));
+    try {
+      const res = await api.post(`/customers/${customerId}/transactions`, tx);
+      const realId = res.data?.id;
+      if (realId) {
+        set((state) => ({
+          customers: state.customers.map((c) =>
+            c.id === customerId
+              ? { ...c, transactions: c.transactions.map((t) => (t.id === tempTx.id ? { ...t, id: realId } : t)) }
+              : c,
+          ),
+        }));
+      }
+    } catch (err) {
+      set({ customers: prev });
+      throw err;
+    }
   },
 
   deleteTransaction: async (customerId, txId) => {
-    await api.delete(`/customers/${customerId}/transactions/${txId}`);
-    await get().fetchCustomers();
+    const prev = get().customers;
+    set((state) => ({
+      customers: state.customers.map((c) =>
+        c.id === customerId ? { ...c, transactions: c.transactions.filter((t) => t.id !== txId) } : c,
+      ),
+    }));
+    try {
+      await api.delete(`/customers/${customerId}/transactions/${txId}`);
+    } catch (err) {
+      set({ customers: prev });
+      throw err;
+    }
   },
 
   addUdharFromBill: async (customerName, amount, billNumber) => {
