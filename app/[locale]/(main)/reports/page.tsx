@@ -40,15 +40,15 @@ export default function ReportsPage() {
     const fetchReport = async () => {
       try {
         setLoading(true);
-        const [reportRes, topRevRes, topQtyRes, topCatRes] = await Promise.all([
-          api.get('/reports/business-report'),
+        const [trendRes, topRevRes, topQtyRes, topCatRes] = await Promise.all([
+          api.get('/reports/sales-trend'),
           api.get('/reports/top-products?group_by=revenue&limit=10'),
           api.get('/reports/top-products?group_by=quantity&limit=10'),
           api.get('/reports/top-products?group_by=category&limit=10'),
         ]);
 
         setData({
-          trend: reportRes.data.trend,
+          trend: trendRes.data,
           topProducts: topRevRes.data,
           categories: topCatRes.data,
           // We can store qty here too if we want a full cache, or just refetch.
@@ -148,7 +148,11 @@ export default function ReportsPage() {
 
       {/* Full width chart at top */}
       <ReportsChart
-        data={data.trend}
+        data={(data.trend || []).map((d: any) => ({
+          name: typeof d.date === 'string' ? d.date.slice(5) : d.date,
+          sales: d.sales ?? d.total ?? 0,
+          profit: d.profit ?? 0,
+        }))}
         title={t('salesVsProfit') || 'Sales vs Profit'}
         salesLabel={t('sales') || 'Sales'}
         profitLabel={t('profit') || 'Profit'}

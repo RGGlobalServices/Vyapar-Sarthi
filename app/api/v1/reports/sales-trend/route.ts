@@ -14,19 +14,22 @@ export const GET = handle(async (req) => {
   sevenDaysAgo.setHours(0, 0, 0, 0);
   const sales = await prisma.sale.findMany({
     where: { shopId: shop.id, createdAt: { gte: sevenDaysAgo } },
-    select: { totalAmount: true, createdAt: true },
+    select: { totalAmount: true, totalProfit: true, createdAt: true },
   });
-  const grouped: Record<string, number> = {};
+  const salesByDay: Record<string, number> = {};
+  const profitByDay: Record<string, number> = {};
   for (const sale of sales) {
     const key = formatDate(sale.createdAt!);
-    grouped[key] = (grouped[key] || 0) + (sale.totalAmount || 0);
+    salesByDay[key] = (salesByDay[key] || 0) + (sale.totalAmount || 0);
+    profitByDay[key] = (profitByDay[key] || 0) + (sale.totalProfit || 0);
   }
   const trend = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const key = formatDate(d);
-    trend.push({ date: key, total: grouped[key] || 0 });
+    const sales = salesByDay[key] || 0;
+    trend.push({ date: key, total: sales, sales, profit: profitByDay[key] || 0 });
   }
   return json(trend);
 });
