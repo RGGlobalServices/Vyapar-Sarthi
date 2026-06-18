@@ -386,17 +386,21 @@ export const useStockStore = create<StockStore>((set, get) => ({
     }
   },
 
+  // Optimistic: the product appears immediately, then syncs. The real server id
+  // replaces the temp id on success; on failure the row is removed.
   addItem: async (item: any) => {
-    await api.post('/products', {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const optimistic: StockItem = {
+      id: tempId,
       name: item.name,
       category: item.category,
-      current_stock: item.current,
-      min_stock: item.min,
-      base_unit: item.unit,
+      current: item.current,
+      min: item.min,
+      unit: item.unit,
+      archived: false,
       mrp: item.mrp || 0,
-      selling_price: item.sellingPrice || 0,
-      wholesale_cost: item.cost || 0,
-      barcode: `BAR-${Date.now()}`,
+      sellingPrice: item.sellingPrice || 0,
+      cost: item.cost || 0,
       model_number: item.model_number || null,
       warranty_months: item.warranty_months ? Number(item.warranty_months) : null,
       expiry_date: item.expiry_date || null,
@@ -405,49 +409,121 @@ export const useStockStore = create<StockStore>((set, get) => ({
       gender: item.gender || null,
       shade: item.shade || null,
       size_variants: item.size_variants || null,
-    });
-    await get().fetchStock();
+    };
+    set((state) => ({ items: [optimistic, ...state.items] }));
+    try {
+      const res = await api.post('/products', {
+        name: item.name,
+        category: item.category,
+        current_stock: item.current,
+        min_stock: item.min,
+        base_unit: item.unit,
+        mrp: item.mrp || 0,
+        selling_price: item.sellingPrice || 0,
+        wholesale_cost: item.cost || 0,
+        barcode: `BAR-${Date.now()}`,
+        model_number: item.model_number || null,
+        warranty_months: item.warranty_months ? Number(item.warranty_months) : null,
+        expiry_date: item.expiry_date || null,
+        batch_number: item.batch_number || null,
+        drug_schedule: item.drug_schedule || null,
+        gender: item.gender || null,
+        shade: item.shade || null,
+        size_variants: item.size_variants || null,
+      });
+      const realId = res.data?.id;
+      if (realId) {
+        set((state) => ({ items: state.items.map((i) => (i.id === tempId ? { ...i, id: realId } : i)) }));
+      }
+    } catch (err) {
+      set((state) => ({ items: state.items.filter((i) => i.id !== tempId) }));
+      throw err;
+    }
   },
 
   updateItem: async (id, updates: any) => {
-    const backendUpdates: any = {};
-    if (updates.name !== undefined) backendUpdates.name = updates.name;
-    if (updates.category !== undefined) backendUpdates.category = updates.category;
-    if (updates.current !== undefined) backendUpdates.current_stock = updates.current;
-    if (updates.min !== undefined) backendUpdates.min_stock = updates.min;
-    if (updates.unit !== undefined) backendUpdates.base_unit = updates.unit;
-    
-    await api.put(`/products/${id}`, backendUpdates);
-    await get().fetchStock();
+    const prev = get().items;
+    set((state) => ({ items: state.items.map((i) => (i.id === id ? { ...i, ...updates } : i)) }));
+    try {
+      const backendUpdates: any = {};
+      if (updates.name !== undefined) backendUpdates.name = updates.name;
+      if (updates.category !== undefined) backendUpdates.category = updates.category;
+      if (updates.current !== undefined) backendUpdates.current_stock = updates.current;
+      if (updates.min !== undefined) backendUpdates.min_stock = updates.min;
+      if (updates.unit !== undefined) backendUpdates.base_unit = updates.unit;
+      await api.put(`/products/${id}`, backendUpdates);
+    } catch (err) {
+      set({ items: prev });
+      throw err;
+    }
   },
 
   removeItem: async (id) => {
-    await api.delete(`/products/${id}`);
-    await get().fetchStock();
+    const prev = get().items;
+    set((state) => ({ items: state.items.filter((i) => i.id !== id) }));
+    try {
+      await api.delete(`/products/${id}`);
+    } catch (err) {
+      set({ items: prev });
+      throw err;
+    }
   },
 
   toggleArchive: async (id) => {
-    const item = get().items.find(i => i.id === id);
+    const item = get().items.find((i) => i.id === id);
     if (!item) return;
-    await api.put(`/products/${id}`, { archived: !item.archived });
-    await get().fetchStock();
+    const prev = get().items;
+    const next = !item.archived;
+    set((state) => ({ items: state.items.map((i) => (i.id === id ? { ...i, archived: next } : i)) }));
+    try {
+      await api.put(`/products/${id}`, { archived: next });
+    } catch (err) {
+      set({ items: prev });
+      throw err;
+    }
   },
 
+  // Optimistic: stock number changes instantly (current ± delta), pricing updates
+  // apply immediately, and a log row appears — then the server confirms.
   adjustStock: async (id, delta, note, pricing?: any) => {
-    await api.post(`/products/${id}/adjust`, {
-      quantity: delta,
-      type: delta > 0 ? 'in' : 'out',
-      note
-    });
+    const prevItems = get().items;
+    const prevLog = get().log;
+    const item = get().items.find((i) => i.id === id);
 
-    if (pricing && Object.keys(pricing).length > 0) {
-      const updates: any = {};
-      if (pricing.mrp !== undefined) updates.mrp = pricing.mrp;
-      if (pricing.sellingPrice !== undefined) updates.selling_price = pricing.sellingPrice;
-      if (pricing.cost !== undefined) updates.wholesale_cost = pricing.cost;
-      await api.put(`/products/${id}`, updates);
+    const pricingPatch: Partial<StockItem> = {};
+    if (pricing) {
+      if (pricing.mrp !== undefined) pricingPatch.mrp = pricing.mrp;
+      if (pricing.sellingPrice !== undefined) pricingPatch.sellingPrice = pricing.sellingPrice;
+      if (pricing.cost !== undefined) pricingPatch.cost = pricing.cost;
     }
-    await get().fetchStock();
+    const now = new Date();
+    const logEntry: StockLogEntry = {
+      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      itemName: item?.name || 'Product',
+      type: delta > 0 ? 'in' : 'out',
+      qty: Math.abs(delta),
+      note,
+      time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      date: now.toLocaleDateString(),
+    };
+    set((state) => ({
+      items: state.items.map((i) => (i.id === id ? { ...i, current: (i.current || 0) + delta, ...pricingPatch } : i)),
+      log: [logEntry, ...state.log],
+    }));
+
+    try {
+      await api.post(`/products/${id}/adjust`, { quantity: delta, type: delta > 0 ? 'in' : 'out', note });
+      if (pricing && Object.keys(pricing).length > 0) {
+        const updates: any = {};
+        if (pricing.mrp !== undefined) updates.mrp = pricing.mrp;
+        if (pricing.sellingPrice !== undefined) updates.selling_price = pricing.sellingPrice;
+        if (pricing.cost !== undefined) updates.wholesale_cost = pricing.cost;
+        await api.put(`/products/${id}`, updates);
+      }
+    } catch (err) {
+      set({ items: prevItems, log: prevLog });
+      throw err;
+    }
   },
 
   mergeFromImport: async (importedItems, date) => {

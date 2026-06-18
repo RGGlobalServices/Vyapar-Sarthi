@@ -129,31 +129,58 @@ export default function CalendarPage() {
     setModalOpen(true);
   }
 
+  // Optimistic: the event appears/updates instantly; the server syncs in the
+  // background and we roll back only if it fails. No blocking refetch/spinner.
   async function save() {
     if (!form.title.trim()) return;
-    setSaving(true);
-    try {
-      const payload = {
-        title: form.title,
-        description: form.description,
-        eventDate: form.eventDate,
-        eventType: form.eventType,
-        amount: form.amount,
-        customerName: form.customerName,
-        reminderDays: form.reminderDays,
-      };
-      if (editing && form.id) await api.patch(`/calendar/${form.id}`, payload);
-      else await api.post('/calendar', payload);
-      setModalOpen(false);
-      await load();
-    } catch {} finally { setSaving(false); }
+    const payload = {
+      title: form.title,
+      description: form.description,
+      eventDate: form.eventDate,
+      eventType: form.eventType,
+      amount: form.amount,
+      customerName: form.customerName,
+      reminderDays: form.reminderDays,
+    };
+    const optimisticFields = {
+      title: form.title,
+      description: form.description,
+      eventDate: form.eventDate,
+      eventType: form.eventType,
+      amount: form.amount ? Number(form.amount) : null,
+      customerName: form.customerName,
+      reminderDays: form.reminderDays,
+    };
+    setModalOpen(false);
+    const prev = events;
+    if (editing && form.id) {
+      setEvents((evs) => evs.map((e) => (e.id === form.id ? { ...e, ...optimisticFields } : e)));
+      try { await api.patch(`/calendar/${form.id}`, payload); }
+      catch { setEvents(prev); }
+    } else {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const optimistic: CalEvent = { id: tempId, status: 'pending', ...optimisticFields };
+      setEvents((evs) => [...evs, optimistic]);
+      try {
+        const res = await api.post('/calendar', payload);
+        const realId = res.data?.id;
+        if (realId) setEvents((evs) => evs.map((e) => (e.id === tempId ? { ...e, id: realId } : e)));
+      } catch { setEvents((evs) => evs.filter((e) => e.id !== tempId)); }
+    }
   }
 
   async function remove(id: string) {
-    try { await api.delete(`/calendar/${id}`); await load(); } catch {}
+    const prev = events;
+    setEvents((evs) => evs.filter((e) => e.id !== id));
+    try { await api.delete(`/calendar/${id}`); }
+    catch { setEvents(prev); }
   }
   async function toggleDone(e: CalEvent) {
-    try { await api.patch(`/calendar/${e.id}`, { status: e.status === 'done' ? 'pending' : 'done' }); await load(); } catch {}
+    const next = e.status === 'done' ? 'pending' : 'done';
+    const prev = events;
+    setEvents((evs) => evs.map((x) => (x.id === e.id ? { ...x, status: next } : x)));
+    try { await api.patch(`/calendar/${e.id}`, { status: next }); }
+    catch { setEvents(prev); }
   }
 
   const isToday = (d: Date) => ymd(d) === ymd(today);

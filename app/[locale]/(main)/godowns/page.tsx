@@ -60,25 +60,34 @@ export default function GodownsPage() {
     finally { setLoadingProducts(false); }
   }
 
+  // Optimistic: the godown appears/updates instantly, then syncs in the background.
   async function handleSaveGodown(e: React.FormEvent) {
     e.preventDefault();
     if (!godownForm.name.trim()) return;
-    setSaving(true);
-    try {
-      if (modal === 'new') {
-        await api.post('/godowns', godownForm);
-      } else if (modal === 'edit' && selected) {
-        await api.patch(`/godowns/${selected.id}`, godownForm);
+    const form = { ...godownForm };
+    const wasNew = modal === 'new';
+    const editTarget = selected;
+    setModal(null);
+    setGodownForm({ name: '', location: '' });
+
+    if (wasNew) {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const optimistic: any = { id: tempId, ...form, godownCode: '…', inventory: [] };
+      setGodowns((g) => [...g, optimistic]);
+      try {
+        const res = await api.post('/godowns', form);
+        if (res.data?.id) setGodowns((g) => g.map((d) => (d.id === tempId ? { ...d, ...res.data } : d)));
+      } catch {
+        setGodowns((g) => g.filter((d) => d.id !== tempId));
+        alert('Failed to save godown.');
       }
-      await loadGodowns();
-      setModal(null);
-      setGodownForm({ name: '', location: '' });
-      if (modal === 'edit') {
-        const r = await api.get(`/godowns/${selected.id}`);
-        setSelected(r.data);
-      }
-    } catch { alert('Failed to save godown.'); }
-    finally { setSaving(false); }
+    } else if (editTarget) {
+      const prev = godowns;
+      setGodowns((g) => g.map((d) => (d.id === editTarget.id ? { ...d, ...form } : d)));
+      setSelected((s: any) => (s && s.id === editTarget.id ? { ...s, ...form } : s));
+      try { await api.patch(`/godowns/${editTarget.id}`, form); }
+      catch { setGodowns(prev); alert('Failed to save godown.'); }
+    }
   }
 
   async function handleDeleteGodown() {
