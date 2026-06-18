@@ -421,8 +421,9 @@ export default function AdminUserDetailPage() {
                   <select value={planForm.plan} onChange={e => setPlanForm(f => ({ ...f, plan: e.target.value }))}
                     className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
                     <option value="">Keep current</option>
-                    <option value="shop">Shop</option>
-                    <option value="wholesale">Wholesale</option>
+                    <option value="shop">Dukaan</option>
+                    <option value="vyapar">Vyapar</option>
+                    <option value="wholesale">Udyog</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">

@@ -11,7 +11,7 @@ export const POST = handle(async (req) => {
   if (!retailerId) throw new ApiError(400, 'retailerId required');
 
   const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
-  if (!shop || shop.subscriptionPlan !== 'wholesale') throw new ApiError(403, 'Wholesale plan required');
+  if (!shop || shop.subscriptionPlan !== 'wholesale') throw new ApiError(403, 'Udyog plan required');
 
   const relationship = await prisma.dukandarRelationship.findFirst({
     where: { wholesalerId: user.uuid, retailerId, status: 'active' },

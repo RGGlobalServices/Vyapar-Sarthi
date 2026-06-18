@@ -109,9 +109,9 @@ export default function DukandarPage() {
         <Card className="border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5">
           <CardContent className="p-8 text-center">
             <Store className="w-16 h-16 mx-auto mb-4 text-amber-400" />
-            <h2 className="text-xl font-bold text-white mb-2">Wholesale Plan Required</h2>
+            <h2 className="text-xl font-bold text-white mb-2">Udyog Plan Required</h2>
             <p className="text-slate-400 mb-4">
-              Dukandar management feature is only available on the Wholesale plan.
+              Dukandar management feature is only available on the Udyog plan.
               Upgrade now to add your shopkeepers and view their stock alerts.
             </p>
             <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -134,7 +134,7 @@ export default function DukandarPage() {
               href={`/${locale}/payment?plan=wholesale`}
               className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
-              Upgrade to Wholesale
+              Upgrade to Udyog
             </a>
           </CardContent>
         </Card>
