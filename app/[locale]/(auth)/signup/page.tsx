@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { PAYMENT_URL } from '@/lib/config';
 import { ALL_BUSINESS_TYPES, BusinessType, getBusinessConfig } from '@/lib/businessConfig';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 interface Form {
   storeName: string;
@@ -281,6 +282,15 @@ export default function SignupPage() {
                   Choose Business Type <ArrowRight size={18} />
                 </button>
               </form>
+              {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && (
+                <>
+                  <div className="relative my-5">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800" /></div>
+                    <div className="relative flex justify-center text-xs"><span className="bg-slate-950 px-3 text-slate-500">or sign up with</span></div>
+                  </div>
+                  <GoogleSignInButton />
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-8 animate-in zoom-in-95 duration-500">

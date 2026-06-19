@@ -8,6 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useLocale } from 'next-intl';
 import api from '@/lib/api';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 type View = 'login' | 'forgot' | 'otp' | 'reset' | 'done';
 
@@ -376,7 +377,23 @@ export default function LoginPage() {
               {loading ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : 'Sign In'}
             </button>
           </form>
+
+          <GoogleAuthDivider />
+          <GoogleSignInButton />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Small "or continue with" divider, shown only when Google sign-in is configured.
+function GoogleAuthDivider() {
+  if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
+  return (
+    <div className="relative my-5">
+      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-700" /></div>
+      <div className="relative flex justify-center text-xs">
+        <span className="bg-slate-950 px-3 text-slate-500">or continue with</span>
       </div>
     </div>
   );
