@@ -18,17 +18,19 @@ const ReportsChart = dynamic(() => import('@/components/ReportsChart'), {
   ),
 });
 
+let cachedReportsData: any = null;
+
 export default function ReportsPage() {
   const t = useTranslations('Reports');
   const { user } = useAuthStore();
   const { profile } = useBusinessStore();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(cachedReportsData === null);
   const [exportingPDF, setExportingPDF] = useState(false);
   const [data, setData] = useState<{
     trend: any[],
     topProducts: { items: any[], total: number, currency: boolean },
     categories: { items: any[], total: number, currency: boolean }
-  }>({
+  }>(cachedReportsData || {
     trend: [],
     topProducts: { items: [], total: 0, currency: true },
     categories: { items: [], total: 0, currency: true }
@@ -38,8 +40,10 @@ export default function ReportsPage() {
 
   useEffect(() => {
     const fetchReport = async () => {
-      try {
+      if (cachedReportsData === null) {
         setLoading(true);
+      }
+      try {
         const [trendRes, topRevRes, topQtyRes, topCatRes] = await Promise.all([
           api.get('/reports/sales-trend'),
           api.get('/reports/top-products?group_by=revenue&limit=10'),
@@ -47,13 +51,13 @@ export default function ReportsPage() {
           api.get('/reports/top-products?group_by=category&limit=10'),
         ]);
 
-        setData({
+        const payload = {
           trend: trendRes.data,
           topProducts: topRevRes.data,
           categories: topCatRes.data,
-          // We can store qty here too if we want a full cache, or just refetch.
-          // For simplicity we will stick to fetching once and saving them all if needed.
-        });
+        };
+        setData(payload);
+        cachedReportsData = payload;
       } catch (err) {
         console.error('Failed to fetch business report:', err);
       } finally {

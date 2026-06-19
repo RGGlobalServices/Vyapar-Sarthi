@@ -418,6 +418,8 @@ model customer_transactions {
   bill_number String?   @db.VarChar
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
   customers   Customer? @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([customer_id])
 }
 
 model CalendarEvent {

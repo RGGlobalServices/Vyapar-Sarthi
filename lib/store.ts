@@ -146,7 +146,10 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
   loading: false,
 
   fetchCustomers: async () => {
-    set({ loading: true });
+    const hasData = get().customers.length > 0;
+    if (!hasData) {
+      set({ loading: true });
+    }
     try {
       const res = await api.get('/customers');
       const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '' }));
@@ -344,9 +347,16 @@ export const useStockStore = create<StockStore>((set, get) => ({
   loading: false,
 
   fetchStock: async () => {
-    set({ loading: true });
+    const hasData = get().items.length > 0;
+    if (!hasData) {
+      set({ loading: true });
+    }
     try {
-      const res = await api.get('/products');
+      const [res, logRes] = await Promise.all([
+        api.get('/products'),
+        api.get('/products/logs/all')
+      ]);
+
       const items = res.data.map((p: any) => ({
         id: p.id,
         name: p.name,
@@ -368,8 +378,6 @@ export const useStockStore = create<StockStore>((set, get) => ({
         size_variants: p.size_variants || null,
       }));
 
-      // Fetch logs
-      const logRes = await api.get('/products/logs/all');
       const log = (logRes.data || []).map((l: any) => ({
         id: l.id,
         itemName: l.product_name || l.products?.name || 'Product',

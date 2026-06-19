@@ -8,17 +8,23 @@ import { Link } from '@/i18n/routing';
 import { IndianRupee, Search, Filter, ArrowLeft, RefreshCw, Eye, Calendar, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+let cachedInvoices: any[] = [];
+
 export default function AllInvoicesPage() {
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [invoices, setInvoices] = useState<any[]>(cachedInvoices);
+  const [loading, setLoading] = useState(cachedInvoices.length === 0);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
 
   useEffect(() => {
     const fetchInvoices = async () => {
+      if (cachedInvoices.length === 0) {
+        setLoading(true);
+      }
       try {
         const res = await api.get('/billing/');
         setInvoices(res.data);
+        cachedInvoices = res.data;
       } catch (err) {
         console.error('Failed to fetch invoices', err);
       } finally {

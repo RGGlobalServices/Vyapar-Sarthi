@@ -130,31 +130,29 @@ function DashboardInner() {
     };
   }, [timeframe, appliedCustomDates]);
 
-  const initData = useCallback(async () => {
-    setLoading(true);
+  const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
+    if (showSpinner) {
+      setLoading(true);
+    }
     const { start_date, end_date } = getDates();
     try {
-      const [sum, stock, bills, topProd] = await Promise.all([
-        api.get(`/reports/summary?start_date=${start_date}&end_date=${end_date}`),
-        api.get('/reports/low-stock'),
-        api.get('/reports/recent-bills'),
-        api.get(`/reports/top-products?limit=5&start_date=${start_date}&end_date=${end_date}`)
-      ]);
+      const res = await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}${forceRefresh ? '&refresh=true' : ''}`);
+      const payload = res.data;
       
-      if (sum.data) {
+      if (payload.summary) {
         setStats({
-          today_sales: sum.data.today_sales ?? 0,
-          today_profit: sum.data.today_profit ?? 0,
-          total_udhar: sum.data.total_udhar ?? 0,
-          low_stock_count: sum.data.low_stock_count ?? 0
+          today_sales: payload.summary.today_sales ?? 0,
+          today_profit: payload.summary.today_profit ?? 0,
+          total_udhar: payload.summary.total_udhar ?? 0,
+          low_stock_count: payload.summary.low_stock_count ?? 0
         });
       }
 
       setData({
-        lowStock: stock.data || [],
-        recentBills: bills.data || [],
+        lowStock: payload.lowStock || [],
+        recentBills: payload.recentBills || [],
         salesTrend: [], // Lazy loaded/calculated
-        topProducts: topProd.data?.items || []
+        topProducts: payload.topProducts || []
       });
     } catch (e: any) {
       console.error("Dashboard init error:", e);
@@ -170,7 +168,9 @@ function DashboardInner() {
         fullError: e
       });
     } finally {
-      setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   }, [getDates]);
 
@@ -216,8 +216,8 @@ function DashboardInner() {
   }, [showStockAlertsModal, fullStockAlerts.length]);
 
   useEffect(() => {
-    initData();
-    const onFocus = () => initData();
+    initData(true, false);
+    const onFocus = () => initData(false, false); // silent refresh
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [initData]);

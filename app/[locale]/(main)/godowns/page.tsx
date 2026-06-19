@@ -10,13 +10,15 @@ import { useLocale } from 'next-intl';
 
 const inp = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
 
+let cachedGodowns: any[] = [];
+
 export default function GodownsPage() {
   const { profile } = useBusinessStore();
   const locale = useLocale();
   const isWholesale = profile.subscriptionPlan === 'wholesale';
 
-  const [godowns, setGodowns] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [godowns, setGodowns] = useState<any[]>(cachedGodowns);
+  const [loading, setLoading] = useState(cachedGodowns.length === 0);
   const [selected, setSelected] = useState<any | null>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -41,10 +43,13 @@ export default function GodownsPage() {
   useEffect(() => { if (isWholesale) loadGodowns(); else setLoading(false); }, [isWholesale]);
 
   async function loadGodowns() {
-    setLoading(true);
+    if (cachedGodowns.length === 0) {
+      setLoading(true);
+    }
     try {
       const r = await api.get('/godowns');
       setGodowns(r.data || []);
+      cachedGodowns = r.data || [];
     } catch {}
     finally { setLoading(false); }
   }

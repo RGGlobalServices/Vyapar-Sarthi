@@ -56,6 +56,8 @@ function buildEmptyForm(btype: string) {
   };
 }
 
+let cachedProducts: Product[] = [];
+
 export default function ProductsPage() {
   const t = useTranslations('Products');
   const locale = useLocale();
@@ -68,8 +70,8 @@ export default function ProductsPage() {
     setMounted(true);
   }, []);
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(cachedProducts);
+  const [loading, setLoading] = useState(cachedProducts.length === 0);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(buildEmptyForm(profile.businessType));
@@ -174,10 +176,12 @@ export default function ProductsPage() {
   };
 
   const fetchProducts = async () => {
-    setLoading(true);
+    if (cachedProducts.length === 0) {
+      setLoading(true);
+    }
     try {
       const res = await api.get('/products');
-      setProducts(res.data.map((p: any) => ({
+      const mapped = res.data.map((p: any) => ({
         id: p.id, name: p.name, category: p.category,
         stock: p.currentStock, minStock: p.minStock,
         mrp: p.mrp, sellingPrice: p.sellingPrice, cost: p.wholesaleCost,
@@ -186,7 +190,10 @@ export default function ProductsPage() {
         drug_schedule: p.drug_schedule, model_number: p.model_number,
         warranty_months: p.warranty_months, gender: p.gender,
         shade: p.shade, size_variants: p.size_variants,
-      })));
+        is_loose: p.is_loose,
+      }));
+      setProducts(mapped);
+      cachedProducts = mapped;
     } catch { /* */ } finally { setLoading(false); }
   };
 

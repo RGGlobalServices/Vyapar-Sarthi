@@ -36,3 +36,5 @@ package-lock.json
 
 # Stray copy of the landing repo (it lives in its own repo, not here)
 /vyapar-landing-page/
+/check_*.mjs
+/test_*.mjs
