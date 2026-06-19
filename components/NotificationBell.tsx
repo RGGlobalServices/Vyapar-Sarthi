@@ -58,15 +58,23 @@ export default function NotificationBell() {
   const refresh = useCallback(() => { loadNotifications(); loadEvents(); }, [loadNotifications, loadEvents]);
 
   // Poll + refetch on tab focus/visibility for a near-real-time bell.
+  // Debounced so that tab-switching (focus → visibilitychange in quick succession)
+  // only triggers ONE refresh instead of two.
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 20000);
-    const onFocus = () => refresh();
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    const interval = setInterval(refresh, 60000); // Poll every 60s (was 20s)
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(refresh, 5000);
+    };
+    const onFocus = () => debouncedRefresh();
+    const onVisible = () => { if (document.visibilityState === 'visible') debouncedRefresh(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(interval);
+      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
     };

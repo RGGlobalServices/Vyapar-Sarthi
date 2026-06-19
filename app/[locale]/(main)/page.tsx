@@ -22,6 +22,11 @@ const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   loading: () => <div className="h-[300px] bg-slate-900/50 rounded-xl animate-pulse border border-slate-800" />,
 });
 
+// Module-level client cache: survives component unmount (navigation away and back)
+// Data is stale after 30 s. Format: { [cacheKey]: { stats, data, ts } }
+const _dashCache: Record<string, { stats: any; data: any; ts: number }> = {};
+const DASH_CACHE_TTL = 30_000;
+
 function DashboardInner() {
   const t = useTranslations('Dashboard');
   const locale = useLocale();
@@ -131,46 +136,50 @@ function DashboardInner() {
   }, [timeframe, appliedCustomDates]);
 
   const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
-    if (showSpinner) {
+    const { start_date, end_date } = getDates();
+    const cacheKey = `${start_date}_${end_date}`;
+    const cached = _dashCache[cacheKey];
+    const isFresh = cached && (Date.now() - cached.ts < DASH_CACHE_TTL);
+
+    // If we have fresh cached data, show it immediately and skip spinner
+    if (isFresh && !forceRefresh) {
+      setStats(cached.stats);
+      setData(cached.data);
+      setLoading(false);
+      return;
+    }
+    // If we have stale cached data, show it instantly (no blank screen) then refresh in background
+    if (cached && !forceRefresh) {
+      setStats(cached.stats);
+      setData(cached.data);
+      setLoading(false);
+      showSpinner = false; // background refresh
+    } else if (showSpinner) {
       setLoading(true);
     }
-    const { start_date, end_date } = getDates();
     try {
       const res = await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}${forceRefresh ? '&refresh=true' : ''}`);
       const payload = res.data;
-      
-      if (payload.summary) {
-        setStats({
-          today_sales: payload.summary.today_sales ?? 0,
-          today_profit: payload.summary.today_profit ?? 0,
-          total_udhar: payload.summary.total_udhar ?? 0,
-          low_stock_count: payload.summary.low_stock_count ?? 0
-        });
-      }
-
-      setData({
+      const newStats = {
+        today_sales: payload.summary?.today_sales ?? 0,
+        today_profit: payload.summary?.today_profit ?? 0,
+        total_udhar: payload.summary?.total_udhar ?? 0,
+        low_stock_count: payload.summary?.low_stock_count ?? 0,
+      };
+      const newData = {
         lowStock: payload.lowStock || [],
         recentBills: payload.recentBills || [],
-        salesTrend: [], // Lazy loaded/calculated
-        topProducts: payload.topProducts || []
-      });
+        salesTrend: [],
+        topProducts: payload.topProducts || [],
+      };
+      // Update cache
+      _dashCache[cacheKey] = { stats: newStats, data: newData, ts: Date.now() };
+      setStats(newStats);
+      setData(newData);
     } catch (e: any) {
-      console.error("Dashboard init error:", e);
-      // Detailed error log
-      const status = e.response?.status || e.status || 500;
-      const errorData = e.response?.data || e.data || {};
-      const errorMessage = e.message || errorData.detail || (typeof e === 'string' ? e : "Unknown error");
-      
-      console.error("Dashboard init detail:", {
-        status,
-        message: errorMessage,
-        data: errorData,
-        fullError: e
-      });
+      console.error('Dashboard init error:', e?.message || e);
     } finally {
-      if (showSpinner) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }, [getDates]);
 
@@ -217,15 +226,47 @@ function DashboardInner() {
 
   useEffect(() => {
     initData(true, false);
-    const onFocus = () => initData(false, false); // silent refresh
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    // Removed: window 'focus' listener that caused silent refetch on every tab switch
   }, [initData]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-        <RefreshCw className="animate-spin text-emerald-500" size={40} />
+      <div className="space-y-6 animate-in fade-in duration-300">
+        {/* Skeleton header */}
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div>
+            <div className="h-9 w-48 bg-slate-800 rounded-xl animate-pulse" />
+            <div className="h-4 w-32 bg-slate-800/60 rounded-lg mt-2 animate-pulse" />
+          </div>
+          <div className="h-10 w-72 bg-slate-800/60 rounded-xl animate-pulse" />
+        </div>
+        {/* Skeleton stat cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+              <div className="h-3 w-24 bg-slate-800 rounded animate-pulse mb-4" />
+              <div className="h-8 w-32 bg-slate-800 rounded-xl animate-pulse" />
+            </div>
+          ))}
+        </div>
+        {/* Skeleton bottom cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-800">
+                <div className="h-4 w-32 bg-slate-800 rounded animate-pulse" />
+              </div>
+              <div className="p-4 space-y-3">
+                {[...Array(5)].map((_, j) => (
+                  <div key={j} className="flex justify-between">
+                    <div className="h-4 w-32 bg-slate-800/70 rounded animate-pulse" />
+                    <div className="h-4 w-16 bg-slate-800/70 rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

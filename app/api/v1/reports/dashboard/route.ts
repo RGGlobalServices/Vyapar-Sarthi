@@ -12,7 +12,7 @@ interface CacheEntry {
   timestamp: number;
 }
 const dashboardCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 10000; // 10 seconds
+const CACHE_TTL = 30000; // 30 seconds
 
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);

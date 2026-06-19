@@ -50,7 +50,6 @@ async function request(url: string, options: RequestInit = {}) {
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
 
   try {
-    console.log(`[API] Fetching: ${fullUrl}`);
     const response = await fetch(fullUrl, {
       ...options,
       headers,

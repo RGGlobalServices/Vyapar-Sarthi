@@ -99,6 +99,11 @@ function mapShopToProfile(data: any): BusinessProfile {
   };
 }
 
+// In-memory profile cache — 60 second TTL to avoid hammering the API on every
+// tab-focus / visibilitychange event (the two main sources of repeat calls).
+let profileCacheTs = 0;
+const PROFILE_CACHE_TTL = 60_000; // ms
+
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
   profile: { ...DEFAULT_PROFILE, businessType: loadCachedType() },
   loading: false,
@@ -106,10 +111,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
 
   fetchProfile: async () => {
+    // Skip if we fetched recently (e.g. tab focus fires repeatedly)
+    if (Date.now() - profileCacheTs < PROFILE_CACHE_TTL && get().profile.id) return;
     set({ loading: true });
     try {
       const res = await api.get('/shop/profile');
       const profile = mapShopToProfile(res.data);
+      profileCacheTs = Date.now();
       set({ profile, loading: false });
       cacheType(profile.businessType);
     } catch {

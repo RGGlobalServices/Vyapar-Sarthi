@@ -129,15 +129,22 @@ export default function MainLayoutClient({
     fetchProfile();
   }, [fetchProfile]);
 
-  // Refresh profile on tab focus/visibility to pick up plan changes from landing page
+  // Refresh profile on tab focus/visibility to pick up plan changes from landing page.
+  // Throttled: at most once per 30 s to avoid hammering the API on rapid tab switches.
   useEffect(() => {
-    function onVisibilityChange() {
-      if (document.visibilityState === 'visible') {
+    let lastRefresh = 0;
+    function throttledFetch() {
+      const now = Date.now();
+      if (now - lastRefresh > 30_000) {
+        lastRefresh = now;
         fetchProfile();
       }
     }
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') throttledFetch();
+    }
     function onFocus() {
-      fetchProfile();
+      throttledFetch();
     }
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibilityChange);
