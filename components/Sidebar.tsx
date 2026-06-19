@@ -265,9 +265,9 @@ export default function Sidebar({
           const Icon = item.icon;
           const isActive = !item.external && pathname === item.href;
           const linkClass = cn(
-            'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group',
+            'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group active:scale-95',
             isActive
-              ? 'bg-emerald-500/10 text-emerald-400 font-bold'
+              ? 'bg-emerald-500/10 text-emerald-400 font-bold shadow-sm'
               : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
           );
           if (item.external) {

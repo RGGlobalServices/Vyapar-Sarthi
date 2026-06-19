@@ -32,77 +32,69 @@ export const GET = handle(async (req) => {
 
   console.log(`[API] Dashboard Cache MISS/REFRESH for shop ${shop.id}. Fetching from DB...`);
 
-  // Execute all dashboard queries concurrently on the database
-  const [
-    salesAgg,
-    profitAgg,
-    customers,
-    productsCount,
-    lowStock,
-    recentBills,
-    topProd
-  ] = await Promise.all([
-    // 1. Sales aggregate sum
-    prisma.sale.aggregate({
-      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
-      _sum: { totalAmount: true },
-    }),
-    // 2. Profit aggregate sum
-    prisma.sale.aggregate({
-      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
-      _sum: { totalProfit: true },
-    }),
-    // 3. Customer total outstanding udhar
-    prisma.customer.aggregate({
-      where: { shopId: shop.id },
-      _sum: { totalDue: true }
-    }),
-    // 4. Low stock count for stats
-    prisma.$queryRaw<{ count: number }[]>`
-      SELECT COUNT(*)::int as count 
-      FROM products 
-      WHERE shop_id = ${shop.id}::uuid 
-        AND current_stock <= min_stock 
-        AND current_stock > 0
-        AND min_stock > 0
-    `,
-    // 5. Low stock alerts (limit 5)
-    prisma.$queryRaw<any[]>`
-      SELECT id, name, category, current_stock, min_stock
-      FROM products 
-      WHERE shop_id = ${shop.id}::uuid 
-        AND current_stock <= min_stock
-        AND min_stock > 0
-      ORDER BY (current_stock / min_stock) ASC
-      LIMIT 5
-    `,
-    // 6. Recent bills (limit 5)
-    prisma.sale.findMany({
-      where: { shopId: shop.id },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      include: { customer: { select: { name: true, mobile: true } } },
-    }),
-    // 7. Top products by revenue (limit 5)
-    prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
-      FROM sale_items si
-      JOIN sales s ON si.sale_id = s.id
-      JOIN products p ON si.product_id = p.id
-      WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
-      GROUP BY p.id, p.name, p.category
-      ORDER BY value DESC
-      LIMIT 5
-    `
-  ]);
+  // Execute dashboard queries sequentially to prevent connection pool exhaustion 
+  // (pool_size limits are easily hit when making 7 concurrent queries per request)
+  
+  // 1. Sales and Profit aggregate sum (Combined into one query)
+  const salesAndProfit = await prisma.sale.aggregate({
+    where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+    _sum: { totalAmount: true, totalProfit: true },
+  });
+
+  // 2. Customer total outstanding udhar
+  const customers = await prisma.customer.aggregate({
+    where: { shopId: shop.id },
+    _sum: { totalDue: true }
+  });
+
+  // 3. Low stock count for stats
+  const productsCount = await prisma.$queryRaw<{ count: number }[]>`
+    SELECT COUNT(*)::int as count 
+    FROM products 
+    WHERE shop_id = ${shop.id}::uuid 
+      AND current_stock <= min_stock 
+      AND current_stock > 0
+      AND min_stock > 0
+  `;
+
+  // 4. Low stock alerts (limit 5)
+  const lowStock = await prisma.$queryRaw<any[]>`
+    SELECT id, name, category, current_stock, min_stock
+    FROM products 
+    WHERE shop_id = ${shop.id}::uuid 
+      AND current_stock <= min_stock
+      AND min_stock > 0
+    ORDER BY (current_stock / min_stock) ASC
+    LIMIT 5
+  `;
+
+  // 5. Recent bills (limit 5)
+  const recentBills = await prisma.sale.findMany({
+    where: { shopId: shop.id },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+    include: { customer: { select: { name: true, mobile: true } } },
+  });
+
+  // 6. Top products by revenue (limit 5)
+  const topProd = await prisma.$queryRaw<any[]>`
+    SELECT p.id, p.name, p.category, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
+    FROM sale_items si
+    JOIN sales s ON si.sale_id = s.id
+    JOIN products p ON si.product_id = p.id
+    WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+    GROUP BY p.id, p.name, p.category
+    ORDER BY value DESC
+    LIMIT 5
+  `;
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
 
   const payload = {
     summary: {
-      today_sales: salesAgg._sum.totalAmount || 0,
-      today_profit: profitAgg._sum.totalProfit || 0,
+      today_sales: salesAndProfit._sum.totalAmount || 0,
+      today_profit: salesAndProfit._sum.totalProfit || 0,
       total_udhar: totalUdhar,
       low_stock_count: lowStockCount,
     },
