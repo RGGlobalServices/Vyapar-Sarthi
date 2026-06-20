@@ -178,48 +178,42 @@ export default function BillingPage() {
 
   const handleWhatsAppPDF = async () => {
     if (isSharing) return;
-
     setIsSharing(true);
     const fileName = `bill-${lastBill?.billNumber || Date.now()}.pdf`;
-    
+
     try {
       const { blob } = await generatePDFBlob();
-      const file = new File([blob], fileName, { type: 'application/pdf' });
-      
-      // 1. Try Native Share first (works on mobile)
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: fileName,
-            text: `Bill from ${user?.storeName ?? 'Store'}`,
-          });
-          setIsSharing(false);
-          return;
-        } catch (shareError) {
-          console.warn('Native share failed, falling back to link method:', shareError);
-        }
-      }
 
-      // 2. Fallback / Desktop: Upload to Supabase and send link
-      const publicUrl = await uploadInvoiceToSupabase(blob, fileName);
-      
-      const text = generateWhatsAppText({ 
-        ...lastBill, 
-        storeName: user?.storeName,
-        pdfUrl: publicUrl || undefined 
-      });
-      
-      // Normalize phone: Ensure it has 91 prefix and no extra characters
-      let phone = lastBill?.customerMobile || '';
-      phone = phone.replace(/\D/g, ''); // Remove non-digits
+      // Normalize customer phone (strip non-digits, add country code)
+      let phone = (lastBill?.customerMobile || '').replace(/\D/g, '');
       if (phone.length === 10) phone = `91${phone}`;
       else if (phone.length > 10 && phone.startsWith('0')) phone = `91${phone.substring(1)}`;
-      
-      // Use api.whatsapp.com for better cross-platform app/web detection
-      const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
-      window.open(waUrl, '_blank');
-      
+
+      if (phone.length >= 10) {
+        // Phone known → upload PDF, open directly in that customer's WhatsApp chat (no contact picker)
+        const publicUrl = await uploadInvoiceToSupabase(blob, fileName);
+        const text = generateWhatsAppText({
+          ...lastBill,
+          storeName: user?.storeName,
+          pdfUrl: publicUrl || undefined,
+        });
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+      } else {
+        // No phone → native share so user can pick the contact themselves
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+        if (navigator.canShare?.({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: fileName, text: `Bill from ${user?.storeName ?? 'Store'}` });
+            return;
+          } catch (shareError: any) {
+            if (shareError?.name === 'AbortError') return;
+          }
+        }
+        // Last resort: download the PDF
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }
     } catch (error: any) {
       if (error?.name !== 'AbortError') {
         console.error('Failed to share PDF', error);
