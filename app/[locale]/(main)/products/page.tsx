@@ -3,8 +3,8 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Plus, Search, Filter, AlertCircle, Pencil, Trash2, Check, X,
-  Loader2, Sparkles, Camera, ShieldCheck, Clock, Package,
+  Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
+  Loader2, Camera, ShieldCheck, Package,
   Warehouse, Store, MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -72,11 +72,13 @@ export default function ProductsPage() {
 
   const [products, setProducts] = useState<Product[]>(cachedProducts);
   const [loading, setLoading] = useState(cachedProducts.length === 0);
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(buildEmptyForm(profile.businessType));
-  const [editingId, setEditingId] = useState<string | number | null>(null);
-  const [editRow, setEditRow] = useState<Partial<Product>>({});
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [editForm, setEditForm] = useState(buildEmptyForm(profile.businessType));
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
@@ -117,7 +119,6 @@ export default function ProductsPage() {
     setForm(buildEmptyForm(profile.businessType));
   }, [profile.businessType]);
 
-  const inp = 'bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-100 text-sm w-full focus:outline-none focus:ring-1 focus:ring-emerald-500';
   const modalInp = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
   const modalSel = modalInp + ' cursor-pointer';
 
@@ -265,20 +266,58 @@ export default function ProductsPage() {
   }
 
   function startEdit(product: Product) {
-    setEditingId(product.id);
-    setEditRow({ ...product });
+    setEditProduct(product);
+    setEditForm({
+      name: product.name,
+      category: product.category,
+      unit: product.unit || bizConfig.defaultUnits[0] || 'Unit',
+      stock: String(product.stock ?? ''),
+      minStock: String(product.minStock ?? ''),
+      mrp: String(product.mrp || ''),
+      sellingPrice: String(product.sellingPrice || ''),
+      cost: String(product.cost || ''),
+      is_loose: product.is_loose || false,
+      expiry_date: product.expiry_date || '',
+      batch_number: product.batch_number || '',
+      drug_schedule: product.drug_schedule || 'OTC',
+      model_number: product.model_number || '',
+      warranty_months: String(product.warranty_months || ''),
+      gender: product.gender || 'Unisex',
+      shade: product.shade || '',
+      size_variants: parseSizeVariants(product.size_variants),
+    });
+    setShowEditModal(true);
   }
-  async function saveEdit(id: string | number) {
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editProduct) return;
+    setSaving(true);
     try {
-      const row = editRow as any;
-      await api.put(`/products/${id}`, {
-        name: row.name, category: row.category,
-        current_stock: row.stock, min_stock: row.minStock,
-        mrp: row.mrp, selling_price: row.sellingPrice, wholesale_cost: row.cost,
+      const sizeVariantsJson = bizConfig.hasSizes ? serializeSizeVariants(editForm.size_variants) : undefined;
+      const stockQty = bizConfig.hasSizes ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
+      await api.put(`/products/${editProduct.id}`, {
+        name: editForm.name,
+        category: editForm.category,
+        current_stock: stockQty,
+        min_stock: Number(editForm.minStock),
+        mrp: Number(editForm.mrp),
+        selling_price: Number(editForm.sellingPrice),
+        wholesale_cost: Number(editForm.cost),
+        base_unit: editForm.unit,
+        is_loose: editForm.is_loose,
+        expiry_date: editForm.expiry_date || null,
+        batch_number: editForm.batch_number || null,
+        drug_schedule: editForm.drug_schedule || null,
+        model_number: editForm.model_number || null,
+        warranty_months: editForm.warranty_months ? Number(editForm.warranty_months) : null,
+        gender: editForm.gender || null,
+        shade: editForm.shade || null,
+        size_variants: sizeVariantsJson || null,
       });
-      fetchProducts();
-      setEditingId(null); setEditRow({});
-    } catch { /* */ }
+      await fetchProducts();
+      setShowEditModal(false);
+      setEditProduct(null);
+    } catch { /* */ } finally { setSaving(false); }
   }
   async function doDelete(id: string | number) {
     try { await api.delete(`/products/${id}`); fetchProducts(); setDeleteConfirmId(null); } catch { /* */ }
@@ -570,38 +609,14 @@ export default function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {filtered.map(product => {
-                  const isEditing = editingId === product.id;
                   const isLowStock = product.stock <= product.minStock && product.stock > 0;
                   const isOut = product.stock === 0;
-                  const profit = product.cost > 0 ? ((product.sellingPrice - product.cost) / product.cost * 100).toFixed(1) : '0.0';
+                  const hasCost = product.cost > 0;
+                  const stockValue = hasCost ? product.stock * product.cost : product.stock * product.sellingPrice;
+                  const profit = hasCost
+                    ? ((product.sellingPrice - product.cost) / product.cost * 100).toFixed(1)
+                    : null;
                   const sizeVariants = parseSizeVariants(product.size_variants);
-
-                  if (isEditing) {
-                    return (
-                      <tr key={product.id} className="bg-slate-800/60 text-slate-200">
-                        <td className="px-4 py-3"><input className={inp} value={editRow.name ?? ''} onChange={e => setEditRow(r => ({ ...r, name: e.target.value }))} /></td>
-                        <td className="px-4 py-3"><input className={inp} value={editRow.category ?? ''} onChange={e => setEditRow(r => ({ ...r, category: e.target.value }))} /></td>
-                        <td className="px-4 py-3"><input type="number" className={inp} value={editRow.stock ?? ''} onChange={e => setEditRow(r => ({ ...r, stock: Number(e.target.value) }))} /></td>
-                        <td className="px-4 py-3"><input type="number" className={inp} value={editRow.minStock ?? ''} onChange={e => setEditRow(r => ({ ...r, minStock: Number(e.target.value) }))} /></td>
-                        {bizConfig.hasExpiry && <td className="px-4 py-3"><input className={inp} type="date" value={editRow.expiry_date ?? ''} onChange={e => setEditRow(r => ({ ...r, expiry_date: e.target.value }))} /></td>}
-                        {bizConfig.hasBatch && <td className="px-4 py-3"><input className={inp} value={editRow.batch_number ?? ''} onChange={e => setEditRow(r => ({ ...r, batch_number: e.target.value }))} /></td>}
-                        {bizConfig.hasModel && <td className="px-4 py-3"><input className={inp} value={editRow.model_number ?? ''} onChange={e => setEditRow(r => ({ ...r, model_number: e.target.value }))} /></td>}
-                        {bizConfig.hasWarranty && <td className="px-4 py-3"><input type="number" className={inp} value={editRow.warranty_months ?? ''} onChange={e => setEditRow(r => ({ ...r, warranty_months: Number(e.target.value) }))} /></td>}
-                        {bizConfig.hasShades && <td className="px-4 py-3"><input className={inp} value={editRow.shade ?? ''} onChange={e => setEditRow(r => ({ ...r, shade: e.target.value }))} /></td>}
-                        {bizConfig.hasGender && <td className="px-4 py-3"><input className={inp} value={editRow.gender ?? ''} onChange={e => setEditRow(r => ({ ...r, gender: e.target.value }))} /></td>}
-                        <td className="px-4 py-3"><input type="number" className={inp} value={editRow.mrp ?? ''} onChange={e => setEditRow(r => ({ ...r, mrp: Number(e.target.value) }))} /></td>
-                        <td className="px-4 py-3"><input type="number" className={inp} value={editRow.sellingPrice ?? ''} onChange={e => setEditRow(r => ({ ...r, sellingPrice: Number(e.target.value) }))} /></td>
-                        <td className="px-4 py-3 text-sm text-slate-400">—</td>
-                        <td className="px-4 py-3 text-sm text-slate-400">—</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => saveEdit(product.id)} className="text-emerald-400 hover:text-emerald-300 p-1"><Check size={18} /></button>
-                            <button onClick={() => { setEditingId(null); setEditRow({}); }} className="text-slate-400 hover:text-red-400 p-1"><X size={18} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
 
                   return (
                     <tr key={product.id} className="group text-slate-200 hover:bg-slate-800/40 transition-all duration-200">
@@ -647,10 +662,20 @@ export default function ProductsPage() {
                       )}
                       {bizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-400">{product.shade || '—'}</td>}
                       {bizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-400">{product.gender || '—'}</td>}
-                      <td className="px-6 py-4 text-right text-slate-400">₹{product.mrp}</td>
-                      <td className="px-6 py-4 text-right font-bold">₹{product.sellingPrice}</td>
-                      <td className="px-6 py-4 text-right text-amber-400 font-semibold">₹{(product.stock * product.cost).toLocaleString('en-IN')}</td>
-                      <td className="px-6 py-4 text-right text-emerald-500 font-medium">{profit}%</td>
+                      <td className="px-6 py-4 text-right text-slate-400">₹{product.mrp?.toLocaleString('en-IN') ?? '—'}</td>
+                      <td className="px-6 py-4 text-right font-bold">₹{product.sellingPrice?.toLocaleString('en-IN') ?? '—'}</td>
+                      <td className="px-6 py-4 text-right font-semibold">
+                        <span className={hasCost ? 'text-amber-400' : 'text-slate-500'}>
+                          {hasCost ? '' : '~'}₹{stockValue.toLocaleString('en-IN')}
+                        </span>
+                        {!hasCost && <span className="block text-[9px] text-slate-600 font-normal">add cost price</span>}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {profit !== null
+                          ? <span className={cn('font-bold', Number(profit) >= 0 ? 'text-emerald-400' : 'text-red-400')}>{profit}%</span>
+                          : <button onClick={() => startEdit(product)} className="text-[10px] text-slate-500 hover:text-amber-400 underline">set cost</button>
+                        }
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => setQrProduct(product)} title="Barcode / QR"
@@ -679,7 +704,7 @@ export default function ProductsPage() {
                   <tr>
                     <td className="px-6 py-3 text-xs font-bold text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
                     <td className="px-6 py-3 text-right text-amber-400 font-bold text-base" colSpan={2}>
-                      ₹{filtered.reduce((sum, p) => sum + p.stock * p.cost, 0).toLocaleString('en-IN')}
+                      ₹{filtered.reduce((sum, p) => sum + p.stock * (p.cost > 0 ? p.cost : p.sellingPrice), 0).toLocaleString('en-IN')}
                     </td>
                     <td colSpan={20} />
                   </tr>
@@ -704,6 +729,165 @@ export default function ProductsPage() {
           }} 
           onClose={() => setShowScanner(false)} 
         />
+      )}
+
+      {/* ── Edit Product Modal ── */}
+      {showEditModal && editProduct && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/20 sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{bizConfig.emoji}</span>
+                <div>
+                  <h2 className="text-base font-bold text-slate-100">Edit Product</h2>
+                  <p className="text-xs text-slate-500 truncate max-w-[200px]">{editProduct.name}</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowEditModal(false); setEditProduct(null); }} className="text-slate-400 hover:text-slate-200"><X size={20} /></button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+              {/* Basic Info */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-1 h-4 rounded bg-emerald-500" />
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Basic Info</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Product Name</label>
+                  <input required autoFocus className={modalInp} value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Category</label>
+                    <input required className={modalInp} value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} list="edit-cat-suggestions" />
+                    <datalist id="edit-cat-suggestions">
+                      {bizConfig.defaultCategories.map(c => <option key={c} value={c} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Unit</label>
+                    <select className={modalSel} value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))}>
+                      {bizConfig.defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {bizConfig.hasGender && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Gender</label>
+                    <select className={modalSel} value={editForm.gender} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}>
+                      {['Unisex', 'Men', 'Women', 'Boys', 'Girls', 'Kids'].map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                )}
+                {(bizConfig.hasFabric || bizConfig.hasShades) && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{bizConfig.hasFabric ? 'Fabric / Material' : 'Shade / Color'}</label>
+                    <input className={modalInp} value={editForm.shade} onChange={e => setEditForm(f => ({ ...f, shade: e.target.value }))} />
+                  </div>
+                )}
+                {bizConfig.hasModel && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Model Number</label>
+                      <input className={modalInp} placeholder="e.g. SM-G990B" value={editForm.model_number} onChange={e => setEditForm(f => ({ ...f, model_number: e.target.value }))} />
+                    </div>
+                    {bizConfig.hasWarranty && (
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Warranty (months)</label>
+                        <input type="number" min="0" className={modalInp} placeholder="12" value={editForm.warranty_months} onChange={e => setEditForm(f => ({ ...f, warranty_months: e.target.value }))} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {/* Medical Fields */}
+              {(bizConfig.hasBatch || bizConfig.hasDrugSchedule) && (
+                <section className="space-y-3 bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1 h-4 rounded bg-blue-500" />
+                    <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">Medical Details</p>
+                  </div>
+                  {bizConfig.hasBatch && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Batch Number</label>
+                      <input className={modalInp} value={editForm.batch_number} onChange={e => setEditForm(f => ({ ...f, batch_number: e.target.value }))} />
+                    </div>
+                  )}
+                  {bizConfig.hasDrugSchedule && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Drug Schedule</label>
+                      <select className={modalSel} value={editForm.drug_schedule} onChange={e => setEditForm(f => ({ ...f, drug_schedule: e.target.value }))}>
+                        {['OTC', 'Rx', 'H1', 'H2', 'X'].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* Stock & Min */}
+              {!bizConfig.hasSizes && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Stock</label>
+                    <input required type="number" min="0" className={modalInp} value={editForm.stock} onChange={e => setEditForm(f => ({ ...f, stock: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Min Stock Level</label>
+                    <input required type="number" min="0" className={modalInp} value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+
+              {/* Expiry */}
+              {bizConfig.hasExpiry && (
+                <ExpiryDateField value={editForm.expiry_date} onChange={val => setEditForm(f => ({ ...f, expiry_date: val }))} required={false} />
+              )}
+
+              {/* Pricing */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-1 h-4 rounded bg-amber-500" />
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Pricing</p>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">MRP</label>
+                    <input required type="number" min="0" className={modalInp} placeholder="0" value={editForm.mrp} onChange={e => setEditForm(f => ({ ...f, mrp: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Selling Price</label>
+                    <input required type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0" value={editForm.sellingPrice} onChange={e => setEditForm(f => ({ ...f, sellingPrice: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cost Price</label>
+                    <input required type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} />
+                  </div>
+                </div>
+                {editForm.sellingPrice && editForm.cost && Number(editForm.cost) > 0 && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-500/70">Profit Margin</span>
+                    <span className="text-lg font-black text-emerald-400">
+                      {(((Number(editForm.sellingPrice) - Number(editForm.cost)) / Number(editForm.cost)) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
+              </section>
+
+              <div className="flex gap-4 pt-2">
+                <button type="button" onClick={() => { setShowEditModal(false); setEditProduct(null); }}
+                  className="flex-1 bg-slate-800 text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-700 hover:text-slate-200 transition-all active:scale-95">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving}
+                  className="flex-1 bg-emerald-500 text-slate-900 py-3 rounded-xl font-black transition-all active:scale-95 hover:bg-emerald-400 disabled:opacity-60 flex items-center justify-center gap-2">
+                  {saving ? <><Loader2 size={16} className="animate-spin" />Saving…</> : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Add/Edit Modal */}
