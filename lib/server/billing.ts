@@ -1,5 +1,8 @@
 import prisma from './prisma';
 import { config } from './config';
+import { generateRenewalToken } from './renewalLinks';
+import { sendWhatsApp } from './whatsapp';
+import { sendRenewalEmail } from './email';
 
 export type ProcessResult = {
   remindersSent: number;
@@ -73,11 +76,48 @@ export async function processDueSubscriptions(): Promise<ProcessResult> {
       if (sent) {
         result.remindersSent += 1;
         result.details.push({ shopId: shop.id, action: `reminder_${remaining}d` });
+
+        // Send outbound WhatsApp + email with a one-click renewal link.
+        await sendRenewalOutbound(shop.ownerId, shop.id, shop.subscriptionPlan || 'shop', planName, remaining).catch(
+          (err) => console.error('[BILLING] Outbound renewal send error:', err),
+        );
       }
     }
   }
 
   return result;
+}
+
+// Fetch the shop owner's contact details then fire WhatsApp + email renewal links.
+// Errors are caught by the caller — never let them block the main cron loop.
+async function sendRenewalOutbound(
+  ownerId: string,
+  shopId: string,
+  plan: string,
+  planName: string,
+  daysLeft: number,
+) {
+  const owner = await prisma.user.findFirst({ where: { uuid: ownerId } });
+  if (!owner) return;
+
+  const amount = config.planAmounts[plan] ?? config.planAmounts['shop'];
+  const token = generateRenewalToken(shopId, plan, amount);
+  const renewalUrl = `${config.appUrl}/api/v1/payments/renewal-pay?token=${token}`;
+  const name = owner.name || 'there';
+  const when = daysLeft === 0 ? 'aaj' : `${daysLeft} din mein`;
+
+  if (owner.mobile) {
+    const body =
+      `Namasthe ${name}! 🙏\n\n` +
+      `Aapki *Vyapar Sarthi* subscription *${when}* expire ho rahi hai.\n\n` +
+      `Ek click mein renew karein aur apna data safe rakhein:\n${renewalUrl}\n\n` +
+      `_Link 72 ghante valid hai._`;
+    await sendWhatsApp({ to: owner.mobile, body });
+  }
+
+  if (owner.email) {
+    await sendRenewalEmail({ to: owner.email, name, planName, daysLeft, renewalUrl });
+  }
 }
 
 // Create an in-app notification unless an identical-type one was already sent in

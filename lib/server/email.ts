@@ -106,6 +106,61 @@ export function sendPasswordResetOTP(to: string, otp: string, name: string) {
   return sendEmail(to, 'Your Password Reset OTP — Vyapar Sarthi', html);
 }
 
+export function sendRenewalEmail({
+  to,
+  name,
+  planName,
+  daysLeft,
+  renewalUrl,
+}: {
+  to: string;
+  name: string;
+  planName: string;
+  daysLeft: number;
+  renewalUrl: string;
+}) {
+  if (!to) return Promise.resolve();
+  const when = daysLeft === 0 ? 'today' : `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+  const subject = `Action needed: Your Vyapar Sarthi subscription expires ${when}`;
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:Arial,sans-serif;color:#e2e8f0;">
+  <div style="max-width:480px;margin:32px auto;background:#1e293b;border-radius:16px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#10b981,#059669);padding:28px 32px;">
+      <h1 style="margin:0;font-size:20px;color:#fff;">Vyapar Sarthi</h1>
+      <p style="margin:6px 0 0;color:#d1fae5;font-size:14px;">Subscription Renewal Reminder</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;">
+        Hi <strong style="color:#e2e8f0;">${name}</strong>,
+      </p>
+      <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;">
+        Your <strong style="color:#e2e8f0;">${planName}</strong> plan expires
+        <strong style="color:#f59e0b;">${when}</strong>. Renew now with one click to
+        keep your billing, inventory, and udhar data accessible.
+      </p>
+      <div style="text-align:center;margin:0 0 24px;">
+        <a href="${renewalUrl}"
+           style="display:inline-block;padding:14px 36px;background:#10b981;color:#fff;
+                  border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;">
+          Renew My Subscription
+        </a>
+      </div>
+      <p style="margin:0;color:#64748b;font-size:12px;text-align:center;">
+        This link is valid for 72 hours. If you have already renewed, ignore this email.
+      </p>
+    </div>
+    <div style="padding:16px 32px;border-top:1px solid #0f172a;text-align:center;">
+      <p style="margin:0;color:#475569;font-size:12px;">Powered by Vyapar Sarthi · Do not reply to this email</p>
+    </div>
+  </div>
+</body>
+</html>`;
+  return sendEmail(to, subject, html);
+}
+
 export function sendBillEmail({
   to,
   customerName,
