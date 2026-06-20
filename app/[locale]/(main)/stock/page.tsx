@@ -112,8 +112,18 @@ export default function StockPage() {
     const original = items.find(i => i.id === id)!;
     const newCurrent = Number(editRow.current ?? original.current);
     const diff = newCurrent - original.current;
-    updateItem(id, { ...editRow, current: newCurrent } as Partial<StockItem>);
+
+    // Update non-stock fields (name, category, unit, min) without touching current.
+    // Sending current_stock here AND calling adjustStock below double-counts the change.
+    const { current: _skip, ...nonStockUpdates } = editRow;
+    if (Object.keys(nonStockUpdates).length > 0) {
+      updateItem(id, nonStockUpdates as Partial<StockItem>);
+    }
+
+    // Stock delta goes through adjustStock only — it handles the optimistic UI update,
+    // the /adjust API call (increment), and the activity log entry.
     if (diff !== 0) adjustStock(id, diff, t('manualEdit'));
+
     setEditId(null); setEditRow({});
   }
   function cancelEdit() { setEditId(null); setEditRow({}); }
