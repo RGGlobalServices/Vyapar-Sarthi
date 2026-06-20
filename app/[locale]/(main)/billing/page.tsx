@@ -66,8 +66,8 @@ export default function BillingPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [sendStatus, setSendStatus] = useState<{ wa: boolean | null; email: boolean | null } | null>(null);
-  const [isSendingBill, setIsSendingBill] = useState(false);
+  const [sendStatus, setSendStatus] = useState<{ email: boolean | null } | null>(null);
+  const [waUrl, setWaUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
 
   // EMI state (electronics)
@@ -337,11 +337,11 @@ export default function BillingPage() {
       setShowCustomerModal(false);
       setShowBillModal(true);
 
-      // Auto-send bill via WhatsApp + email if contact info provided
+      // Auto-send bill via WhatsApp link + email if contact info provided
       const phone = customerMobile.trim();
       const email = customerEmail.trim();
       if (phone || email) {
-        autoSendBill(billData, phone, email);
+        autoSendAfterBill(billData, phone, email);
       }
     } catch (err) {
       console.error('Failed to record sale:', err);
@@ -349,36 +349,51 @@ export default function BillingPage() {
     }
   };
 
-  const autoSendBill = async (billData: any, phone: string, email: string) => {
-    setIsSendingBill(true);
-    setSendStatus({ wa: null, email: null });
+  const autoSendAfterBill = async (billData: any, phone: string, email: string) => {
+    setSendStatus(null);
+    setWaUrl(null);
+
     try {
-      // Generate PDF and upload to Supabase to get a shareable URL
+      // Upload PDF once — reused for both WhatsApp link and email attachment
       const { blob } = await generatePDFBlob();
       const fileName = `bill-${billData.billNumber || Date.now()}.pdf`;
       const pdfUrl = await uploadInvoiceToSupabase(blob, fileName);
 
-      const res = await api.post('/billing/send-bill', {
-        phone: phone || undefined,
-        email: email || undefined,
-        pdfUrl: pdfUrl || undefined,
-        billNumber: billData.billNumber,
-        customerName: billData.customerName,
-        storeName: (profile as any).shopName || user?.storeName,
-        total: billData.total,
-        items: billData.items,
-      });
+      // Build wa.me link with pre-filled bill message
+      if (phone) {
+        const text = generateWhatsAppText({
+          ...billData,
+          storeName: (profile as any).shopName || user?.storeName,
+          pdfUrl: pdfUrl || undefined,
+        });
+        let normalized = phone.replace(/\D/g, '');
+        if (normalized.length === 10) normalized = `91${normalized}`;
+        const url = `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`;
+        setWaUrl(url);
+        // Try auto-open — works on mobile; desktop browsers may block popup after async
+        window.open(url, '_blank');
+      }
 
-      const results = res.data?.results || {};
-      setSendStatus({
-        wa: phone ? (results.whatsapp?.success ?? false) : null,
-        email: email ? (results.email?.success ?? false) : null,
-      });
+      // Email: send silently via server (SMTP)
+      if (email) {
+        setSendStatus({ email: null }); // "sending…"
+        try {
+          await api.post('/billing/send-bill', {
+            email,
+            pdfUrl: pdfUrl || undefined,
+            billNumber: billData.billNumber,
+            customerName: billData.customerName,
+            storeName: (profile as any).shopName || user?.storeName,
+            total: billData.total,
+            items: billData.items,
+          });
+          setSendStatus({ email: true });
+        } catch {
+          setSendStatus({ email: false });
+        }
+      }
     } catch (err) {
-      console.error('Auto-send bill failed:', err);
-      setSendStatus({ wa: phone ? false : null, email: email ? false : null });
-    } finally {
-      setIsSendingBill(false);
+      console.error('Auto-send after bill failed:', err);
     }
   };
 
@@ -984,7 +999,7 @@ export default function BillingPage() {
               <span className="text-emerald-400 font-black text-base flex items-center gap-2">
                 <CheckCircle size={18} /> Bill Generated
               </span>
-              <button onClick={() => setShowBillModal(false)} className="text-slate-400 hover:text-slate-200 p-1">
+              <button onClick={() => { setShowBillModal(false); setWaUrl(null); setSendStatus(null); }} className="text-slate-400 hover:text-slate-200 p-1">
                 <X size={22} />
               </button>
             </div>
@@ -1017,26 +1032,29 @@ export default function BillingPage() {
                 </div>
               )}
 
-              {/* Auto-send status */}
-              {(isSendingBill || sendStatus) && (
-                <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-3 py-2 text-xs">
-                  {isSendingBill ? (
-                    <span className="text-slate-400 flex items-center gap-1.5">
-                      <Loader2 size={12} className="animate-spin" /> Sending bill automatically…
-                    </span>
+              {/* WhatsApp CTA — shown when customer mobile was provided */}
+              {waUrl && (
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#1ebe5d] active:scale-95 transition-all animate-pulse"
+                  onClick={() => setWaUrl(null)}
+                >
+                  <MessageCircle size={18} />
+                  Send Bill on WhatsApp
+                </a>
+              )}
+
+              {/* Email status (silent, no WhatsApp status here) */}
+              {sendStatus?.email !== undefined && sendStatus.email !== undefined && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-xs">
+                  {sendStatus.email === null ? (
+                    <span className="text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Sending email…</span>
+                  ) : sendStatus.email ? (
+                    <span className="text-emerald-400">✓ Email sent to customer</span>
                   ) : (
-                    <>
-                      {sendStatus?.wa !== null && (
-                        <span className={sendStatus?.wa ? 'text-emerald-400' : 'text-red-400'}>
-                          {sendStatus?.wa ? '✓ WhatsApp sent' : '✗ WhatsApp failed'}
-                        </span>
-                      )}
-                      {sendStatus?.email !== null && (
-                        <span className={sendStatus?.email ? 'text-emerald-400' : 'text-red-400'}>
-                          {sendStatus?.email ? '✓ Email sent' : '✗ Email failed'}
-                        </span>
-                      )}
-                    </>
+                    <span className="text-slate-400">Email not sent — check SMTP settings</span>
                   )}
                 </div>
               )}
@@ -1055,17 +1073,13 @@ export default function BillingPage() {
                 >
                   <Download size={17} />PDF
                 </button>
-                 <button
+                <button
                   onClick={handleWhatsAppPDF}
                   disabled={isSharing}
-                  className="flex flex-col items-center justify-center gap-1 bg-[#25D366] text-white py-2.5 rounded-xl font-bold hover:bg-[#1ebe5d] transition-colors active:scale-95 text-xs disabled:opacity-70"
+                  className="flex flex-col items-center justify-center gap-1 bg-slate-700 text-slate-200 py-2.5 rounded-xl font-bold hover:bg-slate-600 transition-colors active:scale-95 text-xs disabled:opacity-70"
                 >
-                  {isSharing ? (
-                    <Loader2 size={17} className="animate-spin" />
-                  ) : (
-                    <MessageCircle size={17} />
-                  )}
-                  {isSharing ? 'Sharing...' : (lastBill.customerMobile ? 'Send PDF' : 'WhatsApp')}
+                  {isSharing ? <Loader2 size={17} className="animate-spin" /> : <MessageCircle size={17} />}
+                  {isSharing ? 'Sharing…' : 'Share'}
                 </button>
               </div>
 
