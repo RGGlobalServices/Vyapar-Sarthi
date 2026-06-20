@@ -328,6 +328,48 @@ export default function AdminUserDetailPage() {
           </Card>
         )}
 
+        {/* Payment History */}
+        {shop && shop.paymentTransactions && shop.paymentTransactions.length > 0 && (
+          <Card className="bg-slate-900 border-slate-800 rounded-2xl">
+            <CardHeader className="border-b border-slate-800 py-4">
+              <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <IndianRupee size={16} className="text-indigo-400" /> Payment History
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 max-h-60 overflow-y-auto">
+              <div className="min-w-full divide-y divide-slate-800/50">
+                {shop.paymentTransactions.map((tx: any) => (
+                  <div key={tx.id} className="flex justify-between items-center px-6 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-200">
+                        ₹{tx.amount} &middot; <span className="capitalize">{tx.plan || 'Unknown'} Plan</span>
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {new Date(tx.createdAt).toLocaleString()} &middot; ID: {tx.txnid}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={cn('text-xs font-black px-2 py-1 rounded-md border',
+                        tx.status === 'success' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                        tx.status === 'pending' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                        'bg-red-500/10 text-red-400 border-red-500/20'
+                      )}>
+                        {tx.status}
+                      </span>
+                      {tx.status === 'success' && (
+                        <a href={`/${locale}/receipt/${tx.txnid}`} target="_blank" rel="noopener noreferrer" 
+                          className="text-xs font-semibold text-indigo-400 hover:text-indigo-300">
+                          View Receipt
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Products & Customers Summary */}
         {shop && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

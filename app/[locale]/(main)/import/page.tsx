@@ -7,7 +7,7 @@ import {
   Upload, FileSpreadsheet, FileImage, FileText, X, CheckCircle,
   Loader2, Trash2, ChevronDown, ChevronUp, AlertCircle,
   BookOpen, Package, ShoppingCart, FileQuestion, Save,
-  GitMerge, Calendar, Camera, Sparkles
+  GitMerge, Calendar, Camera, Sparkles, ArrowLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -63,7 +63,7 @@ function todayISO() {
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
-type Step = 'idle' | 'name' | 'processing' | 'preview' | 'merge' | 'done';
+type Step = 'target' | 'idle' | 'name' | 'processing' | 'preview' | 'merge' | 'done';
 
 interface PendingImport {
   file: File;
@@ -89,7 +89,8 @@ export default function ImportPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [step, setStep]             = useState<Step>('idle');
+  const [step, setStep]             = useState<Step>('target');
+  const [targetType, setTargetType] = useState<string>('');
   const [dragging, setDragging]     = useState(false);
   const [pending, setPending]       = useState<PendingImport | null>(null);
   const [importName, setImportName] = useState('');
@@ -191,7 +192,8 @@ export default function ImportPage() {
     try {
       const fd = new FormData();
       fd.append('file', pending.file);
-      const res  = await fetch('/api/import', { method: 'POST', body: fd });
+      fd.append('targetType', targetType);
+      const res  = await fetch('/api/v1/import', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Processing failed');
       setApiResult(data);
@@ -212,8 +214,33 @@ export default function ImportPage() {
     }
   };
 
+  // ── preview handlers ────────────────────────────────────────────────────
+  const handleEditResult = (type: string, idx: number, field: string, val: any) => {
+    setApiResult((prev: any) => {
+      if (!prev) return prev;
+      const arr = [...(prev[type] || [])];
+      arr[idx] = { ...arr[idx], [field]: val };
+      if (field === 'price' && val > 0) arr[idx].missingPrice = false;
+      if (field === 'totalAmount' && val > 0) arr[idx].missingAmount = false;
+      if (field === 'date' && val) arr[idx].missingDate = false;
+      if (field === 'billDate' && val) arr[idx].missingDate = false;
+      return { ...prev, [type]: arr };
+    });
+  };
+
   // ── preview → merge modal ───────────────────────────────────────────────
-  const handleGoToMerge = () => setStep('merge');
+  const handleGoToMerge = () => {
+    let missing = false;
+    if (apiResult?.stock?.some((s: any) => s.missingPrice || !s.price)) missing = true;
+    if (apiResult?.sales?.some((s: any) => s.missingAmount || !s.totalAmount || s.missingDate || !s.date)) missing = true;
+    if (apiResult?.purchase?.some((p: any) => p.missingDate || !p.billDate || p.missingAmount || !p.totalAmount)) missing = true;
+    
+    if (missing) {
+      alert('Please fill out the highlighted missing fields before proceeding.');
+      return;
+    }
+    setStep('merge');
+  };
 
   // ── confirm merge + save ────────────────────────────────────────────────
   const handleSave = () => {
@@ -253,12 +280,12 @@ export default function ImportPage() {
 
     setPending(null); setApiResult(null); setImportName('');
     setStep('done');
-    setTimeout(() => setStep('idle'), 1800);
+    setTimeout(() => setStep('target'), 1800);
   };
 
   const handleCancel = () => {
     setPending(null); setApiResult(null); setApiError(''); setImportName('');
-    setStep('idle');
+    setStep('target');
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────
@@ -282,9 +309,53 @@ export default function ImportPage() {
         </div>
       </div>
 
+      {/* ── Step: Select Target Type ── */}
+      {step === 'target' && (
+        <div className="space-y-4">
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-blue-400 text-sm flex items-start gap-3">
+            <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Instructions for AI Import</p>
+              <p className="mt-1 opacity-90">First, select what type of document you are importing. This helps our AI accurately extract the right information (like distinguishing a purchase bill from a customer ledger). Once selected, you can upload your file or take a photo.</p>
+            </div>
+          </div>
+          <Card className="bg-slate-900 border-slate-700">
+            <CardContent className="p-8 text-center space-y-6">
+              <h2 className="text-2xl font-bold text-slate-100 mb-2">What are you importing?</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button onClick={() => { setTargetType('purchase'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/30 transition-all text-left">
+                  <ShoppingCart size={32} className="text-emerald-400 mb-3" />
+                  <h3 className="text-lg font-bold text-slate-200">Purchase Bills</h3>
+                  <p className="text-sm text-slate-500 mt-1">Vendor invoices, add new stock</p>
+                </button>
+                <button onClick={() => { setTargetType('sales'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30 transition-all text-left">
+                  <FileSpreadsheet size={32} className="text-blue-400 mb-3" />
+                  <h3 className="text-lg font-bold text-slate-200">Sales History</h3>
+                  <p className="text-sm text-slate-500 mt-1">Old bills, sales registers</p>
+                </button>
+                <button onClick={() => { setTargetType('stock'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-purple-500/10 border border-transparent hover:border-purple-500/30 transition-all text-left">
+                  <Package size={32} className="text-purple-400 mb-3" />
+                  <h3 className="text-lg font-bold text-slate-200">Bulk Stock List</h3>
+                  <p className="text-sm text-slate-500 mt-1">Inventory updates, existing items</p>
+                </button>
+                <button onClick={() => { setTargetType('khata'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-orange-500/10 border border-transparent hover:border-orange-500/30 transition-all text-left">
+                  <BookOpen size={32} className="text-orange-400 mb-3" />
+                  <h3 className="text-lg font-bold text-slate-200">Udhar Khata</h3>
+                  <p className="text-sm text-slate-500 mt-1">Customer credit ledgers</p>
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* ── Drop Zone ── */}
       {(step === 'idle' || step === 'done') && (
-        <div
+        <div className="space-y-4">
+          <button onClick={() => setStep('target')} className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors font-medium text-sm">
+            <ArrowLeft size={16} /> Back to Document Type Selection
+          </button>
+          <div
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -325,6 +396,7 @@ export default function ImportPage() {
               <Camera size={18} /> Take Photo
             </button>
           </div>
+        </div>
         </div>
       )}
 
@@ -452,16 +524,26 @@ export default function ImportPage() {
               </div>
             </div>
 
+            {apiResult.needsClarification && (
+              <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 text-orange-400 text-sm flex items-start gap-3">
+                <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Clarification Needed</p>
+                  <p className="mt-1 opacity-90">The AI was unsure about some handwriting or formatting. Please review the highlighted fields below carefully.</p>
+                </div>
+              </div>
+            )}
+
             {/* Khata table */}
             {hasKhata && (
               <Section title="Khata / Udhar Entries" icon={<BookOpen size={16} className="text-orange-400"/>}>
                 <DataTable
                   headers={['Customer', 'Amount', 'Date', 'Note']}
                   rows={apiResult.khata.map((k: ImportedKhataEntry, idx: number) => [
-                    <span key={`k-name-${idx}`} className="font-medium">{k.customerName}</span>,
-                    <span key={`k-amt-${idx}`} className="text-orange-400 font-bold">₹{k.amount}</span>,
-                    <span key={`k-date-${idx}`} className="text-slate-500 text-xs">{k.date || '—'}</span>,
-                    <span key={`k-note-${idx}`} className="text-slate-500 text-xs">{k.note || '—'}</span>,
+                    <input key={`k-name-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.customerName} onChange={e => handleEditResult('khata', idx, 'customerName', e.target.value)} />,
+                    <input key={`k-amt-${idx}`} type="number" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-20 text-orange-400" value={k.amount || ''} onChange={e => handleEditResult('khata', idx, 'amount', Number(e.target.value))} />,
+                    <input key={`k-date-${idx}`} type="date" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.date || ''} onChange={e => handleEditResult('khata', idx, 'date', e.target.value)} />,
+                    <input key={`k-note-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.note || ''} onChange={e => handleEditResult('khata', idx, 'note', e.target.value)} />,
                   ])}
                 />
               </Section>
@@ -472,27 +554,46 @@ export default function ImportPage() {
               <Section title="Stock / Inventory" icon={<Package size={16} className="text-emerald-400"/>}>
                 <DataTable
                   headers={['Product', 'Qty', 'Unit', 'Price']}
-                  rows={apiResult.stock.map((s: ImportedStockEntry, idx: number) => [
-                    <span key={`s-name-${idx}`} className="font-medium">{s.productName}</span>,
-                    <span key={`s-qty-${idx}`} className="font-bold">{s.quantity}</span>,
-                    <span key={`s-unit-${idx}`} className="text-slate-500 text-xs">{s.unit || '—'}</span>,
-                    <span key={`s-price-${idx}`} className="text-emerald-400 font-bold">{s.price > 0 ? `₹${s.price}` : '—'}</span>,
+                  rows={apiResult.stock.map((s: ImportedStockEntry & { missingPrice?: boolean }, idx: number) => [
+                    <input key={`s-name-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.productName} onChange={e => handleEditResult('stock', idx, 'productName', e.target.value)} />,
+                    <input key={`s-qty-${idx}`} type="number" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.quantity || ''} onChange={e => handleEditResult('stock', idx, 'quantity', Number(e.target.value))} />,
+                    <input key={`s-unit-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.unit || ''} onChange={e => handleEditResult('stock', idx, 'unit', e.target.value)} />,
+                    <input key={`s-price-${idx}`} type="number" className={`bg-slate-900 border ${s.missingPrice || !s.price ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.price || ''} onChange={e => handleEditResult('stock', idx, 'price', Number(e.target.value))} placeholder="₹0" />,
                   ])}
                   align={['left','right','left','right']}
                 />
               </Section>
             )}
 
+            {/* Purchase table */}
+            {(apiResult.purchase?.length > 0) && (
+              <Section title="Purchase Bills" icon={<ShoppingCart size={16} className="text-emerald-400"/>}>
+                <DataTable
+                  headers={['Vendor', 'Bill Date', 'Amount']}
+                  rows={apiResult.purchase.map((p: any, idx: number) => [
+                    <input key={`p-vendor-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={p.vendorName || ''} onChange={e => handleEditResult('purchase', idx, 'vendorName', e.target.value)} />,
+                    <input key={`p-date-${idx}`} type="date" className={`bg-slate-900 border ${p.missingDate || !p.billDate ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-full`} value={p.billDate || ''} onChange={e => handleEditResult('purchase', idx, 'billDate', e.target.value)} />,
+                    <input key={`p-amt-${idx}`} type="number" className={`bg-slate-900 border ${p.missingAmount || !p.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-24 text-emerald-400`} value={p.totalAmount || ''} onChange={e => handleEditResult('purchase', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
+                  ])}
+                />
+              </Section>
+            )}
+
             {/* Sales table */}
             {hasSales && (
-              <Section title="Sales Records" icon={<ShoppingCart size={16} className="text-blue-400"/>}>
+              <Section title="Sales Records" icon={<FileSpreadsheet size={16} className="text-blue-400"/>}>
                 <DataTable
                   headers={['Date', 'Amount', 'Payment', 'Note']}
-                  rows={apiResult.sales.map((s: ImportedSaleEntry, idx: number) => [
-                    <span key={`sa-date-${idx}`} className="text-slate-500 text-xs">{s.date || '—'}</span>,
-                    <span key={`sa-amt-${idx}`} className="text-blue-400 font-bold">₹{s.totalAmount}</span>,
-                    <span key={`sa-pay-${idx}`} className="text-xs">{s.paymentMethod || '—'}</span>,
-                    <span key={`sa-note-${idx}`} className="text-xs text-slate-500">{s.note || '—'}</span>,
+                  rows={apiResult.sales.map((s: ImportedSaleEntry & { missingDate?: boolean, missingAmount?: boolean }, idx: number) => [
+                    <input key={`sa-date-${idx}`} type="date" className={`bg-slate-900 border ${s.missingDate || !s.date ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-full`} value={s.date || ''} onChange={e => handleEditResult('sales', idx, 'date', e.target.value)} />,
+                    <input key={`sa-amt-${idx}`} type="number" className={`bg-slate-900 border ${s.missingAmount || !s.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-20 text-blue-400`} value={s.totalAmount || ''} onChange={e => handleEditResult('sales', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
+                    <select key={`sa-pay-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.paymentMethod || ''} onChange={e => handleEditResult('sales', idx, 'paymentMethod', e.target.value)}>
+                      <option value="">Unknown</option>
+                      <option value="cash">Cash</option>
+                      <option value="upi">UPI</option>
+                      <option value="card">Card</option>
+                    </select>,
+                    <input key={`sa-note-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.note || ''} onChange={e => handleEditResult('sales', idx, 'note', e.target.value)} />,
                   ])}
                 />
               </Section>

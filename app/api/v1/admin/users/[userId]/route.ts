@@ -25,6 +25,10 @@ export const GET = handle<Ctx>(async (req, { params }) => {
           include: {
             products: { select: { id: true, name: true, currentStock: true, minStock: true } },
             customers: { select: { id: true, name: true, mobile: true, totalDue: true } },
+            paymentTransactions: {
+              select: { id: true, txnid: true, amount: true, status: true, plan: true, createdAt: true },
+              orderBy: { createdAt: 'desc' }
+            },
           },
         }),
         prisma.referralCode.findFirst({ where: { userId: uuid } }),

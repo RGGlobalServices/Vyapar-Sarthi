@@ -9,7 +9,7 @@ import AIFloatingButton from '@/components/AIFloatingButton';
 import NotificationBell from '@/components/NotificationBell';
 import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAccess';
 import api from '@/lib/api';
-import { Menu, Clock } from 'lucide-react';
+import { Menu, Clock, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Map URL segment → tool key for usage tracking
@@ -96,6 +96,60 @@ function TrialCountdownTracker({ profile }: { profile: any }) {
       </span>
     </div>
   );
+}
+
+function PaymentReminderBanner({ profile, locale }: { profile: any, locale: string }) {
+  const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  
+  useEffect(() => {
+    if (!profile.subscriptionExpiry) return;
+    const diff = new Date(profile.subscriptionExpiry).getTime() - Date.now();
+    setDaysLeft(Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  }, [profile.subscriptionExpiry]);
+
+  const ended = isSubscriptionEnded(profile);
+  const isTrial = profile.subscriptionStatus === 'trial';
+  
+  if (!profile.subscriptionExpiry) return null;
+
+  const plan = profile.subscriptionPlan || 'vyapar';
+  const paymentLink = `/${locale}/payment?plan=${plan}`;
+
+  if (ended) {
+    return (
+      <div className="bg-red-500 text-white px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg z-40 relative">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={20} className="flex-shrink-0" />
+          <span className="text-sm font-bold leading-tight">
+            Subscription Expired. Some features are locked.
+          </span>
+        </div>
+        <a href={paymentLink} className="bg-white text-red-600 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-red-50 transition-colors shadow-sm">
+          Pay Now to Unlock
+        </a>
+      </div>
+    );
+  }
+
+  if (daysLeft !== null && daysLeft <= 3 && daysLeft >= 0 && !profile.trialPaused) {
+    const isToday = daysLeft === 0;
+    const earlyPaymentLink = `${paymentLink}&force_pay=1`;
+    return (
+      <div className="bg-amber-500 text-slate-900 px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg z-40 relative">
+        <div className="flex items-center gap-2">
+          <Clock size={20} className="flex-shrink-0" />
+          <span className="text-sm font-bold leading-tight">
+            {isTrial ? 'Free trial' : 'Subscription'} ends {isToday ? 'today' : `in ${daysLeft} day${daysLeft > 1 ? 's' : ''}`}. Renew to keep all features.
+          </span>
+        </div>
+        <a href={earlyPaymentLink} className="bg-slate-900 text-amber-500 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-slate-800 transition-colors shadow-sm">
+          Pay Now
+        </a>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 export default function MainLayoutClient({ 
@@ -192,6 +246,7 @@ export default function MainLayoutClient({
             <NotificationBell />
           </div>
         </header>
+        <PaymentReminderBanner profile={profile} locale={locale} />
         <main className="flex-1 p-3 md:p-8">
           {children}
         </main>

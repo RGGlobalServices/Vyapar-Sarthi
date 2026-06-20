@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, ShieldCheck, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Loader2, ShieldCheck, AlertTriangle, CheckCircle, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 
@@ -23,6 +23,7 @@ function PaymentPageInner() {
   const formRef = useRef<HTMLFormElement>(null);
 
   const plan = searchParams.get('plan') || 'shop';
+  const forcePay = searchParams.get('force_pay') === '1';
   const errorParam = searchParams.get('error');
   const planName = PLAN_NAMES[plan] || plan;
   const planPrice = PLAN_PRICES[plan] || 0;
@@ -34,6 +35,7 @@ function PaymentPageInner() {
   const [activating, setActivating] = useState(false);
   const [activated, setActivated] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     loadFromStorage();
@@ -62,7 +64,7 @@ function PaymentPageInner() {
       const trialEndRaw = shop.subscriptionTrialEnds ?? shop.subscription_trial_ends
         ?? shop.subscriptionExpiry ?? shop.subscription_expiry;
       const trialActive = subStatus === 'trial' && trialEndRaw && new Date(trialEndRaw) > new Date();
-      if (trialActive) {
+      if (trialActive && !forcePay) {
         await switchTrialPlan(trialEndRaw);
         return;
       }
@@ -123,6 +125,7 @@ function PaymentPageInner() {
         furl:        data.furl,
         hash:        data.hash,
         udf1:        data.udf1 || plan,
+        udf2:        data.udf2 || '',
       });
       setStatus('submitting');
     } catch (err: any) {
@@ -260,13 +263,36 @@ function PaymentPageInner() {
         )}
 
         {status === 'error' && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center space-y-4">
-            <AlertTriangle className="w-10 h-10 text-red-400 mx-auto" />
-            <p className="text-red-300 font-semibold">{errorMsg}</p>
-            <button onClick={createOrder}
-              className="px-6 py-2.5 bg-red-500 text-white font-bold rounded-xl hover:bg-red-400 transition-colors">
-              Try Again
-            </button>
+          <div className={errorMsg === 'You already have an active subscription' 
+            ? "bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 text-center space-y-4"
+            : "bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center space-y-4"
+          }>
+            {errorMsg === 'You already have an active subscription' ? (
+              <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto" />
+            ) : (
+              <AlertTriangle className="w-10 h-10 text-red-400 mx-auto" />
+            )}
+            <p className={errorMsg === 'You already have an active subscription' ? "text-emerald-300 font-semibold" : "text-red-300 font-semibold"}>
+              {errorMsg}
+            </p>
+            {errorMsg === 'You already have an active subscription' ? (
+              <button 
+                onClick={() => {
+                  setNavigating(true);
+                  router.push('/en/settings');
+                }}
+                disabled={navigating}
+                className="px-6 py-2.5 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-80"
+              >
+                {navigating ? <Loader2 size={18} className="animate-spin" /> : 'Go to Settings'}
+                {!navigating && <ArrowRight size={18} />}
+              </button>
+            ) : (
+              <button onClick={createOrder}
+                className="px-6 py-2.5 bg-red-500 text-white font-bold rounded-xl hover:bg-red-400 transition-colors">
+                Try Again
+              </button>
+            )}
           </div>
         )}
 

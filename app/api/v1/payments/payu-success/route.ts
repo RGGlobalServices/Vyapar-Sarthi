@@ -40,7 +40,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const user = await prisma.user.findUnique({ where: { email: payuData.email } });
+    let user = null;
+    if (payuData.udf2) {
+      user = await prisma.user.findUnique({ where: { uuid: payuData.udf2 } });
+    }
+    if (!user) {
+      user = await prisma.user.findUnique({ where: { email: payuData.email } });
+    }
     if (user) {
       const plan = payuData.udf1 || 'shop';
       const planAmount = parseFloat(payuData.amount) || config.planAmounts[plan] || 0;

@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/browser';
+import { useEffect, useState, useRef } from 'react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -10,60 +10,69 @@ interface CameraScannerProps {
 }
 
 export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannedOnce = useRef(false);
 
   useEffect(() => {
     let mounted = true;
-    const codeReader = new BrowserMultiFormatReader();
-    codeReaderRef.current = codeReader;
+    const html5QrCode = new Html5Qrcode('qr-reader-container', {
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+      ]
+    });
+    scannerRef.current = html5QrCode;
 
-    async function startScanner() {
-      try {
-        const videoInputDevices = await BrowserMultiFormatReader.listVideoInputDevices();
-        if (videoInputDevices.length === 0) {
-          if (mounted) setError('No camera found on this device.');
-          return;
+    html5QrCode.start(
+      { facingMode: 'environment' },
+      {
+        fps: 15,
+      },
+      (decodedText) => {
+        if (!scannedOnce.current && mounted) {
+          scannedOnce.current = true;
+          onScan(decodedText);
+          // Play a nice beep sound if possible (optional)
+          try {
+            const audio = new Audio('/beep.mp3');
+            audio.play().catch(() => {});
+          } catch (e) {}
         }
-
-        // Prefer back camera if available
-        const backCamera = videoInputDevices.find((d: any) => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear'));
-        const selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
-
-        if (videoRef.current) {
-          codeReader.decodeFromVideoDevice(
-            selectedDeviceId,
-            videoRef.current,
-            (result, err) => {
-              if (result) {
-                if (mounted) {
-                  onScan(result.getText());
-                }
-              }
-              if (err && err.name !== 'NotFoundException') {
-                console.error(err);
-              }
-            }
-          );
-        }
-      } catch (err) {
-        if (mounted) {
-          console.error('Scanner error:', err);
-          setError('Could not start camera. Please check permissions.');
-        }
+      },
+      (errorMessage) => {
+        // ignore parse errors
       }
-    }
-
-    startScanner();
+    ).catch((err) => {
+      if (mounted) {
+        console.error('Scanner start error:', err);
+        setError('Could not access camera. Please allow camera permissions.');
+      }
+    });
 
     return () => {
       mounted = false;
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
+      try {
+        if (scannerRef.current?.isScanning) {
+          scannerRef.current.stop()
+            .then(() => {
+              try { scannerRef.current?.clear(); } catch (e) {}
+            })
+            .catch((e) => {
+              console.warn("Scanner stop warning", e);
+              try { scannerRef.current?.clear(); } catch (err) {}
+            });
+        } else {
+          try { scannerRef.current?.clear(); } catch (e) {}
+        }
+      } catch (e) {
+        console.warn("Scanner cleanup caught", e);
       }
-      (codeReader as any).reset?.();
     };
   }, [onScan]);
 
@@ -90,28 +99,21 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
           </div>
         ) : (
           <>
-            <video
-              ref={videoRef}
-              className="absolute inset-0 w-full h-full object-cover"
-              playsInline
-              muted
-            />
+            {/* The Html5Qrcode library injects its own video element into this container */}
+            <div id="qr-reader-container" className="absolute inset-0 w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full" dangerouslySetInnerHTML={{ __html: '' }} />
             
             {/* Viewfinder Overlay/Guides */}
-            <div className="relative z-10 w-[70vw] max-w-[300px] aspect-square">
-              {/* Dark overlay around the square */}
-              <div className="absolute inset-[-1000px] border-[1000px] border-black/50 pointer-events-none" />
-              
+            <div className="relative z-10 w-[70vw] max-w-[250px] aspect-square pointer-events-none">
               {/* Scanning reticle */}
-              <div className="absolute inset-0 border-2 border-emerald-500/50 flex items-center justify-center pointer-events-none">
-                <div className="w-full h-0.5 bg-emerald-500/80 shadow-[0_0_10px_#10b981] animate-[scan_2s_ease-in-out_infinite]" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-full h-0.5 bg-red-500/80 shadow-[0_0_15px_#ef4444] animate-[scan_1.5s_ease-in-out_infinite]" />
               </div>
 
               {/* Corner marks */}
-              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-emerald-500" />
-              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-emerald-500" />
-              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-emerald-500" />
-              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-emerald-500" />
+              <div className="absolute top-[-2px] left-[-2px] w-10 h-10 border-t-[5px] border-l-[5px] border-emerald-500 rounded-tl-xl" />
+              <div className="absolute top-[-2px] right-[-2px] w-10 h-10 border-t-[5px] border-r-[5px] border-emerald-500 rounded-tr-xl" />
+              <div className="absolute bottom-[-2px] left-[-2px] w-10 h-10 border-b-[5px] border-l-[5px] border-emerald-500 rounded-bl-xl" />
+              <div className="absolute bottom-[-2px] right-[-2px] w-10 h-10 border-b-[5px] border-r-[5px] border-emerald-500 rounded-br-xl" />
             </div>
           </>
         )}

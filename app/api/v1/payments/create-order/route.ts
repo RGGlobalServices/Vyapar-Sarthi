@@ -51,8 +51,9 @@ export const POST = handle(async (req) => {
 
   const { key, salt } = getPayuConfig();
   const udf1 = plan;
+  const udf2 = user?.uuid || '';
 
-  const hash = requestHash(key, txnid, amount.toString(), productinfo, name, userEmail, salt, udf1);
+  const hash = requestHash(key, txnid, amount.toString(), productinfo, name, userEmail, salt, udf1, udf2);
 
   return json({
     key,
@@ -67,6 +68,7 @@ export const POST = handle(async (req) => {
     hash,
     plan,
     udf1,
+    udf2,
     paymentUrl: config.payuUrl,
   });
 });

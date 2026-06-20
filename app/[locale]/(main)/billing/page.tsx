@@ -247,6 +247,46 @@ export default function BillingPage() {
     else alert('Product not found in inventory!');
   }, [addToCart, products]);
 
+  // Hardware Barcode Scanner integration
+  useEffect(() => {
+    let barcodeBuffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const currentTime = Date.now();
+      
+      // If time between keystrokes is > 50ms, it's a human typing. Reset buffer.
+      // Physical hardware scanners typically type at 10-30ms per character.
+      if (currentTime - lastKeyTime > 50) {
+        barcodeBuffer = '';
+      }
+
+      // If Enter key is pressed and we have a valid-looking barcode buffered
+      if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
+        e.preventDefault(); // Prevent form submission
+        handleScan(barcodeBuffer);
+        
+        // If the scanner typed into an input field, blur it to prevent issues
+        if (document.activeElement instanceof HTMLInputElement) {
+          document.activeElement.blur();
+        }
+        
+        barcodeBuffer = '';
+        return;
+      }
+
+      // Only capture printable characters
+      if (e.key.length === 1) {
+        barcodeBuffer += e.key;
+      }
+
+      lastKeyTime = currentTime;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleScan]);
+
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;

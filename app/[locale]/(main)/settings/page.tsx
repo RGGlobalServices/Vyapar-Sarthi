@@ -59,6 +59,14 @@ function SettingsPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get('/payments/history')
+      .then(res => setPaymentHistory(res.data))
+      .catch(err => console.error('Failed to fetch payment history:', err));
+  }, []);
+
   // Cancel subscription state
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason]       = useState('');
@@ -381,6 +389,50 @@ function SettingsPageInner() {
               After cancellation your account stays active until the billing period ends.
               Cancel within 30 days of payment for a full refund under our money-back guarantee.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Billing History ── */}
+      {paymentHistory.length > 0 && (
+        <Card className="bg-slate-900 border-slate-800">
+          <CardHeader>
+            <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mb-4">
+              <Clock size={24} />
+            </div>
+            <CardTitle className="text-white">Billing History</CardTitle>
+            <CardDescription className="text-slate-500">View past payments and download receipts</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-slate-800 border-t border-slate-800">
+              {paymentHistory.map(tx => (
+                <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors">
+                  <div>
+                    <p className="text-sm font-bold text-slate-200">
+                      ₹{tx.amount} &middot; <span className="capitalize">{tx.plan || 'Unknown'}</span> Plan
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {new Date(tx.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} &middot; ID: {tx.txnid}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={cn('text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider',
+                      tx.status === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      tx.status === 'pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                      'bg-red-500/10 text-red-400 border border-red-500/20'
+                    )}>
+                      {tx.status}
+                    </span>
+                    {tx.status === 'success' && (
+                      <a href={`/${locale}/receipt/${tx.txnid}`} target="_blank" rel="noopener noreferrer" 
+                        className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                        View Receipt
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

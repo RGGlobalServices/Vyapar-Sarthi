@@ -28,6 +28,7 @@ export const ENDED_ALLOWED_PATHS = new Set([
   '/products',
   '/stock',
   '/settings',
+  '/payment',
 ]);
 
 export function isAllowedWhenEnded(pathname: string): boolean {
