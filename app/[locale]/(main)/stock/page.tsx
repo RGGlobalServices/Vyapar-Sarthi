@@ -51,9 +51,17 @@ export default function StockPage() {
     fetchStock();
   }, [fetchStock]);
 
-  const [editId, setEditId]   = useState<number | string | null>(null);
-  const [editRow, setEditRow] = useState<Partial<StockItem>>({});
   const [menuId, setMenuId]   = useState<number | string | null>(null);
+  const [editModal, setEditModal] = useState<{
+    item: StockItem;
+    adjQty: string;
+    adjType: 'in' | 'out';
+    name: string;
+    category: string;
+    unit: string;
+    min: string;
+    submitting: boolean;
+  } | null>(null);
 
   const [modal, setModal]     = useState<'in' | 'out' | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -107,26 +115,28 @@ export default function StockPage() {
     outOfStock: items.filter(i => !i.archived && i.current === 0).length,
   }), [items]);
 
-  function startEdit(item: StockItem) { setEditId(item.id); setEditRow({ ...item }); setMenuId(null); }
-  function saveEdit(id: number | string) {
-    const original = items.find(i => i.id === id)!;
-    const newCurrent = Number(editRow.current ?? original.current);
-    const diff = newCurrent - original.current;
-
-    // Update non-stock fields (name, category, unit, min) without touching current.
-    // Sending current_stock here AND calling adjustStock below double-counts the change.
-    const { current: _skip, ...nonStockUpdates } = editRow;
-    if (Object.keys(nonStockUpdates).length > 0) {
-      updateItem(id, nonStockUpdates as Partial<StockItem>);
-    }
-
-    // Stock delta goes through adjustStock only — it handles the optimistic UI update,
-    // the /adjust API call (increment), and the activity log entry.
-    if (diff !== 0) adjustStock(id, diff, t('manualEdit'));
-
-    setEditId(null); setEditRow({});
+  function openEditModal(item: StockItem) {
+    setMenuId(null);
+    setEditModal({ item, adjQty: '', adjType: 'in', name: item.name, category: item.category, unit: item.unit, min: String(item.min ?? 0), submitting: false });
   }
-  function cancelEdit() { setEditId(null); setEditRow({}); }
+  async function saveEditModal() {
+    if (!editModal) return;
+    setEditModal(m => m ? { ...m, submitting: true } : m);
+    const { item, adjQty, adjType, name, category, unit, min } = editModal;
+    try {
+      const updates: Partial<StockItem> = {};
+      if (name.trim() !== item.name) updates.name = name.trim();
+      if (category.trim() !== item.category) updates.category = category.trim();
+      if (unit.trim() !== item.unit) updates.unit = unit.trim();
+      if (Number(min) !== item.min) updates.min = Number(min);
+      if (Object.keys(updates).length > 0) await updateItem(item.id, updates);
+      const qty = Number(adjQty);
+      if (qty > 0) await adjustStock(item.id, adjType === 'in' ? qty : -qty, adjType === 'in' ? t('stockIn') : t('stockOut'));
+      setEditModal(null);
+    } catch {
+      setEditModal(m => m ? { ...m, submitting: false } : m);
+    }
+  }
   function permanentDelete(item: StockItem) { setDeleteTarget(item); setMenuId(null); }
   function confirmDelete() { if (!deleteTarget) return; removeItem(deleteTarget.id); setDeleteTarget(null); }
 
@@ -227,29 +237,19 @@ export default function StockPage() {
   function renderRows(rows: StockItem[]) {
     return rows.map(item => {
       const status = getStatus(item);
-      if (editId === item.id) {
-        return (
-          <tr key={item.id} className="bg-slate-800/60 text-slate-200">
-            <td className="px-4 py-3"><input className={cellInp} value={editRow.name ?? ''} onChange={e => setEditRow(r => ({ ...r, name: e.target.value }))} /></td>
-            <td className="px-4 py-3"><input className={cellInp} value={editRow.category ?? ''} onChange={e => setEditRow(r => ({ ...r, category: e.target.value }))} /></td>
-            <td className="px-4 py-3"><input type="number" min="0" className={cellInp} value={editRow.current ?? ''} onChange={e => setEditRow(r => ({ ...r, current: Number(e.target.value) }))} /></td>
-            <td className="px-4 py-3"><input type="number" min="0" className={cellInp} value={editRow.min ?? ''} onChange={e => setEditRow(r => ({ ...r, min: Number(e.target.value) }))} /></td>
-            <td className="px-4 py-3"><input className={cellInp} value={editRow.unit ?? ''} onChange={e => setEditRow(r => ({ ...r, unit: e.target.value }))} /></td>
-            <td className="px-4 py-3 text-slate-400 text-xs">—</td>
-            <td className="px-4 py-3">
-              <div className="flex items-center justify-center gap-2">
-                <button onClick={() => saveEdit(item.id)} className="text-emerald-400 hover:text-emerald-300 p-1"><Check size={17} /></button>
-                <button onClick={cancelEdit} className="text-slate-400 hover:text-red-400 p-1"><X size={17} /></button>
-              </div>
-            </td>
-          </tr>
-        );
-      }
       return (
         <tr key={item.id} className={cn('group text-slate-200 hover:bg-slate-800/40 transition-all duration-200', item.archived && 'opacity-60')}>
           <td className="px-6 py-4 font-medium"><SmartTranslator text={item.name} locale={locale} /></td>
           <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
-          <td className="px-6 py-4 font-bold">{item.current}</td>
+          <td className="px-6 py-4">
+            <button
+              onClick={() => openEditModal(item)}
+              className="font-bold text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
+              title="Click to adjust stock"
+            >
+              {item.current}
+            </button>
+          </td>
           <td className="px-6 py-4 text-slate-400">{item.min}</td>
           <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.unit} locale={locale} /></td>
           <td className="px-6 py-4">
@@ -264,19 +264,19 @@ export default function StockPage() {
           </td>
           <td className="px-6 py-4">
             <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button 
-                onClick={() => startEdit(item)}
+              <button
+                onClick={() => openEditModal(item)}
                 title={t('editRow')}
                 className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all active:scale-90 border border-slate-700/50">
                 <Pencil size={14} />
               </button>
-              
-              <button 
+
+              <button
                 onClick={() => toggleArchive(item.id)}
                 title={item.archived ? t('unarchive') : t('archive')}
                 className={cn(
                   "p-2 rounded-lg bg-slate-800 transition-all active:scale-90 border border-slate-700/50",
-                  item.archived 
+                  item.archived
                     ? "text-blue-400 hover:bg-blue-500/20 hover:text-blue-300"
                     : "text-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
                 )}>
@@ -597,6 +597,111 @@ export default function StockPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Smart Edit Modal ── */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditModal(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h2 className="text-base font-bold text-slate-100 truncate pr-4">{editModal.item.name}</h2>
+              <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-slate-200 shrink-0"><X size={20} /></button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Current stock display */}
+              <div className="flex items-center justify-between bg-slate-800 rounded-xl px-5 py-4">
+                <div>
+                  <p className="text-xs text-slate-400 mb-0.5">Current Stock</p>
+                  <p className="text-3xl font-black text-emerald-400">{editModal.item.current}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">Unit</p>
+                  <p className="text-sm font-semibold text-slate-300">{editModal.item.unit}</p>
+                  <p className="text-xs text-slate-500 mt-1">Min: {editModal.item.min}</p>
+                </div>
+              </div>
+
+              {/* Stock adjust */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Adjust Stock</p>
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => setEditModal(m => m ? { ...m, adjType: 'in' } : m)}
+                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'in' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:text-slate-200')}
+                  >+ Add Stock</button>
+                  <button
+                    onClick={() => setEditModal(m => m ? { ...m, adjType: 'out' } : m)}
+                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'out' ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200')}
+                  >− Remove</button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setEditModal(m => m ? { ...m, adjQty: String(Math.max(0, Number(m.adjQty) - 1)) } : m)}
+                    className="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xl font-bold flex items-center justify-center transition-colors active:scale-90">−</button>
+                  <input
+                    type="number" min="0"
+                    className="flex-1 text-center bg-slate-800 border border-slate-700 rounded-xl py-2.5 text-slate-100 text-xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={editModal.adjQty}
+                    onChange={e => setEditModal(m => m ? { ...m, adjQty: e.target.value } : m)}
+                    placeholder="0"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => setEditModal(m => m ? { ...m, adjQty: String(Number(m.adjQty) + 1) } : m)}
+                    className="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xl font-bold flex items-center justify-center transition-colors active:scale-90">+</button>
+                </div>
+                {Number(editModal.adjQty) > 0 && (
+                  <div className="mt-2.5 text-center text-sm">
+                    <span className="text-slate-400">New stock → </span>
+                    <span className={cn('font-bold text-lg', editModal.adjType === 'in' ? 'text-emerald-400' : 'text-red-400')}>
+                      {editModal.adjType === 'in'
+                        ? editModal.item.current + Number(editModal.adjQty)
+                        : Math.max(0, editModal.item.current - Number(editModal.adjQty))}
+                    </span>
+                    <span className="text-slate-500 text-xs ml-1">{editModal.item.unit}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Details */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Product Details</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">Name</label>
+                    <input className={inp} value={editModal.name} onChange={e => setEditModal(m => m ? { ...m, name: e.target.value } : m)} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">Category</label>
+                    <input className={inp} value={editModal.category} onChange={e => setEditModal(m => m ? { ...m, category: e.target.value } : m)} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">Unit</label>
+                    <input className={inp} value={editModal.unit} onChange={e => setEditModal(m => m ? { ...m, unit: e.target.value } : m)} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">Min Level</label>
+                    <input type="number" min="0" className={inp} value={editModal.min} onChange={e => setEditModal(m => m ? { ...m, min: e.target.value } : m)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 pb-5 flex gap-3">
+              <button onClick={() => setEditModal(null)} className="flex-1 py-2.5 bg-slate-800 rounded-xl text-slate-300 text-sm font-semibold hover:bg-slate-700 transition-colors">Cancel</button>
+              <button
+                onClick={saveEditModal}
+                disabled={editModal.submitting}
+                className="flex-1 py-2.5 bg-emerald-500 text-slate-900 rounded-xl text-sm font-bold hover:bg-emerald-400 transition-colors active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {editModal.submitting ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Stock In Modal */}
