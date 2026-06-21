@@ -6,8 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'out',
   server: {
     androidScheme: 'https',
-    // TODO: Replace with your actual production URL (e.g., https://vyapar-sarthi.com)
-    url: 'https://vyapar-sarthi.com',
+    // Points to your hosted production application
+    url: 'https://app.vyaparsarthii.com/',
     cleartext: true
   }
 };
