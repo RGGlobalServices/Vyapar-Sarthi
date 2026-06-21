@@ -19,14 +19,14 @@ const config: CapacitorConfig = {
       showSpinner: true,
       androidSpinnerStyle: "large",
       iosSpinnerStyle: "small",
-      spinnerColor: "#10b981",
+      spinnerColor: "#FF0000",
       splashFullScreen: true,
       splashImmersive: true,
-      backgroundColor: "#000000",
+      backgroundColor: "#FFFFFF",
     },
     StatusBar: {
-      style: "DARK",
-      backgroundColor: "#000000",
+      style: "LIGHT",
+      backgroundColor: "#FFFFFF",
       overlaysWebView: false
     }
   }
