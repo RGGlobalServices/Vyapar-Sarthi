@@ -18,9 +18,9 @@ function createWindow() {
     win.loadURL('http://localhost:3000');
     win.webContents.openDevTools();
   } else {
-    // In production, we'd load the exported static files or a server
-    // For now, we point to the dev server as a placeholder
-    win.loadURL('http://localhost:3000');
+    // In production, load the SaaS web application URL
+    // TODO: Replace with your actual production URL (e.g., https://vyapar-sarthi.com)
+    win.loadURL('https://vyapar-sarthi.com');
   }
 }
 

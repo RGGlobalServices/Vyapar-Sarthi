@@ -3,6 +3,14 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
+export const metadata = {
+  title: 'Vyapar Sarthi',
+  description: 'Kirana shop management app',
+  icons: {
+    icon: '/icon.png',
+  },
+};
+
 export default function RootLayout({
   children,
 }: {

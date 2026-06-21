@@ -100,13 +100,11 @@ export default function Sidebar({
           onClick={() => setShowShopMenu(s => !s)}
           className="w-full p-4 flex items-center gap-3 hover:bg-slate-800/40 transition-colors"
         >
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 overflow-hidden flex-shrink-0">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden flex-shrink-0 p-0.5">
             {profile.logoUrl ? (
-              <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+              <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" />
             ) : (
-              <span className="text-slate-900 font-black text-xl">
-                {(profile.shopName || user?.storeName || 'B').charAt(0).toUpperCase()}
-              </span>
+              <img src="/icon.png" alt="App Icon" className="w-full h-full object-cover rounded-lg" />
             )}
           </div>
           <div className="min-w-0 flex-1 text-left">

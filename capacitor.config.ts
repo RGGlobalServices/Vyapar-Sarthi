@@ -5,7 +5,10 @@ const config: CapacitorConfig = {
   appName: 'Kirana Manager',
   webDir: 'out',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    // TODO: Replace with your actual production URL (e.g., https://vyapar-sarthi.com)
+    url: 'https://vyapar-sarthi.com',
+    cleartext: true
   }
 };
 
