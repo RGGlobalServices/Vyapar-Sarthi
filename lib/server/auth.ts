@@ -75,6 +75,34 @@ export async function requireUser(req: Request) {
 
 import { isSubscriptionEnded } from '../subscriptionAccess';
 
+export function getBestSubscription(shops: any[]) {
+  if (!shops.length) return null;
+  
+  const PLAN_RANK: Record<string, number> = {
+    wholesale: 3,
+    vyapar: 2,
+    starter: 1,
+    shop: 1,
+  };
+  
+  let bestShop = shops[0];
+  let bestRank = -1;
+  let maxExpiry = 0;
+
+  for (const s of shops) {
+    const sRank = PLAN_RANK[(s.subscriptionPlan || 'shop').toLowerCase()] || 0;
+    const sExpiry = s.subscriptionExpiry ? new Date(s.subscriptionExpiry).getTime() : 0;
+    
+    if (sRank > bestRank || (sRank === bestRank && sExpiry > maxExpiry)) {
+      bestShop = s;
+      bestRank = sRank;
+      maxExpiry = sExpiry;
+    }
+  }
+
+  return bestShop;
+}
+
 // Loads the user and the active shop. Honors the x-shop-id header for
 // multi-shop switching, validating ownership.
 export async function requireShop(
@@ -91,6 +119,18 @@ export async function requireShop(
   } else {
     shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
     if (!shop) throw new ApiError(404, 'Shop not found');
+  }
+
+  // Inject the best subscription from all shops owned by the user
+  const allShops = await prisma.shop.findMany({ where: { ownerId: user.uuid! } });
+  const bestShop = getBestSubscription(allShops);
+  if (bestShop) {
+    shop.subscriptionPlan = bestShop.subscriptionPlan;
+    shop.subscriptionStatus = bestShop.subscriptionStatus;
+    shop.subscriptionExpiry = bestShop.subscriptionExpiry;
+    shop.subscriptionTrialEnds = bestShop.subscriptionTrialEnds;
+    shop.trialPaused = bestShop.trialPaused;
+    shop.trialPauseStart = bestShop.trialPauseStart;
   }
 
   const enforce = options.enforceSubscription ?? true;

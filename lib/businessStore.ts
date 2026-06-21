@@ -147,8 +147,10 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   switchShop: async (shopId: string) => {
     setActiveShopIdStorage(shopId);
     set({ activeShopId: shopId });
-    // Re-fetch profile for the selected shop (api.ts injects x-shop-id header automatically)
-    await get().fetchProfile();
+    // Force a full page reload to the dashboard so all UI, context, and caches are reset to the new shop
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
   },
 
   createShop: async (data) => {

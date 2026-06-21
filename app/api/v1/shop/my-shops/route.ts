@@ -3,6 +3,8 @@ import { requireUser } from '@/lib/server/auth';
 import { ensureShopCode } from '@/lib/server/shopCode';
 import { handle, json } from '@/lib/server/http';
 
+import { getBestSubscription } from '@/lib/server/auth';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +20,18 @@ export const GET = handle(async (req) => {
   for (const shop of shops) {
     if (!shop.shopCode) {
       shop.shopCode = await ensureShopCode(shop.id, shop.name);
+    }
+  }
+
+  const bestShop = getBestSubscription(shops);
+  if (bestShop) {
+    for (const shop of shops) {
+      shop.subscriptionPlan = bestShop.subscriptionPlan;
+      shop.subscriptionStatus = bestShop.subscriptionStatus;
+      shop.subscriptionExpiry = bestShop.subscriptionExpiry;
+      shop.subscriptionTrialEnds = bestShop.subscriptionTrialEnds;
+      shop.trialPaused = bestShop.trialPaused;
+      shop.trialPauseStart = bestShop.trialPauseStart;
     }
   }
 
