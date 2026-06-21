@@ -26,6 +26,8 @@
     "@capacitor/cli": "^8.3.3",
     "@capacitor/core": "^8.3.3",
     "@capacitor/ios": "^8.3.3",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@google/genai": "^1.17.0",
     "@opentelemetry/api": "^1.6.0",
     "@prisma/client": "^6.5.0",
@@ -56,6 +58,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "recharts": "^3.8.1",
+    "sharp": "^0.35.2",
     "tailwind-merge": "^3.5.0",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.12"
@@ -94,6 +97,11 @@
       "target": [
         "nsis"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
     },
     "mac": {
       "target": [
