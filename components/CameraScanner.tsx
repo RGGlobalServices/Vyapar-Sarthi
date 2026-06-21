@@ -17,6 +17,7 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
   useEffect(() => {
     let mounted = true;
     const html5QrCode = new Html5Qrcode('qr-reader-container', {
+      verbose: false,
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
