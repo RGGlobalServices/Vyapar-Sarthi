@@ -19,9 +19,11 @@ function createWindow() {
     win.webContents.openDevTools();
   } else {
     // In production, load the SaaS web application URL
-    // TODO: Replace with your actual production URL (e.g., https://vyapar-sarthi.com)
-    win.loadURL('https://vyapar-sarthi.com');
+    win.loadURL('https://app.vyaparsarthii.com/');
   }
+
+  // Maximize the window to fit the desktop screen
+  win.maximize();
 }
 
 app.whenReady().then(createWindow);
