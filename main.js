@@ -11,7 +11,7 @@ function createWindow() {
       contextIsolation: true,
     },
     backgroundColor: '#0f172a', // Matches slate-950
-    title: 'Kirana Manager'
+    title: 'Vyapar Sarthi'
   });
 
   if (isDev) {
