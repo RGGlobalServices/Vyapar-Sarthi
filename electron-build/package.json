@@ -1,0 +1,1 @@
+{"name":"vyapar-sarthi","version":"0.1.0","main":"main.js","build":{"appId":"com.vyaparsarthi.app","productName":"Vyapar Sarthi","electronVersion":"42.0.1","directories":{"output":"dist-desktop"},"win":{"target":["nsis"]},"nsis":{"oneClick":false,"allowToChangeInstallationDirectory":true,"createDesktopShortcut":true}}}
