@@ -32,7 +32,7 @@ const TYPES: Record<EventType, { label: string; dot: string; chip: string; icon:
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const inp = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500';
+const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500';
 
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -189,68 +189,81 @@ export default function CalendarPage() {
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-sky-500/15 ring-1 ring-sky-500/30 flex items-center justify-center">
-            <CalendarDays className="w-5 h-5 text-sky-400" />
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/30 flex items-center justify-center text-white transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+            <CalendarDays className="w-7 h-7" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-white">Calendar</h1>
-            <p className="text-xs text-slate-500">Payments, reminders &amp; events — never miss a date</p>
+            <h1 className="text-3xl font-black bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Calendar</h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">Payments, reminders &amp; events — never miss a date</p>
           </div>
         </div>
         <button onClick={() => openAdd()}
-          className="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-sky-500/25 transition-all">
-          <Plus size={16} /> Add Event
+          className="flex items-center gap-2 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-sm font-bold px-6 py-3 rounded-xl shadow-xl shadow-sky-500/25 hover:shadow-sky-500/40 hover:-translate-y-0.5 transition-all duration-300">
+          <Plus size={18} strokeWidth={3} /> Add Event
         </button>
       </div>
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         {/* Calendar grid */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+        <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-white">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</h2>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</h2>
             <div className="flex items-center gap-1">
               <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
-                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400"><ChevronLeft size={18} /></button>
+                className="p-2 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><ChevronLeft size={18} /></button>
               <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-slate-800 text-slate-300">Today</button>
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-300">Today</button>
               <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
-                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400"><ChevronRight size={18} /></button>
+                className="p-2 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><ChevronRight size={18} /></button>
             </div>
           </div>
 
-          <div className="grid grid-cols-7 mb-1">
+          <div className="grid grid-cols-7 mb-2">
             {WEEKDAYS.map(d => (
-              <div key={d} className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600 py-1">{d}</div>
+              <div key={d} className="text-center text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 py-2">{d}</div>
             ))}
           </div>
 
           {loading ? (
-            <div className="h-[460px] flex items-center justify-center text-slate-600"><Loader2 className="animate-spin" /></div>
+            <div className="h-[460px] flex items-center justify-center text-sky-500"><Loader2 className="animate-spin w-10 h-10" /></div>
           ) : (
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-2">
               {cells.map((d, i) => {
                 const key = ymd(d);
                 const dayEvents = byDay[key] || [];
+                const isTodayD = isToday(d);
+                const inMonthD = inMonth(d);
                 return (
                   <button key={i} onClick={() => openAdd(key)}
                     className={cn(
-                      'min-h-[68px] sm:min-h-[80px] rounded-lg border p-1.5 text-left flex flex-col gap-1 transition-all',
-                      inMonth(d) ? 'bg-slate-800/40 border-slate-800 hover:border-sky-500/40' : 'bg-transparent border-transparent opacity-40 hover:opacity-70',
-                      isToday(d) && 'ring-1 ring-sky-500 border-sky-500/50',
+                      'min-h-[80px] sm:min-h-[100px] rounded-2xl border p-2 text-left flex flex-col gap-1.5 transition-all duration-300 group overflow-hidden relative',
+                      inMonthD 
+                        ? 'bg-slate-50/50 dark:bg-slate-800/20 border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800 hover:shadow-xl hover:shadow-sky-500/5 hover:-translate-y-1 hover:border-sky-500/30' 
+                        : 'bg-transparent border-transparent opacity-40 hover:opacity-80 hover:bg-slate-50 dark:hover:bg-slate-800/50',
+                      isTodayD && 'bg-sky-50/50 dark:bg-sky-500/5 border-sky-500/30 ring-1 ring-sky-500/20 shadow-[0_0_15px_rgba(14,165,233,0.1)]',
                     )}>
-                    <span className={cn('text-xs font-semibold', isToday(d) ? 'text-sky-400' : 'text-slate-400')}>{d.getDate()}</span>
-                    <div className="flex flex-col gap-0.5 overflow-hidden">
+                    <div className="flex justify-between items-start w-full">
+                      <span className={cn(
+                        'text-xs font-bold w-7 h-7 flex items-center justify-center rounded-full transition-colors', 
+                        isTodayD 
+                          ? 'bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-md shadow-sky-500/40' 
+                          : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200 group-hover:bg-slate-100 dark:group-hover:bg-slate-700'
+                      )}>
+                        {d.getDate()}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1 w-full flex-1">
                       {dayEvents.slice(0, 3).map(e => (
                         <span key={e.id} onClick={(ev) => { ev.stopPropagation(); openEdit(e); }}
-                          className={cn('flex items-center gap-1 text-[10px] leading-tight truncate rounded px-1 py-0.5',
-                            TYPES[e.eventType]?.chip, 'ring-1', e.status === 'done' && 'line-through opacity-60')}>
-                          <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', TYPES[e.eventType]?.dot)} />
+                          className={cn('flex items-center gap-1.5 text-[10px] font-semibold leading-tight truncate rounded-md px-1.5 py-1 transition-transform hover:scale-[1.02] active:scale-95 shadow-sm',
+                            TYPES[e.eventType]?.chip, 'ring-1 border border-transparent hover:border-current/20', e.status === 'done' && 'line-through opacity-50 grayscale')}>
+                          <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0 shadow-sm', TYPES[e.eventType]?.dot)} />
                           <span className="truncate">{e.title}</span>
                         </span>
                       ))}
-                      {dayEvents.length > 3 && <span className="text-[9px] text-slate-500 pl-1">+{dayEvents.length - 3} more</span>}
+                      {dayEvents.length > 3 && <span className="text-[10px] font-bold text-slate-400 pl-1 group-hover:text-sky-500 transition-colors">+{dayEvents.length - 3} more</span>}
                     </div>
                   </button>
                 );
@@ -259,7 +272,7 @@ export default function CalendarPage() {
           )}
 
           {/* Legend */}
-          <div className="flex flex-wrap gap-3 mt-4 pt-3 border-t border-slate-800">
+          <div className="flex flex-wrap gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
             {Object.entries(TYPES).map(([k, v]) => (
               <span key={k} className="flex items-center gap-1.5 text-[11px] text-slate-400">
                 <span className={cn('w-2 h-2 rounded-full', v.dot)} /> {v.label}
@@ -269,32 +282,40 @@ export default function CalendarPage() {
         </div>
 
         {/* Upcoming panel */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 h-fit">
-          <div className="flex items-center gap-2 mb-4">
-            <Clock size={16} className="text-amber-400" />
-            <h2 className="text-sm font-bold text-white">Upcoming</h2>
+        <div className="bg-gradient-to-b from-white to-slate-50 dark:from-slate-900/80 dark:to-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 h-fit shadow-xl shadow-slate-200/50 dark:shadow-none">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center ring-1 ring-amber-500/20">
+              <Clock size={18} />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-slate-900 dark:text-white">Upcoming</h2>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">Next 8 Events</p>
+            </div>
           </div>
           {upcoming.length === 0 ? (
-            <p className="text-xs text-slate-500 py-6 text-center">No upcoming events this month.</p>
+            <div className="py-12 flex flex-col items-center justify-center text-center opacity-60">
+              <CalendarDays className="w-12 h-12 text-slate-400 mb-3" />
+              <p className="text-sm font-semibold text-slate-500">No upcoming events<br/>this month.</p>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {upcoming.map(e => {
                 const Icon = TYPES[e.eventType]?.icon || CalendarDays;
                 const d = new Date(e.eventDate);
                 return (
-                  <div key={e.id} className="group flex items-start gap-3 p-2.5 rounded-xl bg-slate-800/40 border border-slate-800 hover:border-slate-700">
-                    <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ring-1', TYPES[e.eventType]?.chip)}>
-                      <Icon size={16} />
+                  <div key={e.id} className="group flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/50 hover:border-sky-500/30 dark:hover:border-sky-500/30 hover:shadow-lg hover:shadow-sky-500/5 transition-all duration-300 hover:-translate-y-0.5 cursor-pointer" onClick={() => openEdit(e)}>
+                    <div className={cn('w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ring-1 shadow-sm transition-transform group-hover:scale-110', TYPES[e.eventType]?.chip)}>
+                      <Icon size={18} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-100 truncate">{e.title}</p>
-                      <p className="text-[11px] text-slate-500">
-                        {d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                        {e.amount != null ? ` · ${inr(e.amount)}` : ''}
-                        {e.customerName ? ` · ${e.customerName}` : ''}
-                      </p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-sky-500 transition-colors">{e.title}</p>
+                      <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 mt-0.5">
+                        <span className="text-slate-700 dark:text-slate-300">{d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                        {e.amount != null && <><span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" /><span className="text-emerald-500 font-bold">{inr(e.amount)}</span></>}
+                        {e.customerName && <><span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" /><span className="truncate">{e.customerName}</span></>}
+                      </div>
                     </div>
-                    <button onClick={() => openEdit(e)} className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-slate-300"><Pencil size={13} /></button>
+                    <button className="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 rounded-lg transition-all active:scale-95"><Pencil size={15} /></button>
                   </div>
                 );
               })}
@@ -306,10 +327,10 @@ export default function CalendarPage() {
       {/* Add/Edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setModalOpen(false)}>
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-slate-800">
-              <h3 className="font-bold text-white">{editing ? 'Edit Event' : 'New Event'}</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400"><X size={18} /></button>
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="font-bold text-slate-900 dark:text-white">{editing ? 'Edit Event' : 'New Event'}</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><X size={18} /></button>
             </div>
             <div className="p-4 space-y-3.5">
               <div>
@@ -327,7 +348,7 @@ export default function CalendarPage() {
                     return (
                       <button key={k} type="button" onClick={() => setForm({ ...form, eventType: k })}
                         className={cn('flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ring-1 transition-all',
-                          active ? TYPES[k].chip : 'bg-slate-800/40 text-slate-400 ring-slate-700 hover:ring-slate-600')}>
+                          active ? TYPES[k].chip : 'bg-slate-100 dark:bg-slate-800/ text-slate-400 ring-slate-700 hover:ring-slate-600')}>
                         <Icon size={14} /> {TYPES[k].label}
                       </button>
                     );
@@ -363,7 +384,7 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-2 p-4 border-t border-slate-800">
+            <div className="flex items-center justify-between gap-2 p-4 border-t border-slate-200 dark:border-slate-800">
               {editing ? (
                 <button onClick={() => { remove(form.id); setModalOpen(false); }}
                   className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-rose-500/10">
@@ -371,7 +392,7 @@ export default function CalendarPage() {
                 </button>
               ) : <span />}
               <button onClick={save} disabled={saving || !form.title.trim()}
-                className="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg">
+                className="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-900 dark:text-white text-sm font-semibold px-5 py-2 rounded-lg">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {editing ? 'Save' : 'Add Event'}
               </button>
             </div>

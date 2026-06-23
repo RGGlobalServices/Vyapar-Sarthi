@@ -71,77 +71,77 @@ ${referralLink}`;
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Referral Program</h1>
-          <p className="text-slate-400 mt-1">Refer friends and earn free months!</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Referral Program</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">Refer friends and earn free months!</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-purple-500/20 to-purple-600/5 border-purple-500/30">
+        <Card className="bg-gradient-to-br from-purple-500/20 to-purple-600/5 border-purple-500/30 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-xl bg-purple-500/20">
-                <Gift className="w-6 h-6 text-purple-400" />
+                <Gift className="w-6 h-6 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-white">{stats.total}</p>
-                <p className="text-sm text-slate-400">Total Referrals</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.total}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Total Referrals</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border-emerald-500/30">
+        <Card className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border-emerald-500/30 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-xl bg-emerald-500/20">
-                <Award className="w-6 h-6 text-emerald-400" />
+                <Award className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-white">{stats.successful}</p>
-                <p className="text-sm text-slate-400">Successful</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.successful}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Successful</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-sky-500/20 to-sky-600/5 border-sky-500/30">
+        <Card className="bg-gradient-to-br from-sky-500/20 to-sky-600/5 border-sky-500/30 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-xl bg-sky-500/20">
-                <Clock className="w-6 h-6 text-sky-400" />
+                <Clock className="w-6 h-6 text-sky-600 dark:text-sky-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-white">{stats.successful}</p>
-                <p className="text-sm text-slate-400">Free Months Earned</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.successful}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Free Months Earned</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-amber-500/20 to-amber-600/5 border-amber-500/30">
+        <Card className="bg-gradient-to-br from-amber-500/20 to-amber-600/5 border-amber-500/30 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-xl bg-amber-500/20">
-                <Share2 className="w-6 h-6 text-amber-400" />
+                <Share2 className="w-6 h-6 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-white">20% OFF</p>
-                <p className="text-sm text-slate-400">For Referred Friends</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">20% OFF</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">For Referred Friends</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-slate-800 bg-slate-900">
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <Share2 className="w-5 h-5 text-emerald-400" />
+          <CardTitle className="text-slate-900 dark:text-white flex items-center gap-2">
+            <Share2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
             Share Your Referral Code
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="p-6 bg-slate-800 rounded-xl border border-slate-700 text-center">
-            <p className="text-sm text-slate-400 mb-2">Your Referral Code</p>
-            <p className="text-4xl font-black tracking-widest text-emerald-400 select-all">
+          <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Your Referral Code</p>
+            <p className="text-4xl font-black tracking-widest text-emerald-500 dark:text-emerald-400 select-all">
               {referralCode}
             </p>
           </div>
@@ -149,14 +149,14 @@ ${referralLink}`;
           <div className="flex gap-3">
             <button
               onClick={copyReferralLink}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
               {copied ? 'Copied!' : 'Copy Referral Link'}
             </button>
             <button
               onClick={shareOnWhatsApp}
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-500 transition-all"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-green-500 transition-all"
             >
               <ExternalLink className="w-5 h-5" />
               Share on WhatsApp
@@ -164,7 +164,7 @@ ${referralLink}`;
           </div>
 
           <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-            <p className="text-sm text-purple-300">
+            <p className="text-sm text-purple-800 dark:text-purple-300">
               <strong>🎁 How it works:</strong> When someone uses your code and buys a paid plan, 
               you get <strong>1 month free</strong> extension on your current subscription! 
               Your friend gets <strong>20% off</strong> too.
@@ -173,10 +173,10 @@ ${referralLink}`;
         </CardContent>
       </Card>
 
-      <Card className="border-slate-800 bg-slate-900">
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <Users className="w-5 h-5 text-emerald-400" />
+          <CardTitle className="text-slate-900 dark:text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
             Your Referral Team
           </CardTitle>
         </CardHeader>
@@ -190,29 +190,29 @@ ${referralLink}`;
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-800">
-                    <th className="text-left p-3 text-slate-400 text-sm font-medium">Name</th>
-                    <th className="text-left p-3 text-slate-400 text-sm font-medium">Package</th>
-                    <th className="text-left p-3 text-slate-400 text-sm font-medium">Status</th>
-                    <th className="text-left p-3 text-slate-400 text-sm font-medium">Expiry</th>
-                    <th className="text-left p-3 text-slate-400 text-sm font-medium">Rewarded</th>
+                  <tr className="border-b border-slate-200 dark:border-slate-800">
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Name</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Package</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Status</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Expiry</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Rewarded</th>
                   </tr>
                 </thead>
                 <tbody>
                   {team.map((member: any) => (
-                    <tr key={member.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                    <tr key={member.id} className="border-b border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30">
                       <td className="p-3">
                         <div>
-                          <p className="text-white font-medium">{member.referred_name}</p>
+                          <p className="text-slate-900 dark:text-white font-medium">{member.referred_name}</p>
                           <p className="text-xs text-slate-500">{member.referred_email}</p>
                         </div>
                       </td>
                       <td className="p-3">
                         <span className={cn(
                           "px-2 py-1 rounded text-xs font-bold",
-                          member.package === 'wholesale' ? 'bg-purple-500/20 text-purple-300' :
-                          member.package === 'shop' ? 'bg-sky-500/20 text-sky-300' :
-                          'bg-slate-700 text-slate-400'
+                          member.package === 'wholesale' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300' :
+                          member.package === 'shop' ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300' :
+                          'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                         )}>
                           {member.package}
                         </span>
@@ -220,21 +220,21 @@ ${referralLink}`;
                       <td className="p-3">
                         <span className={cn(
                           "px-2 py-1 rounded text-xs font-bold",
-                          member.subscription_status === 'active' ? 'bg-emerald-500/20 text-emerald-300' :
-                          member.subscription_status === 'trialing' ? 'bg-amber-500/20 text-amber-300' :
-                          'bg-red-500/20 text-red-300'
+                          member.subscription_status === 'active' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300' :
+                          member.subscription_status === 'trialing' ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300' :
+                          'bg-red-500/20 text-red-600 dark:text-red-300'
                         )}>
                           {member.subscription_status}
                         </span>
                       </td>
-                      <td className="p-3 text-slate-300 text-sm">
+                      <td className="p-3 text-slate-600 dark:text-slate-300 text-sm">
                         {member.subscription_expiry
                           ? new Date(member.subscription_expiry).toLocaleDateString()
                           : 'N/A'}
                       </td>
                       <td className="p-3">
                         {member.rewarded
-                          ? <span className="text-emerald-400 text-sm font-bold">✅ 1 Month</span>
+                          ? <span className="text-emerald-500 dark:text-emerald-400 text-sm font-bold">✅ 1 Month</span>
                           : <span className="text-slate-500 text-sm">Pending</span>}
                       </td>
                     </tr>

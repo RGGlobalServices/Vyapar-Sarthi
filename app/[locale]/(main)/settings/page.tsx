@@ -189,8 +189,8 @@ function SettingsPageInner() {
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Settings</h1>
-          <p className="text-slate-400">Configure your daily alerts and notifications</p>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Settings</h1>
+          <p className="text-slate-500 dark:text-slate-400">Configure your daily alerts and notifications</p>
         </div>
         <button
           onClick={handleSave}
@@ -221,18 +221,18 @@ function SettingsPageInner() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Device Notifications */}
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader>
-            <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-400 mb-4">
+            <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 dark:text-blue-400 mb-4">
               <Smartphone size={24} />
             </div>
-            <CardTitle className="text-white">Device Notifications</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">Device Notifications</CardTitle>
             <CardDescription className="text-slate-500">Get alerts even when the app is closed</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between p-4 bg-slate-950 rounded-2xl border border-slate-800">
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="space-y-1">
-                <p className="font-bold text-slate-200">Push Notifications</p>
+                <p className="font-bold text-slate-800 dark:text-slate-200">Push Notifications</p>
                 <p className="text-xs text-slate-500">
                   {permission === 'denied' ? 'Blocked in browser' : isSubscribed ? 'Subscribed' : 'Off'}
                 </p>
@@ -241,22 +241,22 @@ function SettingsPageInner() {
                 onClick={handleTogglePush}
                 className={cn(
                   "w-12 h-6 rounded-full transition-colors relative",
-                  isSubscribed ? "bg-emerald-500" : "bg-slate-800"
+                  isSubscribed ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-800"
                 )}
               >
                 <div className={cn(
-                  "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                  "absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm",
                   isSubscribed ? "left-7" : "left-1"
                 )} />
               </button>
             </div>
 
             <div className="space-y-4">
-               <div className="flex items-center gap-3 text-sm text-slate-400">
+               <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
                   <BellRing size={16} className="text-emerald-500" />
                   <span>Stay updated with morning alerts</span>
                </div>
-               <div className="flex items-center gap-3 text-sm text-slate-400">
+               <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
                   <Shield size={16} className="text-blue-500" />
                   <span>Privacy focused & Secure</span>
                </div>
@@ -265,17 +265,17 @@ function SettingsPageInner() {
         </Card>
 
         {/* Alert Content */}
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader>
-            <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-400 mb-4">
+            <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-500 dark:text-emerald-400 mb-4">
               <Bell size={24} />
             </div>
-            <CardTitle className="text-white">Daily Alerts</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">Daily Alerts</CardTitle>
             <CardDescription className="text-slate-500">Select what you want to be notified about</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <label className="flex items-center justify-between p-4 bg-slate-950 rounded-2xl border border-slate-800 cursor-pointer hover:border-slate-700 transition-colors">
-              <span className="font-bold text-slate-200">Yesterday&apos;s Profit</span>
+            <label className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+              <span className="font-bold text-slate-800 dark:text-slate-200">Yesterday&apos;s Profit</span>
               <input 
                 type="checkbox" 
                 className="w-5 h-5 accent-emerald-500" 
@@ -284,8 +284,8 @@ function SettingsPageInner() {
               />
             </label>
 
-            <label className="flex items-center justify-between p-4 bg-slate-950 rounded-2xl border border-slate-800 cursor-pointer hover:border-slate-700 transition-colors">
-              <span className="font-bold text-slate-200">Low Stock Alerts</span>
+            <label className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+              <span className="font-bold text-slate-800 dark:text-slate-200">Low Stock Alerts</span>
               <input 
                 type="checkbox" 
                 className="w-5 h-5 accent-emerald-500" 
@@ -294,14 +294,14 @@ function SettingsPageInner() {
               />
             </label>
 
-            <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center gap-2 text-slate-200 font-bold">
+            <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-bold">
                 <Clock size={16} className="text-emerald-500" />
                 Alert Time
               </div>
               <input 
                 type="time" 
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                 value={settings.alert_time}
                 onChange={e => setSettings({...settings, alert_time: e.target.value})}
               />
@@ -309,36 +309,37 @@ function SettingsPageInner() {
             </div>
           </CardContent>
         </Card>
+
       </div>
 
       {/* ── Subscription Management ── */}
       {profile.subscriptionPlan && (
         <Card className={cn(
-          'border',
+          'border shadow-sm',
           profile.subscriptionStatus === 'cancelled'
-            ? 'bg-slate-900 border-red-500/20'
-            : 'bg-slate-900 border-slate-800'
+            ? 'bg-red-50/50 dark:bg-slate-900 border-red-500/20'
+            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
         )}>
           <CardHeader>
-            <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-400 mb-4">
+            <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-500 dark:text-purple-400 mb-4">
               <CreditCard size={24} />
             </div>
-            <CardTitle className="text-white">Subscription</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">Subscription</CardTitle>
             <CardDescription className="text-slate-500">Manage your current plan and billing</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {/* Plan info row */}
-            <div className="flex items-center justify-between p-4 bg-slate-950 rounded-2xl border border-slate-800">
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="space-y-1">
-                <p className="font-bold text-slate-200">
+                <p className="font-bold text-slate-900 dark:text-slate-200">
                   {planLabel(profile.subscriptionPlan)} Plan
                   <span className={cn(
                     'ml-2 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider',
-                    profile.subscriptionStatus === 'trial'      ? 'bg-amber-500/20 text-amber-400' :
-                    profile.subscriptionStatus === 'cancelled'  ? 'bg-red-500/20 text-red-400' :
-                    profile.subscriptionStatus === 'expired'    ? 'bg-red-500/20 text-red-400' :
-                    profile.subscriptionStatus === 'active'     ? 'bg-emerald-500/20 text-emerald-400' :
-                    'bg-slate-700 text-slate-400'
+                    profile.subscriptionStatus === 'trial'      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' :
+                    profile.subscriptionStatus === 'cancelled'  ? 'bg-red-500/20 text-red-600 dark:text-red-400' :
+                    profile.subscriptionStatus === 'expired'    ? 'bg-red-500/20 text-red-600 dark:text-red-400' :
+                    profile.subscriptionStatus === 'active'     ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                    'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                   )}>
                     {profile.subscriptionStatus === 'trial'     ? 'Free Trial' :
                      profile.subscriptionStatus === 'cancelled' ? 'Cancelled' :
@@ -369,12 +370,12 @@ function SettingsPageInner() {
             {profile.subscriptionStatus !== 'cancelled' ? (
               <button
                 onClick={() => { setCancelReason(''); setShowCancelModal(true); }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all font-semibold text-sm"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-red-500/30 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all font-semibold text-sm"
               >
                 <X size={16} /> Cancel Subscription
               </button>
             ) : (
-              <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl text-sm text-red-400">
+              <div className="p-4 bg-red-50 dark:bg-red-500/5 border border-red-500/20 rounded-xl text-sm text-red-500 dark:text-red-400">
                 Your subscription is cancelled. Access continues until{' '}
                 <strong>
                   {profile.subscriptionExpiry
@@ -395,20 +396,20 @@ function SettingsPageInner() {
 
       {/* ── Billing History ── */}
       {paymentHistory.length > 0 && (
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader>
-            <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mb-4">
+            <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400 mb-4">
               <Clock size={24} />
             </div>
-            <CardTitle className="text-white">Billing History</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">Billing History</CardTitle>
             <CardDescription className="text-slate-500">View past payments and download receipts</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-slate-800 border-t border-slate-800">
+            <div className="divide-y divide-slate-200 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
               {paymentHistory.map(tx => (
-                <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors">
+                <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                   <div>
-                    <p className="text-sm font-bold text-slate-200">
+                    <p className="text-sm font-bold text-slate-900 dark:text-slate-200">
                       ₹{tx.amount} &middot; <span className="capitalize">{tx.plan || 'Unknown'}</span> Plan
                     </p>
                     <p className="text-xs text-slate-500 mt-1">
@@ -417,15 +418,15 @@ function SettingsPageInner() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <span className={cn('text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider',
-                      tx.status === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                      tx.status === 'pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                      'bg-red-500/10 text-red-400 border border-red-500/20'
+                      tx.status === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' :
+                      tx.status === 'pending' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' :
+                      'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
                     )}>
                       {tx.status}
                     </span>
                     {tx.status === 'success' && (
                       <a href={`/${locale}/receipt/${tx.txnid}`} target="_blank" rel="noopener noreferrer" 
-                        className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                        className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 flex items-center gap-1">
                         View Receipt
                       </a>
                     )}
@@ -468,8 +469,8 @@ function SettingsPageInner() {
         return (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <Zap size={16} className="text-emerald-400" />
-              <h2 className="text-base font-bold text-slate-200">Available Plans</h2>
+              <Zap size={16} className="text-emerald-500 dark:text-emerald-400" />
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">Available Plans</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {plans.map(plan => {
@@ -501,12 +502,12 @@ function SettingsPageInner() {
                         <span className={cn('text-3xl font-black', c.text)}>₹{plan.price}</span>
                         <span className="text-slate-500 text-sm">/month</span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">{plan.tagline}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{plan.tagline}</p>
                     </div>
                     <ul className="space-y-1.5 flex-1">
                       {plan.features.map(f => (
-                        <li key={f} className="flex items-start gap-2 text-xs text-slate-300">
-                          <CheckCircle size={12} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <li key={f} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                          <CheckCircle size={12} className="text-emerald-500 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
                           {f}
                         </li>
                       ))}
@@ -528,7 +529,7 @@ function SettingsPageInner() {
                       </a>
                     ) : (
                       <a href={`/${locale}/payment?plan=${plan.key}`}
-                        className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold text-center transition-all block">
+                        className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-300 text-sm font-bold text-center transition-all block">
                         {isPaid ? `Switch — ₹${plan.price}/mo` : `Subscribe — ₹${plan.price}/mo`}
                       </a>
                     )}
@@ -544,14 +545,14 @@ function SettingsPageInner() {
       {/* ── Cancel Confirmation Modal ── */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-5">
+          <div className="bg-white dark:bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-5">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
-                <AlertTriangle size={22} className="text-red-400" />
+                <AlertTriangle size={22} className="text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-100">Cancel Subscription?</h2>
-                <p className="text-sm text-slate-400 mt-1">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Cancel Subscription?</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                   You keep full access until your billing period ends, then move to limited
                   (read-only) access. Cancel within 30 days of payment for a full refund.
                 </p>
@@ -559,23 +560,23 @@ function SettingsPageInner() {
             </div>
 
             {/* What they will lose */}
-            <div className="bg-slate-950 rounded-xl p-4 space-y-2 border border-slate-800">
+            <div className="bg-slate-50 dark:bg-slate-950 rounded-xl p-4 space-y-2 border border-slate-200 dark:border-slate-800">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">You will lose access to</p>
               {profile.subscriptionPlan === 'business' && (
                 <>
-                  <p className="text-xs text-slate-400">• Bulk invoicing &amp; party ledger</p>
-                  <p className="text-xs text-slate-400">• Dealer / distributor accounts</p>
-                  <p className="text-xs text-slate-400">• Custom price lists &amp; GST/Tally export</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">• Bulk invoicing &amp; party ledger</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">• Dealer / distributor accounts</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">• Custom price lists &amp; GST/Tally export</p>
                 </>
               )}
               {(profile.subscriptionPlan === 'professional' || profile.subscriptionPlan === 'business') && (
                 <>
-                  <p className="text-xs text-slate-400">• Products above 500 (will be hidden, not deleted)</p>
-                  <p className="text-xs text-slate-400">• Udhar customers above 100</p>
-                  <p className="text-xs text-slate-400">• PDF &amp; CSV report export</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">• Products above 500 (will be hidden, not deleted)</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">• Udhar customers above 100</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">• PDF &amp; CSV report export</p>
                 </>
               )}
-              <p className="text-xs text-slate-400">• Priority support</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">• Priority support</p>
             </div>
 
             {/* Reason */}
@@ -584,7 +585,7 @@ function SettingsPageInner() {
                 Reason (optional — helps us improve)
               </label>
               <select
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500"
                 value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)}
               >
@@ -601,7 +602,7 @@ function SettingsPageInner() {
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setShowCancelModal(false)}
-                className="flex-1 bg-slate-800 text-slate-300 py-3 rounded-xl font-semibold hover:bg-slate-700 transition-all"
+                className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
               >
                 Keep Subscription
               </button>

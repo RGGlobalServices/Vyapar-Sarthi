@@ -14,7 +14,7 @@ const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieCha
 const ReportsChart = dynamic(() => import('@/components/ReportsChart'), {
   ssr: false,
   loading: () => (
-    <div className="lg:col-span-3 h-[472px] bg-slate-900 border border-slate-800 rounded-xl animate-pulse" />
+    <div className="lg:col-span-3 h-[472px] bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl animate-pulse" />
   ),
 });
 
@@ -126,7 +126,7 @@ export default function ReportsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-3xl font-bold text-emerald-500">{t('title') || 'Business Reports'}</h1>
         <div className="flex gap-2">
-          <button className="bg-slate-800 text-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-700 transition-colors">
+          <button className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
             <Calendar size={18} />
             {t('last7Days') || 'Last 7 Days'}
           </button>
@@ -134,7 +134,7 @@ export default function ReportsPage() {
           <button 
             onClick={handleExportPDF}
             disabled={exportingPDF}
-            className="bg-blue-500 text-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-blue-400 transition-all active:scale-95 shadow-lg shadow-blue-500/20 disabled:opacity-50"
+            className="bg-blue-500 text-white dark:text-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-blue-400 transition-all active:scale-95 shadow-lg shadow-blue-500/20 disabled:opacity-50"
           >
             {exportingPDF ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18} />}
             PDF
@@ -142,7 +142,7 @@ export default function ReportsPage() {
 
           <button 
             onClick={handleExportCSV}
-            className="bg-emerald-500 text-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
+            className="bg-emerald-500 text-white dark:text-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
           >
             <Download size={18} />
             CSV
@@ -163,14 +163,14 @@ export default function ReportsPage() {
       />
 
       <div className="grid grid-cols-1 gap-6 mt-6">
-        <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden">
-          <CardHeader className="bg-slate-800/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <CardTitle className="text-slate-200 xl:text-lg font-bold uppercase tracking-wider">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/0">
+            <CardTitle className="text-slate-900 dark:text-slate-200 xl:text-lg font-bold uppercase tracking-wider">
               {t('topSelling') || 'Smart Insights & Analytics'}
             </CardTitle>
             
             {/* Tabs for Top Products logic */}
-            <div className="flex bg-slate-950 rounded-lg p-1 border border-slate-800">
+            <div className="flex bg-slate-100 dark:bg-slate-950 rounded-lg p-1 border border-slate-200 dark:border-slate-800">
               {(['revenue', 'qty', 'category'] as const).map(mode => (
                 <button
                   key={mode}
@@ -178,8 +178,8 @@ export default function ReportsPage() {
                   className={cn(
                     'px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all',
                     activeTab === mode 
-                      ? 'bg-emerald-500 text-slate-900 shadow-sm' 
-                      : 'text-slate-500 hover:text-slate-300'
+                      ? 'bg-emerald-500 text-white dark:text-slate-900 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-500 dark:hover:text-slate-300'
                   )}
                 >
                   By {mode}

@@ -51,14 +51,14 @@ export default function UpcomingEventsCard() {
     })();
   }, []);
 
-  if (loading) return <div className="h-28 bg-slate-900/50 rounded-2xl animate-pulse border border-slate-800" />;
+  if (loading) return <div className="h-28 bg-slate-100 dark:bg-slate-900/50 rounded-2xl animate-pulse border border-slate-200 dark:border-slate-800" />;
   if (events.length === 0) return null;
 
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+    <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-white">
-          <CalendarDays size={16} className="text-sky-400" /> Upcoming Events
+        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+          <CalendarDays size={16} className="text-sky-500 dark:text-sky-400" /> Upcoming Events
         </h3>
         <button onClick={() => router.push(`/${locale}/calendar`)}
           className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 font-medium">
@@ -70,12 +70,12 @@ export default function UpcomingEventsCard() {
           const Icon = META[e.eventType]?.icon || CalendarDays;
           return (
             <button key={e.id} onClick={() => router.push(`/${locale}/calendar`)}
-              className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/40 border border-slate-800 hover:border-slate-700 text-left transition-all">
+              className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-left transition-all">
               <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ring-1', META[e.eventType]?.chip)}>
                 <Icon size={15} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-100 truncate">{e.title}</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{e.title}</p>
                 <p className="text-[11px] text-slate-500">
                   {dayLabel(e.eventDate)}
                   {e.amount != null ? ` · ₹${Number(e.amount).toLocaleString('en-IN')}` : ''}

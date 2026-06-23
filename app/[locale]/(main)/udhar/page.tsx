@@ -34,7 +34,7 @@ function relativeDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-const inp = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
+const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
 
 // ─── WhatsApp reminder helper ─────────────────────────────────────────────────
 async function sendWhatsAppReminder(customer: UdharCustomer, shopName: string) {
@@ -350,14 +350,14 @@ export default function UdharPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelected(null)}
-              className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95">
+              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-white transition-colors active:scale-95">
               <ChevronLeft size={20} />
             </button>
             <div className="w-11 h-11 rounded-2xl bg-orange-500/15 flex items-center justify-center text-lg font-black text-orange-400">
               {customer.name.charAt(0).toUpperCase()}
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">{customer.name}</h1>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">{customer.name}</h1>
               <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                 <Phone size={12} />{customer.mobile || t('noMobile')}
               </p>
@@ -370,17 +370,17 @@ export default function UdharPage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => { setReminderForm({ date: '', time: '', message: '', channel: 'whatsapp' }); setModal('autoReminder'); }}
-              className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors" title="Set Auto Reminder">
+              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors" title="Set Auto Reminder">
               <AlarmClock size={17} />
             </button>
-            <button onClick={() => openEdit(customer)} className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors"><Pencil size={17} /></button>
-            <button onClick={() => setDeleteId(customer.id)} className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={17} /></button>
+            <button onClick={() => openEdit(customer)} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors"><Pencil size={17} /></button>
+            <button onClick={() => setDeleteId(customer.id)} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={17} /></button>
           </div>
         </div>
 
         {/* Due card + actions */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Card className="bg-slate-900 border-slate-800">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <CardContent className="p-5">
               <p className="text-xs text-slate-400 uppercase font-bold">{t('totalDue')}</p>
               <p className={cn('text-3xl font-black mt-1', due > 0 ? 'text-orange-500' : 'text-emerald-400')}>
@@ -408,24 +408,24 @@ export default function UdharPage() {
         </div>
 
         {/* Transaction history */}
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
           <CardContent className="p-0">
-            <div className="px-5 py-4 border-b border-slate-800">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
               <p className="text-sm font-bold text-slate-300">{t('transactionHistory')}</p>
             </div>
             {sorted.length === 0 ? (
               <p className="px-5 py-10 text-center text-slate-500 text-sm">{t('noTransactions')}</p>
             ) : (
-              <div className="divide-y divide-slate-800">
+              <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {sorted.map(tx => (
-                  <div key={tx.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-800/30 transition-colors">
+                  <div key={tx.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-100 dark:bg-slate-800/ transition-colors">
                     <div className="flex items-center gap-3">
                       <div className={cn('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
                         tx.type === 'udhar' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400')}>
                         {tx.type === 'udhar' ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-200">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-200">
                           {tx.type === 'udhar' ? t('udharGiven') : t('paymentReceived')}
                           {tx.billNumber && <span className="ml-2 text-xs text-slate-500">#{tx.billNumber}</span>}
                         </p>
@@ -478,7 +478,7 @@ export default function UdharPage() {
         {modal === 'payment' && (
           <UModal title={t('recordPayment')} icon={<Minus size={17} className="text-emerald-400" />} onClose={() => setModal(null)}>
             <form onSubmit={handlePayment} className="space-y-4">
-              <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-400">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-400">
                 {t('totalDueLabel')}: <span className="text-orange-400 font-bold">₹{totalDue(customer).toLocaleString('en-IN')}</span>
               </div>
               <UField label={t('amountPaid')}><input type="number" min="1" max={totalDue(customer)} required inputMode="numeric" className={inp} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
@@ -491,8 +491,8 @@ export default function UdharPage() {
         {modal === 'autoReminder' && (
           <UModal title="Set Auto Reminder" icon={<AlarmClock size={17} className="text-amber-400" />} onClose={() => setModal(null)}>
             <form onSubmit={saveAutoReminder} className="space-y-4">
-              <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-300">
-                Customer: <span className="font-bold text-white">{customer.name}</span>
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-300">
+                Customer: <span className="font-bold text-slate-900 dark:text-white">{customer.name}</span>
                 <span className="ml-2 text-orange-400 font-bold">₹{due.toLocaleString('en-IN')} due</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -507,7 +507,7 @@ export default function UdharPage() {
                       className={cn('flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-semibold transition-all',
                         reminderForm.channel === v
                           ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                          : 'bg-slate-800 border-slate-700 text-slate-400'
+                          : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400'
                       )}>
                       <Icon size={15} />{label}
                     </button>
@@ -555,7 +555,7 @@ export default function UdharPage() {
               <button
                 onClick={() => { setSelectMode(s => !s); setSelectedIds(new Set()); }}
                 className={cn('px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all',
-                  selectMode ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                  selectMode ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 hover:text-slate-900 dark:text-white'
                 )}>
                 {selectMode ? 'Cancel' : 'Select'}
               </button>
@@ -572,7 +572,7 @@ export default function UdharPage() {
                 </button>
               ) : (
                 <a href={`/${locale}/payment?plan=vyapar`}
-                  className="bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-400 transition-colors text-sm active:scale-95">
+                  className="bg-indigo-500 text-slate-900 dark:text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-400 transition-colors text-sm active:scale-95">
                   <UserPlus size={16} /> Upgrade for more customers
                 </a>
               )}
@@ -582,14 +582,14 @@ export default function UdharPage() {
       </div>
 
       {/* Tabs — always visible */}
-      <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
+      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
         {[
           { key: 'customers', label: 'Customers', icon: Users },
           { key: 'dukandars', label: isWholesale ? 'Dukandars' : 'My Wholesalers', icon: Store },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key as any)}
             className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
-              tab === key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
+              tab === key ? 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-300'
             )}>
             <Icon size={15} />{label}
           </button>
@@ -601,11 +601,11 @@ export default function UdharPage() {
         <>
           {/* Insight chart */}
           {insightData?.items?.length > 0 && (
-            <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
               <CardContent className="p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-1.5 h-5 bg-orange-500 rounded-full" />
-                  <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wide">Top Debtors</h2>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wide">Top Debtors</h2>
                 </div>
                 <TopProductsPieChart items={insightData.items} total={insightData.total} currency={insightData.currency} valueLabel="Udhar Due" />
               </CardContent>
@@ -630,7 +630,7 @@ export default function UdharPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input type="text" placeholder={t('searchPlaceholder')}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
 
@@ -644,8 +644,8 @@ export default function UdharPage() {
               return (
                 <Card key={customer.id}
                   onClick={() => selectMode && canSelect ? toggleSelect(customer.id) : (!selectMode && setSelected(customer))}
-                  className={cn('bg-slate-900 border-slate-800 transition-all cursor-pointer group',
-                    selectMode && canSelect ? isSelected ? 'border-blue-500/50 bg-blue-500/5' : 'hover:border-slate-700' : 'hover:border-orange-500/40',
+                  className={cn('bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 transition-all cursor-pointer group',
+                    selectMode && canSelect ? isSelected ? 'border-blue-500/50 bg-blue-500/5' : 'hover:border-slate-300 dark:border-slate-700' : 'hover:border-orange-500/40',
                     selectMode && !canSelect && 'opacity-40 cursor-not-allowed'
                   )}>
                   <CardContent className="p-5">
@@ -655,14 +655,14 @@ export default function UdharPage() {
                           <div className={cn('w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all',
                             isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-600'
                           )}>
-                            {isSelected && <Check size={12} className="text-white" />}
+                            {isSelected && <Check size={12} className="text-slate-900 dark:text-white" />}
                           </div>
                         )}
                         <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-base font-bold text-orange-400 flex-shrink-0">
                           {customer.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <h3 className="text-sm font-bold text-slate-100 truncate">{customer.name}</h3>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{customer.name}</h3>
                           <div className="flex items-center gap-1 text-slate-500 text-xs mt-0.5">
                             <Phone size={11} />{customer.mobile || t('noMobile')}
                           </div>
@@ -672,7 +672,7 @@ export default function UdharPage() {
                         <ArrowRight size={18} className="text-slate-700 group-hover:text-orange-500 transition-colors flex-shrink-0 mt-1" />
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+                    <div className="grid grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-800 pt-3">
                       <div>
                         <p className="text-[10px] text-slate-500 uppercase font-bold">{t('totalDue')}</p>
                         <p className={cn('text-xl font-black', due > 0 ? 'text-orange-500' : 'text-emerald-400')}>
@@ -715,7 +715,7 @@ export default function UdharPage() {
                 <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-emerald-500" /></div>
               ) : dukandars.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-4">
-                  <div className="w-20 h-20 rounded-3xl bg-slate-800/60 flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-3xl bg-slate-100 dark:bg-slate-800/ flex items-center justify-center">
                     <Store className="w-9 h-9 text-slate-600" />
                   </div>
                   <div className="text-center">
@@ -732,7 +732,7 @@ export default function UdharPage() {
                       { label: 'Received', value: `₹${Object.values(dukandarSummary).reduce((s: number, v: any) => s + (v.paid || 0), 0).toLocaleString('en-IN')}`, color: 'text-emerald-400' },
                       { label: 'Dukandars', value: String(dukandars.length), color: 'text-blue-400' },
                     ].map(({ label, value, color }) => (
-                      <div key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-center">
+                      <div key={label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-center">
                         <p className={cn('text-lg font-bold', color)}>{value}</p>
                         <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
                       </div>
@@ -747,15 +747,15 @@ export default function UdharPage() {
                       const credits = dukandarCredits[d.id] || [];
 
                       return (
-                        <div key={d.id} className={cn('rounded-2xl border bg-slate-900 overflow-hidden transition-all',
-                          isOpen ? 'border-emerald-500/40' : 'border-slate-800')}>
-                          <button className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-800/50"
+                        <div key={d.id} className={cn('rounded-2xl border bg-white dark:bg-slate-900 overflow-hidden transition-all',
+                          isOpen ? 'border-emerald-500/40' : 'border-slate-200 dark:border-slate-800')}>
+                          <button className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-100 dark:bg-slate-800/"
                             onClick={() => toggleDukandar(d.id)}>
-                            <div className="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center text-base font-bold text-emerald-400 flex-shrink-0">
+                            <div className="w-11 h-11 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-base font-bold text-emerald-400 flex-shrink-0">
                               {(d.shopName || d.name || 'D').charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-white truncate">{d.shopName || d.name}</p>
+                              <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{d.shopName || d.name}</p>
                               <p className="text-xs text-slate-500 truncate">{d.email}</p>
                               {d.stockAlerts?.length > 0 && (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-semibold mt-0.5">
@@ -771,7 +771,7 @@ export default function UdharPage() {
                           </button>
 
                           {isOpen && (
-                            <div className="border-t border-slate-800 px-4 pb-4 pt-3 space-y-4">
+                            <div className="border-t border-slate-200 dark:border-slate-800 px-4 pb-4 pt-3 space-y-4">
                               {/* Stats */}
                               <div className="grid grid-cols-3 gap-3">
                                 {[
@@ -779,7 +779,7 @@ export default function UdharPage() {
                                   { label: 'Pending', value: `₹${s.pending.toLocaleString('en-IN')}`, color: 'text-red-400' },
                                   { label: 'Received', value: `₹${s.paid.toLocaleString('en-IN')}`, color: 'text-emerald-400' },
                                 ].map(({ label, value, color }) => (
-                                  <div key={label} className="bg-slate-800/60 rounded-xl p-3 text-center">
+                                  <div key={label} className="bg-slate-100 dark:bg-slate-800/ rounded-xl p-3 text-center">
                                     <p className={cn('text-base font-bold', color)}>{value}</p>
                                     <p className="text-[10px] text-slate-500 mt-0.5">{label}</p>
                                   </div>
@@ -801,7 +801,7 @@ export default function UdharPage() {
                                 </button>
                                 <button
                                   onClick={() => { loadDukandars(); toggleDukandar(d.id); }}
-                                  className="flex items-center justify-center gap-1.5 py-2.5 bg-slate-800 border border-slate-700 text-slate-400 rounded-xl text-xs font-bold hover:bg-slate-700 transition-colors">
+                                  className="flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-400 rounded-xl text-xs font-bold hover:bg-slate-700 transition-colors">
                                   <ArrowRight size={13} /> Refresh
                                 </button>
                               </div>
@@ -818,11 +818,11 @@ export default function UdharPage() {
                                     const isOverdue = c.dueDate && new Date(c.dueDate) < new Date() && c.status === 'pending';
                                     return (
                                       <div key={c.id} className={cn('rounded-xl border p-3.5',
-                                        c.status === 'paid' ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-slate-800/50 border-slate-700/50',
+                                        c.status === 'paid' ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-slate-100 dark:bg-slate-800/ border-slate-300 dark:border-slate-700/50',
                                         isOverdue && 'border-red-500/30')}>
                                         <div className="flex items-start justify-between gap-2 mb-1.5">
                                           <div>
-                                            <p className="text-base font-bold text-white">₹{c.amount.toLocaleString('en-IN')}</p>
+                                            <p className="text-base font-bold text-slate-900 dark:text-white">₹{c.amount.toLocaleString('en-IN')}</p>
                                             {c.description && <p className="text-xs text-slate-400">{c.description}</p>}
                                           </div>
                                           <div className="flex items-center gap-2">
@@ -874,7 +874,7 @@ export default function UdharPage() {
                 <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-emerald-500" /></div>
               ) : myDues.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-4">
-                  <div className="w-20 h-20 rounded-3xl bg-slate-800/60 flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-3xl bg-slate-100 dark:bg-slate-800/ flex items-center justify-center">
                     <Store className="w-9 h-9 text-slate-600" />
                   </div>
                   <div className="text-center">
@@ -890,7 +890,7 @@ export default function UdharPage() {
                       { label: 'Total Pending', value: `₹${myDues.filter(d => d.status === 'pending').reduce((s: number, d: any) => s + d.amount, 0).toLocaleString('en-IN')}`, color: 'text-red-400' },
                       { label: 'Total Paid', value: `₹${myDues.filter(d => d.status === 'paid').reduce((s: number, d: any) => s + d.amount, 0).toLocaleString('en-IN')}`, color: 'text-emerald-400' },
                     ].map(({ label, value, color }) => (
-                      <div key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-center">
+                      <div key={label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-center">
                         <p className={cn('text-lg font-bold', color)}>{value}</p>
                         <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
                       </div>
@@ -901,12 +901,12 @@ export default function UdharPage() {
                     {myDues.map((c: any) => {
                       const isOverdue = c.dueDate && new Date(c.dueDate) < new Date() && c.status === 'pending';
                       return (
-                        <div key={c.id} className={cn('rounded-2xl border bg-slate-900 p-4',
-                          c.status === 'paid' ? 'border-emerald-500/15' : 'border-slate-800',
+                        <div key={c.id} className={cn('rounded-2xl border bg-white dark:bg-slate-900 p-4',
+                          c.status === 'paid' ? 'border-emerald-500/15' : 'border-slate-200 dark:border-slate-800',
                           isOverdue && 'border-red-500/30')}>
                           <div className="flex items-start justify-between gap-2 mb-2">
                             <div>
-                              <p className="text-sm font-bold text-white">{c.wholesalerShop || c.wholesalerName}</p>
+                              <p className="text-sm font-bold text-slate-900 dark:text-white">{c.wholesalerShop || c.wholesalerName}</p>
                               {c.wholesalerShop && <p className="text-xs text-slate-500">{c.wholesalerName}</p>}
                             </div>
                             <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
@@ -981,13 +981,13 @@ export default function UdharPage() {
                 { v: 'email', label: 'Email', icon: Mail, color: 'text-blue-400', bg: 'bg-blue-500/15 border-blue-500/40' }].map(({ v, label, icon: Icon, color, bg }) => (
                 <button key={v} onClick={() => setBulkChannel(v as any)}
                   className={cn('flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-bold transition-all',
-                    bulkChannel === v ? cn(bg, color) : 'bg-slate-800 border-slate-700 text-slate-400'
+                    bulkChannel === v ? cn(bg, color) : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400'
                   )}>
                   <Icon size={16} />{label}
                 </button>
               ))}
             </div>
-            <div className="bg-slate-800 rounded-xl p-3 max-h-40 overflow-y-auto space-y-1">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 max-h-40 overflow-y-auto space-y-1">
               {customers.filter(c => selectedIds.has(c.id)).map(c => (
                 <div key={c.id} className="flex items-center justify-between text-sm">
                   <span className="text-slate-300">{c.name}</span>
@@ -996,7 +996,7 @@ export default function UdharPage() {
               ))}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setModal(null)} className="flex-1 py-3 bg-slate-800 text-slate-300 rounded-xl font-medium text-sm">Cancel</button>
+              <button onClick={() => setModal(null)} className="flex-1 py-3 bg-slate-50 dark:bg-slate-800 text-slate-300 rounded-xl font-medium text-sm">Cancel</button>
               <button onClick={handleBulkRemind} disabled={bulkSending}
                 className="flex-1 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
                 {bulkSending ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Send size={15} /> Send All</>}
@@ -1013,11 +1013,11 @@ export default function UdharPage() {
 function UModal({ title, icon, onClose, children }: { title: string; icon?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-10 h-1 rounded-full bg-slate-700" /></div>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-          <div className="flex items-center gap-2">{icon}<h2 className="text-base font-bold text-slate-100">{title}</h2></div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={19} /></button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2">{icon}<h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h2></div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:text-white p-1"><X size={19} /></button>
         </div>
         <div className="p-6">{children}</div>
       </div>
@@ -1032,7 +1032,7 @@ function UField({ label, children }: { label: string; children: React.ReactNode 
 function UActions({ onCancel, submitLabel, submitCls }: { onCancel: () => void; submitLabel: string; submitCls: string }) {
   return (
     <div className="flex gap-3 pt-1">
-      <button type="button" onClick={onCancel} className="flex-1 bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm">Cancel</button>
+      <button type="button" onClick={onCancel} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm">Cancel</button>
       <button type="submit" className={cn('flex-1 py-3 rounded-xl font-bold transition-colors text-sm', submitCls)}>{submitLabel}</button>
     </div>
   );
@@ -1041,15 +1041,15 @@ function UActions({ onCancel, submitLabel, submitCls }: { onCancel: () => void; 
 function ConfirmDel({ name, t, onConfirm, onCancel }: { name: string; t: any; onConfirm: () => void; onCancel: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+      <div className="bg-white dark:bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center"><Trash2 size={18} className="text-red-400" /></div>
-          <div><p className="font-bold text-slate-100">{t('deleteCustomer')}</p><p className="text-sm text-slate-400">{t('deleteWarning')}</p></div>
+          <div><p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteCustomer')}</p><p className="text-sm text-slate-400">{t('deleteWarning')}</p></div>
         </div>
-        <div className="bg-slate-800 rounded-lg px-4 py-3 text-sm text-slate-200 font-medium">{name}</div>
+        <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-3 text-sm text-slate-900 dark:text-slate-200 font-medium">{name}</div>
         <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700">{t('cancel')}</button>
-          <button onClick={onConfirm} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400">{t('delete')}</button>
+          <button onClick={onCancel} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700">{t('cancel')}</button>
+          <button onClick={onConfirm} className="flex-1 bg-red-500 text-slate-900 dark:text-white py-2.5 rounded-xl font-bold hover:bg-red-400">{t('delete')}</button>
         </div>
       </div>
     </div>

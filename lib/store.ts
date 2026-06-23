@@ -554,6 +554,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
           mrp: Number(item.price) || 0,
           sellingPrice: Number(item.price) || 0,
           cost: 0,
+          expiry_date: item.expiryDate || null,
         });
       }
     }
@@ -594,6 +595,7 @@ export interface ImportedStockEntry {
   quantity: number;
   unit?: string;
   price: number;
+  expiryDate?: string;
 }
 
 export interface ImportedSaleEntry {

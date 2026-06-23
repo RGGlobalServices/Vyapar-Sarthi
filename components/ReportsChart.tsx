@@ -14,9 +14,9 @@ interface Props {
 
 export default function ReportsChart({ data, title, salesLabel, profitLabel }: Props) {
   return (
-    <Card className="lg:col-span-2 bg-slate-900 border-slate-800 shadow-xl">
+    <Card className="lg:col-span-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl">
       <CardHeader>
-        <CardTitle className="text-slate-200 font-bold">{title}</CardTitle>
+        <CardTitle className="text-slate-900 dark:text-slate-200 font-bold">{title}</CardTitle>
       </CardHeader>
       <CardContent className="h-[400px]">
         <ResponsiveContainer width="100%" height="100%">

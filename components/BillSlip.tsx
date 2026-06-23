@@ -67,7 +67,6 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
           </div>
         )}
         <h1 className="text-[17px] font-black uppercase tracking-tight">{storeName}</h1>
-        <p className="text-[9px] font-bold mt-0.5">SMART DASHBOARD POS</p>
         {storeAddress && <p className="text-[9px] mt-0.5">{storeAddress}</p>}
         {storeMobile && <p className="text-[9px]">Mob: {storeMobile}</p>}
       </div>

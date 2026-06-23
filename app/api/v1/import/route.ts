@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI, Type } from '@google/genai';
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +10,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const apiKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
+      .split(',')
+      .map(k => k.trim())
+      .filter(Boolean);
+
+    if (apiKeys.length === 0) {
+      return NextResponse.json({ error: 'No Gemini API keys configured in environment' }, { status: 500 });
+    }
     
     // Convert the File into a base64 buffer for Gemini
     const arrayBuffer = await file.arrayBuffer();
@@ -29,7 +35,7 @@ export async function POST(req: NextRequest) {
     } else if (targetType === 'purchase') {
       specificInstructions = 'Focus on extracting a list of products purchased from a vendor/supplier. Identify product names, quantities, unit types, and prices. Also look for a total bill amount and a bill date. If any product is missing a price or quantity, or if the overall date is missing, flag it clearly so the user can be prompted.';
     } else if (targetType === 'stock') {
-      specificInstructions = 'Focus on extracting a bulk list of stock/inventory. Look for product names, quantities, and prices. Ensure you format it as stock entries.';
+      specificInstructions = 'Focus on extracting a bulk list of stock/inventory. Look for product names, quantities, units, prices, and expiry dates. CRITICAL: 1. You MUST extract EVERY SINGLE ITEM in the document. Do not stop early. If there are 55 products, return exactly 55 objects. 2. The price MUST be a numeric value in the "price" field. Ignore symbols like ₹, $, or ■. DO NOT put the price in the "unit" field. 3. The "unit" field should ONLY contain units of measurement (e.g. kg, g, ml, pcs, box) separated from the product name. 4. Extract expiry dates into the "expiryDate" field.';
     } else if (targetType === 'khata') {
       specificInstructions = 'Focus on extracting ledger (Udhar Khata) entries showing customer names, amounts they owe, dates, and any notes about the transaction.';
     }
@@ -43,95 +49,120 @@ Please analyze the attached document and return a detailed JSON object containin
 
 Provide a summary describing what you found.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { inlineData: { data: buffer.toString('base64'), mimeType: mimeType } }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            dataType: { type: Type.STRING, enum: ['khata', 'stock', 'sales', 'loans', 'mixed', 'purchase'] },
-            needsClarification: { type: Type.BOOLEAN, description: 'True if there is ambiguous data that requires user intervention' },
-            khata: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  customerName: { type: Type.STRING },
-                  amount: { type: Type.NUMBER },
-                  date: { type: Type.STRING },
-                  note: { type: Type.STRING }
-                }
-              }
-            },
-            stock: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  productName: { type: Type.STRING },
-                  quantity: { type: Type.NUMBER },
-                  unit: { type: Type.STRING },
-                  price: { type: Type.NUMBER },
-                  missingPrice: { type: Type.BOOLEAN },
-                  missingUnit: { type: Type.BOOLEAN }
-                }
-              }
-            },
-            sales: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  date: { type: Type.STRING },
-                  totalAmount: { type: Type.NUMBER },
-                  paymentMethod: { type: Type.STRING },
-                  note: { type: Type.STRING },
-                  missingDate: { type: Type.BOOLEAN },
-                  missingAmount: { type: Type.BOOLEAN }
-                }
-              }
-            },
-            purchase: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  billDate: { type: Type.STRING },
-                  vendorName: { type: Type.STRING },
-                  totalAmount: { type: Type.NUMBER },
-                  missingDate: { type: Type.BOOLEAN },
-                  missingAmount: { type: Type.BOOLEAN }
-                }
-              }
-            },
-            rawText: { type: Type.STRING }
-          }
-        }
-      }
-    });
+    let resultData = null;
+    let lastError: any = null;
 
-    let resultData = response.text ? JSON.parse(response.text) : null;
-    
-    if (!resultData) {
-      throw new Error('AI returned an empty response');
+    for (const apiKey of apiKeys) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: prompt },
+                  { inline_data: { data: buffer.toString('base64'), mime_type: mimeType } }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  summary: { type: "STRING" },
+                  dataType: { type: "STRING", enum: ['khata', 'stock', 'sales', 'loans', 'mixed', 'purchase'] },
+                  needsClarification: { type: "BOOLEAN", description: 'True if there is ambiguous data that requires user intervention' },
+                  khata: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        customerName: { type: "STRING" },
+                        amount: { type: "NUMBER" },
+                        date: { type: "STRING" },
+                        note: { type: "STRING" }
+                      }
+                    }
+                  },
+                  stock: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        productName: { type: "STRING" },
+                        quantity: { type: "NUMBER" },
+                        unit: { type: "STRING" },
+                        price: { type: "NUMBER" },
+                        expiryDate: { type: "STRING" },
+                        missingPrice: { type: "BOOLEAN" },
+                        missingUnit: { type: "BOOLEAN" }
+                      }
+                    }
+                  },
+                  sales: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        date: { type: "STRING" },
+                        totalAmount: { type: "NUMBER" },
+                        paymentMethod: { type: "STRING" },
+                        note: { type: "STRING" },
+                        missingDate: { type: "BOOLEAN" },
+                        missingAmount: { type: "BOOLEAN" }
+                      }
+                    }
+                  },
+                  purchase: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        billDate: { type: "STRING" },
+                        vendorName: { type: "STRING" },
+                        totalAmount: { type: "NUMBER" },
+                        missingDate: { type: "BOOLEAN" },
+                        missingAmount: { type: "BOOLEAN" }
+                      }
+                    }
+                  },
+                  rawText: { type: "STRING" }
+                }
+              }
+            }
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error?.message || 'Unknown API Error');
+        }
+
+        const textOutput = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        resultData = textOutput ? JSON.parse(textOutput) : null;
+        
+        if (resultData) {
+          // Clean up missing booleans defaults
+          resultData.khata = resultData.khata || [];
+          resultData.stock = resultData.stock || [];
+          resultData.sales = resultData.sales || [];
+          resultData.purchase = resultData.purchase || [];
+          
+          break; // Success! Exit the loop
+        }
+      } catch (err: any) {
+        console.warn(`API Key starting with ${apiKey.substring(0, 8)} failed:`, err.message);
+        lastError = err;
+        // Continue to the next key in the loop
+      }
     }
-    
-    // Clean up missing booleans defaults
-    resultData.khata = resultData.khata || [];
-    resultData.stock = resultData.stock || [];
-    resultData.sales = resultData.sales || [];
-    resultData.purchase = resultData.purchase || [];
+
+    if (!resultData) {
+      throw lastError || new Error('All AI API keys failed to return a response');
+    }
 
     return NextResponse.json(resultData);
     

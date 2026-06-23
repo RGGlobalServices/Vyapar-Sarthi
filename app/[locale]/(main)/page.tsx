@@ -19,7 +19,7 @@ import UpcomingEventsCard from '@/components/UpcomingEventsCard';
 
 const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   ssr: false,
-  loading: () => <div className="h-[300px] bg-slate-900/50 rounded-xl animate-pulse border border-slate-800" />,
+  loading: () => <div className="h-[300px] bg-slate-100 dark:bg-slate-900/50 rounded-xl animate-pulse border border-slate-200 dark:border-slate-800" />,
 });
 
 // Module-level client cache: survives component unmount (navigation away and back)
@@ -235,32 +235,32 @@ function DashboardInner() {
         {/* Skeleton header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
-            <div className="h-9 w-48 bg-slate-800 rounded-xl animate-pulse" />
-            <div className="h-4 w-32 bg-slate-800/60 rounded-lg mt-2 animate-pulse" />
+            <div className="h-9 w-48 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse" />
+            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800/60 rounded-lg mt-2 animate-pulse" />
           </div>
-          <div className="h-10 w-72 bg-slate-800/60 rounded-xl animate-pulse" />
+          <div className="h-10 w-72 bg-slate-200 dark:bg-slate-800/60 rounded-xl animate-pulse" />
         </div>
         {/* Skeleton stat cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-              <div className="h-3 w-24 bg-slate-800 rounded animate-pulse mb-4" />
-              <div className="h-8 w-32 bg-slate-800 rounded-xl animate-pulse" />
+            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
+              <div className="h-3 w-24 bg-slate-200 dark:bg-slate-800 rounded animate-pulse mb-4" />
+              <div className="h-8 w-32 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse" />
             </div>
           ))}
         </div>
         {/* Skeleton bottom cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800">
-                <div className="h-4 w-32 bg-slate-800 rounded animate-pulse" />
+            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+                <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
               </div>
               <div className="p-4 space-y-3">
                 {[...Array(5)].map((_, j) => (
                   <div key={j} className="flex justify-between">
-                    <div className="h-4 w-32 bg-slate-800/70 rounded animate-pulse" />
-                    <div className="h-4 w-16 bg-slate-800/70 rounded animate-pulse" />
+                    <div className="h-4 w-32 bg-slate-100 dark:bg-slate-800/70 rounded animate-pulse" />
+                    <div className="h-4 w-16 bg-slate-100 dark:bg-slate-800/70 rounded animate-pulse" />
                   </div>
                 ))}
               </div>
@@ -292,19 +292,19 @@ function DashboardInner() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">{t('title')}</h1>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
           <p className="text-slate-500 text-sm font-medium">Business health at a glance</p>
         </div>
         <div className="flex flex-col md:items-end gap-3 w-full md:w-auto">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full">
-            <div className="flex flex-wrap gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 shadow-sm">
+            <div className="flex flex-wrap gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               {['Today', 'Last 7 Days', 'Weekly', 'Monthly', 'Custom'].map(tf => (
                 <button 
                   key={tf} 
                   onClick={() => setTimeframe(tf)} 
                   className={cn(
                     "px-3 py-1.5 rounded-lg text-xs font-bold transition-all", 
-                    timeframe === tf ? "bg-emerald-500 text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-200"
+                    timeframe === tf ? "bg-emerald-500 text-white dark:text-slate-900 shadow-sm" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                   )}
                 >
                   {tf}
@@ -316,7 +316,7 @@ function DashboardInner() {
               className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm',
                 showProfit 
-                  ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white' 
+                  ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' 
                   : 'bg-emerald-600 border-emerald-500 text-white'
               )}
             >
@@ -325,23 +325,23 @@ function DashboardInner() {
             </button>
           </div>
           {timeframe === 'Custom' && (
-            <div className="flex flex-wrap items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
+            <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
               <input 
                 type="date" 
-                className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
                 value={customDates.start} 
                 onChange={e => setCustomDates({...customDates, start: e.target.value})} 
               />
               <span className="text-slate-500 text-xs font-medium">to</span>
               <input 
                 type="date" 
-                className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
                 value={customDates.end} 
                 onChange={e => setCustomDates({...customDates, end: e.target.value})} 
               />
               <button 
                 onClick={() => setAppliedCustomDates(customDates)}
-                className="bg-emerald-500 text-slate-900 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-400 transition-colors shadow-sm ml-1"
+                className="bg-emerald-500 text-white dark:text-slate-900 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-400 transition-colors shadow-sm ml-1"
                 disabled={!customDates.start || !customDates.end}
               >
                 Apply
@@ -383,32 +383,32 @@ function DashboardInner() {
       {/* Bottom Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Top Products */}
-        <Card className="bg-slate-900 border-slate-800 rounded-2xl overflow-hidden flex flex-col">
-          <CardHeader className="bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-800/50">
-            <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <TrendingUp size={16} className="text-emerald-400" /> Top Products
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+              <TrendingUp size={16} className="text-emerald-500 dark:text-emerald-400" /> Top Products
             </CardTitle>
-            <button onClick={() => setShowTopProductsModal(true)} className="text-xs bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 px-3 py-1 rounded-full font-bold transition-colors">
+            <button onClick={() => setShowTopProductsModal(true)} className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 px-3 py-1 rounded-full font-bold transition-colors">
               All
             </button>
           </CardHeader>
           <CardContent className="p-0 flex-1 overflow-y-auto">
             {data.topProducts?.length > 0 ? data.topProducts.map((item: any, idx: number) => (
-              <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-800/50 last:border-0 hover:bg-slate-800/30 transition-colors group">
+              <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                 <div>
-                  <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-100 group-hover:text-emerald-400 transition-colors flex items-center gap-1">
+                  <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1">
                     {item.name}
                   </Link>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{item.category}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-black text-slate-100">₹{item.value.toLocaleString('en-IN')}</p>
-                  <p className="text-[10px] text-emerald-500/80 font-bold">{item.qty} units</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">₹{item.value.toLocaleString('en-IN')}</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-500/80 font-bold">{item.qty} units</p>
                 </div>
               </div>
             )) : (
               <div className="py-12 flex flex-col items-center justify-center text-center">
-                <Package size={24} className="text-slate-700 mb-2" />
+                <Package size={24} className="text-slate-400 dark:text-slate-700 mb-2" />
                 <p className="text-sm text-slate-500 font-medium tracking-tight">No sales data for {timeframe}</p>
               </div>
             )}
@@ -416,23 +416,23 @@ function DashboardInner() {
         </Card>
 
         {/* Low Stock */}
-        <Card className="bg-slate-900 border-slate-800 rounded-2xl overflow-hidden">
-          <CardHeader className="bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-800/50">
-            <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <AlertTriangle size={16} className="text-red-400" /> Stock Alerts
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red-500 dark:text-red-400" /> Stock Alerts
             </CardTitle>
-            <button onClick={() => setShowStockAlertsModal(true)} className="text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3 py-1 rounded-full font-bold transition-colors">
+            <button onClick={() => setShowStockAlertsModal(true)} className="text-xs bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 px-3 py-1 rounded-full font-bold transition-colors">
               All
             </button>
           </CardHeader>
           <CardContent className="p-0">
             {data.lowStock.length > 0 ? data.lowStock.slice(0, 5).map((item: any) => (
-              <div key={item.id} className="flex justify-between items-center px-6 py-4 border-b border-slate-800 last:border-0 hover:bg-slate-800/30 transition-colors">
+              <div key={item.id} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                 <div>
-                  <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-100 hover:text-red-400 transition-colors">{item.name}</Link>
+                  <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 hover:text-red-600 dark:hover:text-red-400 transition-colors">{item.name}</Link>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{item.category}</p>
                 </div>
-                <span className="text-xs font-black text-red-400 bg-red-400/10 px-2.5 py-1 rounded-full border border-red-400/20">
+                <span className="text-xs font-black text-red-600 dark:text-red-400 bg-red-500/10 dark:bg-red-400/10 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-400/20">
                   {item.current_stock} Left
                 </span>
               </div>
@@ -445,12 +445,12 @@ function DashboardInner() {
         </Card>
 
         {/* Recent Bills */}
-        <Card className="bg-slate-900 border-slate-800 rounded-2xl overflow-hidden">
-          <CardHeader className="bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-800/50">
-            <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <IndianRupee size={16} className="text-indigo-400" /> Recent Invoices
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+              <IndianRupee size={16} className="text-indigo-500 dark:text-indigo-400" /> Recent Invoices
             </CardTitle>
-            <Link href="/billing/invoices" className="text-xs bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 px-3 py-1 rounded-full font-bold transition-colors">
+            <Link href="/billing/invoices" className="text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 px-3 py-1 rounded-full font-bold transition-colors">
               All
             </Link>
           </CardHeader>
@@ -459,19 +459,19 @@ function DashboardInner() {
               <Link 
                 key={bill.id} 
                 href={`/billing/invoices/${bill.id}`}
-                className="flex justify-between items-center px-6 py-4 border-b border-slate-800 last:border-0 hover:bg-slate-800/30 transition-colors group"
+                className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group"
               >
                 <div>
-                  <p className="text-sm font-bold text-slate-100 uppercase tracking-tighter group-hover:text-indigo-400 transition-colors">
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tighter group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                     {bill.invoice_number || `INV-${bill.id.substring(0, 6)}`}
                   </p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{bill.payment_type}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-black text-slate-100">
+                  <span className="text-sm font-black text-slate-900 dark:text-slate-100">
                     ₹{bill.total_amount.toLocaleString()}
                   </span>
-                  <Eye size={14} className="text-slate-600 group-hover:text-indigo-400 transition-colors" />
+                  <Eye size={14} className="text-slate-400 dark:text-slate-600 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
                 </div>
               </Link>
             )) : (
@@ -486,17 +486,17 @@ function DashboardInner() {
       {/* Top Products Modal */}
       {showTopProductsModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-800/20 rounded-t-2xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 rounded-t-2xl">
               <div>
-                <h2 className="text-xl font-black text-slate-100 flex items-center gap-2">
+                <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <TrendingUp className="text-emerald-500" /> All Top Selling Products
                 </h2>
-                <p className="text-sm text-slate-400 mt-1 font-medium">Sorted by highest revenue ({timeframe})</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Sorted by highest revenue ({timeframe})</p>
               </div>
               <button 
                 onClick={() => setShowTopProductsModal(false)}
-                className="p-2 bg-slate-800 text-slate-400 hover:text-white hover:bg-red-500/20 hover:text-red-400 rounded-xl transition-colors"
+                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-red-500/20 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-colors"
               >
                 <X size={20} />
               </button>
@@ -506,11 +506,11 @@ function DashboardInner() {
               {loadingFullTop ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <RefreshCw className="animate-spin text-emerald-500 mb-4" size={32} />
-                  <p className="text-slate-400 font-medium">Loading full list...</p>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">Loading full list...</p>
                 </div>
               ) : fullTopProducts.length > 0 ? (
                 <table className="w-full text-left">
-                  <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase sticky top-0 backdrop-blur-md z-10">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-xs uppercase sticky top-0 backdrop-blur-md z-10">
                     <tr>
                       <th className="px-6 py-4 font-bold">Rank</th>
                       <th className="px-6 py-4 font-bold">Product</th>
@@ -519,36 +519,36 @@ function DashboardInner() {
                       <th className="px-6 py-4 font-bold text-right">Units Sold</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
                     {fullTopProducts.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-800/30 transition-colors group">
+                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                         <td className="px-6 py-4">
                           <span className={cn(
                             "inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-black",
-                            idx === 0 ? "bg-amber-500/20 text-amber-500" :
-                            idx === 1 ? "bg-slate-300/20 text-slate-300" :
-                            idx === 2 ? "bg-amber-700/20 text-amber-600" :
-                            "bg-slate-800 text-slate-500"
+                            idx === 0 ? "bg-amber-500/20 text-amber-600 dark:text-amber-500" :
+                            idx === 1 ? "bg-slate-300/20 text-slate-600 dark:text-slate-300" :
+                            idx === 2 ? "bg-amber-700/20 text-amber-700 dark:text-amber-600" :
+                            "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-500"
                           )}>
                             {idx + 1}
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-100 group-hover:text-emerald-400 transition-colors">
+                          <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                             {item.name}
                           </Link>
                         </td>
-                        <td className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">{item.category}</td>
-                        <td className="px-6 py-4 text-sm font-black text-slate-100 text-right">₹{item.value.toLocaleString('en-IN')}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-emerald-500/80 text-right">{item.qty}</td>
+                        <td className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{item.category}</td>
+                        <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-slate-100 text-right">₹{item.value.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-500/80 text-right">{item.qty}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               ) : (
                 <div className="py-20 flex flex-col items-center justify-center text-center">
-                  <Package size={48} className="text-slate-800 mb-4" />
-                  <p className="text-lg text-slate-300 font-bold">No products found</p>
+                  <Package size={48} className="text-slate-300 dark:text-slate-800 mb-4" />
+                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">No products found</p>
                   <p className="text-sm text-slate-500 font-medium mt-1">There were no sales in the selected timeframe.</p>
                 </div>
               )}
@@ -560,17 +560,17 @@ function DashboardInner() {
       {/* Stock Alerts Modal */}
       {showStockAlertsModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-800/20 rounded-t-2xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 rounded-t-2xl">
               <div>
-                <h2 className="text-xl font-black text-slate-100 flex items-center gap-2">
+                <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <AlertTriangle className="text-red-500" /> All Stock Alerts
                 </h2>
-                <p className="text-sm text-slate-400 mt-1 font-medium">Items that have reached minimum stock levels</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Items that have reached minimum stock levels</p>
               </div>
               <button 
                 onClick={() => setShowStockAlertsModal(false)}
-                className="p-2 bg-slate-800 text-slate-400 hover:text-white hover:bg-red-500/20 hover:text-red-400 rounded-xl transition-colors"
+                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-red-500/20 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-colors"
               >
                 <X size={20} />
               </button>
@@ -580,11 +580,11 @@ function DashboardInner() {
               {loadingFullAlerts ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <RefreshCw className="animate-spin text-red-500 mb-4" size={32} />
-                  <p className="text-slate-400 font-medium">Checking inventory...</p>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">Checking inventory...</p>
                 </div>
               ) : fullStockAlerts.length > 0 ? (
                 <table className="w-full text-left">
-                  <thead className="bg-slate-800/50 text-slate-400 text-[10px] uppercase sticky top-0 backdrop-blur-md z-10 border-b border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-[10px] uppercase sticky top-0 backdrop-blur-md z-10 border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-6 py-4 font-black">Product</th>
                       <th className="px-6 py-4 font-black text-center">In Stock</th>
@@ -593,11 +593,11 @@ function DashboardInner() {
                       <th className="px-6 py-4 font-black text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
                     {fullStockAlerts.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-800/30 transition-colors group">
+                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                         <td className="px-6 py-4">
-                          <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-100 group-hover:text-red-400 transition-colors">
+                          <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
                             {item.name}
                           </Link>
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{item.category}</p>
@@ -610,12 +610,12 @@ function DashboardInner() {
                             {item.current_stock}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm font-medium text-slate-600 text-center">{item.min_stock}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-600 text-center">{item.min_stock}</td>
                         <td className="px-6 py-4">
                           <input 
                             type="number" 
                             placeholder="+ Qty"
-                            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white w-24 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+                            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white w-24 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
                             value={refillValues[item.id] || ''}
                             onChange={e => setRefillValues({...refillValues, [item.id]: e.target.value})}
                           />
@@ -624,7 +624,7 @@ function DashboardInner() {
                           <button 
                             onClick={() => handleQuickFill(item.id)}
                             disabled={refillLoading === item.id || !refillValues[item.id]}
-                            className="bg-emerald-500 text-slate-900 px-4 py-1.5 rounded-lg text-xs font-black hover:bg-emerald-400 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95"
+                            className="bg-emerald-500 text-white dark:text-slate-900 px-4 py-1.5 rounded-lg text-xs font-black hover:bg-emerald-400 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95"
                           >
                             {refillLoading === item.id ? <RefreshCw size={14} className="animate-spin mx-auto" /> : 'Refill'}
                           </button>
@@ -635,8 +635,8 @@ function DashboardInner() {
                 </table>
               ) : (
                 <div className="py-20 flex flex-col items-center justify-center text-center">
-                  <Package size={48} className="text-slate-800 mb-4" />
-                  <p className="text-lg text-slate-300 font-bold">No stock alerts</p>
+                  <Package size={48} className="text-slate-300 dark:text-slate-800 mb-4" />
+                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">No stock alerts</p>
                   <p className="text-sm text-slate-500 font-medium mt-1">Your inventory levels are healthy.</p>
                 </div>
               )}
@@ -658,13 +658,13 @@ export default function Dashboard() {
 
 function StatCard({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
   return (
-    <Card className="bg-slate-900 border-slate-800 rounded-2xl border-b-4 border-slate-800 hover:border-emerald-500/50 transition-all duration-300">
+    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 border-b-slate-200 dark:border-b-slate-800 hover:border-emerald-500/50 transition-all duration-300">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{title}</CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-black text-slate-50 tracking-tighter">{value}</div>
+        <div className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tighter">{value}</div>
       </CardContent>
     </Card>
   );

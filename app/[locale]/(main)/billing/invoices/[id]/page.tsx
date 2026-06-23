@@ -8,6 +8,7 @@ import { Link } from '@/i18n/routing';
 import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
+import { useAuthStore } from '@/lib/store';
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -15,6 +16,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuthStore();
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -101,14 +103,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   if (!invoice) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] gap-6">
-        <div className="w-20 h-20 bg-slate-900 border border-slate-800 rounded-3xl flex items-center justify-center">
-          <Clock size={40} className="text-slate-700" />
+        <div className="w-20 h-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl flex items-center justify-center shadow-sm">
+          <Clock size={40} className="text-slate-400 dark:text-slate-700" />
         </div>
         <div className="text-center">
-          <h2 className="text-2xl font-black text-white tracking-tight">Invoice Not Found</h2>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Invoice Not Found</h2>
           <p className="text-slate-500 mt-1">This record might have been deleted or moved.</p>
         </div>
-        <Link href="/billing/invoices" className="bg-emerald-500 text-slate-900 px-8 py-3 rounded-2xl font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
+        <Link href="/billing/invoices" className="bg-emerald-500 text-white dark:text-slate-900 px-8 py-3 rounded-2xl font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
           Back to History
         </Link>
       </div>
@@ -127,13 +129,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     total: invoice.total_amount,
     paymentMethod: invoice.payment_type,
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
-    date: new Date(invoice.created_at).toLocaleDateString()
+    date: new Date(invoice.created_at).toLocaleDateString(),
+    storeName: user?.storeName || 'Store'
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 relative">
       {/* ── PRINT-ONLY CONTAINER ── */}
-      <div className="hidden print:block print:absolute print:inset-0 print:z-[9999] bg-white">
+      <div id="print-area" className="hidden print:block print:absolute print:inset-0 print:z-[9999] bg-white">
         <BillSlip {...billData} />
       </div>
 
@@ -158,11 +161,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-5">
-              <Link href="/billing/invoices" className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-500 hover:text-white transition-all shadow-sm">
+              <Link href="/billing/invoices" className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm">
                 <ArrowLeft size={24} />
               </Link>
               <div>
-                <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
                   INV-{invoice.id.substring(0, 8).toUpperCase()}
                   <span className={cn(
                     "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
@@ -176,10 +179,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 <p className="text-slate-500 text-sm font-medium mt-1">Record created on {new Date(invoice.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
               </div>
             </div>
-            
             <button 
               onClick={handlePrint}
-              className="hidden md:flex items-center gap-2 bg-slate-900 border border-slate-800 px-6 py-3 rounded-2xl font-bold text-slate-300 hover:bg-slate-800 hover:text-white transition-all shadow-sm"
+              className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-6 py-3 rounded-2xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm"
             >
               <Printer size={18} /> Print Record
             </button>
@@ -188,16 +190,16 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {/* Left Column: Items */}
-          <div className="md:col-span-2 space-y-6">
-            <Card className="bg-slate-900 border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="bg-slate-800/20 border-b border-slate-800 p-6">
-                <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2 uppercase tracking-widest">
+          <div className="md:col-span-2 space-y-6 min-w-0">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+              <CardHeader className="bg-slate-50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800 p-6">
+                <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2 uppercase tracking-widest">
                   <Package size={16} className="text-emerald-500" /> Purchased Items
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-0">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-800/30 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">
+              <CardContent className="p-0 overflow-x-auto w-full">
+                <table className="w-full text-left min-w-[500px]">
+                  <thead className="bg-slate-100 dark:bg-slate-800/30 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-6 py-4">Product Name</th>
                       <th className="px-6 py-4 text-center">Qty</th>
@@ -205,15 +207,15 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       <th className="px-6 py-4 text-right">Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50 text-slate-200">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-slate-900 dark:text-slate-200">
                     {invoice.items.map((item: any) => (
-                      <tr key={item.id} className="hover:bg-slate-800/20 transition-colors">
+                      <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold">{item.name}</div>
                           <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
                         </td>
                         <td className="px-6 py-4 text-center font-black">{item.quantity}</td>
-                        <td className="px-6 py-4 text-right text-slate-400 font-medium">₹{item.price_per_unit.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">₹{item.price_per_unit.toLocaleString('en-IN')}</td>
                         <td className="px-6 py-4 text-right font-black">₹{item.total.toLocaleString('en-IN')}</td>
                       </tr>
                     ))}
@@ -226,7 +228,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           {/* Right Column: Summary & Info */}
           <div className="space-y-6">
             {/* Summary Card */}
-            <Card className="bg-slate-900 border-slate-800 rounded-3xl overflow-hidden shadow-2xl border-b-4 border-emerald-500/20">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl border-b-4 border-b-emerald-500/20 dark:border-b-emerald-500/20">
               <CardHeader className="bg-emerald-500/5 border-b border-emerald-500/10 p-6">
                 <CardTitle className="text-sm font-bold text-emerald-500 flex items-center gap-2 uppercase tracking-widest">
                   Bill Summary
@@ -235,47 +237,47 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               <CardContent className="p-6 space-y-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500 font-medium tracking-tight">Total Items</span>
-                  <span className="text-slate-100 font-bold">{invoice.items.length}</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold">{invoice.items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500 font-medium tracking-tight">Payment Status</span>
                   <span className="text-emerald-500 font-bold uppercase tracking-wider text-xs">Completed</span>
                 </div>
-                <div className="pt-4 border-t border-slate-800 flex justify-between items-end">
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
                   <span className="text-sm font-bold text-slate-400 uppercase tracking-widest pb-1">Grand Total</span>
-                  <span className="text-3xl font-black text-white tracking-tighter">₹{invoice.total_amount.toLocaleString('en-IN')}</span>
+                  <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{invoice.total_amount.toLocaleString('en-IN')}</span>
                 </div>
               </CardContent>
             </Card>
 
             {/* Customer Info Card */}
-            <Card className="bg-slate-900 border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
               <CardContent className="p-6 space-y-4">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
+                  <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
                     <User size={20} />
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Customer</p>
-                    <p className="text-slate-100 font-bold">{invoice.customer_name}</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.customer_name}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
+                  <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
                     <CreditCard size={20} />
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Payment Mode</p>
-                    <p className="text-slate-100 font-bold">{invoice.payment_type}</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.payment_type}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
+                  <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
                     <Calendar size={20} />
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Date</p>
-                    <p className="text-slate-100 font-bold">{new Date(invoice.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-bold">{new Date(invoice.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                   </div>
                 </div>
               </CardContent>

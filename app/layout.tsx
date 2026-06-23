@@ -7,11 +7,11 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Vyapar Sarthi - Smart Kirana & Retail Shop Management App',
+    default: 'Vyapar Sarthi - Smart Business & POS Management App',
     template: '%s | Vyapar Sarthi'
   },
-  description: 'Vyapar Sarthi is an advanced management application for Kirana stores, retail shops, and small businesses. Manage inventory, billing, payments, and customers with ease.',
-  keywords: ['kirana shop management', 'retail billing software', 'vyapar sarthi', 'inventory management', 'POS system', 'business management app'],
+  description: 'Vyapar Sarthi is an advanced management application for wholesalers, distributors, retail shops, and all types of businesses. Manage inventory, billing, payments, and customers with ease.',
+  keywords: ['business management app', 'wholesale software', 'distributor software', 'retail billing software', 'vyapar sarthi', 'inventory management', 'POS system'],
   authors: [{ name: 'Vyapar Sarthi Team' }],
   creator: 'Vyapar Sarthi',
   publisher: 'Vyapar Sarthi',
@@ -23,8 +23,8 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_IN',
     url: 'https://vyaparsarthii.com',
-    title: 'Vyapar Sarthi - Smart Kirana & Retail Shop Management App',
-    description: 'Vyapar Sarthi is an advanced management application for Kirana stores, retail shops, and small businesses.',
+    title: 'Vyapar Sarthi - Smart Business & POS Management App',
+    description: 'Vyapar Sarthi is an advanced management application for wholesalers, distributors, retail shops, and all types of businesses.',
     siteName: 'Vyapar Sarthi',
     images: [
       {
@@ -37,8 +37,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Vyapar Sarthi - Smart Kirana & Retail Shop Management App',
-    description: 'Vyapar Sarthi is an advanced management application for Kirana stores, retail shops, and small businesses.',
+    title: 'Vyapar Sarthi - Smart Business & POS Management App',
+    description: 'Vyapar Sarthi is an advanced management application for wholesalers, distributors, retail shops, and all types of businesses.',
     creator: '@vyaparsarthi',
     images: ['/og-image.jpg'],
   },
@@ -56,7 +56,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark scroll-smooth" suppressHydrationWarning>
-      <body className={`${inter.className} bg-slate-950 text-slate-50 min-h-screen`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                if (localStorage.theme === 'light') {
+                  document.documentElement.classList.remove('dark');
+                }
+              } catch (_) {}
+            `,
+          }}
+        />
+      </head>
+      <body className={`${inter.className} bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-50 min-h-screen`} suppressHydrationWarning>
         {children}
       </body>
     </html>

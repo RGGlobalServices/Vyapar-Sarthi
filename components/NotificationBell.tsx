@@ -127,22 +127,32 @@ export default function NotificationBell() {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <button onClick={toggleDropdown} className="relative p-2 rounded-xl hover:bg-slate-800 transition-all">
-        <Bell className="w-5 h-5 text-slate-400" />
+      <button onClick={toggleDropdown} 
+        className={cn(
+          "relative p-2.5 rounded-2xl transition-all duration-300",
+          showDropdown ? "bg-sky-50 dark:bg-sky-500/10 text-sky-500" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
+        )}>
+        <Bell className={cn("w-5 h-5 transition-transform duration-300", showDropdown ? "scale-110" : "")} />
         {badge > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-            {badge > 9 ? '9+' : badge}
-          </span>
+          <>
+            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping opacity-75"></span>
+            <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1 bg-red-500 shadow-md shadow-red-500/30 text-white text-[10px] font-bold rounded-full flex items-center justify-center transform scale-100 animate-in zoom-in duration-300">
+              {badge > 9 ? '9+' : badge}
+            </span>
+          </>
         )}
       </button>
 
       {showDropdown && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden">
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white">Notifications</h3>
+        <div className="absolute right-0 top-[calc(100%+0.5rem)] w-80 sm:w-96 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/50 dark:border-slate-800/50 rounded-2xl shadow-2xl shadow-slate-200/50 dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)] z-50 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200 origin-top-right">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Notifications</h3>
+              {badge > 0 && <span className="bg-sky-500/10 text-sky-500 text-[10px] font-bold px-1.5 py-0.5 rounded-md">{badge} New</span>}
+            </div>
             {unread.length > 0 && (
-              <button onClick={markAllRead} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-                <CheckCheck className="w-3 h-3" /> Mark all read
+              <button onClick={markAllRead} className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 flex items-center gap-1 transition-colors">
+                <CheckCheck className="w-3.5 h-3.5" /> Mark all read
               </button>
             )}
           </div>
@@ -150,15 +160,15 @@ export default function NotificationBell() {
           <div className="max-h-80 overflow-y-auto custom-scrollbar">
             {/* Upcoming calendar events */}
             {events.length > 0 && (
-              <div className="border-b border-slate-800">
-                <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-sky-400">Upcoming</p>
+              <div className="border-b border-slate-200 dark:border-slate-800">
+                <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-sky-500 dark:text-sky-400">Upcoming</p>
                 {events.slice(0, 5).map((e: any) => (
                   <div key={e.id} onClick={() => dismissEvent(e)}
-                    className="p-3 border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/50 transition-all">
+                    className="p-3 border-b border-slate-100 dark:border-slate-800/50 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all">
                     <div className="flex items-start gap-3">
-                      <CalendarClock className="w-4 h-4 text-sky-400 mt-0.5 flex-shrink-0" />
+                      <CalendarClock className="w-4 h-4 text-sky-500 dark:text-sky-400 mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white font-semibold truncate">{e.title}</p>
+                        <p className="text-sm text-slate-900 dark:text-white font-semibold truncate">{e.title}</p>
                         <p className="text-xs text-slate-500 mt-0.5">
                           {eventDayLabel(e.eventDate)}
                           {e.amount != null ? ` · ₹${Number(e.amount).toLocaleString('en-IN')}` : ''}
@@ -174,26 +184,26 @@ export default function NotificationBell() {
             {/* Unread notifications only */}
             {unread.length === 0 && events.length === 0 ? (
               <div className="p-8 text-center text-slate-500">
-                <Check className="w-6 h-6 mx-auto mb-2 text-slate-600" />
-                <p className="text-sm">No new notifications</p>
-                <p className="text-xs text-slate-600 mt-0.5">You&apos;re all caught up</p>
+                <Check className="w-6 h-6 mx-auto mb-2 text-slate-400 dark:text-slate-600" />
+                <p className="text-sm text-slate-600 dark:text-slate-400">No new notifications</p>
+                <p className="text-xs text-slate-400 dark:text-slate-600 mt-0.5">You&apos;re all caught up</p>
               </div>
             ) : (
               unread.slice(0, 20).map((n) => (
                 <div key={n.id} onClick={() => handleNotificationClick(n)}
-                  className="p-3 border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/50 transition-all bg-slate-800/30">
+                  className="p-3 border-b border-slate-100 dark:border-slate-800/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all bg-slate-50 dark:bg-slate-800/30">
                   <div className="flex items-start gap-3">
                     <span className="text-lg">{TYPE_ICON[n.type] || '💡'}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white font-semibold">{n.title}</p>
-                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">{n.message}</p>
-                      <p className="text-[10px] text-slate-600 mt-1">
+                      <p className="text-sm text-slate-900 dark:text-white font-semibold">{n.title}</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">{n.message}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-1">
                         {n.createdAt ? new Date(n.createdAt).toLocaleDateString() : ''}
                       </p>
                     </div>
                     <button onClick={(e) => { e.stopPropagation(); markRead(n.id); }}
-                      className="p-1 hover:bg-slate-700 rounded" title="Mark as read">
-                      <Check className="w-3 h-3 text-slate-500" />
+                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="Mark as read">
+                      <Check className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                     </button>
                   </div>
                 </div>

@@ -300,9 +300,9 @@ export default function LoginPage() {
                 <ArrowLeft size={14} /> Back to sign in
               </button>
               <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mb-4">
-                <Mail size={20} className="text-emerald-400" />
+                <Mail size={20} className="text-emerald-500 dark:text-emerald-400" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-50">Reset your password</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Reset your password</h2>
               <p className="text-slate-400 text-sm mt-1">Enter your email and we&apos;ll send a 6-digit OTP.</p>
             </div>
             <form onSubmit={handleSendOtp} className="space-y-4">
@@ -311,7 +311,7 @@ export default function LoginPage() {
                 <input type="email" value={fpEmail}
                   onChange={e => { setFpEmail(e.target.value); setFpError(''); }}
                   placeholder="you@example.com" autoComplete="email"
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-600 transition-colors" />
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors" />
               </div>
               {fpError && (
                 <div className="flex items-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm">
@@ -320,7 +320,7 @@ export default function LoginPage() {
               )}
               <button type="submit" disabled={fpLoading}
                 className={cn('w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2',
-                  fpLoading ? 'bg-emerald-600/50 text-emerald-300 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-500/20')}>
+                  fpLoading ? 'bg-emerald-600/50 text-emerald-300 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 shadow-lg shadow-emerald-500/20')}>
                 {fpLoading ? <><Loader2 size={16} className="animate-spin" /> Sending…</> : 'Send OTP'}
               </button>
             </form>
@@ -334,11 +334,11 @@ export default function LoginPage() {
   return (
     <div suppressHydrationWarning className="min-h-screen flex">
       {leftPanel}
-      <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
+      <div className="flex-1 flex items-center justify-center p-6 bg-white dark:bg-slate-950">
         <div className="w-full max-w-sm space-y-8">
           {mobileHeader}
           <div>
-            <h2 className="text-2xl font-bold text-slate-50">Welcome back</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Welcome back</h2>
             <p className="text-slate-400 text-sm mt-1">Sign in to your store account</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -346,7 +346,7 @@ export default function LoginPage() {
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Email</label>
               <input name="email" type="email" value={form.email} onChange={handleChange}
                 placeholder="you@example.com" autoComplete="email"
-                className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-600 transition-colors" />
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors" />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -359,7 +359,7 @@ export default function LoginPage() {
               <div className="relative">
                 <input name="password" type={show ? 'text' : 'password'} value={form.password}
                   onChange={handleChange} placeholder="••••••••" autoComplete="current-password"
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-600 transition-colors" />
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors" />
                 <button type="button" onClick={() => setShow(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                   {show ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -373,10 +373,24 @@ export default function LoginPage() {
             )}
             <button type="submit" disabled={loading}
               className={cn('w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2',
-                loading ? 'bg-emerald-600/50 text-emerald-300 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30')}>
+                loading ? 'bg-emerald-600/50 text-emerald-300 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30')}>
               {loading ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : 'Sign In'}
             </button>
           </form>
+
+          <div className="mt-6 text-center space-y-3">
+            <p className="text-sm text-slate-400">
+              Don&apos;t have an account?{' '}
+              <a href="https://vyaparsarthii.com" className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors">
+                Create Account
+              </a>
+            </p>
+            <p className="text-xs">
+              <a href="https://vyaparsarthii.com" className="text-slate-500 hover:text-slate-400 underline transition-colors flex items-center justify-center gap-1">
+                <ArrowLeft size={12} /> Return to Website
+              </a>
+            </p>
+          </div>
 
           <GoogleAuthDivider />
           <GoogleSignInButton />
@@ -391,9 +405,9 @@ function GoogleAuthDivider() {
   if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
   return (
     <div className="relative my-5">
-      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-700" /></div>
+      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700" /></div>
       <div className="relative flex justify-center text-xs">
-        <span className="bg-slate-950 px-3 text-slate-500">or continue with</span>
+        <span className="bg-white dark:bg-slate-950 px-3 text-slate-500">or continue with</span>
       </div>
     </div>
   );

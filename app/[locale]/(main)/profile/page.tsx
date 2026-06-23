@@ -145,12 +145,12 @@ export default function ProfilePage() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <button onClick={() => router.push(`/${locale}/`)}
-          className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-all">
+          className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <h1 className="text-3xl font-black text-white tracking-tight">Profile Manager</h1>
-          <p className="text-slate-400">Manage your personal and business identity</p>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Profile Manager</h1>
+          <p className="text-slate-500 dark:text-slate-400">Manage your personal and business identity</p>
         </div>
         <button onClick={handleSave} disabled={saving}
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50">
@@ -171,7 +171,7 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Branding */}
-        <Card className="bg-slate-900 border-slate-800 md:col-span-1">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 md:col-span-1 shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm uppercase tracking-widest text-slate-500">Branding</CardTitle>
           </CardHeader>
@@ -203,7 +203,7 @@ export default function ProfilePage() {
               <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
             </div>
             <div className="text-center">
-              <p className="font-bold text-slate-200">Business Logo</p>
+              <p className="font-bold text-slate-900 dark:text-slate-200">Business Logo</p>
               <p className="text-xs text-slate-500 mt-1">Shown on bills &amp; invoices</p>
             </div>
           </CardContent>
@@ -211,9 +211,9 @@ export default function ProfilePage() {
 
         {/* Business + Owner details */}
         <div className="md:col-span-2 space-y-6">
-          <Card className="bg-slate-900 border-slate-800">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
+              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
                 <Store size={20} className="text-emerald-500" /> Business Information
               </CardTitle>
             </CardHeader>
@@ -223,7 +223,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input type="text"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                     value={shop?.name || ''} onChange={e => setShop({ ...shop, name: e.target.value })} />
                 </div>
               </div>
@@ -232,7 +232,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <MapPin className="absolute left-3 top-3 text-slate-500" size={18} />
                   <textarea rows={3}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none resize-none"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none resize-none transition-colors"
                     value={shop?.address || ''} onChange={e => setShop({ ...shop, address: e.target.value })} />
                 </div>
               </div>
@@ -242,7 +242,7 @@ export default function ProfilePage() {
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <input type="tel"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                       value={shop?.mobile || ''} onChange={e => setShop({ ...shop, mobile: e.target.value })} />
                   </div>
                 </div>
@@ -251,7 +251,7 @@ export default function ProfilePage() {
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <select
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
                       value={shop?.business_type || 'kirana'} onChange={e => setShop({ ...shop, business_type: e.target.value })}>
                       <option value="kirana">Kirana / Grocery</option>
                       <option value="medical">Medical / Pharmacy</option>
@@ -265,9 +265,9 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-900 border-slate-800">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
+              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
                 <User size={20} className="text-blue-500" /> Owner Information
               </CardTitle>
             </CardHeader>
@@ -277,7 +277,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input type="text" disabled
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-400 outline-none opacity-60"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 outline-none opacity-80 dark:opacity-60 transition-colors"
                     value={user?.name || ''} />
                 </div>
               </div>
@@ -286,7 +286,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input type="email" disabled
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-400 outline-none opacity-60"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 outline-none opacity-80 dark:opacity-60 transition-colors"
                     value={user?.email || ''} />
                 </div>
               </div>
@@ -296,14 +296,14 @@ export default function ProfilePage() {
       </div>
 
       {/* Change Password */}
-      <Card className="bg-slate-900 border-slate-800">
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-white">
-              <KeyRound size={20} className="text-amber-400" /> Change Password
+            <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <KeyRound size={20} className="text-amber-500 dark:text-amber-400" /> Change Password
             </CardTitle>
             <button onClick={() => { setCpOpen(v => !v); setCpError(''); setCpOk(false); }}
-              className="text-xs text-slate-400 hover:text-white transition-colors">
+              className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
               {cpOpen ? 'Cancel' : 'Change'}
             </button>
           </div>
@@ -323,9 +323,9 @@ export default function ProfilePage() {
                       <input type={cpShow ? 'text' : 'password'} value={cpCurrent}
                         onChange={e => { setCpCurrent(e.target.value); setCpError(''); }}
                         placeholder="Current password"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm" />
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-colors" />
                       <button type="button" onClick={() => setCpShow(v => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
                         {cpShow ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
                     </div>
@@ -335,23 +335,23 @@ export default function ProfilePage() {
                     <input type={cpShow ? 'text' : 'password'} value={cpNew}
                       onChange={e => { setCpNew(e.target.value); setCpError(''); }}
                       placeholder="Min 6 characters"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm" />
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-colors" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-500 uppercase">Confirm Password</label>
                     <input type={cpShow ? 'text' : 'password'} value={cpConfirm}
                       onChange={e => { setCpConfirm(e.target.value); setCpError(''); }}
                       placeholder="Repeat new password"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm" />
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-colors" />
                   </div>
                 </div>
                 {cpError && (
-                  <div className="flex items-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm">
+                  <div className="flex items-center gap-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl px-4 py-3 text-sm">
                     <AlertCircle size={14} /> {cpError}
                   </div>
                 )}
                 <button type="submit" disabled={cpLoading}
-                  className="px-6 py-2.5 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
+                  className="px-6 py-2.5 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
                   {cpLoading ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Lock size={15} /> Update Password</>}
                 </button>
               </form>
@@ -361,21 +361,21 @@ export default function ProfilePage() {
       </Card>
 
       {/* Today's Profit (password-protected) */}
-      <Card className="bg-slate-900 border-slate-800">
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-white">
-              <TrendingUp size={20} className="text-emerald-400" /> Today&apos;s Profit
+            <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" /> Today&apos;s Profit
             </CardTitle>
             {!profitData && (
               <button onClick={() => { setProfitOpen(v => !v); setProfitError(''); setProfitPwd(''); }}
-                className="text-xs text-slate-400 hover:text-white transition-colors">
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
                 {profitOpen ? 'Cancel' : 'View'}
               </button>
             )}
             {profitData && (
               <button onClick={() => { setProfitData(null); setProfitOpen(false); }}
-                className="text-xs text-slate-400 hover:text-white transition-colors">Hide</button>
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Hide</button>
             )}
           </div>
         </CardHeader>
@@ -395,18 +395,18 @@ export default function ProfilePage() {
                   <input type={profitShow ? 'text' : 'password'} value={profitPwd}
                     onChange={e => { setProfitPwd(e.target.value); setProfitError(''); }}
                     placeholder="Enter profit password"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm" />
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
                   <button type="button" onClick={() => setProfitShow(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
                     {profitShow ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
                 {profitError && (
-                  <p className="text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{profitError}</p>
+                  <p className="text-red-600 dark:text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{profitError}</p>
                 )}
               </div>
               <button type="submit" disabled={profitLoading}
-                className="px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
+                className="px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
                 {profitLoading ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
                 {profitLoading ? 'Checking…' : 'Show'}
               </button>
@@ -415,23 +415,23 @@ export default function ProfilePage() {
 
           {hasProfitPwd && !profitData && !profitOpen && (
             <div className="flex items-center gap-3 py-2 text-slate-500 text-sm">
-              <Lock size={16} /> Today&apos;s profit is hidden. Click <strong className="text-slate-300 ml-1">View</strong> to unlock.
+              <Lock size={16} /> Today&apos;s profit is hidden. Click <strong className="text-slate-800 dark:text-slate-300 ml-1">View</strong> to unlock.
             </div>
           )}
 
           {profitData && (
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-slate-800/60 rounded-xl p-4 text-center">
+              <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-center">
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Revenue</p>
-                <p className="text-xl font-black text-white">₹{profitData.totalRevenue.toLocaleString('en-IN')}</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">₹{profitData.totalRevenue.toLocaleString('en-IN')}</p>
               </div>
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
-                <p className="text-xs text-emerald-400 uppercase tracking-wider mb-1">Profit</p>
-                <p className="text-xl font-black text-emerald-400">₹{profitData.totalProfit.toLocaleString('en-IN')}</p>
+              <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 text-center">
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Profit</p>
+                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">₹{profitData.totalProfit.toLocaleString('en-IN')}</p>
               </div>
-              <div className="bg-slate-800/60 rounded-xl p-4 text-center">
+              <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-center">
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Bills</p>
-                <p className="text-xl font-black text-white">{profitData.saleCount}</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">{profitData.saleCount}</p>
               </div>
             </div>
           )}

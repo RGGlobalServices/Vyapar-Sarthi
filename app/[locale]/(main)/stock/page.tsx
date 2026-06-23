@@ -23,7 +23,7 @@ function getStatus(item: StockItem) {
   return 'ok';
 }
 
-const cellInp = 'bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-100 text-sm w-full focus:outline-none focus:ring-1 focus:ring-emerald-500';
+const cellInp = 'bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-900 dark:text-slate-100 text-sm w-full focus:outline-none focus:ring-1 focus:ring-emerald-500';
 
 export default function StockPage() {
   const t  = useTranslations('Stock');
@@ -221,7 +221,7 @@ export default function StockPage() {
   }
 
   const selectedItem = items.find(i => i.id === selId);
-  const inp = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
+  const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
 
   function statusLabel(s: string) {
     if (s === 'ok')  return t('inStock');
@@ -238,13 +238,13 @@ export default function StockPage() {
     return rows.map(item => {
       const status = getStatus(item);
       return (
-        <tr key={item.id} className={cn('group text-slate-200 hover:bg-slate-800/40 transition-all duration-200', item.archived && 'opacity-60')}>
+        <tr key={item.id} className={cn('group text-slate-900 dark:text-slate-200 hover:bg-slate-100 dark:bg-slate-800/ transition-all duration-200', item.archived && 'opacity-60')}>
           <td className="px-6 py-4 font-medium"><SmartTranslator text={item.name} locale={locale} /></td>
           <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
           <td className="px-6 py-4">
             <button
               onClick={() => openEditModal(item)}
-              className="font-bold text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
+              className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
               title="Click to adjust stock"
             >
               {item.current}
@@ -267,7 +267,7 @@ export default function StockPage() {
               <button
                 onClick={() => openEditModal(item)}
                 title={t('editRow')}
-                className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all active:scale-90 border border-slate-700/50">
+                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50">
                 <Pencil size={14} />
               </button>
 
@@ -275,7 +275,7 @@ export default function StockPage() {
                 onClick={() => toggleArchive(item.id)}
                 title={item.archived ? t('unarchive') : t('archive')}
                 className={cn(
-                  "p-2 rounded-lg bg-slate-800 transition-all active:scale-90 border border-slate-700/50",
+                  "p-2 rounded-lg bg-slate-50 dark:bg-slate-800 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50",
                   item.archived
                     ? "text-blue-400 hover:bg-blue-500/20 hover:text-blue-300"
                     : "text-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
@@ -286,7 +286,7 @@ export default function StockPage() {
               <button 
                 onClick={() => permanentDelete(item)}
                 title={t('deletePermanently')}
-                className="p-2 rounded-lg bg-slate-800 text-slate-500 hover:bg-red-500/20 hover:text-red-400 transition-all active:scale-90 border border-slate-700/50">
+                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-500 hover:bg-red-500/20 hover:text-red-400 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50">
                 <Trash2 size={14} />
               </button>
             </div>
@@ -323,7 +323,7 @@ export default function StockPage() {
       </div>
 
       {/* View mode tabs */}
-      <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
+      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
         {[
           { key: 'all', label: 'All Stock', icon: Package },
           ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
@@ -331,7 +331,7 @@ export default function StockPage() {
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
             className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
-              viewMode === key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300')}>
+              viewMode === key ? 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-300')}>
             <Icon size={15} />{label}
           </button>
         ))}
@@ -342,7 +342,7 @@ export default function StockPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
             <select
-              className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-w-[220px]"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-w-[220px]"
               value={selectedGodownId} onChange={e => setSelectedGodownId(e.target.value)}>
               <option value="">— Select Godown —</option>
               {godowns.map((g: any) => (
@@ -355,29 +355,29 @@ export default function StockPage() {
           </div>
 
           {!selectedGodownId ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center">
               <Warehouse className="w-12 h-12 mx-auto mb-3 text-slate-600" />
               <p className="text-slate-400 text-sm">Select a godown to view stock levels</p>
             </div>
           ) : loadingGodown ? (
             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-emerald-400" size={28} /></div>
           ) : !godownData || (godownData.inventory || []).length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center">
               <Package className="w-12 h-12 mx-auto mb-3 text-slate-600" />
               <p className="text-slate-400 text-sm">No products in this godown yet</p>
             </div>
           ) : (
-            <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
               <CardContent className="p-0">
-                <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-2">
+                <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
                   <Warehouse size={15} className="text-emerald-400" />
-                  <span className="text-sm font-semibold text-slate-200">{godownData.name}</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-200">{godownData.name}</span>
                   <span className="ml-auto text-xs font-mono text-slate-500">{godownData.godownCode || godownData.godown_code}</span>
                   <span className="text-xs text-slate-500">{(godownData.inventory || []).length} products</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
+                    <thead className="bg-slate-100 dark:bg-slate-800/ text-slate-400 text-xs uppercase">
                       <tr>
                         <th className="px-5 py-3">Product</th>
                         <th className="px-5 py-3">Category</th>
@@ -388,13 +388,13 @@ export default function StockPage() {
                         <th className="px-5 py-3">Unit</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                       {(godownData.inventory || []).map((item: any) => {
                         const p = item.product;
                         const shopItem = items.find(i => String(i.id) === String(item.productId || item.product_id));
                         const status = shopItem ? getStatus(shopItem) : null;
                         return (
-                          <tr key={item.id} className="text-slate-200 hover:bg-slate-800/30 transition-colors">
+                          <tr key={item.id} className="text-slate-900 dark:text-slate-200 hover:bg-slate-100 dark:bg-slate-800/ transition-colors">
                             <td className="px-5 py-3 font-medium">{p?.name}</td>
                             <td className="px-5 py-3 text-slate-400">{p?.category}</td>
                             <td className="px-5 py-3">
@@ -402,7 +402,7 @@ export default function StockPage() {
                             </td>
                             <td className="px-5 py-3">
                               {shopItem ? (
-                                <span className={cn('font-semibold', status === 'out' ? 'text-red-400' : status === 'low' ? 'text-orange-400' : 'text-slate-200')}>
+                                <span className={cn('font-semibold', status === 'out' ? 'text-red-400' : status === 'low' ? 'text-orange-400' : 'text-slate-900 dark:text-slate-200')}>
                                   {shopItem.current}
                                 </span>
                               ) : <span className="text-slate-600">—</span>}
@@ -440,7 +440,7 @@ export default function StockPage() {
                 <button key={shop.id}
                   onClick={() => { switchShop(shop.id); setTimeout(fetchStock, 300); }}
                   className={cn('flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                    isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700')}>
+                    isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-white hover:border-slate-300 dark:border-slate-700')}>
                   <Store size={14} />
                   <span>{shop.name}</span>
                   {shop.shopCode && <span className="text-[10px] font-mono text-slate-500">{shop.shopCode}</span>}
@@ -461,13 +461,13 @@ export default function StockPage() {
         <div className="relative flex-[2]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input type="text" placeholder={t('searchPlaceholder')}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         
         <div className="relative flex-1">
           <select 
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none cursor-pointer"
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none cursor-pointer"
             value={selectedCategory}
             onChange={e => setSelectedCategory(e.target.value)}
           >
@@ -483,7 +483,7 @@ export default function StockPage() {
 
         <button onClick={() => setShowArchived(v => !v)}
           className={cn('px-6 py-2 rounded-xl border text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap',
-            showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200')}>
+            showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}>
           <Archive size={16} />
           {showArchived ? t('hideArchived') : t('archive')}
           {items.filter(i => i.archived).length > 0 && (
@@ -493,11 +493,11 @@ export default function StockPage() {
       </div>
 
       {/* Active Table */}
-      <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
+              <thead className="bg-slate-100 dark:bg-slate-800/ text-slate-400 text-xs uppercase">
                 <tr>
                   <th className="px-6 py-4">{t('colProduct')}</th>
                   <th className="px-6 py-4">{t('colCategory')}</th>
@@ -508,7 +508,7 @@ export default function StockPage() {
                   <th className="px-6 py-4 text-center">{t('colActions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800" onClick={e => e.stopPropagation()}>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
                 {renderRows(activeItems)}
                 {loading ? (
                   <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
@@ -523,14 +523,14 @@ export default function StockPage() {
 
       {/* Archived Table */}
       {showArchived && (
-        <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
           <CardContent className="p-0">
-            <div className="px-6 py-3 border-b border-slate-800 flex items-center gap-2 text-amber-400 text-sm font-semibold">
+            <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 text-amber-400 text-sm font-semibold">
               <Archive size={15} />{t('archivedProducts')}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
+                <thead className="bg-slate-100 dark:bg-slate-800/ text-slate-400 text-xs uppercase">
                   <tr>
                     <th className="px-6 py-4">{t('colProduct')}</th>
                     <th className="px-6 py-4">{t('colCategory')}</th>
@@ -541,7 +541,7 @@ export default function StockPage() {
                     <th className="px-6 py-4 text-center">{t('colActions')}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800" onClick={e => e.stopPropagation()}>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
                   {renderRows(archivedItems)}
                   {archivedItems.length === 0 && (
                     <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500">{t('noArchived')}</td></tr>
@@ -555,7 +555,7 @@ export default function StockPage() {
 
       {/* Activity Log */}
       {(log?.length ?? 0) > 0 && (
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs text-slate-400 uppercase font-bold">{t('recentActivity')}</p>
@@ -602,16 +602,16 @@ export default function StockPage() {
       {/* ── Smart Edit Modal ── */}
       {editModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditModal(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-              <h2 className="text-base font-bold text-slate-100 truncate pr-4">{editModal.item.name}</h2>
-              <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-slate-200 shrink-0"><X size={20} /></button>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate pr-4">{editModal.item.name}</h2>
+              <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-slate-900 dark:text-slate-200 shrink-0"><X size={20} /></button>
             </div>
 
             <div className="p-5 space-y-5">
               {/* Current stock display */}
-              <div className="flex items-center justify-between bg-slate-800 rounded-xl px-5 py-4">
+              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-xl px-5 py-4">
                 <div>
                   <p className="text-xs text-slate-400 mb-0.5">Current Stock</p>
                   <p className="text-3xl font-black text-emerald-400">{editModal.item.current}</p>
@@ -629,20 +629,20 @@ export default function StockPage() {
                 <div className="flex gap-2 mb-3">
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjType: 'in' } : m)}
-                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'in' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:text-slate-200')}
+                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'in' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}
                   >+ Add Stock</button>
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjType: 'out' } : m)}
-                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'out' ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200')}
+                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'out' ? 'bg-red-500 text-slate-900 dark:text-white' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}
                   >− Remove</button>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjQty: String(Math.max(0, Number(m.adjQty) - 1)) } : m)}
-                    className="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xl font-bold flex items-center justify-center transition-colors active:scale-90">−</button>
+                    className="w-11 h-11 rounded-full bg-slate-50 dark:bg-slate-800 hover:bg-slate-700 text-slate-900 dark:text-slate-200 text-xl font-bold flex items-center justify-center transition-colors active:scale-90">−</button>
                   <input
                     type="number" min="0"
-                    className="flex-1 text-center bg-slate-800 border border-slate-700 rounded-xl py-2.5 text-slate-100 text-xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="flex-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl py-2.5 text-slate-900 dark:text-slate-100 text-xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     value={editModal.adjQty}
                     onChange={e => setEditModal(m => m ? { ...m, adjQty: e.target.value } : m)}
                     placeholder="0"
@@ -650,7 +650,7 @@ export default function StockPage() {
                   />
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjQty: String(Number(m.adjQty) + 1) } : m)}
-                    className="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xl font-bold flex items-center justify-center transition-colors active:scale-90">+</button>
+                    className="w-11 h-11 rounded-full bg-slate-50 dark:bg-slate-800 hover:bg-slate-700 text-slate-900 dark:text-slate-200 text-xl font-bold flex items-center justify-center transition-colors active:scale-90">+</button>
                 </div>
                 {Number(editModal.adjQty) > 0 && (
                   <div className="mt-2.5 text-center text-sm">
@@ -691,7 +691,7 @@ export default function StockPage() {
 
             {/* Footer */}
             <div className="px-5 pb-5 flex gap-3">
-              <button onClick={() => setEditModal(null)} className="flex-1 py-2.5 bg-slate-800 rounded-xl text-slate-300 text-sm font-semibold hover:bg-slate-700 transition-colors">Cancel</button>
+              <button onClick={() => setEditModal(null)} className="flex-1 py-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-300 text-sm font-semibold hover:bg-slate-700 transition-colors">Cancel</button>
               <button
                 onClick={saveEditModal}
                 disabled={editModal.submitting}
@@ -707,21 +707,21 @@ export default function StockPage() {
       {/* Stock In Modal */}
       {modal === 'in' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
             {/* Sticky header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
-              <div className="flex items-center gap-2"><ArrowDownLeft size={18} className="text-emerald-400" /><h2 className="text-lg font-bold text-slate-100">{t('stockIn')}</h2></div>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-200"><X size={20} /></button>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+              <div className="flex items-center gap-2"><ArrowDownLeft size={18} className="text-emerald-400" /><h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('stockIn')}</h2></div>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-900 dark:text-slate-200"><X size={20} /></button>
             </div>
             <form onSubmit={handleStockIn} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1 p-6 space-y-4">
-              <div className="flex rounded-lg overflow-hidden border border-slate-700">
+              <div className="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700">
                 <button type="button" onClick={() => { setIsNew(false); setError(''); }}
-                  className={cn('flex-1 py-2 text-sm font-medium transition-colors', !isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:text-slate-200')}>
+                  className={cn('flex-1 py-2 text-sm font-medium transition-colors', !isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}>
                   {t('existingProduct')}
                 </button>
                 <button type="button" onClick={() => { setIsNew(true); setError(''); }}
-                  className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1', isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:text-slate-200')}>
+                  className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1', isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}>
                   <Plus size={14} />{t('newProduct')}
                 </button>
               </div>
@@ -867,7 +867,7 @@ export default function StockPage() {
               </div>
 
               {/* Pricing Update Section */}
-              <div className="bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 space-y-3">
+              <div className="bg-slate-100 dark:bg-slate-800/ rounded-xl p-4 border border-slate-300 dark:border-slate-700/50 space-y-3">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('updatePricing') || 'Price Adjustment'}</p>
@@ -909,9 +909,9 @@ export default function StockPage() {
             </div>
 
             {/* Sticky footer buttons */}
-            <div className="flex gap-3 px-6 py-4 border-t border-slate-800 flex-shrink-0">
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
               <button type="button" onClick={closeModal}
-                className="flex-1 bg-slate-800 text-slate-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-slate-200 transition-all active:scale-95">
+                className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-slate-900 dark:text-slate-200 transition-all active:scale-95">
                 {t('cancel')}
               </button>
               <button type="submit" disabled={submitting}
@@ -928,10 +928,10 @@ export default function StockPage() {
       {/* Stock Out Modal */}
       {modal === 'out' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-              <div className="flex items-center gap-2"><ArrowUpRight size={18} className="text-red-400" /><h2 className="text-lg font-bold text-slate-100">{t('stockOut')}</h2></div>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-200"><X size={20} /></button>
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2"><ArrowUpRight size={18} className="text-red-400" /><h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('stockOut')}</h2></div>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-900 dark:text-slate-200"><X size={20} /></button>
             </div>
             <form onSubmit={handleStockOut} className="p-6 space-y-4">
               <div>
@@ -947,11 +947,11 @@ export default function StockPage() {
                 )}
               </div>
               {selectedItem && (
-                <div className="bg-slate-800 rounded-lg px-4 py-3 flex items-center gap-3">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-3 flex items-center gap-3">
                   <Package size={18} className="text-slate-400" />
                   <div>
-                    <p className="text-sm font-medium text-slate-200">{selectedItem.name}</p>
-                    <p className="text-xs text-slate-400">{t('available')}: <span className="text-slate-200 font-semibold">{selectedItem.current} {selectedItem.unit}</span></p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-200">{selectedItem.name}</p>
+                    <p className="text-xs text-slate-400">{t('available')}: <span className="text-slate-900 dark:text-slate-200 font-semibold">{selectedItem.current} {selectedItem.unit}</span></p>
                   </div>
                 </div>
               )}
@@ -969,8 +969,8 @@ export default function StockPage() {
               </div>
               {error && <p className="text-red-400 text-sm">{error}</p>}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={closeModal} className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">{t('cancel')}</button>
-                <button type="submit" disabled={submitting} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                <button type="button" onClick={closeModal} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">{t('cancel')}</button>
+                <button type="submit" disabled={submitting} className="flex-1 bg-red-500 text-slate-900 dark:text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                   {submitting ? <Loader2 className="animate-spin" size={18} /> : null}
                   {submitting ? 'Updating...' : t('removeStock')}
                 </button>
@@ -983,20 +983,20 @@ export default function StockPage() {
       {/* Permanent Delete Confirm */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
                 <Trash2 size={18} className="text-red-400" />
               </div>
               <div>
-                <p className="font-bold text-slate-100">{t('deleteTitle')}</p>
+                <p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteTitle')}</p>
                 <p className="text-sm text-slate-400 mt-0.5">{t('deleteWarning')}</p>
               </div>
             </div>
-            <div className="bg-slate-800 rounded-lg px-4 py-3 text-sm text-slate-200 font-medium">{deleteTarget.name}</div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-3 text-sm text-slate-900 dark:text-slate-200 font-medium">{deleteTarget.name}</div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteTarget(null)} className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">{t('cancel')}</button>
-              <button onClick={confirmDelete} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors">{t('deletePermanently')}</button>
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">{t('cancel')}</button>
+              <button onClick={confirmDelete} className="flex-1 bg-red-500 text-slate-900 dark:text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors">{t('deletePermanently')}</button>
             </div>
           </div>
         </div>
@@ -1009,7 +1009,7 @@ export default function StockPage() {
 
 function StatCard({ title, value, color }: { title: string; value: number; color: string }) {
   return (
-    <Card className="bg-slate-900 border-slate-800">
+    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
       <CardContent className="p-6">
         <p className="text-sm text-slate-400 font-medium">{title}</p>
         <p className={cn('text-3xl font-black mt-1', color)}>{value}</p>

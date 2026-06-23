@@ -229,16 +229,16 @@ export default function MainLayoutClient({
     <>
       <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
       <div className="flex-1 flex flex-col overflow-y-auto">
-        <header className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-800 bg-slate-900/50">
+        <header className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
             <div className="md:hidden flex items-center gap-2">
               <button 
                 onClick={() => setIsMobileOpen(true)}
-                className="p-2 text-slate-400 hover:text-white bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors"
+                className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800/50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
               >
                 <Menu size={20} />
               </button>
-              <span className="text-sm font-bold text-white truncate max-w-[150px]">{profile.shopName || 'Vyapar Sarthi'}</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{profile.shopName || 'Vyapar Sarthi'}</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -250,12 +250,12 @@ export default function MainLayoutClient({
         <main className="flex-1 p-3 md:p-8">
           {children}
         </main>
-        <footer className="border-t border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-shrink-0 bg-slate-900/50">
-          <p className="text-xs text-slate-600" suppressHydrationWarning>
+        <footer className="border-t border-slate-200 dark:border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-shrink-0 bg-slate-50 dark:bg-slate-900/50">
+          <p className="text-xs text-slate-500 dark:text-slate-600" suppressHydrationWarning>
             © {new Date().getFullYear()}{' '}
-            <span className="text-slate-400 font-semibold">{profile.shopName || 'Vyapar Sarthi'}</span>. All rights reserved.
+            <span className="text-slate-700 dark:text-slate-400 font-semibold">{profile.shopName || 'Vyapar Sarthi'}</span>. All rights reserved.
           </p>
-          <p className="text-xs text-slate-700">Vyapar Sarthi v2.0</p>
+          <p className="text-xs text-slate-500 dark:text-slate-700">Vyapar Sarthi v2.0</p>
         </footer>
       </div>
       <AIFloatingButton />

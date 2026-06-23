@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays
+  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -35,10 +35,13 @@ export default function Sidebar({
   const emptyShopForm = { name: '', businessType: 'kirana', address: '', mobile: '' };
   const [shopForm, setShopForm] = useState(emptyShopForm);
 
+  const [isDark, setIsDark] = useState(true);
+
   useEffect(() => {
     loadFromStorage();
     fetchProfile();
     fetchAllShops();
+    setIsDark(document.documentElement.classList.contains('dark'));
   }, [loadFromStorage, fetchProfile, fetchAllShops]);
 
   async function handleCreateShop() {
@@ -90,17 +93,17 @@ export default function Sidebar({
         />
       )}
       <aside className={cn(
-        "w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-screen z-50",
+        "w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen z-50",
         "fixed inset-y-0 left-0 transform transition-transform duration-300 md:relative md:translate-x-0 md:sticky md:top-0",
         isMobileOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         {/* Shop header + switcher */}
-      <div className="relative border-b border-slate-800">
+      <div className="relative border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => setShowShopMenu(s => !s)}
-          className="w-full p-4 flex items-center gap-3 hover:bg-slate-800/40 transition-colors"
+          className="w-full p-4 flex items-center gap-3 hover:bg-slate-200/50 dark:hover:bg-slate-800/40 transition-colors"
         >
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden flex-shrink-0 p-0.5">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden flex-shrink-0 p-0.5 border border-slate-100 dark:border-slate-800">
             {profile.logoUrl ? (
               <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" />
             ) : (
@@ -108,7 +111,7 @@ export default function Sidebar({
             )}
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <h1 className="text-sm font-bold text-white truncate leading-tight">
+            <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">
               {profile.shopName || user?.storeName || 'Vyapar Sarthi'}
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
@@ -137,113 +140,36 @@ export default function Sidebar({
 
         {/* Shop dropdown */}
         {showShopMenu && (
-          <div className="absolute top-full left-0 right-0 bg-slate-900 border border-slate-700 rounded-b-xl shadow-xl z-50 overflow-hidden">
-            <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1">Your Shops</p>
+          <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-50 overflow-hidden">
+            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1">Your Shops</p>
             {allShops.map(shop => (
               <button key={shop.id}
                 onClick={() => { switchShop(shop.id); setShowShopMenu(false); }}
-                className={cn('w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-800 transition-colors text-left',
+                className={cn('w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left',
                   (activeShopId === shop.id || (!activeShopId && shop.id === profile.id)) && 'bg-emerald-500/10'
                 )}>
-                <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-xs font-bold text-emerald-400 flex-shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0">
                   {(shop.name || 'S').charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-white truncate">{shop.name}</p>
+                  <p className="text-xs font-semibold text-slate-800 dark:text-white truncate">{shop.name}</p>
                   {shop.shopCode && <p className="text-[10px] text-slate-500 font-mono">{shop.shopCode}</p>}
                 </div>
                 {(activeShopId === shop.id || (!activeShopId && shop.id === profile.id)) && (
-                  <Check size={13} className="text-emerald-400 flex-shrink-0" />
+                  <Check size={13} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                 )}
               </button>
             ))}
 
             {/* Add new shop — opens the full details modal */}
             <button onClick={() => { setShopForm(emptyShopForm); setShowNewShop(true); setShowShopMenu(false); }}
-              className="w-full flex items-center gap-2 px-4 py-3 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors border-t border-slate-800 text-xs font-semibold">
+              className="w-full flex items-center gap-2 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-800 text-xs font-semibold">
               <Plus size={13} /> Add New Shop
             </button>
           </div>
         )}
       </div>
 
-      {/* Add New Shop — full details modal */}
-      {showNewShop && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-          onClick={() => !creatingShop && setShowNewShop(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0">
-                <Store size={20} />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-100">Add New Shop</h2>
-                <p className="text-xs text-slate-500">Enter your business details</p>
-              </div>
-            </div>
-
-            {/* Shop name */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shop / Store Name <span className="text-red-400">*</span></label>
-              <input autoFocus
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                placeholder="e.g. Rahul Kirana Store"
-                value={shopForm.name}
-                onChange={e => setShopForm(f => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-
-            {/* Business category */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Business Category <span className="text-red-400">*</span></label>
-              <select
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                value={shopForm.businessType}
-                onChange={e => setShopForm(f => ({ ...f, businessType: e.target.value }))}
-              >
-                {Object.values(BUSINESS_CONFIGS).map(b => (
-                  <option key={b.type} value={b.type}>{b.emoji} {b.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Address */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shop Address</label>
-              <textarea rows={2}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
-                placeholder="Shop no., street, area, city, pincode"
-                value={shopForm.address}
-                onChange={e => setShopForm(f => ({ ...f, address: e.target.value }))}
-              />
-            </div>
-
-            {/* Contact mobile */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Contact Number</label>
-              <input
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                placeholder="10-digit mobile number"
-                inputMode="numeric"
-                value={shopForm.mobile}
-                onChange={e => setShopForm(f => ({ ...f, mobile: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
-              />
-            </div>
-
-            <div className="flex gap-3 pt-1">
-              <button onClick={() => { setShowNewShop(false); setShopForm(emptyShopForm); }} disabled={creatingShop}
-                className="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-700 transition-all disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={handleCreateShop} disabled={!shopForm.name.trim() || creatingShop}
-                className="flex-1 py-2.5 bg-emerald-500 text-slate-900 font-bold rounded-xl text-sm hover:bg-emerald-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-                {creatingShop ? 'Creating…' : 'Create Shop'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {false && (
         <div className="px-4 py-3 mx-4 mt-4 bg-gradient-to-br from-emerald-500/20 to-teal-500/5 border border-emerald-500/30 rounded-xl">
@@ -265,31 +191,58 @@ export default function Sidebar({
           const linkClass = cn(
             'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group active:scale-95',
             isActive
-              ? 'bg-emerald-500/10 text-emerald-400 font-bold shadow-sm'
-              : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200'
           );
           if (item.external) {
             return (
               <a key={item.key} href={item.href} target="_blank" rel="noopener noreferrer" className={linkClass}>
-                <Icon size={20} className="text-slate-500 group-hover:text-slate-300 transition-colors" />
+                <Icon size={20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors" />
                 <span className="text-sm">{t(item.key as any)}</span>
               </a>
             );
           }
           return (
             <Link key={item.key} href={item.href} className={linkClass} onClick={() => setIsMobileOpen?.(false)}>
-              <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300')} />
+              <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
               <span className="text-sm">{t(item.key as any)}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-4 border-t border-slate-800 space-y-4 bg-slate-900/50">
+      <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50 dark:bg-slate-900/50">
+        <div className="flex items-center justify-between px-2">
+          <div className="flex items-center gap-2 text-slate-500">
+            {isDark ? <Moon size={14} className="text-emerald-400" /> : <Sun size={14} className="text-amber-500" />}
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Theme</span>
+          </div>
+          <button
+            onClick={() => {
+              const html = document.documentElement;
+              const nextDark = !html.classList.contains('dark');
+              if (nextDark) {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+              } else {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+              }
+              setIsDark(nextDark);
+            }}
+            className="w-12 h-6 rounded-full bg-slate-300 dark:bg-emerald-500 transition-colors relative flex items-center p-1"
+          >
+            <div 
+              className="w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-300"
+              style={{ transform: isDark ? 'translateX(24px)' : 'translateX(0px)' }}
+            />
+          </button>
+        </div>
+
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-2 text-slate-500">
             <Languages size={14} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Language</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Language</span>
           </div>
           <div className="flex gap-2">
             {['en', 'hi', 'mr'].map((l) => (
@@ -300,8 +253,8 @@ export default function Sidebar({
                 className={cn(
                   'text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-md border transition-all',
                   locale === l 
-                    ? 'bg-emerald-500 border-emerald-500 text-slate-950' 
-                    : 'border-slate-800 text-slate-500 hover:border-slate-600'
+                    ? 'bg-emerald-500 border-emerald-500 text-white dark:text-slate-950' 
+                    : 'border-slate-300 dark:border-slate-800 text-slate-500 hover:border-slate-400 dark:hover:border-slate-600'
                 )}
               >
                 {l.toUpperCase()}
@@ -312,13 +265,91 @@ export default function Sidebar({
 
         <button
           onClick={() => logout()}
-          className="flex items-center gap-3 px-4 py-3 w-full text-slate-500 hover:bg-red-500/10 hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
+          className="flex items-center gap-3 px-4 py-3 w-full text-slate-600 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
         >
           <LogOut size={18} />
           <span className="text-sm font-semibold">Logout</span>
         </button>
       </div>
       </aside>
+
+      {/* Add New Shop — full details modal */}
+      {showNewShop && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          onClick={() => !creatingShop && setShowNewShop(false)}>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                <Store size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Add New Shop</h2>
+                <p className="text-xs text-slate-500">Enter your business details</p>
+              </div>
+            </div>
+
+            {/* Shop name */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shop / Store Name <span className="text-red-500 dark:text-red-400">*</span></label>
+              <input autoFocus
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="e.g. Rahul Kirana Store"
+                value={shopForm.name}
+                onChange={e => setShopForm(f => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+
+            {/* Business category */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Business Category <span className="text-red-500 dark:text-red-400">*</span></label>
+              <select
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                value={shopForm.businessType}
+                onChange={e => setShopForm(f => ({ ...f, businessType: e.target.value }))}
+              >
+                {Object.values(BUSINESS_CONFIGS).map(b => (
+                  <option key={b.type} value={b.type}>{b.emoji} {b.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Address */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shop Address</label>
+              <textarea rows={2}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                placeholder="Shop no., street, area, city, pincode"
+                value={shopForm.address}
+                onChange={e => setShopForm(f => ({ ...f, address: e.target.value }))}
+              />
+            </div>
+
+            {/* Contact mobile */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Contact Number</label>
+              <input
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="10-digit mobile number"
+                inputMode="numeric"
+                value={shopForm.mobile}
+                onChange={e => setShopForm(f => ({ ...f, mobile: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => { setShowNewShop(false); setShopForm(emptyShopForm); }} disabled={creatingShop}
+                className="flex-1 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleCreateShop} disabled={!shopForm.name.trim() || creatingShop}
+                className="flex-1 py-2.5 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl text-sm hover:bg-emerald-600 dark:hover:bg-emerald-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                {creatingShop ? 'Creating…' : 'Create Shop'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

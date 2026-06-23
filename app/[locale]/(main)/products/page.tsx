@@ -119,7 +119,7 @@ export default function ProductsPage() {
     setForm(buildEmptyForm(profile.businessType));
   }, [profile.businessType]);
 
-  const modalInp = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
+  const modalInp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors';
   const modalSel = modalInp + ' cursor-pointer';
 
   // Camera helpers
@@ -368,7 +368,7 @@ export default function ProductsPage() {
       </div>
 
       {/* View mode tabs */}
-      <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
+      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
         {[
           { key: 'all', label: 'All Products', icon: Package },
           ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
@@ -376,7 +376,7 @@ export default function ProductsPage() {
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
             className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
-              viewMode === key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300')}>
+              viewMode === key ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-500 dark:hover:text-slate-300')}>
             <Icon size={15} />{label}
           </button>
         ))}
@@ -403,28 +403,28 @@ export default function ProductsPage() {
           </div>
 
           {!selectedGodownId ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
-              <Warehouse className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-slate-400 text-sm">Select a godown to view its products</p>
+            <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center">
+              <Warehouse className="w-12 h-12 mx-auto mb-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Select a godown to view its products</p>
             </div>
           ) : loadingGodown ? (
-            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-emerald-400" size={28} /></div>
+            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-emerald-500 dark:text-emerald-400" size={28} /></div>
           ) : !godownData || (godownData.inventory || []).length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
-              <Package className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-slate-400 text-sm">No products in this godown yet</p>
-              <p className="text-slate-500 text-xs mt-1">Add products from the Godowns page</p>
+            <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center">
+              <Package className="w-12 h-12 mx-auto mb-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-slate-500 dark:text-slate-400 text-sm">No products in this godown yet</p>
+              <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Add products from the Godowns page</p>
             </div>
           ) : (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-2">
-                <Warehouse size={15} className="text-emerald-400" />
-                <span className="text-sm font-semibold text-slate-200">{godownData.name}</span>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <Warehouse size={15} className="text-emerald-500 dark:text-emerald-400" />
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-200">{godownData.name}</span>
                 <span className="ml-auto text-xs font-mono text-slate-500">{godownData.godownCode || godownData.godown_code}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
                     <tr>
                       <th className="px-5 py-3">Product</th>
                       <th className="px-5 py-3">Category</th>
@@ -434,14 +434,14 @@ export default function ProductsPage() {
                       <th className="px-5 py-3">MRP</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {(godownData.inventory || []).map((item: any) => {
                       const p = item.product;
                       const shopProduct = products.find((sp: any) => sp.id === (item.productId || item.product_id));
                       return (
-                        <tr key={item.id} className="text-slate-200 hover:bg-slate-800/30 transition-colors">
+                        <tr key={item.id} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                           <td className="px-5 py-3 font-medium">{p?.name}</td>
-                          <td className="px-5 py-3 text-slate-400">{p?.category}</td>
+                          <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{p?.category}</td>
                           <td className="px-5 py-3">
                             <span className="text-emerald-400 font-bold">{item.quantity}</span>
                           </td>
@@ -474,8 +474,8 @@ export default function ProductsPage() {
               return (
                 <button key={shop.id}
                   onClick={() => { switchShop(shop.id); setTimeout(fetchProducts, 300); }}
-                  className={cn('flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                    isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700')}>
+                  className={cn('flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all shadow-sm',
+                    isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900')}>
                   <Store size={14} />
                   <span>{shop.name}</span>
                   {shop.shopCode && <span className="text-[10px] font-mono text-slate-500">{shop.shopCode}</span>}
@@ -496,61 +496,61 @@ export default function ProductsPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input type="text" placeholder="Search by name, category, or scan barcode..."
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-12 text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-12 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm transition-colors"
             value={search} onChange={e => setSearch(e.target.value)} />
           <button 
             title="Scan Barcode to Find"
             onClick={() => setShowScanner(true)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-800 text-slate-400 p-1.5 rounded-lg hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 p-1.5 rounded-lg hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
           >
             <QrCode size={18} />
           </button>
         </div>
         <div className="relative" ref={filterRef}>
           <button onClick={() => setShowFilter(v => !v)}
-            className={cn('p-3 rounded-xl border flex items-center gap-1.5 transition-colors',
+            className={cn('p-3 rounded-xl border flex items-center gap-1.5 transition-colors shadow-sm',
               showFilter || activeFilters > 0
-                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200')}>
+                ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900')}>
             <Filter size={18} />
             {activeFilters > 0 && (
-              <span className="bg-emerald-500 text-slate-900 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">{activeFilters}</span>
+              <span className="bg-emerald-500 text-white dark:text-slate-900 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">{activeFilters}</span>
             )}
           </button>
           {showFilter && (
-            <div className="absolute right-0 top-full mt-2 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl z-30 w-64 p-4 space-y-4">
+            <div className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-30 w-64 p-4 space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-slate-200">{t('filters')}</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('filters')}</p>
                 {activeFilters > 0 && (
                   <button onClick={() => { setFilterCategory(''); setFilterStatus(''); }}
-                    className="text-xs text-red-400 hover:text-red-300">{t('clearAll')}</button>
+                    className="text-xs text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300">{t('clearAll')}</button>
                 )}
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5">{t('filterCategory')}</label>
+                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1.5">{t('filterCategory')}</label>
                 <div className="flex flex-wrap gap-1.5">
                   <button onClick={() => setFilterCategory('')}
                     className={cn('px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-                      !filterCategory ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'border-slate-600 text-slate-400 hover:text-slate-200')}>
+                      !filterCategory ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-transparent')}>
                     {t('allCategories')}
                   </button>
                   {categories.map(cat => (
                     <button key={cat} onClick={() => setFilterCategory(filterCategory === cat ? '' : cat)}
                       className={cn('px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-                        filterCategory === cat ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'border-slate-600 text-slate-400 hover:text-slate-200')}>
+                        filterCategory === cat ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-transparent')}>
                       {cat}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5">{t('filterStatus')}</label>
+                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1.5">{t('filterStatus')}</label>
                 <div className="flex flex-col gap-1">
                   {statusOptions.map(opt => (
                     <button key={opt.val} onClick={() => setFilterStatus(opt.val)}
                       className={cn('w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors',
-                        filterStatus === opt.val ? 'bg-slate-700 text-slate-100 font-medium' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200')}>
-                      <span className={cn('inline-block w-2 h-2 rounded-full mr-2', opt.dot ?? 'bg-slate-500')} />
+                        filterStatus === opt.val ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-200')}>
+                      <span className={cn('inline-block w-2 h-2 rounded-full mr-2', opt.dot ?? 'bg-slate-400 dark:bg-slate-500')} />
                       {opt.label}
                     </button>
                   ))}
@@ -579,16 +579,16 @@ export default function ProductsPage() {
       )}
 
       {/* Product Table */}
-      <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
         <CardContent className="p-0">
           <div className="overflow-x-auto relative">
             {loading && (
-              <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm z-10 flex items-center justify-center">
+              <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm z-10 flex items-center justify-center">
                 <Loader2 className="animate-spin text-emerald-500" size={32} />
               </div>
             )}
             <table className="w-full text-left">
-              <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
                 <tr>
                   <th className="px-6 py-4">{t('colName')}</th>
                   <th className="px-6 py-4">{t('colCategory')}</th>
@@ -607,7 +607,7 @@ export default function ProductsPage() {
                   <th className="px-6 py-4 text-center">{t('colActions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filtered.map(product => {
                   const isLowStock = product.stock <= product.minStock && product.stock > 0;
                   const isOut = product.stock === 0;
@@ -619,15 +619,15 @@ export default function ProductsPage() {
                   const sizeVariants = parseSizeVariants(product.size_variants);
 
                   return (
-                    <tr key={product.id} className="group text-slate-200 hover:bg-slate-800/40 transition-all duration-200">
+                    <tr key={product.id} className="group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200">
                       <td className="px-6 py-4 font-medium">
                         <div className="flex items-center gap-2 flex-wrap">
                           <SmartTranslator text={product.name} locale={locale} />
                           {product.is_loose && <span className="text-[9px] bg-amber-500/20 text-amber-400 font-black px-1.5 py-0.5 rounded uppercase tracking-wide">{t('looseBadge')}</span>}
-                          {product.shade && <span className="text-xs text-pink-400 bg-pink-500/15 px-1.5 py-0.5 rounded-full">{product.shade}</span>}
+                          {product.shade && <span className="text-xs text-pink-500 dark:text-pink-400 bg-pink-100 dark:bg-pink-500/15 px-1.5 py-0.5 rounded-full">{product.shade}</span>}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={product.category} locale={locale} /></td>
+                      <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400"><SmartTranslator text={product.category} locale={locale} /></td>
                       <td className="px-6 py-4">
                         <div className={cn('flex items-center gap-1 font-bold', isOut ? 'text-red-400' : isLowStock ? 'text-orange-400' : 'text-emerald-400')}>
                           {bizConfig.hasSizes ? (
@@ -636,7 +636,7 @@ export default function ProductsPage() {
                               {Object.keys(sizeVariants).length > 0 && (
                                 <div className="flex flex-wrap gap-0.5 mt-1">
                                   {Object.entries(sizeVariants).filter(([,q]) => q > 0).slice(0, 5).map(([sz, q]) => (
-                                    <span key={sz} className="text-[9px] bg-slate-700 text-slate-300 px-1 rounded">{sz}:{q}</span>
+                                    <span key={sz} className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 rounded">{sz}:{q}</span>
                                   ))}
                                 </div>
                               )}
@@ -647,47 +647,47 @@ export default function ProductsPage() {
                           {isLowStock && <AlertCircle size={14} />}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-400">{product.minStock}</td>
+                      <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{product.minStock}</td>
                       {bizConfig.hasExpiry && <td className="px-6 py-4"><ExpiryBadge date={product.expiry_date} /></td>}
-                      {bizConfig.hasBatch && <td className="px-6 py-4 text-xs text-slate-400">{product.batch_number || '—'}</td>}
-                      {bizConfig.hasModel && <td className="px-6 py-4 text-xs text-slate-300 font-mono">{product.model_number || '—'}</td>}
+                      {bizConfig.hasBatch && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.batch_number || '—'}</td>}
+                      {bizConfig.hasModel && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-300 font-mono">{product.model_number || '—'}</td>}
                       {bizConfig.hasWarranty && (
                         <td className="px-6 py-4 text-xs">
                           {product.warranty_months ? (
-                            <span className="flex items-center gap-1 text-sky-400">
+                            <span className="flex items-center gap-1 text-sky-500 dark:text-sky-400">
                               <ShieldCheck size={12} />{product.warranty_months}m
                             </span>
                           ) : '—'}
                         </td>
                       )}
-                      {bizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-400">{product.shade || '—'}</td>}
-                      {bizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-400">{product.gender || '—'}</td>}
-                      <td className="px-6 py-4 text-right text-slate-400">₹{product.mrp?.toLocaleString('en-IN') ?? '—'}</td>
+                      {bizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-500 dark:text-pink-400">{product.shade || '—'}</td>}
+                      {bizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.gender || '—'}</td>}
+                      <td className="px-6 py-4 text-right text-slate-500 dark:text-slate-400">₹{product.mrp?.toLocaleString('en-IN') ?? '—'}</td>
                       <td className="px-6 py-4 text-right font-bold">₹{product.sellingPrice?.toLocaleString('en-IN') ?? '—'}</td>
                       <td className="px-6 py-4 text-right font-semibold">
-                        <span className={hasCost ? 'text-amber-400' : 'text-slate-500'}>
+                        <span className={hasCost ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500'}>
                           {hasCost ? '' : '~'}₹{stockValue.toLocaleString('en-IN')}
                         </span>
-                        {!hasCost && <span className="block text-[9px] text-slate-600 font-normal">add cost price</span>}
+                        {!hasCost && <span className="block text-[9px] text-slate-400 dark:text-slate-600 font-normal">add cost price</span>}
                       </td>
                       <td className="px-6 py-4 text-right">
                         {profit !== null
-                          ? <span className={cn('font-bold', Number(profit) >= 0 ? 'text-emerald-400' : 'text-red-400')}>{profit}%</span>
-                          : <button onClick={() => startEdit(product)} className="text-[10px] text-slate-500 hover:text-amber-400 underline">set cost</button>
+                          ? <span className={cn('font-bold', Number(profit) >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400')}>{profit}%</span>
+                          : <button onClick={() => startEdit(product)} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 underline transition-colors">set cost</button>
                         }
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => setQrProduct(product)} title="Barcode / QR"
-                            className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-blue-500/20 hover:text-blue-400 transition-all active:scale-90 border border-slate-700/50">
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <QrCode size={14} />
                           </button>
                           <button onClick={() => startEdit(product)} title={t('edit')}
-                            className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all active:scale-90 border border-slate-700/50">
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <Pencil size={14} />
                           </button>
                           <button onClick={() => setDeleteConfirmId(product.id)} title={t('delete')}
-                            className="p-2 rounded-lg bg-slate-800 text-slate-500 hover:bg-red-500/20 hover:text-red-400 transition-all active:scale-90 border border-slate-700/50">
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-100 dark:hover:bg-red-500/20 hover:text-red-600 dark:hover:text-red-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -700,10 +700,10 @@ export default function ProductsPage() {
                 )}
               </tbody>
               {filtered.length > 0 && (
-                <tfoot className="bg-slate-800/70 border-t border-slate-700">
+                <tfoot className="bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700">
                   <tr>
-                    <td className="px-6 py-3 text-xs font-bold text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
-                    <td className="px-6 py-3 text-right text-amber-400 font-bold text-base" colSpan={2}>
+                    <td className="px-6 py-3 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
+                    <td className="px-6 py-3 text-right text-amber-500 dark:text-amber-400 font-bold text-base" colSpan={2}>
                       ₹{filtered.reduce((sum, p) => sum + p.stock * (p.cost > 0 ? p.cost : p.sellingPrice), 0).toLocaleString('en-IN')}
                     </td>
                     <td colSpan={20} />
@@ -734,16 +734,16 @@ export default function ProductsPage() {
       {/* ── Edit Product Modal ── */}
       {showEditModal && editProduct && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/20 sticky top-0 z-10">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{bizConfig.emoji}</span>
                 <div>
-                  <h2 className="text-base font-bold text-slate-100">Edit Product</h2>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Edit Product</h2>
                   <p className="text-xs text-slate-500 truncate max-w-[200px]">{editProduct.name}</p>
                 </div>
               </div>
-              <button onClick={() => { setShowEditModal(false); setEditProduct(null); }} className="text-slate-400 hover:text-slate-200"><X size={20} /></button>
+              <button onClick={() => { setShowEditModal(false); setEditProduct(null); }} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"><X size={20} /></button>
             </div>
 
             <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
@@ -877,11 +877,11 @@ export default function ProductsPage() {
 
               <div className="flex gap-4 pt-2">
                 <button type="button" onClick={() => { setShowEditModal(false); setEditProduct(null); }}
-                  className="flex-1 bg-slate-800 text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-700 hover:text-slate-200 transition-all active:scale-95">
+                  className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 transition-all active:scale-95">
                   Cancel
                 </button>
                 <button type="submit" disabled={saving}
-                  className="flex-1 bg-emerald-500 text-slate-900 py-3 rounded-xl font-black transition-all active:scale-95 hover:bg-emerald-400 disabled:opacity-60 flex items-center justify-center gap-2">
+                  className="flex-1 bg-emerald-500 text-white dark:text-slate-900 py-3 rounded-xl font-black transition-all active:scale-95 hover:bg-emerald-400 disabled:opacity-60 flex items-center justify-center gap-2">
                   {saving ? <><Loader2 size={16} className="animate-spin" />Saving…</> : 'Save Changes'}
                 </button>
               </div>
@@ -893,27 +893,27 @@ export default function ProductsPage() {
       {/* Add/Edit Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/20 sticky top-0 z-10">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{bizConfig.emoji}</span>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-100">{t('addModal')}</h2>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('addModal')}</h2>
                   <p className="text-xs text-slate-500">{bizConfig.label}</p>
                 </div>
                 <div className="flex items-center gap-1 bg-emerald-500/10 rounded-lg p-0.5 border border-emerald-500/20 ml-2">
                   <button type="button" onClick={startCamera}
-                    className="flex items-center gap-1.5 px-3 py-1 text-emerald-400 rounded-md text-[10px] font-bold hover:bg-emerald-500/20">
+                    className="flex items-center gap-1.5 px-3 py-1 text-emerald-500 dark:text-emerald-400 rounded-md text-[10px] font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">
                     <Camera size={12} /> Photo
                   </button>
                   <div className="w-px h-3 bg-emerald-500/20" />
                   <button type="button" onClick={() => scanInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1 text-emerald-400 rounded-md text-[10px] font-bold hover:bg-emerald-500/20">
+                    className="flex items-center gap-1.5 px-3 py-1 text-emerald-500 dark:text-emerald-400 rounded-md text-[10px] font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">
                     <Plus size={12} /> Upload
                   </button>
                 </div>
               </div>
-              <button onClick={() => { setShowAddModal(false); setForm(buildEmptyForm(profile.businessType)); setAddToGodownId(''); }} className="text-slate-400 hover:text-slate-200"><X size={20} /></button>
+              <button onClick={() => { setShowAddModal(false); setForm(buildEmptyForm(profile.businessType)); setAddToGodownId(''); }} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"><X size={20} /></button>
             </div>
 
             <form onSubmit={handleAddSubmit} className="p-6 space-y-5 relative">
@@ -968,15 +968,15 @@ export default function ProductsPage() {
                 </div>
 
                 {/* Loose Material toggle */}
-                <label className="flex items-center gap-3 p-3 bg-slate-700/40 rounded-xl border border-slate-700 cursor-pointer hover:border-amber-500/40 transition-colors">
+                <label className="flex items-center gap-3 p-3 bg-slate-100 dark:bg-slate-700/40 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-amber-300 dark:hover:border-amber-500/40 transition-colors">
                   <div className="relative">
                     <input type="checkbox" className="sr-only" checked={form.is_loose}
                       onChange={e => setForm(f => ({ ...f, is_loose: e.target.checked }))} />
-                    <div className={`w-10 h-5 rounded-full transition-colors ${form.is_loose ? 'bg-amber-500' : 'bg-slate-600'}`} />
+                    <div className={`w-10 h-5 rounded-full transition-colors ${form.is_loose ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
                     <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.is_loose ? 'left-5' : 'left-0.5'}`} />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-200">{t('looseMaterialLabel')}</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('looseMaterialLabel')}</p>
                     <p className="text-[11px] text-slate-500">{t('looseMaterialDesc')}</p>
                   </div>
                   {form.is_loose && <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-400 font-black px-2 py-0.5 rounded uppercase">{t('looseBadge')}</span>}
@@ -1157,8 +1157,8 @@ export default function ProductsPage() {
                             onClick={() => switchShop(shop.id)}
                             className={cn('flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold transition-all',
                               isActive
-                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-400'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white')}>
+                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-600 dark:text-blue-400'
+                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shadow-sm')}>
                             <Store size={12} />
                             {shop.name}
                             {shop.shopCode && <span className="font-mono text-[10px] text-slate-500">{shop.shopCode}</span>}
@@ -1184,8 +1184,8 @@ export default function ProductsPage() {
                           onClick={() => setAddToGodownId('')}
                           className={cn('flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all',
                             !addToGodownId
-                              ? 'bg-slate-700 border-slate-600 text-white'
-                              : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300')}>
+                              ? 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white shadow-sm'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 shadow-sm')}>
                           None
                         </button>
                         {godowns.map((g: any) => (
@@ -1193,8 +1193,8 @@ export default function ProductsPage() {
                             onClick={() => setAddToGodownId(g.id)}
                             className={cn('flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all',
                               addToGodownId === g.id
-                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white')}>
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shadow-sm')}>
                             <Warehouse size={11} />
                             {g.name}
                             <span className="font-mono text-[10px] text-slate-500">{g.godownCode || g.godown_code}</span>
@@ -1213,7 +1213,7 @@ export default function ProductsPage() {
 
               <div className="flex gap-4 pt-2">
                 <button type="button" onClick={() => { setShowAddModal(false); setForm(buildEmptyForm(profile.businessType)); setAddToGodownId(''); }}
-                  className="flex-1 bg-slate-800 text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-700 hover:text-slate-200 transition-all active:scale-95">
+                  className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 transition-all active:scale-95">
                   {t('cancel')}
                 </button>
                 <button type="submit"
@@ -1231,18 +1231,18 @@ export default function ProductsPage() {
       {/* Delete Confirm */}
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
-                <Trash2 size={18} className="text-red-400" />
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
+                <Trash2 size={18} className="text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <p className="font-bold text-slate-100">{t('deleteConfirm')}</p>
-                <p className="text-sm text-slate-400 mt-0.5">{t('deleteWarning')}</p>
+                <p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteConfirm')}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{t('deleteWarning')}</p>
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteConfirmId(null)} className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium">{t('cancel')}</button>
+              <button onClick={() => setDeleteConfirmId(null)} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">{t('cancel')}</button>
               <button onClick={() => doDelete(deleteConfirmId)} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400">{t('delete')}</button>
             </div>
           </div>

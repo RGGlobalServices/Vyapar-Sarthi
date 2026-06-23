@@ -463,21 +463,21 @@ export default function BillingPage() {
             <input
               type="text"
               placeholder={t('searchProduct')}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
               value={search}
               onChange={handleSearchChange}
             />
             {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 w-full mt-2 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto">
+              <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
                 {searchResults.map((product) => (
                   <button
                     key={product.id}
                     onClick={() => addToCart(product)}
-                    className="w-full text-left px-4 py-3 hover:bg-slate-800 flex justify-between items-center border-b border-slate-800 last:border-0"
+                    className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 last:border-0"
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-bold text-slate-200">{product.name}</p>
+                        <p className="font-bold text-slate-900 dark:text-slate-200">{product.name}</p>
                         {product.is_loose && <span className="text-[9px] bg-amber-500/20 text-amber-400 font-black px-1.5 py-0.5 rounded uppercase">{tP('looseBadge')}</span>}
                       </div>
                       <p className="text-xs text-slate-500">
@@ -499,8 +499,8 @@ export default function BillingPage() {
           <button
             onClick={() => setShowManualAdd(!showManualAdd)}
             className={cn(
-              'px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors',
-              showManualAdd ? 'bg-slate-800 text-emerald-500' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+              'px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm',
+              showManualAdd ? 'bg-slate-100 dark:bg-slate-800 text-emerald-500' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             )}
           >
             <PlusCircle size={20} />
@@ -508,7 +508,7 @@ export default function BillingPage() {
           </button>
           <button
             onClick={() => setIsScanning(!isScanning)}
-            className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors"
+            className="bg-emerald-500 text-white dark:text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors shadow-sm"
           >
             <Scan size={20} />
             <span className="hidden md:inline">{t('scanQR')}</span>
@@ -516,14 +516,14 @@ export default function BillingPage() {
         </div>
 
         {showManualAdd && (
-          <Card className="bg-slate-900 border-emerald-500/30 animate-in slide-in-from-top-2 duration-200">
+          <Card className="bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30 animate-in slide-in-from-top-2 duration-200 shadow-sm">
             <CardContent className="p-4">
               <form onSubmit={handleManualAdd} className="flex flex-wrap gap-3 items-end">
                 <div className="flex-1 min-w-[200px]">
                   <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Product Name</label>
                   <input
                     type="text" required placeholder="Enter item name..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                     value={manualProduct.name}
                     onChange={e => setManualProduct({...manualProduct, name: e.target.value})}
                   />
@@ -532,7 +532,7 @@ export default function BillingPage() {
                   <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Price (₹)</label>
                   <input
                     type="number" required placeholder="0"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                     value={manualProduct.price}
                     onChange={e => setManualProduct({...manualProduct, price: e.target.value})}
                   />
@@ -540,14 +540,14 @@ export default function BillingPage() {
                 <div className="w-24">
                   <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Unit</label>
                   <select
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                     value={manualProduct.unit}
                     onChange={e => setManualProduct({...manualProduct, unit: e.target.value})}
                   >
                     {bizConfig.defaultUnits.map(u => <option key={u}>{u}</option>)}
                   </select>
                 </div>
-                <button type="submit" className="bg-emerald-500 text-slate-900 px-4 py-2 rounded-lg font-bold hover:bg-emerald-400">Add Item</button>
+                <button type="submit" className="bg-emerald-500 text-white dark:text-slate-900 px-4 py-2 rounded-lg font-bold hover:bg-emerald-400">Add Item</button>
               </form>
             </CardContent>
           </Card>
@@ -560,17 +560,17 @@ export default function BillingPage() {
           />
         )}
 
-        <Card className="bg-slate-900 border-slate-800 flex-1 overflow-hidden flex flex-col">
-          <CardHeader className="border-b border-slate-800">
-            <CardTitle className="text-slate-200 flex justify-between items-center">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex-1 overflow-hidden flex flex-col shadow-sm">
+          <CardHeader className="border-b border-slate-200 dark:border-slate-800">
+            <CardTitle className="text-slate-900 dark:text-slate-200 flex justify-between items-center">
               <span>Items</span>
-              <span className="text-sm font-normal text-slate-400">{items.length} items</span>
+              <span className="text-sm font-normal text-slate-500 dark:text-slate-400">{items.length} items</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[600px]">
-                <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase sticky top-0 z-10">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-3">Item</th>
                   <th className="px-6 py-3">Unit</th>
@@ -580,9 +580,9 @@ export default function BillingPage() {
                   <th className="px-6 py-3 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {items.map((item) => (
-                  <tr key={`${item.id}-${item.unit}`} className="text-slate-200 hover:bg-slate-800/30 transition-colors">
+                  <tr key={`${item.id}-${item.unit}`} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="px-6 py-4 font-medium">{item.name}</td>
                     <td className="px-6 py-4 text-sm text-slate-400">{item.unit}</td>
                     <td className="px-6 py-4">
@@ -599,7 +599,7 @@ export default function BillingPage() {
                                 const v = parseFloat(e.target.value);
                                 if (v > 0) updateQuantity(item.id, v);
                               }}
-                              className="w-20 bg-slate-950 border border-emerald-700/50 rounded px-2 py-1 text-center text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                              className="w-20 bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-700/50 rounded px-2 py-1 text-center text-emerald-600 dark:text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                             />
                             <span className="text-xs text-slate-500">{item.unit}</span>
                             {looseEquivLabel(item.quantity, item.unit) && (
@@ -610,8 +610,8 @@ export default function BillingPage() {
                           </div>
                           {/* Rate info: ₹X per Kg */}
                           <p className="text-[10px] text-slate-500">
-                            {t('ratePerUnit')}: <span className="text-emerald-400 font-bold">₹{item.price}</span> {t('per')} {item.unit}
-                            {' · '}<span className="text-amber-300 font-semibold">= ₹{item.total.toFixed(2)}</span>
+                            {t('ratePerUnit')}: <span className="text-emerald-600 dark:text-emerald-400 font-bold">₹{item.price}</span> {t('per')} {item.unit}
+                            {' · '}<span className="text-amber-500 dark:text-amber-300 font-semibold">= ₹{item.total.toFixed(2)}</span>
                           </p>
                           {/* Preset buttons */}
                           <div className="flex flex-wrap gap-1">
@@ -622,8 +622,8 @@ export default function BillingPage() {
                                 className={cn(
                                   'text-[10px] px-1.5 py-0.5 rounded transition-colors font-medium',
                                   item.quantity === p.v
-                                    ? 'bg-emerald-600 text-white'
-                                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                    ? 'bg-emerald-500 dark:bg-emerald-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                                 )}
                               >{p.l}</button>
                             ))}
@@ -631,16 +631,16 @@ export default function BillingPage() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))} className="p-1 hover:bg-slate-700 rounded"><Minus size={14}/></button>
+                          <button onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Minus size={14}/></button>
                           <span className="w-8 text-center">{item.quantity}</span>
-                          <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1 hover:bg-slate-700 rounded"><Plus size={14}/></button>
+                          <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Plus size={14}/></button>
                         </div>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <input
                         type="number"
-                        className="w-20 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-right text-emerald-500 font-bold focus:ring-1 focus:ring-emerald-500 outline-none"
+                        className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-right text-emerald-600 dark:text-emerald-500 font-bold focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                         value={item.price}
                         onChange={(e) => updatePrice(item.id, Number(e.target.value))}
                       />
@@ -671,8 +671,8 @@ export default function BillingPage() {
           <button
             onClick={() => setShowCalculator(!showCalculator)}
             className={cn(
-              'p-3 rounded-xl border transition-all flex items-center gap-2 font-bold',
-              showCalculator ? 'bg-emerald-500 text-slate-900 border-emerald-500' : 'bg-slate-900 border-slate-800 text-slate-400'
+              'p-3 rounded-xl border transition-all flex items-center gap-2 font-bold shadow-sm',
+              showCalculator ? 'bg-emerald-500 text-white dark:text-slate-900 border-emerald-500' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900'
             )}
           >
             <CalcIcon size={20} />
@@ -686,9 +686,9 @@ export default function BillingPage() {
         </div>
 
         {/* Payment Methods */}
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-slate-200">{t('paymentMethod')}</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-slate-200">{t('paymentMethod')}</CardTitle>
           </CardHeader>
           <CardContent className={cn('grid gap-3', paymentOptions.length === 4 ? 'grid-cols-2' : 'grid-cols-3')}>
             {paymentOptions.map(opt => (
@@ -781,26 +781,26 @@ export default function BillingPage() {
         )}
 
         {/* Order Summary */}
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardContent className="p-6 space-y-4">
-            <div className="flex justify-between text-slate-400">
+            <div className="flex justify-between text-slate-500 dark:text-slate-400">
               <span>{t('subtotal')}</span>
               <span>₹{subtotal.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between items-center text-slate-400">
+            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
               <span>{t('discount')}</span>
-              <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1">
+              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1">
                 <span className="text-emerald-500">₹</span>
                 <input
                   type="number"
-                  className="w-16 bg-transparent text-emerald-500 font-bold outline-none text-right"
+                  className="w-16 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
                   value={discount}
                   onChange={(e) => setDiscount(Number(e.target.value))}
                 />
               </div>
             </div>
-            <div className="border-t border-slate-800 pt-4 flex justify-between items-center">
-              <span className="text-xl font-bold text-slate-200">{t('total')}</span>
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4 flex justify-between items-center">
+              <span className="text-xl font-bold text-slate-900 dark:text-slate-200">{t('total')}</span>
               <span className="text-3xl font-black text-emerald-500">₹{total.toLocaleString('en-IN')}</span>
             </div>
 
@@ -816,14 +816,14 @@ export default function BillingPage() {
                 </div>
               </div>
             ) : (
-              <div className="border-t border-slate-800 pt-4 space-y-3">
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-300 font-semibold">Amount Paid</span>
-                  <div className="flex items-center gap-2 bg-slate-950 border border-emerald-500/40 rounded-lg px-3 py-1">
+                  <span className="text-slate-700 dark:text-slate-300 font-semibold">Amount Paid</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-emerald-200 dark:border-emerald-500/40 rounded-lg px-3 py-1 transition-colors">
                     <span className="text-emerald-500">₹</span>
                     <input
                       type="number" min={0} max={total}
-                      className="w-20 bg-transparent text-emerald-500 font-bold outline-none text-right"
+                      className="w-20 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
                       value={amountPaid}
                       onChange={(e) => setAmountPaid(Math.min(total, Math.max(0, Number(e.target.value))))}
                     />
@@ -872,22 +872,22 @@ export default function BillingPage() {
       {/* Customer Name Modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <Card className="bg-slate-900 border-slate-700 w-full max-w-md shadow-2xl">
-            <CardHeader className="border-b border-slate-800 flex flex-row items-center justify-between">
-              <CardTitle className="text-slate-200 flex items-center gap-2">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between">
+              <CardTitle className="text-slate-900 dark:text-slate-200 flex items-center gap-2">
                 <User size={20} className="text-emerald-500" />
                 Customer Details
               </CardTitle>
-              <button onClick={() => setShowCustomerModal(false)} className="text-slate-400 hover:text-slate-200">
+              <button onClick={() => setShowCustomerModal(false)} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200">
                 <X size={24} />
               </button>
             </CardHeader>
             <CardContent className="p-6 space-y-5">
               {/* Summary */}
-              <div className="bg-slate-800 rounded-xl p-4 space-y-2">
-                <div className="flex justify-between text-sm text-slate-400">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
                   <span>Total Bill</span>
-                  <span className="text-slate-200 font-bold">₹{total.toLocaleString('en-IN')}</span>
+                  <span className="text-slate-900 dark:text-slate-200 font-bold">₹{total.toLocaleString('en-IN')}</span>
                 </div>
                 {isEmi ? (
                   <>
@@ -895,19 +895,19 @@ export default function BillingPage() {
                       <span>Down Payment Today</span>
                       <span className="text-emerald-400 font-bold">₹{emiDownPayment.toLocaleString('en-IN')}</span>
                     </div>
-                    <div className="flex justify-between text-sm border-t border-slate-700 pt-2">
+                    <div className="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
                       <span className="text-sky-400 font-semibold">EMI ({emiMonths} months)</span>
                       <span className="text-sky-400 font-black">₹{emiMonthlyAmount.toLocaleString('en-IN')}/mo</span>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="flex justify-between text-sm text-slate-400">
+                    <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
                       <span>Amount Paid</span>
-                      <span className="text-emerald-400 font-bold">₹{amountPaid.toLocaleString('en-IN')}</span>
+                      <span className="text-emerald-500 dark:text-emerald-400 font-bold">₹{amountPaid.toLocaleString('en-IN')}</span>
                     </div>
                     {remainingAmount > 0 && (
-                      <div className="flex justify-between text-sm border-t border-slate-700 pt-2">
+                      <div className="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
                         <span className="text-orange-400 font-semibold">Remaining (Udhar)</span>
                         <span className="text-orange-500 font-black">₹{remainingAmount}</span>
                       </div>
@@ -919,7 +919,7 @@ export default function BillingPage() {
               {/* Customer Name + Mobile */}
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2 uppercase font-bold">
+                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
                     Customer Name{' '}
                     {remainingAmount > 0 && !isEmi && <span className="text-orange-400 normal-case font-normal">*Required for Udhar</span>}
                     {isEmi && <span className="text-sky-400 normal-case font-normal">*Required for EMI tracking</span>}
@@ -927,36 +927,36 @@ export default function BillingPage() {
                   <input
                     type="text"
                     placeholder="Enter customer name..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                     value={customerName}
                     onChange={e => setCustomerName(e.target.value)}
                     autoFocus
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2 uppercase font-bold">
+                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
                     WhatsApp Number <span className="text-slate-500 normal-case font-normal">— bill auto-sent</span>
                   </label>
-                  <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-emerald-500">
-                    <span className="text-slate-400 text-sm font-bold select-none">+91</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-emerald-500 transition-colors">
+                    <span className="text-slate-500 dark:text-slate-400 text-sm font-bold select-none">+91</span>
                     <input
                       type="tel"
                       placeholder="10-digit mobile number"
                       maxLength={10}
-                      className="flex-1 bg-transparent text-slate-100 outline-none text-sm"
+                      className="flex-1 bg-transparent text-slate-900 dark:text-slate-100 outline-none text-sm"
                       value={customerMobile}
                       onChange={e => setCustomerMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2 uppercase font-bold">
+                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
                     Email <span className="text-slate-500 normal-case font-normal">— bill auto-sent</span>
                   </label>
                   <input
                     type="email"
                     placeholder="customer@example.com"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm transition-colors"
                     value={customerEmail}
                     onChange={e => setCustomerEmail(e.target.value)}
                   />
@@ -989,7 +989,7 @@ export default function BillingPage() {
               )}
 
               {!isEmi && remainingAmount > 0 && !customerName.trim() && (
-                <div className="flex items-center gap-2 bg-slate-800 rounded-lg px-3 py-2 text-xs text-slate-500">
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 text-xs text-slate-600 dark:text-slate-500">
                   <AlertCircle size={13} />
                   Enter customer name to save ₹{remainingAmount} to Udhar Khata.
                 </div>
@@ -998,7 +998,7 @@ export default function BillingPage() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setShowCustomerModal(false)}
-                  className="flex-1 bg-slate-800 text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-700 transition-colors"
+                  className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
                 >
                   Cancel
                 </button>
@@ -1026,20 +1026,20 @@ export default function BillingPage() {
       {showBillModal && lastBill && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3">
           {/* flex-col + max-h so it never overflows the viewport */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[95vh] shadow-2xl overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[95vh] shadow-2xl overflow-hidden">
 
             {/* ── Sticky header ── */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 flex-shrink-0">
-              <span className="text-emerald-400 font-black text-base flex items-center gap-2">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+              <span className="text-emerald-500 dark:text-emerald-400 font-black text-base flex items-center gap-2">
                 <CheckCircle size={18} /> Bill Generated
               </span>
-              <button onClick={() => { setShowBillModal(false); setWaUrl(null); setSendStatus(null); }} className="text-slate-400 hover:text-slate-200 p-1">
+              <button onClick={() => { setShowBillModal(false); setWaUrl(null); setSendStatus(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 p-1 transition-colors">
                 <X size={22} />
               </button>
             </div>
 
             {/* ── Scrollable bill preview ── */}
-            <div id="print-area" className="flex-1 overflow-y-auto bg-white">
+            <div id="print-area" className="flex-1 overflow-y-auto bg-white dark:bg-slate-900">
               <BillSlip
                 ref={componentRef}
                 {...lastBill}
@@ -1051,7 +1051,7 @@ export default function BillingPage() {
             </div>
 
             {/* ── Sticky footer ── */}
-            <div className="flex-shrink-0 bg-slate-900 border-t border-slate-800 p-3 space-y-2">
+            <div className="flex-shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-3 space-y-2">
               {/* Status banners */}
               {lastBill.remainingAmount > 0 && (
                 <div className="flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-xl px-3 py-2 text-xs text-orange-400">
@@ -1082,13 +1082,13 @@ export default function BillingPage() {
 
               {/* Email status (silent, no WhatsApp status here) */}
               {sendStatus?.email !== undefined && sendStatus.email !== undefined && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-xs">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs transition-colors">
                   {sendStatus.email === null ? (
-                    <span className="text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Sending email…</span>
+                    <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Sending email…</span>
                   ) : sendStatus.email ? (
-                    <span className="text-emerald-400">✓ Email sent to customer</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">✓ Email sent to customer</span>
                   ) : (
-                    <span className="text-slate-400">Email not sent — check SMTP settings</span>
+                    <span className="text-slate-600 dark:text-slate-400">Email not sent — check SMTP settings</span>
                   )}
                 </div>
               )}
@@ -1097,7 +1097,7 @@ export default function BillingPage() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={handlePrint}
-                  className="flex flex-col items-center justify-center gap-1 bg-emerald-500 text-slate-900 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors active:scale-95 text-xs"
+                  className="flex flex-col items-center justify-center gap-1 bg-emerald-500 text-white dark:text-slate-900 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors active:scale-95 text-xs shadow-sm"
                 >
                   <Printer size={17} />Print
                 </button>
@@ -1110,7 +1110,7 @@ export default function BillingPage() {
                 <button
                   onClick={handleWhatsAppPDF}
                   disabled={isSharing}
-                  className="flex flex-col items-center justify-center gap-1 bg-slate-700 text-slate-200 py-2.5 rounded-xl font-bold hover:bg-slate-600 transition-colors active:scale-95 text-xs disabled:opacity-70"
+                  className="flex flex-col items-center justify-center gap-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 py-2.5 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors active:scale-95 text-xs disabled:opacity-70 shadow-sm"
                 >
                   {isSharing ? <Loader2 size={17} className="animate-spin" /> : <MessageCircle size={17} />}
                   {isSharing ? 'Sharing…' : 'Share'}
@@ -1120,7 +1120,7 @@ export default function BillingPage() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setShowBillModal(false)}
-                  className="flex items-center justify-center gap-1.5 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold hover:bg-slate-700 transition-colors text-sm"
+                  className="flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm shadow-sm"
                 >
                   Continue
                 </button>
@@ -1145,7 +1145,7 @@ function PaymentButton({active, onClick, icon, label}: {active: boolean; onClick
       onClick={onClick}
       className={cn(
         'flex flex-col items-center gap-2 p-4 rounded-xl border transition-all',
-        active ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+        active ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-500 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800/80'
       )}
     >
       {icon}

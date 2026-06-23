@@ -302,7 +302,7 @@ export default function ImportPage() {
           <Sparkles size={32} className="text-slate-900" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold text-slate-100">Vyapar Sarthi AI Agent</h1>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Vyapar Sarthi AI Agent</h1>
           <p className="text-sm text-slate-400 mt-1">
             Your smart assistant for digitizing files. Scans handwritten papers, bills, and Excel — understands spelling mistakes and automatically matches products with fuzzy logic.
           </p>
@@ -319,28 +319,28 @@ export default function ImportPage() {
               <p className="mt-1 opacity-90">First, select what type of document you are importing. This helps our AI accurately extract the right information (like distinguishing a purchase bill from a customer ledger). Once selected, you can upload your file or take a photo.</p>
             </div>
           </div>
-          <Card className="bg-slate-900 border-slate-700">
+          <Card className="bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700">
             <CardContent className="p-8 text-center space-y-6">
-              <h2 className="text-2xl font-bold text-slate-100 mb-2">What are you importing?</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">What are you importing?</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button onClick={() => { setTargetType('purchase'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/30 transition-all text-left">
+                <button onClick={() => { setTargetType('purchase'); setStep('idle'); }} className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/30 transition-all text-left">
                   <ShoppingCart size={32} className="text-emerald-400 mb-3" />
-                  <h3 className="text-lg font-bold text-slate-200">Purchase Bills</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200">Purchase Bills</h3>
                   <p className="text-sm text-slate-500 mt-1">Vendor invoices, add new stock</p>
                 </button>
-                <button onClick={() => { setTargetType('sales'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30 transition-all text-left">
+                <button onClick={() => { setTargetType('sales'); setStep('idle'); }} className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30 transition-all text-left">
                   <FileSpreadsheet size={32} className="text-blue-400 mb-3" />
-                  <h3 className="text-lg font-bold text-slate-200">Sales History</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200">Sales History</h3>
                   <p className="text-sm text-slate-500 mt-1">Old bills, sales registers</p>
                 </button>
-                <button onClick={() => { setTargetType('stock'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-purple-500/10 border border-transparent hover:border-purple-500/30 transition-all text-left">
+                <button onClick={() => { setTargetType('stock'); setStep('idle'); }} className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl hover:bg-purple-500/10 border border-transparent hover:border-purple-500/30 transition-all text-left">
                   <Package size={32} className="text-purple-400 mb-3" />
-                  <h3 className="text-lg font-bold text-slate-200">Bulk Stock List</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200">Bulk Stock List</h3>
                   <p className="text-sm text-slate-500 mt-1">Inventory updates, existing items</p>
                 </button>
-                <button onClick={() => { setTargetType('khata'); setStep('idle'); }} className="p-6 bg-slate-800 rounded-2xl hover:bg-orange-500/10 border border-transparent hover:border-orange-500/30 transition-all text-left">
+                <button onClick={() => { setTargetType('khata'); setStep('idle'); }} className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl hover:bg-orange-500/10 border border-transparent hover:border-orange-500/30 transition-all text-left">
                   <BookOpen size={32} className="text-orange-400 mb-3" />
-                  <h3 className="text-lg font-bold text-slate-200">Udhar Khata</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200">Udhar Khata</h3>
                   <p className="text-sm text-slate-500 mt-1">Customer credit ledgers</p>
                 </button>
               </div>
@@ -352,7 +352,7 @@ export default function ImportPage() {
       {/* ── Drop Zone ── */}
       {(step === 'idle' || step === 'done') && (
         <div className="space-y-4">
-          <button onClick={() => setStep('target')} className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors font-medium text-sm">
+          <button onClick={() => setStep('target')} className="flex items-center gap-2 text-slate-400 hover:text-slate-900 dark:text-slate-200 transition-colors font-medium text-sm">
             <ArrowLeft size={16} /> Back to Document Type Selection
           </button>
           <div
@@ -363,7 +363,7 @@ export default function ImportPage() {
           className={cn(
             'border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all',
             dragging ? 'border-emerald-500 bg-emerald-500/5'
-                     : 'border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/50'
+                     : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-600 hover:bg-slate-100 dark:bg-slate-800/'
           )}
         >
           {step === 'done' ? (
@@ -402,10 +402,10 @@ export default function ImportPage() {
 
       {showCamera && (
         <div className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center p-4">
-          <video ref={videoRef} autoPlay playsInline className="w-full max-w-2xl aspect-video bg-slate-900 rounded-2xl object-cover shadow-2xl" />
+          <video ref={videoRef} autoPlay playsInline className="w-full max-w-2xl aspect-video bg-white dark:bg-slate-900 rounded-2xl object-cover shadow-2xl" />
           <canvas ref={canvasRef} className="hidden" />
           <div className="flex items-center gap-8 mt-8">
-            <button key="close" onClick={stopCamera} className="p-4 bg-slate-800 text-white rounded-full hover:bg-slate-700 transition-colors">
+            <button key="close" onClick={stopCamera} className="p-4 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-full hover:bg-slate-700 transition-colors">
               <X size={28} />
             </button>
             <button key="snap" onClick={capturePhoto} className="p-6 bg-emerald-500 text-slate-900 rounded-full hover:bg-emerald-400 shadow-2xl shadow-emerald-500/40 transition-all active:scale-90">
@@ -413,16 +413,16 @@ export default function ImportPage() {
             </button>
             <div className="w-12 h-12" /> {/* alignment spacer */}
           </div>
-          <p className="text-white/50 text-sm mt-10 font-medium tracking-widest uppercase">Align Bill or Ledger in Frame</p>
+          <p className="text-slate-900 dark:text-white/50 text-sm mt-10 font-medium tracking-widest uppercase">Align Bill or Ledger in Frame</p>
         </div>
       )}
 
       {/* ── Step: Name ── */}
       {(step === 'name' || step === 'processing') && pending && (
-        <Card className="bg-slate-900 border-slate-700">
+        <Card className="bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700">
           <CardContent className="p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Save size={20} className="text-emerald-500" /> Name this Import
               </h2>
               {step !== 'processing' && (
@@ -431,9 +431,9 @@ export default function ImportPage() {
             </div>
 
             {/* File preview */}
-            <div className="bg-slate-800 rounded-xl p-4 flex items-center gap-4">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 flex items-center gap-4">
               {pending.preview ? (
-                <Image src={pending.preview} alt="preview" width={80} height={80} className="h-20 w-20 object-cover rounded-lg border border-slate-700 flex-shrink-0" />
+                <Image src={pending.preview} alt="preview" width={80} height={80} className="h-20 w-20 object-cover rounded-lg border border-slate-300 dark:border-slate-700 flex-shrink-0" />
               ) : (
                 <div className="h-20 w-20 bg-slate-700 rounded-lg flex items-center justify-center flex-shrink-0">
                   {fileTypeIcon(
@@ -443,7 +443,7 @@ export default function ImportPage() {
                 </div>
               )}
               <div>
-                <p className="text-slate-200 font-medium text-sm truncate max-w-xs">{pending.file.name}</p>
+                <p className="text-slate-900 dark:text-slate-200 font-medium text-sm truncate max-w-xs">{pending.file.name}</p>
                 <p className="text-slate-500 text-xs mt-0.5">{(pending.file.size / 1024).toFixed(1)} KB</p>
               </div>
             </div>
@@ -453,7 +453,7 @@ export default function ImportPage() {
               <input
                 type="text"
                 placeholder="e.g. April 2024 Khata, January Stock Register..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 value={importName}
                 onChange={e => { setImportName(e.target.value); setNameError(''); }}
                 disabled={step === 'processing'}
@@ -469,7 +469,7 @@ export default function ImportPage() {
 
             <div className="flex gap-3">
               <button onClick={handleCancel} disabled={step === 'processing'}
-                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors">
+                className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors">
                 Cancel
               </button>
               <button onClick={handleNameConfirm} disabled={step === 'processing'}
@@ -485,10 +485,10 @@ export default function ImportPage() {
 
       {/* ── Step: Preview ── */}
       {step === 'preview' && apiResult && (
-        <Card className="bg-slate-900 border-slate-700">
+        <Card className="bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700">
           <CardContent className="p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <CheckCircle size={20} className="text-emerald-500"/> AI Analysis Complete
               </h2>
               <button onClick={handleCancel} className="text-slate-500 hover:text-slate-300"><X size={20}/></button>
@@ -505,15 +505,15 @@ export default function ImportPage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest">Vyapar Sarthi AI Report</p>
-                  <p className="text-slate-100 font-medium leading-relaxed">{apiResult.summary}</p>
+                  <p className="text-slate-900 dark:text-slate-100 font-medium leading-relaxed">{apiResult.summary}</p>
                 </div>
               </div>
             </div>
 
             {/* Summary details */}
-            <div className="bg-slate-800/50 rounded-xl p-4 flex items-center justify-between border border-slate-700/50">
+            <div className="bg-slate-100 dark:bg-slate-800/ rounded-xl p-4 flex items-center justify-between border border-slate-300 dark:border-slate-700/50">
               <div className="flex items-center gap-3">
-                <span className="font-bold text-slate-200">{importName}</span>
+                <span className="font-bold text-slate-900 dark:text-slate-200">{importName}</span>
                 {dataTypeBadge(apiResult.dataType)}
               </div>
               <div className="flex gap-4 text-xs">
@@ -540,10 +540,10 @@ export default function ImportPage() {
                 <DataTable
                   headers={['Customer', 'Amount', 'Date', 'Note']}
                   rows={apiResult.khata.map((k: ImportedKhataEntry, idx: number) => [
-                    <input key={`k-name-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.customerName} onChange={e => handleEditResult('khata', idx, 'customerName', e.target.value)} />,
-                    <input key={`k-amt-${idx}`} type="number" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-20 text-orange-400" value={k.amount || ''} onChange={e => handleEditResult('khata', idx, 'amount', Number(e.target.value))} />,
-                    <input key={`k-date-${idx}`} type="date" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.date || ''} onChange={e => handleEditResult('khata', idx, 'date', e.target.value)} />,
-                    <input key={`k-note-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.note || ''} onChange={e => handleEditResult('khata', idx, 'note', e.target.value)} />,
+                    <input key={`k-name-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.customerName} onChange={e => handleEditResult('khata', idx, 'customerName', e.target.value)} />,
+                    <input key={`k-amt-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-orange-400" value={k.amount || ''} onChange={e => handleEditResult('khata', idx, 'amount', Number(e.target.value))} />,
+                    <input key={`k-date-${idx}`} type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.date || ''} onChange={e => handleEditResult('khata', idx, 'date', e.target.value)} />,
+                    <input key={`k-note-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.note || ''} onChange={e => handleEditResult('khata', idx, 'note', e.target.value)} />,
                   ])}
                 />
               </Section>
@@ -553,14 +553,15 @@ export default function ImportPage() {
             {hasStock && (
               <Section title="Stock / Inventory" icon={<Package size={16} className="text-emerald-400"/>}>
                 <DataTable
-                  headers={['Product', 'Qty', 'Unit', 'Price']}
+                  headers={['Product', 'Qty', 'Unit', 'Price', 'Expiry Date']}
                   rows={apiResult.stock.map((s: ImportedStockEntry & { missingPrice?: boolean }, idx: number) => [
-                    <input key={`s-name-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.productName} onChange={e => handleEditResult('stock', idx, 'productName', e.target.value)} />,
-                    <input key={`s-qty-${idx}`} type="number" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.quantity || ''} onChange={e => handleEditResult('stock', idx, 'quantity', Number(e.target.value))} />,
-                    <input key={`s-unit-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.unit || ''} onChange={e => handleEditResult('stock', idx, 'unit', e.target.value)} />,
-                    <input key={`s-price-${idx}`} type="number" className={`bg-slate-900 border ${s.missingPrice || !s.price ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.price || ''} onChange={e => handleEditResult('stock', idx, 'price', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`s-name-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.productName} onChange={e => handleEditResult('stock', idx, 'productName', e.target.value)} />,
+                    <input key={`s-qty-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.quantity || ''} onChange={e => handleEditResult('stock', idx, 'quantity', Number(e.target.value))} />,
+                    <input key={`s-unit-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.unit || ''} onChange={e => handleEditResult('stock', idx, 'unit', e.target.value)} />,
+                    <input key={`s-price-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${s.missingPrice || !s.price ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.price || ''} onChange={e => handleEditResult('stock', idx, 'price', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`s-exp-${idx}`} type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.expiryDate || ''} onChange={e => handleEditResult('stock', idx, 'expiryDate', e.target.value)} />,
                   ])}
-                  align={['left','right','left','right']}
+                  align={['left','right','left','right','left']}
                 />
               </Section>
             )}
@@ -571,9 +572,9 @@ export default function ImportPage() {
                 <DataTable
                   headers={['Vendor', 'Bill Date', 'Amount']}
                   rows={apiResult.purchase.map((p: any, idx: number) => [
-                    <input key={`p-vendor-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={p.vendorName || ''} onChange={e => handleEditResult('purchase', idx, 'vendorName', e.target.value)} />,
-                    <input key={`p-date-${idx}`} type="date" className={`bg-slate-900 border ${p.missingDate || !p.billDate ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-full`} value={p.billDate || ''} onChange={e => handleEditResult('purchase', idx, 'billDate', e.target.value)} />,
-                    <input key={`p-amt-${idx}`} type="number" className={`bg-slate-900 border ${p.missingAmount || !p.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-24 text-emerald-400`} value={p.totalAmount || ''} onChange={e => handleEditResult('purchase', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`p-vendor-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={p.vendorName || ''} onChange={e => handleEditResult('purchase', idx, 'vendorName', e.target.value)} />,
+                    <input key={`p-date-${idx}`} type="date" className={`bg-white dark:bg-slate-900 border ${p.missingDate || !p.billDate ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-full`} value={p.billDate || ''} onChange={e => handleEditResult('purchase', idx, 'billDate', e.target.value)} />,
+                    <input key={`p-amt-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${p.missingAmount || !p.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-24 text-emerald-400`} value={p.totalAmount || ''} onChange={e => handleEditResult('purchase', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
                   ])}
                 />
               </Section>
@@ -585,15 +586,15 @@ export default function ImportPage() {
                 <DataTable
                   headers={['Date', 'Amount', 'Payment', 'Note']}
                   rows={apiResult.sales.map((s: ImportedSaleEntry & { missingDate?: boolean, missingAmount?: boolean }, idx: number) => [
-                    <input key={`sa-date-${idx}`} type="date" className={`bg-slate-900 border ${s.missingDate || !s.date ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-full`} value={s.date || ''} onChange={e => handleEditResult('sales', idx, 'date', e.target.value)} />,
-                    <input key={`sa-amt-${idx}`} type="number" className={`bg-slate-900 border ${s.missingAmount || !s.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'} rounded px-2 py-1 text-sm w-20 text-blue-400`} value={s.totalAmount || ''} onChange={e => handleEditResult('sales', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
-                    <select key={`sa-pay-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.paymentMethod || ''} onChange={e => handleEditResult('sales', idx, 'paymentMethod', e.target.value)}>
+                    <input key={`sa-date-${idx}`} type="date" className={`bg-white dark:bg-slate-900 border ${s.missingDate || !s.date ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-full`} value={s.date || ''} onChange={e => handleEditResult('sales', idx, 'date', e.target.value)} />,
+                    <input key={`sa-amt-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${s.missingAmount || !s.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-20 text-blue-400`} value={s.totalAmount || ''} onChange={e => handleEditResult('sales', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
+                    <select key={`sa-pay-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.paymentMethod || ''} onChange={e => handleEditResult('sales', idx, 'paymentMethod', e.target.value)}>
                       <option value="">Unknown</option>
                       <option value="cash">Cash</option>
                       <option value="upi">UPI</option>
                       <option value="card">Card</option>
                     </select>,
-                    <input key={`sa-note-${idx}`} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.note || ''} onChange={e => handleEditResult('sales', idx, 'note', e.target.value)} />,
+                    <input key={`sa-note-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.note || ''} onChange={e => handleEditResult('sales', idx, 'note', e.target.value)} />,
                   ])}
                 />
               </Section>
@@ -605,7 +606,7 @@ export default function ImportPage() {
                 <DataTable
                   headers={['Lender / Borrower', 'Amount', 'Date', 'Note']}
                   rows={apiResult.loans.map((l: any, idx: number) => [
-                    <span key={`l-name-${idx}`} className="font-medium text-slate-200">{l.lenderName}</span>,
+                    <span key={`l-name-${idx}`} className="font-medium text-slate-900 dark:text-slate-200">{l.lenderName}</span>,
                     <span key={`l-amt-${idx}`} className="text-amber-400 font-bold">₹{l.amount}</span>,
                     <span key={`l-date-${idx}`} className="text-slate-500 text-xs">{l.date || '—'}</span>,
                     <span key={`l-note-${idx}`} className="text-slate-500 text-xs">{l.note || '—'}</span>,
@@ -615,7 +616,7 @@ export default function ImportPage() {
             )}
 
             {!hasKhata && !hasStock && !hasSales && !hasLoans && (
-              <div className="flex items-center gap-2 text-slate-500 text-sm bg-slate-800 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2 text-slate-500 text-sm bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3">
                 <AlertCircle size={16}/> No structured data extracted. Raw text will be saved.
               </div>
             )}
@@ -628,7 +629,7 @@ export default function ImportPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <button onClick={handleCancel} className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">Discard</button>
+              <button onClick={handleCancel} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">Discard</button>
               <button onClick={handleGoToMerge}
                 className="flex-1 bg-emerald-500 text-slate-900 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2">
                 <GitMerge size={18}/> Choose Where to Save
@@ -640,10 +641,10 @@ export default function ImportPage() {
 
       {/* ── Step: Merge Modal ── */}
       {step === 'merge' && apiResult && (
-        <Card className="bg-slate-900 border-slate-700">
+        <Card className="bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700">
           <CardContent className="p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <GitMerge size={20} className="text-emerald-500"/> Merge Into App
               </h2>
               <button onClick={handleCancel} className="text-slate-500 hover:text-slate-300"><X size={20}/></button>
@@ -656,7 +657,7 @@ export default function ImportPage() {
               </label>
               <input
                 type="date"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 value={mergeOpts.date}
                 max={todayISO()}
                 onChange={e => setMergeOpts(o => ({ ...o, date: e.target.value }))}
@@ -730,14 +731,14 @@ export default function ImportPage() {
 
             {/* Nothing selected warning */}
             {!mergeOpts.khata && !mergeOpts.stock && !mergeOpts.sales && (
-              <div className="flex items-center gap-2 text-slate-500 text-sm bg-slate-800 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2 text-slate-500 text-sm bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3">
                 <AlertCircle size={14}/> No sections selected — data will only be saved as an import record.
               </div>
             )}
 
             <div className="flex gap-3">
               <button onClick={() => setStep('preview')}
-                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">
+                className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">
                 Back
               </button>
               <button onClick={handleSave}
@@ -752,20 +753,20 @@ export default function ImportPage() {
       {/* ── Saved Imports List ── */}
       {files.length > 0 && (step === 'idle' || step === 'done') && (
         <div className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-200">Saved Imports ({files.length})</h2>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-200">Saved Imports ({files.length})</h2>
           {files.map((f) => {
             const isOpen = expandedId === f.id;
             return (
-              <Card key={f.id} className="bg-slate-900 border-slate-800">
+              <Card key={f.id} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                 <CardContent className="p-0">
                   <div
-                    className="flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-800/40 transition-colors rounded-xl"
+                    className="flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-100 dark:bg-slate-800/ transition-colors rounded-xl"
                     onClick={() => setExpandedId(isOpen ? null : f.id)}
                   >
                     <div className="flex-shrink-0">{fileTypeIcon(f.fileType)}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-bold text-slate-100 truncate">{f.name}</p>
+                        <p className="font-bold text-slate-900 dark:text-slate-100 truncate">{f.name}</p>
                         {dataTypeBadge(f.dataType)}
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">{f.fileName} · {formatDate(f.importedAt)}</p>
@@ -795,7 +796,7 @@ export default function ImportPage() {
                   </div>
 
                   {isOpen && (
-                    <div className="px-4 pb-4 space-y-4 border-t border-slate-800 pt-4">
+                    <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-800 pt-4">
                       {f.khata.length > 0 && (
                         <Section title="Khata / Udhar" icon={<BookOpen size={14} className="text-orange-400"/>}>
                           <DataTable
@@ -891,16 +892,16 @@ function DataTable({ headers, rows, align }: {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-xs text-slate-500 uppercase border-b border-slate-800">
+        <tr className="text-xs text-slate-500 uppercase border-b border-slate-200 dark:border-slate-800">
           {headers.map((h, i) => (
             <th key={i} className={cn('py-1.5', i > 0 ? 'px-2' : 'pr-2',
               align?.[i] === 'right' ? 'text-right' : 'text-left')}>{h}</th>
           ))}
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-800">
+      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
         {rows.map((row, ri) => (
-          <tr key={ri} className="text-slate-300">
+          <tr key={ri} className="text-slate-900 dark:text-slate-300">
             {row.map((cell, ci) => (
               <td key={ci} className={cn('py-1.5', ci > 0 ? 'px-2' : 'pr-2',
                 align?.[ci] === 'right' ? 'text-right' : 'text-left')}>{cell}</td>
@@ -924,9 +925,9 @@ function MergeToggle({
   preview: React.ReactNode;
 }) {
   const borderCls = {
-    orange:  checked && !disabled ? 'border-orange-500/50 bg-orange-500/5'   : 'border-slate-700 bg-slate-800/50',
-    emerald: checked && !disabled ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-slate-700 bg-slate-800/50',
-    blue:    checked && !disabled ? 'border-blue-500/50 bg-blue-500/5'       : 'border-slate-700 bg-slate-800/50',
+    orange:  checked && !disabled ? 'border-orange-500/50 bg-orange-500/5'   : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/',
+    emerald: checked && !disabled ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/',
+    blue:    checked && !disabled ? 'border-blue-500/50 bg-blue-500/5'       : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/',
   };
   return (
     <div
@@ -940,16 +941,16 @@ function MergeToggle({
       <div className="flex items-center gap-3">
         {/* checkbox */}
         <div className={cn('w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
-          checked && !disabled ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 bg-slate-800')}>
+          checked && !disabled ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 bg-slate-50 dark:bg-slate-800')}>
           {checked && !disabled && <CheckCircle size={14} className="text-slate-900" />}
         </div>
         {icon}
         <div className="flex-1">
-          <p className="font-semibold text-slate-200 text-sm">{title}</p>
+          <p className="font-semibold text-slate-900 dark:text-slate-200 text-sm">{title}</p>
           <p className="text-xs text-slate-500 mt-0.5">{description}</p>
         </div>
       </div>
-      {preview && <div className="mt-3 pt-3 border-t border-slate-700/50">{preview}</div>}
+      {preview && <div className="mt-3 pt-3 border-t border-slate-300 dark:border-slate-700/50">{preview}</div>}
     </div>
   );
 }

@@ -132,7 +132,7 @@ export default function TopProductsPieChart({
           </PieChart>
         </ResponsiveContainer>
         <p className="text-xs text-slate-500 -mt-2">
-          Total: <span className="text-slate-300 font-bold">{fmt(total, currency)}</span>
+          Total: <span className="text-slate-900 dark:text-slate-300 font-bold">{fmt(total, currency)}</span>
         </p>
       </div>
 
@@ -140,37 +140,37 @@ export default function TopProductsPieChart({
       <div className="flex-1 min-w-0 space-y-2 overflow-y-auto max-h-72">
         {selected ? (
           /* Product Detail Panel */
-          <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-4 space-y-3 relative">
+          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3 relative">
             <button onClick={() => { setSelected(null); setSelectedIndex(null); }}
-              className="absolute top-3 right-3 text-slate-500 hover:text-slate-300">
+              className="absolute top-3 right-3 text-slate-500 hover:text-slate-900 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
               <X size={16} />
             </button>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PALETTE[(selectedIndex ?? 0) % PALETTE.length]} } />
-              <p className="font-black text-slate-100 text-base truncate">{selected.name}</p>
+              <p className="font-black text-slate-900 dark:text-slate-100 text-base truncate">{selected.name}</p>
             </div>
             {selected.category && (
               <p className="text-xs text-slate-500 uppercase tracking-widest">{selected.category}</p>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-900 rounded-xl p-3">
+              <div className="bg-white dark:bg-slate-900 shadow-sm rounded-xl p-3 border border-slate-200 dark:border-slate-800/0">
                 <p className="text-[10px] text-slate-500 uppercase font-bold">{valueLabel}</p>
-                <p className="text-lg font-black text-emerald-400">{fmt(selected.value, currency)}</p>
+                <p className="text-lg font-black text-emerald-500 dark:text-emerald-400">{fmt(selected.value, currency)}</p>
               </div>
-              <div className="bg-slate-900 rounded-xl p-3">
+              <div className="bg-white dark:bg-slate-900 shadow-sm rounded-xl p-3 border border-slate-200 dark:border-slate-800/0">
                 <p className="text-[10px] text-slate-500 uppercase font-bold">Share</p>
-                <p className="text-lg font-black text-blue-400">{selected.percentage}%</p>
+                <p className="text-lg font-black text-blue-500 dark:text-blue-400">{selected.percentage}%</p>
               </div>
               {selected.qty !== undefined && (
-                <div className="bg-slate-900 rounded-xl p-3">
+                <div className="bg-white dark:bg-slate-900 shadow-sm rounded-xl p-3 border border-slate-200 dark:border-slate-800/0">
                   <p className="text-[10px] text-slate-500 uppercase font-bold">Qty Sold</p>
-                  <p className="text-lg font-black text-amber-400">{selected.qty}</p>
+                  <p className="text-lg font-black text-amber-500 dark:text-amber-400">{selected.qty}</p>
                 </div>
               )}
               {selected.profit !== undefined && selected.profit > 0 && (
-                <div className="bg-slate-900 rounded-xl p-3">
+                <div className="bg-white dark:bg-slate-900 shadow-sm rounded-xl p-3 border border-slate-200 dark:border-slate-800/0">
                   <p className="text-[10px] text-slate-500 uppercase font-bold">Profit</p>
-                  <p className="text-lg font-black text-violet-400">{fmt(selected.profit, true)}</p>
+                  <p className="text-lg font-black text-violet-500 dark:text-violet-400">{fmt(selected.profit, true)}</p>
                 </div>
               )}
             </div>
@@ -180,7 +180,7 @@ export default function TopProductsPieChart({
                 <span>Share of total {valueLabel.toLowerCase()}</span>
                 <span>{selected.percentage}%</span>
               </div>
-              <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all duration-500"
                   style={{ width: `${selected.percentage}%`, background: PALETTE[(selectedIndex ?? 0) % PALETTE.length] }} />
               </div>
@@ -193,18 +193,18 @@ export default function TopProductsPieChart({
               key={i}
               onClick={() => { setSelected(item); setSelectedIndex(i); }}
               className={cn(
-                'w-full flex items-center gap-3 p-2.5 rounded-xl transition-all text-left hover:bg-slate-800',
-                selectedIndex === i && 'bg-slate-800 ring-1 ring-slate-600'
+                'w-full flex items-center gap-3 p-2.5 rounded-xl transition-all text-left hover:bg-slate-50 dark:hover:bg-slate-800',
+                selectedIndex === i && 'bg-slate-100 dark:bg-slate-800 ring-1 ring-slate-200 dark:ring-slate-600'
               )}
             >
-              <span className="text-xs text-slate-600 font-black w-4 text-right flex-shrink-0">#{i + 1}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-600 font-black w-4 text-right flex-shrink-0">#{i + 1}</span>
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PALETTE[i % PALETTE.length] }} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-slate-200 truncate">{item.name}</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-200 truncate">{item.name}</p>
                 <p className="text-[10px] text-slate-500">{item.detail ?? ''}</p>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="text-sm font-black text-slate-100">{fmt(item.value, currency)}</p>
+                <p className="text-sm font-black text-slate-900 dark:text-slate-100">{fmt(item.value, currency)}</p>
                 <p className="text-[10px] text-slate-500">{item.percentage}%</p>
               </div>
             </button>

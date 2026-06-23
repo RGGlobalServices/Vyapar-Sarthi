@@ -105,34 +105,34 @@ export default function DukandarPage() {
   if (profile.subscriptionPlan !== 'wholesale') {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-white">Dukandar Management</h1>
-        <Card className="border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dukandar Management</h1>
+        <Card className="border-amber-200 dark:border-amber-500/30 bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-500/10 dark:to-amber-600/5 shadow-sm">
           <CardContent className="p-8 text-center">
-            <Store className="w-16 h-16 mx-auto mb-4 text-amber-400" />
-            <h2 className="text-xl font-bold text-white mb-2">Udyog Plan Required</h2>
-            <p className="text-slate-400 mb-4">
+            <Store className="w-16 h-16 mx-auto mb-4 text-amber-500 dark:text-amber-400" />
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Udyog Plan Required</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-4">
               Dukandar management feature is only available on the Udyog plan.
               Upgrade now to add your shopkeepers and view their stock alerts.
             </p>
-            <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-400 mb-2">Your Dukandar Access Code</p>
+            <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 p-4 max-w-sm mx-auto">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-2">Your Dukandar Access Code</p>
               <div className="flex items-center justify-center gap-2">
-                <span className="text-xl font-black tracking-widest text-white">{myAccessCode || '---'}</span>
+                <span className="text-xl font-black tracking-widest text-slate-900 dark:text-white">{myAccessCode || '---'}</span>
                 <button
                   onClick={copyCode}
-                  className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  className="p-2 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-sm dark:shadow-none transition-colors"
                   title="Copy code"
                 >
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  {copied ? <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-xs text-slate-400 mt-2">
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
                 Share this code with your wholesaler so they can add your shop and monitor inventory alerts.
               </p>
             </div>
             <a
               href={`/${locale}/payment?plan=wholesale`}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               Upgrade to Udyog
             </a>
@@ -154,12 +154,12 @@ export default function DukandarPage() {
       )}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dukandar Management</h1>
-          <p className="text-slate-400 mt-1">Manage your shopkeepers and view their stock</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dukandar Management</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">Manage your shopkeepers and view their stock</p>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
         >
           <Plus className="w-4 h-4" />
           Add Dukandar
@@ -167,16 +167,16 @@ export default function DukandarPage() {
       </div>
 
       {dukandar.length === 0 ? (
-        <Card className="border-slate-800 bg-slate-900">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardContent className="p-12 text-center">
-            <Users className="w-16 h-16 mx-auto mb-4 text-slate-600" />
-            <h3 className="text-lg font-bold text-slate-400 mb-2">No Dukandar Added Yet</h3>
+            <Users className="w-16 h-16 mx-auto mb-4 text-slate-400 dark:text-slate-600" />
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-400 mb-2">No Dukandar Added Yet</h3>
             <p className="text-slate-500 mb-4">
               Add your shopkeepers (dukandar) who use Vyapar Sarthi and track their stock
             </p>
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-6 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400"
+              className="px-6 py-3 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               + Add Your First Dukandar
             </button>
@@ -185,12 +185,12 @@ export default function DukandarPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {dukandar.map((d: any) => (
-            <Card key={d.id} className="border-slate-800 bg-slate-900">
+            <Card key={d.id} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-white">{d.shopName || d.name}</h3>
-                    <p className="text-sm text-slate-400">{d.name || d.email}</p>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">{d.shopName || d.name}</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{d.name || d.email}</p>
                     <p className="text-xs text-slate-500">{d.email}</p>
                   </div>
                   {d.mobile && (
@@ -199,24 +199,24 @@ export default function DukandarPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="p-3 bg-slate-800 rounded-xl">
-                    <p className="text-xs text-slate-400">Low Stock Products</p>
-                    <p className="text-lg font-bold text-red-400">{d.stockAlerts?.length || 0}</p>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Low Stock Products</p>
+                    <p className="text-lg font-bold text-red-500 dark:text-red-400">{d.stockAlerts?.length || 0}</p>
                   </div>
-                  <div className="p-3 bg-slate-800 rounded-xl">
-                    <p className="text-xs text-slate-400">Status</p>
-                    <p className="text-lg font-bold text-emerald-400">{d.isActive ? 'Active' : 'Inactive'}</p>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
+                    <p className="text-lg font-bold text-emerald-500 dark:text-emerald-400">{d.isActive ? 'Active' : 'Inactive'}</p>
                   </div>
                 </div>
 
                 {d.stockAlerts && d.stockAlerts.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-xs font-bold text-red-400 mb-2 flex items-center gap-1">
+                    <p className="text-xs font-bold text-red-500 dark:text-red-400 mb-2 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" /> LOW STOCK ALERTS
                     </p>
                     <div className="flex flex-wrap gap-2 mb-3">
                       {d.stockAlerts.map((item: any, i: number) => (
-                        <span key={i} className="px-2 py-1 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-300">
+                        <span key={i} className="px-2 py-1 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded text-xs text-red-600 dark:text-red-300">
                           {item.productName} ({item.currentStock ?? 0}/{item.minStock ?? 0} {item.unit || 'pcs'})
                         </span>
                       ))}
@@ -224,7 +224,7 @@ export default function DukandarPage() {
                     <button
                       onClick={() => sendStockAlert(d.id)}
                       disabled={alertSending === d.id}
-                      className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-slate-900 font-bold rounded-xl hover:bg-orange-400 transition-all disabled:opacity-50 text-sm"
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-orange-400 transition-all disabled:opacity-50 text-sm"
                     >
                       {alertSending === d.id ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -246,19 +246,19 @@ export default function DukandarPage() {
       )}
 
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold text-white mb-4">Add Dukandar</h2>
-            <p className="text-sm text-slate-400 mb-4">
+        <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Add Dukandar</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
               Add by registered email or by the dukandar access code shared by the retailer.
             </p>
-            <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-800 p-1">
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
               <button
                 type="button"
                 onClick={() => setAddMode('email')}
                 className={cn(
                   "rounded-md px-3 py-2 text-sm font-semibold transition-colors",
-                  addMode === 'email' ? "bg-emerald-500 text-slate-900" : "text-slate-300 hover:bg-slate-700"
+                  addMode === 'email' ? "bg-emerald-500 text-white dark:text-slate-900 shadow-sm" : "text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                 )}
               >
                 Email
@@ -268,7 +268,7 @@ export default function DukandarPage() {
                 onClick={() => setAddMode('code')}
                 className={cn(
                   "rounded-md px-3 py-2 text-sm font-semibold transition-colors",
-                  addMode === 'code' ? "bg-emerald-500 text-slate-900" : "text-slate-300 hover:bg-slate-700"
+                  addMode === 'code' ? "bg-emerald-500 text-white dark:text-slate-900 shadow-sm" : "text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                 )}
               >
                 Access Code
@@ -277,24 +277,24 @@ export default function DukandarPage() {
             <form onSubmit={addDukandar}>
               {addMode === 'email' ? (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Retailer Email</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Retailer Email</label>
                   <input
                     type="email"
                     value={retailerEmail}
                     onChange={(e) => setRetailerEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                     placeholder="shopkeeper@example.com"
                     required
                   />
                 </div>
               ) : (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Dukandar Access Code</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Dukandar Access Code</label>
                   <input
                     type="text"
                     value={retailerCode}
                     onChange={(e) => setRetailerCode(e.target.value.toUpperCase())}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                     placeholder="e.g. PATIL123"
                     required
                   />
@@ -303,7 +303,7 @@ export default function DukandarPage() {
               {addStatus && (
                 <p className={cn(
                   "text-sm mb-3 p-2 rounded",
-                  addStatus.type === 'success' ? 'text-emerald-400 bg-emerald-500/10' : addStatus.type === 'info' ? 'text-blue-400 bg-blue-500/10' : 'text-red-400 bg-red-500/10'
+                  addStatus.type === 'success' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : addStatus.type === 'info' ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10'
                 )}>
                   {addStatus.msg}
                 </p>
@@ -312,13 +312,13 @@ export default function DukandarPage() {
                 <button
                   type="button"
                   onClick={() => { setShowAddModal(false); setAddStatus(null); }}
-                  className="flex-1 px-4 py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
+                  className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl hover:bg-emerald-400"
+                  className="flex-1 px-4 py-3 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
                 >
                   Add
                 </button>
