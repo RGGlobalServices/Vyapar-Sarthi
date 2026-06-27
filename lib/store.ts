@@ -68,25 +68,31 @@ export interface CartItem {
   profit: number;
   total: number;
   is_loose?: boolean;
+  variant?: string;
 }
 
 interface CartStore {
   items: CartItem[];
   addItem: (item: CartItem) => void;
-  removeItem: (id: number) => void;
-  updateQuantity: (id: number, quantity: number) => void;
-  updatePrice: (id: number, price: number) => void;
+  removeItem: (id: number, variant?: string) => void;
+  updateQuantity: (id: number, quantity: number, variant?: string) => void;
+  updatePrice: (id: number, price: number, variant?: string) => void;
   clearCart: () => void;
 }
+
+// A cart line is uniquely identified by product id + unit + variant (size),
+// so the same product can sit in the cart at multiple sizes/prices at once.
+const sameLine = (i: CartItem, id: number, variant?: string) =>
+  i.id === id && (variant === undefined || (i.variant ?? undefined) === (variant ?? undefined));
 
 export const useCartStore = create<CartStore>((set) => ({
   items: [],
   addItem: (item) => set((state) => {
-    const existing = state.items.find((i) => i.id === item.id && i.unit === item.unit);
+    const existing = state.items.find((i) => i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? ''));
     if (existing) {
       return {
         items: state.items.map((i) =>
-          i.id === item.id && i.unit === item.unit
+          i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? '')
             ? { ...i, quantity: i.quantity + item.quantity, total: (i.quantity + item.quantity) * i.price }
             : i
         ),
@@ -94,15 +100,15 @@ export const useCartStore = create<CartStore>((set) => ({
     }
     return { items: [...state.items, item] };
   }),
-  removeItem: (id) => set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
-  updateQuantity: (id, quantity) => set((state) => ({
+  removeItem: (id, variant) => set((state) => ({ items: state.items.filter((i) => !sameLine(i, id, variant)) })),
+  updateQuantity: (id, quantity, variant) => set((state) => ({
     items: state.items.map((i) =>
-      i.id === id ? { ...i, quantity, total: quantity * i.price } : i
+      sameLine(i, id, variant) ? { ...i, quantity, total: quantity * i.price } : i
     ),
   })),
-  updatePrice: (id, price) => set((state) => ({
+  updatePrice: (id, price, variant) => set((state) => ({
     items: state.items.map((i) =>
-      i.id === id ? { ...i, price, total: i.quantity * price } : i
+      sameLine(i, id, variant) ? { ...i, price, total: i.quantity * price } : i
     ),
   })),
   clearCart: () => set({ items: [] }),
@@ -547,7 +553,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       } else {
         await get().addItem({
           name: item.productName,
-          category: 'Imported',
+          category: item.category || 'Imported',
           current: Number(item.quantity),
           min: 10,
           unit: item.unit || 'Unit',
@@ -592,6 +598,7 @@ export interface ImportedKhataEntry {
 
 export interface ImportedStockEntry {
   productName: string;
+  category?: string;
   quantity: number;
   unit?: string;
   price: number;

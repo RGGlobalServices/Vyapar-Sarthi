@@ -1,8 +1,9 @@
 'use client';
 import {useState, useEffect, useRef, useCallback} from 'react';
-import {useTranslations} from 'next-intl';
+import {useTranslations, useLocale} from 'next-intl';
 import {useCartStore, useUdharStore, useAuthStore} from '@/lib/store';
 import {useBusinessStore} from '@/lib/businessStore';
+import {translateData} from '@/lib/translateData';
 import {getBusinessConfig} from '@/lib/businessConfig';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {
@@ -40,6 +41,7 @@ function getLoosePresets(unit: string) {
 export default function BillingPage() {
   const t = useTranslations('Billing');
   const tP = useTranslations('Products');
+  const locale = useLocale();
   const {items, addItem, removeItem, updateQuantity, updatePrice, clearCart} = useCartStore();
   const {customers: udharCustomers, fetchCustomers, addUdharFromBill} = useUdharStore();
   const {user} = useAuthStore();
@@ -61,7 +63,7 @@ export default function BillingPage() {
   const [discount, setDiscount] = useState(0);
   const [amountPaid, setAmountPaid] = useState(0);
   const [showCalculator, setShowCalculator] = useState(false);
-  const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit' });
+  const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '' });
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
@@ -69,15 +71,20 @@ export default function BillingPage() {
   const [sendStatus, setSendStatus] = useState<{ email: boolean | null } | null>(null);
   const [waUrl, setWaUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string | number>>(new Set());
+  const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   // EMI state (electronics)
   const [emiMonths, setEmiMonths] = useState(6);
   const [emiDownPayment, setEmiDownPayment] = useState(0);
   const [emiInterestRate, setEmiInterestRate] = useState(0);
 
+  const [isGeneratingBill, setIsGeneratingBill] = useState(false);
+
   const componentRef = useRef<HTMLDivElement>(null);
 
-  const subtotal = items.reduce((acc, item) => acc + item.total, 0);
+  const subtotal = Math.round(items.reduce((acc, item) => acc + item.total, 0));
   const total = Math.max(0, subtotal - discount);
 
   const isEmi = paymentMethod === 'EMI';
@@ -110,8 +117,14 @@ export default function BillingPage() {
   }, [fetchCustomers]);
 
   useEffect(() => {
-    if (!isEmi) setAmountPaid(total);
-  }, [total, isEmi]);
+    if (!isEmi) {
+      if (paymentMethod.toUpperCase() === 'UDHAR') {
+        setAmountPaid(0);
+      } else {
+        setAmountPaid(total);
+      }
+    }
+  }, [total, isEmi, paymentMethod]);
 
   useEffect(() => {
     if (isEmi) setEmiDownPayment(Math.round(total * 0.2));
@@ -194,8 +207,10 @@ export default function BillingPage() {
         const publicUrl = await uploadInvoiceToSupabase(blob, fileName);
         const text = generateWhatsAppText({
           ...lastBill,
-          storeName: user?.storeName,
+          storeName: profile.shopName || user?.storeName,
           pdfUrl: publicUrl || undefined,
+          gst: profile.gst || undefined,
+          pan: profile.pan || undefined,
         });
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
       } else {
@@ -224,22 +239,42 @@ export default function BillingPage() {
     }
   };
 
-  const addToCart = useCallback((product: any) => {
+  const addToCart = useCallback((product: any, variant?: string) => {
+    if (bizConfig.hasSizes && !variant) {
+      setVariantSelectionProduct(product);
+      return;
+    }
+
     const defaultQty = product.is_loose ? 0.5 : 1;
-    const price = product.sellingPrice || Number(product.price);
+    // Resolve per-size pricing: if this product has a price set for the chosen
+    // variant/size, charge that instead of the flat fallback selling price.
+    let price = product.sellingPrice || Number(product.price);
+    let cost = product.wholesaleCost || 0;
+    if (variant) {
+      try {
+        const meta = typeof product.metadata === 'string' ? JSON.parse(product.metadata) : (product.metadata || {});
+        const sp = meta?.size_prices?.[variant];
+        if (sp && (sp.sellingPrice > 0 || sp.mrp > 0)) {
+          price = sp.sellingPrice || sp.mrp;
+          cost = sp.cost || cost;
+        }
+      } catch { /* fall back to flat price */ }
+    }
     addItem({
       id: product.id || Math.random(),
       name: product.name,
       unit: product.baseUnit || product.unit,
+      variant,
       quantity: defaultQty,
       price: price || 0,
-      profit: (price || 0) - (product.wholesaleCost || 0),
-      total: (price || 0) * defaultQty,
+      profit: (price || 0) - cost,
+      total: Math.round((price || 0) * defaultQty),
       is_loose: !!product.is_loose,
     });
     setSearch('');
     setSearchResults([]);
-  }, [addItem]);
+    setVariantSelectionProduct(null);
+  }, [addItem, bizConfig.hasSizes]);
 
   const handleScan = useCallback((barcode: string) => {
     const product = products.find(p => p.barcode === barcode);
@@ -290,8 +325,8 @@ export default function BillingPage() {
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;
-    addToCart({ name: manualProduct.name, sellingPrice: Number(manualProduct.price), baseUnit: manualProduct.unit, wholesaleCost: 0 });
-    setManualProduct({ name: '', price: '', unit: 'Unit' });
+    addToCart({ name: manualProduct.name, sellingPrice: Number(manualProduct.price), baseUnit: manualProduct.unit, wholesaleCost: 0 }, manualProduct.variant || undefined);
+    setManualProduct({ name: '', price: '', unit: 'Unit', variant: '' });
     setShowManualAdd(false);
   };
 
@@ -319,20 +354,27 @@ export default function BillingPage() {
   const udharInfo = getUdharInfo(customerName);
 
   const handleConfirmBill = async () => {
+    setIsGeneratingBill(true);
     try {
       const saleItems = items.map(item => ({
         product_id: typeof item.id === 'string' ? item.id : null,
         unit: item.unit,
+        variant: item.variant || null,
         quantity: item.quantity,
         price_per_unit: item.price,
         margin_per_unit: item.profit || 0,
       }));
 
       const salePayload = {
-        customer_id: udharInfo?.type === 'existing' ? udharInfo.customer?.id ?? null : null,
+        customer_id: udharInfo?.type === 'existing' && typeof udharInfo.customer?.id === 'string' && !udharInfo.customer.id.startsWith('temp-') 
+          ? udharInfo.customer.id 
+          : null,
+        customer_name: customerName.trim() || null,
+        customer_mobile: customerMobile.trim() || null,
+        customer_email: customerEmail.trim() || null,
         items: saleItems,
         total_amount: total,
-        total_profit: items.reduce((acc, item) => acc + (item.profit * item.quantity), 0),
+        total_profit: items.reduce((acc, item) => acc + ((item.profit || 0) * item.quantity), 0),
         payment_type: paymentMethod,
       };
 
@@ -380,25 +422,38 @@ export default function BillingPage() {
     } catch (err) {
       console.error('Failed to record sale:', err);
       alert('Failed to generate bill. Please check your inventory and try again.');
+    } finally {
+      setIsGeneratingBill(false);
     }
   };
 
   const autoSendAfterBill = async (billData: any, phone: string, email: string) => {
-    setSendStatus(null);
+    setSendStatus(email ? { email: null } : null);
     setWaUrl(null);
 
+    let pdfUrl: string | null = null;
+
     try {
+      // Wait for React to render the modal so componentRef is available
+      await new Promise(resolve => setTimeout(resolve, 500)); // increased slightly
+
       // Upload PDF once — reused for both WhatsApp link and email attachment
-      const { blob } = await generatePDFBlob();
-      const fileName = `bill-${billData.billNumber || Date.now()}.pdf`;
-      const pdfUrl = await uploadInvoiceToSupabase(blob, fileName);
+      try {
+        const { blob } = await generatePDFBlob();
+        const fileName = `bill-${billData.billNumber || Date.now()}.pdf`;
+        pdfUrl = await uploadInvoiceToSupabase(blob, fileName);
+      } catch (pdfErr) {
+        console.warn('PDF generation or upload failed, continuing without PDF:', pdfErr);
+      }
 
       // Build wa.me link with pre-filled bill message
       if (phone) {
         const text = generateWhatsAppText({
           ...billData,
-          storeName: (profile as any).shopName || user?.storeName,
+          storeName: profile.shopName || user?.storeName,
           pdfUrl: pdfUrl || undefined,
+          gst: profile.gst || undefined,
+          pan: profile.pan || undefined,
         });
         let normalized = phone.replace(/\D/g, '');
         if (normalized.length === 10) normalized = `91${normalized}`;
@@ -410,7 +465,6 @@ export default function BillingPage() {
 
       // Email: send silently via server (SMTP)
       if (email) {
-        setSendStatus({ email: null }); // "sending…"
         try {
           await api.post('/billing/send-bill', {
             email,
@@ -451,7 +505,7 @@ export default function BillingPage() {
             <span>{bizConfig.label} Mode</span>
             {isElectronics && (
               <span className="bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
-                <Zap size={9} />EMI Available
+                <Zap size={9} />{t('emiMode') || 'EMI Available'}
               </span>
             )}
           </div>
@@ -504,7 +558,7 @@ export default function BillingPage() {
             )}
           >
             <PlusCircle size={20} />
-            <span className="hidden md:inline">Manual Add</span>
+            <span className="hidden md:inline">{t('manualAdd') || 'Manual Add'}</span>
           </button>
           <button
             onClick={() => setIsScanning(!isScanning)}
@@ -528,6 +582,17 @@ export default function BillingPage() {
                     onChange={e => setManualProduct({...manualProduct, name: e.target.value})}
                   />
                 </div>
+                {bizConfig.hasSizes && (
+                  <div className="w-28">
+                    <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Size/Variant</label>
+                    <input
+                      type="text" placeholder="e.g. M, L"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                      value={manualProduct.variant}
+                      onChange={e => setManualProduct({...manualProduct, variant: e.target.value})}
+                    />
+                  </div>
+                )}
                 <div className="w-28">
                   <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Price (₹)</label>
                   <input
@@ -544,7 +609,7 @@ export default function BillingPage() {
                     value={manualProduct.unit}
                     onChange={e => setManualProduct({...manualProduct, unit: e.target.value})}
                   >
-                    {bizConfig.defaultUnits.map(u => <option key={u}>{u}</option>)}
+                    {bizConfig.defaultUnits.map(u => <option key={u} value={u}>{translateData(u, locale) || u}</option>)}
                   </select>
                 </div>
                 <button type="submit" className="bg-emerald-500 text-white dark:text-slate-900 px-4 py-2 rounded-lg font-bold hover:bg-emerald-400">Add Item</button>
@@ -560,11 +625,30 @@ export default function BillingPage() {
           />
         )}
 
+        {/* Original modal removed (using the enhanced one below) */}
+
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex-1 overflow-hidden flex flex-col shadow-sm">
-          <CardHeader className="border-b border-slate-200 dark:border-slate-800">
-            <CardTitle className="text-slate-900 dark:text-slate-200 flex justify-between items-center">
-              <span>Items</span>
-              <span className="text-sm font-normal text-slate-500 dark:text-slate-400">{items.length} items</span>
+          <CardHeader className="border-b border-slate-200 dark:border-slate-800 p-4">
+            <CardTitle className="text-slate-900 dark:text-slate-200 flex justify-between items-center text-base">
+              <div className="flex items-center gap-3">
+                <span>{t('items') || 'Items'}</span>
+                <span className="text-sm font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{items.length}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedItemIds.size > 0 && (
+                  <button onClick={() => {
+                    selectedItemIds.forEach(id => removeItem(id as number));
+                    setSelectedItemIds(new Set());
+                  }} className="text-xs bg-red-500/10 text-red-500 hover:bg-red-500/20 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-colors">
+                    <Trash2 size={14} /> {t('deleteSelected') || 'Delete Selected'} ({selectedItemIds.size})
+                  </button>
+                )}
+                {items.length > 0 && (
+                  <button onClick={() => { clearCart(); setSelectedItemIds(new Set()); }} className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg font-bold transition-colors">
+                    {t('clearAll') || 'Clear All'}
+                  </button>
+                )}
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto p-0">
@@ -572,18 +656,49 @@ export default function BillingPage() {
               <table className="w-full text-left min-w-[600px]">
                 <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase sticky top-0 z-10">
                 <tr>
-                  <th className="px-6 py-3">Item</th>
-                  <th className="px-6 py-3">Unit</th>
-                  <th className="px-6 py-3">Qty</th>
-                  <th className="px-6 py-3 text-right">Price</th>
-                  <th className="px-6 py-3 text-right">Total</th>
-                  <th className="px-6 py-3 text-center">Action</th>
+                  <th className="px-4 py-3 w-10">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+                      checked={items.length > 0 && selectedItemIds.size === items.length}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedItemIds(new Set(items.map(i => i.id)));
+                        else setSelectedItemIds(new Set());
+                      }}
+                    />
+                  </th>
+                  <th className="px-2 py-3">{t('itemCol') || 'ITEM'}</th>
+                  <th className="px-6 py-3">{t('unitCol') || 'UNIT'}</th>
+                  <th className="px-6 py-3">{t('qtyCol') || 'QTY'}</th>
+                  <th className="px-6 py-3 text-right">{t('priceCol') || 'PRICE'}</th>
+                  <th className="px-6 py-3 text-right">{t('totalCol') || 'TOTAL'}</th>
+                  <th className="px-6 py-3 text-center">{t('actionCol') || 'ACTION'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {items.map((item) => (
-                  <tr key={`${item.id}-${item.unit}`} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                    <td className="px-6 py-4 font-medium">{item.name}</td>
+                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="px-4 py-4">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+                        checked={selectedItemIds.has(item.id)}
+                        onChange={(e) => {
+                          const newSet = new Set(selectedItemIds);
+                          if (e.target.checked) newSet.add(item.id);
+                          else newSet.delete(item.id);
+                          setSelectedItemIds(newSet);
+                        }}
+                      />
+                    </td>
+                    <td className="px-2 py-4 font-medium">
+                      {item.name}
+                      {item.variant && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
+                          {item.variant}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm text-slate-400">{item.unit}</td>
                     <td className="px-6 py-4">
                       {item.is_loose ? (
@@ -597,7 +712,7 @@ export default function BillingPage() {
                               value={item.quantity}
                               onChange={e => {
                                 const v = parseFloat(e.target.value);
-                                if (v > 0) updateQuantity(item.id, v);
+                                if (v > 0) updateQuantity(item.id, v, item.variant);
                               }}
                               className="w-20 bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-700/50 rounded px-2 py-1 text-center text-emerald-600 dark:text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                             />
@@ -618,7 +733,7 @@ export default function BillingPage() {
                             {getLoosePresets(item.unit).map(p => (
                               <button
                                 key={p.l}
-                                onClick={() => updateQuantity(item.id, p.v)}
+                                onClick={() => updateQuantity(item.id, p.v, item.variant)}
                                 className={cn(
                                   'text-[10px] px-1.5 py-0.5 rounded transition-colors font-medium',
                                   item.quantity === p.v
@@ -631,9 +746,9 @@ export default function BillingPage() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Minus size={14}/></button>
+                          <button onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1), item.variant)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Minus size={14}/></button>
                           <span className="w-8 text-center">{item.quantity}</span>
-                          <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Plus size={14}/></button>
+                          <button onClick={() => updateQuantity(item.id, item.quantity + 1, item.variant)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Plus size={14}/></button>
                         </div>
                       )}
                     </td>
@@ -647,14 +762,16 @@ export default function BillingPage() {
                     </td>
                     <td className="px-6 py-4 text-right font-bold">₹{item.total}</td>
                     <td className="px-6 py-4 text-center">
-                      <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 size={18}/></button>
+                      <button onClick={() => removeItem(item.id, item.variant)} className="text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-2 rounded-lg transition-colors">
+                        <Trash2 size={18} />
+                      </button>
                     </td>
                   </tr>
                 ))}
                   {items.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-20 text-center text-slate-500">
-                        No items in cart. Start scanning or searching!
+                        {t('emptyCart') || 'No items in cart. Start scanning or searching!'}
                       </td>
                     </tr>
                   )}
@@ -676,7 +793,7 @@ export default function BillingPage() {
             )}
           >
             <CalcIcon size={20} />
-            Calculator
+            {t('calculator') || 'Calculator'}
           </button>
           {showCalculator && (
             <div className="absolute top-full right-0 mt-2 z-[60]">
@@ -869,6 +986,95 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Variant Selection Modal */}
+      {variantSelectionProduct && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-sm shadow-2xl">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-slate-900 dark:text-slate-200 text-lg flex items-center gap-2">
+                Select Size
+              </CardTitle>
+              <button onClick={() => setVariantSelectionProduct(null)} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200">
+                <X size={20} />
+              </button>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{variantSelectionProduct.name}</p>
+                <p className="text-xs text-slate-500 mt-1">Available Inventory:</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {(() => {
+                  let sizes = {};
+                  try {
+                    sizes = typeof variantSelectionProduct.size_variants === 'string'
+                      ? JSON.parse(variantSelectionProduct.size_variants)
+                      : (variantSelectionProduct.size_variants || {});
+                  } catch (e) {}
+                  let sizePrices: any = {};
+                  try {
+                    const meta = typeof variantSelectionProduct.metadata === 'string'
+                      ? JSON.parse(variantSelectionProduct.metadata)
+                      : (variantSelectionProduct.metadata || {});
+                    sizePrices = meta?.size_prices || {};
+                  } catch {}
+                  return Object.entries(sizes).map(([size, qty]) => {
+                    const stock = Number(qty) || 0;
+                    const isOutOfStock = stock <= 0;
+                    const sp = sizePrices[size];
+                    const sizePrice = sp && (sp.sellingPrice > 0 || sp.mrp > 0)
+                      ? (sp.sellingPrice || sp.mrp)
+                      : (variantSelectionProduct.sellingPrice || Number(variantSelectionProduct.price) || 0);
+                    return (
+                      <button
+                        key={size}
+                        onClick={() => {
+                          addToCart(variantSelectionProduct, size);
+                          setVariantSelectionProduct(null);
+                        }}
+                        className={cn(
+                          'py-3 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition-colors active:scale-95',
+                          isOutOfStock
+                            ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-60 hover:opacity-100'
+                            : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30 hover:border-emerald-500 dark:hover:border-emerald-500 text-slate-900 dark:text-slate-100 shadow-sm'
+                        )}
+                      >
+                        <span className="font-bold">{size}</span>
+                        {sizePrice > 0 && <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">₹{sizePrice}</span>}
+                        <span className={cn('text-[10px] font-semibold', isOutOfStock ? 'text-red-400' : 'text-slate-400 dark:text-slate-500')}>
+                          {isOutOfStock ? 'Out' : `${stock} left`}
+                        </span>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const val = new FormData(e.currentTarget).get('custom_size') as string;
+                  if (val && val.trim()) {
+                    addToCart(variantSelectionProduct, val.trim());
+                    setVariantSelectionProduct(null);
+                  }
+                }} className="flex gap-2">
+                  <input 
+                    name="custom_size" 
+                    placeholder="Type custom size... e.g. XL" 
+                    className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-slate-200" 
+                    autoFocus
+                  />
+                  <button type="submit" className="bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 px-4 py-2 rounded-lg font-bold text-sm transition-colors">
+                    Add
+                  </button>
+                </form>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Customer Name Modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -918,7 +1124,7 @@ export default function BillingPage() {
 
               {/* Customer Name + Mobile */}
               <div className="space-y-3">
-                <div>
+                <div className="relative">
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
                     Customer Name{' '}
                     {remainingAmount > 0 && !isEmi && <span className="text-orange-400 normal-case font-normal">*Required for Udhar</span>}
@@ -929,9 +1135,36 @@ export default function BillingPage() {
                     placeholder="Enter customer name..."
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                     value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
+                    onChange={e => {
+                      setCustomerName(e.target.value);
+                      setShowCustomerDropdown(true);
+                    }}
+                    onFocus={() => setShowCustomerDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                     autoFocus
                   />
+                  {showCustomerDropdown && udharCustomers.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {udharCustomers
+                        .filter(c => c.name.toLowerCase().includes(customerName.toLowerCase()))
+                        .map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 text-sm text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 last:border-0"
+                            onMouseDown={() => {
+                              setCustomerName(c.name);
+                              if (c.mobile) setCustomerMobile(c.mobile);
+                              if (c.email) setCustomerEmail(c.email);
+                              setShowCustomerDropdown(false);
+                            }}
+                          >
+                            <div className="font-bold">{c.name}</div>
+                            <div className="text-xs text-slate-500">{c.mobile || 'No mobile'}</div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
@@ -1004,15 +1237,21 @@ export default function BillingPage() {
                 </button>
                 <button
                   onClick={handleConfirmBill}
-                  disabled={!isEmi && remainingAmount > 0 && !customerName.trim()}
+                  disabled={isGeneratingBill || (!isEmi && remainingAmount > 0 && !customerName.trim())}
                   className={cn(
-                    'flex-[2] py-3 rounded-xl font-black text-base transition-all active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed',
+                    'flex-[2] py-3 rounded-xl font-black text-base transition-all active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2',
                     isEmi
                       ? 'bg-sky-500 text-slate-900 hover:bg-sky-400 shadow-sky-500/20'
                       : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400 shadow-emerald-500/20'
                   )}
                 >
-                  {remainingAmount > 0 ? 'Confirm Udhar Sale' : 'Confirm & Print Slip'}
+                  {isGeneratingBill ? (
+                    <><Loader2 size={18} className="animate-spin" /> Generating...</>
+                  ) : remainingAmount > 0 ? (
+                    'Confirm Udhar Sale'
+                  ) : (
+                    'Confirm & Print Slip'
+                  )}
                 </button>
               </div>
             </CardContent>
@@ -1047,6 +1286,8 @@ export default function BillingPage() {
                 storeAddress={profile.address}
                 storeMobile={profile.mobile}
                 logoUrl={profile.logoUrl}
+                gst={profile.gst || undefined}
+                pan={profile.pan || undefined}
               />
             </div>
 

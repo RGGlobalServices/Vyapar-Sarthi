@@ -59,6 +59,16 @@ function buildEmptyForm(btype: string) {
   };
 }
 
+/** Pick the first size that has a non-zero price as the product-level fallback. */
+function deriveFallbackPrice(sizePrices: Record<string, SizePriceEntry>) {
+  for (const p of Object.values(sizePrices)) {
+    if (p && (p.sellingPrice > 0 || p.mrp > 0)) {
+      return { mrp: p.mrp || p.sellingPrice, sellingPrice: p.sellingPrice || p.mrp, cost: p.cost || 0 };
+    }
+  }
+  return null;
+}
+
 let cachedProducts: Product[] = [];
 
 export default function ProductsPage() {
@@ -244,12 +254,16 @@ export default function ProductsPage() {
     const sizeVariantsJson = bizConfig.hasSizes ? serializeSizeVariants(form.size_variants) : undefined;
     const stockQty = bizConfig.hasSizes ? totalFromSizes(form.size_variants) : Number(form.stock);
     const metadataPayload = bizConfig.hasSizes ? mergeSizePricesIntoMetadata({}, sizePrices, perSizePricing) : undefined;
+    // When per-size pricing is on and the fallback fields are blank, derive the
+    // fallback from the first priced size so billing/reports always have a value.
+    const fallback = perSizePricing ? deriveFallbackPrice(sizePrices) : null;
     try {
       const res = await api.post('/products', {
         name: form.name, category: form.category,
         current_stock: stockQty, min_stock: Number(form.minStock),
-        mrp: Number(form.mrp), selling_price: Number(form.sellingPrice),
-        wholesale_cost: Number(form.cost), base_unit: form.unit || 'Unit',
+        mrp: Number(form.mrp) || fallback?.mrp || 0,
+        selling_price: Number(form.sellingPrice) || fallback?.sellingPrice || 0,
+        wholesale_cost: Number(form.cost) || fallback?.cost || 0, base_unit: form.unit || 'Unit',
         barcode: `BAR-${Date.now()}`,
         is_loose: form.is_loose,
         expiry_date: form.expiry_date || null,
@@ -322,14 +336,15 @@ export default function ProductsPage() {
       const editMetadata = bizConfig.hasSizes
         ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePrices, editPerSizePricing)
         : undefined;
+      const editFallback = editPerSizePricing ? deriveFallbackPrice(editSizePrices) : null;
       await api.put(`/products/${editProduct.id}`, {
         name: editForm.name,
         category: editForm.category,
         current_stock: stockQty,
         min_stock: Number(editForm.minStock),
-        mrp: Number(editForm.mrp),
-        selling_price: Number(editForm.sellingPrice),
-        wholesale_cost: Number(editForm.cost),
+        mrp: Number(editForm.mrp) || editFallback?.mrp || 0,
+        selling_price: Number(editForm.sellingPrice) || editFallback?.sellingPrice || 0,
+        wholesale_cost: Number(editForm.cost) || editFallback?.cost || 0,
         base_unit: editForm.unit,
         is_loose: editForm.is_loose,
         expiry_date: editForm.expiry_date || null,
@@ -945,21 +960,24 @@ export default function ProductsPage() {
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1 h-4 rounded bg-amber-500" />
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                    {editPerSizePricing ? 'Default Pricing (Fallback)' : 'Pricing'}
+                    {editPerSizePricing ? 'Default Pricing (Optional Fallback)' : 'Pricing'}
                   </p>
                 </div>
+                {editPerSizePricing && (
+                  <p className="text-[10px] text-slate-500 -mt-1">Per-size prices are set above. These are optional fallbacks for sizes without a price.</p>
+                )}
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">MRP</label>
-                    <input required type="number" min="0" className={modalInp} placeholder="0" value={editForm.mrp} onChange={e => setEditForm(f => ({ ...f, mrp: e.target.value }))} />
+                    <input required={!editPerSizePricing} type="number" min="0" className={modalInp} placeholder="0" value={editForm.mrp} onChange={e => setEditForm(f => ({ ...f, mrp: e.target.value }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Selling Price</label>
-                    <input required type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0" value={editForm.sellingPrice} onChange={e => setEditForm(f => ({ ...f, sellingPrice: e.target.value }))} />
+                    <input required={!editPerSizePricing} type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0" value={editForm.sellingPrice} onChange={e => setEditForm(f => ({ ...f, sellingPrice: e.target.value }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cost Price</label>
-                    <input required type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} />
+                    <input type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} />
                   </div>
                 </div>
                 {editForm.sellingPrice && editForm.cost && Number(editForm.cost) > 0 && (
@@ -1223,23 +1241,26 @@ export default function ProductsPage() {
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1 h-4 rounded bg-amber-500" />
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                    {perSizePricing ? `${t('fieldMRP')} (Default/Fallback)` : 'Pricing'}
+                    {perSizePricing ? `${t('fieldMRP')} (Optional Fallback)` : 'Pricing'}
                   </p>
                 </div>
+                {perSizePricing && (
+                  <p className="text-[10px] text-slate-500 -mt-1">Per-size prices are set above. These are optional fallbacks for sizes without a price.</p>
+                )}
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMRP')}</label>
-                    <input required type="number" min="0" className={modalInp} placeholder="0"
+                    <input required={!perSizePricing} type="number" min="0" className={modalInp} placeholder="0"
                       value={form.mrp} onChange={e => setForm(f => ({ ...f, mrp: e.target.value }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldSelling')}</label>
-                    <input required type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0"
+                    <input required={!perSizePricing} type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0"
                       value={form.sellingPrice} onChange={e => setForm(f => ({ ...f, sellingPrice: e.target.value }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldCost')}</label>
-                    <input required type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0"
+                    <input type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0"
                       value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} />
                   </div>
                 </div>
