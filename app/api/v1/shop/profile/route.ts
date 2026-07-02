@@ -13,7 +13,7 @@ export const GET = handle(async (req) => {
 export const PATCH = handle(async (req) => {
   const { shop } = await requireShop(req);
   const body = await readBody(req);
-  const allowedFields = ['name', 'address', 'mobile', 'businessType', 'logoUrl', 'setupComplete'];
+  const allowedFields = ['name', 'address', 'mobile', 'businessType', 'logoUrl', 'setupComplete', 'gst', 'pan'];
   const data: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (body[field] !== undefined) data[field] = body[field];

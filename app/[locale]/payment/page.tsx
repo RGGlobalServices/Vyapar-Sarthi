@@ -38,6 +38,21 @@ function PaymentPageInner() {
   const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
+    // If arriving from landing page registration, _auth contains the user credentials
+    // encoded as JSON. Bootstrap ks_auth localStorage + cookie so the app treats
+    // the user as logged in without requiring a separate login step.
+    const authParam = searchParams.get('_auth');
+    if (authParam) {
+      try {
+        const authData = JSON.parse(decodeURIComponent(authParam));
+        if (authData.access_token) {
+          localStorage.setItem('ks_auth', JSON.stringify(authData));
+          document.cookie = `ks_auth=1; path=/; max-age=${60 * 60 * 24 * 7}`;
+        }
+      } catch (e) {
+        console.warn('Failed to parse _auth param:', e);
+      }
+    }
     loadFromStorage();
   }, [loadFromStorage]);
 
@@ -68,7 +83,8 @@ function PaymentPageInner() {
         await switchTrialPlan(trialEndRaw);
         return;
       }
-    } catch {
+    } catch (err) {
+      console.error("initFlow fetch profile failed:", err);
       /* couldn't read profile — fall through to paid flow */
     }
     createOrder();
@@ -86,7 +102,8 @@ function PaymentPageInner() {
       // Set plan cookie so middleware allows app access
       document.cookie = `ks_plan=${plan}; path=/; max-age=${60 * 60 * 24 * 7}`;
       setTimeout(() => router.push(`/en?plan_switched=1&plan=${plan}`), 1800);
-    } catch {
+    } catch (err) {
+      console.error("switchTrialPlan failed:", err);
       // Trial ended between page loads → fall back to paid flow.
       createOrder();
     }

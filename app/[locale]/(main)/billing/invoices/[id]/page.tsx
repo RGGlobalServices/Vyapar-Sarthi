@@ -130,7 +130,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     paymentMethod: invoice.payment_type,
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
     date: new Date(invoice.created_at).toLocaleDateString(),
-    storeName: user?.storeName || 'Store'
+    storeName: user?.storeName || 'Store',
+    customerName: invoice.customer_name || undefined
   };
 
   return (

@@ -40,5 +40,15 @@ export const POST = handle(async (req) => {
     ON CONFLICT (godown_id, product_id) DO UPDATE SET quantity = godown_products.quantity + ${qty}, updated_at = NOW()
   `;
 
+  // Log stock movements
+  await prisma.$executeRaw`
+    INSERT INTO stock_movements (shop_id, product_id, warehouse_id, type, quantity, reference_id)
+    VALUES (${shop.id}::uuid, ${productId}::uuid, ${fromGodownId}::uuid, 'transfer_out', ${qty}, ${toGodownId}::uuid)
+  `;
+  await prisma.$executeRaw`
+    INSERT INTO stock_movements (shop_id, product_id, warehouse_id, type, quantity, reference_id)
+    VALUES (${shop.id}::uuid, ${productId}::uuid, ${toGodownId}::uuid, 'transfer_in', ${qty}, ${fromGodownId}::uuid)
+  `;
+
   return json({ detail: `Transferred ${qty} units from ${source[0].name} to ${destGodown[0].name}` });
 });

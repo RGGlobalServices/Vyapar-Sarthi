@@ -78,8 +78,8 @@ export default function TopProductsPieChart({
     );
   }
 
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, index }: any) => {
-    if (items[index]?.percentage < 5) return null;
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, payload }: any) => {
+    if (payload?.percentage < 5) return null;
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -87,7 +87,7 @@ export default function TopProductsPieChart({
     return (
       <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
         fontSize={11} fontWeight="bold">
-        {items[index].percentage}%
+        {payload.percentage}%
       </text>
     );
   };

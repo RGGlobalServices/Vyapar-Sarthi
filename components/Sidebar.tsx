@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { Link, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
+import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon
+  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -14,6 +15,8 @@ import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { BUSINESS_CONFIGS } from '@/lib/businessConfig';
 import { isSubscriptionEnded, isAllowedWhenEnded } from '@/lib/subscriptionAccess';
+import { canUseReferEarn, canUseManpower } from '@/lib/planGates';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 export default function Sidebar({ 
   locale, 
@@ -25,7 +28,7 @@ export default function Sidebar({
   setIsMobileOpen?: (val: boolean) => void;
 }) {
   const pathname = usePathname();
-  const { user, loadFromStorage, logout } = useAuthStore();
+  const { user, loadFromStorage, logout, role, setRole } = useAuthStore();
   const { profile, fetchProfile, allShops, activeShopId, fetchAllShops, switchShop, createShop } = useBusinessStore();
   const t = useTranslations('Nav');
   const ended = isSubscriptionEnded(profile);
@@ -35,13 +38,16 @@ export default function Sidebar({
   const emptyShopForm = { name: '', businessType: 'kirana', address: '', mobile: '' };
   const [shopForm, setShopForm] = useState(emptyShopForm);
 
-  const [isDark, setIsDark] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === 'dark';
+  const upcomingEventsCount = useNotificationStore(s => s.upcomingEventsCount);
 
   useEffect(() => {
+    setMounted(true);
     loadFromStorage();
     fetchProfile();
     fetchAllShops();
-    setIsDark(document.documentElement.classList.contains('dark'));
   }, [loadFromStorage, fetchProfile, fetchAllShops]);
 
   async function handleCreateShop() {
@@ -67,9 +73,13 @@ export default function Sidebar({
     { key: 'profile',   icon: User,            href: '/profile' },
     { key: 'billing',   icon: IndianRupee,     href: '/billing' },
     { key: 'products',  icon: Package,         href: '/products' },
+    ...(profile.subscriptionPlan === 'wholesale' ? [
+      { key: 'purchases', icon: ShoppingCart, href: '/purchases' },
+      { key: 'suppliers', icon: Users,        href: '/suppliers' }
+    ] : []),
     { key: 'stock',     icon: Box,             href: '/stock' },
     { key: 'udhar',     icon: Users,           href: '/udhar' },
-    { key: 'calendar',  icon: CalendarDays,    href: '/calendar' },
+    { key: 'calendar',  icon: CalendarDays,    href: '/calendar', badge: upcomingEventsCount },
     { key: 'reports',   icon: BarChart3,       href: '/reports' },
     { key: 'import',    icon: FolderUp,        href: '/import' },
     { key: 'referral',  icon: Gift,            href: '/referral' },
@@ -81,7 +91,12 @@ export default function Sidebar({
   ];
   const visibleMenuItems = ended
     ? menuItems.filter(item => item.external || isAllowedWhenEnded(item.href))
-    : menuItems;
+    : menuItems.filter(item => {
+        if (role === 'staff') {
+          return !['reports', 'import', 'settings', 'godowns', 'suppliers', 'purchases'].includes(item.key);
+        }
+        return true;
+      });
 
   return (
     <>
@@ -97,45 +112,45 @@ export default function Sidebar({
         "fixed inset-y-0 left-0 transform transition-transform duration-300 md:relative md:translate-x-0 md:sticky md:top-0",
         isMobileOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        {/* Shop header + switcher */}
       <div className="relative border-b border-slate-200 dark:border-slate-800">
+        {/* Shop header + switcher */}
         <button
           onClick={() => setShowShopMenu(s => !s)}
-          className="w-full p-4 flex items-center gap-3 hover:bg-slate-200/50 dark:hover:bg-slate-800/40 transition-colors"
+          className="w-full p-4 flex flex-col gap-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/40 transition-colors text-left"
         >
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden flex-shrink-0 p-0.5 border border-slate-100 dark:border-slate-800">
-            {profile.logoUrl ? (
-              <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" />
-            ) : (
-              <img src="/icon.png" alt="App Icon" className="w-full h-full object-cover rounded-lg" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1 text-left">
-            <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">
-              {profile.shopName || user?.storeName || 'Vyapar Sarthi'}
-            </h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider truncate">
-                {user?.name || 'Owner'}
-              </span>
-              {profile.shopCode && (
-                <span className="text-[9px] text-slate-500 font-mono">{profile.shopCode}</span>
+          {/* Main Business Identity */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0 p-0.5 border border-slate-100 dark:border-slate-800">
+              {profile.logoUrl ? (
+                <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" />
+              ) : (
+                <img src="/icon.png" alt="App Icon" className="w-full h-full object-cover rounded-lg" />
               )}
-              <span className={cn(
-                "text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter",
-                profile.subscriptionPlan === 'wholesale' ? "bg-purple-500 text-white" :
-                profile.subscriptionPlan === 'vyapar'    ? "bg-indigo-500 text-white" :
-                "bg-sky-500 text-white"
-              )}>
-                {profile.subscriptionPlan === 'wholesale' ? 'Udyog' :
-                 profile.subscriptionPlan === 'vyapar'    ? 'Vyapar' :
-                 'Dukaan'}
-              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[15px] font-black text-slate-900 dark:text-white truncate leading-tight tracking-tight">
+                {user?.storeName || 'Vyapar Sarthi'}
+              </h1>
+              <div className="flex items-center mt-0.5">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest truncate">
+                  {profile.subscriptionPlan === 'wholesale' ? 'Wholesale Distributor' : 'Retail Store'}
+                </span>
+              </div>
             </div>
           </div>
-          {allShops.length > 0 && (
-            <ChevronDown size={14} className={cn('text-slate-500 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
-          )}
+
+          {/* Location Selector */}
+          <div className="w-full mt-2 flex items-center justify-between bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-2 group transition-all hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:border-emerald-200 dark:hover:border-emerald-500/30">
+            <div className="flex items-center gap-2 truncate">
+              <span className="text-sm">
+                {profile.subscriptionPlan === 'wholesale' ? '📦' : '🏪'}
+              </span>
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 truncate">
+                {profile.shopName || (profile.subscriptionPlan === 'wholesale' ? 'Main Warehouse' : 'Main Store')}
+              </span>
+            </div>
+            <ChevronDown size={14} className={cn('text-slate-400 group-hover:text-emerald-500 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
+          </div>
         </button>
 
         {/* Shop dropdown */}
@@ -204,8 +219,15 @@ export default function Sidebar({
           }
           return (
             <Link key={item.key} href={item.href} className={linkClass} onClick={() => setIsMobileOpen?.(false)}>
-              <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
-              <span className="text-sm">{t(item.key as any)}</span>
+              <div className="flex items-center gap-3 flex-1">
+                <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
+                <span className="text-sm">{t(item.key as any)}</span>
+              </div>
+              {!!item.badge && item.badge > 0 && (
+                <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -215,21 +237,10 @@ export default function Sidebar({
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-2 text-slate-500">
             {isDark ? <Moon size={14} className="text-emerald-400" /> : <Sun size={14} className="text-amber-500" />}
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Theme</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('theme') || 'Theme'}</span>
           </div>
           <button
-            onClick={() => {
-              const html = document.documentElement;
-              const nextDark = !html.classList.contains('dark');
-              if (nextDark) {
-                html.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
-              } else {
-                html.classList.remove('dark');
-                localStorage.setItem('theme', 'light');
-              }
-              setIsDark(nextDark);
-            }}
+            onClick={() => setTheme(isDark ? 'light' : 'dark')}
             className="w-12 h-6 rounded-full bg-slate-300 dark:bg-emerald-500 transition-colors relative flex items-center p-1"
           >
             <div 
@@ -242,7 +253,7 @@ export default function Sidebar({
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-2 text-slate-500">
             <Languages size={14} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Language</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('language') || 'Language'}</span>
           </div>
           <div className="flex gap-2">
             {['en', 'hi', 'mr'].map((l) => (
@@ -263,12 +274,27 @@ export default function Sidebar({
           </div>
         </div>
 
+        <div className="flex items-center justify-between px-2">
+          <div className="flex items-center gap-2 text-slate-500">
+            <User size={14} />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('accessRole') || 'Access Role'}</span>
+          </div>
+          <button
+            onClick={() => setRole(role === 'admin' ? 'staff' : 'admin')}
+            className={cn("px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors", 
+              role === 'admin' ? "bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-sky-500/20 text-sky-600 dark:text-sky-400"
+            )}
+          >
+            {role}
+          </button>
+        </div>
+
         <button
           onClick={() => logout()}
           className="flex items-center gap-3 px-4 py-3 w-full text-slate-600 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
         >
           <LogOut size={18} />
-          <span className="text-sm font-semibold">Logout</span>
+          <span className="text-sm font-semibold">{t('logout') || 'Logout'}</span>
         </button>
       </div>
       </aside>

@@ -19,6 +19,8 @@ interface BillSlipProps {
   logoUrl?: string;
   ownerSignature?: string;
   customerMobile?: string;
+  gst?: string;
+  pan?: string;
   // EMI fields
   isEmi?: boolean;
   emiMonths?: number;
@@ -27,6 +29,8 @@ interface BillSlipProps {
   emiInterestRate?: number;
   emiTotalAmount?: number;
 }
+
+import { useTranslations } from 'next-intl';
 
 export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
   items,
@@ -38,11 +42,13 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
   paymentMethod,
   billNumber,
   date,
-  storeName = 'Kirana Store',
+  storeName,
   storeAddress,
   storeMobile,
   logoUrl,
   ownerSignature,
+  gst,
+  pan,
   isEmi,
   emiMonths,
   emiDownPayment,
@@ -50,6 +56,7 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
   emiInterestRate,
   emiTotalAmount,
 }, ref) => {
+  const t = useTranslations('BillSlip');
   const subtotal = items.reduce((acc, item) => acc + item.total, 0);
   const paid = amountPaid ?? total;
 
@@ -66,30 +73,32 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
             <img src={logoUrl} alt="Logo" style={{ maxHeight: '40px', maxWidth: '100px' }} />
           </div>
         )}
-        <h1 className="text-[17px] font-black uppercase tracking-tight">{storeName}</h1>
+        <h1 className="text-[17px] font-black uppercase tracking-tight">{storeName || t('storeNameFallback')}</h1>
         {storeAddress && <p className="text-[9px] mt-0.5">{storeAddress}</p>}
-        {storeMobile && <p className="text-[9px]">Mob: {storeMobile}</p>}
+        {storeMobile && <p className="text-[9px]">{t('mob')} {storeMobile}</p>}
+        {gst && <p className="text-[9px]">{t('gstin')} {gst}</p>}
+        {pan && <p className="text-[9px]">{t('pan')} {pan}</p>}
       </div>
 
       {/* Bill meta */}
       <div className="flex justify-between mb-1 text-[9px] font-bold">
-        <span>Bill: {billNumber}</span>
+        <span>{t('bill')} {billNumber}</span>
         <span>{date}</span>
       </div>
       {customerName && (
-        <div className="mb-1 text-[9px]">Customer: <strong>{customerName}</strong></div>
+        <div className="mb-1 text-[9px]">{t('customer')} <strong>{customerName}</strong></div>
       )}
       <div className="mb-3 text-[9px]">
-        Payment: <strong>{isEmi ? 'EMI' : paymentMethod.toUpperCase()}</strong>
+        {t('payment')} <strong>{isEmi ? t('emi') : paymentMethod.toUpperCase()}</strong>
       </div>
 
       {/* Items table */}
       <table className="w-full mb-3" style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000' }}>
         <thead>
           <tr className="text-[9px]">
-            <th className="text-left py-1">ITEM</th>
-            <th className="text-center py-1 w-8">QTY</th>
-            <th className="text-right py-1 w-16">AMT</th>
+            <th className="text-left py-1">{t('item')}</th>
+            <th className="text-center py-1 w-8">{t('qty')}</th>
+            <th className="text-right py-1 w-16">{t('amt')}</th>
           </tr>
         </thead>
         <tbody style={{ borderTop: '1px dotted #000' }}>
@@ -106,17 +115,17 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
       {/* Totals */}
       <div className="space-y-0.5">
         <div className="flex justify-between text-[9px]">
-          <span>Subtotal:</span>
+          <span>{t('subtotal')}</span>
           <span>₹{subtotal.toLocaleString('en-IN')}</span>
         </div>
         {discount > 0 && (
           <div className="flex justify-between text-[9px]">
-            <span>Discount:</span>
+            <span>{t('discount')}</span>
             <span>- ₹{discount.toLocaleString('en-IN')}</span>
           </div>
         )}
         <div className="flex justify-between font-black text-[14px] pt-1" style={{ borderTop: '1px solid #000' }}>
-          <span>TOTAL</span>
+          <span>{t('total')}</span>
           <span>₹{total.toLocaleString('en-IN')}</span>
         </div>
       </div>
@@ -124,23 +133,23 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
       {/* EMI breakdown */}
       {isEmi && emiMonths && emiMonthlyAmount !== undefined ? (
         <div className="mt-2 pt-2 space-y-0.5" style={{ borderTop: '1px dashed #000' }}>
-          <div className="text-[9px] font-bold text-center mb-1">── EMI DETAILS ──</div>
+          <div className="text-[9px] font-bold text-center mb-1">{t('emiDetails')}</div>
           <div className="flex justify-between text-[9px]">
-            <span>Down Payment:</span>
+            <span>{t('downPayment')}</span>
             <span className="font-bold">₹{(emiDownPayment ?? 0).toLocaleString('en-IN')}</span>
           </div>
           <div className="flex justify-between text-[9px]">
-            <span>Monthly EMI × {emiMonths}:</span>
-            <span className="font-bold">₹{emiMonthlyAmount.toLocaleString('en-IN')}/mo</span>
+            <span>{t('monthlyEmi')} &times; {emiMonths}:</span>
+            <span className="font-bold">₹{emiMonthlyAmount.toLocaleString('en-IN')}{t('mo')}</span>
           </div>
           {emiInterestRate !== undefined && (
             <div className="flex justify-between text-[9px]">
-              <span>Interest Rate:</span>
-              <span>{emiInterestRate === 0 ? 'No Cost EMI' : `${emiInterestRate}% p.a.`}</span>
+              <span>{t('interestRate')}</span>
+              <span>{emiInterestRate === 0 ? t('noCostEmi') : `${emiInterestRate}% ${t('pa')}`}</span>
             </div>
           )}
           <div className="flex justify-between text-[9px] font-bold" style={{ borderTop: '1px dotted #000', paddingTop: '2px' }}>
-            <span>Total Payable:</span>
+            <span>{t('totalPayable')}</span>
             <span>₹{(emiTotalAmount ?? 0).toLocaleString('en-IN')}</span>
           </div>
         </div>
@@ -148,39 +157,30 @@ export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>(({
         /* Cash / UPI / Udhar summary */
         <div className="mt-2 pt-2 space-y-0.5" style={{ borderTop: '1px dashed #000' }}>
           <div className="flex justify-between text-[10px] font-bold">
-            <span>Amount Paid:</span>
+            <span>{t('amountPaid')}</span>
             <span>₹{paid.toLocaleString('en-IN')}</span>
           </div>
           <div className="flex justify-between text-[10px] font-bold">
-            <span>Remaining (Udhar):</span>
+            <span>{t('remainingUdhar')}</span>
             <span>{remainingAmount > 0 ? `₹${remainingAmount.toLocaleString('en-IN')}` : '₹0'}</span>
           </div>
           {remainingAmount > 0 && customerName && (
             <div className="text-[8px] text-center mt-1 italic">
-              ₹{remainingAmount.toLocaleString('en-IN')} added to Udhar Khata for {customerName}
+              {t('savedToUdharKhata')}
             </div>
           )}
         </div>
       )}
 
-      {/* Owner Signature */}
-      {ownerSignature && (
-        <div className="mt-5 pt-2" style={{ borderTop: '1px dashed #000' }}>
-          <div className="flex justify-end">
-            <div className="text-center">
-              <div style={{ borderTop: '1px solid #000', width: '120px', marginBottom: '2px' }} />
-              <p className="text-[9px] font-black">{ownerSignature}</p>
-              <p className="text-[8px]">Authorized Signatory</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Footer */}
-      <div className="text-center mt-4 pt-3" style={{ borderTop: '1px dashed #000' }}>
-        <p className="font-bold text-[9px]">THANK YOU FOR SHOPPING!</p>
-        <p className="text-[8px] italic">Please check items before leaving</p>
-        <p className="text-[7px] mt-1.5">Powered by Vyapar Sarthi</p>
+      <div className="mt-4 pt-3 text-center" style={{ borderTop: '1px solid #000' }}>
+        {ownerSignature && (
+          <div className="mb-2">
+            <img src={ownerSignature} alt="Signature" className="mx-auto" style={{ maxHeight: '30px' }} />
+          </div>
+        )}
+        <p className="font-bold text-[11px] mb-1">{t('thankYou')}</p>
+        <p className="text-[8px] text-gray-500">vyaparsarthii.com</p>
       </div>
     </div>
   );
@@ -207,35 +207,43 @@ export function generateWhatsAppText(bill: {
   emiInterestRate?: number;
   emiTotalAmount?: number;
   pdfUrl?: string;
+  gst?: string;
+  pan?: string;
+  t: (key: string) => string;
 }): string {
-  const lines: string[] = [];
-  const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  const { t, storeName, billNumber, date, customerName, items, total, discount, amountPaid, remainingAmount, isEmi, emiMonths, emiDownPayment, emiMonthlyAmount, emiTotalAmount } = bill;
+  const subtotal = items.reduce((acc, item) => acc + item.total, 0);
+  const paid = amountPaid ?? total;
+  const parts: string[] = [];
 
-  lines.push(`*${bill.storeName ?? 'Store'}*`);
-  lines.push(`Bill: *${bill.billNumber}*  |  Date: ${bill.date}`);
-  if (bill.customerName) lines.push(`Customer: ${bill.customerName}`);
-  lines.push(`Payment: *${bill.isEmi ? 'EMI' : bill.paymentMethod.toUpperCase()}*`);
-  lines.push('');
-  lines.push('*Items:*');
-  bill.items.forEach(item => {
-    lines.push(`  • ${item.name} × ${item.quantity}  =  ${fmt(item.total)}`);
+  parts.push(`*${t('bill')} ${billNumber}*`);
+  parts.push(`*${storeName || t('storeNameFallback')}*`);
+  
+  if (customerName) {
+    parts.push(`\n${t('customer')} ${customerName}`);
+  }
+  
+  parts.push('\n*Items:*');
+  items.forEach(item => {
+    parts.push(`${item.name} x ${item.quantity} = ₹${item.total}`);
   });
-  lines.push('');
-  if ((bill.discount ?? 0) > 0) lines.push(`Discount: -${fmt(bill.discount!)}`);
-  lines.push(`*TOTAL: ${fmt(bill.total)}*`);
-
-  if (bill.isEmi && bill.emiMonths) {
-    lines.push('');
-    lines.push('*EMI Details:*');
-    lines.push(`  Down Payment: ${fmt(bill.emiDownPayment ?? 0)}`);
-    lines.push(`  Monthly EMI: ${fmt(bill.emiMonthlyAmount ?? 0)} × ${bill.emiMonths} months`);
-    if (bill.emiInterestRate === 0) lines.push(`  ✅ No Cost EMI`);
-    else if (bill.emiInterestRate) lines.push(`  Interest: ${bill.emiInterestRate}% p.a.`);
-    lines.push(`  Total Payable: ${fmt(bill.emiTotalAmount ?? 0)}`);
+  
+  if ((discount ?? 0) > 0) {
+    parts.push(`\n${t('subtotal')} ₹${subtotal}`);
+    parts.push(`${t('discount')} -₹${discount}`);
+  }
+  
+  parts.push(`\n*${t('total')} ₹${total}*`);
+  
+  if (isEmi) {
+    parts.push(`\n${t('emiDetails')}`);
+    parts.push(`${t('downPayment')} ₹${emiDownPayment ?? 0}`);
+    parts.push(`${t('monthlyEmi')} x ${emiMonths}: ₹${emiMonthlyAmount ?? 0}${t('mo')}`);
+    parts.push(`${t('totalPayable')} ₹${emiTotalAmount ?? 0}`);
   } else {
-    lines.push(`Amount Paid: ${fmt(bill.amountPaid ?? bill.total)}`);
-    if ((bill.remainingAmount ?? 0) > 0) {
-      lines.push(`Remaining (Udhar): *${fmt(bill.remainingAmount!)}*`);
+    parts.push(`\n${t('amountPaid')} ₹${paid}`);
+    if ((remainingAmount ?? 0) > 0) {
+      parts.push(`*${t('remainingUdhar')} ₹${remainingAmount}*`);
     }
   }
 

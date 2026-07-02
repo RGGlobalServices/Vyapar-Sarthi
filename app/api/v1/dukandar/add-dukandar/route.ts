@@ -10,12 +10,15 @@ export const POST = handle(async (req) => {
   const { retailerEmail } = await readBody(req);
   if (!retailerEmail) throw new ApiError(400, 'Retailer email is required');
 
-  const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
+  // Run shop + retailer lookups in parallel
+  const [shop, retailer] = await Promise.all([
+    prisma.shop.findFirst({ where: { ownerId: user.uuid! } }),
+    prisma.user.findUnique({ where: { email: retailerEmail } }),
+  ]);
+
   if (!shop || shop.subscriptionPlan !== 'wholesale') {
     throw new ApiError(403, 'Business plan required to add dukandar');
   }
-
-  const retailer = await prisma.user.findUnique({ where: { email: retailerEmail } });
   if (!retailer) throw new ApiError(404, 'Retailer not found');
   if (retailer.uuid === user.uuid) throw new ApiError(400, 'Cannot add yourself as dukandar');
 

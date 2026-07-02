@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useLocale } from 'next-intl';
 
 declare global {
@@ -17,6 +17,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 export default function GoogleSignInButton() {
   const locale = useLocale();
   const ref = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const handleCredential = useCallback(async (response: { credential?: string }) => {
     if (!response?.credential) return;
@@ -66,6 +69,6 @@ export default function GoogleSignInButton() {
     document.head.appendChild(s);
   }, [handleCredential]);
 
-  if (!CLIENT_ID) return null;
+  if (!mounted || !CLIENT_ID) return null;
   return <div ref={ref} className="flex justify-center" />;
 }

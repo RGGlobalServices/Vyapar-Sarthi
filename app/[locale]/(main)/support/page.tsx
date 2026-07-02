@@ -9,7 +9,7 @@ export default function SupportPage() {
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center gap-3">
         <HelpCircle className="text-emerald-500" size={28} />
-        <h1 className="text-3xl font-black text-white tracking-tight">Help & Support</h1>
+        <h1 className="text-3xl font-black text-white tracking-tight">{t('title')}</h1>
       </div>
 
       <Card className="bg-slate-900 border-slate-800">

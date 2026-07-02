@@ -7,12 +7,14 @@ import { cn } from '@/lib/utils';
 interface CameraScannerProps {
   onScan: (result: string) => void;
   onClose: () => void;
+  continuous?: boolean;
 }
 
-export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
+export default function CameraScanner({ onScan, onClose, continuous = false }: CameraScannerProps) {
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannedOnce = useRef(false);
+  const lastScanned = useRef<{ text: string; time: number } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -36,14 +38,28 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
         fps: 15,
       },
       (decodedText) => {
-        if (!scannedOnce.current && mounted) {
-          scannedOnce.current = true;
+        if (!mounted) return;
+        
+        if (!continuous) {
+          if (!scannedOnce.current) {
+            scannedOnce.current = true;
+            onScan(decodedText);
+            playBeep();
+          }
+        } else {
+          // Continuous mode: prevent scanning the SAME code within 2 seconds
+          const now = Date.now();
+          if (
+            lastScanned.current &&
+            lastScanned.current.text === decodedText &&
+            now - lastScanned.current.time < 2000
+          ) {
+            return; // ignore duplicate scan
+          }
+          
+          lastScanned.current = { text: decodedText, time: now };
           onScan(decodedText);
-          // Play a nice beep sound if possible (optional)
-          try {
-            const audio = new Audio('/beep.mp3');
-            audio.play().catch(() => {});
-          } catch (e) {}
+          playBeep();
         }
       },
       (errorMessage) => {
@@ -55,6 +71,13 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
         setError('Could not access camera. Please allow camera permissions.');
       }
     });
+
+    function playBeep() {
+      try {
+        const audio = new Audio('/beep.mp3');
+        audio.play().catch(() => {});
+      } catch (e) {}
+    }
 
     return () => {
       mounted = false;

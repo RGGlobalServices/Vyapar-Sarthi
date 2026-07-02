@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { usePathname } from '@/i18n/routing';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
@@ -15,25 +14,10 @@ import { cn } from '@/lib/utils';
 // Map URL segment → tool key for usage tracking
 const PATH_TO_TOOL: Record<string, string> = {
   billing: 'billing', stock: 'stock', udhar: 'udhar', products: 'products',
-  reports: 'reports', calendar: 'calendar', returns: 'returns',
   dukandar: 'dukandar', settings: 'settings', profile: 'profile',
 };
 
-const Sidebar = dynamic(() => import('@/components/Sidebar'), {
-  ssr: false,
-  loading: () => (
-    <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-screen sticky top-0 z-30">
-      <div className="p-6 border-b border-slate-800">
-        <div className="w-10 h-10 bg-slate-800 rounded-xl animate-pulse" />
-      </div>
-      <div className="flex-1 px-4 py-6 space-y-3">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
-        ))}
-      </div>
-    </aside>
-  ),
-});
+import Sidebar from '@/components/Sidebar';
 
 function TrialCountdownTracker({ profile }: { profile: any }) {
   const [timeLeft, setTimeLeft] = useState<string>('');
@@ -57,6 +41,7 @@ function TrialCountdownTracker({ profile }: { profile: any }) {
         setTimeLeft('Ended');
         return;
       }
+
 
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -152,6 +137,8 @@ function PaymentReminderBanner({ profile, locale }: { profile: any, locale: stri
   return null;
 }
 
+import GlobalSearch from './GlobalSearch';
+
 export default function MainLayoutClient({ 
   locale, 
   children 
@@ -160,8 +147,8 @@ export default function MainLayoutClient({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { loadFromStorage } = useAuthStore();
-  const { profile, fetchProfile } = useBusinessStore();
+  const { loadFromStorage, user } = useAuthStore();
+  const { profile, fetchProfile, activeShopId } = useBusinessStore();
   const lastTracked = useRef('');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -218,16 +205,34 @@ export default function MainLayoutClient({
     const plan = (profile.subscriptionPlan || '').toLowerCase();
     document.cookie = `ks_plan=${plan}; path=/; max-age=${60 * 60 * 24 * 7}`;
   }, [profile.id, profile.subscriptionPlan]);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!isSubscriptionEnded(profile)) return;
-    if (isAllowedWhenEnded(pathname)) return;
-    window.location.href = `/${locale}/billing`;
-  }, [profile, pathname, locale]);
+    setMounted(true);
+  }, []);
+
+
+  const ended = isSubscriptionEnded(profile);
+  const isExcludedRoute = ended ? isAllowedWhenEnded(pathname) : false;
 
   return (
-    <>
-      <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
+    <section className="flex min-h-screen">
+      {!mounted ? (
+        <aside className="w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen sticky top-0 z-30 hidden md:flex">
+          <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+            <div className="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse" />
+          </div>
+          <div className="flex-1 px-4 py-6 space-y-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-10 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        </aside>
+      ) : (
+        <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
+      )}
+
       <div className="flex-1 flex flex-col overflow-y-auto">
         <header className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
@@ -238,27 +243,59 @@ export default function MainLayoutClient({
               >
                 <Menu size={20} />
               </button>
-              <span className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{profile.shopName || 'Vyapar Sarthi'}</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{mounted ? (profile.shopName || 'Vyapar Sarthi') : 'Vyapar Sarthi'}</span>
+            </div>
+            {/* Desktop global search */}
+            <div className="hidden md:block w-72 lg:w-96">
+              <GlobalSearch locale={locale} />
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <TrialCountdownTracker profile={profile} />
+            {mounted && <TrialCountdownTracker profile={profile} />}
             <NotificationBell />
           </div>
         </header>
-        <PaymentReminderBanner profile={profile} locale={locale} />
-        <main className="flex-1 p-3 md:p-8">
-          {children}
+        {mounted && <PaymentReminderBanner profile={profile} locale={locale} />}
+        <main key={activeShopId || 'default'} className="flex-1 p-3 md:p-8">
+          <div className={cn(!mounted || (ended && !isExcludedRoute) ? 'hidden' : 'block')}>
+            {children}
+          </div>
+
+          {!mounted && (
+            <div className="w-full h-64 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500" />
+            </div>
+          )}
+
+          {mounted && ended && !isExcludedRoute && (
+            <div className="max-w-2xl mx-auto text-center py-20 px-4">
+              <div className="w-24 h-24 bg-rose-100 dark:bg-rose-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Clock size={40} className="text-rose-600 dark:text-rose-400" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-4">
+                Subscription Ended
+              </h2>
+              <p className="text-slate-600 dark:text-slate-400 text-lg mb-8 leading-relaxed">
+                Your subscription has ended. Please renew to continue accessing this section.
+              </p>
+              <a
+                href={`/${locale}/payment?plan=shop`}
+                className="inline-flex items-center gap-2 bg-emerald-500 text-slate-900 font-bold px-8 py-4 rounded-xl hover:bg-emerald-400 hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl shadow-emerald-500/20"
+              >
+                Renew Subscription
+              </a>
+            </div>
+          )}
         </main>
         <footer className="border-t border-slate-200 dark:border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-shrink-0 bg-slate-50 dark:bg-slate-900/50">
           <p className="text-xs text-slate-500 dark:text-slate-600" suppressHydrationWarning>
             © {new Date().getFullYear()}{' '}
-            <span className="text-slate-700 dark:text-slate-400 font-semibold">{profile.shopName || 'Vyapar Sarthi'}</span>. All rights reserved.
+            <span className="text-slate-700 dark:text-slate-400 font-semibold">{mounted ? (profile.shopName || 'Vyapar Sarthi') : 'Vyapar Sarthi'}</span>. All rights reserved.
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-700">Vyapar Sarthi v2.0</p>
         </footer>
       </div>
       <AIFloatingButton />
-    </>
+    </section>
   );
 }

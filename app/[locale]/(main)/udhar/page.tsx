@@ -1,6 +1,7 @@
 'use client';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/routing';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Search, UserPlus, Phone, Calendar, ArrowRight,
@@ -8,12 +9,14 @@ import {
   ArrowDownLeft, ArrowUpRight, ChevronLeft, Trash, Send,
   Users, Store, Bell, Clock, Mail, MessageSquare,
   CheckSquare, Square, ChevronRight, Package, IndianRupee,
-  Loader2, AlarmClock,
+  Loader2, AlarmClock, FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUdharStore, UdharCustomer, UdharTransaction } from '@/lib/store';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
+import { UdharSlip, generateUdharWhatsAppText } from '@/components/UdharSlip';
 import { canAddUdharCustomer, udharLimitDisplay } from '@/lib/planGates';
 import { useLocale } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -98,9 +101,13 @@ export default function UdharPage() {
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState<UdharCustomer | null>(null);
   const [modal, setModal]       = useState<'newCustomer' | 'udhar' | 'payment' | 'editCustomer' | 'autoReminder' | 'bulkRemind' | null>(null);
+  const [recentTx, setRecentTx] = useState<{tx: UdharTransaction, customer: UdharCustomer, newDue: number} | null>(null);
+  const slipRef                 = useRef<HTMLDivElement>(null);
   const [deleteId, setDeleteId] = useState<number | string | null>(null);
   const [txDeleteId, setTxDeleteId] = useState<number | string | null>(null);
   const [insightData, setInsightData] = useState<any>(null);
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [addCustomerSuccess, setAddCustomerSuccess] = useState(false);
 
   // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
@@ -227,7 +234,11 @@ export default function UdharPage() {
   }
 
   const filtered = useMemo(() =>
-    customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.mobile.includes(search)),
+    customers.filter(c => {
+      const match = c.name.toLowerCase().includes(search.toLowerCase()) || c.mobile.includes(search);
+      if (search.trim().length > 0) return match;
+      return match && (totalDue(c) !== 0 || (c.transactions && c.transactions.length > 0));
+    }),
   [customers, search]);
 
   const totalOutstanding = useMemo(() => customers.reduce((s, c) => s + totalDue(c), 0), [customers]);
@@ -300,11 +311,24 @@ export default function UdharPage() {
   function openUdhar()   { setTxForm({ amount: '', note: '' }); setTxError(''); setModal('udhar'); }
   function openPayment() { setTxForm({ amount: '', note: '' }); setTxError(''); setModal('payment'); }
 
-  function handleAddCustomer(e: React.FormEvent) {
+  async function handleAddCustomer(e: React.FormEvent) {
     e.preventDefault();
     if (!custForm.name.trim()) { setCustError(t('nameRequired')); return; }
-    addCustomer(custForm.name.trim(), custForm.mobile.trim(), custForm.email.trim());
-    setModal(null);
+    setAddingCustomer(true);
+    try {
+      const customerId = await addCustomer(custForm.name.trim(), custForm.mobile.trim(), custForm.email.trim());
+      const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'udhar', amount: 0, note: 'Account Created', date: new Date().toISOString() };
+      await addTransaction(customerId, tx);
+      setAddCustomerSuccess(true);
+      setTimeout(() => {
+        setModal(null);
+        setAddCustomerSuccess(false);
+      }, 1500);
+    } catch {
+      setCustError('Failed to add customer.');
+    } finally {
+      setAddingCustomer(false);
+    }
   }
 
   function handleEditCustomer(e: React.FormEvent) {
@@ -324,8 +348,11 @@ export default function UdharPage() {
     e.preventDefault();
     const amt = Number(txForm.amount);
     if (!amt || amt <= 0) { setTxError(t('validAmount')); return; }
-    addTransaction(selected!.id, { type: 'udhar', amount: amt, note: txForm.note, date: new Date().toISOString() });
+    const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'udhar', amount: amt, note: txForm.note, date: new Date().toISOString() };
+    addTransaction(selected!.id, tx);
     setModal(null);
+    const customer = customers.find(c => c.id === selected!.id)!;
+    setRecentTx({ tx, customer, newDue: totalDue(customer) + amt });
   }
 
   function handlePayment(e: React.FormEvent) {
@@ -335,8 +362,64 @@ export default function UdharPage() {
     const customer = customers.find(c => c.id === selected!.id)!;
     const due = totalDue(customer);
     if (amt > due) { setTxError(`${t('exceedsDue')} ₹${due}.`); return; }
-    addTransaction(selected!.id, { type: 'payment', amount: amt, note: txForm.note, date: new Date().toISOString() });
+    const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'payment', amount: amt, note: txForm.note, date: new Date().toISOString() };
+    addTransaction(selected!.id, tx);
     setModal(null);
+    setRecentTx({ tx, customer, newDue: totalDue(customer) - amt });
+  }
+
+  async function handleShareRecentTx() {
+    if (!recentTx || !slipRef.current) return;
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas-pro'),
+        import('jspdf')
+      ]);
+
+      const clone = slipRef.current.cloneNode(true) as HTMLElement;
+      clone.style.position = 'fixed';
+      clone.style.top = '0';
+      clone.style.left = '-9999px';
+      clone.style.width = '320px';
+      clone.style.height = 'auto';
+      clone.style.backgroundColor = '#ffffff';
+      document.body.appendChild(clone);
+
+      await new Promise(r => setTimeout(r, 200));
+
+      const canvas = await html2canvas(clone, { scale: 3, useCORS: true, backgroundColor: '#ffffff', logging: false });
+      const imgData = canvas.toDataURL('image/png');
+      const pdfWidth = 80;
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [pdfWidth, pdfHeight] });
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      
+      document.body.removeChild(clone);
+
+      const blob = pdf.output('blob');
+      const fileName = `udhar-${Date.now()}.pdf`;
+      const pdfUrl = await uploadInvoiceToSupabase(blob, fileName);
+
+      const text = generateUdharWhatsAppText({
+        type: recentTx.tx.type,
+        storeName: profile.shopName || 'My Store',
+        customerName: recentTx.customer.name,
+        amount: recentTx.tx.amount,
+        date: new Date(recentTx.tx.date).toLocaleDateString('en-IN'),
+        due: recentTx.newDue,
+        note: recentTx.tx.note,
+        pdfUrl: pdfUrl || undefined,
+      });
+
+      const phone = (recentTx.customer.mobile || '').replace(/\D/g, '');
+      const waNum = phone.length === 10 ? `91${phone}` : phone.length > 10 ? phone : '';
+      const encoded = encodeURIComponent(text);
+      window.open(waNum ? `https://api.whatsapp.com/send?phone=${waNum}&text=${encoded}` : `https://wa.me/?text=${encoded}`, '_blank');
+      setRecentTx(null);
+    } catch (err) {
+      console.error('Failed to share:', err);
+    }
   }
 
   // ─── Customer detail view ──────────────────────────────────────────────────
@@ -370,7 +453,7 @@ export default function UdharPage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => { setReminderForm({ date: '', time: '', message: '', channel: 'whatsapp' }); setModal('autoReminder'); }}
-              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors" title="Set Auto Reminder">
+              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors" title="Set Payment Reminder">
               <AlarmClock size={17} />
             </button>
             <button onClick={() => openEdit(customer)} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors"><Pencil size={17} /></button>
@@ -418,7 +501,11 @@ export default function UdharPage() {
             ) : (
               <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {sorted.map(tx => (
-                  <div key={tx.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-100 dark:bg-slate-800/ transition-colors">
+                  <div 
+                    key={tx.id} 
+                    className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-100 dark:bg-slate-800/50 transition-colors cursor-pointer"
+                    onClick={() => setRecentTx({ tx, customer: selected!, newDue: totalDue(selected!) })}
+                  >
                     <div className="flex items-center gap-3">
                       <div className={cn('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
                         tx.type === 'udhar' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400')}>
@@ -430,7 +517,9 @@ export default function UdharPage() {
                           {tx.billNumber && <span className="ml-2 text-xs text-slate-500">#{tx.billNumber}</span>}
                         </p>
                         {tx.note && <p className="text-xs text-slate-500">{tx.note}</p>}
-                        <p className="text-[11px] text-slate-600 mt-0.5">{relativeDate(tx.date)}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          {new Date(tx.date).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -439,11 +528,11 @@ export default function UdharPage() {
                       </p>
                       {txDeleteId === tx.id ? (
                         <div className="flex items-center gap-1">
-                          <button onClick={() => { deleteTransaction(selected!.id, tx.id); setTxDeleteId(null); }} className="text-red-400 p-1"><Check size={13} /></button>
-                          <button onClick={() => setTxDeleteId(null)} className="text-slate-400 p-1"><X size={13} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteTransaction(selected!.id, tx.id); setTxDeleteId(null); }} className="text-red-400 p-1"><Check size={13} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); setTxDeleteId(null); }} className="text-slate-400 p-1"><X size={13} /></button>
                         </div>
                       ) : (
-                        <button onClick={() => setTxDeleteId(tx.id)} className="text-slate-700 hover:text-red-400 p-1 transition-colors"><Trash size={13} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setTxDeleteId(tx.id); }} className="text-slate-700 hover:text-red-400 p-1 transition-colors"><Trash size={13} /></button>
                       )}
                     </div>
                   </div>
@@ -489,41 +578,109 @@ export default function UdharPage() {
           </UModal>
         )}
         {modal === 'autoReminder' && (
-          <UModal title="Set Auto Reminder" icon={<AlarmClock size={17} className="text-amber-400" />} onClose={() => setModal(null)}>
+          <UModal title="Set Payment Reminder" icon={<AlarmClock size={17} className="text-amber-400" />} onClose={() => setModal(null)}>
             <form onSubmit={saveAutoReminder} className="space-y-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-300">
                 Customer: <span className="font-bold text-slate-900 dark:text-white">{customer.name}</span>
                 <span className="ml-2 text-orange-400 font-bold">₹{due.toLocaleString('en-IN')} due</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <UField label="Date"><input type="date" required className={inp} value={reminderForm.date} onChange={e => setReminderForm(f => ({ ...f, date: e.target.value }))} /></UField>
-                <UField label="Time"><input type="time" required className={inp} value={reminderForm.time} onChange={e => setReminderForm(f => ({ ...f, time: e.target.value }))} /></UField>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quick Select:</span>
+                  {[
+                    { label: 'Tomorrow', days: 1 },
+                    { label: '3 Days', days: 3 },
+                    { label: '1 Week', days: 7 },
+                  ].map(preset => (
+                    <button key={preset.label} type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() + preset.days);
+                        setReminderForm(f => ({ ...f, date: d.toISOString().split('T')[0], time: f.time || '10:00' }));
+                      }}
+                      className="px-3 py-1 rounded-full text-[11px] font-bold bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Date</label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
+                      <input type="date" required className={cn(inp, 'pl-10 text-slate-700 dark:text-slate-300 font-semibold focus:ring-orange-500 cursor-pointer w-full appearance-none min-h-[42px]')} value={reminderForm.date} onChange={e => setReminderForm(f => ({ ...f, date: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Time</label>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
+                      <input type="time" required className={cn(inp, 'pl-10 text-slate-700 dark:text-slate-300 font-semibold focus:ring-orange-500 cursor-pointer w-full appearance-none min-h-[42px]')} value={reminderForm.time} onChange={e => setReminderForm(f => ({ ...f, time: e.target.value }))} />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <UField label="Channel">
+              <UField label="Notification Channel">
                 <div className="flex gap-2">
-                  {[{ v: 'whatsapp', label: 'WhatsApp', icon: MessageSquare }, { v: 'email', label: 'Email', icon: Mail }].map(({ v, label, icon: Icon }) => (
+                  {[{ v: 'whatsapp', label: 'WhatsApp', icon: MessageSquare }, { v: 'email', label: 'Email', icon: Mail }, { v: 'app', label: 'Notify Me', icon: Bell }].map(({ v, label, icon: Icon }) => (
                     <button key={v} type="button"
                       onClick={() => setReminderForm(f => ({ ...f, channel: v }))}
-                      className={cn('flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-semibold transition-all',
+                      className={cn('flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border text-xs font-bold transition-all',
                         reminderForm.channel === v
-                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                          : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400'
+                          ? 'bg-orange-500/15 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/10'
+                          : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                       )}>
-                      <Icon size={15} />{label}
+                      <Icon size={18} className={reminderForm.channel === v ? 'text-orange-500' : 'text-slate-400'} />
+                      <span>{label}</span>
                     </button>
                   ))}
                 </div>
               </UField>
               <UField label="Custom Message (optional)">
-                <textarea rows={2} className={cn(inp, 'resize-none')} placeholder={`Reminder: ₹${due.toLocaleString('en-IN')} is due`}
+                <textarea rows={2} className={cn(inp, 'resize-none text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:border-orange-500/50 focus:border-orange-500')} placeholder={`Reminder: ₹${due.toLocaleString('en-IN')} is due`}
                   value={reminderForm.message} onChange={e => setReminderForm(f => ({ ...f, message: e.target.value }))} />
               </UField>
-              <UActions onCancel={() => setModal(null)} submitLabel={savingReminder ? 'Saving…' : 'Set Reminder'} submitCls="bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-50" />
+              <UActions onCancel={() => setModal(null)} submitLabel={savingReminder ? 'Saving…' : 'Set Reminder'} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50 font-bold" />
             </form>
           </UModal>
         )}
         {deleteId === customer.id && (
           <ConfirmDel name={customer.name} t={t} onConfirm={handleDeleteCustomer} onCancel={() => setDeleteId(null)} />
+        )}
+
+        {/* Recent Transaction Receipt Modal */}
+        {recentTx && (
+          <UModal title="Receipt Generated" onClose={() => setRecentTx(null)}>
+            <div className="flex flex-col items-center">
+              <div className="border border-slate-200 dark:border-slate-800 p-2 bg-white rounded-lg mb-6 shadow-sm overflow-x-auto w-full flex justify-center">
+                <UdharSlip
+                  ref={slipRef}
+                  type={recentTx.tx.type}
+                  amount={recentTx.tx.amount}
+                  customerName={recentTx.customer.name}
+                  customerMobile={recentTx.customer.mobile}
+                  date={new Date(recentTx.tx.date).toLocaleDateString('en-IN')}
+                  note={recentTx.tx.note}
+                  storeName={profile.shopName || 'My Store'}
+                  due={recentTx.newDue}
+                />
+              </div>
+              <div className="flex gap-3 w-full">
+                <button onClick={handleShareRecentTx} className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+                  <Send size={18} /> Share Receipt
+                </button>
+                <button onClick={() => setRecentTx(null)} className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold transition-colors">
+                  Done
+                </button>
+              </div>
+              {recentTx.tx.billNumber && (
+                <Link href={`/billing/invoices/${recentTx.tx.billNumber}`} className="mt-3 w-full bg-orange-500 hover:bg-orange-400 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+                  <FileText size={18} /> View Original Bill
+                </Link>
+              )}
+            </div>
+          </UModal>
         )}
       </div>
     );
@@ -539,7 +696,7 @@ export default function UdharPage() {
           <h1 className="text-2xl font-bold text-orange-500">{t('title')}</h1>
           <p className="text-sm text-slate-400 mt-0.5">
             {t('totalOutstanding')}: <span className="text-orange-400 font-bold">₹{totalOutstanding.toLocaleString('en-IN')}</span>
-            {' · '}{customers.length}{udharLimitDisplay(profile.subscriptionPlan) !== 'Unlimited' ? `/${udharLimitDisplay(profile.subscriptionPlan)}` : ''} {t('customers')}
+            {' · '}{filtered.length}{udharLimitDisplay(profile.subscriptionPlan) !== 'Unlimited' ? `/${udharLimitDisplay(profile.subscriptionPlan)}` : ''} {t('customers')}
           </p>
           {/* Upgrade banner when near/at limit */}
           {!canAddUdharCustomer(profile.subscriptionPlan, customers.length) && (
@@ -584,8 +741,8 @@ export default function UdharPage() {
       {/* Tabs — always visible */}
       <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
         {[
-          { key: 'customers', label: 'Customers', icon: Users },
-          { key: 'dukandars', label: isWholesale ? 'Dukandars' : 'My Wholesalers', icon: Store },
+          { key: 'customers', label: t('customersTab') || 'Customers', icon: Users },
+          { key: 'dukandars', label: isWholesale ? 'Dukandars' : t('wholesalers') || 'My Wholesalers', icon: Store },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key as any)}
             className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
@@ -878,8 +1035,8 @@ export default function UdharPage() {
                     <Store className="w-9 h-9 text-slate-600" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-base font-bold text-slate-300 mb-1">No Wholesaler Credits</h3>
-                    <p className="text-sm text-slate-500 max-w-xs">When a wholesaler adds credit for your shop, it will appear here.</p>
+                    <h3 className="text-base font-bold text-slate-300 mb-1">{t('noWholesalerCredits') || 'No Wholesaler Credits'}</h3>
+                    <p className="text-sm text-slate-500 max-w-xs">{t('wholesalerCreditsDesc') || 'When a wholesaler adds credit for your shop, it will appear here.'}</p>
                   </div>
                 </div>
               ) : (
@@ -961,13 +1118,27 @@ export default function UdharPage() {
       {/* New Customer Modal */}
       {modal === 'newCustomer' && (
         <UModal title={t('newCustomer')} icon={<UserPlus size={17} className="text-orange-400" />} onClose={() => setModal(null)}>
-          <form onSubmit={handleAddCustomer} className="space-y-4">
-            <UField label={t('nameLabel')}><input required className={inp} placeholder={t('namePlaceholder')} value={custForm.name} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></UField>
-            <UField label={t('mobileLabel')}><input className={inp} type="tel" placeholder={t('mobilePlaceholder')} value={custForm.mobile} onChange={e => setCustForm(f => ({ ...f, mobile: e.target.value }))} /></UField>
-            <UField label="Email (for reminders)"><input className={inp} type="email" inputMode="email" placeholder="customer@example.com" value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
-            {custError && <p className="text-red-400 text-sm">{custError}</p>}
-            <UActions onCancel={() => setModal(null)} submitLabel={t('addCustomer')} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400" />
-          </form>
+          {addCustomerSuccess ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="w-16 h-16 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center mb-4 animate-bounce">
+                <Check size={32} />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Successfully Added!</h3>
+            </div>
+          ) : (
+            <form onSubmit={handleAddCustomer} className="space-y-4">
+              <UField label={t('nameLabel')}><input required disabled={addingCustomer} className={inp} placeholder={t('namePlaceholder')} value={custForm.name} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></UField>
+              <UField label={t('mobileLabel')}><input className={inp} disabled={addingCustomer} type="tel" placeholder={t('mobilePlaceholder')} value={custForm.mobile} onChange={e => setCustForm(f => ({ ...f, mobile: e.target.value }))} /></UField>
+              <UField label="Email (for reminders)"><input className={inp} disabled={addingCustomer} type="email" inputMode="email" placeholder="customer@example.com" value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
+              {custError && <p className="text-red-400 text-sm">{custError}</p>}
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setModal(null)} disabled={addingCustomer} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm disabled:opacity-50">Cancel</button>
+                <button type="submit" disabled={addingCustomer} className="flex-1 py-3 rounded-xl font-bold transition-colors text-sm bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {addingCustomer ? <><Loader2 size={16} className="animate-spin" /> Adding...</> : t('addCustomer')}
+                </button>
+              </div>
+            </form>
+          )}
         </UModal>
       )}
 

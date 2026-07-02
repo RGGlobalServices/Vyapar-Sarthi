@@ -97,7 +97,7 @@ async function request(url: string, options: RequestInit = {}) {
         headers: retryHeaders,
       });
       if (retryResponse.ok) {
-        const data = await retryResponse.json();
+        const data = await retryResponse.json().catch(() => ({}));
         return { data };
       }
     }
@@ -117,10 +117,27 @@ async function request(url: string, options: RequestInit = {}) {
     }
 
     // Axios compatibility: return { data }
-    const data = await response.json();
+    // Guard against routes that accidentally return HTML (e.g. Next.js error pages)
+    // instead of JSON — without this check a successful-looking HTML response throws
+    // "Unexpected token '<', <!DOCTYPE..." which is hard to debug.
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json') && !contentType.includes('text/plain')) {
+      // Likely an HTML page (404/500 from Next.js itself, not our route handlers)
+      const text = await response.text().catch(() => '');
+      const htmlSnippet = text.substring(0, 200);
+      const friendlyErr = {
+        response: { status: response.status, data: { detail: `Server returned non-JSON response. Check if the API route exists. Preview: ${htmlSnippet}` } },
+        message: 'API route returned HTML instead of JSON — possible missing route or server crash',
+      };
+      console.error(`[API] Non-JSON success response on ${url}:`, friendlyErr);
+      throw friendlyErr;
+    }
+    const data = await response.json().catch(() => ({}));
     return { data };
   } catch (error) {
     if ((error as any).response) throw error;
+    if ((error as Error).name === 'AbortError') throw error;
+    
     const errorMessage = (error as Error).message || 'Unknown network error';
     const err = { 
       response: { 
@@ -130,7 +147,7 @@ async function request(url: string, options: RequestInit = {}) {
       message: errorMessage,
       isNetworkError: true
     };
-    console.error(`[API] Network/Internal Error on ${url}:`, error);
+    console.warn(`[API] Network/Internal Error on ${url}:`, errorMessage);
     throw err;
   }
 }

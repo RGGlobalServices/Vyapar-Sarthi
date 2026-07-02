@@ -38,7 +38,11 @@ export function handle<C = unknown>(fn: Handler<C>): Handler<C> {
         return errorResponse(err.message, err.status);
       }
       const message = err instanceof Error ? err.message : 'Internal server error';
+      const stack = err instanceof Error ? err.stack : String(err);
       console.error('Unhandled API error:', message);
+      try {
+        require('fs').appendFileSync(require('path').join(process.cwd(), 'scratch', 'api_errors.log'), `[${req.url}] ${stack}\n\n`);
+      } catch (e) {}
       return errorResponse(message || 'Internal server error', 500);
     }
   };

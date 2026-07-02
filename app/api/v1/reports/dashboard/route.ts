@@ -32,61 +32,112 @@ export const GET = handle(async (req) => {
 
   console.log(`[API] Dashboard Cache MISS/REFRESH for shop ${shop.id}. Fetching from DB...`);
 
-  // Execute dashboard queries sequentially to prevent connection pool exhaustion 
-  // (pool_size limits are easily hit when making 7 concurrent queries per request)
-  
-  // 1. Sales and Profit aggregate sum (Combined into one query)
-  const salesAndProfit = await prisma.sale.aggregate({
-    where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
-    _sum: { totalAmount: true, totalProfit: true },
-  });
+  // Execute dashboard queries in parallel batches to improve speed
+  // while preventing connection pool exhaustion
+  const [
+    salesAndProfit,
+    customers,
+    productsCount,
+    returnsSummary,
+    returnsByReason
+  ] = await Promise.all([
+    prisma.sale.aggregate({
+      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+      _sum: { totalAmount: true, totalProfit: true },
+    }),
+    prisma.customer.aggregate({
+      where: { shopId: shop.id },
+      _sum: { totalDue: true }
+    }),
+    prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int as count 
+      FROM products 
+      WHERE shop_id = ${shop.id}::uuid 
+        AND current_stock <= min_stock 
+        AND current_stock > 0
+        AND min_stock > 0
+    `,
+    prisma.materialReturn.aggregate({
+      where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+      _sum: { amount: true },
+      _count: { id: true },
+    }),
+    prisma.materialReturn.groupBy({
+      by: ['reason'],
+      where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+      _sum: { amount: true },
+      _count: { id: true },
+    })
+  ]);
 
-  // 2. Customer total outstanding udhar
-  const customers = await prisma.customer.aggregate({
-    where: { shopId: shop.id },
-    _sum: { totalDue: true }
-  });
-
-  // 3. Low stock count for stats
-  const productsCount = await prisma.$queryRaw<{ count: number }[]>`
-    SELECT COUNT(*)::int as count 
-    FROM products 
-    WHERE shop_id = ${shop.id}::uuid 
-      AND current_stock <= min_stock 
-      AND current_stock > 0
-      AND min_stock > 0
-  `;
-
-  // 4. Low stock alerts (limit 5)
-  const lowStock = await prisma.$queryRaw<any[]>`
-    SELECT id, name, category, current_stock, min_stock
-    FROM products 
-    WHERE shop_id = ${shop.id}::uuid 
-      AND current_stock <= min_stock
-      AND min_stock > 0
-    ORDER BY (current_stock / min_stock) ASC
-    LIMIT 5
-  `;
-
-  // 5. Recent bills (limit 5)
-  const recentBills = await prisma.sale.findMany({
-    where: { shopId: shop.id },
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-    include: { customer: { select: { name: true, mobile: true } } },
-  });
-
-  // 6. Top products by revenue (limit 5)
-  const topProd = await prisma.$queryRaw<any[]>`
-    SELECT p.id, p.name, p.category, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
-    FROM sale_items si
-    JOIN sales s ON si.sale_id = s.id
-    JOIN products p ON si.product_id = p.id
-    WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
-    GROUP BY p.id, p.name, p.category
-    ORDER BY value DESC
-    LIMIT 5
-  `;
+  const [
+    lowStock,
+    recentBills,
+    topProd,
+    fastProd,
+    slowProd
+  ] = await Promise.all([
+    // Low stock
+    prisma.$queryRaw<any[]>`
+      SELECT id, name, category, current_stock, min_stock
+      FROM products 
+      WHERE shop_id = ${shop.id}::uuid 
+        AND current_stock <= min_stock
+        AND min_stock > 0
+      ORDER BY (current_stock / min_stock) ASC
+      LIMIT 5
+    `,
+    // Recent bills
+    prisma.sale.findMany({
+      where: { shopId: shop.id },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: { customer: { select: { name: true, mobile: true } } },
+    }),
+    // Top Products by Value (Optimized)
+    prisma.$queryRaw<any[]>`
+      SELECT p.id, p.name, p.category, s_agg.value, s_agg.qty
+      FROM (
+        SELECT si.product_id, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
+        FROM sale_items si
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+        GROUP BY si.product_id
+      ) s_agg
+      JOIN products p ON s_agg.product_id = p.id
+      ORDER BY s_agg.value DESC
+      LIMIT 5
+    `,
+    // Fast moving by Qty (Optimized)
+    prisma.$queryRaw<any[]>`
+      SELECT p.id, p.name, p.category, s_agg.qty, s_agg.value
+      FROM (
+        SELECT si.product_id, SUM(si.quantity) as qty, SUM(si.price_per_unit * si.quantity) as value
+        FROM sale_items si
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+        GROUP BY si.product_id
+      ) s_agg
+      JOIN products p ON s_agg.product_id = p.id
+      ORDER BY s_agg.qty DESC
+      LIMIT 5
+    `,
+    // Slow moving (Optimized Left Join Subquery)
+    prisma.$queryRaw<any[]>`
+      SELECT p.id, p.name, p.category, COALESCE(s_agg.qty, 0) as qty, p.current_stock
+      FROM products p
+      LEFT JOIN (
+        SELECT si.product_id, SUM(si.quantity) as qty
+        FROM sale_items si
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+        GROUP BY si.product_id
+      ) s_agg ON p.id = s_agg.product_id
+      WHERE p.shop_id = ${shop.id}::uuid AND p.current_stock > 0
+      ORDER BY COALESCE(s_agg.qty, 0) ASC, p.current_stock DESC
+      LIMIT 5
+    `
+  ]);
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
@@ -97,7 +148,14 @@ export const GET = handle(async (req) => {
       today_profit: salesAndProfit._sum.totalProfit || 0,
       total_udhar: totalUdhar,
       low_stock_count: lowStockCount,
+      returns_amount: returnsSummary._sum.amount || 0,
+      returns_count: returnsSummary._count.id || 0,
     },
+    returnsByReason: returnsByReason.map(r => ({
+      reason: r.reason,
+      amount: r._sum.amount || 0,
+      count: r._count.id || 0,
+    })),
     lowStock: lowStock.map((p) => ({
       id: p.id,
       name: p.name,
@@ -120,8 +178,57 @@ export const GET = handle(async (req) => {
       category: r.category,
       value: Number(r.value || 0),
       qty: Number(r.qty || 0),
+    })),
+    fastMoving: fastProd.map(r => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      value: Number(r.value || 0),
+      qty: Number(r.qty || 0),
+    })),
+    slowMoving: slowProd.map(r => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      current_stock: Number(r.current_stock || 0),
+      qty: Number(r.qty || 0),
     }))
   };
+
+  // Add ERP / Wholesale specific stats
+  if (shop.subscriptionPlan === 'wholesale') {
+    const [inventoryValueResult, expiringBatches, recentFeeds] = await Promise.all([
+      prisma.$queryRaw<{ total_value: number }[]>`
+        SELECT COALESCE(SUM(current_stock * wholesale_cost), 0)::float as total_value
+        FROM products
+        WHERE shop_id = ${shop.id}::uuid AND current_stock > 0
+      `,
+      prisma.batch.findMany({
+        where: { 
+          shopId: shop.id, 
+          quantity: { gt: 0 },
+          expiryDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } // Next 30 days
+        },
+        include: { product: { select: { name: true } } },
+        orderBy: { expiryDate: 'asc' },
+        take: 5
+      }),
+      prisma.$queryRaw`
+        SELECT m.id, m.type, m.quantity, m.created_at, p.name as product_name
+        FROM stock_movements m
+        JOIN products p ON p.id = m.product_id
+        WHERE m.shop_id = ${shop.id}::uuid
+        ORDER BY m.created_at DESC
+        LIMIT 5
+      ` as Promise<any[]>
+    ]);
+
+    payload.wholesale = {
+      inventoryValue: inventoryValueResult[0]?.total_value || 0,
+      expiringBatches,
+      recentFeeds
+    };
+  }
 
   // Cache result
   dashboardCache.set(cacheKey, {

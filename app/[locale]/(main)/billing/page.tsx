@@ -1,5 +1,6 @@
 'use client';
 import {useState, useEffect, useRef, useCallback} from 'react';
+import WholesaleBillingUI from './WholesaleBillingUI';
 import {useTranslations, useLocale} from 'next-intl';
 import {useCartStore, useUdharStore, useAuthStore} from '@/lib/store';
 import {useBusinessStore} from '@/lib/businessStore';
@@ -37,9 +38,67 @@ function getLoosePresets(unit: string) {
   if (u === 'gram') return [{l:'50g', v:50},{l:'100g', v:100},{l:'250g', v:250},{l:'500g', v:500}];
   return [{l:'0.25', v:0.25},{l:'0.5', v:0.5},{l:'1', v:1},{l:'2', v:2}];
 }
+const CartQuantityInputRetail = ({ item, updateQuantity, removeItem }: any) => {
+  const [localVal, setLocalVal] = useState(item.quantity.toString());
+  useEffect(() => {
+    if (Number(localVal) !== item.quantity) setLocalVal(item.quantity.toString());
+  }, [item.quantity, localVal]);
 
-export default function BillingPage() {
+  return (
+    <input
+      type="number"
+      step="any"
+      min="0"
+      value={localVal}
+      onChange={(e) => {
+        setLocalVal(e.target.value);
+        const num = Number(e.target.value);
+        if (!isNaN(num)) {
+          updateQuantity(item.id, num, item.variant);
+        }
+      }}
+      onBlur={(e) => {
+        const num = Number(e.target.value);
+        if (num <= 0 || e.target.value === '') removeItem(item.id, item.variant);
+        else setLocalVal(num.toString());
+      }}
+      className="w-20 bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-700/50 rounded px-2 py-1 text-center text-emerald-600 dark:text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+    />
+  );
+};
+
+const CartPriceInputRetail = ({ item, updatePrice }: any) => {
+  const [localVal, setLocalVal] = useState(item.price.toString());
+  useEffect(() => {
+    if (Number(localVal) !== item.price) setLocalVal(item.price.toString());
+  }, [item.price, localVal]);
+
+  return (
+    <input
+      type="number"
+      className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-right text-emerald-600 dark:text-emerald-500 font-bold focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+      value={localVal}
+      onChange={(e) => {
+        setLocalVal(e.target.value);
+        const num = Number(e.target.value);
+        if (!isNaN(num)) {
+          updatePrice(item.id, num, item.variant);
+        }
+      }}
+      onBlur={(e) => {
+        const num = Number(e.target.value);
+        if (e.target.value === '') updatePrice(item.id, 0, item.variant);
+        setLocalVal(num.toString());
+      }}
+      step="any"
+      min="0"
+    />
+  );
+};
+
+export function StandardBillingUI() {
   const t = useTranslations('Billing');
+  const tBill = useTranslations('BillSlip');
   const tP = useTranslations('Products');
   const locale = useLocale();
   const {items, addItem, removeItem, updateQuantity, updatePrice, clearCart} = useCartStore();
@@ -211,6 +270,7 @@ export default function BillingPage() {
           pdfUrl: publicUrl || undefined,
           gst: profile.gst || undefined,
           pan: profile.pan || undefined,
+          t: tBill,
         });
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
       } else {
@@ -240,7 +300,16 @@ export default function BillingPage() {
   };
 
   const addToCart = useCallback((product: any, variant?: string) => {
-    if (bizConfig.hasSizes && !variant) {
+    // Prompt for a variant when the business uses sizes OR this product carries its own
+    // variant breakdown (colour/size, type/watt, net-weight) — works for any category.
+    let productVariants: Record<string, number> = {};
+    try {
+      productVariants = typeof product.size_variants === 'string'
+        ? JSON.parse(product.size_variants)
+        : (product.size_variants || {});
+    } catch { productVariants = {}; }
+    const productHasVariants = Object.values(productVariants).some((v: any) => Number(v) > 0);
+    if ((bizConfig.hasSizes || productHasVariants) && !variant) {
       setVariantSelectionProduct(product);
       return;
     }
@@ -405,9 +474,7 @@ export default function BillingPage() {
       };
       setLastBill(billData);
 
-      if (remainingAmount > 0 && customerName.trim()) {
-        await addUdharFromBill(customerName.trim(), remainingAmount, billNumber);
-      }
+      // Udhar tracking is now natively processed in the /billing/ route backend
 
       clearCart();
       setShowCustomerModal(false);
@@ -454,6 +521,7 @@ export default function BillingPage() {
           pdfUrl: pdfUrl || undefined,
           gst: profile.gst || undefined,
           pan: profile.pan || undefined,
+          t: tBill,
         });
         let normalized = phone.replace(/\D/g, '');
         if (normalized.length === 10) normalized = `91${normalized}`;
@@ -705,17 +773,7 @@ export default function BillingPage() {
                         <div className="flex flex-col gap-1.5 min-w-[150px]">
                           {/* Quantity input */}
                           <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              step="0.05"
-                              min="0.05"
-                              value={item.quantity}
-                              onChange={e => {
-                                const v = parseFloat(e.target.value);
-                                if (v > 0) updateQuantity(item.id, v, item.variant);
-                              }}
-                              className="w-20 bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-700/50 rounded px-2 py-1 text-center text-emerald-600 dark:text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
-                            />
+                            <CartQuantityInputRetail item={item} updateQuantity={updateQuantity} removeItem={removeItem} />
                             <span className="text-xs text-slate-500">{item.unit}</span>
                             {looseEquivLabel(item.quantity, item.unit) && (
                               <span className="text-[10px] text-amber-400 font-bold">
@@ -745,20 +803,23 @@ export default function BillingPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1), item.variant)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Minus size={14}/></button>
-                          <span className="w-8 text-center">{item.quantity}</span>
-                          <button onClick={() => updateQuantity(item.id, item.quantity + 1, item.variant)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"><Plus size={14}/></button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => {
+                            const newQty = item.quantity - 1;
+                            if (newQty <= 0) removeItem(item.id, item.variant);
+                            else updateQuantity(item.id, newQty, item.variant);
+                          }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
+                            <Minus size={14}/>
+                          </button>
+                          <CartQuantityInputRetail item={item} updateQuantity={updateQuantity} removeItem={removeItem} />
+                          <button onClick={() => updateQuantity(item.id, item.quantity + 1, item.variant)} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors">
+                            <Plus size={14}/>
+                          </button>
                         </div>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <input
-                        type="number"
-                        className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-right text-emerald-600 dark:text-emerald-500 font-bold focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
-                        value={item.price}
-                        onChange={(e) => updatePrice(item.id, Number(e.target.value))}
-                      />
+                      <CartPriceInputRetail item={item} updatePrice={updatePrice} />
                     </td>
                     <td className="px-6 py-4 text-right font-bold">₹{item.total}</td>
                     <td className="px-6 py-4 text-center">
@@ -1393,4 +1454,18 @@ function PaymentButton({active, onClick, icon, label}: {active: boolean; onClick
       <span className="text-xs font-bold uppercase">{label}</span>
     </button>
   );
+}
+
+export default function BillingPage() {
+  const { profile } = useBusinessStore();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) return <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-emerald-500" /></div>;
+
+  if (profile.subscriptionPlan === 'wholesale') {
+    return <WholesaleBillingUI />;
+  }
+
+  return <StandardBillingUI />;
 }

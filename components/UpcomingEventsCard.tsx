@@ -7,7 +7,7 @@ import { CalendarDays, ArrowDownLeft, ArrowUpRight, Bell, ChevronRight } from 'l
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-type EventType = 'payment_in' | 'payment_out' | 'reminder' | 'event';
+type EventType = 'payment_in' | 'payment_out' | 'reminder' | 'event' | 'udhar_reminder';
 
 interface CalEvent {
   id: string;
@@ -19,10 +19,11 @@ interface CalEvent {
 }
 
 const META: Record<EventType, { chip: string; icon: any }> = {
-  payment_in:  { chip: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30', icon: ArrowDownLeft },
-  payment_out: { chip: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',          icon: ArrowUpRight },
-  reminder:    { chip: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',       icon: Bell },
-  event:       { chip: 'bg-sky-500/15 text-sky-300 ring-sky-500/30',    icon: CalendarDays },
+  payment_in:     { chip: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30', icon: ArrowDownLeft },
+  payment_out:    { chip: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',          icon: ArrowUpRight },
+  reminder:       { chip: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',       icon: Bell },
+  event:          { chip: 'bg-sky-500/15 text-sky-300 ring-sky-500/30',             icon: CalendarDays },
+  udhar_reminder: { chip: 'bg-orange-500/15 text-orange-400 ring-orange-500/30',    icon: Bell },
 };
 
 function dayLabel(iso: string) {

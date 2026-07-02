@@ -15,6 +15,33 @@ export const GET = handle(async (req) => {
 
   const where: Record<string, unknown> = { shopId: shop.id };
 
+  if (q.bell) {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    
+    const endOfUpcoming = new Date();
+    endOfUpcoming.setDate(endOfUpcoming.getDate() + 7);
+    endOfUpcoming.setHours(23, 59, 59, 999);
+
+    const [upcoming, pastPending, recentCompleted] = await Promise.all([
+      prisma.calendarEvent.findMany({
+        where: { shopId: shop.id, status: 'pending', eventDate: { gte: startOfToday, lte: endOfUpcoming } },
+        orderBy: { eventDate: 'asc' },
+      }),
+      prisma.calendarEvent.findMany({
+        where: { shopId: shop.id, status: 'pending', eventDate: { lt: startOfToday } },
+        orderBy: { eventDate: 'desc' },
+      }),
+      prisma.calendarEvent.findMany({
+        where: { shopId: shop.id, status: 'completed' },
+        orderBy: { updatedAt: 'desc' },
+        take: 3,
+      })
+    ]);
+    
+    return json({ upcoming, pastPending, recentCompleted });
+  }
+
   if (q.month && /^\d{4}-\d{2}$/.test(q.month)) {
     const [y, m] = q.month.split('-').map(Number);
     const start = new Date(y, m - 1, 1, 0, 0, 0, 0);
@@ -22,7 +49,6 @@ export const GET = handle(async (req) => {
     where.eventDate = { gte: start, lte: end };
   } else if (q.upcoming) {
     const days = parseInt(q.upcoming) || 7;
-    // From the start of today (events are stored at midnight) through N days out.
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date();
@@ -30,8 +56,6 @@ export const GET = handle(async (req) => {
     end.setHours(23, 59, 59, 999);
     where.eventDate = { gte: start, lte: end };
     where.status = 'pending';
-    // The notification bell passes hideNotified=1 so dismissed events disappear
-    // from the bell (but still show on the calendar and dashboard).
     if (q.hideNotified) where.notified = false;
   }
 

@@ -1,25 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
+import pdfParse from 'pdf-parse';
+import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 
 export async function POST(req: NextRequest) {
   try {
     const fd = await req.formData();
     const file = fd.get('file') as File | null;
     const targetType = fd.get('targetType') as string || 'mixed';
+    const businessTypeStr = fd.get('businessType') as string || 'general';
+    const bizConfig = getBusinessConfig(businessTypeStr as BusinessType);
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    const apiKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
-      .split(',')
-      .map(k => k.trim())
-      .filter(Boolean);
+    const apiKey = process.env.NVIDIA_API_KEY || '';
 
-    if (apiKeys.length === 0) {
-      return NextResponse.json({ error: 'No Gemini API keys configured in environment' }, { status: 500 });
+    if (!apiKey) {
+      return NextResponse.json({ error: 'No Nvidia API key configured in environment' }, { status: 500 });
     }
     
-    // Convert the File into a base64 buffer for Gemini
+    // Convert the File into a base64 buffer for extraction
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     
@@ -28,140 +29,137 @@ export async function POST(req: NextRequest) {
     if (file.name.endsWith('.csv')) mimeType = 'text/csv';
     if (!mimeType) mimeType = 'application/octet-stream';
 
+    let extraItemFields = [];
+    let extraSchemaFields = '';
+    if (bizConfig.hasGender) { extraItemFields.push('gender'); extraSchemaFields += ', "gender": "String"'; }
+    if (bizConfig.hasSizes) { extraItemFields.push('size_variants (as a JSON object e.g. {\\"M\\": 10, \\"L\\": 5} if sizes are grouped, otherwise leave empty)'); extraSchemaFields += ', "size_variants": {}'; }
+    if (bizConfig.hasShades) { extraItemFields.push('shade'); extraSchemaFields += ', "shade": "String"'; }
+    if (bizConfig.hasBatch) { extraItemFields.push('batch_number'); extraSchemaFields += ', "batch_number": "String"'; }
+    if (bizConfig.hasDrugSchedule) { extraItemFields.push('drug_schedule'); extraSchemaFields += ', "drug_schedule": "String"'; }
+    if (bizConfig.hasModel) { extraItemFields.push('model_number'); extraSchemaFields += ', "model_number": "String"'; }
+    if (bizConfig.hasWarranty) { extraItemFields.push('warranty_months'); extraSchemaFields += ', "warranty_months": 0'; }
+
+    let businessInstructions = '';
+    if (extraItemFields.length > 0) {
+      businessInstructions = ` Additionally, extract the following fields for each product if available: ${extraItemFields.join(', ')}.`;
+    }
+
     // Build the prompt based on targetType
     let specificInstructions = '';
     if (targetType === 'sales') {
       specificInstructions = 'Focus specifically on extracting sales transactions, dates, total amounts, and payment methods. If dates or total amounts are unclear or missing, you must still create a sales entry but explicitly flag the missing fields with the string "MISSING".';
     } else if (targetType === 'purchase') {
-      specificInstructions = 'Focus on extracting a list of products purchased from a vendor/supplier. Identify product names, quantities, unit types, and prices. Also look for a total bill amount and a bill date. If any product is missing a price or quantity, or if the overall date is missing, flag it clearly so the user can be prompted.';
+      specificInstructions = `Focus on extracting a purchase invoice. Extract vendorName, billDate, totalAmount, and EVERY individual product under "items". For each product, infer a logical "category" (e.g. Grocery, Dairy, Snacks). Extract "wholesaleCost" (the cost per unit on the bill). Intelligently calculate "suggestedSellingPrice" by adding a ~15% margin to wholesale cost. Ensure items array contains all products.${businessInstructions}`;
     } else if (targetType === 'stock') {
-      specificInstructions = 'Focus on extracting a bulk list of stock/inventory. Look for product names, quantities, units, prices, and expiry dates. CRITICAL: 1. You MUST extract EVERY SINGLE ITEM in the document. Do not stop early. If there are 55 products, return exactly 55 objects. 2. The price MUST be a numeric value in the "price" field. Ignore symbols like ₹, $, or ■. DO NOT put the price in the "unit" field. 3. The "unit" field should ONLY contain units of measurement (e.g. kg, g, ml, pcs, box) separated from the product name. 4. Extract expiry dates into the "expiryDate" field.';
+      specificInstructions = `Focus on extracting bulk inventory. CRITICAL: 1. Extract EVERY SINGLE ITEM. 2. Infer "category". 3. Smart Pricing: Set "mrp" and "sellingPrice". Intelligently estimate "wholesaleCost". 4. Ignore symbols. 5. Extract expiryDate.${businessInstructions}`;
     } else if (targetType === 'khata') {
       specificInstructions = 'Focus on extracting ledger (Udhar Khata) entries showing customer names, amounts they owe, dates, and any notes about the transaction.';
+    }
+
+    const jsonSchemaInstructions = `
+Your response MUST be a VALID JSON object matching the following structure:
+{
+  "summary": "String summarizing what you found",
+  "dataType": "String (khata, stock, sales, loans, mixed, purchase)",
+  "needsClarification": "Boolean",
+  "mismatchWarning": "String explaining if this data seems totally unrelated to a '${businessTypeStr}' business (e.g. uploading a cloth bill in a grocery store). Return null if it matches or is uncertain.",
+  "khata": [{"customerName": "String", "amount": 0, "date": "String", "note": "String"}],
+  "stock": [{"productName": "String", "category": "String", "quantity": 0, "unit": "String", "wholesaleCost": 0, "mrp": 0, "sellingPrice": 0, "expiryDate": "String", "missingPrice": false, "missingUnit": false${extraSchemaFields}}],
+  "sales": [{"date": "String", "totalAmount": 0, "paymentMethod": "String", "note": "String", "missingDate": false, "missingAmount": false}],
+  "purchase": [{"billDate": "String", "vendorName": "String", "totalAmount": 0, "missingDate": false, "missingAmount": false, "items": [{"productName": "String", "category": "String", "quantity": 0, "unit": "String", "wholesaleCost": 0, "suggestedSellingPrice": 0, "expiryDate": "String"${extraSchemaFields}}]}],
+  "rawText": "String"
+}`;
+
+    let extractedText = '';
+    let isVision = false;
+
+    // Fast local PDF parsing
+    if (mimeType === 'application/pdf') {
+      const pdfData = await pdfParse(buffer);
+      extractedText = pdfData.text;
+    } else if (mimeType.startsWith('image/')) {
+      isVision = true;
+    } else {
+      extractedText = buffer.toString('utf-8'); // CSV, txt, etc.
     }
 
     const prompt = `You are an expert data entry assistant named Vyapar Sarthi AI. You extract structured data from images, PDFs, CSVs, and Excel files. 
 
 Target Data Type: ${targetType.toUpperCase()}
 ${specificInstructions}
+${jsonSchemaInstructions}
 
-Please analyze the attached document and return a detailed JSON object containing arrays for any found data. If you are unsure about an extraction (like a messy handwriting), append " (Please Verify)" to the value or provide options in a note. If a required field (like price or date) is missing, output the string "MISSING" for that field.
+Please analyze the attached document data and return the required JSON object. If you are unsure about an extraction, append " (Please Verify)" to the value. If a required field is missing, set booleans like missingPrice or missingDate to true, and put 0 for missing numbers.
 
-Provide a summary describing what you found.`;
+DOCUMENT DATA:
+${extractedText}`;
 
     let resultData = null;
-    let lastError: any = null;
 
-    for (const apiKey of apiKeys) {
+    let messages = [];
+    let modelName = isVision ? "meta/llama-3.2-11b-vision-instruct" : "meta/llama-3.1-8b-instruct";
+
+    if (isVision) {
+      messages = [
+        {
+          role: 'user',
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }
+          ]
+        }
+      ];
+    } else {
+      messages = [
+        { role: 'user', content: prompt }
+      ];
+    }
+
+    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: modelName,
+        messages: messages,
+        temperature: 0.2,
+        max_tokens: 8000,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || data.detail || 'Unknown Nvidia API Error');
+    }
+
+    const textOutput = data.choices?.[0]?.message?.content;
+    
+    if (textOutput) {
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: prompt },
-                  { inline_data: { data: buffer.toString('base64'), mime_type: mimeType } }
-                ]
-              }
-            ],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "OBJECT",
-                properties: {
-                  summary: { type: "STRING" },
-                  dataType: { type: "STRING", enum: ['khata', 'stock', 'sales', 'loans', 'mixed', 'purchase'] },
-                  needsClarification: { type: "BOOLEAN", description: 'True if there is ambiguous data that requires user intervention' },
-                  khata: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        customerName: { type: "STRING" },
-                        amount: { type: "NUMBER" },
-                        date: { type: "STRING" },
-                        note: { type: "STRING" }
-                      }
-                    }
-                  },
-                  stock: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        productName: { type: "STRING" },
-                        quantity: { type: "NUMBER" },
-                        unit: { type: "STRING" },
-                        price: { type: "NUMBER" },
-                        expiryDate: { type: "STRING" },
-                        missingPrice: { type: "BOOLEAN" },
-                        missingUnit: { type: "BOOLEAN" }
-                      }
-                    }
-                  },
-                  sales: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        date: { type: "STRING" },
-                        totalAmount: { type: "NUMBER" },
-                        paymentMethod: { type: "STRING" },
-                        note: { type: "STRING" },
-                        missingDate: { type: "BOOLEAN" },
-                        missingAmount: { type: "BOOLEAN" }
-                      }
-                    }
-                  },
-                  purchase: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        billDate: { type: "STRING" },
-                        vendorName: { type: "STRING" },
-                        totalAmount: { type: "NUMBER" },
-                        missingDate: { type: "BOOLEAN" },
-                        missingAmount: { type: "BOOLEAN" }
-                      }
-                    }
-                  },
-                  rawText: { type: "STRING" }
-                }
-              }
-            }
-          })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error?.message || 'Unknown API Error');
+        resultData = JSON.parse(textOutput);
+      } catch (e: any) {
+        try {
+          const { jsonrepair } = require('jsonrepair');
+          const repaired = jsonrepair(textOutput);
+          resultData = JSON.parse(repaired);
+        } catch (repairError) {
+          throw new Error('Nvidia AI returned invalid JSON that could not be repaired: ' + e.message);
         }
-
-        const textOutput = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        resultData = textOutput ? JSON.parse(textOutput) : null;
-        
-        if (resultData) {
-          // Clean up missing booleans defaults
-          resultData.khata = resultData.khata || [];
-          resultData.stock = resultData.stock || [];
-          resultData.sales = resultData.sales || [];
-          resultData.purchase = resultData.purchase || [];
-          
-          break; // Success! Exit the loop
-        }
-      } catch (err: any) {
-        console.warn(`API Key starting with ${apiKey.substring(0, 8)} failed:`, err.message);
-        lastError = err;
-        // Continue to the next key in the loop
       }
+    }
+    
+    if (resultData) {
+      resultData.khata = resultData.khata || [];
+      resultData.stock = resultData.stock || [];
+      resultData.sales = resultData.sales || [];
+      resultData.purchase = resultData.purchase || [];
     }
 
     if (!resultData) {
-      throw lastError || new Error('All AI API keys failed to return a response');
+      throw new Error('Nvidia AI API failed to return a valid JSON response');
     }
 
     return NextResponse.json(resultData);

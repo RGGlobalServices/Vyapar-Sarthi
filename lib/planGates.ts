@@ -30,6 +30,8 @@ interface PlanLimit {
   multiShop: boolean;     // multiple shops
   godowns: boolean;       // warehouse management
   dukandar: boolean;      // dukandar management
+  referEarn: boolean;     // refer and earn program
+  manpower: boolean;      // staff management
 }
 
 export const PLAN_LIMITS: Record<string, PlanLimit> = {
@@ -41,6 +43,8 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
     multiShop: false,
     godowns: false,
     dukandar: false,
+    referEarn: false,
+    manpower: false,
   },
   vyapar: {
     maxProducts: Infinity,
@@ -50,6 +54,8 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
     multiShop: true,
     godowns: false,
     dukandar: false,
+    referEarn: true,
+    manpower: true,
   },
   wholesale: {
     maxProducts: Infinity,
@@ -59,6 +65,8 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
     multiShop: true,
     godowns: true,
     dukandar: true,
+    referEarn: true,
+    manpower: true,
   },
 };
 
@@ -99,6 +107,14 @@ export function canUseGodowns(plan: string): boolean {
 
 export function canUseDukandar(plan: string): boolean {
   return getPlanLimits(plan).dukandar;
+}
+
+export function canUseReferEarn(plan: string): boolean {
+  return getPlanLimits(plan).referEarn;
+}
+
+export function canUseManpower(plan: string): boolean {
+  return getPlanLimits(plan).manpower;
 }
 
 export function udharLimitDisplay(plan: string): string {

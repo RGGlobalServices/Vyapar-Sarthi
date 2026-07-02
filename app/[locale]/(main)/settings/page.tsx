@@ -75,7 +75,9 @@ function SettingsPageInner() {
   const [settings, setSettings] = useState({
     daily_summary_enabled: true,
     low_stock_alert_enabled: true,
-    alert_time: '08:00'
+    alert_time: '08:00',
+    udharWhatsAppEnabled: false,
+    udharEmailEnabled: false
   });
 
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -189,8 +191,8 @@ function SettingsPageInner() {
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Settings</h1>
-          <p className="text-slate-500 dark:text-slate-400">Configure your daily alerts and notifications</p>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
+          <p className="text-slate-500 dark:text-slate-400">{t('desc') || 'Configure your daily alerts and notifications'}</p>
         </div>
         <button
           onClick={handleSave}
@@ -198,7 +200,7 @@ function SettingsPageInner() {
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
         >
           {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-          Save Changes
+          {t('save')}
         </button>
       </div>
 
@@ -226,15 +228,15 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 dark:text-blue-400 mb-4">
               <Smartphone size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Device Notifications</CardTitle>
-            <CardDescription className="text-slate-500">Get alerts even when the app is closed</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('deviceNotif') || 'Device Notifications'}</CardTitle>
+            <CardDescription className="text-slate-500">{t('deviceNotifDesc') || 'Get alerts even when the app is closed'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="space-y-1">
-                <p className="font-bold text-slate-800 dark:text-slate-200">Push Notifications</p>
+                <p className="font-bold text-slate-800 dark:text-slate-200">{t('pushNotif') || 'Push Notifications'}</p>
                 <p className="text-xs text-slate-500">
-                  {permission === 'denied' ? 'Blocked in browser' : isSubscribed ? 'Subscribed' : 'Off'}
+                  {permission === 'denied' ? 'Blocked in browser' : isSubscribed ? (t('subscribed') || 'Subscribed') : 'Off'}
                 </p>
               </div>
               <button
@@ -254,11 +256,11 @@ function SettingsPageInner() {
             <div className="space-y-4">
                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
                   <BellRing size={16} className="text-emerald-500" />
-                  <span>Stay updated with morning alerts</span>
+                  <span>{t('morningAlerts') || 'Stay updated with morning alerts'}</span>
                </div>
                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
                   <Shield size={16} className="text-blue-500" />
-                  <span>Privacy focused & Secure</span>
+                  <span>{t('privacySecure') || 'Privacy focused & Secure'}</span>
                </div>
             </div>
           </CardContent>
@@ -270,34 +272,60 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-500 dark:text-emerald-400 mb-4">
               <Bell size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Daily Alerts</CardTitle>
-            <CardDescription className="text-slate-500">Select what you want to be notified about</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('dailyAlerts') || 'Daily Alerts'}</CardTitle>
+            <CardDescription className="text-slate-500">{t('dailyAlertsDesc') || 'Select what you want to be notified about'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <label className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
-              <span className="font-bold text-slate-800 dark:text-slate-200">Yesterday&apos;s Profit</span>
+              <span className="font-bold text-slate-800 dark:text-slate-200">{t('yesterdayProfit') || "Yesterday's Profit"}</span>
               <input 
                 type="checkbox" 
                 className="w-5 h-5 accent-emerald-500" 
-                checked={settings.daily_summary_enabled}
+                checked={!!settings.daily_summary_enabled}
                 onChange={e => setSettings({...settings, daily_summary_enabled: e.target.checked})}
               />
             </label>
 
             <label className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
-              <span className="font-bold text-slate-800 dark:text-slate-200">Low Stock Alerts</span>
+              <span className="font-bold text-slate-800 dark:text-slate-200">{t('lowStock') || 'Low Stock Alerts'}</span>
               <input 
                 type="checkbox" 
                 className="w-5 h-5 accent-emerald-500" 
-                checked={settings.low_stock_alert_enabled}
+                checked={!!settings.low_stock_alert_enabled}
                 onChange={e => setSettings({...settings, low_stock_alert_enabled: e.target.checked})}
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+              <div>
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">{t('udharWA') || 'Udhar WhatsApp Reminders'}</span>
+                <span className="text-[10px] text-slate-500">{t('udharWADesc') || 'Send automatic reminders to customers via WhatsApp'}</span>
+              </div>
+              <input 
+                type="checkbox" 
+                className="w-5 h-5 accent-emerald-500" 
+                checked={!!settings.udharWhatsAppEnabled}
+                onChange={e => setSettings({...settings, udharWhatsAppEnabled: e.target.checked})}
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+              <div>
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">{t('udharEmail') || 'Udhar Email Reminders'}</span>
+                <span className="text-[10px] text-slate-500">{t('udharEmailDesc') || 'Send automatic reminders to customers via Email'}</span>
+              </div>
+              <input 
+                type="checkbox" 
+                className="w-5 h-5 accent-emerald-500" 
+                checked={!!settings.udharEmailEnabled}
+                onChange={e => setSettings({...settings, udharEmailEnabled: e.target.checked})}
               />
             </label>
 
             <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
               <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-bold">
                 <Clock size={16} className="text-emerald-500" />
-                Alert Time
+                {t('alertTime') || 'Alert Time'}
               </div>
               <input 
                 type="time" 
@@ -324,8 +352,8 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-500 dark:text-purple-400 mb-4">
               <CreditCard size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Subscription</CardTitle>
-            <CardDescription className="text-slate-500">Manage your current plan and billing</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('subscriptionTitle') || 'Subscription'}</CardTitle>
+            <CardDescription className="text-slate-500">{t('subscriptionDesc') || 'Manage your current plan and billing'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {/* Plan info row */}
@@ -372,7 +400,7 @@ function SettingsPageInner() {
                 onClick={() => { setCancelReason(''); setShowCancelModal(true); }}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-red-500/30 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all font-semibold text-sm"
               >
-                <X size={16} /> Cancel Subscription
+                <X size={16} /> {t('cancelSubscription') || 'Cancel Subscription'}
               </button>
             ) : (
               <div className="p-4 bg-red-50 dark:bg-red-500/5 border border-red-500/20 rounded-xl text-sm text-red-500 dark:text-red-400">
@@ -387,8 +415,7 @@ function SettingsPageInner() {
             )}
 
             <p className="text-xs text-slate-600 text-center">
-              After cancellation your account stays active until the billing period ends.
-              Cancel within 30 days of payment for a full refund under our money-back guarantee.
+              {t('cancelDesc') || 'After cancellation your account stays active until the billing period ends. Cancel within 30 days of payment for a full refund under our money-back guarantee.'}
             </p>
           </CardContent>
         </Card>
@@ -401,8 +428,8 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400 mb-4">
               <Clock size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Billing History</CardTitle>
-            <CardDescription className="text-slate-500">View past payments and download receipts</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('billingHistory') || 'Billing History'}</CardTitle>
+            <CardDescription className="text-slate-500">{t('billingHistoryDesc') || 'View past payments and download receipts'}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-slate-200 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
@@ -470,7 +497,7 @@ function SettingsPageInner() {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Zap size={16} className="text-emerald-500 dark:text-emerald-400" />
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">Available Plans</h2>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">{t('availablePlans') || 'Available Plans'}</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {plans.map(plan => {

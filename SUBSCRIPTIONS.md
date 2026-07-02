@@ -72,9 +72,11 @@ Authorization: Bearer <CRON_SECRET>
 ```
 
 - **Vercel** (`vercel.json`):
+
   ```json
   { "crons": [{ "path": "/api/v1/cron/process-subscriptions", "schedule": "0 6 * * *" }] }
   ```
+
 - **Render / cron-job.org / GitHub Action**:
   `curl -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/v1/cron/process-subscriptions`
 

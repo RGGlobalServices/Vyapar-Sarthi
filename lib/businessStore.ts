@@ -28,6 +28,8 @@ interface BusinessProfile {
   shopCode: string | null;
   trialPaused: boolean;
   trialPauseStart: string | null;
+  gst: string | null;
+  pan: string | null;
 }
 
 interface BusinessStore {
@@ -36,9 +38,9 @@ interface BusinessStore {
   // Multi-shop
   allShops: ShopSummary[];
   activeShopId: string | null;
-  fetchProfile: () => Promise<void>;
+  fetchProfile: (force?: boolean) => Promise<void>;
   fetchAllShops: () => Promise<void>;
-  switchShop: (shopId: string) => Promise<void>;
+  switchShop: (shopId: string, preventReload?: boolean) => Promise<void>;
   createShop: (data: { name: string; businessType?: string; address?: string; mobile?: string }) => Promise<ShopSummary>;
   updateProfile: (updates: Partial<BusinessProfile>) => Promise<void>;
   setBusinessType: (type: BusinessType) => Promise<void>;
@@ -59,6 +61,8 @@ const DEFAULT_PROFILE: BusinessProfile = {
   shopCode: null,
   trialPaused: false,
   trialPauseStart: null,
+  gst: null,
+  pan: null,
 };
 
 function loadCachedType(): BusinessType {
@@ -68,6 +72,15 @@ function loadCachedType(): BusinessType {
 
 function cacheType(type: BusinessType) {
   if (typeof window !== 'undefined') localStorage.setItem('ks_business_type', type);
+}
+
+function loadCachedPlan(): string {
+  if (typeof window === 'undefined') return 'shop';
+  return localStorage.getItem('ks_subscription_plan') ?? 'shop';
+}
+
+function cachePlan(plan: string) {
+  if (typeof window !== 'undefined') localStorage.setItem('ks_subscription_plan', plan);
 }
 
 export function getActiveShopId(): string | null {
@@ -96,6 +109,8 @@ function mapShopToProfile(data: any): BusinessProfile {
     shopCode: data.shop_code ?? data.shopCode ?? null,
     trialPaused: data.trialPaused ?? data.trial_paused ?? false,
     trialPauseStart: data.trialPauseStart ?? data.trial_pause_start ?? null,
+    gst: data.gst ?? null,
+    pan: data.pan ?? null,
   };
 }
 
@@ -105,14 +120,14 @@ let profileCacheTs = 0;
 const PROFILE_CACHE_TTL = 60_000; // ms
 
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
-  profile: { ...DEFAULT_PROFILE, businessType: loadCachedType() },
+  profile: { ...DEFAULT_PROFILE, businessType: loadCachedType(), subscriptionPlan: loadCachedPlan() },
   loading: false,
   allShops: [],
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
 
-  fetchProfile: async () => {
+  fetchProfile: async (force = false) => {
     // Skip if we fetched recently (e.g. tab focus fires repeatedly)
-    if (Date.now() - profileCacheTs < PROFILE_CACHE_TTL && get().profile.id) return;
+    if (!force && Date.now() - profileCacheTs < PROFILE_CACHE_TTL && get().profile.id) return;
     set({ loading: true });
     try {
       const res = await api.get('/shop/profile');
@@ -120,6 +135,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       profileCacheTs = Date.now();
       set({ profile, loading: false });
       cacheType(profile.businessType);
+      cachePlan(profile.subscriptionPlan);
     } catch {
       set({ loading: false });
     }
@@ -144,12 +160,27 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     } catch {}
   },
 
-  switchShop: async (shopId: string) => {
+  switchShop: async (shopId: string, preventReload = false) => {
     setActiveShopIdStorage(shopId);
     set({ activeShopId: shopId });
-    // Force a full page reload to the dashboard so all UI, context, and caches are reset to the new shop
-    if (typeof window !== 'undefined') {
-      window.location.href = '/';
+    
+    // Proactively update cached business type for immediate UI reflection
+    const shop = get().allShops.find(s => s.id === shopId);
+    if (shop) {
+      cacheType(shop.businessType as BusinessType);
+      cachePlan(shop.subscriptionPlan);
+      set(state => ({ profile: { ...state.profile, businessType: shop.businessType as BusinessType, subscriptionPlan: shop.subscriptionPlan } }));
+    }
+
+    // Always fetch the new profile to get complete details
+    await get().fetchProfile(true);
+
+    if (!preventReload) {
+      // With the new layout key={activeShopId}, React handles remounting children
+      // so a full browser reload is no longer necessary! Just optionally scroll to top.
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     }
   },
 
@@ -181,9 +212,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.mobile !== undefined) apiUpdates.mobile = updates.mobile;
       if (updates.logoUrl !== undefined) apiUpdates.logoUrl = updates.logoUrl;
       if (updates.businessType !== undefined) apiUpdates.businessType = updates.businessType;
+      if (updates.gst !== undefined) apiUpdates.gst = updates.gst;
+      if (updates.pan !== undefined) apiUpdates.pan = updates.pan;
+      if (updates.subscriptionPlan !== undefined) apiUpdates.subscriptionPlan = updates.subscriptionPlan;
       await api.patch('/shop/profile', apiUpdates);
       set(state => ({ profile: { ...state.profile, ...updates } }));
       if (updates.businessType) cacheType(updates.businessType);
+      if (updates.subscriptionPlan) cachePlan(updates.subscriptionPlan);
     } catch (err) {
       console.error('Failed to update profile:', err);
       throw err;

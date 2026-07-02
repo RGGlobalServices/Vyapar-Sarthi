@@ -10,12 +10,15 @@ export const POST = handle(async (req) => {
   const { accessCode } = await readBody(req);
   if (!accessCode) throw new ApiError(400, 'Access code is required');
 
-  const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
+  // Run shop + referral code lookups in parallel
+  const [shop, refCode] = await Promise.all([
+    prisma.shop.findFirst({ where: { ownerId: user.uuid! } }),
+    prisma.referralCode.findUnique({ where: { code: accessCode } }),
+  ]);
+
   if (!shop || shop.subscriptionPlan !== 'wholesale') {
     throw new ApiError(403, 'Business plan required to add dukandar');
   }
-
-  const refCode = await prisma.referralCode.findUnique({ where: { code: accessCode } });
   if (!refCode) throw new ApiError(404, 'Invalid access code');
 
   const retailer = await prisma.user.findUnique({ where: { uuid: refCode.userId! } });

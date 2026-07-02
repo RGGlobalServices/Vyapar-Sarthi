@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
+import { ALL_BUSINESS_TYPES } from '@/lib/businessConfig';
 
 type ProfitData = { totalRevenue: number; totalProfit: number; saleCount: number } | null;
 
@@ -72,6 +73,8 @@ export default function ProfilePage() {
         mobile: profile.mobile,
         logo_url: profile.logoUrl,
         business_type: profile.businessType,
+        gst: profile.gst || '',
+        pan: profile.pan || '',
       });
     }
   }, [profile]);
@@ -82,14 +85,19 @@ export default function ProfilePage() {
   };
 
   const handleSave = async () => {
+    if (!shop?.name?.trim()) {
+      showStatus('error', t('nameRequired'));
+      return;
+    }
     setSaving(true);
     try {
       await updateProfile({
         shopName: shop.name, address: shop.address,
         mobile: shop.mobile, logoUrl: shop.logo_url, businessType: shop.business_type,
+        gst: shop.gst, pan: shop.pan,
       });
-      showStatus('success', 'Profile updated successfully');
-    } catch { showStatus('error', 'Failed to update profile'); }
+      showStatus('success', t('updateSuccess'));
+    } catch { showStatus('error', t('updateError')); }
     finally { setSaving(false); }
   };
 
@@ -104,16 +112,16 @@ export default function ProfilePage() {
         setShop({ ...shop, logo_url: publicUrl });
         await updateProfile({ logoUrl: publicUrl });
       }
-    } catch { alert('Failed to upload logo'); }
+    } catch { showStatus('error', t('uploadFailed')); }
     finally { setUploading(false); }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setCpError('');
-    if (!cpCurrent) { setCpError('Enter your current password.'); return; }
-    if (!cpNew || cpNew.length < 6) { setCpError('New password must be at least 6 characters.'); return; }
-    if (cpNew !== cpConfirm) { setCpError('Passwords do not match.'); return; }
+    if (!cpCurrent) { setCpError(t('enterCurrentPwd')); return; }
+    if (!cpNew || cpNew.length < 6) { setCpError(t('minPwdLen')); return; }
+    if (cpNew !== cpConfirm) { setCpError(t('pwdMismatch')); return; }
     setCpLoading(true);
     try {
       await api.patch('/user/profile', { currentPassword: cpCurrent, newPassword: cpNew });
@@ -127,7 +135,7 @@ export default function ProfilePage() {
 
   const handleViewProfit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profitPwd) { setProfitError('Enter your profit password.'); return; }
+    if (!profitPwd) { setProfitError(t('enterProfitPwdError')); return; }
     setProfitLoading(true); setProfitError('');
     try {
       const res = await api.post('/shop/today-profit', { password: profitPwd });
@@ -149,13 +157,13 @@ export default function ProfilePage() {
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Profile Manager</h1>
-          <p className="text-slate-500 dark:text-slate-400">Manage your personal and business identity</p>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
+          <p className="text-slate-500 dark:text-slate-400">{t('subtitle')}</p>
         </div>
         <button onClick={handleSave} disabled={saving}
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50">
           {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-          Save Changes
+          {saving ? t('saving') : t('saveChanges')}
         </button>
       </div>
 
@@ -173,7 +181,7 @@ export default function ProfilePage() {
         {/* Branding */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 md:col-span-1 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-sm uppercase tracking-widest text-slate-500">Branding</CardTitle>
+            <CardTitle className="text-sm uppercase tracking-widest text-slate-500">{t('branding')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-6">
             <div className="relative group">
@@ -196,15 +204,15 @@ export default function ProfilePage() {
                   </div>
                 )}
               </div>
-              <button onClick={() => fileInputRef.current?.click()}
-                className="absolute -bottom-2 -right-2 w-10 h-10 bg-emerald-500 text-slate-900 rounded-xl flex items-center justify-center shadow-xl hover:bg-emerald-400 transition-all active:scale-90">
+              <button onClick={() => !uploading && fileInputRef.current?.click()} disabled={uploading}
+                className="absolute -bottom-2 -right-2 w-10 h-10 bg-emerald-500 text-slate-900 rounded-xl flex items-center justify-center shadow-xl hover:bg-emerald-400 transition-all active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed">
                 <Camera size={20} />
               </button>
-              <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+              <input type="file" ref={fileInputRef} onChange={handleLogoUpload} disabled={uploading} accept="image/*" className="hidden" />
             </div>
             <div className="text-center">
-              <p className="font-bold text-slate-900 dark:text-slate-200">Business Logo</p>
-              <p className="text-xs text-slate-500 mt-1">Shown on bills &amp; invoices</p>
+              <p className="font-bold text-slate-900 dark:text-slate-200">{t('businessLogo')}</p>
+              <p className="text-xs text-slate-500 mt-1">{t('logoDesc')}</p>
             </div>
           </CardContent>
         </Card>
@@ -214,12 +222,12 @@ export default function ProfilePage() {
           <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                <Store size={20} className="text-emerald-500" /> Business Information
+                <Store size={20} className="text-emerald-500" /> {t('businessInfo')}
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Store Name</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('shopName')}</label>
                 <div className="relative">
                   <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input type="text"
@@ -228,7 +236,7 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Business Address</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('address')}</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-3 text-slate-500" size={18} />
                   <textarea rows={3}
@@ -238,7 +246,7 @@ export default function ProfilePage() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Business Contact</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('mobile')}</label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <input type="tel"
@@ -247,18 +255,39 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Business Type</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('shopType')}</label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <select
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
                       value={shop?.business_type || 'kirana'} onChange={e => setShop({ ...shop, business_type: e.target.value })}>
-                      <option value="kirana">Kirana / Grocery</option>
-                      <option value="medical">Medical / Pharmacy</option>
-                      <option value="electronics">Electronics</option>
-                      <option value="clothes">Clothes / Boutique</option>
-                      <option value="general">General Store</option>
+                      <option value="" disabled>{t('selectType')}</option>
+                      {ALL_BUSINESS_TYPES.map(config => (
+                        <option key={config.type} value={config.type}>
+                          {config.label}
+                        </option>
+                      ))}
                     </select>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('gstin')}</label>
+                  <div className="relative">
+                    <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input type="text" placeholder={t('optional')}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                      value={shop?.gst || ''} onChange={e => setShop({ ...shop, gst: e.target.value.toUpperCase() })} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('pan')}</label>
+                  <div className="relative">
+                    <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input type="text" placeholder={t('optional')}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                      value={shop?.pan || ''} onChange={e => setShop({ ...shop, pan: e.target.value.toUpperCase() })} />
                   </div>
                 </div>
               </div>
@@ -268,12 +297,12 @@ export default function ProfilePage() {
           <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                <User size={20} className="text-blue-500" /> Owner Information
+                <User size={20} className="text-blue-500" /> {t('personalInfo')}
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Owner Name</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('fullName')}</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input type="text" disabled
@@ -282,7 +311,7 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Email Address</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('email')}</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input type="email" disabled
@@ -300,11 +329,11 @@ export default function ProfilePage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <KeyRound size={20} className="text-amber-500 dark:text-amber-400" /> Change Password
+              <KeyRound size={20} className="text-amber-500 dark:text-amber-400" /> {t('changePassword')}
             </CardTitle>
             <button onClick={() => { setCpOpen(v => !v); setCpError(''); setCpOk(false); }}
               className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-              {cpOpen ? 'Cancel' : 'Change'}
+              {cpOpen ? t('cancel') : t('change')}
             </button>
           </div>
         </CardHeader>
@@ -312,17 +341,17 @@ export default function ProfilePage() {
           <CardContent>
             {cpOk ? (
               <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 text-sm">
-                <CheckCircle size={15} /> Password changed successfully!
+                <CheckCircle size={15} /> {t('pwdSuccess')}
               </div>
             ) : (
               <form onSubmit={handleChangePassword} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Current Password</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase">{t('currentPassword')}</label>
                     <div className="relative">
                       <input type={cpShow ? 'text' : 'password'} value={cpCurrent}
                         onChange={e => { setCpCurrent(e.target.value); setCpError(''); }}
-                        placeholder="Current password"
+                        placeholder={t('currentPwdPlaceholder')}
                         className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-colors" />
                       <button type="button" onClick={() => setCpShow(v => !v)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
@@ -331,17 +360,17 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase">New Password</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase">{t('newPassword')}</label>
                     <input type={cpShow ? 'text' : 'password'} value={cpNew}
                       onChange={e => { setCpNew(e.target.value); setCpError(''); }}
-                      placeholder="Min 6 characters"
+                      placeholder={t('newPwdPlaceholder')}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-colors" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Confirm Password</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase">{t('confirmPassword')}</label>
                     <input type={cpShow ? 'text' : 'password'} value={cpConfirm}
                       onChange={e => { setCpConfirm(e.target.value); setCpError(''); }}
-                      placeholder="Repeat new password"
+                      placeholder={t('confirmPwdPlaceholder')}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-colors" />
                   </div>
                 </div>
@@ -352,7 +381,7 @@ export default function ProfilePage() {
                 )}
                 <button type="submit" disabled={cpLoading}
                   className="px-6 py-2.5 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
-                  {cpLoading ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Lock size={15} /> Update Password</>}
+                  {cpLoading ? <><Loader2 size={15} className="animate-spin" /> {t('saving')}</> : <><Lock size={15} /> {t('updatePwdBtn')}</>}
                 </button>
               </form>
             )}
@@ -365,17 +394,17 @@ export default function ProfilePage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" /> Today&apos;s Profit
+              <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" /> {t('todaysProfit')}
             </CardTitle>
             {!profitData && (
               <button onClick={() => { setProfitOpen(v => !v); setProfitError(''); setProfitPwd(''); }}
                 className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                {profitOpen ? 'Cancel' : 'View'}
+                {profitOpen ? t('cancel') : t('view')}
               </button>
             )}
             {profitData && (
               <button onClick={() => { setProfitData(null); setProfitOpen(false); }}
-                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Hide</button>
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">{t('hide')}</button>
             )}
           </div>
         </CardHeader>
@@ -383,18 +412,18 @@ export default function ProfilePage() {
           {!hasProfitPwd && !profitData && (
             <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm">
               <ShieldCheck size={16} className="flex-shrink-0" />
-              <span>No profit password set. Go to your <strong>landing page profile</strong> to set one for security.</span>
+              <span>{t('noProfitPwd')}</span>
             </div>
           )}
 
           {hasProfitPwd && !profitData && profitOpen && (
             <form onSubmit={handleViewProfit} className="flex items-end gap-3">
               <div className="flex-1 space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Profit Password</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('profitPwd')}</label>
                 <div className="relative">
                   <input type={profitShow ? 'text' : 'password'} value={profitPwd}
                     onChange={e => { setProfitPwd(e.target.value); setProfitError(''); }}
-                    placeholder="Enter profit password"
+                    placeholder={t('enterProfitPwd')}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
                   <button type="button" onClick={() => setProfitShow(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
@@ -408,29 +437,29 @@ export default function ProfilePage() {
               <button type="submit" disabled={profitLoading}
                 className="px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
                 {profitLoading ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                {profitLoading ? 'Checking…' : 'Show'}
+                {profitLoading ? t('checking') : t('show')}
               </button>
             </form>
           )}
 
           {hasProfitPwd && !profitData && !profitOpen && (
             <div className="flex items-center gap-3 py-2 text-slate-500 text-sm">
-              <Lock size={16} /> Today&apos;s profit is hidden. Click <strong className="text-slate-800 dark:text-slate-300 ml-1">View</strong> to unlock.
+              <Lock size={16} /> {t('hiddenProfit')}
             </div>
           )}
 
           {profitData && (
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-center">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Revenue</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{t('revenue')}</p>
                 <p className="text-xl font-black text-slate-900 dark:text-white">₹{profitData.totalRevenue.toLocaleString('en-IN')}</p>
               </div>
               <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 text-center">
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Profit</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">{t('profit')}</p>
                 <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">₹{profitData.totalProfit.toLocaleString('en-IN')}</p>
               </div>
               <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-center">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Bills</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{t('bills')}</p>
                 <p className="text-xl font-black text-slate-900 dark:text-white">{profitData.saleCount}</p>
               </div>
             </div>

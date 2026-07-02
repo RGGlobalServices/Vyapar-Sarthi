@@ -47,7 +47,7 @@ export const POST = handle(async (req) => {
 
   await prisma.userNotification.create({
     data: {
-      userId: retailerId,
+      userId: retailerId,           // recipient = retailer
       title: 'Stock Alert from Wholesaler',
       message,
       notificationType: 'dukandar_stock_alert',

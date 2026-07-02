@@ -71,8 +71,8 @@ ${referralLink}`;
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Referral Program</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Refer friends and earn free months!</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{t('title') || 'Referral Program'}</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('desc') || 'Refer friends and earn free months!'}</p>
         </div>
       </div>
 
@@ -85,7 +85,7 @@ ${referralLink}`;
               </div>
               <div>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.total}</p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Total Referrals</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{t('totalReferrals') || 'Total Referrals'}</p>
               </div>
             </div>
           </CardContent>
@@ -98,7 +98,7 @@ ${referralLink}`;
               </div>
               <div>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.successful}</p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Successful</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{t('successful') || 'Successful'}</p>
               </div>
             </div>
           </CardContent>
@@ -111,7 +111,7 @@ ${referralLink}`;
               </div>
               <div>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.successful}</p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Free Months Earned</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{t('freeMonths') || 'Free Months Earned'}</p>
               </div>
             </div>
           </CardContent>
@@ -123,8 +123,8 @@ ${referralLink}`;
                 <Share2 className="w-6 h-6 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">20% OFF</p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">For Referred Friends</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{t('discount') || '20% OFF'}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{t('discountDesc') || 'For Referred Friends'}</p>
               </div>
             </div>
           </CardContent>
@@ -135,12 +135,12 @@ ${referralLink}`;
         <CardHeader>
           <CardTitle className="text-slate-900 dark:text-white flex items-center gap-2">
             <Share2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
-            Share Your Referral Code
+            {t('shareCode') || 'Share Your Referral Code'}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Your Referral Code</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">{t('yourCode') || 'Your Referral Code'}</p>
             <p className="text-4xl font-black tracking-widest text-emerald-500 dark:text-emerald-400 select-all">
               {referralCode}
             </p>
@@ -152,22 +152,20 @@ ${referralLink}`;
               className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-              {copied ? 'Copied!' : 'Copy Referral Link'}
+              {copied ? 'Copied!' : (t('copyLink') || 'Copy Referral Link')}
             </button>
             <button
               onClick={shareOnWhatsApp}
               className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-green-500 transition-all"
             >
               <ExternalLink className="w-5 h-5" />
-              Share on WhatsApp
+              {t('shareWA') || 'Share on WhatsApp'}
             </button>
           </div>
 
           <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
             <p className="text-sm text-purple-800 dark:text-purple-300">
-              <strong>🎁 How it works:</strong> When someone uses your code and buys a paid plan, 
-              you get <strong>1 month free</strong> extension on your current subscription! 
-              Your friend gets <strong>20% off</strong> too.
+              <strong>🎁 {t('howItWorks') || 'How it works:'}</strong> {t('howItWorksDesc') || 'When someone uses your code and buys a paid plan, you get 1 month free extension on your current subscription! Your friend gets 20% off too.'}
             </p>
           </div>
         </CardContent>
@@ -177,14 +175,14 @@ ${referralLink}`;
         <CardHeader>
           <CardTitle className="text-slate-900 dark:text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
-            Your Referral Team
+            {t('team') || 'Your Referral Team'}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {team.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
               <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No referrals yet. Share your code and start building your team!</p>
+              <p>{t('noReferrals') || "You haven't referred anyone yet. Share your code and start building your team!"}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">

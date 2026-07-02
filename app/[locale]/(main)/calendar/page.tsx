@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   ChevronLeft, ChevronRight, Plus, X, Trash2, Pencil, Check,
   CalendarDays, Bell, ArrowDownLeft, ArrowUpRight, Loader2, IndianRupee, Clock,
@@ -8,7 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 
-type EventType = 'payment_in' | 'payment_out' | 'reminder' | 'event';
+type EventType = 'payment_in' | 'payment_out' | 'reminder' | 'event' | 'udhar_reminder';
 
 interface CalEvent {
   id: string;
@@ -22,38 +23,37 @@ interface CalEvent {
   reminderDays: number;
 }
 
-const TYPES: Record<EventType, { label: string; dot: string; chip: string; icon: any }> = {
-  payment_in:  { label: 'Payment to receive', dot: 'bg-emerald-500', chip: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30', icon: ArrowDownLeft },
-  payment_out: { label: 'Payment to pay',     dot: 'bg-rose-500',    chip: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',          icon: ArrowUpRight },
-  reminder:    { label: 'Reminder',           dot: 'bg-amber-500',   chip: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',       icon: Bell },
-  event:       { label: 'Event',              dot: 'bg-sky-500',  chip: 'bg-sky-500/15 text-sky-300 ring-sky-500/30',    icon: CalendarDays },
-};
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500';
-
-function ymd(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function inr(n: number) {
-  return `₹${Number(n).toLocaleString('en-IN')}`;
-}
-
-const emptyForm = (date?: string) => ({
-  id: '' as string,
-  title: '',
-  description: '',
-  eventDate: date || ymd(new Date()),
-  eventType: 'payment_in' as EventType,
-  amount: '',
-  customerName: '',
-  reminderDays: 1,
-});
-
 export default function CalendarPage() {
+  const t = useTranslations('Calendar');
+
+  const TYPES: Record<EventType, { label: string; dot: string; chip: string; icon: any }> = {
+    payment_in:  { label: t('paymentIn') || 'Payment to receive', dot: 'bg-emerald-500', chip: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30', icon: ArrowDownLeft },
+    payment_out: { label: t('paymentOut') || 'Payment to pay',     dot: 'bg-rose-500',    chip: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',          icon: ArrowUpRight },
+    reminder:    { label: t('reminder') || 'Reminder',           dot: 'bg-amber-500',   chip: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',       icon: Bell },
+    event:       { label: t('event') || 'Event',              dot: 'bg-sky-500',  chip: 'bg-sky-500/15 text-sky-300 ring-sky-500/30',    icon: CalendarDays },
+    udhar_reminder: { label: t('udharReminder') || 'Udhar Reminder', dot: 'bg-orange-500', chip: 'bg-orange-500/15 text-orange-400 ring-orange-500/30', icon: Bell },
+  };
+
+  const WEEKDAYS = [t('weekSun'), t('weekMon'), t('weekTue'), t('weekWed'), t('weekThu'), t('weekFri'), t('weekSat')];
+  const MONTHS = [t('monthJan'), t('monthFeb'), t('monthMar'), t('monthApr'), t('monthMay'), t('monthJun'), t('monthJul'), t('monthAug'), t('monthSep'), t('monthOct'), t('monthNov'), t('monthDec')];
+
   const today = new Date();
+
+  const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500';
+
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const inr = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`;
+  const emptyForm = (date?: string) => ({
+    id: '' as string,
+    title: '',
+    description: '',
+    eventDate: date || ymd(new Date()),
+    eventType: 'payment_in' as EventType,
+    amount: '',
+    customerName: '',
+    reminderDays: 1,
+  });
+
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,7 +176,7 @@ export default function CalendarPage() {
     catch { setEvents(prev); }
   }
   async function toggleDone(e: CalEvent) {
-    const next = e.status === 'done' ? 'pending' : 'done';
+    const next = e.status === 'completed' ? 'pending' : 'completed';
     const prev = events;
     setEvents((evs) => evs.map((x) => (x.id === e.id ? { ...x, status: next } : x)));
     try { await api.patch(`/calendar/${e.id}`, { status: next }); }
@@ -195,13 +195,13 @@ export default function CalendarPage() {
             <CalendarDays className="w-7 h-7" />
           </div>
           <div>
-            <h1 className="text-3xl font-black bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Calendar</h1>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">Payments, reminders &amp; events — never miss a date</p>
+            <h1 className="text-3xl font-black bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">{t('title') || 'Calendar'}</h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">{t('paymentsEvents') || 'Payments, reminders & events — never miss a date'}</p>
           </div>
         </div>
         <button onClick={() => openAdd()}
           className="flex items-center gap-2 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-sm font-bold px-6 py-3 rounded-xl shadow-xl shadow-sky-500/25 hover:shadow-sky-500/40 hover:-translate-y-0.5 transition-all duration-300">
-          <Plus size={18} strokeWidth={3} /> Add Event
+          <Plus size={18} strokeWidth={3} /> {t('addEvent') || 'Add Event'}
         </button>
       </div>
 
@@ -214,7 +214,7 @@ export default function CalendarPage() {
               <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
                 className="p-2 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><ChevronLeft size={18} /></button>
               <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-300">Today</button>
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-300">{t('today') || 'Today'}</button>
               <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
                 className="p-2 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><ChevronRight size={18} /></button>
             </div>
@@ -258,12 +258,12 @@ export default function CalendarPage() {
                       {dayEvents.slice(0, 3).map(e => (
                         <span key={e.id} onClick={(ev) => { ev.stopPropagation(); openEdit(e); }}
                           className={cn('flex items-center gap-1.5 text-[10px] font-semibold leading-tight truncate rounded-md px-1.5 py-1 transition-transform hover:scale-[1.02] active:scale-95 shadow-sm',
-                            TYPES[e.eventType]?.chip, 'ring-1 border border-transparent hover:border-current/20', e.status === 'done' && 'line-through opacity-50 grayscale')}>
+                            TYPES[e.eventType]?.chip, 'ring-1 border border-transparent hover:border-current/20', e.status === 'completed' && 'line-through opacity-50 grayscale')}>
                           <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0 shadow-sm', TYPES[e.eventType]?.dot)} />
                           <span className="truncate">{e.title}</span>
                         </span>
                       ))}
-                      {dayEvents.length > 3 && <span className="text-[10px] font-bold text-slate-400 pl-1 group-hover:text-sky-500 transition-colors">+{dayEvents.length - 3} more</span>}
+                      {dayEvents.length > 3 && <span className="text-[10px] font-bold text-slate-400 pl-1 group-hover:text-sky-500 transition-colors">+{dayEvents.length - 3} {t('moreEvents', { count: '' }).replace('+{count} ', '') || 'more'}</span>}
                     </div>
                   </button>
                 );
@@ -288,14 +288,14 @@ export default function CalendarPage() {
               <Clock size={18} />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white">Upcoming</h2>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">Next 8 Events</p>
+              <h2 className="text-base font-black text-slate-900 dark:text-white">{t('upcoming') || 'Upcoming'}</h2>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">{t('nextEvents', { count: upcoming.length }) || `NEXT ${upcoming.length} EVENTS`}</p>
             </div>
           </div>
           {upcoming.length === 0 ? (
             <div className="py-12 flex flex-col items-center justify-center text-center opacity-60">
               <CalendarDays className="w-12 h-12 text-slate-400 mb-3" />
-              <p className="text-sm font-semibold text-slate-500">No upcoming events<br/>this month.</p>
+              <p className="text-sm font-semibold text-slate-500">{t('noUpcoming') || 'No upcoming events this month.'}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -329,18 +329,18 @@ export default function CalendarPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setModalOpen(false)}>
           <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="font-bold text-slate-900 dark:text-white">{editing ? 'Edit Event' : 'New Event'}</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white">{editing ? (t('editEvent') || 'Edit Event') : (t('newEvent') || 'New Event')}</h3>
               <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><X size={18} /></button>
             </div>
             <div className="p-4 space-y-3.5">
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Title</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelTitle') || 'TITLE'}</label>
                 <input autoFocus value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-                  placeholder="e.g. Collect from Sharma Stores" className={inp + ' mt-1'} />
+                  placeholder={t('placeholderTitle') || 'e.g. Collect from Sharma Stores'} className={inp + ' mt-1'} />
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Type</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelType') || 'TYPE'}</label>
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   {(Object.keys(TYPES) as EventType[]).map(k => {
                     const Icon = TYPES[k].icon;
@@ -358,29 +358,29 @@ export default function CalendarPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Date</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelDate') || 'DATE'}</label>
                   <input type="date" value={form.eventDate} onChange={e => setForm({ ...form, eventDate: e.target.value })} className={inp + ' mt-1'} />
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Amount (optional)</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelAmount') || 'AMOUNT (OPTIONAL)'}</label>
                   <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="0" className={inp + ' mt-1'} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Customer (optional)</label>
-                  <input value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} placeholder="Name" className={inp + ' mt-1'} />
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelCustomer') || 'CUSTOMER (OPTIONAL)'}</label>
+                  <input value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} placeholder={t('placeholderCustomer') || 'Name'} className={inp + ' mt-1'} />
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Remind (days before)</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelRemind') || 'REMIND (DAYS BEFORE)'}</label>
                   <input type="number" min={0} value={form.reminderDays} onChange={e => setForm({ ...form, reminderDays: parseInt(e.target.value) || 0 })} className={inp + ' mt-1'} />
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Note (optional)</label>
-                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} placeholder="Details…" className={inp + ' mt-1 resize-none'} />
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelNote') || 'NOTE (OPTIONAL)'}</label>
+                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} placeholder={t('placeholderNote') || 'Details…'} className={inp + ' mt-1 resize-none'} />
               </div>
             </div>
 
@@ -388,12 +388,12 @@ export default function CalendarPage() {
               {editing ? (
                 <button onClick={() => { remove(form.id); setModalOpen(false); }}
                   className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-rose-500/10">
-                  <Trash2 size={15} /> Delete
+                  <Trash2 size={15} /> {t('delete') || 'Delete'}
                 </button>
               ) : <span />}
               <button onClick={save} disabled={saving || !form.title.trim()}
                 className="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-900 dark:text-white text-sm font-semibold px-5 py-2 rounded-lg">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {editing ? 'Save' : 'Add Event'}
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {editing ? (t('save') || 'Save') : (t('addEvent') || 'Add Event')}
               </button>
             </div>
           </div>

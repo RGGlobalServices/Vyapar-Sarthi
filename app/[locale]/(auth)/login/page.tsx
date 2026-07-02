@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Eye, EyeOff, ShoppingBag, Loader2, AlertCircle, ArrowLeft,
   CheckCircle2, Mail, KeyRound, Lock,
@@ -158,7 +158,7 @@ export default function LoginPage() {
   /* ── Done ── */
   if (view === 'done') {
     return (
-      <div suppressHydrationWarning className="min-h-screen flex">
+      <div className="min-h-screen flex" suppressHydrationWarning>
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm text-center space-y-6">
@@ -183,7 +183,7 @@ export default function LoginPage() {
   /* ── Reset password (step 3) ── */
   if (view === 'reset') {
     return (
-      <div suppressHydrationWarning className="min-h-screen flex">
+      <div className="min-h-screen flex" suppressHydrationWarning>
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -235,7 +235,7 @@ export default function LoginPage() {
   /* ── OTP entry (step 2) ── */
   if (view === 'otp') {
     return (
-      <div suppressHydrationWarning className="min-h-screen flex">
+      <div className="min-h-screen flex" suppressHydrationWarning>
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -289,7 +289,7 @@ export default function LoginPage() {
   /* ── Forgot (step 1: email) ── */
   if (view === 'forgot') {
     return (
-      <div suppressHydrationWarning className="min-h-screen flex">
+      <div className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -332,13 +332,13 @@ export default function LoginPage() {
 
   /* ── Login form ── */
   return (
-    <div suppressHydrationWarning className="min-h-screen flex">
+    <div className="min-h-screen flex" suppressHydrationWarning>
       {leftPanel}
-      <div className="flex-1 flex items-center justify-center p-6 bg-white dark:bg-slate-950">
+      <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
         <div className="w-full max-w-sm space-y-8">
           {mobileHeader}
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Welcome back</h2>
+            <h2 className="text-2xl font-bold text-slate-50">Welcome back</h2>
             <p className="text-slate-400 text-sm mt-1">Sign in to your store account</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -346,7 +346,7 @@ export default function LoginPage() {
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Email</label>
               <input name="email" type="email" value={form.email} onChange={handleChange}
                 placeholder="you@example.com" autoComplete="email"
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors" />
+                className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-600 transition-colors" />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -359,7 +359,7 @@ export default function LoginPage() {
               <div className="relative">
                 <input name="password" type={show ? 'text' : 'password'} value={form.password}
                   onChange={handleChange} placeholder="••••••••" autoComplete="current-password"
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors" />
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-600 transition-colors" />
                 <button type="button" onClick={() => setShow(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                   {show ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -402,7 +402,9 @@ export default function LoginPage() {
 
 // Small "or continue with" divider, shown only when Google sign-in is configured.
 function GoogleAuthDivider() {
-  if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted || !process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
   return (
     <div className="relative my-5">
       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700" /></div>

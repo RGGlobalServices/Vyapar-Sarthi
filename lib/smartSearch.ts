@@ -73,9 +73,9 @@ export function performSmartSearch(products: Product[], query: string): Product[
 
   // 1. Direct matches (Highest priority)
   const directMatches = products.filter(p => 
-    p.name.toLowerCase().includes(q) || 
+    (p.name || '').toLowerCase().includes(q) || 
     p.barcode?.includes(q) ||
-    p.category?.toLowerCase().includes(q)
+    (p.category || '').toLowerCase().includes(q)
   );
 
   if (directMatches.length > 5) return directMatches;
@@ -96,8 +96,8 @@ export function performSmartSearch(products: Product[], query: string): Product[
     if (directMatches.some(dm => dm.id === p.id)) return false;
 
     return expandedTerms.some(term => 
-      p.name.toLowerCase().includes(term) || 
-      p.category?.toLowerCase().includes(term)
+      (p.name || '').toLowerCase().includes(term) || 
+      (p.category || '').toLowerCase().includes(term)
     );
   });
 
@@ -108,7 +108,7 @@ export function performSmartSearch(products: Product[], query: string): Product[
   if (results.length < 3 && q.length > 3) {
     const fuzzyMatches = products
       .filter(p => !results.some(r => r.id === p.id))
-      .map(p => ({ p, score: getFuzzyScore(p.name, q) }))
+      .map(p => ({ p, score: getFuzzyScore(p.name || '', q) }))
       .filter(m => m.score > 0.75)
       .sort((a, b) => b.score - a.score)
       .map(m => m.p);

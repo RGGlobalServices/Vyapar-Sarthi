@@ -17,12 +17,22 @@ interface AuthUser {
 
 interface AuthStore {
   user: AuthUser | null;
+  role: 'admin' | 'staff';
+  setRole: (role: 'admin' | 'staff') => void;
   loadFromStorage: () => void;
   logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
+  role: 'admin',
+
+  setRole: (role) => {
+    set({ role });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ks_role', role);
+    }
+  },
 
   loadFromStorage: () => {
     if (typeof window === 'undefined') return;
@@ -40,6 +50,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
           mobile: d.mobile || '',
           accessToken: d.access_token || d.accessToken || '',
         },
+        role: (localStorage.getItem('ks_role') as 'admin' | 'staff') || 'admin'
       });
     } catch (e) {
       console.error('Error loading auth from storage', e);
@@ -321,6 +332,7 @@ export interface StockItem {
   gender?: string | null;
   shade?: string | null;
   size_variants?: string | null;
+  metadata?: any;
 }
 
 export interface StockLogEntry {
@@ -382,6 +394,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
         gender: p.gender || null,
         shade: p.shade || null,
         size_variants: p.size_variants || null,
+        metadata: p.metadata ?? null,
       }));
 
       const log = (logRes.data || []).map((l: any) => ({
@@ -423,6 +436,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       gender: item.gender || null,
       shade: item.shade || null,
       size_variants: item.size_variants || null,
+      metadata: item.metadata ?? null,
     };
     set((state) => ({ items: [optimistic, ...state.items] }));
     try {
@@ -444,6 +458,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
         gender: item.gender || null,
         shade: item.shade || null,
         size_variants: item.size_variants || null,
+        metadata: item.metadata ?? undefined,
       });
       const realId = res.data?.id;
       if (realId) {
@@ -465,6 +480,11 @@ export const useStockStore = create<StockStore>((set, get) => ({
       if (updates.current !== undefined) backendUpdates.current_stock = updates.current;
       if (updates.min !== undefined) backendUpdates.min_stock = updates.min;
       if (updates.unit !== undefined) backendUpdates.base_unit = updates.unit;
+      if (updates.size_variants !== undefined) backendUpdates.size_variants = updates.size_variants;
+      if (updates.metadata !== undefined) backendUpdates.metadata = updates.metadata;
+      if (updates.mrp !== undefined) backendUpdates.mrp = updates.mrp;
+      if (updates.sellingPrice !== undefined) backendUpdates.selling_price = updates.sellingPrice;
+      if (updates.cost !== undefined) backendUpdates.wholesale_cost = updates.cost;
       await api.put(`/products/${id}`, backendUpdates);
     } catch (err) {
       set({ items: prev });

@@ -1,6 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireUser } from '@/lib/server/auth';
-import { handle, json, ApiError } from '@/lib/server/http';
+import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,8 +29,8 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       const full = await prisma.product.findUnique({ where: { id: p.id } });
       return {
         ...p,
-        sellingPrice: full?.sellingPrice || 0,
-        wholesaleCost: full?.wholesaleCost || 0,
+        sellingPrice: full?.sellingPrice || p.sellingPrice || 0,
+        wholesaleCost: full?.wholesaleCost || p.wholesaleCost || 0,
       };
     }),
   );
@@ -41,5 +41,47 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     toShop: rtShop?.name || retailer?.storeName || 'Retailer',
     products: fullProducts,
     createdAt: alert.createdAt,
+    status: alert.status,
   });
 });
+
+export const POST = handle<Ctx>(async (req, { params }) => {
+  const { alertId } = await params;
+  const user = await requireUser(req);
+  const { products } = await readBody(req);
+
+  if (!products || !Array.isArray(products)) {
+    throw new ApiError(400, 'products array is required');
+  }
+
+  const alert = await prisma.dukandarStockAlert.findUnique({ where: { id: alertId } });
+  if (!alert) throw new ApiError(404, 'Alert not found');
+  if (alert.wholesalerId !== user.uuid) throw new ApiError(403, 'Unauthorized');
+
+  // Update alert status and products list (with new prices & quantities)
+  await prisma.dukandarStockAlert.update({
+    where: { id: alertId },
+    data: {
+      status: 'quotation_sent',
+      products: JSON.stringify(products),
+      respondedAt: new Date(),
+    },
+  });
+
+  // Notify retailer
+  const wsShop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
+  const senderName = wsShop?.name || user.storeName || 'Wholesaler';
+
+  await prisma.userNotification.create({
+    data: {
+      userId: alert.retailerId,     // recipient = retailer
+      title: 'Quotation Received',
+      message: `${senderName} has sent a quotation for your stock request.`,
+      notificationType: 'dukandar_stock_alert',
+      link: `/dukandar-alerts/${alert.id}`,
+    },
+  });
+
+  return json({ detail: 'Quotation sent successfully' });
+});
+

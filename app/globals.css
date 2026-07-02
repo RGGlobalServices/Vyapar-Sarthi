@@ -16,3 +16,30 @@
     width: 100%;
   }
 }
+
+@theme {
+  --animate-scan: scan 1.5s ease-in-out infinite alternate;
+  --animate-shimmer: shimmer 1.2s ease-in-out infinite;
+
+  @keyframes scan {
+    from { transform: translateY(-100%); }
+    to { transform: translateY(100%); }
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+}
+
+/* Hide default HTML5 number input spinners for a cleaner, professional UI */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

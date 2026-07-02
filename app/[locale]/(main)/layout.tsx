@@ -10,10 +10,8 @@ export default async function MainLayout({
   const { locale } = await params;
 
   return (
-    <div className="flex min-h-screen" suppressHydrationWarning>
-      <MainLayoutClient locale={locale}>
-        {children}
-      </MainLayoutClient>
-    </div>
+    <MainLayoutClient locale={locale}>
+      {children}
+    </MainLayoutClient>
   );
 }

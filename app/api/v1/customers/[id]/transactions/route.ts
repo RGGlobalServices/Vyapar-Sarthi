@@ -15,7 +15,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   if (!customer) throw new ApiError(404, 'Customer not found');
 
   const { type, amount, note, billNumber, date } = await readBody(req);
-  if (!type || !amount || amount <= 0) throw new ApiError(400, 'type and positive amount required');
+  if (!type || amount === undefined || amount < 0) throw new ApiError(400, 'type and non-negative amount required');
   if (!['udhar', 'payment'].includes(type)) throw new ApiError(400, 'type must be udhar or payment');
 
   const tx = await prisma.customer_transactions.create({

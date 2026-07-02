@@ -213,10 +213,12 @@ export function sendBillEmail({
         </thead>
         <tbody>${itemRows}</tbody>
       </table>
-      <div style="margin-top:16px;padding:12px 16px;background:#0f172a;border-radius:10px;display:flex;justify-content:space-between;">
-        <span style="color:#94a3b8;font-size:15px;">Total</span>
-        <span style="color:#10b981;font-size:18px;font-weight:bold;">₹${Number(total).toLocaleString('en-IN')}</span>
-      </div>
+      <table style="width:100%;margin-top:16px;background:#0f172a;border-radius:10px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:12px 16px;color:#94a3b8;font-size:15px;text-align:left;">Total</td>
+          <td style="padding:12px 16px;color:#10b981;font-size:18px;font-weight:bold;text-align:right;">₹${Number(total).toLocaleString('en-IN')}</td>
+        </tr>
+      </table>
       ${
         pdfUrl
           ? `

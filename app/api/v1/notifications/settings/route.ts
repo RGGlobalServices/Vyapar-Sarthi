@@ -17,7 +17,7 @@ export const GET = handle(async (req) => {
 export const PATCH = handle(async (req) => {
   const user = await requireUser(req);
   const body = await readBody(req);
-  const allowedFields = ['dailySummaryEnabled', 'lowStockAlertEnabled', 'alertTime'];
+  const allowedFields = ['dailySummaryEnabled', 'lowStockAlertEnabled', 'alertTime', 'udharWhatsAppEnabled', 'udharEmailEnabled'];
   const data: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (body[field] !== undefined) data[field] = body[field];

@@ -15,11 +15,27 @@ import SmartTranslator from '@/components/SmartTranslator';
 import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
 import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata } from '@/components/SizeVariantGrid';
 import type { SizePriceEntry } from '@/components/SizeVariantGrid';
+import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey } from '@/components/ColorSizeVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
-import { getBusinessConfig } from '@/lib/businessConfig';
+import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
 
 import { QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import WholesaleProductsUI from './WholesaleProductsUI';
+import useSWR from 'swr';
+
+const fetchProductsMapped = (url: string) => api.get(url).then(res => res.data.map((p: any) => ({
+  id: p.id, name: p.name, category: p.category,
+  stock: p.currentStock, minStock: p.minStock,
+  mrp: p.mrp, sellingPrice: p.sellingPrice, cost: p.wholesaleCost,
+  unit: p.baseUnit || 'Unit',
+  expiry_date: p.expiryDate, batch_number: p.batch_number,
+  drug_schedule: p.drug_schedule, model_number: p.model_number,
+  warranty_months: p.warranty_months, gender: p.gender,
+  shade: p.shade, size_variants: p.size_variants,
+  is_loose: p.is_loose,
+  metadata: p.metadata,
+})));
 
 const BarcodeQRModal = dynamic(() => import('@/components/BarcodeQRModal'), { ssr: false });
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
@@ -59,20 +75,29 @@ function buildEmptyForm(btype: string) {
   };
 }
 
-/** Pick the first size that has a non-zero price as the product-level fallback. */
-function deriveFallbackPrice(sizePrices: Record<string, SizePriceEntry>) {
-  for (const p of Object.values(sizePrices)) {
-    if (p && (p.sellingPrice > 0 || p.mrp > 0)) {
-      return { mrp: p.mrp || p.sellingPrice, sellingPrice: p.sellingPrice || p.mrp, cost: p.cost || 0 };
-    }
+export default function ProductsPage() {
+  const { profile } = useBusinessStore();
+  const isWholesale = profile.subscriptionPlan === 'wholesale';
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
   }
-  return null;
+
+  if (isWholesale) {
+    return <WholesaleProductsUI />;
+  }
+
+  return <LegacyProductsUI />;
 }
 
-let cachedProducts: Product[] = [];
-
-export default function ProductsPage() {
+function LegacyProductsUI() {
   const t = useTranslations('Products');
+  const tv = useTranslations('Variants');
   const locale = useLocale();
   const { profile, allShops, activeShopId, switchShop } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
@@ -83,8 +108,7 @@ export default function ProductsPage() {
     setMounted(true);
   }, []);
 
-  const [products, setProducts] = useState<Product[]>(cachedProducts);
-  const [loading, setLoading] = useState(cachedProducts.length === 0);
+  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR('/products', fetchProductsMapped);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -110,6 +134,36 @@ export default function ProductsPage() {
   const [sizePrices, setSizePrices] = useState<Record<string, SizePriceEntry>>({});
   const [editPerSizePricing, setEditPerSizePricing] = useState(false);
   const [editSizePrices, setEditSizePrices] = useState<Record<string, SizePriceEntry>>({});
+
+  // Variant matrix model. `colors`/`editColors` hold the selected primary-dimension values
+  // (colours for apparel, types like LED/Tubelight for electricals).
+  const [colors, setColors] = useState<string[]>([]);
+  const [editColors, setEditColors] = useState<string[]>([]);
+
+  // Build the variant dimensions for a product. Apparel = Colour × Size (always on).
+  // Electricals/electronics = a Type × Spec matrix resolved from the product's CATEGORY
+  // (bulb → Type × Watt, battery → Type × Capacity, …); null when the category has no spec.
+  function buildVariantDim(category: string) {
+    if (bizConfig.hasColors) {
+      return { options: bizConfig.colorChart || [], label: 'colour', swatch: true, sectionLabel: tv('colourSizeInventory'), sizeChart: bizConfig.sizeChart || [] };
+    }
+    if (bizConfig.hasSpecs) {
+      const spec = getCategoryVariantSpec(category, bizConfig.type);
+      if (spec) {
+        const lbl = spec.typeLabel.toLowerCase();
+        // Colour/shade dimensions get a swatch even on the spec path (apparel, footwear, lipstick…).
+        const swatch = /colour|color|shade/.test(lbl);
+        return { options: spec.typeOptions, label: lbl, swatch, sectionLabel: tv('specInventory', { type: spec.typeLabel, spec: spec.sizeLabel }), sizeChart: spec.sizeChart };
+      }
+    }
+    return null;
+  }
+  const addVariantDim = buildVariantDim(form.category);
+  const editVariantDim = buildVariantDim(editForm.category);
+  // Stock comes from the grid when: apparel/kirana (always) or an electrical/electronics product
+  // whose category has a spec AND the user has picked at least one type.
+  const addVariantActive = bizConfig.hasColors ? true : bizConfig.hasSpecs ? (!!addVariantDim && colors.length > 0) : bizConfig.hasSizes;
+  const editVariantActive = bizConfig.hasColors ? true : bizConfig.hasSpecs ? (!!editVariantDim && editColors.length > 0) : bizConfig.hasSizes;
 
   // ── Add-product godown/shop assignment ──────────────────────────────────
   const [addToGodownId, setAddToGodownId] = useState('');
@@ -195,31 +249,7 @@ export default function ProductsPage() {
     }
   };
 
-  const fetchProducts = async () => {
-    if (cachedProducts.length === 0) {
-      setLoading(true);
-    }
-    try {
-      const res = await api.get('/products');
-      const mapped = res.data.map((p: any) => ({
-        id: p.id, name: p.name, category: p.category,
-        stock: p.currentStock, minStock: p.minStock,
-        mrp: p.mrp, sellingPrice: p.sellingPrice, cost: p.wholesaleCost,
-        unit: p.baseUnit || 'Unit',
-        expiry_date: p.expiryDate, batch_number: p.batch_number,
-        drug_schedule: p.drug_schedule, model_number: p.model_number,
-        warranty_months: p.warranty_months, gender: p.gender,
-        shade: p.shade, size_variants: p.size_variants,
-        is_loose: p.is_loose,
-        metadata: p.metadata,
-      }));
-      setProducts(mapped);
-      cachedProducts = mapped;
-    } catch { /* */ } finally { setLoading(false); }
-  };
-
   useEffect(() => {
-    fetchProducts();
     function handleClick(e: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
     }
@@ -249,21 +279,41 @@ export default function ProductsPage() {
     return matchSearch && matchCat && matchStatus;
   }), [products, search, filterCategory, filterStatus]);
 
+  // Drop composite "Colour / Size" variant + price entries whose colour is no longer selected.
+  function pruneByColors<T>(map: Record<string, T>, keepColors: string[]): Record<string, T> {
+    const out: Record<string, T> = {};
+    for (const [k, v] of Object.entries(map)) {
+      const { color } = splitVariantKey(k);
+      if (!color || keepColors.includes(color)) out[k] = v;
+    }
+    return out;
+  }
+  function handleAddColorsChange(next: string[]) {
+    setColors(next);
+    setForm(f => ({ ...f, size_variants: pruneByColors(f.size_variants, next) }));
+    setSizePrices(p => pruneByColors(p, next));
+    // Variant products use per-spec pricing by default (apparel always; electricals once a type is picked).
+    setPerSizePricing(bizConfig.hasColors || next.length > 0);
+  }
+  function handleEditColorsChange(next: string[]) {
+    setEditColors(next);
+    setEditForm(f => ({ ...f, size_variants: pruneByColors(f.size_variants, next) }));
+    setEditSizePrices(p => pruneByColors(p, next));
+  }
+
   async function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const sizeVariantsJson = bizConfig.hasSizes ? serializeSizeVariants(form.size_variants) : undefined;
-    const stockQty = bizConfig.hasSizes ? totalFromSizes(form.size_variants) : Number(form.stock);
-    const metadataPayload = bizConfig.hasSizes ? mergeSizePricesIntoMetadata({}, sizePrices, perSizePricing) : undefined;
-    // When per-size pricing is on and the fallback fields are blank, derive the
-    // fallback from the first priced size so billing/reports always have a value.
-    const fallback = perSizePricing ? deriveFallbackPrice(sizePrices) : null;
+    const sizeVariantsJson = addVariantActive ? serializeSizeVariants(form.size_variants) : undefined;
+    const stockQty = addVariantActive ? totalFromSizes(form.size_variants) : Number(form.stock);
+    const metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePrices, Object.keys(sizePrices).length > 0) : undefined;
+    // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
     try {
       const res = await api.post('/products', {
         name: form.name, category: form.category,
         current_stock: stockQty, min_stock: Number(form.minStock),
-        mrp: Number(form.mrp) || fallback?.mrp || 0,
-        selling_price: Number(form.sellingPrice) || fallback?.sellingPrice || 0,
-        wholesale_cost: Number(form.cost) || fallback?.cost || 0, base_unit: form.unit || 'Unit',
+        mrp: Number(form.mrp) || 0,
+        selling_price: Number(form.sellingPrice) || 0,
+        wholesale_cost: Number(form.cost) || 0, base_unit: form.unit || 'Unit',
         barcode: `BAR-${Date.now()}`,
         is_loose: form.is_loose,
         expiry_date: form.expiry_date || null,
@@ -289,11 +339,12 @@ export default function ProductsPage() {
         } catch { /* godown assignment is best-effort */ }
       }
 
-      fetchProducts();
+      mutateProducts();
       setForm(buildEmptyForm(profile.businessType));
       setAddToGodownId('');
       setPerSizePricing(false);
       setSizePrices({});
+      setColors([]);
       setShowAddModal(false);
     } catch { /* */ }
   }
@@ -301,8 +352,8 @@ export default function ProductsPage() {
   function startEdit(product: Product) {
     setEditProduct(product);
     setEditForm({
-      name: product.name,
-      category: product.category,
+      name: product.name || '',
+      category: product.category || '',
       unit: product.unit || bizConfig.defaultUnits[0] || 'Unit',
       stock: String(product.stock ?? ''),
       minStock: String(product.minStock ?? ''),
@@ -319,11 +370,15 @@ export default function ProductsPage() {
       shade: product.shade || '',
       size_variants: parseSizeVariants(product.size_variants),
     });
-    // Load per-size pricing from metadata
+    // Load per-size pricing from metadata. Default it ON for variant products (colour/size or a
+    // category with a spec matrix) so per-spec price fields are visible without hunting for a toggle.
     const existingPrices = parseSizePrices(product.metadata);
     const hasPrices = Object.keys(existingPrices).length > 0;
-    setEditPerSizePricing(hasPrices);
+    const isVariantProduct = !!(bizConfig.hasColors || (bizConfig.hasSpecs && getCategoryVariantSpec(product.category, bizConfig.type)));
+    setEditPerSizePricing(hasPrices || isVariantProduct);
     setEditSizePrices(existingPrices);
+    // Colour × size: derive the selected colours from the existing composite variant keys.
+    setEditColors(colorsFromVariants(parseSizeVariants(product.size_variants)));
     setShowEditModal(true);
   }
   async function handleEditSubmit(e: React.FormEvent) {
@@ -331,20 +386,20 @@ export default function ProductsPage() {
     if (!editProduct) return;
     setSaving(true);
     try {
-      const sizeVariantsJson = bizConfig.hasSizes ? serializeSizeVariants(editForm.size_variants) : undefined;
-      const stockQty = bizConfig.hasSizes ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
-      const editMetadata = bizConfig.hasSizes
-        ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePrices, editPerSizePricing)
+      const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
+      const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
+      const editMetadata = editVariantActive
+        ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePrices, Object.keys(editSizePrices).length > 0)
         : undefined;
-      const editFallback = editPerSizePricing ? deriveFallbackPrice(editSizePrices) : null;
+      // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
       await api.put(`/products/${editProduct.id}`, {
         name: editForm.name,
         category: editForm.category,
         current_stock: stockQty,
         min_stock: Number(editForm.minStock),
-        mrp: Number(editForm.mrp) || editFallback?.mrp || 0,
-        selling_price: Number(editForm.sellingPrice) || editFallback?.sellingPrice || 0,
-        wholesale_cost: Number(editForm.cost) || editFallback?.cost || 0,
+        mrp: Number(editForm.mrp) || 0,
+        selling_price: Number(editForm.sellingPrice) || 0,
+        wholesale_cost: Number(editForm.cost) || 0,
         base_unit: editForm.unit,
         is_loose: editForm.is_loose,
         expiry_date: editForm.expiry_date || null,
@@ -357,13 +412,13 @@ export default function ProductsPage() {
         size_variants: sizeVariantsJson || null,
         metadata: editMetadata,
       });
-      await fetchProducts();
+      await mutateProducts();
       setShowEditModal(false);
       setEditProduct(null);
     } catch { /* */ } finally { setSaving(false); }
   }
   async function doDelete(id: string | number) {
-    try { await api.delete(`/products/${id}`); fetchProducts(); setDeleteConfirmId(null); } catch { /* */ }
+    try { await api.delete(`/products/${id}`); mutateProducts(); setDeleteConfirmId(null); } catch { /* */ }
   }
 
   const statusOptions = [
@@ -403,7 +458,7 @@ export default function ProductsPage() {
               {products.length.toLocaleString('en-IN')} / Unlimited products
             </p>
           </div>
-          <button onClick={() => setShowAddModal(true)}
+          <button onClick={() => { setColors([]); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}
           </button>
@@ -516,7 +571,7 @@ export default function ProductsPage() {
               const isActive = activeShopId === shop.id || (!activeShopId && shop.id === profile.id);
               return (
                 <button key={shop.id}
-                  onClick={() => { switchShop(shop.id); setTimeout(fetchProducts, 300); }}
+                  onClick={() => { switchShop(shop.id); setTimeout(mutateProducts, 300); }}
                   className={cn('flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all shadow-sm',
                     isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900')}>
                   <Store size={14} />
@@ -654,19 +709,44 @@ export default function ProductsPage() {
                 {filtered.map(product => {
                   const isLowStock = product.stock <= product.minStock && product.stock > 0;
                   const isOut = product.stock === 0;
-                  const hasCost = product.cost > 0;
                   const sizeVariants = parseSizeVariants(product.size_variants);
                   const sizePriceData = parseSizePrices(product.metadata);
                   const hasPerSizePricing = Object.keys(sizePriceData).length > 0;
-                  const stockValue = hasCost
-                    ? product.stock * product.cost
-                    : hasPerSizePricing
-                      ? Object.entries(sizeVariants).reduce((sum, [sz, qty]) =>
-                          sum + qty * (sizePriceData[sz]?.sellingPrice || product.sellingPrice), 0)
-                      : product.stock * product.sellingPrice;
-                  const profit = hasCost
-                    ? ((product.sellingPrice - product.cost) / product.cost * 100).toFixed(1)
-                    : null;
+                  
+                  const hasCost = product.cost > 0 || (hasPerSizePricing && Object.values(sizePriceData).some(sp => sp.cost > 0));
+                  const stockValue = hasPerSizePricing
+                    ? Object.entries(sizeVariants).reduce((sum, [sz, qty]) => {
+                        const cost = sizePriceData[sz]?.cost || product.cost;
+                        const price = cost > 0 ? cost : (sizePriceData[sz]?.sellingPrice || product.sellingPrice || 0);
+                        return sum + qty * price;
+                      }, 0)
+                    : (product.cost > 0 ? product.stock * product.cost : product.stock * product.sellingPrice);
+
+                  let profit: string | null = null;
+                  if (hasPerSizePricing) {
+                    let totalCostValue = 0;
+                    let totalSellingValue = 0;
+                    let hasValidCostAndPrice = false;
+                    
+                    const activeSizes = Object.entries(sizeVariants);
+                    if (activeSizes.length > 0) {
+                      activeSizes.forEach(([sz, qty]) => {
+                        const variantCost = sizePriceData[sz]?.cost || 0;
+                        const variantSell = sizePriceData[sz]?.sellingPrice || product.sellingPrice || 0;
+                        if (variantCost > 0 && variantSell > 0) {
+                          hasValidCostAndPrice = true;
+                          const weight = qty > 0 ? qty : 1;
+                          totalCostValue += weight * variantCost;
+                          totalSellingValue += weight * variantSell;
+                        }
+                      });
+                    }
+                    if (hasValidCostAndPrice && totalCostValue > 0) {
+                      profit = ((totalSellingValue - totalCostValue) / totalCostValue * 100).toFixed(1);
+                    }
+                  } else if (product.cost > 0) {
+                    profit = ((product.sellingPrice - product.cost) / product.cost * 100).toFixed(1);
+                  }
 
                   return (
                     <tr key={product.id} className="group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200">
@@ -680,7 +760,7 @@ export default function ProductsPage() {
                       <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400"><SmartTranslator text={product.category} locale={locale} /></td>
                       <td className="px-6 py-4">
                         <div className={cn('flex items-center gap-1 font-bold', isOut ? 'text-red-400' : isLowStock ? 'text-orange-400' : 'text-emerald-400')}>
-                          {bizConfig.hasSizes ? (
+                          {(bizConfig.hasSizes || Object.keys(sizeVariants).length > 0) ? (
                             <div>
                               <div className="text-sm font-bold flex items-center gap-1">
                                 {product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit || 'Unit'} locale={locale} /></span>
@@ -773,7 +853,21 @@ export default function ProductsPage() {
                   <tr>
                     <td className="px-6 py-3 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
                     <td className="px-6 py-3 text-right text-amber-500 dark:text-amber-400 font-bold text-base" colSpan={2}>
-                      ₹{filtered.reduce((sum, p) => sum + p.stock * (p.cost > 0 ? p.cost : p.sellingPrice), 0).toLocaleString('en-IN')}
+                      ₹{filtered.reduce((sum, p) => {
+                        const sizeVariants = parseSizeVariants(p.size_variants);
+                        const sizePriceData = parseSizePrices(p.metadata);
+                        const hasPerSizePricing = Object.keys(sizePriceData).length > 0;
+                        
+                        const val = hasPerSizePricing
+                          ? Object.entries(sizeVariants).reduce((s, [sz, qty]) => {
+                              const cost = sizePriceData[sz]?.cost || p.cost;
+                              const price = cost > 0 ? cost : (sizePriceData[sz]?.sellingPrice || p.sellingPrice || 0);
+                              return s + qty * price;
+                            }, 0)
+                          : (p.cost > 0 ? p.stock * p.cost : p.stock * p.sellingPrice);
+                          
+                        return sum + val;
+                      }, 0).toLocaleString('en-IN')}
                     </td>
                     <td colSpan={20} />
                   </tr>
@@ -895,17 +989,22 @@ export default function ProductsPage() {
                 </section>
               )}
 
-              {/* Size Inventory */}
-              {bizConfig.hasSizes && bizConfig.sizeChart && (
+              {/* Size / Variant Inventory */}
+              {((bizConfig.hasSizes && bizConfig.sizeChart) || (bizConfig.hasSpecs && editVariantDim)) && (
                 <section className="space-y-3 bg-violet-500/5 border border-violet-500/20 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                       <div className="w-1 h-4 rounded bg-violet-500" />
-                      <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">Size / Weight Inventory</p>
+                      <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">{editVariantDim?.sectionLabel || tv('sizeWeightInventory')}</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setEditPerSizePricing(prev => !prev)}
+                      onClick={() => {
+                        const next = !editPerSizePricing;
+                        setEditPerSizePricing(next);
+                        // Per-size pricing replaces the default price → reset it to 0.
+                        if (next) setEditForm(f => ({ ...f, mrp: '0', sellingPrice: '0', cost: '0' }));
+                      }}
                       className={cn(
                         'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
                         editPerSizePricing
@@ -914,11 +1013,31 @@ export default function ProductsPage() {
                       )}
                     >
                       <IndianRupee size={10} />
-                      {editPerSizePricing ? 'Per-Size Pricing ON' : 'Per-Size Pricing'}
+                      {editPerSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
                     </button>
                   </div>
+                  {bizConfig.hasSpecs && editVariantDim && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
+                  )}
+                  {editVariantDim ? (
+                    <div className="space-y-3">
+                      <ColorPicker colorChart={editVariantDim.options} value={editColors} onChange={handleEditColorsChange} showSwatch={editVariantDim.swatch} />
+                      <ColorSizeVariantGrid
+                        colors={editColors}
+                        sizeChart={Array.from(new Set([...editVariantDim.sizeChart, ...sizesFromVariants(editForm.size_variants)]))}
+                        value={editForm.size_variants}
+                        onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
+                        unitLabel={editForm.unit?.toLowerCase() || 'units'}
+                        perSizePricing={editPerSizePricing}
+                        sizePrices={editSizePrices}
+                        onSizePricesChange={setEditSizePrices}
+                        showSwatch={editVariantDim.swatch}
+                        dimensionLabel={editVariantDim.label}
+                      />
+                    </div>
+                  ) : (
                   <SizeVariantGrid
-                    sizeChart={bizConfig.sizeChart}
+                    sizeChart={bizConfig.sizeChart!}
                     value={editForm.size_variants}
                     onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
                     unitLabel={editForm.unit?.toLowerCase() || 'units'}
@@ -926,11 +1045,12 @@ export default function ProductsPage() {
                     sizePrices={editSizePrices}
                     onSizePricesChange={setEditSizePrices}
                   />
+                  )}
                 </section>
               )}
 
               {/* Stock & Min */}
-              {!bizConfig.hasSizes && (
+              {!editVariantActive && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Stock</label>
@@ -943,7 +1063,7 @@ export default function ProductsPage() {
                 </div>
               )}
 
-              {bizConfig.hasSizes && (
+              {editVariantActive && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Min Stock Level (Total)</label>
                   <input required type="number" min="0" className={modalInp} value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} />
@@ -955,16 +1075,14 @@ export default function ProductsPage() {
                 <ExpiryDateField value={editForm.expiry_date} onChange={val => setEditForm(f => ({ ...f, expiry_date: val }))} required={false} />
               )}
 
-              {/* Pricing - show global pricing always (as default/fallback price) */}
+              {/* Pricing - when per-spec pricing is on these act as an optional fallback price */}
               <section className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1 h-4 rounded bg-amber-500" />
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                    {editPerSizePricing ? 'Default Pricing (Optional Fallback)' : 'Pricing'}
-                  </p>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{editPerSizePricing ? tv('fallbackPriceLabel') : tv('pricingLabel')}</p>
                 </div>
                 {editPerSizePricing && (
-                  <p className="text-[10px] text-slate-500 -mt-1">Per-size prices are set above. These are optional fallbacks for sizes without a price.</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1">{tv('fallbackPriceHint')}</p>
                 )}
                 <div className="grid grid-cols-3 gap-4">
                   <div>
@@ -1169,17 +1287,22 @@ export default function ProductsPage() {
                 </section>
               )}
 
-              {/* ── Size Inventory ── */}
-              {bizConfig.hasSizes && bizConfig.sizeChart && (
+              {/* ── Size / Variant Inventory ── */}
+              {((bizConfig.hasSizes && bizConfig.sizeChart) || (bizConfig.hasSpecs && addVariantDim)) && (
                 <section className="space-y-3 bg-violet-500/5 border border-violet-500/20 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                       <div className="w-1 h-4 rounded bg-violet-500" />
-                      <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">Size / Weight Inventory</p>
+                      <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">{addVariantDim?.sectionLabel || tv('sizeWeightInventory')}</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setPerSizePricing(prev => !prev)}
+                      onClick={() => {
+                        const next = !perSizePricing;
+                        setPerSizePricing(next);
+                        // Per-size pricing replaces the default price → reset it to 0.
+                        if (next) setForm(f => ({ ...f, mrp: '0', sellingPrice: '0', cost: '0' }));
+                      }}
                       className={cn(
                         'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
                         perSizePricing
@@ -1188,11 +1311,31 @@ export default function ProductsPage() {
                       )}
                     >
                       <IndianRupee size={10} />
-                      {perSizePricing ? 'Per-Size Pricing ON' : 'Per-Size Pricing'}
+                      {perSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
                     </button>
                   </div>
+                  {bizConfig.hasSpecs && addVariantDim && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
+                  )}
+                  {addVariantDim ? (
+                    <div className="space-y-3">
+                      <ColorPicker colorChart={addVariantDim.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim.swatch} />
+                      <ColorSizeVariantGrid
+                        colors={colors}
+                        sizeChart={addVariantDim.sizeChart}
+                        value={form.size_variants}
+                        onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
+                        unitLabel={form.unit?.toLowerCase() || 'units'}
+                        perSizePricing={perSizePricing}
+                        sizePrices={sizePrices}
+                        onSizePricesChange={setSizePrices}
+                        showSwatch={addVariantDim.swatch}
+                        dimensionLabel={addVariantDim.label}
+                      />
+                    </div>
+                  ) : (
                   <SizeVariantGrid
-                    sizeChart={bizConfig.sizeChart}
+                    sizeChart={bizConfig.sizeChart!}
                     value={form.size_variants}
                     onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
                     unitLabel={form.unit?.toLowerCase() || 'units'}
@@ -1200,11 +1343,16 @@ export default function ProductsPage() {
                     sizePrices={sizePrices}
                     onSizePricesChange={setSizePrices}
                   />
+                  )}
                 </section>
               )}
+              {/* Electricals/electronics: prompt to choose a category when none maps to a spec yet */}
+              {bizConfig.hasSpecs && !addVariantDim && form.category.trim() !== '' && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-2">{tv('simpleCategoryHint')}</p>
+              )}
 
-              {/* ── Stock & Min ── (hidden for size-based if fully managed by size grid) */}
-              {!bizConfig.hasSizes && (
+              {/* ── Stock & Min ── (hidden when stock is driven by the variant grid) */}
+              {!addVariantActive && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldStock')}</label>
@@ -1219,7 +1367,7 @@ export default function ProductsPage() {
                 </div>
               )}
 
-              {bizConfig.hasSizes && (
+              {addVariantActive && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMinStock')} (Total)</label>
                   <input required type="number" min="0" className={modalInp} placeholder="5"
@@ -1236,16 +1384,14 @@ export default function ProductsPage() {
                 />
               )}
 
-              {/* ── Pricing ── */}
+              {/* ── Pricing ── when per-spec pricing is on these act as an optional fallback price ── */}
               <section className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1 h-4 rounded bg-amber-500" />
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                    {perSizePricing ? `${t('fieldMRP')} (Optional Fallback)` : 'Pricing'}
-                  </p>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{perSizePricing ? tv('fallbackPriceLabel') : tv('pricingLabel')}</p>
                 </div>
                 {perSizePricing && (
-                  <p className="text-[10px] text-slate-500 -mt-1">Per-size prices are set above. These are optional fallbacks for sizes without a price.</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1">{tv('fallbackPriceHint')}</p>
                 )}
                 <div className="grid grid-cols-3 gap-4">
                   <div>

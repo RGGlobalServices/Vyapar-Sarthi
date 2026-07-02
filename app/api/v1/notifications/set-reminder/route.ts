@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireUser } from '@/lib/server/auth';
+import { requireUser, requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -16,15 +16,21 @@ export const POST = handle(async (req) => {
   const scheduledAt = new Date(`${reminderDate}T${reminderTime}:00`);
   if (isNaN(scheduledAt.getTime())) throw new ApiError(400, 'Invalid date or time');
 
-  // Store reminder as a notification with future scheduledAt
-  await prisma.userNotification.create({
+  // We want this reminder to show up in the calendar and notification bell on/before the date.
+  const { shop } = await requireShop(req);
+
+  await prisma.calendarEvent.create({
     data: {
-      userId: user.uuid,
-      title: `Udhar Reminder — ${customerName}`,
-      message: message || `Reminder: ₹${dueAmount?.toLocaleString('en-IN')} is due from ${customerName}`,
-      notificationType: 'udhar_reminder',
-      isRead: false,
-      link: '/udhar',
+      shopId: shop.id,
+      ownerId: user.uuid,
+      title: `Udhar Payment - ${customerName}`,
+      description: message || `Reminder: ₹${dueAmount?.toLocaleString('en-IN')} is due from ${customerName}`,
+      eventDate: scheduledAt,
+      eventType: 'udhar_reminder',
+      amount: dueAmount ? parseFloat(dueAmount.toString()) : null,
+      customerName: customerName,
+      status: 'pending',
+      reminderDays: 1, // Will notify 1 day before and on the day
     },
   });
 

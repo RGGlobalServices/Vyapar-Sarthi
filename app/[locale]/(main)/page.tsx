@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { planLabel } from '@/lib/planGates';
 import { useBusinessStore } from '@/lib/businessStore';
 import UpcomingEventsCard from '@/components/UpcomingEventsCard';
+import WholesaleWidgets from './WholesaleWidgets';
 
 const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   ssr: false,
@@ -52,18 +53,23 @@ function DashboardInner() {
     today_sales: 0,
     today_profit: 0,
     total_udhar: 0,
-    low_stock_count: 0
+    low_stock_count: 0,
+    returns_amount: 0,
+    returns_count: 0
   });
   const [data, setData] = useState<any>({
     salesTrend: [],
     lowStock: [],
     recentBills: [],
-    topProducts: []
+    topProducts: [],
+    fastMoving: [],
+    slowMoving: [],
+    returnsByReason: []
   });
   const [loading, setLoading] = useState(true);
   const [showProfit, setShowProfit] = useState(true);
 
-  const [timeframe, setTimeframe] = useState('Today');
+  const [timeframe, setTimeframe] = useState(t('today'));
   const [customDates, setCustomDates] = useState({ start: '', end: '' });
   const [appliedCustomDates, setAppliedCustomDates] = useState({ start: '', end: '' });
   const [showTopProductsModal, setShowTopProductsModal] = useState(false);
@@ -108,15 +114,15 @@ function DashboardInner() {
   const getDates = useCallback(() => {
     const end = new Date();
     let start = new Date();
-    if (timeframe === 'Last 7 Days') {
+    if (timeframe === t('last7Days')) {
       start.setDate(end.getDate() - 6);
-    } else if (timeframe === 'Weekly') {
+    } else if (timeframe === t('weekly')) {
       const day = end.getDay();
       const diff = end.getDate() - day + (day === 0 ? -6 : 1);
       start.setDate(diff);
-    } else if (timeframe === 'Monthly') {
+    } else if (timeframe === t('monthly')) {
       start.setDate(1); // Start of month
-    } else if (timeframe === 'Custom') {
+    } else if (timeframe === t('custom')) {
       if (appliedCustomDates.start && appliedCustomDates.end) {
         return { start_date: appliedCustomDates.start, end_date: appliedCustomDates.end };
       }
@@ -134,6 +140,39 @@ function DashboardInner() {
       end_date: formatDate(end) 
     };
   }, [timeframe, appliedCustomDates]);
+
+  const getDynamicTitle = (baseLabel: string) => {
+    const labelMap: Record<string, string> = {
+      'Sales': t('todaysSales').split(' ')[1] || 'Sales',
+      'Profit': t('todaysProfit').split(' ')[1] || 'Profit',
+      'Returns': t('todaysReturns').split(' ')[1] || 'Returns'
+    };
+    
+    // For today, we have exact translations like "आजची विक्री"
+    if (timeframe === t('today')) {
+      if (baseLabel === 'Sales') return t('todaysSales');
+      if (baseLabel === 'Profit') return t('todaysProfit');
+      if (baseLabel === 'Returns') return t('todaysReturns');
+      return `Today's ${baseLabel}`;
+    }
+
+    // For other timeframes, fallback to simple concatenation
+    const translatedLabel = labelMap[baseLabel] || baseLabel;
+    
+    if (timeframe === t('last7Days')) return `${t('last7Days')} ${translatedLabel}`;
+    if (timeframe === t('weekly')) return `${t('weekly')} ${translatedLabel}`;
+    if (timeframe === t('monthly')) return `${t('monthly')} ${translatedLabel}`;
+    if (timeframe === t('custom')) {
+      if (appliedCustomDates.start && appliedCustomDates.end) {
+        const d1 = new Date(appliedCustomDates.start);
+        const d2 = new Date(appliedCustomDates.end);
+        const diff = Math.max(1, Math.ceil((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        return `${diff} Days ${translatedLabel}`;
+      }
+      return `${t('custom')} ${translatedLabel}`;
+    }
+    return translatedLabel;
+  };
 
   const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
     const { start_date, end_date } = getDates();
@@ -165,12 +204,17 @@ function DashboardInner() {
         today_profit: payload.summary?.today_profit ?? 0,
         total_udhar: payload.summary?.total_udhar ?? 0,
         low_stock_count: payload.summary?.low_stock_count ?? 0,
+        returns_amount: payload.summary?.returns_amount ?? 0,
+        returns_count: payload.summary?.returns_count ?? 0,
       };
       const newData = {
         lowStock: payload.lowStock || [],
         recentBills: payload.recentBills || [],
         salesTrend: [],
         topProducts: payload.topProducts || [],
+        fastMoving: payload.fastMoving || [],
+        slowMoving: payload.slowMoving || [],
+        returnsByReason: payload.returnsByReason || [],
       };
       // Update cache
       _dashCache[cacheKey] = { stats: newStats, data: newData, ts: Date.now() };
@@ -223,6 +267,11 @@ function DashboardInner() {
       loadFullStockAlerts();
     }
   }, [showStockAlertsModal, fullStockAlerts.length]);
+
+  // Reset modal data when timeframe changes so it fetches fresh data
+  useEffect(() => {
+    setFullTopProducts([]);
+  }, [timeframe, appliedCustomDates]);
 
   useEffect(() => {
     initData(true, false);
@@ -293,12 +342,12 @@ function DashboardInner() {
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
-          <p className="text-slate-500 text-sm font-medium">Business health at a glance</p>
+          <p className="text-slate-500 text-sm font-medium">{t('businessHealth')}</p>
         </div>
         <div className="flex flex-col md:items-end gap-3 w-full md:w-auto">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full">
             <div className="flex flex-wrap gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              {['Today', 'Last 7 Days', 'Weekly', 'Monthly', 'Custom'].map(tf => (
+              {[t('today'), t('last7Days'), t('weekly'), t('monthly'), t('custom')].map(tf => (
                 <button 
                   key={tf} 
                   onClick={() => setTimeframe(tf)} 
@@ -321,10 +370,10 @@ function DashboardInner() {
               )}
             >
               {showProfit ? <EyeOff size={14} /> : <Eye size={14} />}
-              {showProfit ? 'Hide Profit' : 'Show Profit'}
+              {showProfit ? t('hideProfit') : t('showProfit')}
             </button>
           </div>
-          {timeframe === 'Custom' && (
+          {timeframe === t('custom') && (
             <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
               <input 
                 type="date" 
@@ -352,44 +401,56 @@ function DashboardInner() {
       </div>
 
       {/* Main Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard 
-          title={t('todaySales')} 
-          value={`₹ ${stats.today_sales.toLocaleString('en-IN')}`} 
+          title={getDynamicTitle('Sales')} 
+          value={`₹ ${Math.round(stats.today_sales).toLocaleString('en-IN')}`} 
           icon={<TrendingUp className="text-emerald-500" />} 
+          href="/reports"
         />
         {showProfit && (
           <StatCard 
-            title={t('todayProfit')} 
-            value={`₹ ${stats.today_profit.toLocaleString('en-IN')}`} 
+            title={getDynamicTitle('Profit')} 
+            value={`₹ ${Math.round(stats.today_profit).toLocaleString('en-IN')}`} 
             icon={<ShoppingCart className="text-indigo-500" />} 
+            href="/reports"
           />
         )}
         <StatCard 
           title={t('totalUdhar')} 
-          value={`₹ ${stats.total_udhar.toLocaleString('en-IN')}`} 
+          value={`₹ ${Math.round(stats.total_udhar).toLocaleString('en-IN')}`} 
           icon={<Wallet className="text-orange-500" />} 
+          href="/udhar"
         />
         <StatCard 
-          title={t('lowStock')} 
+          title={getDynamicTitle('Returns')} 
+          value={`₹ ${stats.returns_amount ? Math.round(stats.returns_amount).toLocaleString('en-IN') : '0'}`} 
+          icon={<RefreshCw className="text-purple-500" />} 
+          href="/returns"
+        />
+        <StatCard 
+          title={t('lowStockAlerts')} 
           value={stats.low_stock_count.toString()} 
           icon={<AlertTriangle className="text-red-500" />} 
+          href="/stock"
         />
       </div>
+
+      {data.wholesale && <WholesaleWidgets data={data.wholesale} />}
 
       {/* Upcoming calendar events */}
       <UpcomingEventsCard />
 
       {/* Bottom Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Top Products */}
+        {/* {t('topProducts')} */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <TrendingUp size={16} className="text-emerald-500 dark:text-emerald-400" /> Top Products
+              <TrendingUp size={16} className="text-emerald-500 dark:text-emerald-400" /> {t('topProducts')}
             </CardTitle>
             <button onClick={() => setShowTopProductsModal(true)} className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 px-3 py-1 rounded-full font-bold transition-colors">
-              All
+              {t('all')}
             </button>
           </CardHeader>
           <CardContent className="p-0 flex-1 overflow-y-auto">
@@ -403,7 +464,7 @@ function DashboardInner() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">₹{item.value.toLocaleString('en-IN')}</p>
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-500/80 font-bold">{item.qty} units</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-500/80 font-bold">{item.qty} {t('units')}</p>
                 </div>
               </div>
             )) : (
@@ -419,10 +480,10 @@ function DashboardInner() {
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <AlertTriangle size={16} className="text-red-500 dark:text-red-400" /> Stock Alerts
+              <AlertTriangle size={16} className="text-red-500 dark:text-red-400" /> {t('stockAlerts')}
             </CardTitle>
             <button onClick={() => setShowStockAlertsModal(true)} className="text-xs bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 px-3 py-1 rounded-full font-bold transition-colors">
-              All
+              {t('all')}
             </button>
           </CardHeader>
           <CardContent className="p-0">
@@ -438,7 +499,7 @@ function DashboardInner() {
               </div>
             )) : (
               <div className="py-10 text-center">
-                <p className="text-sm text-slate-500 font-medium tracking-tight">Stock levels are healthy</p>
+                <p className="text-sm text-slate-500 font-medium tracking-tight">{t('stockHealthy')}</p>
               </div>
             )}
           </CardContent>
@@ -448,10 +509,10 @@ function DashboardInner() {
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <IndianRupee size={16} className="text-indigo-500 dark:text-indigo-400" /> Recent Invoices
+              <IndianRupee size={16} className="text-indigo-500 dark:text-indigo-400" /> {t('recentInvoices')}
             </CardTitle>
             <Link href="/billing/invoices" className="text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 px-3 py-1 rounded-full font-bold transition-colors">
-              All
+              {t('all')}
             </Link>
           </CardHeader>
           <CardContent className="p-0">
@@ -463,9 +524,16 @@ function DashboardInner() {
               >
                 <div>
                   <p className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tighter group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    {bill.invoice_number || `INV-${bill.id.substring(0, 6)}`}
+                    {bill.customer_name || 'Walk-in Customer'}
                   </p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{bill.payment_type}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                      {bill.invoice_number || `INV-${bill.id.substring(0, 6)}`}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                      {bill.payment_type}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-black text-slate-900 dark:text-slate-100">
@@ -483,14 +551,125 @@ function DashboardInner() {
         </Card>
       </div>
 
-      {/* Top Products Modal */}
+      {/* Second Row: Fast & {t('slowMovingItems')} */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* {t('fastMovingItems')} */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+              <Sparkles size={16} className="text-blue-500 dark:text-blue-400" /> {t('fastMovingItems')}
+            </CardTitle>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('topByVolume')}</span>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 overflow-y-auto max-h-[350px]">
+            {data.fastMoving?.length > 0 ? data.fastMoving.map((item: any, idx: number) => (
+              <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                <div>
+                  <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center gap-1">
+                    {item.name}
+                  </Link>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{item.category}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">{item.qty} {t('units')}</p>
+                  <p className="text-[10px] text-blue-600 dark:text-blue-500/80 font-bold">₹{item.value.toLocaleString('en-IN')} rev</p>
+                </div>
+              </div>
+            )) : (
+              <div className="py-12 flex flex-col items-center justify-center text-center">
+                <Package size={24} className="text-slate-400 dark:text-slate-700 mb-2" />
+                <p className="text-sm text-slate-500 font-medium tracking-tight">No fast moving items found</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* {t('slowMovingItems')} */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+              <Package size={16} className="text-orange-500 dark:text-orange-400" /> {t('slowMovingItems')}
+            </CardTitle>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('needAttention')}</span>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 overflow-y-auto max-h-[350px]">
+            {data.slowMoving?.length > 0 ? data.slowMoving.map((item: any, idx: number) => (
+              <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                <div>
+                  <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors flex items-center gap-1">
+                    {item.name}
+                  </Link>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{item.category}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    {item.qty === 0 ? <span className="text-red-500">0 {t('unitsSold')}</span> : `${item.qty} {t('unitsSold')}`}
+                  </p>
+                  <p className="text-[10px] text-orange-600 dark:text-orange-500/80 font-bold">{item.current_stock} {t('inStock')}</p>
+                </div>
+              </div>
+            )) : (
+              <div className="py-12 flex flex-col items-center justify-center text-center">
+                <CheckCircle size={24} className="text-emerald-400 dark:text-emerald-700 mb-2" />
+                <p className="text-sm text-slate-500 font-medium tracking-tight">No slow moving items found</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Third Row: Returns Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col lg:col-span-2">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+              <RefreshCw size={16} className="text-purple-500 dark:text-purple-400" /> {t('materialReturns')} ({getDynamicTitle('').trim()})
+            </CardTitle>
+            <Link href="/returns" className="text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 px-3 py-1 rounded-full font-bold transition-colors">
+              {t('manageReturns')}
+            </Link>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 overflow-y-auto max-h-[350px]">
+            {data.returnsByReason?.length > 0 ? (
+              <div className="p-6">
+                <div className="flex flex-col gap-4">
+                  {data.returnsByReason.map((item: any, idx: number) => {
+                    const percent = Math.round((item.amount / (stats.returns_amount || 1)) * 100);
+                    return (
+                      <div key={idx} className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm font-bold text-slate-900 dark:text-slate-100 capitalize">{item.reason}</span>
+                            <span className="text-xs font-bold text-slate-500">{percent}% (₹{item.amount.toLocaleString('en-IN')})</span>
+                          </div>
+                          <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2">
+                            <div className="bg-purple-500 h-2 rounded-full" style={{ width: `${percent}%` }}></div>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">{item.count} items returned for this reason</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="py-12 flex flex-col items-center justify-center text-center">
+                <CheckCircle size={24} className="text-emerald-400 dark:text-emerald-700 mb-2" />
+                <p className="text-sm text-slate-500 font-medium tracking-tight">{t('noReturns')}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* {t('topProducts')} Modal */}
       {showTopProductsModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 rounded-t-2xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 shrink-0">
               <div>
                 <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <TrendingUp className="text-emerald-500" /> All Top Selling Products
+                  <TrendingUp className="text-emerald-500" /> {t('all')} {t('topProducts')}
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Sorted by highest revenue ({timeframe})</p>
               </div>
@@ -560,11 +739,11 @@ function DashboardInner() {
       {/* Stock Alerts Modal */}
       {showStockAlertsModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 rounded-t-2xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 shrink-0">
               <div>
                 <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <AlertTriangle className="text-red-500" /> All Stock Alerts
+                  <AlertTriangle className="text-red-500" /> {t('all')} {t('stockAlerts')}
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Items that have reached minimum stock levels</p>
               </div>
@@ -656,9 +835,9 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
-  return (
-    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 border-b-slate-200 dark:border-b-slate-800 hover:border-emerald-500/50 transition-all duration-300">
+function StatCard({ title, value, icon, href }: { title: string; value: string; icon: React.ReactNode; href?: string }) {
+  const card = (
+    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 border-b-slate-200 dark:border-b-slate-800 hover:border-emerald-500/50 transition-all duration-300 cursor-pointer h-full">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{title}</CardTitle>
         {icon}
@@ -668,4 +847,10 @@ function StatCard({ title, value, icon }: { title: string; value: string; icon: 
       </CardContent>
     </Card>
   );
+  
+  return href ? (
+    <Link href={href as any} className="block group">
+      {card}
+    </Link>
+  ) : card;
 }

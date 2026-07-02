@@ -185,16 +185,16 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
             <div className="space-y-3 pt-2">
               <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                 <span className="text-sm text-slate-400 font-medium">Selling Price</span>
-                <span className="text-sm font-bold text-white">₹{product.price.toLocaleString('en-IN')}</span>
+                <span className="text-sm font-bold text-white">₹{(product.price || product.sellingPrice || 0).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                 <span className="text-sm text-slate-400 font-medium">Wholesale Cost</span>
-                <span className="text-sm font-bold text-amber-400">₹{product.cost.toLocaleString('en-IN')}</span>
+                <span className="text-sm font-bold text-amber-400">₹{(product.cost || product.wholesaleCost || 0).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-400 font-medium">Profit Margin</span>
                 <span className="text-sm font-bold text-emerald-400">
-                  {product.cost > 0 ? (((product.price - product.cost) / product.cost) * 100).toFixed(1) : 0}%
+                  {(product.cost || product.wholesaleCost) > 0 ? ((((product.price || product.sellingPrice || 0) - (product.cost || product.wholesaleCost || 0)) / (product.cost || product.wholesaleCost || 1)) * 100).toFixed(1) : 0}%
                 </span>
               </div>
             </div>

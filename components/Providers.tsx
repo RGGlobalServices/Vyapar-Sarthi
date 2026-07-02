@@ -1,5 +1,6 @@
 'use client';
 import { NextIntlClientProvider } from 'next-intl';
+import { ThemeProvider } from 'next-themes';
 import { useEffect } from 'react';
 
 export default function Providers({
@@ -27,8 +28,10 @@ export default function Providers({
   }, []);
 
   return (
-    <NextIntlClientProvider locale={locale} messages={messages} timeZone={timeZone ?? 'Asia/Kolkata'}>
-      {children}
-    </NextIntlClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <NextIntlClientProvider locale={locale} messages={messages} timeZone={timeZone ?? 'Asia/Kolkata'}>
+        {children}
+      </NextIntlClientProvider>
+    </ThemeProvider>
   );
 }

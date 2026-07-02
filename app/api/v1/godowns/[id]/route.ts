@@ -1,6 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
-import { dbGodown } from '@/lib/server/godowns';
+import { dbGodown, ensureGodownTables } from '@/lib/server/godowns';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -12,6 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const GET = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
+  await ensureGodownTables();
   const godown = await dbGodown(id, shop.id);
   if (!godown) throw new ApiError(404, 'Godown not found');
   return json(godown);
@@ -22,6 +23,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
   const { name, location } = await readBody(req);
+  await ensureGodownTables();
   const rows = (await prisma.$queryRaw`
     UPDATE godowns
     SET name     = COALESCE(${name?.trim() ?? null}, name),
