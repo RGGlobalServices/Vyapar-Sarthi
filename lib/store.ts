@@ -71,7 +71,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
 // ─── Cart Store ─────────────────────────────────────────────────────────────
 
 export interface CartItem {
-  id: number;
+  id: string | number;
   name: string;
   unit: string;
   quantity: number;
@@ -85,15 +85,15 @@ export interface CartItem {
 interface CartStore {
   items: CartItem[];
   addItem: (item: CartItem) => void;
-  removeItem: (id: number, variant?: string) => void;
-  updateQuantity: (id: number, quantity: number, variant?: string) => void;
-  updatePrice: (id: number, price: number, variant?: string) => void;
+  removeItem: (id: string | number, variant?: string) => void;
+  updateQuantity: (id: string | number, quantity: number, variant?: string) => void;
+  updatePrice: (id: string | number, price: number, variant?: string) => void;
   clearCart: () => void;
 }
 
 // A cart line is uniquely identified by product id + unit + variant (size),
 // so the same product can sit in the cart at multiple sizes/prices at once.
-const sameLine = (i: CartItem, id: number, variant?: string) =>
+const sameLine = (i: CartItem, id: string | number, variant?: string) =>
   i.id === id && (variant === undefined || (i.variant ?? undefined) === (variant ?? undefined));
 
 export const useCartStore = create<CartStore>((set) => ({

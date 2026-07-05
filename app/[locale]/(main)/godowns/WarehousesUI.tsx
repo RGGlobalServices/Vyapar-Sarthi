@@ -438,14 +438,14 @@ export default function WarehousesUI() {
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('fromWarehouse')}</label>
                   <select required className={inp} value={transfer.fromId} onChange={e => setTransfer({...transfer, fromId: e.target.value, productId: ''})}>
                     <option value="">{t('selectSource')}</option>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    {warehouses.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('toWarehouse')}</label>
                   <select required className={inp} value={transfer.toId} onChange={e => setTransfer({...transfer, toId: e.target.value})}>
                     <option value="">{t('selectDestination')}</option>
-                    {warehouses.filter(w => w.id !== transfer.fromId).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    {warehouses.filter((w: any) => w.id !== transfer.fromId).map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                 </div>
                 {transfer.fromId && (
@@ -453,7 +453,7 @@ export default function WarehousesUI() {
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('selectProduct')}</label>
                     <select required className={inp} value={transfer.productId} onChange={e => setTransfer({...transfer, productId: e.target.value})}>
                       <option value="">{t('selectProductTransfer')}</option>
-                      {(warehouses.find(w => w.id === transfer.fromId)?.inventory || []).map((i: any) => (
+                      {(warehouses.find((w: any) => w.id === transfer.fromId)?.inventory || []).map((i: any) => (
                         <option key={i.product?.id} value={i.product?.id}>{i.product?.name} ({t('available')}: {i.quantity})</option>
                       ))}
                     </select>
@@ -506,7 +506,7 @@ export default function WarehousesUI() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {warehouses.map(w => {
+        {warehouses.map((w: any) => {
           const stats = calculateStats(w);
           return (
             <Card key={w.id} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-all cursor-pointer group shadow-sm" onClick={() => setSelected(w)}>

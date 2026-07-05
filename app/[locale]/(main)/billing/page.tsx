@@ -96,7 +96,7 @@ const CartPriceInputRetail = ({ item, updatePrice }: any) => {
   );
 };
 
-export function StandardBillingUI() {
+function StandardBillingUI() {
   const t = useTranslations('Billing');
   const tBill = useTranslations('BillSlip');
   const tP = useTranslations('Products');
