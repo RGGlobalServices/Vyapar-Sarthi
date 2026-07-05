@@ -41,7 +41,7 @@ export const POST = handle(async (req) => {
       }
     });
 
-    if (shop.subscriptionPlan === 'wholesale') {
+    if (shop.subscriptionPlan === 'wholesale' && saleItem.productId) {
       const latestBatch = await prisma.batch.findFirst({
         where: { productId: saleItem.productId, shopId: shop.id },
         orderBy: { createdAt: 'desc' }

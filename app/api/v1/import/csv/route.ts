@@ -78,8 +78,7 @@ export async function POST(req: Request) {
             name: row.name,
             brand: row.brand || null,
             category: row.category || null,
-            sku: row.sku || null,
-            barcode: row.barcode || null,
+            barcode: row.barcode || row.sku || null,
             hsnCode: row.hsnCode || null,
             gstPercent: row.gstPercent ? parseFloat(row.gstPercent) : 0,
             mrp: row.mrp ? parseFloat(row.mrp) : 0,
@@ -114,7 +113,7 @@ export async function POST(req: Request) {
     } else if (type === 'stock') {
       for (const row of data) {
         if (!row.productSku || !row.quantity) continue;
-        const product = await prisma.product.findFirst({ where: { shopId: shop.id, sku: row.productSku } });
+        const product = await prisma.product.findFirst({ where: { shopId: shop.id, barcode: row.productSku } });
         if (!product) continue;
         
         await prisma.batch.create({
@@ -153,20 +152,19 @@ export async function POST(req: Request) {
             supplierId: supplier?.id || '',
             invoiceNumber: row.invoiceNumber || null,
             date: row.date ? new Date(row.date) : new Date(),
-            totalAmount: row.totalAmount ? parseFloat(row.totalAmount) : 0,
-            paymentType: row.paymentType || 'Cash',
+            totalCost: row.totalAmount ? parseFloat(row.totalAmount) : 0,
           }
         });
 
         for (const item of items) {
-          const product = await prisma.product.findFirst({ where: { shopId: shop.id, sku: item.productSku } });
+          const product = await prisma.product.findFirst({ where: { shopId: shop.id, barcode: item.productSku } });
           if (product) {
-            await prisma.purchaseInvoiceItem.create({
+            await prisma.purchaseItem.create({
               data: {
-                invoiceId: invoice.id,
+                purchaseInvoiceId: invoice.id,
                 productId: product.id,
                 quantity: item.qty,
-                costPrice: item.cost,
+                cost: item.cost,
               }
             });
             // Update stock and batch

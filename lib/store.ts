@@ -356,6 +356,7 @@ interface StockStore {
   toggleArchive: (id: number | string) => Promise<void>;
   adjustStock: (id: number | string, delta: number, note: string, pricing?: any) => Promise<void>;
   mergeFromImport: (items: any[], date: string) => Promise<void>;
+  mergePurchaseBill: (items: any[], date: string, vendorName: string) => Promise<void>;
   clearLog: () => void;
 }
 
@@ -586,6 +587,39 @@ export const useStockStore = create<StockStore>((set, get) => ({
     }
   },
 
+  mergePurchaseBill: async (importedItems, date, vendorName) => {
+    for (const item of importedItems) {
+      if (!item.productName || !item.quantity) continue;
+      
+      const existing = get().items.find(i => i.name.toLowerCase() === item.productName.toLowerCase());
+      if (existing) {
+        await get().adjustStock(existing.id, Number(item.quantity), `Purchase Bill from ${vendorName}`, {
+          cost: Number(item.wholesaleCost) || existing.cost,
+          sellingPrice: Number(item.suggestedSellingPrice) || existing.sellingPrice,
+        });
+      } else {
+        await get().addItem({
+          name: item.productName,
+          category: item.category || 'Imported Purchase',
+          current: Number(item.quantity),
+          min: 10,
+          unit: item.unit || 'Unit',
+          mrp: Number(item.suggestedSellingPrice) || 0,
+          sellingPrice: Number(item.suggestedSellingPrice) || 0,
+          cost: Number(item.wholesaleCost) || 0,
+          expiry_date: item.expiryDate || null,
+          gender: item.gender || null,
+          shade: item.shade || null,
+          size_variants: item.size_variants || null,
+          batch_number: item.batch_number || null,
+          drug_schedule: item.drug_schedule || null,
+          model_number: item.model_number || null,
+          warranty_months: item.warranty_months ? Number(item.warranty_months) : null,
+        });
+      }
+    }
+  },
+
   clearLog: () => set({ log: [] }),
 }));
 
@@ -623,10 +657,14 @@ export interface ImportedStockEntry {
   unit?: string;
   price: number;
   expiryDate?: string;
+  wholesaleCost?: number;
+  mrp?: number;
+  sellingPrice?: number;
 }
 
 export interface ImportedSaleEntry {
   date?: string;
+  endDate?: string;
   totalAmount: number;
   paymentMethod?: string;
   note?: string;

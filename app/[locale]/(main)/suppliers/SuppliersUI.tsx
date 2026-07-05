@@ -69,7 +69,7 @@ export default function SuppliersUI() {
     }
   };
 
-  const filteredSuppliers = suppliers.filter(s => 
+  const filteredSuppliers = suppliers.filter((s: any) => 
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || 
     (s.gst && s.gst.toLowerCase().includes(search.toLowerCase()))
   );
@@ -123,7 +123,7 @@ export default function SuppliersUI() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredSuppliers.map(s => (
+                {filteredSuppliers.map((s: any) => (
                   <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="px-5 py-4">
                       <p className="font-bold text-slate-900 dark:text-white text-base mb-1">{s.name}</p>

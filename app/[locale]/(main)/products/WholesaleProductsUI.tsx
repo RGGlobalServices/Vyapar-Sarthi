@@ -85,7 +85,7 @@ export default function WholesaleProductsUI() {
 
   const emptyProduct = buildEmptyProduct(profile.businessType);
   
-  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR('/products', fetcher);
+  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<WholesaleProduct[]>('/products', fetcher);
 
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -109,7 +109,7 @@ export default function WholesaleProductsUI() {
     if (selectedIds.length === filteredProducts.length && filteredProducts.length > 0) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredProducts.map(p => p.id));
+      setSelectedIds(filteredProducts.map((p: any) => p.id));
     }
   };
 

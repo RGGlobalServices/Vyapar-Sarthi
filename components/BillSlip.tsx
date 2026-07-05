@@ -248,14 +248,14 @@ export function generateWhatsAppText(bill: {
   }
 
   if (bill.pdfUrl) {
-    lines.push('');
-    lines.push(`📄 *View/Download PDF Bill:*`);
-    lines.push(bill.pdfUrl);
+    parts.push('');
+    parts.push(`📄 *View/Download PDF Bill:*`);
+    parts.push(bill.pdfUrl);
   }
 
-  lines.push('');
-  lines.push('_Thank you for shopping!_');
-  lines.push('_Powered by Vyapar Sarthi_');
+  parts.push('');
+  parts.push('_Thank you for shopping!_');
+  parts.push('_Powered by Vyapar Sarthi_');
 
-  return lines.join('\n');
+  return parts.join('\n');
 }

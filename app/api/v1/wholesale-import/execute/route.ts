@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
           const barcode = row.Barcode || row.barcode;
           if (!name) { skipped++; continue; }
 
-          let matchId = null;
+          let matchId: string | null = null;
           if (barcode) {
             const exactMatch = existingProducts.find(p => p.barcode === String(barcode));
             if (exactMatch) matchId = exactMatch.id;
@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
           const cost = parseFloat(row['Cost Price'] || row.wholesaleCost || row.cost || 0);
           const mrp = parseFloat(row.MRP || row.mrp || price);
           const category = row.Category || row.category || 'General';
+          const quantity = parseFloat(row.Quantity || row.quantity || row.stock || 0);
 
           if (matchId) {
             await prisma.product.update({
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
             });
             updated++;
           } else {
-            await prisma.product.create({
+            const newProd = await prisma.product.create({
               data: {
                 shopId,
                 name: String(name),
@@ -69,10 +70,11 @@ export async function POST(req: NextRequest) {
                 baseUnit: row.Unit || row.unit || 'pcs'
               }
             });
+            matchId = newProd.id;
             created++;
           }
 
-          if (godownId && quantity > 0) {
+          if (godownId && quantity > 0 && matchId) {
             const existingGodownProd = await prisma.godownProduct.findUnique({
               where: { godownId_productId: { godownId, productId: matchId } }
             });
@@ -174,7 +176,7 @@ export async function POST(req: NextRequest) {
           
           if (!name || quantity <= 0) { skipped++; continue; }
 
-          let matchId = null;
+          let matchId: string | null = null;
           const barcode = row.barcode || row.sku;
           if (barcode) {
              const exact = existingProducts.find(p => p.barcode === String(barcode));
@@ -214,7 +216,7 @@ export async function POST(req: NextRequest) {
             updated++;
           }
 
-          if (godownId) {
+          if (godownId && matchId) {
             const existingGodownProd = await prisma.godownProduct.findUnique({
               where: { godownId_productId: { godownId, productId: matchId } }
             });

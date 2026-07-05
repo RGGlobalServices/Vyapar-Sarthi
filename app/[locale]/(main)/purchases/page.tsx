@@ -153,7 +153,7 @@ export default function PurchasesPage() {
                       <select required value={supplierId} onChange={e => setSupplierId(e.target.value)}
                         className="flex-1 px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
                           <option value="">{t('selectSupplier') || 'Select Supplier'}</option>
-                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                       <button type="button" onClick={() => setIsAddingSupplier(true)} className="px-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">+</button>
                     </div>
@@ -164,7 +164,7 @@ export default function PurchasesPage() {
                   <select required value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
                     <option value="">{t('selectWarehouse') || 'Select Warehouse'}</option>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    {warehouses.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -196,7 +196,7 @@ export default function PurchasesPage() {
                         setItems(newItems);
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
                         <option value="">{t('selectProduct') || 'Select Product...'}</option>
-                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                     <div className="w-24">
@@ -286,7 +286,7 @@ export default function PurchasesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {invoices.map((inv) => (
+                {invoices.map((inv: any) => (
                   <tr key={inv.id} onClick={() => setSelectedInvoice(inv)} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer">
                     <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">{new Date(inv.date).toLocaleDateString('en-IN')}</td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400 font-mono text-xs">{inv.invoiceNumber || '-'}</td>
@@ -350,7 +350,7 @@ export default function PurchasesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {selectedInvoice.purchaseItems?.map((item) => (
+                    {selectedInvoice.purchaseItems?.map((item: any) => (
                       <tr key={item.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="px-4 py-3 text-slate-900 dark:text-slate-200 font-bold">{item.product?.name}</td>
                         <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.quantity}</td>

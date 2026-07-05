@@ -18,7 +18,7 @@ export async function GET(req: Request) {
       // Stock Valuation
       prisma.product.findMany({
         where: { shopId: shop.id, currentStock: { gt: 0 } },
-        select: { id: true, name: true, sku: true, currentStock: true, wholesaleCost: true },
+        select: { id: true, name: true, barcode: true, currentStock: true, wholesaleCost: true },
         orderBy: { currentStock: 'desc' },
       }),
 

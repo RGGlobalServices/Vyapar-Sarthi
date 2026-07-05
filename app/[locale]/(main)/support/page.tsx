@@ -4,7 +4,10 @@ import { SUPPORT_URL } from '@/lib/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HelpCircle, Mail, MessageCircle, ExternalLink } from 'lucide-react';
 
+import { useTranslations } from 'next-intl';
+
 export default function SupportPage() {
+  const t = useTranslations('Support');
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center gap-3">

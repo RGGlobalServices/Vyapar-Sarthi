@@ -108,7 +108,7 @@ function LegacyProductsUI() {
     setMounted(true);
   }, []);
 
-  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR('/products', fetchProductsMapped);
+  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<Product[]>('/products', fetchProductsMapped);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -853,7 +853,7 @@ function LegacyProductsUI() {
                   <tr>
                     <td className="px-6 py-3 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
                     <td className="px-6 py-3 text-right text-amber-500 dark:text-amber-400 font-bold text-base" colSpan={2}>
-                      ₹{filtered.reduce((sum, p) => {
+                      ₹{filtered.reduce((sum: number, p: any) => {
                         const sizeVariants = parseSizeVariants(p.size_variants);
                         const sizePriceData = parseSizePrices(p.metadata);
                         const hasPerSizePricing = Object.keys(sizePriceData).length > 0;

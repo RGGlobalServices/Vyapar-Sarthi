@@ -142,7 +142,7 @@ export const GET = handle(async (req) => {
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
 
-  const payload = {
+  const payload: any = {
     summary: {
       today_sales: salesAndProfit._sum.totalAmount || 0,
       today_profit: salesAndProfit._sum.totalProfit || 0,

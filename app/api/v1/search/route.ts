@@ -19,14 +19,14 @@ export async function GET(req: Request) {
     
     // Build optimized OR conditions to prevent full-table sequential scans
     // Multiple ILIKE (contains/mode:insensitive) conditions are extremely slow.
-    const productOr = [{ name: { contains: q, mode: 'insensitive' } }];
+    const productOr: any[] = [{ name: { contains: q, mode: 'insensitive' } }];
     if (isNumeric) productOr.push({ barcode: { startsWith: q } });
 
-    const supplierOr = [{ name: { contains: q, mode: 'insensitive' } }];
+    const supplierOr: any[] = [{ name: { contains: q, mode: 'insensitive' } }];
     if (isNumeric) supplierOr.push({ mobile: { startsWith: q } });
     else supplierOr.push({ gst: { startsWith: q, mode: 'insensitive' } });
 
-    const customerOr = [{ name: { contains: q, mode: 'insensitive' } }];
+    const customerOr: any[] = [{ name: { contains: q, mode: 'insensitive' } }];
     if (isNumeric) customerOr.push({ mobile: { startsWith: q } });
 
     const [products, suppliers, customers] = await Promise.all([

@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 
     for (const shop of shops) {
       if (!shop.ownerId) continue;
-      const ownerId = shop.ownerId; // Assign to the shop owner
+      const ownerId = shop.ownerId as string; // Assign to the shop owner
 
       // 1. Low Stock Alerts
       const lowStockProducts = await prisma.product.findMany({
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
           where: {
             userId: ownerId,
             notificationType: 'LOW_STOCK',
-            title: { contains: p.name },
+            title: { contains: p.name || '' },
             createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // last 24h
           }
         });
@@ -44,8 +44,8 @@ export async function GET(req: Request) {
           await prisma.userNotification.create({
             data: {
               userId: ownerId,
-              title: `Low Stock: ${p.name}`,
-              message: `Your stock for ${p.name} has dropped to ${p.currentStock}. Please restock.`,
+              title: `Low Stock: ${p.name || 'Product'}`,
+              message: `Your stock for ${p.name || 'this product'} has dropped to ${p.currentStock}. Please restock.`,
               notificationType: 'LOW_STOCK',
               isRead: false,
               link: `/products/${p.id}`
@@ -70,7 +70,7 @@ export async function GET(req: Request) {
           where: {
             userId: ownerId,
             notificationType: 'BATCH_EXPIRY',
-            title: { contains: b.product.name },
+            title: { contains: b.product?.name || '' },
             createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // every 7 days
           }
         });

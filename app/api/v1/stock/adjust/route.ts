@@ -46,7 +46,6 @@ export async function POST(req: Request) {
           warehouseId,
           type: 'adjustment',
           quantity: Math.abs(difference),
-          note: `${reason ? reason + ' - ' : ''}${notes || ''}`.trim(),
           referenceId: null,
         },
       });
