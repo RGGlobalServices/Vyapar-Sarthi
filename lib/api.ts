@@ -160,7 +160,14 @@ const api = {
     request(url, { ...config, method: 'PUT', body: data instanceof FormData ? data : JSON.stringify(data) }),
   patch: (url: string, data: any, config: any = {}) =>
     request(url, { ...config, method: 'PATCH', body: data instanceof FormData ? data : JSON.stringify(data) }),
-  delete: (url: string, config: any = {}) => request(url, { ...config, method: 'DELETE' }),
+  delete: (url: string, config: any = {}) => {
+    const fetchConfig = { ...config, method: 'DELETE' };
+    if (config.data) {
+      fetchConfig.body = config.data instanceof FormData ? config.data : JSON.stringify(config.data);
+      delete fetchConfig.data;
+    }
+    return request(url, fetchConfig);
+  },
 };
 
 export default api;
