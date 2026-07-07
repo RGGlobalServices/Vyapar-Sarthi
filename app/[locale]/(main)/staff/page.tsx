@@ -102,10 +102,15 @@ export default function StaffPage() {
                   </div>
                   <div>
                     <h3 className="font-black text-slate-900 dark:text-white text-base group-hover:text-indigo-500 transition-colors">{staff.name}</h3>
-                    <p className="text-xs font-bold text-slate-500 flex items-center gap-2 mt-0.5">
-                      <span>{staff.mobile}</span>
+                    <p className="text-xs font-bold text-slate-500 flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-slate-600 dark:text-slate-400">{staff.mobile}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-                      <span className="uppercase tracking-wider text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400">{staff.salaryType}</span>
+                      <span className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold">
+                        {staff.role || 'Other'}
+                      </span>
+                      <span className="uppercase tracking-wider text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 font-bold">
+                        {staff.salaryType}
+                      </span>
                     </p>
                   </div>
                 </div>

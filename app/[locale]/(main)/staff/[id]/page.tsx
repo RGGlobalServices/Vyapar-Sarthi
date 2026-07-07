@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
 import api from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { User, Phone, MapPin, CreditCard, HeartPulse, Camera, Save, Trash2, IndianRupee, Calculator, ChevronLeft } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, ExternalLink } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 
@@ -13,15 +13,21 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   const isNew = resolvedParams.id === 'new';
   const router = useRouter();
 
+  const [activeTab, setActiveTab] = useState<'profile' | 'attendance' | 'salary'>('profile');
+  
   const [form, setForm] = useState({
     name: '',
     mobile: '',
     address: '',
     idProof: '',
     emergencyContact: '',
+    role: 'Other',
+    joiningDate: new Date().toISOString().split('T')[0],
     salaryType: 'monthly',
     salaryAmount: '',
-    photoUrl: ''
+    photoUrl: '',
+    bankAccount: { accNo: '', ifsc: '', upi: '' },
+    documents: {} as Record<string, string>
   });
 
   const [loading, setLoading] = useState(!isNew);
@@ -30,30 +36,43 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
 
   // Salary calc state
   const [calcMonth, setCalcMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [calcData, setCalcData] = useState({ baseAmount: 0, deductions: 0, bonus: { Performance: 0, Diwali: 0 }, netAmount: 0 });
+  const [calcData, setCalcData] = useState({ baseAmount: 0, deductions: 0, bonus: { Performance: 0, Diwali: 0 }, netAmount: 0, paymentMode: 'Cash' });
   const [salaryHistory, setSalaryHistory] = useState<any[]>([]);
+
+  // Attendance state
+  const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [markingAtt, setMarkingAtt] = useState(false);
 
   useEffect(() => {
     if (!isNew) {
       loadStaff();
-      loadSalaryHistory();
+      if (activeTab === 'salary') loadSalaryHistory();
+      if (activeTab === 'attendance') loadAttendance();
     }
-  }, [isNew, resolvedParams.id]);
+  }, [isNew, resolvedParams.id, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'attendance') loadAttendance();
+  }, [attendanceMonth]);
 
   async function loadStaff() {
     try {
       const res = await api.get(`/staff/${resolvedParams.id}`);
       setForm({
-        name: res.data.name,
-        mobile: res.data.mobile,
+        name: res.data.name || '',
+        mobile: res.data.mobile || '',
         address: res.data.address || '',
         idProof: res.data.idProof || '',
         emergencyContact: res.data.emergencyContact || '',
-        salaryType: res.data.salaryType,
-        salaryAmount: res.data.salaryAmount.toString(),
-        photoUrl: res.data.photoUrl || ''
+        role: res.data.role || 'Other',
+        joiningDate: res.data.joiningDate ? new Date(res.data.joiningDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        salaryType: res.data.salaryType || 'monthly',
+        salaryAmount: res.data.salaryAmount?.toString() || '',
+        photoUrl: res.data.photoUrl || '',
+        bankAccount: res.data.bankAccount || { accNo: '', ifsc: '', upi: '' },
+        documents: res.data.documents || {}
       });
-      // Set base amount for calculator
       setCalcData(prev => ({ ...prev, baseAmount: res.data.salaryAmount, netAmount: res.data.salaryAmount }));
     } catch (e) {
       console.error(e);
@@ -67,6 +86,15 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     try {
       const res = await api.get(`/staff/${resolvedParams.id}/salary?month=all`);
       setSalaryHistory(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function loadAttendance() {
+    try {
+      const res = await api.get(`/staff/${resolvedParams.id}/attendance?monthYear=${attendanceMonth}`);
+      setAttendanceRecords(res.data);
     } catch (e) {
       console.error(e);
     }
@@ -111,12 +139,28 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         baseAmount: calcData.baseAmount,
         deductions: calcData.deductions,
         bonus: calcData.bonus,
-        netAmount: calcData.netAmount
+        netAmount: calcData.netAmount,
+        paymentMode: calcData.paymentMode
       });
       alert('Salary marked as paid!');
       loadSalaryHistory();
     } catch (e) {
       alert('Failed to pay salary');
+    }
+  }
+
+  async function markAttendance(status: string) {
+    setMarkingAtt(true);
+    try {
+      await api.post(`/staff/${resolvedParams.id}/attendance`, {
+        date: new Date().toISOString().split('T')[0],
+        status
+      });
+      loadAttendance();
+    } catch (e) {
+      alert('Failed to mark attendance');
+    } finally {
+      setMarkingAtt(false);
     }
   }
 
@@ -136,142 +180,194 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
-      <Link href="/staff" className="flex items-center gap-1 text-sm font-bold text-slate-500 hover:text-indigo-500 transition-colors w-max">
-        <ChevronLeft size={16} /> Back to Staff
-      </Link>
-
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Profile Card */}
-        <div className="md:w-1/3 flex flex-col gap-6">
-          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col items-center p-6">
-            <div className="relative group">
-              <div className="w-32 h-32 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center border-4 border-white dark:border-slate-900 shadow-xl">
-                {form.photoUrl ? (
-                  <img src={form.photoUrl} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <User size={48} className="text-slate-400" />
-                )}
-              </div>
-              <button className="absolute bottom-0 right-0 p-2.5 bg-indigo-500 text-white rounded-full shadow-lg hover:bg-indigo-600 transition-transform hover:scale-110" onClick={() => {
-                const url = prompt("Enter photo URL (In a real app, this would be an image upload dialog)");
-                if (url !== null) setForm({ ...form, photoUrl: url });
-              }}>
-                <Camera size={16} />
-              </button>
-            </div>
-            
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mt-4 text-center">{form.name || 'New Staff'}</h2>
-            <p className="text-sm font-bold text-indigo-500 bg-indigo-500/10 px-3 py-1 rounded-full mt-2 uppercase tracking-wider">{form.salaryType} • ₹{form.salaryAmount}</p>
-          </Card>
+    <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
+      <div className="flex items-center gap-4">
+        <Link href="/staff" className="w-10 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-indigo-500 transition-colors shadow-sm">
+          <ChevronLeft size={24} />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">{form.name}</h1>
+          <p className="text-sm font-medium text-slate-500">{form.role} • {form.mobile}</p>
         </div>
+      </div>
 
-        {/* Details Form */}
-        <div className="md:w-2/3 flex flex-col gap-6">
-          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl p-6">
+      {!isNew && (
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto">
+          {['profile', 'attendance', 'salary'].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab as any)} className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-colors capitalize whitespace-nowrap px-4", activeTab === tab ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700")}>
+              {tab}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* --- PROFILE TAB --- */}
+      {activeTab === 'profile' && (
+        <div className="space-y-6">
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4 md:p-6">
             <h3 className="font-bold text-slate-900 dark:text-white mb-4">Personal Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><User size={14} /> Full Name</label>
-                <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder="e.g. Rahul Kumar" />
+                <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Phone size={14} /> Mobile Number</label>
-                <input type="text" value={form.mobile} onChange={e => setForm({...form, mobile: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder="10-digit mobile" />
+                <input type="text" value={form.mobile} onChange={e => setForm({...form, mobile: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><MapPin size={14} /> Address</label>
-                <input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder="Full address" />
+                <input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><CreditCard size={14} /> ID Proof (Govt ID)</label>
-                <input type="text" value={form.idProof} onChange={e => setForm({...form, idProof: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder="Aadhar / PAN" />
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Briefcase size={14} /> Role</label>
+                <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
+                  {['Salesman', 'Helper', 'Cashier', 'Warehouse Staff', 'Delivery Boy', 'Other'].map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><HeartPulse size={14} /> Emergency Contact</label>
-                <input type="text" value={form.emergencyContact} onChange={e => setForm({...form, emergencyContact: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder="Name & Mobile" />
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Calendar size={14} /> Joining Date</label>
+                <input type="date" value={form.joiningDate} onChange={e => setForm({...form, joiningDate: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
             </div>
-
-            <div className="h-px bg-slate-200 dark:bg-slate-800 my-6" />
-
-            <h3 className="font-bold text-slate-900 dark:text-white mb-4">Salary & Compensation</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5">Payment Frequency</label>
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                  <button onClick={() => setForm({...form, salaryType: 'monthly'})} className={cn("flex-1 py-1.5 text-xs font-bold rounded-md transition-colors", form.salaryType === 'monthly' ? "bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-slate-500")}>Monthly</button>
-                  <button onClick={() => setForm({...form, salaryType: 'daily'})} className={cn("flex-1 py-1.5 text-xs font-bold rounded-md transition-colors", form.salaryType === 'daily' ? "bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-slate-500")}>Daily</button>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><IndianRupee size={14} /> Base Amount (₹)</label>
-                <div className="flex items-center gap-2">
-                  <input type="number" value={form.salaryAmount} onChange={e => setForm({...form, salaryAmount: e.target.value})} className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-900 dark:text-white" />
-                  {/* Dynamic Inc/Dec */}
-                  <button onClick={() => setForm(f => ({...f, salaryAmount: String(Number(f.salaryAmount || 0) - 500)}))} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 font-bold hover:bg-slate-200">-</button>
-                  <button onClick={() => setForm(f => ({...f, salaryAmount: String(Number(f.salaryAmount || 0) + 500)}))} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 font-bold hover:bg-slate-200">+</button>
-                </div>
-              </div>
-            </div>
-
+            
             <div className="mt-8 flex justify-between items-center">
               {!isNew ? (
-                <button onClick={handleDelete} disabled={deleting} className="text-sm font-bold text-red-500 flex items-center gap-2 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors">
-                  <Trash2 size={16} /> {deleting ? 'Removing...' : 'Remove Staff'}
+                <button onClick={handleDelete} disabled={deleting} className="text-sm font-bold text-red-500 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors flex items-center gap-2">
+                  <Trash2 size={16} /> Remove
                 </button>
               ) : <div/>}
-              <button onClick={handleSave} disabled={saving} className="bg-indigo-500 text-white font-black px-6 py-2.5 rounded-xl shadow-lg shadow-indigo-500/20 hover:bg-indigo-600 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50">
+              <button onClick={handleSave} disabled={saving} className="bg-indigo-600 text-white font-bold px-6 py-2.5 rounded-xl hover:bg-indigo-700 flex items-center gap-2">
                 <Save size={18} /> {saving ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
           </Card>
-
-          {/* Salary Calculator (Only if existing) */}
-          {!isNew && (
-            <Card className="bg-gradient-to-br from-slate-900 to-indigo-950 dark:from-slate-900 dark:to-slate-950 border-none rounded-2xl p-1 shadow-xl">
-              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-black text-slate-900 dark:text-white flex items-center gap-2 text-lg">
-                    <Calculator className="text-indigo-500" /> Salary Payout
-                  </h3>
-                  <input type="month" value={calcMonth} onChange={e => setCalcMonth(e.target.value)} className="text-sm font-bold bg-slate-100 dark:bg-slate-800 border-none rounded-lg px-2 py-1 outline-none text-slate-700 dark:text-slate-300" />
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                    <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Base Salary</span>
-                    <span className="font-black text-slate-900 dark:text-white">₹{calcData.baseAmount}</span>
+          
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4 md:p-6">
+            <h3 className="font-bold text-slate-900 dark:text-white mb-4">Uploaded Documents</h3>
+            <div className="space-y-2">
+              {Object.keys(form.documents).length === 0 ? (
+                <p className="text-sm text-slate-500 italic">No documents uploaded.</p>
+              ) : (
+                Object.entries(form.documents).map(([key, url]) => (
+                  <div key={key} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="text-sm font-bold capitalize text-slate-700 dark:text-slate-300">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 flex items-center gap-1 text-xs font-bold hover:underline">
+                      View <ExternalLink size={12} />
+                    </a>
                   </div>
-                  <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-500/5 rounded-lg border border-red-100 dark:border-red-500/10">
-                    <span className="text-sm font-bold text-red-600 dark:text-red-400">Deductions (Absents, Half Days)</span>
-                    <input type="number" value={calcData.deductions} onChange={e => setCalcData({...calcData, deductions: Number(e.target.value)})} className="w-24 px-2 py-1 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 rounded text-right font-bold text-red-600 dark:text-red-400" />
-                  </div>
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-500/5 rounded-lg border border-emerald-100 dark:border-emerald-500/10">
-                    <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 block mb-2">Bonuses</span>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1">
-                        <label className="text-[10px] font-bold text-emerald-600/70 uppercase">Performance</label>
-                        <input type="number" value={calcData.bonus.Performance} onChange={e => updateBonus('Performance', Number(e.target.value))} className="w-full mt-1 px-2 py-1 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded font-bold text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-[10px] font-bold text-emerald-600/70 uppercase">Diwali / Festival</label>
-                        <input type="number" value={calcData.bonus.Diwali} onChange={e => updateBonus('Diwali', Number(e.target.value))} className="w-full mt-1 px-2 py-1 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded font-bold text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <span className="text-lg font-black text-slate-900 dark:text-white">Net Payable</span>
-                    <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">₹{calcData.netAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                  <button onClick={paySalary} className="w-full py-3 mt-4 bg-slate-900 dark:bg-indigo-500 text-white font-black rounded-xl hover:bg-slate-800 dark:hover:bg-indigo-600 transition-colors">Mark as Paid</button>
-                </div>
-              </div>
-            </Card>
-          )}
+                ))
+              )}
+            </div>
+          </Card>
         </div>
-      </div>
+      )}
+
+      {/* --- ATTENDANCE TAB --- */}
+      {activeTab === 'attendance' && (
+        <div className="space-y-6">
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
+            <div className="bg-emerald-50 dark:bg-emerald-500/10 p-4 border-b border-emerald-100 dark:border-emerald-500/20 text-center">
+              <h2 className="font-bold text-emerald-900 dark:text-emerald-100">Quick Mark Today</h2>
+              <p className="text-xs text-emerald-600/70">{new Date().toDateString()}</p>
+            </div>
+            <CardContent className="p-4 flex gap-2">
+              {['Present', 'Half Day', 'Absent', 'Leave'].map(status => (
+                <button 
+                  key={status} 
+                  disabled={markingAtt}
+                  onClick={() => markAttendance(status)} 
+                  className={cn("flex-1 py-3 text-sm font-bold rounded-xl transition-colors", 
+                    status === 'Present' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' :
+                    status === 'Absent' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
+                    'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                  )}
+                >
+                  {status}
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+          
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-slate-900 dark:text-white">Attendance History</h3>
+              <input type="month" value={attendanceMonth} onChange={e => setAttendanceMonth(e.target.value)} className="text-sm font-bold bg-slate-100 dark:bg-slate-800 border-none rounded-lg px-2 py-1 outline-none text-slate-700" />
+            </div>
+            
+            <div className="space-y-2">
+              {attendanceRecords.map(record => (
+                <div key={record.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <span className="text-sm font-bold text-slate-600">{new Date(record.date).toDateString()}</span>
+                  <span className={cn("text-xs font-bold px-2 py-1 rounded", 
+                    record.status === 'Present' ? 'bg-emerald-100 text-emerald-700' :
+                    record.status === 'Absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                  )}>{record.status}</span>
+                </div>
+              ))}
+              {attendanceRecords.length === 0 && <p className="text-center text-slate-500 py-4 text-sm">No records found for this month.</p>}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* --- SALARY TAB --- */}
+      {activeTab === 'salary' && (
+        <div className="space-y-6">
+          <Card className="border-none rounded-2xl shadow-xl overflow-hidden">
+            <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 p-6 text-white space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-black flex items-center gap-2 text-lg">
+                  <Calculator className="text-indigo-400" /> Pay Salary
+                </h3>
+                <input type="month" value={calcMonth} onChange={e => setCalcMonth(e.target.value)} className="text-sm font-bold bg-white/10 border-none rounded-lg px-2 py-1 outline-none text-white" />
+              </div>
+              
+              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
+                <span className="text-sm font-bold text-indigo-200">Base Salary</span>
+                <span className="font-black">₹{calcData.baseAmount}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-red-500/30">
+                <span className="text-sm font-bold text-red-300">Deductions (Absents)</span>
+                <input type="number" value={calcData.deductions} onChange={e => setCalcData({...calcData, deductions: Number(e.target.value)})} className="w-24 px-2 py-1 bg-black/20 rounded text-right font-bold text-red-300 outline-none" />
+              </div>
+              
+              <div className="flex justify-between items-center pt-4 border-t border-white/10">
+                <span className="text-lg font-black">Net Payable</span>
+                <span className="text-3xl font-black text-emerald-400">₹{calcData.netAmount.toLocaleString('en-IN')}</span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                <select value={calcData.paymentMode} onChange={e => setCalcData({...calcData, paymentMode: e.target.value})} className="px-3 py-3 bg-white/10 border border-white/20 rounded-xl font-bold outline-none text-white text-sm">
+                  <option value="Cash" className="text-black">Cash</option>
+                  <option value="UPI" className="text-black">UPI</option>
+                  <option value="Bank Transfer" className="text-black">Bank Transfer</option>
+                </select>
+                <button onClick={paySalary} className="bg-emerald-500 text-white font-black rounded-xl hover:bg-emerald-600 transition-colors">Mark as Paid</button>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4">
+            <h3 className="font-bold text-slate-900 dark:text-white mb-4">Payment History</h3>
+            <div className="space-y-2">
+              {salaryHistory.map(pay => (
+                <div key={pay.id} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">{pay.monthYear}</p>
+                    <p className="text-[10px] font-bold text-slate-500">{new Date(pay.paidAt).toLocaleDateString()} • {pay.paymentMode}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-black text-emerald-600 dark:text-emerald-400">₹{pay.netAmount}</p>
+                    {pay.deductions > 0 && <p className="text-[10px] text-red-500 font-bold">-₹{pay.deductions}</p>}
+                  </div>
+                </div>
+              ))}
+              {salaryHistory.length === 0 && <p className="text-center text-slate-500 py-4 text-sm">No payment history.</p>}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

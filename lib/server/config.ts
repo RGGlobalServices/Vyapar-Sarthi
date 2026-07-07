@@ -1,8 +1,7 @@
 // Server-side configuration, ported from the former Express backend.
 // Reads from process.env at runtime (server-only — never import in client code).
-
 export const config = {
-  jwtSecret: process.env.SECRET_KEY || 'your-secret-key-for-dev-only',
+  jwtSecret: process.env.SECRET_KEY || (process.env.NODE_ENV === 'production' ? (() => { throw new Error('SECRET_KEY is missing in production'); })() : 'your-secret-key-for-dev-only'),
   jwtAlgorithm: 'HS256' as const,
   jwtExpiresIn: '7d',
 

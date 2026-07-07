@@ -30,9 +30,12 @@ function assertJwtSecret() {
   }
 }
 
-export function buildTokenResponse(user: UserRecord) {
+export function buildTokenResponse(user: UserRecord, sessionId?: string) {
   assertJwtSecret();
-  const access_token = jwt.sign({ sub: user.uuid }, config.jwtSecret, {
+  const payload: any = { sub: user.uuid };
+  if (sessionId) payload.sessionId = sessionId;
+  
+  const access_token = jwt.sign(payload, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn,
   } as jwt.SignOptions);
   return {
@@ -48,7 +51,7 @@ export function buildTokenResponse(user: UserRecord) {
   };
 }
 
-export function getUserIdFromToken(req: Request): string {
+export function getAuthPayloadFromToken(req: Request): { sub: string; sessionId?: string } {
   const authHeader = req.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new ApiError(401, 'Not authenticated');
@@ -57,7 +60,7 @@ export function getUserIdFromToken(req: Request): string {
   try {
     const payload = jwt.verify(token, config.jwtSecret) as jwt.JwtPayload;
     if (!payload.sub) throw new ApiError(401, 'Invalid token');
-    return payload.sub as string;
+    return { sub: payload.sub as string, sessionId: payload.sessionId as string | undefined };
   } catch (err) {
     if (err instanceof ApiError) throw err;
     throw new ApiError(401, 'Invalid token');
@@ -65,9 +68,16 @@ export function getUserIdFromToken(req: Request): string {
 }
 
 export async function requireUser(req: Request) {
-  const userId = getUserIdFromToken(req);
+  const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
   const user = await prisma.user.findUnique({ where: { uuid: userId } });
   if (!user) throw new ApiError(401, 'User not found');
+  
+  // Verify session if the token was issued with one
+  if (sessionId) {
+    const session = await prisma.userSession.findUnique({ where: { id: sessionId } });
+    if (!session) throw new ApiError(401, 'Session expired or revoked from another device. Please log in again.');
+  }
+
   // A user authenticated by uuid always has a non-null uuid — narrow the type
   // so route code can use user.uuid without repeated non-null assertions.
   return user as typeof user & { uuid: string };

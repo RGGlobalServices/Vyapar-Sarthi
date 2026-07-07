@@ -401,7 +401,7 @@ function DashboardInner() {
       </div>
 
       {/* Main Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-6">
         <StatCard 
           title={getDynamicTitle('Sales')} 
           value={`₹ ${Math.round(stats.today_sales).toLocaleString('en-IN')}`} 
@@ -838,12 +838,12 @@ export default function Dashboard() {
 function StatCard({ title, value, icon, href }: { title: string; value: string; icon: React.ReactNode; href?: string }) {
   const card = (
     <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 border-b-slate-200 dark:border-b-slate-800 hover:border-emerald-500/50 transition-all duration-300 cursor-pointer h-full">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{title}</CardTitle>
-        {icon}
+      <CardHeader className="flex flex-row items-center justify-between pb-1 md:pb-2 p-4 md:p-6">
+        <CardTitle className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest leading-tight">{title}</CardTitle>
+        <div className="scale-75 md:scale-100 origin-right">{icon}</div>
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tighter">{value}</div>
+      <CardContent className="px-4 pb-4 md:px-6 md:pb-6 pt-0">
+        <div className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tighter">{value}</div>
       </CardContent>
     </Card>
   );

@@ -486,9 +486,9 @@ export default function WholesaleBillingUI() {
   };
 
   return (
-    <div className="h-[calc(100vh-80px)] flex flex-col md:flex-row gap-4">
+    <div className="min-h-[calc(100vh-80px)] lg:h-[calc(100vh-80px)] flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
       {/* LEFT PANEL: Search & Cart Table */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 lg:overflow-hidden">
         
         {/* Top Bar: Search & Scanner */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap gap-3 items-center">

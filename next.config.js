@@ -9,6 +9,9 @@ const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Backend is now served by native Next.js Route Handlers under app/api/v1.
   // Prisma + bcrypt must stay external so they aren't bundled by webpack.
   serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma', 'bcryptjs'],

@@ -15,6 +15,7 @@ export const GET = handle(async (req) => {
     email: user.email,
     mobile: user.mobile,
     hasProfitPassword: !!user.profitViewPassword,
+    hasAdminPin: !!user.adminPin,
   });
 });
 
@@ -28,6 +29,8 @@ export const PATCH = handle(async (req) => {
     newPassword?: string;
     profitViewPassword?: string;   // set/clear the profit-view lock
     removeProfitPassword?: boolean;
+    adminPin?: string;
+    removeAdminPin?: boolean;
   }>(req);
 
   const updates: Record<string, unknown> = {};
@@ -55,6 +58,19 @@ export const PATCH = handle(async (req) => {
     } else if (body.profitViewPassword) {
       if (body.profitViewPassword.length < 4) throw new ApiError(400, 'Profit password must be at least 4 characters.');
       updates.profitViewPassword = await bcrypt.hash(body.profitViewPassword, 10);
+    }
+  }
+
+  // Set / update admin PIN (requires current login password for security)
+  if (body.adminPin !== undefined || body.removeAdminPin) {
+    if (!body.currentPassword) throw new ApiError(400, 'Enter your current login password to change this setting.');
+    const valid = await bcrypt.compare(body.currentPassword, user.password);
+    if (!valid) throw new ApiError(401, 'Current password is incorrect.');
+    if (body.removeAdminPin) {
+      updates.adminPin = null;
+    } else if (body.adminPin) {
+      if (body.adminPin.length < 4) throw new ApiError(400, 'Admin PIN must be at least 4 characters.');
+      updates.adminPin = await bcrypt.hash(body.adminPin, 10);
     }
   }
 

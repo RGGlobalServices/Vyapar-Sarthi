@@ -47,6 +47,8 @@ export const POST = handle<Ctx>(async (req, { params }) => {
       deductions: b.deductions ? parseFloat(b.deductions) : 0,
       bonus: b.bonus ? JSON.stringify(b.bonus) : null,
       netAmount: parseFloat(b.netAmount),
+      paymentMode: b.paymentMode || 'Cash',
+      paidAt: b.paidAt ? new Date(b.paidAt) : new Date(),
     },
   });
 

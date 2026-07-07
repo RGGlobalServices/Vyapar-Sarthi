@@ -563,7 +563,7 @@ function StandardBillingUI() {
   ];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full relative">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-full lg:h-full relative overflow-y-auto lg:overflow-visible">
       {/* Left: Product Search & Cart */}
       <div className="lg:col-span-2 space-y-6 flex flex-col">
         {/* Business mode badge */}

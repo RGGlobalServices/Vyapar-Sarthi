@@ -3,8 +3,14 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
-import { Metadata } from 'next';
+import { Metadata, Viewport } from 'next';
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 export const metadata: Metadata = {
   title: {
     default: 'Vyapar Sarthi - Smart Business & POS Management App',

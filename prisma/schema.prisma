@@ -23,7 +23,9 @@ model User {
   passwordResetToken  String?     @map("password_reset_token") @db.VarChar
   passwordResetExpiry DateTime?   @map("password_reset_expiry") @db.Timestamptz(6)
   profitViewPassword  String?     @map("profit_view_password") @db.VarChar
+  adminPin            String?     @map("admin_pin") @db.VarChar
   toolUsages          ToolUsage[]
+  sessions            UserSession[]
 
   @@map("users")
 }
@@ -38,6 +40,20 @@ model ToolUsage {
 
   @@unique([userId, tool])
   @@map("tool_usage")
+}
+
+model UserSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    Int      @map("user_id")
+  device    String   @db.VarChar
+  os        String   @db.VarChar
+  browser   String   @db.VarChar
+  ip        String   @db.VarChar
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeen  DateTime @default(now()) @map("last_seen") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
 }
 
 model Shop {
@@ -439,8 +455,12 @@ model Staff {
   address         String?  @db.VarChar
   idProof         String?  @map("id_proof") @db.VarChar
   emergencyContact String? @map("emergency_contact") @db.VarChar
+  role            String   @default("Other") @db.VarChar
+  joiningDate     DateTime @default(now()) @map("joining_date") @db.Timestamptz(6)
   salaryType      String   @default("monthly") @map("salary_type") @db.VarChar
   salaryAmount    Float    @map("salary_amount")
+  bankAccount     Json?    @map("bank_account")
+  documents       Json?    @default("{}")
   photoUrl        String?  @map("photo_url")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -473,6 +493,7 @@ model SalaryPayment {
   deductions  Float    @default(0)
   bonus       String?  
   netAmount   Float    @map("net_amount")
+  paymentMode String   @default("Cash") @map("payment_mode") @db.VarChar
   paidAt      DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
   
   staff       Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)

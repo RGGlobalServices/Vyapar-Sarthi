@@ -5,7 +5,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap } from 'lucide-react';
+import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -83,11 +83,25 @@ function SettingsPageInner() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
 
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [showAdminPinModal, setShowAdminPinModal] = useState(false);
+  const [adminPinForm, setAdminPinForm] = useState({ currentPassword: '', newPin: '' });
+  const [savingPin, setSavingPin] = useState(false);
+  const [pinStatus, setPinStatus] = useState<any>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await api.get('/notifications/settings');
+        const [res, profileRes, sessionsRes] = await Promise.all([
+          api.get('/notifications/settings'),
+          api.get('/user/profile'),
+          api.get('/auth/sessions').catch(() => ({ data: [] }))
+        ]);
         setSettings(prev => ({ ...prev, ...res.data }));
+        setUserProfile(profileRes.data);
+        setSessions(sessionsRes.data || []);
         
         if ('Notification' in window) {
           setPermission(Notification.permission);
@@ -173,7 +187,7 @@ function SettingsPageInner() {
   };
 
   const handleSave = async () => {
-    setSaving(true);
+    setSavingPin(true);
     try {
       await api.patch('/notifications/settings', settings);
       setStatus({ type: 'success', message: 'Settings saved successfully' });
@@ -181,7 +195,42 @@ function SettingsPageInner() {
     } catch (err) {
       setStatus({ type: 'error', message: 'Failed to save settings' });
     } finally {
-      setSaving(false);
+      setSavingPin(false);
+    }
+  };
+
+  const handleSaveAdminPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPin(true);
+    setPinStatus(null);
+    try {
+      await api.patch('/user/profile', {
+        currentPassword: adminPinForm.currentPassword,
+        adminPin: adminPinForm.newPin || undefined,
+        removeAdminPin: !adminPinForm.newPin
+      });
+      setUserProfile((prev: any) => ({ ...prev, hasAdminPin: !!adminPinForm.newPin }));
+      setPinStatus({ type: 'success', message: 'Admin PIN updated successfully.' });
+      setTimeout(() => setShowAdminPinModal(false), 1500);
+    } catch (err: any) {
+      setPinStatus({ type: 'error', message: err.response?.data?.detail || 'Failed to update PIN.' });
+    } finally {
+      setSavingPin(false);
+    }
+  };
+
+  const handleRevokeSession = async (id: string) => {
+    if (!confirm('Are you sure you want to log out this device?')) return;
+    setRevokingId(id);
+    try {
+      await api.delete(`/auth/sessions/${id}`);
+      setSessions(prev => prev.filter(s => s.id !== id));
+      setStatus({ type: 'success', message: 'Device logged out successfully.' });
+      setTimeout(() => setStatus(null), 3000);
+    } catch (err) {
+      setStatus({ type: 'error', message: 'Failed to log out device.' });
+    } finally {
+      setRevokingId(null);
     }
   };
 
@@ -222,6 +271,85 @@ function SettingsPageInner() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Security & Access */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
+          <CardHeader>
+            <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 dark:text-red-400 mb-4">
+              <Shield size={24} />
+            </div>
+            <CardTitle className="text-slate-900 dark:text-white">Security & Access</CardTitle>
+            <CardDescription className="text-slate-500">Protect access to sensitive features and roles</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="space-y-1">
+                <p className="font-bold text-slate-800 dark:text-slate-200">Admin Access PIN</p>
+                <p className="text-xs text-slate-500">Require a PIN to switch from Staff to Admin role in the sidebar.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setAdminPinForm({ currentPassword: '', newPin: '' });
+                  setPinStatus(null);
+                  setShowAdminPinModal(true);
+                }}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                  userProfile?.hasAdminPin 
+                    ? "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700"
+                    : "bg-emerald-500 text-slate-900 hover:bg-emerald-400"
+                )}
+              >
+                {userProfile?.hasAdminPin ? 'Change PIN' : 'Set PIN'}
+              </button>
+            </div>
+
+            {/* Active Sessions List */}
+            <div className="mt-6 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-950">
+              <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2">
+                <MonitorSmartphone size={18} className="text-slate-500" />
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Active Devices & Sessions</h3>
+              </div>
+              <div className="divide-y divide-slate-200 dark:divide-slate-800">
+                {sessions.map(s => (
+                  <div key={s.id} className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500">
+                        {s.os === 'iOS' || s.os === 'Android' ? <Smartphone size={18} /> : <MonitorSmartphone size={18} />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-900 dark:text-slate-200 text-sm">{s.device}</p>
+                          {s.isCurrent && (
+                            <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-wider">
+                              This Device
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {s.ip} &middot; Active {new Date(s.lastSeen).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    {!s.isCurrent && (
+                      <button
+                        onClick={() => handleRevokeSession(s.id)}
+                        disabled={revokingId === s.id}
+                        className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl transition-colors disabled:opacity-50"
+                        title="Log out this device"
+                      >
+                        {revokingId === s.id ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {sessions.length === 0 && (
+                  <div className="p-4 text-center text-sm text-slate-500">No active sessions found.</div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Device Notifications */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader>
@@ -642,6 +770,73 @@ function SettingsPageInner() {
                 {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admin PIN Modal ── */}
+      {showAdminPinModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm shadow-2xl p-6">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Admin Access PIN</h2>
+            <p className="text-sm text-slate-500 mb-6">
+              {userProfile?.hasAdminPin ? 'Update or remove your Admin PIN.' : 'Set a PIN to protect the Admin role switch.'}
+            </p>
+            
+            {pinStatus && (
+              <div className={cn(
+                "p-3 rounded-xl flex items-center gap-2 text-sm mb-4 font-medium",
+                pinStatus.type === 'success' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+              )}>
+                {pinStatus.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                {pinStatus.message}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAdminPin}>
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Login Password</label>
+                  <input
+                    type="password"
+                    required
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={adminPinForm.currentPassword}
+                    onChange={e => setAdminPinForm(f => ({...f, currentPassword: e.target.value}))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    New Admin PIN <span className="text-[10px] font-normal lowercase">(leave blank to remove)</span>
+                  </label>
+                  <input
+                    type="password"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={adminPinForm.newPin}
+                    onChange={e => setAdminPinForm(f => ({...f, newPin: e.target.value}))}
+                    placeholder="At least 4 characters"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminPinModal(false)}
+                  className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!adminPinForm.currentPassword || savingPin}
+                  className="flex-1 bg-emerald-500 text-slate-900 py-2.5 rounded-xl font-black hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {savingPin ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {savingPin ? 'Saving...' : 'Save PIN'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

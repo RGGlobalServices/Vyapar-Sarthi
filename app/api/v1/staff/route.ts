@@ -32,8 +32,12 @@ export const POST = handle(async (req) => {
       address: b.address?.trim() || null,
       idProof: b.idProof?.trim() || null,
       emergencyContact: b.emergencyContact?.trim() || null,
+      role: b.role?.trim() || 'Other',
+      joiningDate: b.joiningDate ? new Date(b.joiningDate) : new Date(),
       salaryType: b.salaryType === 'daily' ? 'daily' : 'monthly',
       salaryAmount: parseFloat(b.salaryAmount),
+      bankAccount: b.bankAccount || null,
+      documents: b.documents || {},
       photoUrl: b.photoUrl || null,
     },
   });

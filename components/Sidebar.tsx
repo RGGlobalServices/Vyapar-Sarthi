@@ -7,16 +7,47 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart
+  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
+import api from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { BUSINESS_CONFIGS } from '@/lib/businessConfig';
 import { isSubscriptionEnded, isAllowedWhenEnded } from '@/lib/subscriptionAccess';
 import { canUseReferEarn, canUseManpower } from '@/lib/planGates';
 import { useNotificationStore } from '@/lib/notificationStore';
+
+const UsersThree = ({ size = 24, className = "" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    {/* Left person */}
+    <circle cx="4.5" cy="6.5" r="2.25" />
+    <path d="M1 17v-1a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1" />
+    {/* Right person */}
+    <circle cx="19.5" cy="6.5" r="2.25" />
+    <path d="M16 17v-1a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1" />
+    {/* Center person (front) */}
+    <circle cx="12" cy="11.5" r="2.25" />
+    <path d="M8.5 22v-1a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
+const UdharIcon = ({ size = 24, className = "" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    {/* Thumbs Up (done hand) on the left */}
+    <g transform="translate(0, 4) scale(0.65)" strokeWidth="3.1">
+      <path d="M7 10v12" />
+      <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+    </g>
+    
+    {/* Indian Rupee Symbol with clear gap */}
+    <path d="M17 4h5" />
+    <path d="M17 8h5" />
+    <path d="M17 12h1c3 0 3-8 0-8" />
+    <path d="M17 12l3.5 5" />
+  </svg>
+);
 
 export default function Sidebar({ 
   locale, 
@@ -42,6 +73,36 @@ export default function Sidebar({
   const { theme, setTheme } = useTheme();
   const isDark = theme === 'dark';
   const upcomingEventsCount = useNotificationStore(s => s.upcomingEventsCount);
+
+  const [showAdminPinModal, setShowAdminPinModal] = useState(false);
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [verifyingPin, setVerifyingPin] = useState(false);
+
+  const handleRoleToggle = () => {
+    if (role === 'admin') {
+      setRole('staff');
+    } else {
+      setShowAdminPinModal(true);
+      setAdminPinInput('');
+      setPinError('');
+    }
+  };
+
+  const handleVerifyPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerifyingPin(true);
+    setPinError('');
+    try {
+      await api.post('/auth/verify-pin', { pin: adminPinInput });
+      setRole('admin');
+      setShowAdminPinModal(false);
+    } catch (err: any) {
+      setPinError(err.response?.data?.detail || 'Incorrect Password/PIN');
+    } finally {
+      setVerifyingPin(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -78,7 +139,8 @@ export default function Sidebar({
       { key: 'suppliers', icon: Users,        href: '/suppliers' }
     ] : []),
     { key: 'stock',     icon: Box,             href: '/stock' },
-    { key: 'udhar',     icon: Users,           href: '/udhar' },
+    { key: 'staff',     icon: UsersThree,      href: '/staff' },
+    { key: 'udhar',     icon: UdharIcon,       href: '/udhar' },
     { key: 'calendar',  icon: CalendarDays,    href: '/calendar', badge: upcomingEventsCount },
     { key: 'reports',   icon: BarChart3,       href: '/reports' },
     { key: 'import',    icon: FolderUp,        href: '/import' },
@@ -93,7 +155,7 @@ export default function Sidebar({
     ? menuItems.filter(item => item.external || isAllowedWhenEnded(item.href))
     : menuItems.filter(item => {
         if (role === 'staff') {
-          return !['reports', 'import', 'settings', 'godowns', 'suppliers', 'purchases'].includes(item.key);
+          return !['reports', 'import', 'godowns', 'suppliers', 'purchases'].includes(item.key);
         }
         return true;
       });
@@ -280,7 +342,7 @@ export default function Sidebar({
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('accessRole') || 'Access Role'}</span>
           </div>
           <button
-            onClick={() => setRole(role === 'admin' ? 'staff' : 'admin')}
+            onClick={handleRoleToggle}
             className={cn("px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors", 
               role === 'admin' ? "bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-sky-500/20 text-sky-600 dark:text-sky-400"
             )}
@@ -373,6 +435,44 @@ export default function Sidebar({
                 {creatingShop ? 'Creating…' : 'Create Shop'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAdminPinModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm shadow-xl p-6">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Admin Access</h2>
+            <p className="text-sm text-slate-500 mb-6">Enter Admin PIN or Login Password to switch to Admin role.</p>
+            
+            <form onSubmit={handleVerifyPin}>
+              <input
+                type="password"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="Enter PIN / Password"
+                value={adminPinInput}
+                onChange={e => setAdminPinInput(e.target.value)}
+                autoFocus
+              />
+              {pinError && <p className="text-red-500 text-xs font-medium mb-4">{pinError}</p>}
+              
+              <div className="flex gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminPinModal(false)}
+                  className="flex-1 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!adminPinInput || verifyingPin}
+                  className="flex-1 py-2.5 bg-emerald-500 text-slate-900 font-black rounded-xl hover:bg-emerald-400 transition-colors disabled:opacity-50"
+                >
+                  {verifyingPin ? 'Verifying...' : 'Unlock'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

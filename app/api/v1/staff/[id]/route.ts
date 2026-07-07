@@ -33,8 +33,12 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (b.address !== undefined) data.address = b.address?.trim() || null;
   if (b.idProof !== undefined) data.idProof = b.idProof?.trim() || null;
   if (b.emergencyContact !== undefined) data.emergencyContact = b.emergencyContact?.trim() || null;
+  if (b.role !== undefined) data.role = b.role?.trim() || 'Other';
+  if (b.joiningDate !== undefined) data.joiningDate = b.joiningDate ? new Date(b.joiningDate) : new Date();
   if (b.salaryType !== undefined) data.salaryType = b.salaryType === 'daily' ? 'daily' : 'monthly';
   if (b.salaryAmount !== undefined) data.salaryAmount = parseFloat(b.salaryAmount);
+  if (b.bankAccount !== undefined) data.bankAccount = b.bankAccount || null;
+  if (b.documents !== undefined) data.documents = b.documents || {};
   if (b.photoUrl !== undefined) data.photoUrl = b.photoUrl || null;
 
   const staff = await prisma.staff.update({
