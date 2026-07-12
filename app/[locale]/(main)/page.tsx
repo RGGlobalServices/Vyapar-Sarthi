@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense, useMemo } from 'react';
+import useSWR from 'swr';
 import { useTranslations, useLocale } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
@@ -15,6 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { planLabel } from '@/lib/planGates';
 import { useBusinessStore } from '@/lib/businessStore';
+import { useAuthStore } from '@/lib/store';
 import UpcomingEventsCard from '@/components/UpcomingEventsCard';
 import WholesaleWidgets from './WholesaleWidgets';
 
@@ -23,10 +25,7 @@ const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   loading: () => <div className="h-[300px] bg-slate-100 dark:bg-slate-900/50 rounded-xl animate-pulse border border-slate-200 dark:border-slate-800" />,
 });
 
-// Module-level client cache: survives component unmount (navigation away and back)
-// Data is stale after 30 s. Format: { [cacheKey]: { stats, data, ts } }
-const _dashCache: Record<string, { stats: any; data: any; ts: number }> = {};
-const DASH_CACHE_TTL = 30_000;
+
 
 function DashboardInner() {
   const t = useTranslations('Dashboard');
@@ -34,6 +33,7 @@ function DashboardInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { fetchProfile } = useBusinessStore();
+  const { role } = useAuthStore();
 
   const [paymentBanner, setPaymentBanner] = useState<{ plan: string } | null>(null);
 
@@ -174,40 +174,26 @@ function DashboardInner() {
     return translatedLabel;
   };
 
-  const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
-    const { start_date, end_date } = getDates();
-    const cacheKey = `${start_date}_${end_date}`;
-    const cached = _dashCache[cacheKey];
-    const isFresh = cached && (Date.now() - cached.ts < DASH_CACHE_TTL);
+  const { start_date, end_date } = getDates();
+  const fetcher = (url: string) => api.get(url).then(res => res.data);
+  const { data: dashboardPayload, mutate: mutateDashboard } = useSWR(
+    `/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, 
+    fetcher, 
+    { revalidateOnFocus: true }
+  );
 
-    // If we have fresh cached data, show it immediately and skip spinner
-    if (isFresh && !forceRefresh) {
-      setStats(cached.stats);
-      setData(cached.data);
-      setLoading(false);
-      return;
-    }
-    // If we have stale cached data, show it instantly (no blank screen) then refresh in background
-    if (cached && !forceRefresh) {
-      setStats(cached.stats);
-      setData(cached.data);
-      setLoading(false);
-      showSpinner = false; // background refresh
-    } else if (showSpinner) {
-      setLoading(true);
-    }
-    try {
-      const res = await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}${forceRefresh ? '&refresh=true' : ''}`);
-      const payload = res.data;
-      const newStats = {
+  useEffect(() => {
+    if (dashboardPayload) {
+      const payload = dashboardPayload;
+      setStats({
         today_sales: payload.summary?.today_sales ?? 0,
         today_profit: payload.summary?.today_profit ?? 0,
         total_udhar: payload.summary?.total_udhar ?? 0,
         low_stock_count: payload.summary?.low_stock_count ?? 0,
         returns_amount: payload.summary?.returns_amount ?? 0,
         returns_count: payload.summary?.returns_count ?? 0,
-      };
-      const newData = {
+      });
+      setData({
         lowStock: payload.lowStock || [],
         recentBills: payload.recentBills || [],
         salesTrend: [],
@@ -215,17 +201,19 @@ function DashboardInner() {
         fastMoving: payload.fastMoving || [],
         slowMoving: payload.slowMoving || [],
         returnsByReason: payload.returnsByReason || [],
-      };
-      // Update cache
-      _dashCache[cacheKey] = { stats: newStats, data: newData, ts: Date.now() };
-      setStats(newStats);
-      setData(newData);
-    } catch (e: any) {
-      console.error('Dashboard init error:', e?.message || e);
-    } finally {
+      });
       setLoading(false);
     }
-  }, [getDates]);
+  }, [dashboardPayload]);
+
+  const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
+    if (showSpinner && !dashboardPayload) setLoading(true);
+    if (forceRefresh) {
+      await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}&refresh=true`);
+    }
+    await mutateDashboard();
+    setLoading(false);
+  }, [mutateDashboard, dashboardPayload, start_date, end_date]);
 
   const loadFullTopProducts = async () => {
     setLoadingFullTop(true);
@@ -360,18 +348,20 @@ function DashboardInner() {
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => setShowProfit(!showProfit)}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm',
-                showProfit 
-                  ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' 
-                  : 'bg-emerald-600 border-emerald-500 text-white'
-              )}
-            >
-              {showProfit ? <EyeOff size={14} /> : <Eye size={14} />}
-              {showProfit ? t('hideProfit') : t('showProfit')}
-            </button>
+            {role !== 'staff' && (
+              <button
+                onClick={() => setShowProfit(!showProfit)}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm',
+                  showProfit 
+                    ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' 
+                    : 'bg-emerald-600 border-emerald-500 text-white'
+                )}
+              >
+                {showProfit ? <EyeOff size={14} /> : <Eye size={14} />}
+                {showProfit ? t('hideProfit') : t('showProfit')}
+              </button>
+            )}
           </div>
           {timeframe === t('custom') && (
             <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
@@ -408,7 +398,7 @@ function DashboardInner() {
           icon={<TrendingUp className="text-emerald-500" />} 
           href="/reports"
         />
-        {showProfit && (
+        {role !== 'staff' && showProfit && (
           <StatCard 
             title={getDynamicTitle('Profit')} 
             value={`₹ ${Math.round(stats.today_profit).toLocaleString('en-IN')}`} 

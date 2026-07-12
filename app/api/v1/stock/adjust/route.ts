@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
 import { ensureWholesaleTables } from '@/lib/server/wholesale';
+import { checkLowStockAlerts } from '@/lib/server/notificationsEngine';
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,15 @@ export async function POST(req: Request) {
 
     if (difference === 0) {
       return NextResponse.json({ error: 'Difference cannot be zero.' }, { status: 400 });
+    }
+
+    if (difference < 0) {
+      const current = await prisma.godownProduct.findUnique({
+        where: { godownId_productId: { godownId: warehouseId, productId } }
+      });
+      if (!current || current.quantity + difference < 0) {
+        return NextResponse.json({ error: 'Negative stock is not allowed.' }, { status: 400 });
+      }
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -50,8 +60,23 @@ export async function POST(req: Request) {
         },
       });
 
+      await tx.activityLog.create({
+        data: {
+          shopId: auth.shop.id,
+          action: 'stock_adjusted',
+          entityId: productId,
+          details: { productId, difference, warehouseId, reason: reason || 'Manual adjustment' }
+        }
+      });
+
       return { success: true };
     });
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await checkLowStockAlerts(tx, auth.shop.id, [productId]);
+      });
+    } catch(e) { console.error('Low stock alert failed', e); }
 
     return NextResponse.json(result);
   } catch (error: any) {

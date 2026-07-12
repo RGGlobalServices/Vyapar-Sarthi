@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { useCartStore, useUdharStore, useAuthStore } from '@/lib/store';
+import { useUdharStore, useAuthStore } from '@/lib/store';
+import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
 import { useBusinessStore } from '@/lib/businessStore';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
@@ -77,10 +78,15 @@ const CartPriceInput = ({ item, updatePrice }: any) => {
 export default function WholesaleBillingUI() {
   const t = useTranslations('Billing');
   const tBill = useTranslations('BillSlip');
-  const { items, addItem, removeItem, updateQuantity, updatePrice, clearCart } = useCartStore();
   const { customers: udharCustomers, fetchCustomers, addUdharFromBill } = useUdharStore();
   const { user } = useAuthStore();
   const { profile } = useBusinessStore();
+
+  const { 
+    items, addItem, removeItem, updateQuantity, updatePrice, clearCart,
+    subtotal, discount, setDiscount, total,
+    splitPayments, setSplitPayments, collectedAmount, remainingAmount 
+  } = useBillingEngine(profile?.id);
 
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -98,9 +104,7 @@ export default function WholesaleBillingUI() {
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
-  const [discount, setDiscount] = useState(0);
-  const [amountPaid, setAmountPaid] = useState(0);
+
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Bill Success Modal
@@ -260,9 +264,7 @@ export default function WholesaleBillingUI() {
     }
   };
 
-  const subtotal = Math.round(items.reduce((acc, item) => acc + item.total, 0));
-  const total = Math.max(0, subtotal - discount);
-  const remainingAmount = paymentMethod === 'Udhar' ? total : Math.max(0, total - amountPaid);
+
 
   const generatePDFBlob = async () => {
     if (!componentRef.current) throw new Error('No ref');
@@ -397,17 +399,19 @@ export default function WholesaleBillingUI() {
     }
   };
 
-  useEffect(() => {
-    if (paymentMethod !== 'Udhar') {
-      setAmountPaid(total);
-    } else {
-      setAmountPaid(0);
-    }
-  }, [total, paymentMethod]);
-
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     if (items.length === 0) return;
+    
+    if (remainingAmount > 0 && !customerName.trim()) {
+      alert("Customer Name is required for Udhar / Remaining balances.");
+      return;
+    }
+    if (collectedAmount > total) {
+      alert("Collected amount cannot be greater than Total bill.");
+      return;
+    }
+    
     setIsGenerating(true);
 
     try {
@@ -427,7 +431,9 @@ export default function WholesaleBillingUI() {
         items: saleItems,
         total_amount: total,
         total_profit: items.reduce((acc, item) => acc + ((item.profit || 0) * item.quantity), 0),
-        payment_type: paymentMethod,
+        payment_type: 'Split',
+        amount_paid: collectedAmount,
+        payment_details: { ...splitPayments, udhar: remainingAmount },
       };
 
       const res = await api.post('/billing/', payload);
@@ -440,9 +446,10 @@ export default function WholesaleBillingUI() {
         items: [...items],
         total,
         discount,
-        amountPaid: paymentMethod === 'Udhar' ? 0 : amountPaid,
+        amountPaid: collectedAmount,
         remainingAmount,
-        paymentMethod,
+        paymentMethod: 'Split',
+        splitPayments: { ...splitPayments, udhar: remainingAmount },
         billNumber,
         date: new Date().toLocaleDateString(),
       };
@@ -654,28 +661,32 @@ export default function WholesaleBillingUI() {
                   ₹{total.toLocaleString()}
                 </span>
               </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('collectedAmount') || 'Collected'}</span>
+                <span className="text-lg font-bold text-slate-900 dark:text-white font-mono">
+                  ₹{collectedAmount.toLocaleString()}
+                </span>
+              </div>
+              {remainingAmount > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-orange-400">{t('remainingUdhar') || 'Remaining (Udhar)'}</span>
+                  <span className="text-lg font-black text-orange-500 font-mono">
+                    ₹{remainingAmount.toLocaleString()}
+                  </span>
+                </div>
+              )}
+              {collectedAmount > total && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-blue-400">{t('changeReturn') || 'Change Return'}</span>
+                  <span className="text-lg font-black text-blue-500 font-mono">
+                    ₹{(collectedAmount - total).toLocaleString()}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">{t('paymentMethod') || 'Payment Method'}</label>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {['Cash', 'UPI', 'Card', 'Udhar'].map(method => (
-                <button
-                  key={method}
-                  onClick={() => setPaymentMethod(method)}
-                  className={cn(
-                    "py-2 text-sm font-bold rounded-lg border transition-all",
-                    paymentMethod === method
-                      ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-sm"
-                      : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300"
-                  )}
-                >
-                  {t(method.toLowerCase()) || method}
-                </button>
-              ))}
-            </div>
-            
             <button
               disabled={items.length === 0}
               onClick={() => setShowCheckout(true)}
@@ -745,7 +756,7 @@ export default function WholesaleBillingUI() {
               <div className="relative">
                 <label className="text-xs font-bold text-slate-500 mb-1 block">
                   {t('nameLabel')}
-                  {paymentMethod === 'Udhar' && <span className="text-orange-400 normal-case font-normal ml-1">*Required for Udhar</span>}
+                  {remainingAmount > 0 && <span className="text-orange-400 normal-case font-normal ml-1">*Required for Udhar</span>}
                 </label>
                 <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
                   value={customerName} 
@@ -793,23 +804,50 @@ export default function WholesaleBillingUI() {
                   value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder={t('emailPlaceholder') || "For auto email bill receipt"} />
               </div>
 
-              {paymentMethod !== 'Udhar' && (
-                <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 flex items-center justify-between">
-                    <span>{t('amountPaid')} ({t('totalCol') || 'Total'}: ₹{total.toLocaleString('en-IN')})</span>
-                    {amountPaid < total && (
-                      <span className="text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded text-[10px]">
-                        Udhar: ₹{(total - amountPaid).toLocaleString('en-IN')}
-                      </span>
-                    )}
-                  </label>
-                  <input type="number" required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all font-mono font-bold"
-                    value={amountPaid} onChange={e => setAmountPaid(Number(e.target.value))} />
-                  {amountPaid > total && (
-                    <p className="text-xs text-blue-500 mt-1.5 font-medium">Return Change: ₹{(amountPaid - total).toLocaleString()}</p>
-                  )}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 block text-center">
+                  {t('paymentSplit') || 'Payment Split'} (Total: ₹{total.toLocaleString()})
+                </label>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+                      {t('cash') || 'Cash'}
+                    </label>
+                    <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                      value={splitPayments.cash === 0 ? '' : splitPayments.cash} placeholder="0"
+                      onChange={e => setSplitPayments(p => ({ ...p, cash: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+                      {t('upi') || 'UPI'}
+                    </label>
+                    <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                      value={splitPayments.upi === 0 ? '' : splitPayments.upi} placeholder="0"
+                      onChange={e => setSplitPayments(p => ({ ...p, upi: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+                      {t('card') || 'Card'}
+                    </label>
+                    <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                      value={splitPayments.card === 0 ? '' : splitPayments.card} placeholder="0"
+                      onChange={e => setSplitPayments(p => ({ ...p, card: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                  </div>
                 </div>
-              )}
+                
+                {remainingAmount > 0 && (
+                  <div className="flex justify-between items-center bg-orange-50 dark:bg-orange-500/10 px-3 py-2.5 rounded-lg border border-orange-200 dark:border-orange-500/20 mb-2">
+                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{t('remainingUdhar') || 'Remaining (Udhar)'}</span>
+                    <span className="text-sm font-black text-orange-600 dark:text-orange-400 font-mono">₹{remainingAmount.toLocaleString()}</span>
+                  </div>
+                )}
+                {collectedAmount > total && (
+                  <div className="flex justify-between items-center bg-blue-50 dark:bg-blue-500/10 px-3 py-2.5 rounded-lg border border-blue-200 dark:border-blue-500/20 mb-2">
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400">{t('changeReturn') || 'Change Return'}</span>
+                    <span className="text-sm font-black text-blue-600 dark:text-blue-400 font-mono">₹{(collectedAmount - total).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
 
               <button 
                 type="submit" 

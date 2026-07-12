@@ -48,6 +48,14 @@ type WholesaleProduct = {
   fabric?: string;
   sole_material?: string;
   metadata?: any;
+  // Master data relations
+  categoryId?: string;
+  brandId?: string;
+  baseUnitId?: string;
+  defaultSaleUnitId?: string;
+  defaultPurchaseUnitId?: string;
+  maxStock?: number;
+  wholesaleMoq?: number;
 };
 
 function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
@@ -85,9 +93,18 @@ export default function WholesaleProductsUI() {
 
   const emptyProduct = buildEmptyProduct(profile.businessType);
   
-  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<WholesaleProduct[]>('/products', fetcher);
-
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  const swrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
+  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<WholesaleProduct[]>(swrKey, fetcher);
+  
+  const { data: masterData } = useSWR('/master-data', fetcher);
+
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -148,6 +165,13 @@ export default function WholesaleProductsUI() {
       fabric: meta.fabric || '',
       sole_material: meta.sole_material || '',
       metadata: meta,
+      categoryId: p.categoryId || '',
+      brandId: p.brandId || '',
+      baseUnitId: p.baseUnitId || '',
+      defaultSaleUnitId: p.defaultSaleUnitId || '',
+      defaultPurchaseUnitId: p.defaultPurchaseUnitId || '',
+      maxStock: p.maxStock || undefined,
+      wholesaleMoq: p.wholesaleMoq || undefined,
     });
     setVariants(p.variants || []);
     setShowAddModal(true);
@@ -178,14 +202,17 @@ export default function WholesaleProductsUI() {
 
   const handleSingleDelete = async (id: string) => {
     setSaving(true);
+    // Optimistic Update
+    mutateProducts((prev: any[] = []) => prev.filter(p => p.id !== id), false);
+    setSelectedProduct(null);
+
     try {
       await api.delete(`/products/${id}`);
-      mutateProducts((prev: any[] = []) => prev.filter(p => p.id !== id), { revalidate: false });
-      mutateProducts();
-      setSelectedProduct(null);
     } catch (err: any) {
       alert(`Error: ${err.message || 'Failed to delete product'}`);
+      mutateProducts(); // Rollback
     } finally {
+      mutateProducts(); // Sync
       setSaving(false);
     }
   };
@@ -193,14 +220,18 @@ export default function WholesaleProductsUI() {
   const handleBulkDelete = async () => {
     if (!confirm(t('confirmBulkDelete') || `Are you sure you want to delete ${selectedIds.length} products?`)) return;
     setSaving(true);
+    
+    // Optimistic Update
+    mutateProducts((prev: any[] = []) => prev.filter(p => !selectedIds.includes(p.id)), false);
+    
     try {
       await api.delete(`/products/bulk?ids=${selectedIds.join(',')}`);
-      mutateProducts((prev: any[] = []) => prev.filter(p => !selectedIds.includes(p.id)), { revalidate: false });
-      mutateProducts();
       setSelectedIds([]);
     } catch (err: any) {
       alert(`Error: ${err.message || 'Failed to bulk delete'}`);
+      mutateProducts(); // Rollback
     } finally {
+      mutateProducts(); // Sync
       setSaving(false);
     }
   };
@@ -234,8 +265,21 @@ export default function WholesaleProductsUI() {
         sole_material: undefined,
       };
       
+      // Optimistic update
+      const isEdit = !!form.id;
+      const optimisticProduct = { ...payload, id: form.id || 'temp-' + Date.now(), variants: [] };
+      
+      mutateProducts((prev: any[] = []) => {
+        if (isEdit) return prev.map(p => p.id === form.id ? { ...p, ...optimisticProduct } : p);
+        return [optimisticProduct, ...prev];
+      }, false);
+
+      setShowAddModal(false);
+      setForm(emptyProduct);
+      setVariants([]);
+
       let updatedProd;
-      if (form.id) {
+      if (isEdit) {
         const res = await api.put(`/products/${form.id}`, payload);
         updatedProd = res.data;
       } else {
@@ -243,20 +287,16 @@ export default function WholesaleProductsUI() {
         updatedProd = res.data;
       }
       
-      setShowAddModal(false);
-      setForm(emptyProduct);
-      setVariants([]);
-      
-      if (form.id) {
-        mutateProducts((prev: any[] = []) => prev.map(p => p.id === form.id ? { ...p, ...updatedProd } : p), { revalidate: false });
-      } else {
-        mutateProducts((prev: any[] = []) => [updatedProd, ...prev], { revalidate: false });
+      // Update with real ID from server
+      if (!isEdit) {
+        mutateProducts((prev: any[] = []) => prev.map(p => p.id === optimisticProduct.id ? updatedProd : p), false);
       }
       mutateProducts();
     } catch (err: any) {
       console.error('Failed to save product', err);
       const msg = err?.response?.data?.detail || err.message || 'Failed to save product. Check for duplicate barcodes or missing fields.';
       alert(`Error: ${msg}`);
+      mutateProducts(); // Rollback on error
     } finally {
       setSaving(false);
     }
@@ -548,7 +588,9 @@ export default function WholesaleProductsUI() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {filteredProducts.map((p: any) => {
-                    const stock = p.currentStock || 0;
+                    const stock = (p.godownProducts && p.godownProducts.length > 0)
+                      ? p.godownProducts.reduce((sum: number, gp: any) => sum + gp.quantity, 0)
+                      : (p.currentStock || 0);
                     const minStock = p.minStock || 5;
                     const isOutOfStock = stock <= 0;
                     const isLowStock = stock > 0 && stock <= minStock;
@@ -714,26 +756,35 @@ export default function WholesaleProductsUI() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('brand') || 'Brand'}</label>
-                      <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        value={form.brand || ''} onChange={e => setForm({...form, brand: e.target.value})} />
+                      <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                        value={form.brandId || ''} onChange={e => {
+                          const brand = masterData?.brands?.find((b:any) => b.id === e.target.value);
+                          setForm({...form, brandId: e.target.value, brand: brand ? brand.name : ''});
+                        }}>
+                        <option value="">-- Select Brand --</option>
+                        {masterData?.brands?.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('category') || 'Category'}</label>
-                      <input 
-                        list="categoryList"
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        placeholder={t('selectCategory') || 'Select or type category'}
-                        value={form.category || ''} onChange={e => setForm({...form, category: e.target.value})} 
-                      />
-                      <datalist id="categoryList">
-                        {bizConfig.defaultCategories.map(c => <option key={c} value={c} />)}
-                      </datalist>
+                      <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                        value={form.categoryId || ''} onChange={e => {
+                          const cat = masterData?.categories?.find((c:any) => c.id === e.target.value);
+                          setForm({...form, categoryId: e.target.value, category: cat ? cat.name : ''});
+                        }}>
+                        <option value="">-- Select Category --</option>
+                        {masterData?.categories?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Base Unit</label>
                       <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        value={form.baseUnit || bizConfig.defaultUnits[0]} onChange={e => setForm({...form, baseUnit: e.target.value})}>
-                        {bizConfig.defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                        value={form.baseUnitId || ''} onChange={e => {
+                          const unit = masterData?.units?.find((u:any) => u.id === e.target.value);
+                          setForm({...form, baseUnitId: e.target.value, baseUnit: unit ? unit.name : form.baseUnit});
+                        }}>
+                        <option value="">-- Legacy Unit ({form.baseUnit}) --</option>
+                        {masterData?.units?.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>)}
                       </select>
                     </div>
                     <div>

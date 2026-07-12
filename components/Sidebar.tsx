@@ -7,14 +7,15 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase
+  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
 import api from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
-import { BUSINESS_CONFIGS } from '@/lib/businessConfig';
+import { getBusinessConfig, BUSINESS_CONFIGS } from '@/lib/businessConfig';
+import { getPackageConfig } from '@/lib/config/packageConfig';
 import { isSubscriptionEnded, isAllowedWhenEnded } from '@/lib/subscriptionAccess';
 import { canUseReferEarn, canUseManpower } from '@/lib/planGates';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -60,14 +61,22 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const { user, loadFromStorage, logout, role, setRole } = useAuthStore();
-  const { profile, fetchProfile, allShops, activeShopId, fetchAllShops, switchShop, createShop } = useBusinessStore();
+  const { profile, fetchProfile, allShops, activeShopId, fetchAllShops, switchShop, createShop, loading, deleteShop } = useBusinessStore();
   const t = useTranslations('Nav');
   const ended = isSubscriptionEnded(profile);
   const [showShopMenu, setShowShopMenu] = useState(false);
   const [showNewShop, setShowNewShop] = useState(false);
   const [creatingShop, setCreatingShop] = useState(false);
-  const emptyShopForm = { name: '', businessType: 'kirana', address: '', mobile: '' };
+  const emptyShopForm = { 
+    name: '', 
+    businessType: 'kirana', 
+    address: '', 
+    mobile: '',
+    gst: ''
+  };
   const [shopForm, setShopForm] = useState(emptyShopForm);
+  const [isSwitchingShop, setIsSwitchingShop] = useState(false);
+  const [switchingToName, setSwitchingToName] = useState('');
 
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -120,6 +129,7 @@ export default function Sidebar({
         businessType: shopForm.businessType,
         address: shopForm.address.trim() || undefined,
         mobile: shopForm.mobile.trim() || undefined,
+        gst: shopForm.gst.trim() || undefined,
       });
       await switchShop(shop.id);
       setShowNewShop(false);
@@ -129,33 +139,67 @@ export default function Sidebar({
     finally { setCreatingShop(false); }
   }
 
-  const menuItems = [
+  const handleSwitchShop = async (shop: any) => {
+    if (activeShopId === shop.id) {
+      setShowShopMenu(false);
+      return;
+    }
+    setSwitchingToName(shop.name);
+    setIsSwitchingShop(true);
+    setShowShopMenu(false);
+    
+    // Slight artificial delay so user sees the loading state
+    await new Promise(r => setTimeout(r, 400));
+    
+    try {
+      await switchShop(shop.id, true);
+    } catch {
+      // error handled inside store
+    } finally {
+      setIsSwitchingShop(false);
+      setSwitchingToName('');
+    }
+  };
+
+  const masterMenuItems = [
     { key: 'dashboard', icon: LayoutDashboard, href: '/' },
     { key: 'profile',   icon: User,            href: '/profile' },
+    { key: 'orders',    icon: ClipboardList,   href: '/orders' },
     { key: 'billing',   icon: IndianRupee,     href: '/billing' },
+    { key: 'wholesale_billing', icon: Briefcase, href: '/wholesale-billing' },
     { key: 'products',  icon: Package,         href: '/products' },
-    ...(profile.subscriptionPlan === 'wholesale' ? [
-      { key: 'purchases', icon: ShoppingCart, href: '/purchases' },
-      { key: 'suppliers', icon: Users,        href: '/suppliers' }
-    ] : []),
+    { key: 'party',     icon: Users,           href: '/party' },
+    { key: 'purchases', icon: ShoppingCart,    href: '/purchases' },
+    { key: 'suppliers', icon: Users,           href: '/suppliers' },
+    { key: 'warehouses',icon: Warehouse,       href: '/godowns' },
     { key: 'stock',     icon: Box,             href: '/stock' },
+    { key: 'expenses',  icon: Receipt,         href: '/expenses' },
     { key: 'staff',     icon: UsersThree,      href: '/staff' },
     { key: 'udhar',     icon: UdharIcon,       href: '/udhar' },
+    { key: 'customers', icon: Users,           href: '/customers' },
     { key: 'calendar',  icon: CalendarDays,    href: '/calendar', badge: upcomingEventsCount },
     { key: 'reports',   icon: BarChart3,       href: '/reports' },
     { key: 'import',    icon: FolderUp,        href: '/import' },
     { key: 'referral',  icon: Gift,            href: '/referral' },
-    { key: 'dukandar',  icon: Store,            href: '/dukandar' },
-    ...(profile.subscriptionPlan === 'wholesale' ? [{ key: 'godowns', icon: Warehouse, href: '/godowns' }] : []),
-    { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
+    { key: 'dukandar',  icon: Store,           href: '/dukandar' },
     { key: 'settings',  icon: Settings,        href: '/settings' },
     { key: 'returns',   icon: RotateCcw,       href: '/returns' },
+    { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
   ];
+  
+  const currentPackageConfig = getPackageConfig(profile.packageType);
+  const currentBusinessConfig = getBusinessConfig(profile.businessType);
+
+  // Filter master list based on allowed modules for this shop's package
+  const baseMenuItems = masterMenuItems.filter(item => 
+    item.external || currentPackageConfig.modules.includes(item.key)
+  );
+
   const visibleMenuItems = ended
-    ? menuItems.filter(item => item.external || isAllowedWhenEnded(item.href))
-    : menuItems.filter(item => {
+    ? baseMenuItems.filter(item => item.external || isAllowedWhenEnded(item.href))
+    : baseMenuItems.filter(item => {
         if (role === 'staff') {
-          return !['reports', 'import', 'godowns', 'suppliers', 'purchases'].includes(item.key);
+          return !['reports', 'import', 'warehouses', 'suppliers', 'purchases', 'transfers'].includes(item.key);
         }
         return true;
       });
@@ -193,9 +237,12 @@ export default function Sidebar({
               <h1 className="text-[15px] font-black text-slate-900 dark:text-white truncate leading-tight tracking-tight">
                 {user?.storeName || 'Vyapar Sarthi'}
               </h1>
-              <div className="flex items-center mt-0.5">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest truncate">
-                  {profile.subscriptionPlan === 'wholesale' ? 'Wholesale Distributor' : 'Retail Store'}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest truncate border border-slate-200 dark:border-slate-700">
+                  {currentBusinessConfig.label}
+                </span>
+                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest truncate">
+                  {currentPackageConfig.label}
                 </span>
               </div>
             </div>
@@ -220,22 +267,44 @@ export default function Sidebar({
           <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-50 overflow-hidden">
             <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1">Your Shops</p>
             {allShops.map(shop => (
-              <button key={shop.id}
-                onClick={() => { switchShop(shop.id); setShowShopMenu(false); }}
-                className={cn('w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left',
-                  (activeShopId === shop.id || (!activeShopId && shop.id === profile.id)) && 'bg-emerald-500/10'
-                )}>
-                <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0">
-                  {(shop.name || 'S').charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-slate-800 dark:text-white truncate">{shop.name}</p>
-                  {shop.shopCode && <p className="text-[10px] text-slate-500 font-mono">{shop.shopCode}</p>}
-                </div>
-                {(activeShopId === shop.id || (!activeShopId && shop.id === profile.id)) && (
-                  <Check size={13} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              <div key={shop.id} className="relative group">
+                <button 
+                  onClick={() => handleSwitchShop(shop)}
+                  className={cn('w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left pr-10',
+                    (activeShopId === shop.id || (!activeShopId && shop.id === profile.id)) && 'bg-emerald-500/10'
+                  )}>
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                    {(shop.name || 'S').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-white truncate">{shop.name}</p>
+                    {shop.shopCode && <p className="text-[10px] text-slate-500 font-mono">{shop.shopCode}</p>}
+                  </div>
+                  {(activeShopId === shop.id || (!activeShopId && shop.id === profile.id)) && (
+                    <Check size={13} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                  )}
+                </button>
+                
+                {allShops.length > 1 && (
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (confirm(`Are you sure you want to remove shop "${shop.name}"? This action cannot be undone.`)) {
+                        try {
+                          await deleteShop(shop.id);
+                        } catch (err: any) {
+                          console.error('Delete shop error:', err);
+                          alert(err.response?.data?.detail || err.response?.data?.error || err.message || 'Failed to remove shop');
+                        }
+                      }
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100 z-10"
+                    title="Remove Shop"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 )}
-              </button>
+              </div>
             ))}
 
             {/* Add new shop — opens the full details modal */}
@@ -261,8 +330,25 @@ export default function Sidebar({
         </div>
       )}
 
-      <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto custom-scrollbar">
-        {visibleMenuItems.map((item) => {
+      <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar relative p-2 md:p-3 pb-24">
+        {isSwitchingShop && (
+          <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center pt-10">
+            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300 text-center px-4">Switching to <br/><span className="text-emerald-600">{switchingToName}</span>...</p>
+          </div>
+        )}
+        
+        {allShops.length === 0 && !loading && (
+          <div className="py-8 px-4 text-center bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800/50 my-4 mx-2">
+            <Store className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400">Create your first Shop</p>
+            <p className="text-xs text-emerald-600 dark:text-emerald-500/80 mt-1">Click the button above to get started</p>
+          </div>
+        )}
+
+        {(!isSwitchingShop && allShops.length > 0) && (
+          <nav className="space-y-0.5">
+            {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = !item.external && pathname === item.href;
           const linkClass = cn(
@@ -275,7 +361,17 @@ export default function Sidebar({
             return (
               <a key={item.key} href={item.href} target="_blank" rel="noopener noreferrer" className={linkClass}>
                 <Icon size={20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors" />
-                <span className="text-sm">{t(item.key as any)}</span>
+                <span className="text-sm">
+                  {item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
+                    ? 'Parties'
+                    : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
+                    ? 'Party Ledger'
+                    : item.key === 'expenses'
+                    ? 'Expenses'
+                    : item.key === 'orders'
+                    ? 'Orders'
+                    : t(item.key as any)}
+                </span>
               </a>
             );
           }
@@ -283,7 +379,17 @@ export default function Sidebar({
             <Link key={item.key} href={item.href} className={linkClass} onClick={() => setIsMobileOpen?.(false)}>
               <div className="flex items-center gap-3 flex-1">
                 <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
-                <span className="text-sm">{t(item.key as any)}</span>
+                <span className="text-sm">
+                  {item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
+                    ? 'Parties'
+                    : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
+                    ? 'Party Ledger'
+                    : item.key === 'expenses'
+                    ? 'Expenses'
+                    : item.key === 'orders'
+                    ? 'Orders'
+                    : t(item.key as any)}
+                </span>
               </div>
               {!!item.badge && item.badge > 0 && (
                 <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
@@ -293,7 +399,9 @@ export default function Sidebar({
             </Link>
           );
         })}
-      </nav>
+          </nav>
+        )}
+      </div>
 
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50 dark:bg-slate-900/50">
         <div className="flex items-center justify-between px-2">
@@ -397,9 +505,34 @@ export default function Sidebar({
                 onChange={e => setShopForm(f => ({ ...f, businessType: e.target.value }))}
               >
                 {Object.values(BUSINESS_CONFIGS).map(b => (
-                  <option key={b.type} value={b.type}>{b.emoji} {b.label}</option>
+                  <option key={b.type} value={b.type}>{b.label}</option>
                 ))}
               </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Contact mobile */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Contact Number</label>
+                <input
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="10-digit number"
+                  inputMode="numeric"
+                  value={shopForm.mobile}
+                  onChange={e => setShopForm(f => ({ ...f, mobile: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+                />
+              </div>
+
+              {/* GST */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">GST Number</label>
+                <input
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 uppercase"
+                  placeholder="Optional"
+                  value={shopForm.gst}
+                  onChange={e => setShopForm(f => ({ ...f, gst: e.target.value.toUpperCase() }))}
+                />
+              </div>
             </div>
 
             {/* Address */}
@@ -413,17 +546,6 @@ export default function Sidebar({
               />
             </div>
 
-            {/* Contact mobile */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Contact Number</label>
-              <input
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                placeholder="10-digit mobile number"
-                inputMode="numeric"
-                value={shopForm.mobile}
-                onChange={e => setShopForm(f => ({ ...f, mobile: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
-              />
-            </div>
 
             <div className="flex gap-3 pt-1">
               <button onClick={() => { setShowNewShop(false); setShopForm(emptyShopForm); }} disabled={creatingShop}

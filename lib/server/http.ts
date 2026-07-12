@@ -10,8 +10,8 @@ export class ApiError extends Error {
   }
 }
 
-export function json(data: unknown, status = 200) {
-  return NextResponse.json(data, { status });
+export function json(data: unknown, status = 200, headers?: HeadersInit) {
+  return NextResponse.json(data, { status, headers });
 }
 
 // Query-string params (replaces Express req.query). Returns a plain object of

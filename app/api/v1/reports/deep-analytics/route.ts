@@ -35,12 +35,31 @@ export const GET = handle(async (req) => {
     end.setHours(23, 59, 59, 999);
   }
 
-  // 1. Sales Trend
-  const sales = await prisma.sale.findMany({
-    where: { shopId: shop.id, createdAt: { gte: start, lte: end } },
-    select: { id: true, totalAmount: true, totalProfit: true, paymentType: true, createdAt: true },
-    orderBy: { createdAt: 'asc' }
-  });
+  // 1. Sales Trend & KPIs (via SQL Aggregation)
+  const salesByDayRaw = await prisma.$queryRaw<any[]>`
+    SELECT 
+      DATE_TRUNC('day', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') as date,
+      SUM(total_amount)::float as total_amount,
+      SUM(total_profit)::float as total_profit
+    FROM sales 
+    WHERE shop_id = ${shop.id}::uuid AND created_at >= ${start} AND created_at <= ${end}
+    GROUP BY 1 ORDER BY 1 ASC
+  `;
+
+  const paymentMethodsRaw = await prisma.$queryRaw<any[]>`
+    SELECT 
+      payment_type as method, 
+      SUM(total_amount)::float as amount
+    FROM sales 
+    WHERE shop_id = ${shop.id}::uuid AND created_at >= ${start} AND created_at <= ${end}
+    GROUP BY 1
+  `;
+
+  const salesCountRaw = await prisma.$queryRaw<any[]>`
+    SELECT COUNT(*)::int as count 
+    FROM sales 
+    WHERE shop_id = ${shop.id}::uuid AND created_at >= ${start} AND created_at <= ${end}
+  `;
 
   const salesByDay: Record<string, number> = {};
   const profitByDay: Record<string, number> = {};
@@ -49,20 +68,24 @@ export const GET = handle(async (req) => {
   let totalProfit = 0;
   let totalUdhar = 0;
 
-  for (const sale of sales) {
-    const key = formatDate(sale.createdAt || new Date());
-    const amt = sale.totalAmount || 0;
-    
-    salesByDay[key] = (salesByDay[key] || 0) + amt;
-    profitByDay[key] = (profitByDay[key] || 0) + (sale.totalProfit || 0);
-    
+  for (const row of salesByDayRaw) {
+    const key = formatDate(row.date);
+    const amt = Number(row.total_amount || 0);
+    const prof = Number(row.total_profit || 0);
+    salesByDay[key] = amt;
+    profitByDay[key] = prof;
     totalRevenue += amt;
-    totalProfit += (sale.totalProfit || 0);
-
-    const pt = sale.paymentType?.toUpperCase() || 'UNKNOWN';
-    if (pt === 'UDHAR') totalUdhar += amt;
-    paymentMethodSums[pt] = (paymentMethodSums[pt] || 0) + amt;
+    totalProfit += prof;
   }
+
+  for (const row of paymentMethodsRaw) {
+    const method = row.method || 'Cash';
+    const amt = Number(row.amount || 0);
+    paymentMethodSums[method] = amt;
+    if (method.toLowerCase() === 'udhar') totalUdhar += amt;
+  }
+
+  const totalSalesCount = Number(salesCountRaw[0]?.count || 0);
 
   // Format trend array properly mapping between start and end date
   const trend = [];
@@ -104,21 +127,19 @@ export const GET = handle(async (req) => {
     currentStock: Number(r.current_stock || 0)
   }));
 
-  // Overall Stock Valuation
-  const allProducts = await prisma.product.findMany({
-    where: { shopId: shop.id },
-    select: { currentStock: true, sellingPrice: true }
-  });
-  
-  let stockValuation = 0;
-  let lowStockAlerts = 0;
-  for (const p of allProducts) {
-    const qty = p.currentStock || 0;
-    if (qty <= 5) lowStockAlerts++;
-    stockValuation += (qty * (p.sellingPrice || 0));
-  }
+  // Overall Stock Valuation (SQL Aggregation instead of fetching all products)
+  const stockValuationRaw = await prisma.$queryRaw<any[]>`
+    SELECT 
+      SUM(current_stock * selling_price)::float as stock_valuation,
+      COUNT(CASE WHEN current_stock <= 5 THEN 1 END)::int as low_stock_alerts
+    FROM products
+    WHERE shop_id = ${shop.id}::uuid AND (archived = false OR archived IS NULL)
+  `;
 
-  const averageOrderValue = sales.length > 0 ? totalRevenue / sales.length : 0;
+  const stockValuation = Number(stockValuationRaw[0]?.stock_valuation || 0);
+  const lowStockAlerts = Number(stockValuationRaw[0]?.low_stock_alerts || 0);
+
+  const averageOrderValue = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
 
   return json({
     kpis: {

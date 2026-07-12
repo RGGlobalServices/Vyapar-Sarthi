@@ -12,6 +12,9 @@ type Ctx = { params: Promise<{ id: string }> };
 export const GET = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
+  if (shop.subscriptionPlan !== 'wholesale') {
+    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
+  }
   await ensureGodownTables();
   const godown = await dbGodown(id, shop.id);
   if (!godown) throw new ApiError(404, 'Godown not found');
@@ -22,6 +25,9 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
+  if (shop.subscriptionPlan !== 'wholesale') {
+    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
+  }
   const { name, location } = await readBody(req);
   await ensureGodownTables();
   const rows = (await prisma.$queryRaw`
@@ -39,6 +45,9 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
+  if (shop.subscriptionPlan !== 'wholesale') {
+    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
+  }
   const existing = (await prisma.$queryRaw`SELECT id FROM godowns WHERE id = ${id}::uuid AND shop_id = ${shop.id}::uuid LIMIT 1`) as unknown[];
   if (!existing || existing.length === 0) throw new ApiError(404, 'Godown not found');
   await prisma.$executeRaw`DELETE FROM godown_products WHERE godown_id = ${id}::uuid`;

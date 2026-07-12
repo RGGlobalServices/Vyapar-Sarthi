@@ -15,7 +15,7 @@ export default function AdjustDrawer({
   product: any, 
   godowns: any[], 
   onClose: () => void,
-  onSuccess: () => void
+  onSuccess: (data?: any) => void
 }) {
   const t = useTranslations('Stock');
   const [loading, setLoading] = useState(false);
@@ -44,20 +44,24 @@ export default function AdjustDrawer({
       return;
     }
 
-    setLoading(true);
-    setError('');
-    try {
-      await api.post('/stock/adjust', {
-        productId: product.id,
-        ...form,
-        difference: Number(form.difference)
-      });
-      onSuccess();
-      onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Adjustment failed');
-      setLoading(false);
-    }
+    // Fire and forget so UI closes instantly
+    api.post('/stock/adjust', {
+      productId: product.id,
+      warehouseId: form.warehouseId,
+      difference: Number(form.difference),
+      reason: form.reason,
+      notes: form.notes
+    }).catch(err => {
+      console.error('[API Error] Adjust:', err);
+    });
+
+    onSuccess({
+      type: 'adjust',
+      productId: product.id,
+      quantity: Number(form.difference),
+      warehouseId: form.warehouseId
+    });
+    onClose();
   };
 
   return (

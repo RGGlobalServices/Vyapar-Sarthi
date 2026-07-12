@@ -24,22 +24,38 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, 'Valid salary amount is required');
   }
 
-  const staff = await prisma.staff.create({
-    data: {
-      shopId: shop.id,
-      name: b.name.trim(),
-      mobile: b.mobile.trim(),
-      address: b.address?.trim() || null,
-      idProof: b.idProof?.trim() || null,
-      emergencyContact: b.emergencyContact?.trim() || null,
-      role: b.role?.trim() || 'Other',
-      joiningDate: b.joiningDate ? new Date(b.joiningDate) : new Date(),
-      salaryType: b.salaryType === 'daily' ? 'daily' : 'monthly',
-      salaryAmount: parseFloat(b.salaryAmount),
-      bankAccount: b.bankAccount || null,
-      documents: b.documents || {},
-      photoUrl: b.photoUrl || null,
-    },
+  const staff = await prisma.$transaction(async (tx) => {
+    const created = await tx.staff.create({
+      data: {
+        shopId: shop.id,
+        name: b.name.trim(),
+        mobile: b.mobile.trim(),
+        address: b.address?.trim() || null,
+        idProof: b.idProof?.trim() || null,
+        emergencyContact: b.emergencyContact?.trim() || null,
+        role: b.role?.trim() || 'Other',
+        joiningDate: b.joiningDate ? new Date(b.joiningDate) : new Date(),
+        salaryType: b.salaryType === 'daily' ? 'daily' : 'monthly',
+        salaryAmount: parseFloat(b.salaryAmount),
+        bankAccount: b.bankAccount || null,
+        documents: b.documents || {},
+        photoUrl: b.photoUrl || null,
+        status: b.status || 'active',
+        warehouseId: b.warehouseId || null,
+      },
+    });
+
+    await tx.activityLog.create({
+      data: {
+        shopId: shop.id,
+        action: 'staff_added',
+        entityId: created.id,
+        details: { name: created.name, role: created.role }
+      }
+    });
+
+    return created;
   });
+
   return json(staff, 201);
 });

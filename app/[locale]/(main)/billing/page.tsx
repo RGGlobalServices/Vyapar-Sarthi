@@ -1,14 +1,16 @@
 'use client';
 import {useState, useEffect, useRef, useCallback} from 'react';
+import useSWR from 'swr';
 import WholesaleBillingUI from './WholesaleBillingUI';
 import {useTranslations, useLocale} from 'next-intl';
 import {useCartStore, useUdharStore, useAuthStore} from '@/lib/store';
 import {useBusinessStore} from '@/lib/businessStore';
+import {useBillingEngine} from '@/lib/hooks/useBillingEngine';
 import {translateData} from '@/lib/translateData';
 import {getBusinessConfig} from '@/lib/businessConfig';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {
-  Search, Scan, Trash2, Plus, Minus, CreditCard, IndianRupee,
+  Search, Scan, Camera, Trash2, Plus, Minus, CreditCard, IndianRupee,
   User, X, Printer, Calculator as CalcIcon, PlusCircle, Download,
   AlertCircle, CheckCircle, Zap, MessageCircle, ShieldCheck, Loader2
 } from 'lucide-react';
@@ -101,28 +103,33 @@ function StandardBillingUI() {
   const tBill = useTranslations('BillSlip');
   const tP = useTranslations('Products');
   const locale = useLocale();
-  const {items, addItem, removeItem, updateQuantity, updatePrice, clearCart} = useCartStore();
-  const {customers: udharCustomers, fetchCustomers, addUdharFromBill} = useUdharStore();
-  const {user} = useAuthStore();
   const {profile} = useBusinessStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  
+  const {
+    items, addItem, removeItem, updateQuantity, updatePrice, clearCart,
+    subtotal, discount, setDiscount, total,
+    splitPayments, setSplitPayments, collectedAmount,
+    remainingAmount, isEmi
+  } = useBillingEngine(mounted ? profile.id : undefined);
   const effectiveBusinessType = mounted ? profile.businessType : 'kirana';
   const bizConfig = getBusinessConfig(effectiveBusinessType);
   const isElectronics = effectiveBusinessType === 'electronics';
 
+  const {customers: udharCustomers, fetchCustomers, addUdharFromBill} = useUdharStore();
+  const {user} = useAuthStore();
+  
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isScanning, setIsScanning] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [showCamera, setShowCamera] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [lastBill, setLastBill] = useState<any>(null);
-  const [discount, setDiscount] = useState(0);
-  const [amountPaid, setAmountPaid] = useState(0);
   const [showCalculator, setShowCalculator] = useState(false);
-  const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '' });
+  const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '', barcode: '' });
+  const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
@@ -140,13 +147,22 @@ function StandardBillingUI() {
   const [emiInterestRate, setEmiInterestRate] = useState(0);
 
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const componentRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const subtotal = Math.round(items.reduce((acc, item) => acc + item.total, 0));
-  const total = Math.max(0, subtotal - discount);
+  // Use SWR for instant cache loading
+  const fetcher = (url: string) => api.get(url).then(res => res.data);
+  const { data: swrProducts = [] } = useSWR('/products', fetcher, { revalidateOnFocus: true });
+  
+  useEffect(() => {
+    if (swrProducts && swrProducts.length > 0) {
+      setProducts(swrProducts);
+    }
+  }, [swrProducts]);
 
-  const isEmi = paymentMethod === 'EMI';
+  // isEmi is provided by useBillingEngine
   const emiPrincipal = Math.max(0, total - emiDownPayment);
   const emiMonthlyRate = emiInterestRate / 100 / 12;
   const emiMonthlyAmount = emiInterestRate > 0 && emiMonthlyRate > 0
@@ -154,36 +170,11 @@ function StandardBillingUI() {
     : Math.round(emiPrincipal / emiMonths);
   const emiTotalAmount = emiMonthlyAmount * emiMonths + emiDownPayment;
 
-  const effectiveAmountPaid = isEmi ? emiDownPayment : amountPaid;
-  const remainingAmount = isEmi ? 0 : Math.max(0, total - amountPaid);
+  const effectiveAmountPaid = isEmi ? emiDownPayment : collectedAmount;
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await api.get('/products');
-        setProducts(res.data);
-      } catch (err: any) {
-        console.error('Failed to load products for billing:', {
-          message: err.message || 'Unknown error',
-          status: err.response?.status,
-          data: err.response?.data,
-          error: err
-        });
-      }
-    };
-    load();
     fetchCustomers();
   }, [fetchCustomers]);
-
-  useEffect(() => {
-    if (!isEmi) {
-      if (paymentMethod.toUpperCase() === 'UDHAR') {
-        setAmountPaid(0);
-      } else {
-        setAmountPaid(total);
-      }
-    }
-  }, [total, isEmi, paymentMethod]);
 
   useEffect(() => {
     if (isEmi) setEmiDownPayment(Math.round(total * 0.2));
@@ -204,7 +195,8 @@ function StandardBillingUI() {
     clone.style.position = 'fixed';
     clone.style.top = '0';
     clone.style.left = '-9999px';
-    clone.style.width = '320px'; // Force specific width for POS slip
+    const isA4 = profile.invoiceFormat === 'a4' || profile.invoiceFormat === 'wholesale';
+    clone.style.width = isA4 ? '800px' : '320px';
     clone.style.height = 'auto';
     clone.style.backgroundColor = '#ffffff';
     clone.style.visibility = 'visible';
@@ -215,23 +207,29 @@ function StandardBillingUI() {
       await new Promise(r => setTimeout(r, 100));
       
       const canvas = await html2canvas(clone, { 
-        scale: 3, // Higher scale for better quality
+        scale: isA4 ? 2 : 3, // Lower scale for A4 to prevent memory issues
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false
       });
       
       const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = 80;
+      const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
       const pdf = new jsPDF({ 
         orientation: 'portrait', 
         unit: 'mm', 
-        format: [pdfWidth, pdfHeight] 
+        format: isA4 ? 'a4' : [pdfWidth, pdfHeight] 
       });
       
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      if (isA4) {
+        // A4 pages might need multiple pages, but for now we scale to fit one page width
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      } else {
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      }
+      
       return { pdf, blob: pdf.output('blob') };
     } finally {
       document.body.removeChild(clone);
@@ -239,12 +237,16 @@ function StandardBillingUI() {
   };
 
   const handleDownloadPDF = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
     try {
       const { pdf } = await generatePDFBlob();
       pdf.save(`bill-${lastBill?.billNumber?.replace(/[^a-zA-Z0-9]/g, '') || 'invoice'}.pdf`);
     } catch (error) {
       console.error('Failed to generate PDF', error);
       alert('Failed to download PDF. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -346,9 +348,12 @@ function StandardBillingUI() {
   }, [addItem, bizConfig.hasSizes]);
 
   const handleScan = useCallback((barcode: string) => {
-    const product = products.find(p => p.barcode === barcode);
-    if (product) addToCart(product);
-    else alert('Product not found in inventory!');
+    const product = products.find(p => p.barcode === barcode || p.sku === barcode);
+    if (product) {
+      addToCart(product);
+    } else {
+      setUnknownBarcode(barcode);
+    }
   }, [addToCart, products]);
 
   // Hardware Barcode Scanner integration
@@ -365,17 +370,11 @@ function StandardBillingUI() {
         barcodeBuffer = '';
       }
 
-      // If Enter key is pressed and we have a valid-looking barcode buffered
       if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
         e.preventDefault(); // Prevent form submission
         handleScan(barcodeBuffer);
-        
-        // If the scanner typed into an input field, blur it to prevent issues
-        if (document.activeElement instanceof HTMLInputElement) {
-          document.activeElement.blur();
-        }
-        
         barcodeBuffer = '';
+        searchInputRef.current?.focus();
         return;
       }
 
@@ -394,16 +393,38 @@ function StandardBillingUI() {
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;
-    addToCart({ name: manualProduct.name, sellingPrice: Number(manualProduct.price), baseUnit: manualProduct.unit, wholesaleCost: 0 }, manualProduct.variant || undefined);
-    setManualProduct({ name: '', price: '', unit: 'Unit', variant: '' });
+    addToCart({ name: manualProduct.name, sellingPrice: Number(manualProduct.price), baseUnit: manualProduct.unit, wholesaleCost: 0, barcode: manualProduct.barcode }, manualProduct.variant || undefined);
+    setManualProduct({ name: '', price: '', unit: 'Unit', variant: '', barcode: '' });
     setShowManualAdd(false);
+    setTimeout(() => searchInputRef.current?.focus(), 100);
   };
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearch(value);
-    if (value.length > 1) setSearchResults(performSmartSearch(products, value));
-    else setSearchResults([]);
+    
+    if (value.length > 1) {
+      // 1. Try instant local cache first (< 50ms)
+      const localResults = performSmartSearch(products, value);
+      
+      if (localResults.length > 0) {
+        setSearchResults(localResults);
+      } else {
+        // 2. Fallback to server search for large catalogs
+        try {
+          const res = await api.get(`/products?q=${encodeURIComponent(value)}&lite=true`);
+          if (res.data?.data) {
+            setSearchResults(res.data.data.slice(0, 15));
+          } else if (Array.isArray(res.data)) {
+            setSearchResults(res.data.slice(0, 15));
+          }
+        } catch {
+          setSearchResults([]);
+        }
+      }
+    } else {
+      setSearchResults([]);
+    }
   };
 
   const handleCreateBillClick = () => {
@@ -444,7 +465,9 @@ function StandardBillingUI() {
         items: saleItems,
         total_amount: total,
         total_profit: items.reduce((acc, item) => acc + ((item.profit || 0) * item.quantity), 0),
-        payment_type: paymentMethod,
+        payment_type: isEmi ? 'EMI' : 'Split',
+        amount_paid: isEmi ? emiDownPayment : collectedAmount,
+        payment_details: isEmi ? {} : { ...splitPayments, udhar: remainingAmount },
       };
 
       const res = await api.post('/billing/', salePayload);
@@ -459,9 +482,10 @@ function StandardBillingUI() {
         items: [...items],
         total,
         discount,
-        amountPaid: effectiveAmountPaid,
+        amountPaid: isEmi ? emiDownPayment : collectedAmount,
         remainingAmount,
-        paymentMethod,
+        paymentMethod: isEmi ? 'EMI' : 'Split',
+        splitPayments: isEmi ? undefined : { ...splitPayments, udhar: remainingAmount },
         billNumber,
         date: new Date().toLocaleDateString(),
         // EMI extras
@@ -471,6 +495,11 @@ function StandardBillingUI() {
         emiMonthlyAmount: isEmi ? emiMonthlyAmount : undefined,
         emiInterestRate: isEmi ? emiInterestRate : undefined,
         emiTotalAmount: isEmi ? emiTotalAmount : undefined,
+        // New features
+        invoiceFormat: profile.invoiceFormat || 'thermal80',
+        businessType: profile.businessType || 'kirana',
+        showQrCode: profile.showQrCode || false,
+        invoiceFooter: profile.invoiceFooter || undefined,
       };
       setLastBill(billData);
 
@@ -583,6 +612,7 @@ function StandardBillingUI() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder={t('searchProduct')}
               className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
@@ -629,7 +659,7 @@ function StandardBillingUI() {
             <span className="hidden md:inline">{t('manualAdd') || 'Manual Add'}</span>
           </button>
           <button
-            onClick={() => setIsScanning(!isScanning)}
+            onClick={() => setShowCamera(!showCamera)}
             className="bg-emerald-500 text-white dark:text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors shadow-sm"
           >
             <Scan size={20} />
@@ -686,14 +716,45 @@ function StandardBillingUI() {
           </Card>
         )}
 
-        {isScanning && (
-          <CameraScanner
-            onScan={(result) => { handleScan(result); setIsScanning(false); }}
-            onClose={() => setIsScanning(false)}
-          />
-        )}
+      {/* Camera Scanner Modal (Continuous) */}
+      {showCamera && (
+        <CameraScanner
+          onScan={(text) => {
+            handleScan(text);
+            setShowCamera(false);
+          }}
+          onClose={() => setShowCamera(false)}
+          continuous={false}
+        />
+      )}
 
-        {/* Original modal removed (using the enhanced one below) */}
+      {/* Unknown Barcode Modal */}
+      {unknownBarcode && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Scan size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t('productNotFound') || 'Product Not Found'}</h3>
+            <p className="text-slate-500 mb-6">{t('noProductFoundBarcode') || 'No product found for barcode '} <strong className="text-slate-700 dark:text-slate-300">{unknownBarcode}</strong></p>
+            <div className="flex gap-3">
+              <button onClick={() => {
+                setUnknownBarcode(null);
+                setTimeout(() => searchInputRef.current?.focus(), 100);
+              }} className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700">
+                {t('cancel') || 'Cancel'}
+              </button>
+              <button onClick={() => {
+                setManualProduct(p => ({ ...p, barcode: unknownBarcode }));
+                setUnknownBarcode(null);
+                setShowManualAdd(true);
+              }} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold">
+                {t('createProduct') || 'Create Product'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex-1 overflow-hidden flex flex-col shadow-sm">
           <CardHeader className="border-b border-slate-200 dark:border-slate-800 p-4">
@@ -722,7 +783,7 @@ function StandardBillingUI() {
           <CardContent className="flex-1 overflow-y-auto p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[600px]">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase sticky top-0 z-10">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase sticky top-0 z-10">
                 <tr>
                   <th className="px-4 py-3 w-10">
                     <input 
@@ -736,11 +797,16 @@ function StandardBillingUI() {
                     />
                   </th>
                   <th className="px-2 py-3">{t('itemCol') || 'ITEM'}</th>
-                  <th className="px-6 py-3">{t('unitCol') || 'UNIT'}</th>
-                  <th className="px-6 py-3">{t('qtyCol') || 'QTY'}</th>
-                  <th className="px-6 py-3 text-right">{t('priceCol') || 'PRICE'}</th>
-                  <th className="px-6 py-3 text-right">{t('totalCol') || 'TOTAL'}</th>
-                  <th className="px-6 py-3 text-center">{t('actionCol') || 'ACTION'}</th>
+                  {bizConfig.hasSizes && <th className="px-4 py-3 whitespace-nowrap">{t('sizeColor') || 'SIZE / COLOR'}</th>}
+                  {bizConfig.hasBatch && <th className="px-4 py-3 whitespace-nowrap">{t('batch') || 'BATCH'}</th>}
+                  {bizConfig.hasExpiry && <th className="px-4 py-3 whitespace-nowrap">{t('expiry') || 'EXPIRY'}</th>}
+                  {bizConfig.hasWarranty && <th className="px-4 py-3 whitespace-nowrap">{t('warranty') || 'WARRANTY'}</th>}
+                  {isElectronics && <th className="px-4 py-3 whitespace-nowrap">{t('serialNo') || 'SERIAL #'}</th>}
+                  <th className="px-4 py-3 whitespace-nowrap">{t('unitCol') || 'UNIT'}</th>
+                  <th className="px-6 py-3 whitespace-nowrap">{t('qtyCol') || 'QTY'}</th>
+                  <th className="px-6 py-3 text-right whitespace-nowrap">{t('priceCol') || 'PRICE'}</th>
+                  <th className="px-6 py-3 text-right whitespace-nowrap">{t('totalCol') || 'TOTAL'}</th>
+                  <th className="px-4 py-3 text-center whitespace-nowrap">{t('actionCol') || 'ACTION'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -759,14 +825,39 @@ function StandardBillingUI() {
                         }}
                       />
                     </td>
-                    <td className="px-2 py-4 font-medium">
+                    <td className="px-2 py-4 font-medium min-w-[200px]">
                       {item.name}
-                      {item.variant && (
+                      {item.variant && !bizConfig.hasSizes && (
                         <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
                           {item.variant}
                         </span>
                       )}
                     </td>
+                    {bizConfig.hasSizes && (
+                      <td className="px-4 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                        {item.variant || '-'}
+                      </td>
+                    )}
+                    {bizConfig.hasBatch && (
+                      <td className="px-4 py-4">
+                        <input type="text" placeholder="Batch..." className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                      </td>
+                    )}
+                    {bizConfig.hasExpiry && (
+                      <td className="px-4 py-4">
+                        <input type="text" placeholder="MM/YY" className="w-20 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                      </td>
+                    )}
+                    {bizConfig.hasWarranty && (
+                      <td className="px-4 py-4">
+                        <input type="text" placeholder="Months" className="w-16 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5 text-center" />
+                      </td>
+                    )}
+                    {isElectronics && (
+                      <td className="px-4 py-4">
+                        <input type="text" placeholder="IMEI / SN..." className="w-28 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-sm text-slate-400">{item.unit}</td>
                     <td className="px-6 py-4">
                       {item.is_loose ? (
@@ -844,7 +935,7 @@ function StandardBillingUI() {
       </div>
 
       {/* Right: Summary & Payment */}
-      <div className="space-y-6">
+      <div className="space-y-6 lg:overflow-y-auto lg:max-h-[calc(100vh-100px)] lg:pb-8 custom-scrollbar">
         <div className="flex justify-end relative">
           <button
             onClick={() => setShowCalculator(!showCalculator)}
@@ -863,23 +954,7 @@ function StandardBillingUI() {
           )}
         </div>
 
-        {/* Payment Methods */}
-        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-slate-900 dark:text-slate-200">{t('paymentMethod')}</CardTitle>
-          </CardHeader>
-          <CardContent className={cn('grid gap-3', paymentOptions.length === 4 ? 'grid-cols-2' : 'grid-cols-3')}>
-            {paymentOptions.map(opt => (
-              <PaymentButton
-                key={opt.id}
-                active={paymentMethod === opt.id}
-                onClick={() => setPaymentMethod(opt.id)}
-                icon={opt.icon}
-                label={opt.label}
-              />
-            ))}
-          </CardContent>
-        </Card>
+
 
         {/* EMI Configuration (electronics only) */}
         {isEmi && (
@@ -969,12 +1044,13 @@ function StandardBillingUI() {
               <span>{t('discount')}</span>
               <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1">
                 <span className="text-emerald-500">₹</span>
-                <input
-                  type="number"
-                  className="w-16 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
-                  value={discount}
-                  onChange={(e) => setDiscount(Number(e.target.value))}
-                />
+                  <input
+                    type="number" min={0}
+                    className="w-16 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
+                    value={discount === 0 ? '' : discount}
+                    placeholder="0"
+                    onChange={(e) => setDiscount(e.target.value === '' ? 0 : Number(e.target.value))}
+                  />
               </div>
             </div>
             <div className="border-t border-slate-200 dark:border-slate-800 pt-4 flex justify-between items-center">
@@ -994,33 +1070,76 @@ function StandardBillingUI() {
                 </div>
               </div>
             ) : (
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-700 dark:text-slate-300 font-semibold">Amount Paid</span>
-                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-emerald-200 dark:border-emerald-500/40 rounded-lg px-3 py-1 transition-colors">
-                    <span className="text-emerald-500">₹</span>
-                    <input
-                      type="number" min={0} max={total}
-                      className="w-20 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
-                      value={amountPaid}
-                      onChange={(e) => setAmountPaid(Math.min(total, Math.max(0, Number(e.target.value))))}
-                    />
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-4">
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Payment Split</div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('cash') || 'Cash'}</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                      <input type="number" min={0} className="w-full pl-7 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-900 dark:text-white"
+                        value={splitPayments.cash === 0 ? '' : splitPayments.cash} placeholder="0"
+                        onChange={e => setSplitPayments(p => ({ ...p, cash: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('upi') || 'UPI'}</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                      <input type="number" min={0} className="w-full pl-7 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-900 dark:text-white"
+                        value={splitPayments.upi === 0 ? '' : splitPayments.upi} placeholder="0"
+                        onChange={e => setSplitPayments(p => ({ ...p, upi: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('card') || 'Card'}</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                      <input type="number" min={0} className="w-full pl-7 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-900 dark:text-white"
+                        value={splitPayments.card === 0 ? '' : splitPayments.card} placeholder="0"
+                        onChange={e => setSplitPayments(p => ({ ...p, card: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-orange-500 uppercase block mb-1">{t('udhar') || 'Udhar'} (Auto)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400 font-bold">₹</span>
+                      <input type="number" className="w-full pl-7 pr-3 py-2 bg-orange-50 dark:bg-orange-500/5 border border-orange-200 dark:border-orange-500/20 rounded-lg text-sm font-bold text-orange-600 dark:text-orange-400"
+                        value={remainingAmount} readOnly />
+                    </div>
                   </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className={cn('font-semibold', remainingAmount > 0 ? 'text-orange-400' : 'text-slate-500')}>
-                    Remaining (Udhar)
-                  </span>
-                  <span className={cn('text-2xl font-black', remainingAmount > 0 ? 'text-orange-500' : 'text-slate-600')}>
-                    ₹{remainingAmount}
-                  </span>
-                </div>
-                {remainingAmount > 0 && (
-                  <div className="flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2 text-xs text-orange-400">
-                    <AlertCircle size={14} />
-                    ₹{remainingAmount} will be added to Udhar Khata
+
+                <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-semibold text-slate-500">{t('collectedAmount') || 'Collected'}</span>
+                    <span className="text-lg font-black text-emerald-500">₹{collectedAmount.toLocaleString('en-IN')}</span>
                   </div>
-                )}
+                  {remainingAmount > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold text-orange-500">{t('remainingUdhar') || 'Remaining Due'}</span>
+                      <span className="text-lg font-black text-orange-500">₹{remainingAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {collectedAmount > total && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold text-blue-500">{t('changeReturn') || 'Change Return'}</span>
+                      <span className="text-lg font-black text-blue-500">₹{(collectedAmount - total).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  
+                  <div className="mt-2 flex justify-between items-center bg-slate-50 dark:bg-slate-950 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <span className="text-xs font-bold text-slate-500">Status</span>
+                    {collectedAmount === 0 ? (
+                      <span className="text-xs font-black text-rose-500 bg-rose-500/10 px-2 py-1 rounded">Unpaid / Udhar</span>
+                    ) : remainingAmount > 0 ? (
+                      <span className="text-xs font-black text-orange-500 bg-orange-500/10 px-2 py-1 rounded">Partially Paid</span>
+                    ) : (
+                      <span className="text-xs font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">Fully Paid</span>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>
@@ -1139,8 +1258,8 @@ function StandardBillingUI() {
       {/* Customer Name Modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl">
-            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl flex flex-col max-h-[calc(100vh-2rem)]">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
               <CardTitle className="text-slate-900 dark:text-slate-200 flex items-center gap-2">
                 <User size={20} className="text-emerald-500" />
                 Customer Details
@@ -1149,7 +1268,7 @@ function StandardBillingUI() {
                 <X size={24} />
               </button>
             </CardHeader>
-            <CardContent className="p-6 space-y-5">
+            <CardContent className="p-6 space-y-5 overflow-y-auto">
               {/* Summary */}
               <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
@@ -1168,18 +1287,41 @@ function StandardBillingUI() {
                     </div>
                   </>
                 ) : (
-                  <>
-                    <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
-                      <span>Amount Paid</span>
-                      <span className="text-emerald-500 dark:text-emerald-400 font-bold">₹{amountPaid.toLocaleString('en-IN')}</span>
+                  <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 text-center">Payment Split</p>
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Cash</label>
+                        <input type="number" min={0} className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                          value={splitPayments.cash === 0 ? '' : splitPayments.cash} placeholder="0"
+                          onChange={e => setSplitPayments(p => ({ ...p, cash: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">UPI</label>
+                        <input type="number" min={0} className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                          value={splitPayments.upi === 0 ? '' : splitPayments.upi} placeholder="0"
+                          onChange={e => setSplitPayments(p => ({ ...p, upi: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Card</label>
+                        <input type="number" min={0} className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                          value={splitPayments.card === 0 ? '' : splitPayments.card} placeholder="0"
+                          onChange={e => setSplitPayments(p => ({ ...p, card: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
+                      </div>
                     </div>
                     {remainingAmount > 0 && (
-                      <div className="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
-                        <span className="text-orange-400 font-semibold">Remaining (Udhar)</span>
-                        <span className="text-orange-500 font-black">₹{remainingAmount}</span>
+                      <div className="flex justify-between text-sm mt-2 items-center bg-orange-50 dark:bg-orange-500/10 px-2 py-1.5 rounded border border-orange-200 dark:border-orange-500/20">
+                        <span className="text-orange-500 font-bold text-xs">Remaining (Udhar)</span>
+                        <span className="text-orange-600 dark:text-orange-400 font-black font-mono text-sm">₹{remainingAmount.toLocaleString()}</span>
                       </div>
                     )}
-                  </>
+                    {collectedAmount > total && (
+                      <div className="flex justify-between text-sm mt-2 items-center bg-blue-50 dark:bg-blue-500/10 px-2 py-1.5 rounded border border-blue-200 dark:border-blue-500/20">
+                        <span className="text-blue-500 font-bold text-xs">Change Return</span>
+                        <span className="text-blue-600 dark:text-blue-400 font-black font-mono text-sm">₹{(collectedAmount - total).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1229,7 +1371,7 @@ function StandardBillingUI() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
-                    WhatsApp Number <span className="text-slate-500 normal-case font-normal">— bill auto-sent</span>
+                    {t('whatsappNumberLabel')} <span className="text-emerald-500 dark:text-emerald-400 normal-case font-normal">— {t('billWillBeSent')}</span>
                   </label>
                   <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-emerald-500 transition-colors">
                     <span className="text-slate-500 dark:text-slate-400 text-sm font-bold select-none">+91</span>
@@ -1245,7 +1387,7 @@ function StandardBillingUI() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
-                    Email <span className="text-slate-500 normal-case font-normal">— bill auto-sent</span>
+                    {t('emailFieldLabel')} <span className="text-emerald-500 dark:text-emerald-400 normal-case font-normal">— {t('billWillBeSent')}</span>
                   </label>
                   <input
                     type="email"
@@ -1405,9 +1547,11 @@ function StandardBillingUI() {
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  className="flex flex-col items-center justify-center gap-1 bg-blue-500 text-white py-2.5 rounded-xl font-bold hover:bg-blue-400 transition-colors active:scale-95 text-xs"
+                  disabled={isGeneratingPdf}
+                  className="flex flex-col items-center justify-center gap-1 bg-blue-500 text-white py-2.5 rounded-xl font-bold hover:bg-blue-400 transition-colors active:scale-95 text-xs disabled:opacity-70"
                 >
-                  <Download size={17} />PDF
+                  {isGeneratingPdf ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />}
+                  {isGeneratingPdf ? 'Generating…' : 'PDF'}
                 </button>
                 <button
                   onClick={handleWhatsAppPDF}
@@ -1415,11 +1559,11 @@ function StandardBillingUI() {
                   className="flex flex-col items-center justify-center gap-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 py-2.5 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors active:scale-95 text-xs disabled:opacity-70 shadow-sm"
                 >
                   {isSharing ? <Loader2 size={17} className="animate-spin" /> : <MessageCircle size={17} />}
-                  {isSharing ? 'Sharing…' : 'Share'}
+                  {isSharing ? 'Sharing…' : 'WhatsApp'}
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setShowBillModal(false)}
                   className="flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm shadow-sm"
@@ -1432,6 +1576,13 @@ function StandardBillingUI() {
                 >
                   New Bill
                 </button>
+                <a
+                  href={`/${locale}/billing/invoices`}
+                  onClick={() => setShowBillModal(false)}
+                  className="flex items-center justify-center gap-1.5 bg-sky-500/10 text-sky-500 py-2.5 rounded-xl font-semibold hover:bg-sky-500/20 transition-colors text-xs text-center leading-tight"
+                >
+                  History
+                </a>
               </div>
             </div>
           </div>

@@ -24,6 +24,7 @@ import dynamic from 'next/dynamic';
 const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieChart'), { ssr: false });
 
 function totalDue(c: UdharCustomer) {
+  if (c.totalDue !== undefined && c.totalDue !== null) return c.totalDue;
   return (c.transactions || []).reduce((sum, t) => t.type === 'udhar' ? sum + t.amount : sum - t.amount, 0);
 }
 

@@ -4,6 +4,7 @@ import prisma from '@/lib/server/prisma';
 import { ensureWholesaleTables } from '@/lib/server/wholesale';
 import { ensureGodownTables } from '@/lib/server/godowns';
 import { randomUUID } from 'crypto';
+import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
 
 export async function GET(req: Request) {
   try {
@@ -44,21 +45,31 @@ export async function POST(req: Request) {
     }
 
     const data = await req.json();
-    const { supplierId, invoiceNumber, date, warehouseId, items } = data;
+    const { supplierId, invoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;
 
     if (!supplierId || !warehouseId || !items || items.length === 0) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
     }
 
+    const finalAmountPaid = typeof amountPaid === 'number' ? amountPaid : 0;
+    const finalPaymentMode = paymentMode || 'Cash';
+
     // We use a sequential Array Transaction so the entire process runs in exactly 1 Database Round-Trip.
     const invoiceId = randomUUID();
 
-    // 1. Calculate totals
+    // 1. Calculate totals and normalize to base units
     let totalCost = 0;
     let totalGst = 0;
 
-    for (const item of items) {
-      totalCost += item.quantity * item.cost;
+    const processedItems = items.map((item: any) => {
+      const factor = Number(item.conversionFactor) || 1;
+      const baseQuantity = item.quantity * factor;
+      const baseCost = item.cost / factor;
+      return { ...item, baseQuantity, baseCost };
+    });
+
+    for (const item of processedItems) {
+      totalCost += item.quantity * item.cost; // Use original for invoice total
       if (item.gst) totalGst += item.gst;
     }
 
@@ -78,42 +89,42 @@ export async function POST(req: Request) {
 
       // 3. Bulk Insert Items, Batches, and Movements
       prisma.purchaseItem.createMany({
-        data: items.map((item: any) => ({
+        data: processedItems.map((item: any) => ({
           purchaseInvoiceId: invoiceId,
           productId: item.productId,
           variantId: item.variantId || null,
-          quantity: item.quantity,
-          cost: item.cost,
+          quantity: item.baseQuantity,
+          cost: item.baseCost,
           gst: item.gst || 0,
         }))
       }),
 
       prisma.batch.createMany({
-        data: items.map((item: any) => ({
+        data: processedItems.map((item: any) => ({
           shopId: auth.shop.id,
           productId: item.productId,
           variantId: item.variantId || null,
           batchNumber: item.batchNumber || null,
           mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
           expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-          quantity: item.quantity,
+          quantity: item.baseQuantity,
         }))
       }),
 
       prisma.stockMovement.createMany({
-        data: items.map((item: any) => ({
+        data: processedItems.map((item: any) => ({
           shopId: auth.shop.id,
           productId: item.productId,
           variantId: item.variantId || null,
           warehouseId,
           type: 'purchase',
-          quantity: item.quantity,
+          quantity: item.baseQuantity,
           referenceId: invoiceId,
         }))
       }),
 
       // 4. Update Global Stock and Warehouse Inventory concurrently
-      ...items.flatMap((item: any) => [
+      ...processedItems.flatMap((item: any) => [
         prisma.godownProduct.upsert({
           where: {
             godownId_productId: {
@@ -121,18 +132,63 @@ export async function POST(req: Request) {
               productId: item.productId
             }
           },
-          update: { quantity: { increment: item.quantity } },
-          create: { godownId: warehouseId, productId: item.productId, quantity: item.quantity }
+          update: { quantity: { increment: item.baseQuantity } },
+          create: { godownId: warehouseId, productId: item.productId, quantity: item.baseQuantity }
         }),
         prisma.product.update({
           where: { id: item.productId },
-          data: { currentStock: { increment: item.quantity } }
+          data: { currentStock: { increment: item.baseQuantity } }
         })
-      ])
+      ]),
+
+      // 5. Update Supplier Ledger
+      prisma.supplier.update({
+        where: { id: supplierId },
+        data: { balance: { increment: totalCost - finalAmountPaid } }
+      }),
+      prisma.supplierTransaction.create({
+        data: {
+          supplierId,
+          type: 'purchase',
+          amount: totalCost,
+          note: `Purchase Invoice: ${invoiceNumber || invoiceId}`,
+        }
+      }),
+
+      // 6. CashBook Entry (if payment made)
+      ...(finalAmountPaid > 0 && finalPaymentMode.toLowerCase() === 'cash' ? [
+        prisma.cashBook.create({
+          data: {
+            shopId: auth.shop.id,
+            type: 'purchase',
+            amount: finalAmountPaid,
+            referenceId: invoiceId,
+            description: `Payment for Purchase Invoice: ${invoiceNumber || invoiceId}`
+          }
+        })
+      ] : []),
+
+      // 7. Activity Log
+      prisma.activityLog.create({
+        data: {
+          shopId: auth.shop.id,
+          action: 'purchase_added',
+          entityId: invoiceId,
+          details: { invoice: invoiceNumber || invoiceId, total: totalCost }
+        }
+      })
     ];
 
     const results = await prisma.$transaction(transactionOps);
     const invoice = results[0];
+
+    // 8. Notifications Trigger (Outside transaction so it doesn't fail the primary purchase if it errors, but wait, the instructions say "Background helpers that can run safely inside transactions" -> wait, prisma.$transaction(transactionOps) is an array transaction, we can't await functions inside array. 
+    // We can just run it after since notification is not strictly mission-critical for database consistency, or we rewrite it as an interactive transaction). Let's run it after.
+    try {
+      await prisma.$transaction(async (tx) => {
+        await checkLargeTransactionAlert(tx, auth.shop.id, totalCost, 'purchase', invoiceNumber || invoiceId);
+      });
+    } catch(e) { console.error('Notification failed', e); }
 
     return NextResponse.json({ success: true, invoice });
   } catch (error: any) {

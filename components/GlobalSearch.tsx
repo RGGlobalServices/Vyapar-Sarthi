@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Search, Loader2, Package, Users, ShoppingCart, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import { useBusinessStore } from '@/lib/businessStore';
 
 export default function GlobalSearch({ locale }: { locale: string }) {
   const [query, setQuery] = useState('');
@@ -12,6 +13,8 @@ export default function GlobalSearch({ locale }: { locale: string }) {
   const [results, setResults] = useState<{ products: any[], suppliers: any[], customers: any[] } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { profile } = useBusinessStore();
+  const isWholesale = profile?.packageType === 'wholesale';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -70,7 +73,7 @@ export default function GlobalSearch({ locale }: { locale: string }) {
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <input 
           type="text"
-          placeholder="Search products, suppliers, customers (Cmd+K)"
+          placeholder={`Search products, suppliers, ${isWholesale ? 'parties' : 'customers'} (Cmd+K)`}
           className="w-full bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-slate-900 dark:text-slate-100"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -119,7 +122,9 @@ export default function GlobalSearch({ locale }: { locale: string }) {
             {/* Customers */}
             {results.customers?.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2"><User size={12}/> Customers</h3>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2">
+                  <User size={12}/> {isWholesale ? 'Parties' : 'Customers'}
+                </h3>
                 <div className="space-y-1">
                   {results.customers.map(c => (
                     <button key={c.id} onClick={() => handleSelect('/udhar')} className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group">

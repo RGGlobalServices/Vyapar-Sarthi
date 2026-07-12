@@ -8,6 +8,9 @@ export const dynamic = 'force-dynamic';
 // POST /godowns/transfer — move stock between two godowns
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
+  if (shop.subscriptionPlan !== 'wholesale') {
+    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
+  }
   const { fromGodownId, toGodownId, productId, quantity } = await readBody(req);
   if (!fromGodownId || !toGodownId || !productId || !quantity) {
     throw new ApiError(400, 'fromGodownId, toGodownId, productId, quantity required');

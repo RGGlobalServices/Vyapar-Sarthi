@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
-  const { question, locale } = await readBody(req);
+  const { question, locale, screenContext } = await readBody(req);
   if (!question?.trim()) throw new ApiError(400, 'question is required');
 
   // ── Gather the shop's real data for grounding ──
@@ -56,11 +56,36 @@ export const POST = handle(async (req) => {
 
   const lang = LANG[locale as string] || 'the same language as the question';
 
-  const systemPrompt = `You are "Vyapar Guru", a knowledgeable AI business advisor for an Indian shop owner. You help with their own shop AND general business/market knowledge.
+  // ── Screen-specific context injection ──
+  const screenHints: Record<string, string> = {
+    billing: 'The user is currently on the Billing/POS screen. Focus on billing, invoice creation, payment methods, and customer selection.',
+    stock: 'The user is on the Stock/Inventory screen. Focus on stock levels, minimum stock, reorder, and product details.',
+    purchases: 'The user is on the Purchases screen. Focus on supplier invoices, purchase costs, and stock inflow.',
+    udhar: 'The user is on the Outstanding/Udhar screen. Focus on customer dues, payment collection, and ledger entries.',
+    reports: 'The user is on the Reports screen. Focus on sales trends, profit analysis, and business performance.',
+    expenses: 'The user is on the Expenses screen. Focus on expense categories, cash outflow, and cost management.',
+    customers: 'The user is on the Customers screen. Focus on customer profiles, purchase history, and outstanding amounts.',
+    suppliers: 'The user is on the Suppliers screen. Focus on supplier ledgers, payables, and purchase history.',
+    products: 'The user is on the Products screen. Focus on product pricing, margin, stock, and catalog management.',
+    dashboard: 'The user is on the Dashboard. Give a holistic business overview.',
+  };
+
+  const screenNote = screenContext
+    ? (screenHints[screenContext] || `The user is currently on the "${screenContext}" screen.`)
+    : '';
+
+  const packageNote = `Package: ${shop.subscriptionPlan || 'basic'}. Business type: ${shop.businessType || 'retail'}.`;
+
+  const systemPrompt = `You are "Vyapar Guru", a knowledgeable AI business advisor for an Indian shop owner using the Vyapar Sarthi ERP app.
+
+${screenNote ? `CURRENT SCREEN CONTEXT: ${screenNote}\n` : ''}
+${packageNote}
 
 How to answer:
 - If the question is about THIS shop's own products, prices, stock, profit or sales, use the SHOP DATA below. For a product the shop stocks, give its wholesale (buying) cost, selling price, MRP, and profit per unit.
-- If the question is about general/market topics NOT in the shop data — e.g. typical wholesale/market prices of a product, brand comparisons, what to stock, suppliers, margins, or business advice — answer from your general knowledge. Give a helpful approximate figure or a typical price range in ₹, then add a brief note that it is an estimate that varies by city, supplier, model and season, and suggest confirming with a local wholesaler. Do NOT refuse just because it is not in the shop data.
+- If the question is about the current screen, focus your answer on that domain specifically.
+- If the question is about general/market topics NOT in the shop data — e.g. typical wholesale/market prices of a product, brand comparisons, what to stock, suppliers, margins, or business advice — answer from your general knowledge. Give a helpful approximate figure or a typical price range in ₹, then add a brief note that it is an estimate that varies by city, supplier, model and season, and suggest confirming with a local wholesaler.
+- NEVER suggest modifying prices, deleting products, or creating bills without explicit user intent.
 - Only say you don't know if you truly have no useful information.
 
 Reply in ${lang}. Be concise, practical and friendly. Use ₹ for money.

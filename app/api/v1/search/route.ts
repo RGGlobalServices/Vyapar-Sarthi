@@ -36,13 +36,15 @@ export async function GET(req: Request) {
         take: 5,
         select: { id: true, name: true, barcode: true, sellingPrice: true },
       }),
-      
-      // Suppliers
-      prisma.supplier.findMany({
-        where: { shopId: shop.id, OR: supplierOr },
-        take: 5,
-        select: { id: true, name: true, contact: true, mobile: true },
-      }),
+
+      // Suppliers — Udyog plan only
+      shop.subscriptionPlan === 'wholesale'
+        ? prisma.supplier.findMany({
+            where: { shopId: shop.id, OR: supplierOr },
+            take: 5,
+            select: { id: true, name: true, contact: true, mobile: true },
+          })
+        : Promise.resolve([]),
 
       // Customers
       prisma.customer.findMany({

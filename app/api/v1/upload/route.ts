@@ -15,17 +15,32 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, 'No file uploaded');
   }
 
-  const BUCKET_NAME = 'staff_documents';
-  
+  // Reuses the 'invoices' bucket (already provisioned and writable with the
+  // anon key — see lib/supabaseStorage.ts) under a staff-docs/ prefix, since
+  // a dedicated 'staff_documents' bucket was never created in Supabase.
+  const BUCKET_NAME = 'invoices';
+
   // Generate a unique filename using crypto.randomUUID
-  const fileExt = file.name.split('.').pop();
-  const fileName = `${shop.id}/${crypto.randomUUID()}.${fileExt}`;
+  const fileExt = (file.name.split('.').pop() || '').toLowerCase();
+  const fileName = `staff-docs/${shop.id}/${crypto.randomUUID()}.${fileExt}`;
+
+  // Some pickers (mobile camera/gallery intents especially) report an empty
+  // file.type. A missing/generic Content-Type makes browsers force-download
+  // the file instead of opening it inline when a user clicks "View" — fall
+  // back to a lookup by extension so images/PDFs render in the browser tab.
+  const EXT_MIME: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+    gif: 'image/gif', heic: 'image/heic', pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  const contentType = file.type || EXT_MIME[fileExt] || 'application/octet-stream';
 
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
     .upload(fileName, file, {
       upsert: true,
-      contentType: file.type
+      contentType
     });
 
   if (error) {

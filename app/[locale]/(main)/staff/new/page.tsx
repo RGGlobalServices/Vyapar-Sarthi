@@ -5,8 +5,9 @@ import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
-import { Briefcase, Camera, Check, ChevronLeft, CreditCard, FileText, UploadCloud, User } from 'lucide-react';
+import { Briefcase, Check, ChevronLeft, CreditCard, Eye, FileText, Trash2, UploadCloud, User } from 'lucide-react';
 import { Link } from '@/i18n/routing';
+import DocumentViewerModal from '@/components/DocumentViewerModal';
 
 const ROLES = ['Salesman', 'Helper', 'Cashier', 'Warehouse Staff', 'Delivery Boy', 'Other'];
 
@@ -28,6 +29,7 @@ export default function AddStaffPage() {
   });
 
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, docType: string) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -38,9 +40,7 @@ export default function AddStaffPage() {
     body.append('file', file);
     
     try {
-      const res = await api.post('/upload', body, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.post('/upload', body);
       if (res.data.url) {
         if (docType === 'photoUrl') {
           setFormData(p => ({ ...p, photoUrl: res.data.url }));
@@ -59,6 +59,19 @@ export default function AddStaffPage() {
     }
   };
 
+  const handleRemoveDoc = (docType: string) => {
+    if (!confirm('Remove this document?')) return;
+    if (docType === 'photoUrl') {
+      setFormData(p => ({ ...p, photoUrl: '' }));
+    } else {
+      setFormData(p => {
+        const documents = { ...p.documents };
+        delete documents[docType];
+        return { ...p, documents };
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
@@ -74,9 +87,10 @@ export default function AddStaffPage() {
   };
 
   const DocumentUpload = ({ label, docType }: { label: string, docType: string }) => {
-    const isUploaded = docType === 'photoUrl' ? !!formData.photoUrl : !!formData.documents[docType];
+    const fileUrl = docType === 'photoUrl' ? formData.photoUrl : formData.documents[docType];
+    const isUploaded = !!fileUrl;
     const isUploading = uploadingDoc === docType;
-    
+
     return (
       <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl">
         <div className="flex items-center gap-3">
@@ -88,25 +102,46 @@ export default function AddStaffPage() {
             <p className="text-xs text-slate-500">{isUploaded ? 'Uploaded' : 'Pending'}</p>
           </div>
         </div>
-        <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${isUploaded ? 'bg-white border-2 border-green-500 text-green-600 dark:bg-slate-800 dark:text-green-400' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20'}`}>
-          {isUploading ? (
-            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-          ) : isUploaded ? (
-            'Change'
-          ) : (
-            <>
-              <Camera size={16} /> Upload
-            </>
+        <div className="flex items-center gap-2">
+          {isUploaded && (
+            <button
+              type="button"
+              onClick={() => setViewingDoc({ url: fileUrl, label })}
+              className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 transition-colors"
+            >
+              View <Eye size={14} />
+            </button>
           )}
-          <input 
-            type="file" 
-            accept="image/*,application/pdf"
-            capture="environment"
-            className="hidden" 
-            onChange={(e) => handleFileUpload(e, docType)}
-            disabled={isUploading}
-          />
-        </label>
+          <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${isUploaded ? 'bg-white border-2 border-green-500 text-green-600 dark:bg-slate-800 dark:text-green-400' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20'}`}>
+            {isUploading ? (
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : isUploaded ? (
+              'Change'
+            ) : (
+              <>
+                <UploadCloud size={16} /> Upload
+              </>
+            )}
+            <input
+              type="file"
+              accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(e) => handleFileUpload(e, docType)}
+              disabled={isUploading}
+            />
+          </label>
+          {isUploaded && (
+            <button
+              type="button"
+              onClick={() => handleRemoveDoc(docType)}
+              disabled={isUploading}
+              title="Remove document"
+              className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+        </div>
       </div>
     );
   };
@@ -216,6 +251,10 @@ export default function AddStaffPage() {
           {loading ? <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin" /> : 'Save Employee Details'}
         </button>
       </form>
+
+      {viewingDoc && (
+        <DocumentViewerModal url={viewingDoc.url} label={viewingDoc.label} onClose={() => setViewingDoc(null)} />
+      )}
     </div>
   );
 }

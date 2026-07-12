@@ -53,14 +53,19 @@ export default function WarehousesUI() {
     e.preventDefault();
     if (!form.name.trim()) return;
     setSaving(true);
+    
+    // Optimistic Update
+    const newGodown = { ...form, id: 'temp-' + Date.now(), total_products: 0, total_value: 0 };
+    mutateWarehouses((current: any[] = []) => [newGodown, ...current], false);
+    setModal(null);
+    setForm({ name: '', location: '' });
+
     try {
       await api.post('/godowns', form);
-      setModal(null);
-      setForm({ name: '', location: '' });
-      mutateWarehouses();
     } catch (err) {
       alert('Failed to save warehouse');
     } finally {
+      mutateWarehouses(); // Sync with server
       setSaving(false);
     }
   };

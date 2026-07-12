@@ -12,6 +12,9 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
+  if (shop.subscriptionPlan !== 'wholesale') {
+    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
+  }
   const { productId, quantity } = await readBody(req);
   if (!productId) throw new ApiError(400, 'productId required');
   if (quantity === undefined || quantity < 0) throw new ApiError(400, 'quantity must be >= 0');

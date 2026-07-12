@@ -4,9 +4,10 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from '@/i18n/routing';
 import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
-import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, ExternalLink } from 'lucide-react';
+import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, Eye } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
+import DocumentViewerModal from '@/components/DocumentViewerModal';
 
 export default function StaffProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -33,6 +34,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
 
   // Salary calc state
   const [calcMonth, setCalcMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -129,6 +131,18 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     } catch (e) {
       alert('Failed to delete');
       setDeleting(false);
+    }
+  }
+
+  async function handleDeleteDocument(key: string) {
+    if (!confirm(`Remove ${key.replace(/([A-Z])/g, ' $1').trim()}?`)) return;
+    const documents = { ...form.documents };
+    delete documents[key];
+    try {
+      await api.patch(`/staff/${resolvedParams.id}`, { documents });
+      setForm(prev => ({ ...prev, documents }));
+    } catch (e) {
+      alert('Failed to delete document');
     }
   }
 
@@ -252,9 +266,21 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 Object.entries(form.documents).map(([key, url]) => (
                   <div key={key} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
                     <span className="text-sm font-bold capitalize text-slate-700 dark:text-slate-300">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 flex items-center gap-1 text-xs font-bold hover:underline">
-                      View <ExternalLink size={12} />
-                    </a>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setViewingDoc({ url, label: key.replace(/([A-Z])/g, ' $1').trim() })}
+                        className="text-indigo-600 flex items-center gap-1 text-xs font-bold hover:underline"
+                      >
+                        View <Eye size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDocument(key)}
+                        title="Remove document"
+                        className="text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg p-1.5 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -367,6 +393,10 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
             </div>
           </Card>
         </div>
+      )}
+
+      {viewingDoc && (
+        <DocumentViewerModal url={viewingDoc.url} label={viewingDoc.label} onClose={() => setViewingDoc(null)} />
       )}
     </div>
   );

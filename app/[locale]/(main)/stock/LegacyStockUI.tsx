@@ -368,7 +368,7 @@ export default function LegacyStockUI() {
     return rows.map(item => {
       const status = getStatus(item);
       return (
-        <tr key={item.id} className={cn('group text-slate-900 dark:text-slate-200 hover:bg-slate-100 dark:bg-slate-800/ transition-all duration-200', item.archived && 'opacity-60')}>
+        <tr key={item.id} className={cn('group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200', item.archived && 'opacity-60')}>
           <td className="px-6 py-4 font-medium"><SmartTranslator text={item.name} locale={locale} /></td>
           <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
           <td className="px-6 py-4">
@@ -583,7 +583,7 @@ export default function LegacyStockUI() {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-100 dark:bg-slate-800/ text-slate-400 text-xs uppercase">
+                    <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
                       <tr>
                         <th className="px-5 py-3">Product</th>
                         <th className="px-5 py-3">Category</th>
@@ -600,7 +600,7 @@ export default function LegacyStockUI() {
                         const shopItem = items.find(i => String(i.id) === String(item.productId || item.product_id));
                         const status = shopItem ? getStatus(shopItem) : null;
                         return (
-                          <tr key={item.id} className="text-slate-900 dark:text-slate-200 hover:bg-slate-100 dark:bg-slate-800/ transition-colors">
+                          <tr key={item.id} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                             <td className="px-5 py-3 font-medium">{p?.name}</td>
                             <td className="px-5 py-3 text-slate-400">{p?.category}</td>
                             <td className="px-5 py-3">
@@ -646,7 +646,7 @@ export default function LegacyStockUI() {
                 <button key={shop.id}
                   onClick={() => { switchShop(shop.id); setTimeout(fetchStock, 300); }}
                   className={cn('flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                    isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-white hover:border-slate-300 dark:border-slate-700')}>
+                    isActive ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white hover:border-slate-300 dark:border-slate-700')}>
                   <Store size={14} />
                   <span>{shop.name}</span>
                   {shop.shopCode && <span className="text-[10px] font-mono text-slate-500">{shop.shopCode}</span>}
@@ -689,7 +689,7 @@ export default function LegacyStockUI() {
 
         <button onClick={() => setShowArchived(v => !v)}
           className={cn('px-6 py-2 rounded-xl border text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap',
-            showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}>
+            showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
           <Archive size={16} />
           {showArchived ? t('hideArchived') : t('archive')}
           {items.filter(i => i.archived).length > 0 && (
@@ -703,7 +703,7 @@ export default function LegacyStockUI() {
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-slate-100 dark:bg-slate-800/ text-slate-400 text-xs uppercase">
+              <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
                 <tr>
                   <th className="px-6 py-4">{t('colProduct')}</th>
                   <th className="px-6 py-4">{t('colCategory')}</th>
@@ -736,7 +736,7 @@ export default function LegacyStockUI() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-slate-100 dark:bg-slate-800/ text-slate-400 text-xs uppercase">
+                <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
                   <tr>
                     <th className="px-6 py-4">{t('colProduct')}</th>
                     <th className="px-6 py-4">{t('colCategory')}</th>
@@ -812,7 +812,7 @@ export default function LegacyStockUI() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate pr-4">{editModal.item.name}</h2>
-              <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-slate-900 dark:text-slate-200 shrink-0"><X size={20} /></button>
+              <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white shrink-0"><X size={20} /></button>
             </div>
 
             <div className="p-5 space-y-5 overflow-y-auto flex-1 min-h-0">
@@ -863,11 +863,11 @@ export default function LegacyStockUI() {
                 <div className="flex gap-2 mb-3">
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjType: 'in' } : m)}
-                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'in' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}
+                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'in' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}
                   >+ Add Stock</button>
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjType: 'out' } : m)}
-                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'out' ? 'bg-red-500 text-slate-900 dark:text-white' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}
+                    className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'out' ? 'bg-red-500 text-slate-900 dark:text-white' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}
                   >− Remove</button>
                 </div>
                 <div className="flex items-center gap-3">
@@ -946,17 +946,17 @@ export default function LegacyStockUI() {
             {/* Sticky header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
               <div className="flex items-center gap-2"><ArrowDownLeft size={18} className="text-emerald-400" /><h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('stockIn')}</h2></div>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-900 dark:text-slate-200"><X size={20} /></button>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white"><X size={20} /></button>
             </div>
             <form onSubmit={handleStockIn} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1 p-6 space-y-4">
               <div className="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700">
                 <button type="button" onClick={() => { setIsNew(false); setError(''); }}
-                  className={cn('flex-1 py-2 text-sm font-medium transition-colors', !isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}>
+                  className={cn('flex-1 py-2 text-sm font-medium transition-colors', !isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
                   {t('existingProduct')}
                 </button>
                 <button type="button" onClick={() => { setIsNew(true); setError(''); }}
-                  className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1', isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200')}>
+                  className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1', isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
                   <Plus size={14} />{t('newProduct')}
                 </button>
               </div>
@@ -1186,7 +1186,7 @@ export default function LegacyStockUI() {
               </div>
 
               {/* Pricing Update Section */}
-              <div className="bg-slate-100 dark:bg-slate-800/ rounded-xl p-4 border border-slate-300 dark:border-slate-700/50 space-y-3">
+              <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 border border-slate-300 dark:border-slate-700/50 space-y-3">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('updatePricing') || 'Price Adjustment'}</p>
@@ -1230,7 +1230,7 @@ export default function LegacyStockUI() {
             {/* Sticky footer buttons */}
             <div className="flex gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
               <button type="button" onClick={closeModal}
-                className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-slate-900 dark:text-slate-200 transition-all active:scale-95">
+                className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white transition-all active:scale-95">
                 {t('cancel')}
               </button>
               <button type="submit" disabled={submitting}
@@ -1250,7 +1250,7 @@ export default function LegacyStockUI() {
           <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
               <div className="flex items-center gap-2"><ArrowUpRight size={18} className="text-red-400" /><h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('stockOut')}</h2></div>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-900 dark:text-slate-200"><X size={20} /></button>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white"><X size={20} /></button>
             </div>
             <form onSubmit={handleStockOut} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1 p-6 space-y-4">

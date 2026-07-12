@@ -3,6 +3,8 @@
  * Central source of truth for all business-type-specific settings
  */
 
+import { PackageType } from './config/packageConfig';
+
 export type BusinessType =
   | 'kirana'
   | 'medical'
@@ -49,6 +51,7 @@ export interface BusinessConfig {
   // resolved from the product's CATEGORY via getCategoryVariantSpec(), not a fixed list,
   // so a Battery gets type × capacity, a Bulb gets type × watt, a Wire gets material × gauge…
   hasSpecs?: boolean;
+  defaultPackage?: PackageType;
 }
 
 export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
@@ -96,6 +99,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholderHi: 'जैसे टाटा नमक (1kg)',
     productPlaceholderMr: 'उदा. टाटा मीठ (1kg)',
     sizeChart: ['10g', '50g', '100g', '250g', '500g', '1kg', '5kg', '10kg', '50ml', '100ml', '200ml', '500ml', '1L'],
+    defaultPackage: 'dukan',
   },
   medical: {
     type: 'medical',

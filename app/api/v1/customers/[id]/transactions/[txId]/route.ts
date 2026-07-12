@@ -19,13 +19,15 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
 
   await prisma.customer_transactions.delete({ where: { id: txId } });
 
-  // Recalculate totalDue
-  const allTx = await prisma.customer_transactions.findMany({ where: { customer_id: id } });
-  const totalDue = allTx.reduce(
-    (sum, t) => (t.type === 'udhar' ? sum + (t.amount || 0) : sum - (t.amount || 0)),
-    0,
-  );
-  await prisma.customer.update({ where: { id }, data: { totalDue } });
+  // Atomic update to reverse the transaction's effect
+  await prisma.customer.update({
+    where: { id },
+    data: {
+      totalDue: {
+        [tx.type === 'udhar' ? 'decrement' : 'increment']: Number(tx.amount || 0)
+      }
+    }
+  });
 
   return json({ detail: 'Transaction deleted' });
 });

@@ -10,6 +10,10 @@ import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAcces
 import api from '@/lib/api';
 import { Menu, Clock, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useRouter } from '@/i18n/routing';
+import toast from 'react-hot-toast';
+import { getPackageConfig } from '@/lib/config/packageConfig';
+import { getBusinessConfig } from '@/lib/businessConfig';
 
 // Map URL segment → tool key for usage tracking
 const PATH_TO_TOOL: Record<string, string> = {
@@ -18,6 +22,7 @@ const PATH_TO_TOOL: Record<string, string> = {
 };
 
 import Sidebar from '@/components/Sidebar';
+import { useRealtimeSync } from '@/lib/hooks/useRealtimeSync';
 
 function TrialCountdownTracker({ profile }: { profile: any }) {
   const [timeLeft, setTimeLeft] = useState<string>('');
@@ -147,14 +152,18 @@ export default function MainLayoutClient({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { loadFromStorage, user } = useAuthStore();
+  const { loadFromStorage, user, role } = useAuthStore();
   const { profile, fetchProfile, activeShopId } = useBusinessStore();
   const lastTracked = useRef('');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     loadFromStorage();
   }, [loadFromStorage]);
+
+  // Activate global realtime sync
+  useRealtimeSync();
 
   // Track which tool (page) the user visits — silent, non-blocking
   useEffect(() => {
@@ -216,6 +225,39 @@ export default function MainLayoutClient({
   const ended = isSubscriptionEnded(profile);
   const isExcludedRoute = ended ? isAllowedWhenEnded(pathname) : false;
 
+  const currentPackageConfig = getPackageConfig(profile.packageType);
+  const currentBusinessConfig = getBusinessConfig(profile.businessType);
+
+  // Route Protection: If module is not in package, redirect to dashboard
+  useEffect(() => {
+    if (!mounted || !profile.id) return;
+    
+    // Extract the primary module from pathname (e.g. /en/products -> products)
+    const segments = pathname.split('/').filter(Boolean);
+    // Ignore locale if present
+    const mainSegment = segments.length > 0 && ['en', 'hi', 'mr'].includes(segments[0]) ? segments[1] : segments[0];
+    
+    if (mainSegment) {
+      // Map route segment to module name if they differ
+      let moduleName = mainSegment;
+      if (mainSegment === 'godowns') moduleName = 'warehouses';
+      if (mainSegment === 'wholesale-billing') moduleName = 'wholesale_billing';
+
+      // Some routes are external or not in the sidebar explicitly but should be allowed (like settings, profile, etc.)
+      const alwaysAllowed = ['profile', 'settings', 'support', 'dukandar-alerts'];
+      
+      // If staff, apply additional restrictions
+      const staffRestricted = role === 'staff' && ['reports', 'import', 'warehouses', 'suppliers', 'purchases', 'transfers'].includes(moduleName);
+      
+      if (!alwaysAllowed.includes(moduleName)) {
+        if (!currentPackageConfig.modules.includes(moduleName) || staffRestricted) {
+          toast.error(`Module '${moduleName}' is not available in your ${currentPackageConfig.label}`);
+          router.replace('/');
+        }
+      }
+    }
+  }, [pathname, currentPackageConfig, profile.id, mounted, role, router]);
+
   return (
     <section className="flex min-h-screen">
       {!mounted ? (
@@ -243,7 +285,19 @@ export default function MainLayoutClient({
               >
                 <Menu size={20} />
               </button>
-              <span className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{mounted ? (profile.shopName || 'Vyapar Sarthi') : 'Vyapar Sarthi'}</span>
+              <div className="flex flex-col">
+                <span className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{mounted ? (profile.shopName || 'Vyapar Sarthi') : 'Vyapar Sarthi'}</span>
+                {mounted && (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest truncate border border-slate-200 dark:border-slate-700">
+                      {currentBusinessConfig.label}
+                    </span>
+                    <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest truncate">
+                      {currentPackageConfig.label}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             {/* Desktop global search */}
             <div className="hidden md:block w-72 lg:w-96">

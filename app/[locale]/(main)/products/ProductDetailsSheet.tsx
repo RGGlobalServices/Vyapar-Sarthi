@@ -10,6 +10,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import useSWR, { useSWRConfig } from 'swr';
+import ReceiveDrawer from '../stock/ReceiveDrawer';
+
+const fetcher = (url: string) => api.get(url).then(res => res.data);
 
 export default function ProductDetailsSheet({
   productId,
@@ -25,6 +29,11 @@ export default function ProductDetailsSheet({
   const t = useTranslations('ProductDetails');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
+  
+  const { mutate } = useSWRConfig();
+  
+  const [showReceive, setShowReceive] = useState(false);
+  const { data: godowns = [] } = useSWR('/godowns', fetcher);
 
   useEffect(() => {
     if (productId) fetchDetails();
@@ -79,6 +88,13 @@ export default function ProductDetailsSheet({
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              disabled={loading}
+              onClick={() => setShowReceive(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
+            >
+              <Package size={13} /> Receive Stock
+            </button>
             {onDelete && (
               <button
                 disabled={loading}
@@ -282,6 +298,19 @@ export default function ProductDetailsSheet({
           )}
         </div>
       </div>
+      
+      {showReceive && data?.product && (
+        <ReceiveDrawer 
+          product={data.product}
+          godowns={godowns}
+          onClose={() => setShowReceive(false)}
+          onSuccess={() => {
+            setShowReceive(false);
+            fetchDetails(); // refresh stock
+            mutate('/products'); // refresh background table
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -108,9 +108,17 @@ function LegacyProductsUI() {
     setMounted(true);
   }, []);
 
-  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<Product[]>('/products', fetchProductsMapped);
-  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  const swrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
+  const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<Product[]>(swrKey, fetchProductsMapped);
+  
+  const [saving, setSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(buildEmptyForm(profile.businessType));
   const [showEditModal, setShowEditModal] = useState(false);
@@ -234,7 +242,7 @@ function LegacyProductsUI() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await api.post('/products/scan', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await api.post('/products/scan', formData);
       const d = res.data;
       setForm(prev => ({
         ...prev,

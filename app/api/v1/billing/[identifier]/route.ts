@@ -56,6 +56,8 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     invoice_number: sale.invoice_number,
     total_amount: sale.totalAmount,
     payment_type: sale.paymentType,
+    amount_paid: sale.amountPaid,
+    payment_details: sale.paymentDetails,
     customer_name: sale.customer?.name || null,
     created_at: sale.createdAt,
     items: sale.items.map((item) => ({

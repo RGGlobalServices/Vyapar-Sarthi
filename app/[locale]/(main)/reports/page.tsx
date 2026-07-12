@@ -1,401 +1,704 @@
 'use client';
-import {useState, useEffect} from 'react';
-import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+
+import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import {Calendar, Download, FileText, Loader2, History, IndianRupee, TrendingUp, Percent, X, Box} from 'lucide-react';
-import Link from 'next/link';
-import {cn} from '@/lib/utils';
+import {
+  TrendingUp, IndianRupee, Percent, Package, Users, ShoppingCart,
+  FileText, Download, Loader2, BarChart3, PieChart, Receipt,
+  Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Box, Scale
+} from 'lucide-react';
 import api from '@/lib/api';
-import {useTranslations} from 'next-intl';
-import { exportReportPDF } from '@/lib/pdfExport';
-import { useAuthStore } from '@/lib/store';
+import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
+import { ExportButton } from '@/lib/hooks/useExport';
 
-const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieChart'), { ssr: false });
-const SalesAnalyticsChart = dynamic(() => import('@/components/SalesAnalyticsChart'), {
-  ssr: false,
-  loading: () => (
-    <div className="lg:col-span-3 h-[472px] bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl animate-pulse" />
-  ),
-});
+const ReportFilterBar = dynamic(() => import('@/components/reports/ReportFilterBar'), { ssr: false });
+const DrillDownChart = dynamic(() => import('@/components/reports/DrillDownChart'), { ssr: false });
+const ReportTable = dynamic(() => import('@/components/reports/ReportTable'), { ssr: false });
 
-let cachedReportsData: any = null;
+type Tab = 'sales' | 'purchases' | 'stock' | 'financials' | 'expenses' | 'crm' | 'staff';
 
-export default function ReportsPage() {
-  const t = useTranslations('Reports');
-  const { user } = useAuthStore();
-  const { profile } = useBusinessStore();
-  const [loading, setLoading] = useState(cachedReportsData === null);
-  const [exportingPDF, setExportingPDF] = useState(false);
-  const [data, setData] = useState<{
-    trend: any[],
-    topProducts: { items: any[], total: number, currency: boolean },
-    categories: { items: any[], total: number, currency: boolean },
-    kpis: { revenue: number, profit: number, margin: number }
-  }>(cachedReportsData || {
-    trend: [],
-    topProducts: { items: [], total: 0, currency: true },
-    categories: { items: [], total: 0, currency: true },
-    kpis: { revenue: 0, profit: 0, margin: 0 }
-  });
+const TABS: { id: Tab; label: string; icon: any; plans?: string[] }[] = [
+  { id: 'sales', label: 'Sales', icon: TrendingUp },
+  { id: 'financials', label: 'Financials', icon: Scale },
+  { id: 'stock', label: 'Stock', icon: Package },
+  { id: 'expenses', label: 'Expenses', icon: Wallet },
+  { id: 'crm', label: 'CRM', icon: Users },
+  { id: 'purchases', label: 'Purchases', icon: ShoppingCart, plans: ['wholesale'] },
+  { id: 'staff', label: 'Staff', icon: FileText },
+];
 
-  const [activeTab, setActiveTab] = useState<'revenue' | 'qty' | 'category'>('revenue');
-  const [showFullModal, setShowFullModal] = useState(false);
-  const [fullListLoading, setFullListLoading] = useState(false);
-  const [fullList, setFullList] = useState<any[]>([]);
-
-  // Calculate default dates
-  const getDates = () => {
-    const today = new Date();
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(today.getDate() - 6);
-    return {
-      start_date: sevenDaysAgo.toISOString().split('T')[0],
-      end_date: today.toISOString().split('T')[0]
-    };
+function KPICard({ label, value, sub, icon: Icon, color = 'emerald', trend }: any) {
+  const colorMap: Record<string, string> = {
+    emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600',
+    blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600',
+    amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600',
+    rose: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600',
+    purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600',
+    slate: 'bg-slate-100 dark:bg-slate-800 text-slate-600',
   };
-
-  useEffect(() => {
-    const fetchReport = async () => {
-      if (cachedReportsData === null) {
-        setLoading(true);
-      }
-      try {
-        const { start_date, end_date } = getDates();
-
-        const [trendRes, topRevRes, topQtyRes, topCatRes] = await Promise.all([
-          api.get('/reports/sales-trend'),
-          api.get(`/reports/top-products?group_by=revenue&limit=10&start_date=${start_date}&end_date=${end_date}`),
-          api.get(`/reports/top-products?group_by=quantity&limit=10&start_date=${start_date}&end_date=${end_date}`),
-          api.get(`/reports/top-products?group_by=category&limit=10&start_date=${start_date}&end_date=${end_date}`),
-        ]);
-
-        const totalRev = trendRes.data.reduce((sum: number, d: any) => sum + (d.sales ?? d.total ?? 0), 0);
-        const totalProf = trendRes.data.reduce((sum: number, d: any) => sum + (d.profit ?? 0), 0);
-        const margin = totalRev > 0 ? (totalProf / totalRev) * 100 : 0;
-
-        const payload = {
-          trend: trendRes.data,
-          topProducts: topRevRes.data,
-          categories: topCatRes.data,
-          kpis: { revenue: totalRev, profit: totalProf, margin }
-        };
-        setData(payload);
-        cachedReportsData = payload;
-      } catch (err) {
-        console.error('Failed to fetch business report:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
-  }, []);
-
-  const handleTabChange = async (tab: 'revenue' | 'qty' | 'category') => {
-    setActiveTab(tab);
-    try {
-      const { start_date, end_date } = getDates();
-      const res = await api.get(`/reports/top-products?group_by=${tab === 'qty' ? 'quantity' : tab}&limit=10&start_date=${start_date}&end_date=${end_date}`);
-      if (tab === 'category') {
-        setData(prev => ({ ...prev, categories: res.data }));
-      } else {
-        setData(prev => ({ ...prev, topProducts: res.data }));
-      }
-    } catch(err) {}
-  };
-
-  useEffect(() => {
-    if (showFullModal) {
-      const fetchFullList = async () => {
-        setFullListLoading(true);
-        try {
-          const { start_date, end_date } = getDates();
-          const groupParam = activeTab === 'qty' ? 'quantity' : activeTab;
-          const res = await api.get(`/reports/top-products?group_by=${groupParam}&limit=100&start_date=${start_date}&end_date=${end_date}`);
-          setFullList(res.data.items || []);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setFullListLoading(false);
-        }
-      };
-      fetchFullList();
-    } else {
-      setFullList([]); // clear on close
-    }
-  }, [showFullModal, activeTab]);
-
-  const handleExportCSV = async () => {
-    try {
-      let csvString = "Section,Item/Date,Revenue (INR),Secondary Value (Profit/Qty)\n";
-      
-      csvString += "\n--- SALES TREND ---\n";
-      data.trend.forEach((t: any) => {
-        csvString += `Trend,${typeof t.date === 'string' ? t.date : ''},${t.sales ?? t.total ?? 0},${t.profit ?? 0}\n`;
-      });
-      
-      csvString += "\n--- TOP PRODUCTS ---\n";
-      data.topProducts.items.forEach((p: any) => {
-        csvString += `Product,"${(p.name || '').replace(/"/g, '""')}",${p.value ?? 0},${p.qty ?? 0}\n`;
-      });
-
-      csvString += "\n--- TOP CATEGORIES ---\n";
-      data.categories.items.forEach((c: any) => {
-        csvString += `Category,"${(c.name || '').replace(/"/g, '""')}",${c.value ?? 0},${c.qty ?? 0}\n`;
-      });
-
-      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Business_Report_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (err) {
-      console.error('Export CSV failed:', err);
-      alert('Failed to export report CSV');
-    }
-  };
-
-  const handleExportPDF = async () => {
-    setExportingPDF(true);
-    try {
-      await exportReportPDF({
-        shopName: user?.storeName || 'Store',
-        dateRange: 'Last 30 Days',
-        trendData: data.trend,
-        topProducts: data.topProducts.items,
-        categories: data.categories.items
-      });
-    } catch (e) {
-      console.error(e);
-      alert('Failed to generate PDF');
-    } finally {
-      setExportingPDF(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="h-[60vh] flex items-center justify-center">
-        <Loader2 className="animate-spin text-emerald-500" size={40} />
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between mb-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
+          <Icon size={18} />
+        </div>
+        {trend !== undefined && (
+          <span className={`flex items-center gap-0.5 text-xs font-bold ${trend >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+            {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+            {Math.abs(trend).toFixed(1)}%
+          </span>
+        )}
       </div>
-    );
-  }
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-2xl font-black text-slate-900 dark:text-white leading-tight">{value}</p>
+      {sub && <p className="text-xs text-slate-500 font-medium mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function SectionCard({ title, children, actions }: any) {
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+        <h3 className="font-black text-sm text-slate-700 dark:text-slate-200 uppercase tracking-wider">{title}</h3>
+        {actions}
+      </div>
+      <div className="p-6">{children}</div>
+    </div>
+  );
+}
+
+// ── SALES TAB ──────────────────────────────────────────────────────────────
+function SalesTab({ filters }: { filters: any }) {
+  const [data, setData] = useState<any>(null);
+  const [byProduct, setByProduct] = useState<any>(null);
+  const [byCategory, setByCategory] = useState<any>(null);
+  const [byPayment, setByPayment] = useState<any>(null);
+  const [byCustomer, setByCustomer] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState<'overview' | 'products' | 'categories' | 'customers' | 'payment' | 'gst'>('overview');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}&group_by=${filters.groupBy}`;
+      const [trend, prod, cat, pay, cust] = await Promise.all([
+        api.get(`/reports/engine?module=sales&report_type=trend&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=by_product&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=by_category&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=by_payment&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=by_customer&${qs}`),
+      ]);
+      setData(trend.data);
+      setByProduct(prod.data);
+      setByCategory(cat.data);
+      setByPayment(pay.data);
+      setByCustomer(cust.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  const summary = data?.summary || {};
+  const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+  const subTabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'products', label: 'By Product' },
+    { id: 'categories', label: 'By Category' },
+    { id: 'customers', label: 'By Customer' },
+    { id: 'payment', label: 'By Payment' },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold text-emerald-500">{t('title') || 'Business Reports'}</h1>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/en/reports/sales-history" className="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-4 py-2 rounded-lg flex items-center gap-2 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-200 dark:hover:bg-emerald-500/40 transition-colors font-bold shadow-sm">
-            <History size={18} />
-            {t('deepSales') || 'Deep Sales Analysis'}
-          </Link>
-          {profile.subscriptionPlan === 'wholesale' && (
-            <Link href="/en/reports/wholesale" className="bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-4 py-2 rounded-lg flex items-center gap-2 border border-amber-200 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/40 transition-colors font-bold shadow-sm">
-              <Box size={18} />
-              Udyog Reports Suite
-            </Link>
-          )}
-          <button className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
-            <Calendar size={18} />
-            {t('last7Days') || 'Last 7 Days'}
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KPICard label="Total Revenue" value={fmt(summary.revenue || 0)} icon={IndianRupee} color="emerald" />
+        <KPICard label="Gross Profit" value={fmt(summary.profit || 0)} icon={TrendingUp} color="blue" />
+        <KPICard label="Profit Margin" value={`${(summary.margin || 0).toFixed(1)}%`} icon={Percent} color="amber" />
+        <KPICard label="Total Bills" value={(summary.count || 0).toLocaleString()} icon={Receipt} color="purple"
+          sub={`₹${summary.outstanding?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0} outstanding`} />
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex flex-wrap gap-2">
+        {subTabs.map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id as any)}
+            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === t.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+            {t.label}
           </button>
-          
-          <button 
-            onClick={handleExportPDF}
-            disabled={exportingPDF}
-            className="bg-blue-500 text-white dark:text-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-blue-400 transition-all active:scale-95 shadow-lg shadow-blue-500/20 disabled:opacity-50"
-          >
-            {exportingPDF ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18} />}
-            PDF
-          </button>
-
-          <button 
-            onClick={handleExportCSV}
-            className="bg-emerald-500 text-white dark:text-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
-          >
-            <Download size={18} />
-            CSV
-          </button>
-        </div>
+        ))}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-lg shadow-slate-200/40 dark:shadow-black/40 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
-            <IndianRupee size={28} strokeWidth={2.5} />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('totalRevenue') || 'Total Revenue'}</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-slate-100">
-              ₹{data.kpis?.revenue?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}
-            </p>
-          </div>
-        </div>
+      {subTab === 'overview' && data?.trend && (
+        <SectionCard title="Revenue & Profit Trend"
+          actions={<ExportButton columns={[{ key: 'date', label: 'Date' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }]} data={data.trend} filename="sales_trend" />}>
+          <DrillDownChart type="area" data={data.trend} xKey="date"
+            yKeys={[{ key: 'revenue', label: 'Revenue', color: '#10b981' }, { key: 'profit', label: 'Profit', color: '#3b82f6' }]} height={300} />
+        </SectionCard>
+      )}
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-lg shadow-slate-200/40 dark:shadow-black/40 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
-            <TrendingUp size={28} strokeWidth={2.5} />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('totalProfit') || 'Total Profit'}</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-slate-100">
-              ₹{data.kpis?.profit?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}
-            </p>
-          </div>
-        </div>
+      {subTab === 'products' && byProduct?.rows && (
+        <SectionCard title="Sales by Product"
+          actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }]} data={byProduct.rows} filename="sales_by_product" />}>
+          <ReportTable
+            columns={[
+              { key: 'name', label: 'Product', sortable: true },
+              { key: 'category', label: 'Category', type: 'badge', sortable: true },
+              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
+              { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+            ]}
+            rows={byProduct.rows} maxHeight="480px" />
+        </SectionCard>
+      )}
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-lg shadow-slate-200/40 dark:shadow-black/40 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-            <Percent size={28} strokeWidth={2.5} />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('profitMargin') || 'Profit Margin'}</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-slate-100">
-              {data.kpis?.margin?.toFixed(1) || 0}%
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Full width chart at top */}
-      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/60 rounded-3xl p-6 shadow-2xl shadow-slate-200/40 dark:shadow-black/40">
-        <SalesAnalyticsChart
-          data={(data.trend || []).map((d: any) => ({
-            date: typeof d.date === 'string' ? d.date.slice(5) : d.date,
-            sales: d.sales ?? d.total ?? 0,
-            profit: d.profit ?? 0,
-          }))}
-          title={t('salesVsProfit') || 'Sales vs Profit'}
-          salesLabel={t('sales') || 'Sales'}
-          profitLabel={t('profit') || 'Profit'}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 mt-6">
-        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
-          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/0">
-            <CardTitle className="text-slate-900 dark:text-slate-200 xl:text-lg font-bold uppercase tracking-wider">
-              {t('topSelling') || 'Smart Insights & Analytics'}
-            </CardTitle>
-            
-            {/* Tabs for Top Products logic */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex bg-slate-100 dark:bg-slate-950 rounded-lg p-1 border border-slate-200 dark:border-slate-800">
-                {(['revenue', 'qty', 'category'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => handleTabChange(mode)}
-                    className={cn(
-                      'px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all',
-                      activeTab === mode 
-                        ? 'bg-emerald-500 text-white dark:text-slate-900 shadow-sm' 
-                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-500 dark:hover:text-slate-300'
-                    )}
-                  >
-                    By {mode}
-                  </button>
-                ))}
-              </div>
-              <button 
-                onClick={() => setShowFullModal(true)}
-                className="text-xs bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 px-4 py-1.5 rounded-lg font-bold transition-colors"
-              >
-                View All
-              </button>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-6">
-            <TopProductsPieChart 
-              items={(activeTab === 'category' ? data.categories.items : data.topProducts.items).map(item => ({
-                ...item,
-                percentage: (activeTab === 'category' ? data.categories.total : data.topProducts.total) > 0 
-                  ? Number(((item.value / (activeTab === 'category' ? data.categories.total : data.topProducts.total)) * 100).toFixed(1))
-                  : 0
-              }))} 
-              total={activeTab === 'category' ? data.categories.total : data.topProducts.total}
-              currency={activeTab === 'category' ? data.categories.currency : data.topProducts.currency}
-              title={activeTab === 'category' ? 'Top Categories' : 'Top Products'}
-              valueLabel={activeTab === 'qty' ? 'Quantity' : 'Revenue'}
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Full List Modal */}
-      {showFullModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 shrink-0">
-              <div>
-                <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <TrendingUp className="text-emerald-500" /> Full {activeTab === 'category' ? 'Categories' : 'Products'} List
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Ranked by highest {activeTab === 'qty' ? 'quantity' : 'revenue'}</p>
-              </div>
-              <button 
-                onClick={() => setShowFullModal(false)}
-                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-red-500/20 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-0 overflow-y-auto flex-1">
-              {fullListLoading ? (
-                <div className="flex flex-col items-center justify-center py-20">
-                  <Loader2 className="animate-spin text-emerald-500 mb-4" size={32} />
-                  <p className="text-slate-500 dark:text-slate-400 font-medium">Loading full list...</p>
-                </div>
-              ) : fullList.length > 0 ? (
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-xs uppercase sticky top-0 backdrop-blur-md z-10">
-                    <tr>
-                      <th className="px-6 py-4 font-bold">Rank</th>
-                      <th className="px-6 py-4 font-bold">{activeTab === 'category' ? 'Category' : 'Product'}</th>
-                      <th className="px-6 py-4 font-bold text-right">Revenue</th>
-                      <th className="px-6 py-4 font-bold text-right">Units Sold</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
-                    {fullList.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-                        <td className="px-6 py-4">
-                          <span className={cn(
-                            "inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-black",
-                            idx === 0 ? "bg-amber-500/20 text-amber-600 dark:text-amber-500" :
-                            idx === 1 ? "bg-slate-300/20 text-slate-600 dark:text-slate-300" :
-                            idx === 2 ? "bg-amber-700/20 text-amber-700 dark:text-amber-600" :
-                            "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-500"
-                          )}>
-                            {idx + 1}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-slate-100">
-                          {item.name}
-                        </td>
-                        <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-slate-100 text-right">₹{item.value.toLocaleString('en-IN')}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-500/80 text-right">{item.qty ?? '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="py-20 flex flex-col items-center justify-center text-center">
-                  <FileText size={48} className="text-slate-300 dark:text-slate-800 mb-4" />
-                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">No data found</p>
-                  <p className="text-sm text-slate-500 font-medium mt-1">There were no sales in the selected timeframe.</p>
-                </div>
-              )}
-            </div>
-          </div>
+      {subTab === 'categories' && byCategory?.rows && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionCard title="Revenue by Category">
+            <DrillDownChart type="pie" data={byCategory.rows.slice(0, 8)} xKey="category"
+              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
+          </SectionCard>
+          <SectionCard title="Category Breakdown"
+            actions={<ExportButton columns={[{ key: 'category', label: 'Category' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }]} data={byCategory.rows} filename="sales_by_category" />}>
+            <ReportTable columns={[
+              { key: 'category', label: 'Category', sortable: true },
+              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: 'Units', type: 'number', sortable: true, align: 'right' },
+            ]} rows={byCategory.rows} maxHeight="280px" />
+          </SectionCard>
         </div>
       )}
+
+      {subTab === 'customers' && byCustomer?.rows && (
+        <SectionCard title="Top Customers by Revenue"
+          actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, { key: 'total_spent', label: 'Total Spent', type: 'currency' }, { key: 'outstanding', label: 'Outstanding', type: 'currency' }]} data={byCustomer.rows} filename="sales_by_customer" />}>
+          <ReportTable columns={[
+            { key: 'name', label: 'Customer', sortable: true },
+            { key: 'mobile', label: 'Mobile' },
+            { key: 'total_spent', label: 'Total Spent', type: 'currency', sortable: true, align: 'right' },
+            { key: 'contributed_profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
+            { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+            { key: 'outstanding', label: 'Outstanding', type: 'currency', sortable: true, align: 'right' },
+          ]} rows={byCustomer.rows} maxHeight="480px" />
+        </SectionCard>
+      )}
+
+      {subTab === 'payment' && byPayment?.rows && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionCard title="Collection by Mode">
+            <DrillDownChart type="pie" data={byPayment.rows} xKey="method"
+              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={260} />
+          </SectionCard>
+          <SectionCard title="Payment Mode Breakdown">
+            <ReportTable columns={[
+              { key: 'method', label: 'Method', type: 'badge' },
+              { key: 'revenue', label: 'Billed', type: 'currency', sortable: true, align: 'right' },
+              { key: 'collected', label: 'Collected', type: 'currency', sortable: true, align: 'right' },
+              { key: 'count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+            ]} rows={byPayment.rows} />
+          </SectionCard>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── FINANCIALS TAB ─────────────────────────────────────────────────────────
+function FinancialsTab({ filters }: { filters: any }) {
+  const [pnl, setPnl] = useState<any>(null);
+  const [daybook, setDaybook] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState<'pnl' | 'daybook' | 'cashflow'>('pnl');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
+      const [pnlRes, dbRes] = await Promise.all([
+        api.get(`/reports/engine?module=financials&report_type=pnl&${qs}`),
+        api.get(`/reports/engine?module=financials&report_type=daybook&${qs}`),
+      ]);
+      setPnl(pnlRes.data);
+      setDaybook(dbRes.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  const fmt = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex gap-2">
+        {[{ id: 'pnl', label: 'P&L Statement' }, { id: 'daybook', label: 'Day Book' }].map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id as any)}
+            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === t.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'pnl' && pnl && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard label="Gross Revenue" value={fmt(pnl.revenue)} icon={IndianRupee} color="emerald" />
+            <KPICard label="Gross Profit" value={fmt(pnl.gross_profit)} icon={TrendingUp} color="blue" sub={`${(pnl.gross_margin || 0).toFixed(1)}% margin`} />
+            <KPICard label="Total Overhead" value={fmt(pnl.total_overhead)} icon={Wallet} color="rose" sub={`₹${(pnl.expenses || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} expenses + ₹${(pnl.salaries || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} salary`} />
+            <KPICard label="Net Profit" value={fmt(pnl.net_profit)} icon={BarChart3}
+              color={pnl.net_profit >= 0 ? 'emerald' : 'rose'}
+              sub={`${(pnl.net_margin || 0).toFixed(1)}% net margin`} />
+          </div>
+          <SectionCard title="Profit & Loss Statement">
+            <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+              {[
+                { label: 'Gross Revenue (Sales)', value: pnl.revenue, bold: false, indent: false, positive: true },
+                { label: 'Cost of Goods Sold', value: pnl.revenue - pnl.gross_profit, bold: false, indent: true, positive: false },
+                { label: 'Gross Profit', value: pnl.gross_profit, bold: true, indent: false, positive: pnl.gross_profit >= 0 },
+                { label: 'Operating Expenses', value: pnl.expenses, bold: false, indent: true, positive: false },
+                { label: 'Staff Salaries', value: pnl.salaries, bold: false, indent: true, positive: false },
+                { label: 'Total Overheads', value: pnl.total_overhead, bold: true, indent: false, positive: false },
+                { label: 'Net Profit / Loss', value: pnl.net_profit, bold: true, indent: false, positive: pnl.net_profit >= 0, highlight: true },
+              ].map((row, i) => (
+                <div key={i} className={`flex justify-between items-center py-3 px-2 ${row.highlight ? 'bg-emerald-50 dark:bg-emerald-900/20 rounded-xl' : ''} ${row.indent ? 'ml-4' : ''}`}>
+                  <span className={`${row.bold ? 'font-black text-slate-900 dark:text-white' : 'font-medium text-slate-600 dark:text-slate-400'}`}>
+                    {row.label}
+                  </span>
+                  <span className={`font-black tabular-nums ${row.highlight ? (row.positive ? 'text-emerald-600' : 'text-rose-500') : row.bold ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                    {row.positive ? '+' : '-'}{fmt(Math.abs(row.value || 0))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </>
+      )}
+
+      {subTab === 'daybook' && daybook && (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <KPICard label="Total Inflows" value={`₹${(daybook.inflow_total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ArrowUpRight} color="emerald" />
+            <KPICard label="Total Outflows" value={`₹${(daybook.outflow_total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ArrowDownRight} color="rose" />
+            <KPICard label="Net Balance" value={`₹${(daybook.net_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Scale}
+              color={daybook.net_balance >= 0 ? 'emerald' : 'rose'} />
+          </div>
+          <SectionCard title="Cash Book Entries"
+            actions={<ExportButton columns={[{ key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'currency' }, { key: 'description', label: 'Description' }, { key: 'createdAt', label: 'Date', type: 'date' }]} data={daybook.entries || []} filename="daybook" />}>
+            <ReportTable
+              columns={[
+                { key: 'type', label: 'Type', type: 'badge', sortable: true },
+                { key: 'amount', label: 'Amount', type: 'currency', sortable: true, align: 'right' },
+                { key: 'description', label: 'Description' },
+                { key: 'createdAt', label: 'Date', type: 'date', sortable: true },
+              ]}
+              rows={daybook.entries || []} maxHeight="480px" />
+          </SectionCard>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── STOCK TAB ─────────────────────────────────────────────────────────────
+function StockTab({ filters }: { filters: any }) {
+  const [data, setData] = useState<any>(null);
+  const [valuation, setValuation] = useState<any>(null);
+  const [deadStock, setDeadStock] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState<'current' | 'valuation' | 'dead' | 'movement'>('current');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
+      const [curr, val, dead] = await Promise.all([
+        api.get(`/reports/engine?module=stock&report_type=current&${qs}`),
+        api.get(`/reports/engine?module=stock&report_type=valuation&${qs}`),
+        api.get(`/reports/engine?module=stock&report_type=dead_stock&${qs}`),
+      ]);
+      setData(curr.data);
+      setValuation(val.data);
+      setDeadStock(dead.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  const summary = data?.summary || {};
+  const fmt = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex gap-2 flex-wrap">
+        {[{ id: 'current', label: 'Current Stock' }, { id: 'valuation', label: 'Valuation' }, { id: 'dead', label: 'Dead Stock' }].map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id as any)}
+            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === t.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'current' && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard label="Total Products" value={(summary.totalProducts || 0).toLocaleString()} icon={Package} color="blue" />
+            <KPICard label="Stock Value" value={fmt(summary.totalValue || 0)} icon={IndianRupee} color="emerald" />
+            <KPICard label="Low Stock" value={(summary.lowCount || 0).toLocaleString()} icon={AlertTriangle} color="amber" />
+            <KPICard label="Out of Stock" value={(summary.outCount || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
+          </div>
+          <SectionCard title="Stock Status"
+            actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'current_stock', label: 'Stock', type: 'number' }, { key: 'min_stock', label: 'Min Stock', type: 'number' }, { key: 'stock_value', label: 'Value', type: 'currency' }]} data={data?.rows || []} filename="stock_report" />}>
+            <ReportTable
+              columns={[
+                { key: 'name', label: 'Product', sortable: true },
+                { key: 'category', label: 'Category', type: 'badge', sortable: true },
+                { key: 'current_stock', label: 'Current Stock', type: 'number', sortable: true, align: 'right' },
+                { key: 'min_stock', label: 'Min Stock', type: 'number', sortable: true, align: 'right' },
+                { key: 'stock_value', label: 'Stock Value', type: 'currency', sortable: true, align: 'right' },
+                { key: 'status', label: 'Status', type: 'badge' },
+              ]}
+              rows={data?.rows || []} maxHeight="480px" />
+          </SectionCard>
+        </>
+      )}
+
+      {subTab === 'valuation' && valuation?.rows && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionCard title="Stock Value by Category">
+            <DrillDownChart type="bar" data={valuation.rows} xKey="category"
+              yKeys={[{ key: 'stock_value', label: 'Value', color: '#10b981' }]} height={300} />
+          </SectionCard>
+          <SectionCard title="Valuation Breakdown">
+            <ReportTable columns={[
+              { key: 'category', label: 'Category', sortable: true },
+              { key: 'product_count', label: 'Products', type: 'number', sortable: true, align: 'right' },
+              { key: 'total_qty', label: 'Qty', type: 'number', sortable: true, align: 'right' },
+              { key: 'stock_value', label: 'Value', type: 'currency', sortable: true, align: 'right' },
+            ]} rows={valuation.rows} maxHeight="300px" />
+          </SectionCard>
+        </div>
+      )}
+
+      {subTab === 'dead' && deadStock?.rows && (
+        <SectionCard title="Dead Stock (No Sales in Period)"
+          actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'current_stock', label: 'Stock', type: 'number' }, { key: 'tied_value', label: 'Tied Value', type: 'currency' }]} data={deadStock.rows} filename="dead_stock" />}>
+          <ReportTable
+            columns={[
+              { key: 'name', label: 'Product', sortable: true },
+              { key: 'category', label: 'Category', type: 'badge' },
+              { key: 'current_stock', label: 'Stock', type: 'number', sortable: true, align: 'right' },
+              { key: 'tied_value', label: 'Tied Capital', type: 'currency', sortable: true, align: 'right' },
+            ]}
+            rows={deadStock.rows} maxHeight="480px"
+            emptyMessage="No dead stock found — all products sold in the selected period." />
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
+// ── EXPENSES TAB ──────────────────────────────────────────────────────────
+function ExpensesTab({ filters }: { filters: any }) {
+  const [data, setData] = useState<any>(null);
+  const [byCategory, setByCategory] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
+      const [trend, cat] = await Promise.all([
+        api.get(`/reports/engine?module=expenses&report_type=trend&${qs}`),
+        api.get(`/reports/engine?module=expenses&report_type=by_category&${qs}`),
+      ]);
+      setData(trend.data);
+      setByCategory(cat.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4">
+        <KPICard label="Total Expenses" value={`₹${(data?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Wallet} color="rose" />
+        <KPICard label="Total Transactions" value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SectionCard title="Daily Expense Trend">
+          <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
+            yKeys={[{ key: 'amount', label: 'Expenses', color: '#ef4444' }]} height={240} />
+        </SectionCard>
+        <SectionCard title="By Category">
+          <DrillDownChart type="pie" data={byCategory?.rows || []} xKey="category"
+            yKeys={[{ key: 'amount', label: 'Amount' }]} height={240} />
+        </SectionCard>
+      </div>
+      <SectionCard title="All Expenses"
+        actions={<ExportButton columns={[{ key: 'category', label: 'Category' }, { key: 'amount', label: 'Amount', type: 'currency' }, { key: 'paymentMode', label: 'Mode' }, { key: 'description', label: 'Description' }, { key: 'createdAt', label: 'Date', type: 'date' }]} data={data?.expenses || []} filename="expenses" />}>
+        <ReportTable
+          columns={[
+            { key: 'category', label: 'Category', type: 'badge', sortable: true },
+            { key: 'amount', label: 'Amount', type: 'currency', sortable: true, align: 'right' },
+            { key: 'paymentMode', label: 'Mode', type: 'badge' },
+            { key: 'description', label: 'Description' },
+            { key: 'createdAt', label: 'Date', type: 'date', sortable: true },
+          ]}
+          rows={data?.expenses || []} maxHeight="400px" />
+      </SectionCard>
+    </div>
+  );
+}
+
+// ── CRM TAB ───────────────────────────────────────────────────────────────
+function CRMTab({ filters }: { filters: any }) {
+  const { profile } = useBusinessStore();
+  const isUdyog = profile?.subscriptionPlan === 'wholesale';
+  const [outstanding, setOutstanding] = useState<any>(null);
+  const [suppliers, setSuppliers] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
+      const [cust, sup] = await Promise.all([
+        api.get(`/reports/engine?module=crm&report_type=outstanding&entity_type=customer&${qs}`),
+        isUdyog
+          ? api.get(`/reports/engine?module=crm&report_type=outstanding&entity_type=supplier&${qs}`)
+          : Promise.resolve({ data: null }),
+      ]);
+      setOutstanding(cust.data);
+      setSuppliers(sup.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters, isUdyog]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className={cn('grid gap-4', isUdyog ? 'grid-cols-2' : 'grid-cols-1')}>
+        <KPICard label="Customer Outstanding" value={`₹${(outstanding?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Users} color="rose" sub={`${outstanding?.summary?.count || 0} customers with dues`} />
+        {isUdyog && (
+          <KPICard label="Supplier Payable" value={`₹${(suppliers?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ShoppingCart} color="amber" sub={`${suppliers?.summary?.count || 0} suppliers`} />
+        )}
+      </div>
+      <div className={cn('grid grid-cols-1 gap-6', isUdyog && 'lg:grid-cols-2')}>
+        <SectionCard title="Outstanding Customers"
+          actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, { key: 'totalDue', label: 'Outstanding', type: 'currency' }]} data={outstanding?.rows || []} filename="outstanding_customers" />}>
+          <ReportTable
+            columns={[
+              { key: 'name', label: 'Customer', sortable: true },
+              { key: 'mobile', label: 'Mobile' },
+              { key: 'totalDue', label: 'Outstanding', type: 'currency', sortable: true, align: 'right' },
+              { key: 'creditLimit', label: 'Credit Limit', type: 'currency', align: 'right' },
+            ]}
+            rows={outstanding?.rows || []} maxHeight="380px" />
+        </SectionCard>
+        {isUdyog && (
+          <SectionCard title="Outstanding Suppliers"
+            actions={<ExportButton columns={[{ key: 'name', label: 'Supplier' }, { key: 'mobile', label: 'Mobile' }, { key: 'balance', label: 'Payable', type: 'currency' }]} data={suppliers?.rows || []} filename="outstanding_suppliers" />}>
+            <ReportTable
+              columns={[
+                { key: 'name', label: 'Supplier', sortable: true },
+                { key: 'mobile', label: 'Mobile' },
+                { key: 'balance', label: 'Payable', type: 'currency', sortable: true, align: 'right' },
+              ]}
+              rows={suppliers?.rows || []} maxHeight="380px" />
+          </SectionCard>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── STAFF TAB ─────────────────────────────────────────────────────────────
+function StaffTab({ filters }: { filters: any }) {
+  const [payroll, setPayroll] = useState<any>(null);
+  const [attendance, setAttendance] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
+      const [pay, att] = await Promise.all([
+        api.get(`/reports/engine?module=staff&report_type=payroll&${qs}`),
+        api.get(`/reports/engine?module=staff&report_type=attendance&${qs}`),
+      ]);
+      setPayroll(pay.data);
+      setAttendance(att.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-3 gap-4">
+        <KPICard label="Total Salaries Paid" value={`₹${(payroll?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={IndianRupee} color="purple" />
+        <KPICard label="Present Days" value={(attendance?.summary?.present || 0).toLocaleString()} icon={Users} color="emerald" />
+        <KPICard label="Absent Days" value={(attendance?.summary?.absent || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SectionCard title="Salary Payroll"
+          actions={<ExportButton columns={[{ key: 'monthYear', label: 'Period' }, { key: 'netAmount', label: 'Amount', type: 'currency' }, { key: 'paymentMode', label: 'Mode' }, { key: 'paidAt', label: 'Date', type: 'date' }]} data={payroll?.rows || []} filename="payroll" />}>
+          <ReportTable
+            columns={[
+              { key: 'staff', label: 'Staff', sortable: false },
+              { key: 'monthYear', label: 'Period', type: 'badge', sortable: true },
+              { key: 'netAmount', label: 'Net Paid', type: 'currency', sortable: true, align: 'right' },
+              { key: 'paymentMode', label: 'Mode', type: 'badge' },
+              { key: 'paidAt', label: 'Date', type: 'date', sortable: true },
+            ]}
+            rows={(payroll?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—' }))}
+            maxHeight="380px" />
+        </SectionCard>
+        <SectionCard title="Attendance Log">
+          <ReportTable
+            columns={[
+              { key: 'staff', label: 'Staff', sortable: false },
+              { key: 'date', label: 'Date', type: 'date', sortable: true },
+              { key: 'status', label: 'Status', type: 'badge', sortable: true },
+              { key: 'notes', label: 'Notes' },
+            ]}
+            rows={(attendance?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—', notes: r.reason || '' }))}
+            maxHeight="380px" />
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+// ── PURCHASES TAB ─────────────────────────────────────────────────────────
+function PurchasesTab({ filters }: { filters: any }) {
+  const [data, setData] = useState<any>(null);
+  const [bySupplier, setBySupplier] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
+      const [trend, sup] = await Promise.all([
+        api.get(`/reports/engine?module=purchases&report_type=trend&${qs}`),
+        api.get(`/reports/engine?module=purchases&report_type=by_supplier&${qs}`),
+      ]);
+      setData(trend.data);
+      setBySupplier(sup.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-3 gap-4">
+        <KPICard label="Total Cost" value={`₹${(data?.summary?.cost || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ShoppingCart} color="rose" />
+        <KPICard label="Total GST" value={`₹${(data?.summary?.gst || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Percent} color="amber" />
+        <KPICard label="Invoices" value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
+      </div>
+      <SectionCard title="Purchase Trend">
+        <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
+          yKeys={[{ key: 'cost', label: 'Cost', color: '#ef4444' }, { key: 'gst', label: 'GST', color: '#f59e0b' }]} height={260} />
+      </SectionCard>
+      <SectionCard title="By Supplier"
+        actions={<ExportButton columns={[{ key: 'supplier', label: 'Supplier' }, { key: 'cost', label: 'Cost', type: 'currency' }, { key: 'gst', label: 'GST', type: 'currency' }, { key: 'count', label: 'Invoices', type: 'number' }]} data={(bySupplier?.rows || []).map((r: any) => ({ supplier: r.supplier?.name || '—', cost: r.cost, gst: r.gst, count: r.count }))} filename="purchase_by_supplier" />}>
+        <ReportTable
+          columns={[
+            { key: 'supplier', label: 'Supplier' },
+            { key: 'cost', label: 'Total Cost', type: 'currency', sortable: true, align: 'right' },
+            { key: 'gst', label: 'GST Paid', type: 'currency', sortable: true, align: 'right' },
+            { key: 'count', label: 'Invoices', type: 'number', sortable: true, align: 'right' },
+          ]}
+          rows={(bySupplier?.rows || []).map((r: any) => ({ ...r, supplier: r.supplier?.name || '—' }))}
+          maxHeight="380px" />
+      </SectionCard>
+    </div>
+  );
+}
+
+// ── MAIN PAGE ─────────────────────────────────────────────────────────────
+export default function ReportsPage() {
+  const { profile } = useBusinessStore();
+  const [activeTab, setActiveTab] = useState<Tab>('sales');
+  const [filters, setFilters] = useState({
+    startDate: (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; })(),
+    endDate: new Date().toISOString().split('T')[0],
+    groupBy: 'day' as 'day' | 'week' | 'month',
+  });
+
+  const availableTabs = TABS.filter(t => !t.plans || t.plans.includes(profile?.subscriptionPlan || ''));
+
+  return (
+    <div className="space-y-6 animate-in fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-200 dark:border-emerald-800">
+            <BarChart3 size={24} />
+          </div>
+          <div>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Reports & Analytics</h1>
+            <p className="text-sm text-slate-500 font-medium mt-0.5">Real-time business intelligence dashboard</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <ReportFilterBar onChange={setFilters} showPaymentMode />
+
+      {/* Tab Navigation */}
+      <div className="flex flex-wrap gap-1 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+        {availableTabs.map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 min-w-[80px] justify-center',
+                activeTab === tab.id
+                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-700'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              )}>
+              <Icon size={15} />
+              <span className="hidden sm:inline">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'sales' && <SalesTab filters={filters} />}
+      {activeTab === 'financials' && <FinancialsTab filters={filters} />}
+      {activeTab === 'stock' && <StockTab filters={filters} />}
+      {activeTab === 'expenses' && <ExpensesTab filters={filters} />}
+      {activeTab === 'crm' && <CRMTab filters={filters} />}
+      {activeTab === 'staff' && <StaffTab filters={filters} />}
+      {activeTab === 'purchases' && <PurchasesTab filters={filters} />}
     </div>
   );
 }

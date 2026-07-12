@@ -10,8 +10,14 @@ export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
   const customers = await prisma.customer.findMany({
     where: { shopId: shop.id },
-    include: { customer_transactions: { orderBy: { created_at: 'asc' } } },
+    include: { 
+      customer_transactions: { 
+        orderBy: { created_at: 'desc' },
+        take: 5 
+      } 
+    },
     orderBy: { name: 'asc' },
+    take: 1000 // Prevent massive payload, needs full pagination later
   });
 
   const mapped = customers.map((c) => ({
@@ -20,7 +26,7 @@ export const GET = handle(async (req) => {
     mobile: c.mobile || '',
     email: c.email || '',
     totalDue: c.totalDue || 0,
-    transactions: (c.customer_transactions || []).map((t) => ({
+    transactions: (c.customer_transactions || []).reverse().map((t) => ({
       id: t.id,
       type: t.type || 'udhar',
       amount: t.amount || 0,

@@ -49,6 +49,13 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
         hsnCode: b.hsnCode ?? b.hsn_code,
         productType: b.productType ?? b.product_type,
         gstPercent: b.gstPercent ?? b.gst_percent,
+        categoryId: b.categoryId ?? b.category_id,
+        brandId: b.brandId ?? b.brand_id,
+        baseUnitId: b.baseUnitId ?? b.base_unit_id,
+        defaultSaleUnitId: b.defaultSaleUnitId ?? b.default_sale_unit_id,
+        defaultPurchaseUnitId: b.defaultPurchaseUnitId ?? b.default_purchase_unit_id,
+        maxStock: b.maxStock ?? b.max_stock,
+        wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,
       },
     });
     return json(updated);

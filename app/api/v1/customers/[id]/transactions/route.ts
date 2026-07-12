@@ -29,13 +29,15 @@ export const POST = handle<Ctx>(async (req, { params }) => {
     },
   });
 
-  // Recalculate totalDue
-  const allTx = await prisma.customer_transactions.findMany({ where: { customer_id: id } });
-  const totalDue = allTx.reduce(
-    (sum, t) => (t.type === 'udhar' ? sum + (t.amount || 0) : sum - (t.amount || 0)),
-    0,
-  );
-  await prisma.customer.update({ where: { id }, data: { totalDue } });
+  // Atomic update of totalDue instead of fetching all transactions
+  await prisma.customer.update({
+    where: { id },
+    data: {
+      totalDue: {
+        [type === 'udhar' ? 'increment' : 'decrement']: parseFloat(amount)
+      }
+    }
+  });
 
   return json({
     id: tx.id,

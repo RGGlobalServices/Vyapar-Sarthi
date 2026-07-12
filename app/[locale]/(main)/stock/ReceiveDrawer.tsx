@@ -17,13 +17,13 @@ export default function ReceiveDrawer({
   product: any, 
   godowns: any[], 
   onClose: () => void,
-  onSuccess: () => void
+  onSuccess: (data?: any) => void
 }) {
   const t = useTranslations('Stock');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  const { data: suppliersData = [], mutate: mutateSuppliers } = useSWR('/suppliers', fetcher);
+  const { data: suppliersData = [], mutate: mutateSuppliers, isLoading: sLoad } = useSWR('/suppliers', fetcher);
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
   
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
@@ -64,28 +64,30 @@ export default function ReceiveDrawer({
       return;
     }
 
-    setLoading(true);
-    setError('');
-    try {
-      await api.post('/purchases', {
-        supplierId: form.supplierId,
-        invoiceNumber: form.invoiceNumber,
-        date: form.date,
-        warehouseId: form.warehouseId,
-        items: [{
-          productId: product.id,
-          quantity: Number(form.quantity),
-          cost: Number(form.cost),
-          batchNumber: form.batchNumber || undefined,
-          expiryDate: form.expiryDate || undefined
-        }]
-      });
-      onSuccess();
-      onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Failed to receive stock');
-      setLoading(false);
-    }
+    // Fire and forget so UI closes instantly
+    api.post('/purchases', {
+      supplierId: form.supplierId,
+      invoiceNumber: form.invoiceNumber,
+      date: form.date,
+      warehouseId: form.warehouseId,
+      items: [{
+        productId: product.id,
+        quantity: Number(form.quantity),
+        cost: Number(form.cost),
+        batchNumber: form.batchNumber || undefined,
+        expiryDate: form.expiryDate || undefined
+      }]
+    }).catch(err => {
+      console.error('[API Error] Receive:', err);
+    });
+
+    onSuccess({
+      type: 'receive',
+      productId: product.id,
+      quantity: Number(form.quantity),
+      warehouseId: form.warehouseId
+    });
+    onClose();
   };
 
   return (
@@ -152,7 +154,7 @@ export default function ReceiveDrawer({
                   onChange={e => setForm({...form, supplierId: e.target.value})}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="">{t('selectSupplier')}</option>
+                  <option value="">{sLoad ? 'Loading suppliers...' : t('selectSupplier')}</option>
                   {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <button type="button" onClick={() => setIsAddingSupplier(true)} className="px-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">+</button>

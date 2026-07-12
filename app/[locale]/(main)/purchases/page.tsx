@@ -58,13 +58,18 @@ export default function PurchasesPage() {
     fetcher
   );
 
+  const { data: masterData } = useSWR(
+    shouldFetchDetails ? '/master-data' : null,
+    fetcher
+  );
+
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
   
   const [supplierId, setSupplierId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   
-  const [items, setItems] = useState<any[]>([{ productId: '', quantity: 1, cost: 0, batchNumber: '' }]);
+  const [items, setItems] = useState<any[]>([{ productId: '', quantity: 1, cost: 0, batchNumber: '', unitId: '', conversionFactor: 1 }]);
   const [saving, setSaving] = useState(false);
   
   // Inline {t('supplierLabel')} State
@@ -75,6 +80,19 @@ export default function PurchasesPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    
+    // Optimistic Update
+    const optimisticInvoice = {
+      id: 'temp-' + Date.now(),
+      invoice_number: invoiceNumber,
+      date: date,
+      total_amount: items.reduce((sum, item) => sum + (item.quantity * item.cost), 0),
+      supplier: suppliers.find((s: any) => s.id === supplierId) || { name: 'Unknown' },
+      created_at: new Date().toISOString()
+    };
+    mutateInvoices((current: any[] = []) => [optimisticInvoice, ...current], false);
+    setShowAdd(false);
+
     try {
       await api.post('/purchases', {
         supplierId,
@@ -83,13 +101,12 @@ export default function PurchasesPage() {
         date,
         items: items.filter(i => i.productId && i.quantity > 0)
       });
-      setShowAdd(false);
-      alert('Purchase recorded successfully! Stock updated.');
-      mutateInvoices();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to record purchase', err);
-      alert('Failed to record purchase');
+      alert('Failed to record purchase: ' + (err?.response?.data?.detail || err.message));
+      mutateInvoices(); // Rollback
     } finally {
+      mutateInvoices(); // Sync
       setSaving(false);
     }
   };
@@ -208,6 +225,21 @@ export default function PurchasesPage() {
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                     </div>
                     <div className="w-28">
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Unit</label>
+                      <select value={item.unitId || ''} onChange={e => {
+                        const newItems = [...items];
+                        const selectedUnit = masterData?.units?.find((u:any) => u.id === e.target.value);
+                        newItems[index].unitId = e.target.value;
+                        newItems[index].conversionFactor = selectedUnit ? selectedUnit.conversionFactor : 1;
+                        setItems(newItems);
+                      }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
+                        <option value="">Base Unit</option>
+                        {masterData?.units?.map((u: any) => (
+                          <option key={u.id} value={u.id}>{u.shortName} (x{u.conversionFactor})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="w-28">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('unitCost') || 'Unit Cost'}</label>
                       <input type="number" step="0.01" required value={item.cost} onChange={e => {
                         const newItems = [...items];
@@ -230,7 +262,7 @@ export default function PurchasesPage() {
                   </div>
                 ))}
                 
-                <button type="button" onClick={() => setItems([...items, { productId: '', quantity: 1, cost: 0, batchNumber: '' }])}
+                <button type="button" onClick={() => setItems([...items, { productId: '', quantity: 1, cost: 0, batchNumber: '', unitId: '', conversionFactor: 1 }])}
                   className="w-full py-3 border-2 border-dashed border-emerald-200 dark:border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2">
                   <Plus size={18} /> {t('addAnotherProduct') || 'Add Another Product'}
                 </button>

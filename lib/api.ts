@@ -86,22 +86,6 @@ async function request(url: string, options: RequestInit = {}) {
       }
     }
 
-    // 403 from requireShop means the stored x-shop-id doesn't belong to this user.
-    // Clear it and retry once without the header so the server picks the default shop.
-    if (response.status === 403 && typeof window !== 'undefined' && localStorage.getItem('ks_active_shop_id')) {
-      localStorage.removeItem('ks_active_shop_id');
-      const retryHeaders = new Headers(headers);
-      retryHeaders.delete('x-shop-id');
-      const retryResponse = await fetch(url.startsWith('http') ? url : `${API_BASE_URL}${url}`, {
-        ...options,
-        headers: retryHeaders,
-      });
-      if (retryResponse.ok) {
-        const data = await retryResponse.json().catch(() => ({}));
-        return { data };
-      }
-    }
-
     if (!response.ok) {
       let errorData;
       const contentType = response.headers.get('content-type');
@@ -111,7 +95,8 @@ async function request(url: string, options: RequestInit = {}) {
         const text = await response.text().catch(() => '');
         errorData = { detail: text || `HTTP Error ${response.status}` };
       }
-      const err = { response: { status: response.status, data: errorData }, message: `Request failed with status ${response.status}` };
+      const err = new Error(`Request failed with status ${response.status}`);
+      (err as any).response = { status: response.status, data: errorData };
       console.error(`[API] Error ${response.status} on ${url}:`, err);
       throw err;
     }
@@ -125,30 +110,19 @@ async function request(url: string, options: RequestInit = {}) {
       // Likely an HTML page (404/500 from Next.js itself, not our route handlers)
       const text = await response.text().catch(() => '');
       const htmlSnippet = text.substring(0, 200);
-      const friendlyErr = {
-        response: { status: response.status, data: { detail: `Server returned non-JSON response. Check if the API route exists. Preview: ${htmlSnippet}` } },
-        message: 'API route returned HTML instead of JSON — possible missing route or server crash',
-      };
+      const friendlyErr = new Error('API route returned HTML instead of JSON — possible missing route or server crash');
+      (friendlyErr as any).response = { status: response.status, data: { detail: `Server returned non-JSON response. Check if the API route exists. Preview: ${htmlSnippet}` } };
       console.error(`[API] Non-JSON success response on ${url}:`, friendlyErr);
       throw friendlyErr;
     }
     const data = await response.json().catch(() => ({}));
     return { data };
-  } catch (error) {
-    if ((error as any).response) throw error;
-    if ((error as Error).name === 'AbortError') throw error;
+  } catch (error: any) {
+    if (error.response) throw error;
+    if (error.name === 'AbortError') throw error;
     
-    const errorMessage = (error as Error).message || 'Unknown network error';
-    const err = { 
-      response: { 
-        status: 500, 
-        data: { detail: errorMessage } 
-      },
-      message: errorMessage,
-      isNetworkError: true
-    };
-    console.warn(`[API] Network/Internal Error on ${url}:`, errorMessage);
-    throw err;
+    console.warn(`[API] Network/Internal Error on ${url}:`, error.message);
+    throw error;
   }
 }
 

@@ -20,7 +20,3 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 export default prisma;
 
-// Auto-run migrations in background
-if (process.env.NODE_ENV !== 'production' || true) {
-  import('./autoMigrate').then((m) => m.runAutoMigrations()).catch(console.error);
-}

@@ -122,19 +122,19 @@ export const GET = handle(async (req) => {
       ORDER BY s_agg.qty DESC
       LIMIT 5
     `,
-    // Slow moving (Optimized Left Join Subquery)
+    // Slow moving (Optimized INNER JOIN)
     prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, COALESCE(s_agg.qty, 0) as qty, p.current_stock
-      FROM products p
-      LEFT JOIN (
+      SELECT p.id, p.name, p.category, s_agg.qty, p.current_stock
+      FROM (
         SELECT si.product_id, SUM(si.quantity) as qty
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
         WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
         GROUP BY si.product_id
-      ) s_agg ON p.id = s_agg.product_id
-      WHERE p.shop_id = ${shop.id}::uuid AND p.current_stock > 0
-      ORDER BY COALESCE(s_agg.qty, 0) ASC, p.current_stock DESC
+      ) s_agg
+      JOIN products p ON s_agg.product_id = p.id
+      WHERE p.current_stock > 0
+      ORDER BY s_agg.qty ASC, p.current_stock DESC
       LIMIT 5
     `
   ]);

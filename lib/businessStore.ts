@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { mutate } from 'swr';
 import api from './api';
 import { BusinessType } from './businessConfig';
 
@@ -11,12 +12,14 @@ export interface ShopSummary {
   address: string | null;
   mobile: string | null;
   businessType: string;
+  packageType: string;
   subscriptionPlan: string;
 }
 
 interface BusinessProfile {
   id: string;
   businessType: BusinessType;
+  packageType: string;
   shopName: string;
   address: string;
   mobile: string;
@@ -30,6 +33,9 @@ interface BusinessProfile {
   trialPauseStart: string | null;
   gst: string | null;
   pan: string | null;
+  invoiceFormat: 'thermal58' | 'thermal80' | 'a4' | 'wholesale';
+  invoiceFooter: string | null;
+  showQrCode: boolean;
 }
 
 interface BusinessStore {
@@ -41,7 +47,8 @@ interface BusinessStore {
   fetchProfile: (force?: boolean) => Promise<void>;
   fetchAllShops: () => Promise<void>;
   switchShop: (shopId: string, preventReload?: boolean) => Promise<void>;
-  createShop: (data: { name: string; businessType?: string; address?: string; mobile?: string }) => Promise<ShopSummary>;
+  createShop: (data: { name: string; businessType?: string; packageType?: string; subscriptionPlan?: string; address?: string; mobile?: string; gst?: string }) => Promise<ShopSummary>;
+  deleteShop: (shopId: string) => Promise<void>;
   updateProfile: (updates: Partial<BusinessProfile>) => Promise<void>;
   setBusinessType: (type: BusinessType) => Promise<void>;
   completeSetup: (type: BusinessType) => Promise<void>;
@@ -50,12 +57,13 @@ interface BusinessStore {
 const DEFAULT_PROFILE: BusinessProfile = {
   id: '',
   businessType: 'kirana',
+  packageType: 'dukan',
   shopName: '',
   address: '',
   mobile: '',
   logoUrl: '',
   setupComplete: false,
-  subscriptionPlan: 'shop',
+  subscriptionPlan: 'trial',
   subscriptionStatus: 'active',
   subscriptionExpiry: null,
   shopCode: null,
@@ -63,6 +71,9 @@ const DEFAULT_PROFILE: BusinessProfile = {
   trialPauseStart: null,
   gst: null,
   pan: null,
+  invoiceFormat: 'thermal80',
+  invoiceFooter: null,
+  showQrCode: false,
 };
 
 function loadCachedType(): BusinessType {
@@ -75,12 +86,21 @@ function cacheType(type: BusinessType) {
 }
 
 function loadCachedPlan(): string {
-  if (typeof window === 'undefined') return 'shop';
-  return localStorage.getItem('ks_subscription_plan') ?? 'shop';
+  if (typeof window === 'undefined') return 'trial';
+  return localStorage.getItem('ks_subscription_plan') ?? 'trial';
 }
 
 function cachePlan(plan: string) {
   if (typeof window !== 'undefined') localStorage.setItem('ks_subscription_plan', plan);
+}
+
+function loadCachedPackage(): string {
+  if (typeof window === 'undefined') return 'dukan';
+  return localStorage.getItem('ks_package_type') ?? 'dukan';
+}
+
+function cachePackage(pkg: string) {
+  if (typeof window !== 'undefined') localStorage.setItem('ks_package_type', pkg);
 }
 
 export function getActiveShopId(): string | null {
@@ -98,12 +118,13 @@ function mapShopToProfile(data: any): BusinessProfile {
   return {
     id: data.id ?? '',
     businessType: (data.business_type ?? data.businessType ?? 'kirana') as BusinessType,
+    packageType: (data.package_type ?? data.packageType ?? 'dukan').toLowerCase(),
     shopName: data.name ?? '',
     address: data.address ?? '',
     mobile: data.mobile ?? '',
     logoUrl: data.logo_url ?? data.logoUrl ?? '',
     setupComplete: data.setup_complete ?? data.setupComplete ?? false,
-    subscriptionPlan: ((data.subscription_plan ?? data.subscriptionPlan) || 'shop').toLowerCase(),
+    subscriptionPlan: ((data.subscription_plan ?? data.subscriptionPlan) || 'trial').toLowerCase(),
     subscriptionStatus: data.subscription_status ?? data.subscriptionStatus ?? 'active',
     subscriptionExpiry: data.subscription_expiry ?? data.subscriptionExpiry ?? null,
     shopCode: data.shop_code ?? data.shopCode ?? null,
@@ -111,6 +132,9 @@ function mapShopToProfile(data: any): BusinessProfile {
     trialPauseStart: data.trialPauseStart ?? data.trial_pause_start ?? null,
     gst: data.gst ?? null,
     pan: data.pan ?? null,
+    invoiceFormat: (data.invoiceFormat ?? data.invoice_format ?? 'thermal80') as 'thermal58' | 'thermal80' | 'a4' | 'wholesale',
+    invoiceFooter: data.invoiceFooter ?? data.invoice_footer ?? null,
+    showQrCode: data.showQrCode ?? data.show_qr_code ?? false,
   };
 }
 
@@ -120,7 +144,7 @@ let profileCacheTs = 0;
 const PROFILE_CACHE_TTL = 60_000; // ms
 
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
-  profile: { ...DEFAULT_PROFILE, businessType: loadCachedType(), subscriptionPlan: loadCachedPlan() },
+  profile: { ...DEFAULT_PROFILE, businessType: loadCachedType(), packageType: loadCachedPackage(), subscriptionPlan: loadCachedPlan() },
   loading: false,
   allShops: [],
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
@@ -135,6 +159,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       profileCacheTs = Date.now();
       set({ profile, loading: false });
       cacheType(profile.businessType);
+      cachePackage(profile.packageType);
       cachePlan(profile.subscriptionPlan);
     } catch {
       set({ loading: false });
@@ -151,7 +176,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         address: s.address ?? null,
         mobile: s.mobile ?? null,
         businessType: s.business_type ?? s.businessType ?? 'kirana',
-        subscriptionPlan: (s.subscription_plan ?? s.subscriptionPlan ?? 'shop').toLowerCase(),
+        packageType: (s.package_type ?? s.packageType ?? 'vyapar').toLowerCase(),
+        subscriptionPlan: (s.subscription_plan ?? s.subscriptionPlan ?? 'trial').toLowerCase(),
       }));
       // Restore active shop from localStorage (safe here — client-only, inside useEffect)
       const storedId = typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null;
@@ -168,28 +194,34 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const shop = get().allShops.find(s => s.id === shopId);
     if (shop) {
       cacheType(shop.businessType as BusinessType);
+      cachePackage(shop.packageType);
       cachePlan(shop.subscriptionPlan);
-      set(state => ({ profile: { ...state.profile, businessType: shop.businessType as BusinessType, subscriptionPlan: shop.subscriptionPlan } }));
+      set(state => ({ profile: { ...state.profile, businessType: shop.businessType as BusinessType, packageType: shop.packageType, subscriptionPlan: shop.subscriptionPlan } }));
     }
+    try {
+      await api.post('/shop/profile', { shopId });
+    } catch {}
+
+    // Clear all SWR caches instantly and refetch for the new shop
+    await mutate(
+      () => true, 
+      undefined, 
+      { revalidate: true }
+    );
 
     // Always fetch the new profile to get complete details
     await get().fetchProfile(true);
-
-    if (!preventReload) {
-      // With the new layout key={activeShopId}, React handles remounting children
-      // so a full browser reload is no longer necessary! Just optionally scroll to top.
-      if (typeof window !== 'undefined') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    }
   },
 
   createShop: async (data) => {
     const res = await api.post('/shop/create', {
       name: data.name,
       businessType: data.businessType,
+      packageType: data.packageType,
+      subscriptionPlan: data.subscriptionPlan,
       address: data.address,
       mobile: data.mobile,
+      gst: data.gst,
     });
     const shop: ShopSummary = {
       id: res.data.id,
@@ -198,10 +230,40 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       address: res.data.address ?? null,
       mobile: res.data.mobile ?? null,
       businessType: res.data.business_type ?? res.data.businessType ?? 'kirana',
+      packageType: (res.data.package_type ?? res.data.packageType ?? 'vyapar').toLowerCase(),
       subscriptionPlan: (res.data.subscription_plan ?? res.data.subscriptionPlan ?? 'shop').toLowerCase(),
     };
     set(state => ({ allShops: [...state.allShops, shop] }));
     return shop;
+  },
+
+  deleteShop: async (shopId: string) => {
+    const previousShops = get().allShops;
+    const previousActive = get().activeShopId;
+    
+    // 1. Optimistic Update: Immediately remove from UI
+    const updatedShops = previousShops.filter(s => s.id !== shopId);
+    set({ allShops: updatedShops });
+
+    try {
+      // 2. Background API Call
+      await api.delete(`/shop/${shopId}`);
+      
+      // 3. Handle active shop switch if needed
+      if (previousActive === shopId && updatedShops.length > 0) {
+        // Instantly reflect active shop change in UI
+        const newActiveId = updatedShops[0].id;
+        set({ activeShopId: newActiveId });
+        await get().switchShop(newActiveId);
+      } else {
+        // Silently sync with server to ensure consistency
+        get().fetchAllShops();
+      }
+    } catch (error) {
+      // Revert optimistic update on failure
+      set({ allShops: previousShops, activeShopId: previousActive });
+      throw error;
+    }
   },
 
   updateProfile: async (updates: Partial<BusinessProfile>) => {
@@ -212,6 +274,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.mobile !== undefined) apiUpdates.mobile = updates.mobile;
       if (updates.logoUrl !== undefined) apiUpdates.logoUrl = updates.logoUrl;
       if (updates.businessType !== undefined) apiUpdates.businessType = updates.businessType;
+      if (updates.packageType !== undefined) apiUpdates.packageType = updates.packageType;
       if (updates.gst !== undefined) apiUpdates.gst = updates.gst;
       if (updates.pan !== undefined) apiUpdates.pan = updates.pan;
       if (updates.subscriptionPlan !== undefined) apiUpdates.subscriptionPlan = updates.subscriptionPlan;

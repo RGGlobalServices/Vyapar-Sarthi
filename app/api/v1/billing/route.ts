@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { checkLargeTransactionAlert, checkLowStockAlerts } from '@/lib/server/notificationsEngine';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,8 +16,21 @@ export const POST = handle(async (req) => {
   const totalAmount = isNaN(body.total_amount) ? 0 : body.total_amount;
   const totalProfit = isNaN(body.total_profit) ? 0 : body.total_profit;
   const paymentType = body.payment_type || 'Cash';
+  const amountPaid = typeof body.amount_paid !== 'undefined' ? Number(body.amount_paid) : (paymentType === 'Udhar' ? 0 : totalAmount);
+  const paymentDetails = body.payment_details || {};
+  const outstandingAmount = Math.max(0, totalAmount - amountPaid);
+
+  if (outstandingAmount > 0 && (!customerId && !body.customer_name)) {
+    throw new ApiError(400, 'Customer is required for Udhar / Outstanding amounts');
+  }
 
   if (!items || !items.length) throw new ApiError(400, 'No items in bill');
+  
+  // Validation: Check for negative or zero quantities and prices
+  for (const item of items) {
+    if (item.quantity <= 0) throw new ApiError(400, `Invalid quantity for item ${item.product_id || item.productId}`);
+    if (item.price_per_unit < 0 || item.pricePerUnit < 0) throw new ApiError(400, `Invalid price for item ${item.product_id || item.productId}`);
+  }
 
   const invoice_number = `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
 
@@ -62,6 +76,8 @@ export const POST = handle(async (req) => {
           totalAmount,
           totalProfit,
           paymentType,
+          amountPaid,
+          paymentDetails,
           invoice_number,
           createdAt: body.created_at ? new Date(body.created_at) : undefined,
           items: {
@@ -89,7 +105,7 @@ export const POST = handle(async (req) => {
       if (productIds.length > 0) {
         const [products, activeBatches] = await Promise.all([
           tx.product.findMany({ where: { id: { in: productIds } } }),
-          shop.subscriptionPlan === 'wholesale' 
+          shop.packageType === 'wholesale' 
             ? tx.batch.findMany({ where: { productId: { in: productIds }, shopId, quantity: { gt: 0 } }, orderBy: { createdAt: 'asc' } })
             : Promise.resolve([])
         ]);
@@ -130,7 +146,7 @@ export const POST = handle(async (req) => {
             })
           );
 
-          if (shop.subscriptionPlan === 'wholesale') {
+          if (shop.packageType === 'wholesale') {
             let remainingQty = totalQty;
             const pBatches = batchMap.get(product.id) || [];
             for (const batch of pBatches) {
@@ -161,17 +177,25 @@ export const POST = handle(async (req) => {
         await Promise.all(promises);
       }
 
-      if (paymentType === 'Udhar' && finalCustomerId) {
+      if (outstandingAmount > 0 && finalCustomerId) {
+        const custData = await tx.customer.findUnique({ where: { id: finalCustomerId }});
+        if (custData && (custData.creditLimit ?? 0) > 0) {
+          const currentDue = custData.totalDue || 0;
+          if (currentDue + outstandingAmount > custData.creditLimit!) {
+            throw new Error(`Credit Limit of ₹${custData.creditLimit} exceeded by ₹${(currentDue + outstandingAmount) - custData.creditLimit!}`);
+          }
+        }
+        
         await Promise.all([
           tx.customer.update({
             where: { id: finalCustomerId },
-            data: { totalDue: { increment: totalAmount } },
+            data: { totalDue: { increment: outstandingAmount } },
           }),
           tx.customer_transactions.create({
             data: {
               customer_id: finalCustomerId,
               type: 'udhar',
-              amount: totalAmount,
+              amount: outstandingAmount,
               note: `Bill: ${invoice_number}`,
               bill_number: invoice_number,
               created_at: new Date()
@@ -179,11 +203,44 @@ export const POST = handle(async (req) => {
           })
         ]);
       }
+
+      const cashAmount = paymentType === 'Split' ? Number(paymentDetails?.cash || 0) : (paymentType === 'Cash' ? amountPaid : 0);
+      if (cashAmount > 0) {
+        await tx.cashBook.create({
+          data: {
+            shopId: shop.id,
+            type: 'sale',
+            amount: cashAmount,
+            referenceId: created.id,
+            description: paymentType === 'Split' ? `Split Sale (Cash portion): ${invoice_number}` : `Cash Sale: ${invoice_number}`
+          }
+        });
+      }
+
+      await tx.activityLog.create({
+        data: {
+          shopId: shop.id,
+          action: 'bill_created',
+          entityId: created.id,
+          details: { invoice: invoice_number, total: totalAmount }
+        }
+      });
+
       return created;
     }, {
       maxWait: 10000, // 10 seconds
       timeout: 20000  // 20 seconds
     });
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await checkLargeTransactionAlert(tx, shop.id, totalAmount, 'sale', invoice_number);
+        // Extract unique product IDs
+        const productIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId)));
+        await checkLowStockAlerts(tx, shop.id, productIds as string[]);
+      });
+    } catch(e) { console.error('Notification failed', e); }
+
   } catch (err: any) {
     const fs = require('fs');
     fs.writeFileSync('error.log', JSON.stringify({ message: err?.message, stack: err?.stack }, null, 2));
@@ -209,6 +266,8 @@ export const GET = handle(async (req) => {
       invoice_number: s.invoice_number,
       total_amount: s.totalAmount,
       payment_type: s.paymentType,
+      amount_paid: s.amountPaid,
+      payment_details: s.paymentDetails,
       customer_name: s.customer?.name || null,
       customer_mobile: s.customer?.mobile || null,
       customer_email: s.customer?.email || null,

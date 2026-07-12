@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CalendarClock, CheckCircle2, XCircle, Clock, Save, User, Calendar as CalendarIcon, FileX } from 'lucide-react';
+import { CalendarClock, CheckCircle2, XCircle, Clock, Save, User, Calendar as CalendarIcon, FileX, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useRouter } from 'next/navigation';
+import { useRouter, Link } from '@/i18n/routing';
 
 export default function AttendancePage() {
   const t = useTranslations('Dashboard');
@@ -79,12 +79,17 @@ export default function AttendancePage() {
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-            <CalendarClock className="text-indigo-500" size={32} />
-            Daily Attendance
-          </h1>
-          <p className="text-slate-500 font-medium mt-1">Track presence, absences, and leaves.</p>
+        <div className="flex items-center gap-4">
+          <Link href="/staff" className="w-10 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-indigo-500 transition-colors shadow-sm shrink-0">
+            <ChevronLeft size={24} />
+          </Link>
+          <div>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+              <CalendarClock className="text-indigo-500" size={32} />
+              Daily Attendance
+            </h1>
+            <p className="text-slate-500 font-medium mt-1">Track presence, absences, and leaves.</p>
+          </div>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 shadow-sm">
           <CalendarIcon size={18} className="text-slate-400" />
@@ -190,8 +195,14 @@ export default function AttendancePage() {
         )}
       </Card>
 
-      <div className="flex justify-end">
-        <button 
+      <div className="flex justify-end gap-3">
+        <Link
+          href="/staff"
+          className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-6 py-3 rounded-xl font-black hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+        >
+          <ChevronLeft size={20} /> Back
+        </Link>
+        <button
           onClick={handleSave}
           disabled={saving || staffList.length === 0}
           className="flex items-center gap-2 bg-indigo-500 text-white px-6 py-3 rounded-xl font-black hover:bg-indigo-600 transition-colors shadow-xl shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"

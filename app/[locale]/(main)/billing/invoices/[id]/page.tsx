@@ -128,10 +128,13 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     })),
     total: invoice.total_amount,
     paymentMethod: invoice.payment_type,
+    amountPaid: invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : invoice.total_amount),
+    remainingAmount: Math.max(0, invoice.total_amount - (invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : invoice.total_amount))),
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
     date: new Date(invoice.created_at).toLocaleDateString(),
     storeName: user?.storeName || 'Store',
-    customerName: invoice.customer_name || undefined
+    customerName: invoice.customer_name || undefined,
+    splitPayments: invoice.payment_type === 'Split' ? (typeof invoice.payment_details === 'string' ? JSON.parse(invoice.payment_details) : invoice.payment_details) : undefined,
   };
 
   return (
@@ -242,7 +245,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500 font-medium tracking-tight">Payment Status</span>
-                  <span className="text-emerald-500 font-bold uppercase tracking-wider text-xs">Completed</span>
+                  <span className={cn(
+                    "font-bold uppercase tracking-wider text-xs",
+                    billData.remainingAmount <= 0 ? "text-emerald-500" : billData.amountPaid > 0 ? "text-amber-500" : "text-orange-500"
+                  )}>
+                    {billData.remainingAmount <= 0 ? 'Paid' : billData.amountPaid > 0 ? 'Partially Paid' : 'Credit (Udhar)'}
+                  </span>
                 </div>
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
                   <span className="text-sm font-bold text-slate-400 uppercase tracking-widest pb-1">Grand Total</span>

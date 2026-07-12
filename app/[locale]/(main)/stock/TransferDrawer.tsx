@@ -15,7 +15,7 @@ export default function TransferDrawer({
   product: any, 
   godowns: any[], 
   onClose: () => void,
-  onSuccess: () => void
+  onSuccess: (data?: any) => void
 }) {
   const t = useTranslations('Stock');
   const [loading, setLoading] = useState(false);
@@ -40,20 +40,25 @@ export default function TransferDrawer({
       return;
     }
 
-    setLoading(true);
-    setError('');
-    try {
-      await api.post('/stock/transfer', {
-        productId: product.id,
-        ...form,
-        quantity: Number(form.quantity)
-      });
-      onSuccess();
-      onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Transfer failed');
-      setLoading(false);
-    }
+    // Fire and forget so UI closes instantly
+    api.post('/stock/transfer', {
+      productId: product.id,
+      fromWarehouseId: form.fromWarehouseId,
+      toWarehouseId: form.toWarehouseId,
+      quantity: Number(form.quantity),
+      reason: form.reason
+    }).catch(err => {
+      console.error('[API Error] Transfer:', err);
+    });
+
+    onSuccess({
+      type: 'transfer',
+      productId: product.id,
+      quantity: Number(form.quantity),
+      fromWarehouseId: form.fromWarehouseId,
+      toWarehouseId: form.toWarehouseId
+    });
+    onClose();
   };
 
   return (

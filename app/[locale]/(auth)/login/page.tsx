@@ -163,10 +163,9 @@ export default function LoginPage() {
   /* ── Done ── */
   if (view === 'done') {
     return (
-      <div className="min-h-screen flex" suppressHydrationWarning>
+    <div className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
-          {mounted ? (
             <div className="w-full max-w-sm text-center space-y-6">
             <div className="w-16 h-16 bg-emerald-500/15 rounded-full flex items-center justify-center mx-auto">
               <CheckCircle2 size={32} className="text-emerald-400" />
@@ -181,7 +180,6 @@ export default function LoginPage() {
               Sign In with New Password
             </button>
           </div>
-          ) : null}
         </div>
       </div>
     );
@@ -190,12 +188,11 @@ export default function LoginPage() {
   /* ── Reset password (step 3) ── */
   if (view === 'reset') {
     return (
-      <div className="min-h-screen flex" suppressHydrationWarning>
+    <div className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
             {mobileHeader}
-            {mounted ? (
             <div className="space-y-6">
               <div>
                 <button onClick={restartForgot}
@@ -236,7 +233,6 @@ export default function LoginPage() {
                 </button>
               </form>
             </div>
-            ) : null}
           </div>
         </div>
       </div>
@@ -246,7 +242,7 @@ export default function LoginPage() {
   /* ── OTP entry (step 2) ── */
   if (view === 'otp') {
     return (
-      <div className="min-h-screen flex" suppressHydrationWarning>
+    <div className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -309,7 +305,6 @@ export default function LoginPage() {
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
             {mobileHeader}
-            {mounted ? (
             <div className="space-y-6">
               <div>
                 <button onClick={() => { setView('login'); setFpError(''); }}
@@ -342,7 +337,6 @@ export default function LoginPage() {
                 </button>
               </form>
             </div>
-            ) : null}
           </div>
         </div>
       </div>
@@ -351,12 +345,11 @@ export default function LoginPage() {
 
   /* ── Login form ── */
   return (
-    <div className="min-h-screen flex" suppressHydrationWarning>
+    <div className="min-h-screen flex">
       {leftPanel}
       <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
         <div className="w-full max-w-sm space-y-8">
           {mobileHeader}
-          {mounted ? (
           <>
           <div>
             <h2 className="text-2xl font-bold text-slate-50">Welcome back</h2>
@@ -416,7 +409,6 @@ export default function LoginPage() {
           <GoogleAuthDivider />
           <GoogleSignInButton />
           </>
-          ) : null}
         </div>
       </div>
     </div>

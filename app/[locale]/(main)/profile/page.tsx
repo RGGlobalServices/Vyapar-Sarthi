@@ -18,7 +18,6 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 import { ALL_BUSINESS_TYPES } from '@/lib/businessConfig';
 
-type ProfitData = { totalRevenue: number; totalProfit: number; saleCount: number } | null;
 
 export default function ProfilePage() {
   const t = useTranslations('Profile');
@@ -44,21 +43,12 @@ export default function ProfilePage() {
   const [cpError, setCpError]       = useState('');
   const [cpOk, setCpOk]             = useState(false);
 
-  // Today's profit
-  const [profitOpen, setProfitOpen]   = useState(false);
-  const [profitPwd, setProfitPwd]     = useState('');
-  const [profitShow, setProfitShow]   = useState(false);
-  const [profitLoading, setProfitLoading] = useState(false);
-  const [profitError, setProfitError]   = useState('');
-  const [profitData, setProfitData]     = useState<ProfitData>(null);
-  const [hasProfitPwd, setHasProfitPwd] = useState(false);
+
 
   useEffect(() => {
     (async () => {
       try {
         await fetchProfile();
-        const upRes = await api.get('/user/profile');
-        setHasProfitPwd(!!upRes.data.hasProfitPassword);
       } catch {}
       finally { setLoading(false); }
     })();
@@ -73,6 +63,7 @@ export default function ProfilePage() {
         mobile: profile.mobile,
         logo_url: profile.logoUrl,
         business_type: profile.businessType,
+        package_type: profile.packageType,
         gst: profile.gst || '',
         pan: profile.pan || '',
       });
@@ -94,8 +85,10 @@ export default function ProfilePage() {
       await updateProfile({
         shopName: shop.name, address: shop.address,
         mobile: shop.mobile, logoUrl: shop.logo_url, businessType: shop.business_type,
+        packageType: shop.package_type,
         gst: shop.gst, pan: shop.pan,
       });
+      fetchProfile(); // Force re-fetch to ensure all components receive updated states
       showStatus('success', t('updateSuccess'));
     } catch { showStatus('error', t('updateError')); }
     finally { setSaving(false); }
@@ -131,19 +124,6 @@ export default function ProfilePage() {
     } catch (err: any) {
       setCpError(err.response?.data?.detail || 'Failed to change password.');
     } finally { setCpLoading(false); }
-  };
-
-  const handleViewProfit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profitPwd) { setProfitError(t('enterProfitPwdError')); return; }
-    setProfitLoading(true); setProfitError('');
-    try {
-      const res = await api.post('/shop/today-profit', { password: profitPwd });
-      setProfitData(res.data);
-      setProfitPwd('');
-    } catch (err: any) {
-      setProfitError(err.response?.data?.detail || 'Incorrect password.');
-    } finally { setProfitLoading(false); }
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading profile...</div>;
@@ -212,7 +192,6 @@ export default function ProfilePage() {
             </div>
             <div className="text-center">
               <p className="font-bold text-slate-900 dark:text-slate-200">{t('businessLogo')}</p>
-              <p className="text-xs text-slate-500 mt-1">{t('logoDesc')}</p>
             </div>
           </CardContent>
         </Card>
@@ -255,7 +234,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">{t('shopType')}</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">Business Category</label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <select
@@ -267,6 +246,18 @@ export default function ProfilePage() {
                           {config.label}
                         </option>
                       ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Package Type</label>
+                  <div className="relative">
+                    <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <select disabled
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors opacity-80 cursor-not-allowed"
+                      value={shop?.package_type || 'vyapar'} onChange={e => setShop({ ...shop, package_type: e.target.value })}>
+                      <option value="vyapar">Vyapar Package</option>
+                      <option value="wholesale">Udyog Package</option>
                     </select>
                   </div>
                 </div>
@@ -389,83 +380,7 @@ export default function ProfilePage() {
         )}
       </Card>
 
-      {/* Today's Profit (password-protected) */}
-      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" /> {t('todaysProfit')}
-            </CardTitle>
-            {!profitData && (
-              <button onClick={() => { setProfitOpen(v => !v); setProfitError(''); setProfitPwd(''); }}
-                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                {profitOpen ? t('cancel') : t('view')}
-              </button>
-            )}
-            {profitData && (
-              <button onClick={() => { setProfitData(null); setProfitOpen(false); }}
-                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">{t('hide')}</button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!hasProfitPwd && !profitData && (
-            <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm">
-              <ShieldCheck size={16} className="flex-shrink-0" />
-              <span>{t('noProfitPwd')}</span>
-            </div>
-          )}
 
-          {hasProfitPwd && !profitData && profitOpen && (
-            <form onSubmit={handleViewProfit} className="flex items-end gap-3">
-              <div className="flex-1 space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">{t('profitPwd')}</label>
-                <div className="relative">
-                  <input type={profitShow ? 'text' : 'password'} value={profitPwd}
-                    onChange={e => { setProfitPwd(e.target.value); setProfitError(''); }}
-                    placeholder={t('enterProfitPwd')}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
-                  <button type="button" onClick={() => setProfitShow(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-                    {profitShow ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-                {profitError && (
-                  <p className="text-red-600 dark:text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{profitError}</p>
-                )}
-              </div>
-              <button type="submit" disabled={profitLoading}
-                className="px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
-                {profitLoading ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                {profitLoading ? t('checking') : t('show')}
-              </button>
-            </form>
-          )}
-
-          {hasProfitPwd && !profitData && !profitOpen && (
-            <div className="flex items-center gap-3 py-2 text-slate-500 text-sm">
-              <Lock size={16} /> {t('hiddenProfit')}
-            </div>
-          )}
-
-          {profitData && (
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-center">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{t('revenue')}</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">₹{profitData.totalRevenue.toLocaleString('en-IN')}</p>
-              </div>
-              <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 text-center">
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">{t('profit')}</p>
-                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">₹{profitData.totalProfit.toLocaleString('en-IN')}</p>
-              </div>
-              <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-center">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{t('bills')}</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">{profitData.saleCount}</p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

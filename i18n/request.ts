@@ -23,6 +23,20 @@ export default getRequestConfig(async ({requestLocale}) => {
   return {
     locale,
     messages,
-    timeZone: 'Asia/Kolkata'
+    timeZone: 'Asia/Kolkata',
+    getMessageFallback: ({ namespace, key, error }) => {
+      // If a translation is missing, return empty string so `t('key') || 'Fallback'` evaluates to the fallback.
+      if (error.code === 'MISSING_MESSAGE') {
+        return '';
+      }
+      return `${namespace ? namespace + '.' : ''}${key}`;
+    },
+    onError: (error) => {
+      // Suppress missing message warnings in production/console
+      if (error.code === 'MISSING_MESSAGE') {
+        return;
+      }
+      console.error(error);
+    }
   };
 });

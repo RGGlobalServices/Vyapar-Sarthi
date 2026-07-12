@@ -155,6 +155,18 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     }
   };
 
+  const handleCellEdit = (rowIndex: number, header: string, value: string) => {
+    setPreviewData(prev => {
+      const next = [...prev];
+      next[rowIndex] = { ...next[rowIndex], [header]: value };
+      return next;
+    });
+  };
+
+  const handleDeleteRow = (rowIndex: number) => {
+    setPreviewData(prev => prev.filter((_, i) => i !== rowIndex));
+  };
+
   const validateData = (rows: any[], cols: string[]) => {
     // Basic validation based on importType
     const newErrors = [];
@@ -299,46 +311,86 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     {headers.map((h, i) => (
                       <th key={i} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                     ))}
+                    <th className="px-4 py-3 font-medium whitespace-nowrap w-10" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {previewData.slice(0, 50).map((row, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-300">
+                    <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-300 group">
                       {headers.map((h, j) => (
-                        <td key={j} className="px-4 py-2 whitespace-nowrap">
-                          {String(row[h] ?? '')}
+                        <td key={j} className="px-1 py-1 whitespace-nowrap">
+                          <input
+                            type="text"
+                            value={String(row[h] ?? '')}
+                            onChange={(e) => handleCellEdit(i, h, e.target.value)}
+                            className="w-full min-w-[90px] px-3 py-1.5 bg-transparent border border-transparent rounded-lg hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition-colors"
+                          />
                         </td>
                       ))}
+                      <td className="px-2 py-1">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRow(i)}
+                          title="Remove row"
+                          className="p-1.5 rounded-lg text-slate-300 dark:text-slate-700 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             {previewData.length > 50 && (
-              <p className="text-center text-sm text-slate-500 mt-4">Showing first 50 rows...</p>
+              <p className="text-center text-sm text-slate-500 mt-4">Showing first 50 rows (editable) — remaining {previewData.length - 50} rows will still be imported as-is.</p>
             )}
           </CardContent>
         </Card>
       )}
 
       {step === 'done' && summary && (
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
+        <Card className={(summary.rowErrors?.length > 0) ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}>
           <CardContent className="p-12 text-center">
-            <CheckCircle size={64} className="text-emerald-500 mx-auto mb-6" />
-            <h2 className="text-2xl font-bold text-emerald-500 mb-2">Import Successful!</h2>
+            {(summary.rowErrors?.length > 0) ? (
+              <AlertCircle size={64} className="text-amber-500 mx-auto mb-6" />
+            ) : (
+              <CheckCircle size={64} className="text-emerald-500 mx-auto mb-6" />
+            )}
+            <h2 className={(summary.rowErrors?.length > 0) ? 'text-2xl font-bold text-amber-500 mb-2' : 'text-2xl font-bold text-emerald-500 mb-2'}>
+              {(summary.rowErrors?.length > 0) ? 'Import Completed with Some Issues' : 'Import Successful!'}
+            </h2>
             <p className="text-slate-700 dark:text-slate-300 mb-8">
-              Successfully processed {summary.totalProcessed || previewData.length} records.
+              Processed {summary.totalProcessed || previewData.length} records.
             </p>
-            <div className="flex justify-center gap-6 text-left max-w-sm mx-auto">
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
+            <div className="flex flex-wrap justify-center gap-4 text-left max-w-lg mx-auto">
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-w-[120px]">
                 <p className="text-sm text-slate-500">Created</p>
                 <p className="text-2xl font-bold text-emerald-500">{summary.created || 0}</p>
               </div>
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-w-[120px]">
                 <p className="text-sm text-slate-500">Updated</p>
                 <p className="text-2xl font-bold text-blue-500">{summary.updated || 0}</p>
               </div>
+              {summary.skipped > 0 && (
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-w-[120px]">
+                  <p className="text-sm text-slate-500">Skipped</p>
+                  <p className="text-2xl font-bold text-amber-500">{summary.skipped}</p>
+                </div>
+              )}
             </div>
+
+            {summary.rowErrors?.length > 0 && (
+              <div className="mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-amber-500/30 rounded-xl">
+                <h4 className="font-bold flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-2">
+                  <AlertCircle size={16} /> {summary.rowErrors.length} row{summary.rowErrors.length > 1 ? 's' : ''} could not be imported
+                </h4>
+                <ul className="list-disc pl-6 text-sm text-slate-600 dark:text-slate-400 max-h-48 overflow-y-auto space-y-1">
+                  {summary.rowErrors.map((e: string, i: number) => <li key={i}>{e}</li>)}
+                </ul>
+              </div>
+            )}
+
             <button onClick={onBack} className="mt-8 px-6 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
               Start Another Import
             </button>

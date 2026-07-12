@@ -34,9 +34,7 @@ export default function BulkCSVImport() {
     formData.append('type', type);
 
     try {
-      const res = await api.post('/import/csv', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.post('/import/csv', formData);
       setResult({ success: true, count: res.data.count, message: res.data.message });
     } catch (err: any) {
       console.error(err);

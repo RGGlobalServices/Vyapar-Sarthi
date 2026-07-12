@@ -83,12 +83,12 @@ export interface CartItem {
 }
 
 interface CartStore {
-  items: CartItem[];
-  addItem: (item: CartItem) => void;
-  removeItem: (id: string | number, variant?: string) => void;
-  updateQuantity: (id: string | number, quantity: number, variant?: string) => void;
-  updatePrice: (id: string | number, price: number, variant?: string) => void;
-  clearCart: () => void;
+  carts: Record<string, CartItem[]>;
+  addItem: (shopId: string, item: CartItem) => void;
+  removeItem: (shopId: string, id: string | number, variant?: string) => void;
+  updateQuantity: (shopId: string, id: string | number, quantity: number, variant?: string) => void;
+  updatePrice: (shopId: string, id: string | number, price: number, variant?: string) => void;
+  clearCart: (shopId: string) => void;
 }
 
 // A cart line is uniquely identified by product id + unit + variant (size),
@@ -97,32 +97,47 @@ const sameLine = (i: CartItem, id: string | number, variant?: string) =>
   i.id === id && (variant === undefined || (i.variant ?? undefined) === (variant ?? undefined));
 
 export const useCartStore = create<CartStore>((set) => ({
-  items: [],
-  addItem: (item) => set((state) => {
-    const existing = state.items.find((i) => i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? ''));
+  carts: {},
+  addItem: (shopId, item) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    const existing = shopCart.find((i) => i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? ''));
     if (existing) {
       return {
-        items: state.items.map((i) =>
-          i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? '')
-            ? { ...i, quantity: i.quantity + item.quantity, total: (i.quantity + item.quantity) * i.price }
-            : i
-        ),
+        carts: {
+          ...state.carts,
+          [shopId]: shopCart.map((i) =>
+            i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? '')
+              ? { ...i, quantity: i.quantity + item.quantity, total: (i.quantity + item.quantity) * i.price }
+              : i
+          ),
+        }
       };
     }
-    return { items: [...state.items, item] };
+    return { carts: { ...state.carts, [shopId]: [...shopCart, item] } };
   }),
-  removeItem: (id, variant) => set((state) => ({ items: state.items.filter((i) => !sameLine(i, id, variant)) })),
-  updateQuantity: (id, quantity, variant) => set((state) => ({
-    items: state.items.map((i) =>
-      sameLine(i, id, variant) ? { ...i, quantity, total: quantity * i.price } : i
-    ),
-  })),
-  updatePrice: (id, price, variant) => set((state) => ({
-    items: state.items.map((i) =>
-      sameLine(i, id, variant) ? { ...i, price, total: i.quantity * price } : i
-    ),
-  })),
-  clearCart: () => set({ items: [] }),
+  removeItem: (shopId, id, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return { carts: { ...state.carts, [shopId]: shopCart.filter((i) => !sameLine(i, id, variant)) } };
+  }),
+  updateQuantity: (shopId, id, quantity, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return {
+      carts: {
+        ...state.carts,
+        [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, quantity, total: quantity * i.price } : i)
+      }
+    };
+  }),
+  updatePrice: (shopId, id, price, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return {
+      carts: {
+        ...state.carts,
+        [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, price, total: i.quantity * price } : i)
+      }
+    };
+  }),
+  clearCart: (shopId) => set((state) => ({ carts: { ...state.carts, [shopId]: [] } })),
 }));
 
 // ─── Udhar (Credit) Store ───────────────────────────────────────────────────
@@ -141,6 +156,7 @@ export interface UdharCustomer {
   name: string;
   mobile: string;
   email: string;
+  totalDue?: number;
   transactions: UdharTransaction[];
 }
 
@@ -169,7 +185,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
     }
     try {
       const res = await api.get('/customers');
-      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '' }));
+      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0 }));
       set({ customers, loading: false });
     } catch {
       set({ loading: false });
@@ -182,7 +198,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
   silentRefresh: async () => {
     try {
       const res = await api.get('/customers');
-      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '' }));
+      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0 }));
       set({ customers });
     } catch { /* keep optimistic state */ }
   },
@@ -191,7 +207,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
   // server id (awaited) so chained flows (bill/import) can add a transaction.
   addCustomer: async (name, mobile, email = '') => {
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const optimistic: UdharCustomer = { id: tempId, name, mobile, email, transactions: [] };
+    const optimistic: UdharCustomer = { id: tempId, name, mobile, email, totalDue: 0, transactions: [] };
     set((state) => ({ customers: [optimistic, ...state.customers] }));
     try {
       const res = await api.post('/customers', { name, mobile, email });
