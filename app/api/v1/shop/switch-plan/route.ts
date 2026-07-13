@@ -3,6 +3,7 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { packageTypeForPlan } from '@/lib/planGates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ export const POST = handle(async (req) => {
 
   const updated = await prisma.shop.update({
     where: { id: shop.id },
-    data: { subscriptionPlan: plan }, // keep trial dates & status untouched
+    data: { subscriptionPlan: plan, packageType: packageTypeForPlan(plan) }, // keep trial dates & status untouched
   });
 
   const body = {

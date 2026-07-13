@@ -59,6 +59,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: async () => {
     if (typeof window !== 'undefined') {
+      // Best-effort: invalidate the session server-side so it stops showing
+      // as "Active" in Settings and can't be reused. Never let this block or
+      // fail the actual client-side logout — a network blip shouldn't strand
+      // the user unable to sign out.
+      try { await api.post('/auth/logout', {}); } catch {}
+
       localStorage.removeItem('ks_auth');
       document.cookie = 'ks_auth=; path=/; max-age=0';
       document.cookie = 'ks_plan=; path=/; max-age=0';

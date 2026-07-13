@@ -15,6 +15,20 @@ export const PLAN_DISPLAY: Record<string, string> = {
   starter:   'Dukaan', // alias for backwards-compat
 };
 
+// subscriptionPlan ('shop' | 'vyapar' | 'wholesale', billing-facing) and
+// packageType ('dukan' | 'vyapar' | 'wholesale', drives sidebar/module
+// access — see lib/config/packageConfig.ts) are two separate Shop columns.
+// Every place that changes subscriptionPlan (trial switch, PayU webhook,
+// activate-plan, admin panel) must update packageType alongside it, or the
+// two drift apart — a paying Udyog customer's sidebar can end up stuck
+// showing "Vyapar Package" and missing their paid Purchases/Suppliers/
+// Warehouses modules even though billing correctly shows them as Udyog.
+export function packageTypeForPlan(plan: string): 'dukan' | 'vyapar' | 'wholesale' {
+  if (plan === 'wholesale') return 'wholesale';
+  if (plan === 'vyapar') return 'vyapar';
+  return 'dukan'; // 'shop' / 'starter' / anything else
+}
+
 export const PLAN_COLORS: Record<string, string> = {
   shop:      'bg-sky-500 text-white',
   vyapar:    'bg-indigo-500 text-white',

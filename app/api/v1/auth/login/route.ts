@@ -31,17 +31,23 @@ export const POST = handle(async (req) => {
   else if (/safari/i.test(uaString)) browser = 'Safari';
 
   const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'Unknown IP';
+  const cleanIp = ip.split(',')[0].trim();
+  const device = `${browser} on ${os}`;
 
-  // Create session
-  const session = await prisma.userSession.create({
-    data: {
-      userId: user.id,
-      device: `${browser} on ${os}`,
-      os,
-      browser,
-      ip: ip.split(',')[0].trim(),
-    }
+  // Reuse an existing session for this same device+browser+IP (just bump
+  // lastSeen) instead of inserting a new row every login — otherwise the
+  // same browser piles up a fresh "Active" entry on every single sign-in.
+  const existingSession = await prisma.userSession.findFirst({
+    where: { userId: user.id, device, browser, ip: cleanIp },
   });
+  const session = existingSession
+    ? await prisma.userSession.update({
+        where: { id: existingSession.id },
+        data: { lastSeen: new Date() },
+      })
+    : await prisma.userSession.create({
+        data: { userId: user.id, device, os, browser, ip: cleanIp },
+      });
 
   return json(buildTokenResponse(user, session.id));
 });

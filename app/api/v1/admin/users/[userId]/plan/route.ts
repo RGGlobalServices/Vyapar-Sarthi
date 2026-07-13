@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireAdmin } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { packageTypeForPlan } from '@/lib/planGates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,10 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (!shop) throw new ApiError(404, 'Shop not found for this user');
 
   const updateData: Record<string, unknown> = {};
-  if (plan) updateData.subscriptionPlan = plan;
+  if (plan) {
+    updateData.subscriptionPlan = plan;
+    updateData.packageType = packageTypeForPlan(plan);
+  }
   if (status) updateData.subscriptionStatus = status;
   if (expiryDays !== undefined) {
     updateData.subscriptionExpiry = new Date(Date.now() + expiryDays * 86400000);

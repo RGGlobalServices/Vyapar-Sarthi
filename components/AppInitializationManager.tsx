@@ -70,22 +70,29 @@ export default function AppInitializationManager() {
     if (!Capacitor.isNativePlatform()) return;
 
     const requestPermissions = async () => {
-      const hasRequested = localStorage.getItem('app_permissions_requested');
-      if (!hasRequested) {
-        try {
-          // Camera
-          await Camera.requestPermissions();
-          // Notifications
+      try {
+        // Notifications — check actual OS-level status rather than a local
+        // "did we ask before" flag. If a previous attempt silently failed (or
+        // the user hasn't actually granted it yet), this re-prompts instead
+        // of giving up forever after one try.
+        const notifStatus = await LocalNotifications.checkPermissions();
+        if (notifStatus.display !== 'granted') {
           await LocalNotifications.requestPermissions();
-          // Filesystem plugin usually requests permission on first write on modern Android,
-          // but we can try to call it if a requestPermissions method exists.
+        }
+
+        // Camera / Filesystem: still only ask once, since these are prompted
+        // contextually elsewhere in the app when actually needed (barcode
+        // scan, document upload) — no need to front-load them on every launch.
+        const hasRequestedOthers = localStorage.getItem('app_permissions_requested');
+        if (!hasRequestedOthers) {
+          await Camera.requestPermissions();
           if ((Filesystem as any).requestPermissions) {
-             await (Filesystem as any).requestPermissions();
+            await (Filesystem as any).requestPermissions();
           }
           localStorage.setItem('app_permissions_requested', 'true');
-        } catch (error) {
-          console.error('Failed to request permissions on startup', error);
         }
+      } catch (error) {
+        console.error('Failed to request permissions on startup', error);
       }
     };
     requestPermissions();

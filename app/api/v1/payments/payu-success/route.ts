@@ -3,6 +3,7 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { getPayuConfig, responseHash } from '@/lib/server/payu';
 import { readForm } from '@/lib/server/http';
+import { packageTypeForPlan } from '@/lib/planGates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
           where: { id: shop.id },
           data: {
             subscriptionPlan: plan,
+            packageType: packageTypeForPlan(plan),
             subscriptionStatus: 'active',
             subscriptionExpiry: expiry,
             nextBillingDate: expiry,

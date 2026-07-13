@@ -10,6 +10,46 @@ import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useNotificationStore } from '@/lib/notificationStore';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+
+const SEEN_IDS_KEY = 'ks_seen_notification_ids';
+const MAX_TRACKED_IDS = 200;
+
+// Fires a real Android/iOS system notification (shows in the notification
+// tray even if the app is backgrounded) for notifications the device hasn't
+// already shown — the in-app bell badge alone never touches native APIs.
+function fireNativeNotifications(items: Notif[]) {
+  if (!Capacitor.isNativePlatform()) return;
+  let seen: string[] = [];
+  try { seen = JSON.parse(localStorage.getItem(SEEN_IDS_KEY) || '[]'); } catch {}
+  const seenSet = new Set(seen);
+
+  const fresh = items.filter(n => !n.isRead && !seenSet.has(n.id));
+  if (fresh.length > 0) {
+    LocalNotifications.schedule({
+      notifications: fresh.slice(0, 10).map(n => ({
+        id: Math.abs(hashCode(n.id)),
+        title: n.title || 'Vyapar Sarthi',
+        body: n.message || '',
+      })),
+    }).catch((e) => console.error('Failed to schedule local notification', e));
+  }
+
+  const updatedSeen = [...seen, ...items.map(n => n.id)].slice(-MAX_TRACKED_IDS);
+  try { localStorage.setItem(SEEN_IDS_KEY, JSON.stringify(updatedSeen)); } catch {}
+}
+
+// Simple deterministic string -> 32-bit int hash (LocalNotifications requires
+// a numeric id; notification ids from the API are uuid strings).
+function hashCode(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h << 5) - h + s.charCodeAt(i);
+    h |= 0;
+  }
+  return h;
+}
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -91,6 +131,7 @@ export default function NotificationBell() {
       const items = (res.data.notifications || []).map(norm);
       setNotifications(items);
       setUnreadCount(items.filter((n: Notif) => !n.isRead).length);
+      fireNativeNotifications(items);
     } catch { /* silent */ }
   }, [setUnreadCount]);
 

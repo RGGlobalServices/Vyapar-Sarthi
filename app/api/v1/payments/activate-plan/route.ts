@@ -3,6 +3,7 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { packageTypeForPlan } from '@/lib/planGates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,7 @@ export const POST = handle(async (req) => {
     where: { id: shop.id },
     data: {
       subscriptionPlan: activatedPlan,
+      packageType: packageTypeForPlan(activatedPlan),
       subscriptionStatus: 'active',
       subscriptionExpiry: expiry,
     },

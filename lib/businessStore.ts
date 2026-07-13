@@ -202,15 +202,16 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       await api.post('/shop/profile', { shopId });
     } catch {}
 
-    // Clear all SWR caches instantly and refetch for the new shop
-    await mutate(
-      () => true, 
-      undefined, 
-      { revalidate: true }
-    );
-
-    // Always fetch the new profile to get complete details
+    // Always fetch the new profile to get complete details — this is the one
+    // thing callers actually need to wait on.
     await get().fetchProfile(true);
+
+    // Clear every other SWR cache (products/customers/staff/etc. from the
+    // previous shop) in the background. Not awaited: this predicate matches
+    // every cache key in the app, so awaiting it forces dozens of unrelated
+    // endpoints to revalidate before the "switching shop" spinner could ever
+    // clear — that's what made shop switching feel slow.
+    mutate(() => true, undefined, { revalidate: true });
   },
 
   createShop: async (data) => {
