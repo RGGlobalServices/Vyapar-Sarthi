@@ -80,6 +80,13 @@ export interface CartItem {
   total: number;
   is_loose?: boolean;
   variant?: string;
+  batchNumber?: string;
+  expiryDate?: string | Date;
+  color?: string;
+  size?: string;
+  model?: string;
+  warranty?: string;
+  [key: string]: any;
 }
 
 interface CartStore {

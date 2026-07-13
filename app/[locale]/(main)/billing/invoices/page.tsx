@@ -369,9 +369,9 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
 export default function InvoiceHistoryPage() {
   const locale = useLocale();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, role } = useAuthStore();
   const { profile } = useBusinessStore();
-  const { addItem, setDiscount, clearCart } = useCartStore();
+  const { addItem, clearCart } = useCartStore();
 
   // Data
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -438,16 +438,17 @@ export default function InvoiceHistoryPage() {
     try {
       const res = await api.get(`/billing/${inv.id}`);
       const detail = res.data;
-      clearCart();
+      if (shopId) clearCart(shopId);
       for (const item of (detail.items || [])) {
-        addItem({
+        addItem(shopId || '', {
           id: item.product_id || `manual-${item.id}`,
           name: item.name,
-          sellingPrice: item.price_per_unit,
-          baseUnit: item.unit || 'Unit',
-          wholesaleCost: 0,
-          barcode: null,
-        }, undefined);
+          unit: item.unit || 'Unit',
+          quantity: item.quantity,
+          price: item.price_per_unit,
+          profit: 0,
+          total: item.quantity * item.price_per_unit
+        });
       }
       router.push('/billing' as any);
     } catch (e) {
@@ -743,7 +744,7 @@ export default function InvoiceHistoryPage() {
                           >
                             <RotateCcw size={13} />
                           </button>
-                          {user?.role === 'admin' && (
+                          {role === 'admin' && (
                             <button
                               onClick={() => handleDelete(inv.id)}
                               title="Delete (Admin)"
