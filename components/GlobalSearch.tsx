@@ -14,7 +14,13 @@ export default function GlobalSearch({ locale }: { locale: string }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { profile } = useBusinessStore();
-  const isWholesale = profile?.packageType === 'wholesale';
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  // `profile` is hydrated from a localStorage cache synchronously on the client,
+  // so it can already read 'wholesale' on first paint while the server-rendered
+  // HTML (no localStorage) always used the default. Gating on `mounted` keeps the
+  // first client render identical to the server's, avoiding a hydration mismatch.
+  const isWholesale = mounted && profile?.packageType === 'wholesale';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

@@ -18,17 +18,20 @@ type SearchIntent =
 function detectIntent(query: string): { intent: SearchIntent; keywords: string[] } {
   const q = query.toLowerCase().trim();
 
-  if (/low stock|kam stock|stock khatam|reorder|out of stock|finish|khatam/.test(q))
+  // Each pattern below covers English, common Hindi/Marathi Hinglish spellings
+  // (Latin-script transliteration), and native Devanagari script, since shop
+  // owners freely mix all three when typing.
+  if (/low stock|kam stock|stock khatam|reorder|out of stock|finish|khatam|sathaat kami|kami stock|संपत आहे|कम स्टॉक|स्टॉक संपला/.test(q))
     return { intent: 'low_stock', keywords: [] };
-  if (/dead stock|slow|no sale|nahi bika|slow moving/.test(q))
+  if (/dead stock|slow|no sale|nahi bika|nahi vikla|vikla nahi|slow moving|nahi bikla|नाही विकले|नहीं बिका/.test(q))
     return { intent: 'dead_stock', keywords: [] };
-  if (/top|best|fast|highest|most sold|top selling|sabse zyada/.test(q))
+  if (/top|best|fast|highest|most sold|top selling|sabse zyada|sarvat jast|jast vikri|सबसे ज्यादा|सर्वात जास्त/.test(q))
     return { intent: 'top_products', keywords: [] };
-  if (/outstanding|udhar|due|baaki|overdue/.test(q))
+  if (/outstanding|udhar|due|baaki|baki|overdue|kiti udhar|kitna udhar|उधार|बाकी/.test(q))
     return { intent: 'outstanding', keywords: [] };
-  if (/recent bill|latest sale|aaj ki sale|today sale|last bill/.test(q))
+  if (/recent bill|latest sale|aaj ki sale|today sale|last bill|aajची विक्री|aaj ki vikri|आजची विक्री|आज की बिक्री/.test(q))
     return { intent: 'recent_bills', keywords: [] };
-  if (/expense|kharcha|kharch/.test(q))
+  if (/expense|kharcha|kharch|kharach|खर्च|ख़र्च/.test(q))
     return { intent: 'expense_summary', keywords: [] };
 
   // Treat everything else as a product name search

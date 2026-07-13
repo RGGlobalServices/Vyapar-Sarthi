@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { mutate } from 'swr';
 import api from './api';
 import { BusinessType } from './businessConfig';
+import { useUdharStore, useStockStore } from './store';
 
 export interface ShopSummary {
   id: string;
@@ -212,6 +213,12 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     // endpoints to revalidate before the "switching shop" spinner could ever
     // clear — that's what made shop switching feel slow.
     mutate(() => true, undefined, { revalidate: true });
+
+    // Zustand stores (Udhar khata, Stock) aren't part of the SWR cache above,
+    // so they'd otherwise keep showing the previous shop's data until a full
+    // page reload. Re-fetch them in the background too.
+    useUdharStore.getState().fetchCustomers();
+    useStockStore.getState().fetchStock();
   },
 
   createShop: async (data) => {

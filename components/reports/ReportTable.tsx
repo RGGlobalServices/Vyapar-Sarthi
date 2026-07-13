@@ -126,7 +126,7 @@ export default function ReportTable({ columns, rows, onRowClick, emptyMessage = 
                 ))}
                 {onRowClick && (
                   <td className="px-2">
-                    <ChevronRight size={14} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ChevronRight size={14} className="text-slate-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity" />
                   </td>
                 )}
               </tr>

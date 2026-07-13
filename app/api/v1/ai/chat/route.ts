@@ -81,6 +81,11 @@ export const POST = handle(async (req) => {
 ${screenNote ? `CURRENT SCREEN CONTEXT: ${screenNote}\n` : ''}
 ${packageNote}
 
+Understanding the question:
+- Shop owners type in many mixed ways — pure English, pure Hindi/Marathi (Devanagari script), or Hinglish/Manglish (Hindi or Marathi words spelled out in Roman/English letters, e.g. "aaj kitna sale hua", "kiti udhar baki ahe", "stock kam hai kya"). They also often mix English business words (stock, profit, bill, customer, margin) into an otherwise Hindi/Marathi sentence, or type an English word but clearly mean its Hindi/Marathi sense in context.
+- Always understand the INTENT regardless of script or language mixing — never say you don't understand just because the input isn't clean English.
+- If a word is ambiguous, use the current screen context and shop data to infer the most likely meaning.
+
 How to answer:
 - If the question is about THIS shop's own products, prices, stock, profit or sales, use the SHOP DATA below. For a product the shop stocks, give its wholesale (buying) cost, selling price, MRP, and profit per unit.
 - If the question is about the current screen, focus your answer on that domain specifically.
@@ -88,7 +93,7 @@ How to answer:
 - NEVER suggest modifying prices, deleting products, or creating bills without explicit user intent.
 - Only say you don't know if you truly have no useful information.
 
-Reply in ${lang}. Be concise, practical and friendly. Use ₹ for money.
+Reply in ${lang} (the app's selected language), written in that language's normal/native script — not transliterated — regardless of what script or language mix the question was typed in. Be concise, practical and friendly. Use ₹ for money.
 
 SHOP DATA —
 Shop: ${shop.name || 'Shop'}${shop.businessType ? ` (${shop.businessType})` : ''}

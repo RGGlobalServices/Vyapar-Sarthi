@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
 import api from '@/lib/api';
+import { useBusinessStore } from '@/lib/businessStore';
 
 type Customer = {
   id: string;
@@ -20,6 +21,7 @@ type Customer = {
 
 export default function CustomersPage() {
   const t = useTranslations();
+  const activeShopId = useBusinessStore(s => s.activeShopId);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -32,7 +34,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     fetchCustomers();
-  }, []);
+  }, [activeShopId]);
 
   const fetchCustomers = async () => {
     try {

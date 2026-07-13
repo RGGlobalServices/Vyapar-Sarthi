@@ -109,6 +109,7 @@ export default function UdharPage() {
   const [insightData, setInsightData] = useState<any>(null);
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [addCustomerSuccess, setAddCustomerSuccess] = useState(false);
+  const [addingTx, setAddingTx] = useState(false);
 
   // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
@@ -345,18 +346,25 @@ export default function UdharPage() {
     setSelected(null);
   }
 
-  function handleAddUdhar(e: React.FormEvent) {
+  async function handleAddUdhar(e: React.FormEvent) {
     e.preventDefault();
     const amt = Number(txForm.amount);
     if (!amt || amt <= 0) { setTxError(t('validAmount')); return; }
     const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'udhar', amount: amt, note: txForm.note, date: new Date().toISOString() };
-    addTransaction(selected!.id, tx);
-    setModal(null);
-    const customer = customers.find(c => c.id === selected!.id)!;
-    setRecentTx({ tx, customer, newDue: totalDue(customer) + amt });
+    setAddingTx(true);
+    try {
+      await addTransaction(selected!.id, tx);
+      const customer = customers.find(c => c.id === selected!.id)!;
+      setModal(null);
+      setRecentTx({ tx, customer, newDue: totalDue(customer) + amt });
+    } catch {
+      setTxError(t('addUdharFailed'));
+    } finally {
+      setAddingTx(false);
+    }
   }
 
-  function handlePayment(e: React.FormEvent) {
+  async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
     const amt = Number(txForm.amount);
     if (!amt || amt <= 0) { setTxError(t('validAmount')); return; }
@@ -364,9 +372,16 @@ export default function UdharPage() {
     const due = totalDue(customer);
     if (amt > due) { setTxError(`${t('exceedsDue')} ₹${due}.`); return; }
     const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'payment', amount: amt, note: txForm.note, date: new Date().toISOString() };
-    addTransaction(selected!.id, tx);
-    setModal(null);
-    setRecentTx({ tx, customer, newDue: totalDue(customer) - amt });
+    setAddingTx(true);
+    try {
+      await addTransaction(selected!.id, tx);
+      setModal(null);
+      setRecentTx({ tx, customer, newDue: totalDue(customer) - amt });
+    } catch {
+      setTxError(t('paymentFailed'));
+    } finally {
+      setAddingTx(false);
+    }
   }
 
   async function handleShareRecentTx() {
@@ -556,25 +571,25 @@ export default function UdharPage() {
           </UModal>
         )}
         {modal === 'udhar' && (
-          <UModal title={t('addUdhar')} icon={<Plus size={17} className="text-orange-400" />} onClose={() => setModal(null)}>
+          <UModal title={t('addUdhar')} icon={<Plus size={17} className="text-orange-400" />} onClose={() => !addingTx && setModal(null)}>
             <form onSubmit={handleAddUdhar} className="space-y-4">
-              <UField label={t('amountLabel')}><input type="number" min="1" required inputMode="numeric" className={inp} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
-              <UField label={t('noteLabel')}><input className={inp} placeholder={t('noteHint')} value={txForm.note} onChange={e => setTxForm(f => ({ ...f, note: e.target.value }))} /></UField>
+              <UField label={t('amountLabel')}><input type="number" min="1" required disabled={addingTx} inputMode="numeric" className={cn(inp, 'disabled:opacity-50')} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
+              <UField label={t('noteLabel')}><input disabled={addingTx} className={cn(inp, 'disabled:opacity-50')} placeholder={t('noteHint')} value={txForm.note} onChange={e => setTxForm(f => ({ ...f, note: e.target.value }))} /></UField>
               {txError && <p className="text-red-400 text-sm">{txError}</p>}
-              <UActions onCancel={() => setModal(null)} submitLabel={t('addUdhar')} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400" />
+              <UActions onCancel={() => setModal(null)} submitLabel={addingTx ? t('adding') : t('addUdhar')} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400" submitting={addingTx} cancelLabel={t('cancel')} />
             </form>
           </UModal>
         )}
         {modal === 'payment' && (
-          <UModal title={t('recordPayment')} icon={<Minus size={17} className="text-emerald-400" />} onClose={() => setModal(null)}>
+          <UModal title={t('recordPayment')} icon={<Minus size={17} className="text-emerald-400" />} onClose={() => !addingTx && setModal(null)}>
             <form onSubmit={handlePayment} className="space-y-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-400">
                 {t('totalDueLabel')}: <span className="text-orange-400 font-bold">₹{totalDue(customer).toLocaleString('en-IN')}</span>
               </div>
-              <UField label={t('amountPaid')}><input type="number" min="1" max={totalDue(customer)} required inputMode="numeric" className={inp} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
-              <UField label={t('noteLabel')}><input className={inp} placeholder={t('paymentNoteHint')} value={txForm.note} onChange={e => setTxForm(f => ({ ...f, note: e.target.value }))} /></UField>
+              <UField label={t('amountPaid')}><input type="number" min="1" max={totalDue(customer)} required disabled={addingTx} inputMode="numeric" className={cn(inp, 'disabled:opacity-50')} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
+              <UField label={t('noteLabel')}><input disabled={addingTx} className={cn(inp, 'disabled:opacity-50')} placeholder={t('paymentNoteHint')} value={txForm.note} onChange={e => setTxForm(f => ({ ...f, note: e.target.value }))} /></UField>
               {txError && <p className="text-red-400 text-sm">{txError}</p>}
-              <UActions onCancel={() => setModal(null)} submitLabel={t('recordPayment')} submitCls="bg-emerald-500 text-slate-900 hover:bg-emerald-400" />
+              <UActions onCancel={() => setModal(null)} submitLabel={addingTx ? t('adding') : t('recordPayment')} submitCls="bg-emerald-500 text-slate-900 hover:bg-emerald-400" submitting={addingTx} cancelLabel={t('cancel')} />
             </form>
           </UModal>
         )}
@@ -1133,9 +1148,9 @@ export default function UdharPage() {
               <UField label="Email (for reminders)"><input className={inp} disabled={addingCustomer} type="email" inputMode="email" placeholder="customer@example.com" value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
               {custError && <p className="text-red-400 text-sm">{custError}</p>}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setModal(null)} disabled={addingCustomer} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm disabled:opacity-50">Cancel</button>
+                <button type="button" onClick={() => setModal(null)} disabled={addingCustomer} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm disabled:opacity-50">{t('cancel')}</button>
                 <button type="submit" disabled={addingCustomer} className="flex-1 py-3 rounded-xl font-bold transition-colors text-sm bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-2">
-                  {addingCustomer ? <><Loader2 size={16} className="animate-spin" /> Adding...</> : t('addCustomer')}
+                  {addingCustomer ? <><Loader2 size={16} className="animate-spin" /> {t('adding')}</> : t('addCustomer')}
                 </button>
               </div>
             </form>
@@ -1201,11 +1216,14 @@ function UField({ label, children }: { label: string; children: React.ReactNode 
   return <div><label className="block text-xs text-slate-400 mb-1.5 font-medium">{label}</label>{children}</div>;
 }
 
-function UActions({ onCancel, submitLabel, submitCls }: { onCancel: () => void; submitLabel: string; submitCls: string }) {
+function UActions({ onCancel, submitLabel, submitCls, submitting, cancelLabel }: { onCancel: () => void; submitLabel: string; submitCls: string; submitting?: boolean; cancelLabel?: string }) {
   return (
     <div className="flex gap-3 pt-1">
-      <button type="button" onClick={onCancel} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm">Cancel</button>
-      <button type="submit" className={cn('flex-1 py-3 rounded-xl font-bold transition-colors text-sm', submitCls)}>{submitLabel}</button>
+      <button type="button" onClick={onCancel} disabled={submitting} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm disabled:opacity-50">{cancelLabel || 'Cancel'}</button>
+      <button type="submit" disabled={submitting} className={cn('flex-1 py-3 rounded-xl font-bold transition-colors text-sm disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95', submitCls)}>
+        {submitting && <Loader2 size={16} className="animate-spin" />}
+        {submitLabel}
+      </button>
     </div>
   );
 }

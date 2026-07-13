@@ -144,7 +144,7 @@ export default function VariantBuilder({ value, onChange, sizeChart = [], hasCol
                   })}
                   {hasColors && (
                     <td className="p-2 align-middle border-b border-slate-100 dark:border-slate-800/50 text-center">
-                      <button type="button" onClick={() => removeColorRow(color)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded transition-all">
+                      <button type="button" onClick={() => removeColorRow(color)} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded transition-all">
                         <X size={14} />
                       </button>
                     </td>

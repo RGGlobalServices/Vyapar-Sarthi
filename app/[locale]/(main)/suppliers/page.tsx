@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
 import api from '@/lib/api';
+import { useBusinessStore } from '@/lib/businessStore';
 
 type Supplier = {
   id: string;
@@ -21,6 +22,7 @@ type Supplier = {
 
 export default function SuppliersPage() {
   const t = useTranslations();
+  const activeShopId = useBusinessStore(s => s.activeShopId);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -33,7 +35,7 @@ export default function SuppliersPage() {
 
   useEffect(() => {
     fetchSuppliers();
-  }, []);
+  }, [activeShopId]);
 
   const fetchSuppliers = async () => {
     try {

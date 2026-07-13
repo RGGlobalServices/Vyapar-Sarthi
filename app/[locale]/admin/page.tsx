@@ -109,7 +109,7 @@ export default function AdminDashboard() {
           <StatCard title="Total Shops" value={analytics?.totalShops || 0} icon={<Store className="text-cyan-500" />} accent="cyan" />
           <StatCard title="Total Referrals" value={analytics?.totalReferrals || 0} icon={<Gift className="text-amber-500" />} accent="amber" />
           <StatCard title="Completed Referrals" value={analytics?.completedReferrals || 0} icon={<TrendingUp className="text-emerald-500" />} accent="emerald" />
-          <StatCard title="Revenue (Rewarded)" value={`₹${(analytics?.totalRevenue || 0) * 100}`} icon={<IndianRupee className="text-green-500" />} accent="green" />
+          <StatCard title="Total Revenue" value={`₹${(analytics?.totalRevenue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={<IndianRupee className="text-green-500" />} accent="green" />
           <StatCard title="New Users" value={analytics?.newUsers || 0} icon={<UserPlus className="text-blue-500" />} accent="blue" />
         </div>
 

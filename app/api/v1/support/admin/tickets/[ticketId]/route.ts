@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { requireAdmin } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -7,6 +8,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ ticketId: string }> };
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {
+  await requireAdmin(req);
   const { ticketId } = await params;
   const { status, adminNotes } = await readBody(req);
 

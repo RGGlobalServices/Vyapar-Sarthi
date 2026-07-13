@@ -77,6 +77,7 @@ export default function Sidebar({
   const [shopForm, setShopForm] = useState(emptyShopForm);
   const [isSwitchingShop, setIsSwitchingShop] = useState(false);
   const [switchingToName, setSwitchingToName] = useState('');
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -166,7 +167,6 @@ export default function Sidebar({
     { key: 'profile',   icon: User,            href: '/profile' },
     { key: 'orders',    icon: ClipboardList,   href: '/orders' },
     { key: 'billing',   icon: IndianRupee,     href: '/billing' },
-    { key: 'wholesale_billing', icon: Briefcase, href: '/wholesale-billing' },
     { key: 'products',  icon: Package,         href: '/products' },
     { key: 'party',     icon: Users,           href: '/party' },
     { key: 'purchases', icon: ShoppingCart,    href: '/purchases' },
@@ -252,10 +252,10 @@ export default function Sidebar({
           <div className="w-full mt-2 flex items-center justify-between bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-2 group transition-all hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:border-emerald-200 dark:hover:border-emerald-500/30">
             <div className="flex items-center gap-2 truncate">
               <span className="text-sm">
-                {profile.subscriptionPlan === 'wholesale' ? '📦' : '🏪'}
+                {mounted && profile.subscriptionPlan === 'wholesale' ? '📦' : '🏪'}
               </span>
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 truncate">
-                {profile.shopName || (profile.subscriptionPlan === 'wholesale' ? 'Main Warehouse' : 'Main Store')}
+                {profile.shopName || (mounted && profile.subscriptionPlan === 'wholesale' ? 'Main Warehouse' : 'Main Store')}
               </span>
             </div>
             <ChevronDown size={14} className={cn('text-slate-400 group-hover:text-emerald-500 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
@@ -298,7 +298,7 @@ export default function Sidebar({
                         }
                       }
                     }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100 z-10"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100 z-10"
                     title="Remove Shop"
                   >
                     <Trash2 size={13} />
@@ -363,13 +363,9 @@ export default function Sidebar({
                 <Icon size={20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors" />
                 <span className="text-sm">
                   {item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
-                    ? 'Parties'
+                    ? t('parties')
                     : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
-                    ? 'Party Ledger'
-                    : item.key === 'expenses'
-                    ? 'Expenses'
-                    : item.key === 'orders'
-                    ? 'Orders'
+                    ? t('partyLedger')
                     : t(item.key as any)}
                 </span>
               </a>
@@ -381,13 +377,9 @@ export default function Sidebar({
                 <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
                 <span className="text-sm">
                   {item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
-                    ? 'Parties'
+                    ? t('parties')
                     : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
-                    ? 'Party Ledger'
-                    : item.key === 'expenses'
-                    ? 'Expenses'
-                    : item.key === 'orders'
-                    ? 'Orders'
+                    ? t('partyLedger')
                     : t(item.key as any)}
                 </span>
               </div>
@@ -460,7 +452,7 @@ export default function Sidebar({
         </div>
 
         <button
-          onClick={() => logout()}
+          onClick={() => setShowLogoutConfirm(true)}
           className="flex items-center gap-3 px-4 py-3 w-full text-slate-600 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
         >
           <LogOut size={18} />
@@ -468,6 +460,39 @@ export default function Sidebar({
         </button>
       </div>
       </aside>
+
+      {/* Logout confirmation */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          onClick={() => setShowLogoutConfirm(false)}>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-red-500/15 flex items-center justify-center text-red-500 dark:text-red-400 shrink-0">
+                <LogOut size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('logout') || 'Logout'}</h2>
+                <p className="text-xs text-slate-500">{t('confirmLogout')}</p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={() => { setShowLogoutConfirm(false); logout(); }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
+              >
+                {t('logout') || 'Logout'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add New Shop — full details modal */}
       {showNewShop && (

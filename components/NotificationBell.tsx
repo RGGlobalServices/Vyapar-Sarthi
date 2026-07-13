@@ -412,7 +412,7 @@ export default function NotificationBell() {
                     </div>
                     <button
                       onClick={ev => { ev.stopPropagation(); markEventCompleted(e, true); }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all active:scale-90"
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all active:scale-90"
                       title="Mark done"
                     >
                       <Check className="w-3.5 h-3.5" />
@@ -529,7 +529,7 @@ function NotifRow({
       {unread && (
         <button
           onClick={e => { e.stopPropagation(); onMarkRead(); }}
-          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 transition-all shrink-0 active:scale-90"
+          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 transition-all shrink-0 active:scale-90"
           title="Mark as read"
         >
           <Check className="w-3.5 h-3.5" />

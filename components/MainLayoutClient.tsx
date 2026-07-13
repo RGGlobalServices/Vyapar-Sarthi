@@ -241,7 +241,6 @@ export default function MainLayoutClient({
       // Map route segment to module name if they differ
       let moduleName = mainSegment;
       if (mainSegment === 'godowns') moduleName = 'warehouses';
-      if (mainSegment === 'wholesale-billing') moduleName = 'wholesale_billing';
 
       // Some routes are external or not in the sidebar explicitly but should be allowed (like settings, profile, etc.)
       const alwaysAllowed = ['profile', 'settings', 'support', 'dukandar-alerts'];

@@ -19,8 +19,13 @@ export const GET = handle(async (req) => {
   const totalReferrals = await prisma.referral.count();
   const completedReferrals = await prisma.referral.count({ where: { status: 'completed' } });
 
-  // Revenue: count of referrals that were rewarded (simple proxy)
-  const totalRevenue = await prisma.referral.count({ where: { referrerRewarded: true } });
+  // Real revenue from actual payments: successful charges minus refunds —
+  // this used to be a count of rewarded referrals mislabeled as money.
+  const [grossRevenue, refunds] = await Promise.all([
+    prisma.paymentTransaction.aggregate({ where: { status: 'success' }, _sum: { amount: true } }),
+    prisma.paymentTransaction.aggregate({ where: { type: 'refund' }, _sum: { amount: true } }),
+  ]);
+  const totalRevenue = (grossRevenue._sum.amount || 0) - (refunds._sum.amount || 0);
 
   let dateFilter: { gte?: Date } = {};
   if (period === 'daily') {

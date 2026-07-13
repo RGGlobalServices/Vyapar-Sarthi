@@ -4,18 +4,20 @@ import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import api from '@/lib/api';
+import { useBusinessStore } from '@/lib/businessStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Briefcase, UserPlus, Users, CheckCircle2, XCircle, Clock, Search, ChevronRight, User } from 'lucide-react';
 
 export default function StaffPage() {
   const t = useTranslations('Staff');
+  const activeShopId = useBusinessStore(s => s.activeShopId);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     loadStaff();
-  }, []);
+  }, [activeShopId]);
 
   async function loadStaff() {
     setLoading(true);

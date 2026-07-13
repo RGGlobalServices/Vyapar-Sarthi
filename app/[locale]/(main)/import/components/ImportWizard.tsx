@@ -332,7 +332,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                           type="button"
                           onClick={() => handleDeleteRow(i)}
                           title="Remove row"
-                          className="p-1.5 rounded-lg text-slate-300 dark:text-slate-700 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                          className="p-1.5 rounded-lg text-slate-300 dark:text-slate-700 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
                         >
                           <Trash2 size={14} />
                         </button>

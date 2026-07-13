@@ -242,9 +242,14 @@ export const POST = handle(async (req) => {
     } catch(e) { console.error('Notification failed', e); }
 
   } catch (err: any) {
-    const fs = require('fs');
-    fs.writeFileSync('error.log', JSON.stringify({ message: err?.message, stack: err?.stack }, null, 2));
-    return json({ 
+    console.error('Billing error:', err?.message, err?.stack);
+    // Best-effort local log — must never block the actual error response.
+    // On a read-only serverless filesystem this throws (EROFS), which would
+    // otherwise mask the real billing error behind an unrelated crash.
+    try {
+      require('fs').writeFileSync('error.log', JSON.stringify({ message: err?.message, stack: err?.stack }, null, 2));
+    } catch {}
+    return json({
       detail: err?.message || err?.toString() || 'Unknown error',
       stack: err?.stack,
       name: err?.name

@@ -92,7 +92,13 @@ export default function WholesaleBillingUI() {
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showCamera, setShowCamera] = useState(false);
-  const [isWholesale, setIsWholesale] = useState(true);
+  // Defaults to Retail (sellingPrice, a real margin) rather than Wholesale
+  // (wholesaleCost — the shop's own purchase/cost price, not a discounted
+  // selling price — there is no separate "wholesale selling price" field in
+  // the product schema). Defaulting to Wholesale meant every bill started
+  // priced at exact cost with zero profit unless the cashier manually
+  // noticed and flipped this toggle.
+  const [isWholesale, setIsWholesale] = useState(false);
 
   // Manual Add
   const [showManualAdd, setShowManualAdd] = useState(false);
@@ -124,7 +130,7 @@ export default function WholesaleBillingUI() {
     fetchCustomers();
     // Auto-focus search on load
     setTimeout(() => searchInputRef.current?.focus(), 100);
-  }, []);
+  }, [profile?.id]);
 
   const fetchProducts = async () => {
     try {
@@ -194,7 +200,7 @@ export default function WholesaleBillingUI() {
   }, [items, addItem, updateQuantity, getPrice]);
 
   const handleScan = useCallback((barcode: string) => {
-    const product = products.find(p => p.barcode === barcode || p.sku === barcode);
+    const product = products.find(p => p.barcode === barcode);
     if (product) {
       addToCart(product);
     }
@@ -528,7 +534,7 @@ export default function WholesaleBillingUI() {
                         {p.barcode && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">B: {p.barcode}</span>}
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
-                        Stock: {p.totalStock} {p.baseUnit} • Retail: ₹{p.sellingPrice} • Wholesale: ₹{p.wholesaleCost}
+                        Stock: {p.currentStock} {p.baseUnit} • Retail: ₹{p.sellingPrice} • Wholesale: ₹{p.wholesaleCost}
                       </div>
                     </div>
                     <Plus size={16} className="text-emerald-500" />
@@ -602,7 +608,7 @@ export default function WholesaleBillingUI() {
                     ₹{item.total.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100">
+                    <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100">
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -703,7 +709,7 @@ export default function WholesaleBillingUI() {
         <CameraScanner
           continuous={true}
           onScan={(barcode) => {
-            const product = products.find(p => p.barcode === barcode || p.sku === barcode);
+            const product = products.find(p => p.barcode === barcode);
             if (product) addToCart(product);
           }}
           onClose={() => setShowCamera(false)}

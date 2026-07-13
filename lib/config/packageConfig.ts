@@ -56,7 +56,7 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
     modules: [
       'dashboard',
       'orders',
-      'wholesale_billing',
+      'billing',
       'products',
       'party',
       'suppliers',

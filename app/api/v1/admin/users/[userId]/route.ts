@@ -135,6 +135,11 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
     prisma.pushSubscription.deleteMany({ where: { userId: uuid } }),
     prisma.notificationSetting.deleteMany({ where: { userId: uuid } }),
     prisma.supportTicket.deleteMany({ where: { userId: uuid } }),
+    // Godown's shop relation is onDelete: NoAction (unlike every other
+    // shop-scoped model, which cascades) — must be deleted explicitly or
+    // shop.deleteMany below throws a foreign-key violation and rolls back
+    // the whole transaction for any shop that ever created a warehouse.
+    prisma.godown.deleteMany({ where: { shop: { ownerId: uuid } } }),
     prisma.shop.deleteMany({ where: { ownerId: uuid } }),
     prisma.user.delete({ where: { id: userId } }),
   ]);
