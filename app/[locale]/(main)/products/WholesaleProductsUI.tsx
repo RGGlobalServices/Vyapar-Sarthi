@@ -103,7 +103,7 @@ export default function WholesaleProductsUI() {
   const swrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
   const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<WholesaleProduct[]>(swrKey, fetcher);
   
-  const { data: masterData } = useSWR('/master-data', fetcher);
+  const { data: masterData, mutate: mutateMasterData } = useSWR('/master-data', fetcher);
 
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -179,6 +179,40 @@ export default function WholesaleProductsUI() {
 
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [bulkForm, setBulkForm] = useState<{ category?: string; brand?: string }>({});
+
+  const [showInlineMasterModal, setShowInlineMasterModal] = useState(false);
+  const [inlineMasterType, setInlineMasterType] = useState<'brand'|'category'|'unit'>('brand');
+  const [inlineMasterForm, setInlineMasterForm] = useState({ name: '', shortName: '' });
+  const [inlineMasterSaving, setInlineMasterSaving] = useState(false);
+
+  const handleSaveInlineMasterData = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inlineMasterForm.name.trim()) return;
+    setInlineMasterSaving(true);
+    try {
+      const res = await api.post('/master-data', {
+        type: inlineMasterType,
+        name: inlineMasterForm.name,
+        shortName: inlineMasterType === 'unit' ? (inlineMasterForm.shortName || inlineMasterForm.name.substring(0, 3).toUpperCase()) : undefined
+      });
+      await mutateMasterData();
+      
+      if (inlineMasterType === 'brand') {
+        setForm(prev => ({ ...prev, brandId: res.data.id, brand: res.data.name }));
+      } else if (inlineMasterType === 'category') {
+        setForm(prev => ({ ...prev, categoryId: res.data.id, category: res.data.name }));
+      } else if (inlineMasterType === 'unit') {
+        setForm(prev => ({ ...prev, baseUnitId: res.data.id, baseUnit: res.data.name }));
+      }
+      
+      setShowInlineMasterModal(false);
+      setInlineMasterForm({ name: '', shortName: '' });
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to save master data');
+    } finally {
+      setInlineMasterSaving(false);
+    }
+  };
 
   const handleBulkSave = async () => {
     if (!bulkForm.category && !bulkForm.brand) {
@@ -758,10 +792,17 @@ export default function WholesaleProductsUI() {
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('brand') || 'Brand'}</label>
                       <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
                         value={form.brandId || ''} onChange={e => {
+                          if (e.target.value === '__NEW__') {
+                            setInlineMasterType('brand');
+                            setInlineMasterForm({ name: '', shortName: '' });
+                            setShowInlineMasterModal(true);
+                            return;
+                          }
                           const brand = masterData?.brands?.find((b:any) => b.id === e.target.value);
                           setForm({...form, brandId: e.target.value, brand: brand ? brand.name : ''});
                         }}>
                         <option value="">-- Select Brand --</option>
+                        <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Brand...</option>
                         {masterData?.brands?.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </div>
@@ -769,22 +810,47 @@ export default function WholesaleProductsUI() {
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('category') || 'Category'}</label>
                       <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
                         value={form.categoryId || ''} onChange={e => {
+                          if (e.target.value === '__NEW__') {
+                            setInlineMasterType('category');
+                            setInlineMasterForm({ name: '', shortName: '' });
+                            setShowInlineMasterModal(true);
+                            return;
+                          }
                           const cat = masterData?.categories?.find((c:any) => c.id === e.target.value);
                           setForm({...form, categoryId: e.target.value, category: cat ? cat.name : ''});
                         }}>
                         <option value="">-- Select Category --</option>
+                        <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category...</option>
                         {masterData?.categories?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Base Unit</label>
                       <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        value={form.baseUnitId || ''} onChange={e => {
+                        value={form.baseUnitId || form.baseUnit || ''} onChange={e => {
+                          if (e.target.value === '__NEW__') {
+                            setInlineMasterType('unit');
+                            setInlineMasterForm({ name: '', shortName: '' });
+                            setShowInlineMasterModal(true);
+                            return;
+                          }
                           const unit = masterData?.units?.find((u:any) => u.id === e.target.value);
-                          setForm({...form, baseUnitId: e.target.value, baseUnit: unit ? unit.name : form.baseUnit});
+                          if (unit) {
+                            setForm({...form, baseUnitId: unit.id, baseUnit: unit.name});
+                          } else {
+                            setForm({...form, baseUnitId: '', baseUnit: e.target.value});
+                          }
                         }}>
-                        <option value="">-- Legacy Unit ({form.baseUnit}) --</option>
-                        {masterData?.units?.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>)}
+                        <option value="">-- Select Unit --</option>
+                        <option value="__NEW__" className="font-bold text-emerald-600">+ Add Custom Unit...</option>
+                        <optgroup label="Your Units">
+                          {masterData?.units?.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>)}
+                        </optgroup>
+                        {(!masterData?.units || masterData.units.length === 0) && (
+                          <optgroup label="Default Units">
+                            {bizConfig.defaultUnits.map((u: string) => <option key={u} value={u}>{u}</option>)}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                     <div>
@@ -1175,6 +1241,53 @@ export default function WholesaleProductsUI() {
                 {saving ? <><Loader2 size={16} className="animate-spin" /> {t('saving') || 'Saving...'}</> : (t('saveMasterData') || 'Save Master Data')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inline Master Data Modal */}
+      {showInlineMasterModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Plus size={18} className="text-emerald-500" />
+                Add New {inlineMasterType === 'brand' ? 'Brand' : inlineMasterType === 'category' ? 'Category' : 'Base Unit'}
+              </h2>
+              <button onClick={() => setShowInlineMasterModal(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveInlineMasterData} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input required autoFocus className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                  placeholder={`e.g. ${inlineMasterType === 'brand' ? 'Tata' : inlineMasterType === 'category' ? 'Spices' : 'Kilogram'}`}
+                  value={inlineMasterForm.name} onChange={e => setInlineMasterForm({...inlineMasterForm, name: e.target.value})} />
+              </div>
+              {inlineMasterType === 'unit' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                    Short Name <span className="text-red-500">*</span>
+                  </label>
+                  <input required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                    placeholder="e.g. KG"
+                    value={inlineMasterForm.shortName} onChange={e => setInlineMasterForm({...inlineMasterForm, shortName: e.target.value})} />
+                </div>
+              )}
+              <div className="pt-2 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowInlineMasterModal(false)}
+                  className="px-4 py-2 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm">
+                  Cancel
+                </button>
+                <button type="submit" disabled={inlineMasterSaving}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-all shadow-sm flex items-center gap-2 text-sm">
+                  {inlineMasterSaving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : 'Save'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
