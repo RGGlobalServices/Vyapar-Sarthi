@@ -196,7 +196,7 @@
     "pricingCodes": "मूल्य निर्धारण और कोड",
     "sellingPriceSale": "विक्रय मूल्य (बिक्री)",
     "costPricePurchase": "लागत मूल्य (खरीद)",
-    "mrp": "MRP",
+    "mrp": "एमआरपी",
     "barcodeSku": "बारकोड / SKU",
     "hsnCode": "HSN कोड",
     "taxUnits": "कर और इकाइयाँ",
@@ -225,7 +225,12 @@
     "bulkEditProducts": "एक साथ उत्पाद संपादित करें",
     "leaveFieldsBlank": "यदि आप उन्हें बदलना नहीं चाहते हैं तो फ़ील्ड खाली छोड़ दें।",
     "applyToAll": "सभी पर लागू करें",
-    "confirmBulkDelete": "क्या आप वाकई चयनित उत्पादों को हटाना चाहते हैं?"
+    "confirmBulkDelete": "क्या आप वाकई चयनित उत्पादों को हटाना चाहते हैं?",
+    "deleteProduct": "उत्पाद हटाएं",
+    "confirmDelete": "क्या आप वाकई इस उत्पाद को हटाना चाहते हैं?",
+    "productCreated": "उत्पाद सफलतापूर्वक जोड़ा गया",
+    "productUpdated": "उत्पाद सफलतापूर्वक अपडेट किया गया",
+    "productDeleted": "उत्पाद सफलतापूर्वक हटा दिया गया"
   },
   "Stock": {
     "title": "स्टॉक और इन्वेंटरी",
@@ -259,7 +264,7 @@
     "hideArchived": "संग्रहीत छुपाएं",
     "existingProduct": "मौजूदा उत्पाद",
     "newProduct": "नया उत्पाद",
-    "selectProduct": "उत्पाद चुनें *",
+    "selectProduct": "उत्पाद चुनें",
     "chooseProduct": "— उत्पाद चुनें —",
     "quantityAdd": "जोड़ने की मात्रा *",
     "note": "नोट (वैकल्पिक)",
@@ -267,7 +272,7 @@
     "addStock": "स्टॉक जोड़ें",
     "cancel": "रद्द करें",
     "quantityRemove": "हटाने की मात्रा *",
-    "reason": "कारण (वैकल्पिक)",
+    "reason": "कारण",
     "reasonHint": "जैसे क्षतिग्रस्त, बेचा, समाप्त",
     "removeStock": "स्टॉक हटाएं",
     "newStockWill": "नया स्टॉक",
@@ -310,7 +315,7 @@
     "sellingPrice": "बिक्री मूल्य",
     "stockValue": "स्टॉक मूल्य",
     "receiveStock": "स्टॉक प्राप्त करें",
-    "transferStock": "स्टॉक ट्रांसफर करें",
+    "transferStock": "स्टॉक ट्रांसफर",
     "adjustStock": "स्टॉक समायोजित करें",
     "printBarcode": "बारकोड प्रिंट करें",
     "exportExcel": "एक्सेल निर्यात करें",
@@ -340,7 +345,7 @@
     "transferQuantity": "ट्रांसफर मात्रा *",
     "reasonOptional": "कारण (वैकल्पिक)",
     "transferReasonHint": "उदा. स्टॉक संतुलित करना",
-    "confirmTransfer": "ट्रांसफर की पुष्टि करें",
+    "confirmTransfer": "स्थानांतरण",
     "selectSupplier": "आपूर्तिकर्ता चुनें",
     "quantityRequired": "मात्रा *",
     "unitCostRequired": "यूनिट लागत (₹) *",
@@ -353,7 +358,16 @@
     "expired": "समाप्त",
     "theft": "चोरी",
     "lost": "खोया हुआ",
-    "openingBalance": "प्रारंभिक शेष"
+    "openingBalance": "प्रारंभिक शेष",
+    "selectGodown": "गोदाम चुनें",
+    "quantity": "मात्रा",
+    "saveAdjustment": "समायोजन सहेजें",
+    "stockAdjustedSuccessfully": "स्टॉक सफलतापूर्वक समायोजित किया गया",
+    "stockInSuccess": "स्टॉक सफलतापूर्वक जोड़ा गया",
+    "stockOutSuccess": "स्टॉक सफलतापूर्वक हटा दिया गया",
+    "transferSuccess": "स्टॉक सफलतापूर्वक स्थानांतरित किया गया",
+    "fromGodown": "से (गोदाम)",
+    "toGodown": "तक (गोदाम)"
   },
   "Udhar": {
     "title": "उधार खाता (बही)",
@@ -1138,11 +1152,11 @@
   },
   "Orders": {
     "title": "ऑर्डर",
-    "subtitle": "थोक ऑर्डर प्रबंधित करें",
+    "subtitle": "अपने बिक्री ऑर्डर प्रबंधित करें",
     "newOrder": "नया ऑर्डर",
     "orderNumber": "ऑर्डर नंबर",
     "orderNumberPlaceholder": "ORD-001",
-    "totalAmount": "कुल राशि (₹)",
+    "totalAmount": "कुल राशि",
     "cancel": "रद्द करें",
     "saving": "सहेजा जा रहा है...",
     "saveOrder": "ऑर्डर सहेजें",
@@ -1153,7 +1167,15 @@
     "colAmount": "राशि",
     "loadError": "ऑर्डर लोड करने में विफल",
     "createSuccess": "ऑर्डर सफलतापूर्वक बनाया गया",
-    "createError": "ऑर्डर बनाने में विफल"
+    "createError": "ऑर्डर बनाने में विफल",
+    "addOrder": "ऑर्डर जोड़ें",
+    "editOrder": "ऑर्डर संपादित करें",
+    "deleteOrder": "ऑर्डर हटाएं",
+    "orderStatus": "स्थिति",
+    "confirmDeleteOrder": "क्या आप वाकई इस ऑर्डर को हटाना चाहते हैं?",
+    "orderDeletedSuccessfully": "ऑर्डर सफलतापूर्वक हटा दिया गया",
+    "customer": "ग्राहक",
+    "paymentType": "भुगतान प्रकार"
   },
   "Expenses": {
     "title": "व्यय",
@@ -1217,5 +1239,17 @@
     "creditDays": "क्रेडिट दिन",
     "creditDaysFull": "क्रेडिट दिन",
     "saveParty": "पार्टी सहेजें"
+  },
+  "Transfers": {
+    "title": "स्टॉक ट्रांसफर",
+    "subtitle": "गोदामों के बीच स्थानांतरण प्रबंधित करें",
+    "transferStock": "स्टॉक ट्रांसफर",
+    "newTransfer": "नया ट्रांसफर",
+    "date": "दिनांक",
+    "product": "उत्पाद",
+    "from": "से",
+    "to": "तक",
+    "quantity": "मात्रा",
+    "status": "स्थिति"
   }
 }

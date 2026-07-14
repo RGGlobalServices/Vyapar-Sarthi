@@ -36,9 +36,15 @@ export const DELETE = handle(async (req, { params }: any) => {
   const { shop } = await requireShop(req);
   const { id } = await params;
 
-  await prisma.customer.delete({
-    where: { id, shopId: shop.id }
-  });
+  // Soft delete by archiving, since they might have ledgers/transactions
+  // which would block a hard delete due to foreign key constraints.
+  const customer = await prisma.customer.findUnique({ where: { id, shopId: shop.id } });
+  if (customer) {
+    await prisma.customer.update({
+      where: { id, shopId: shop.id },
+      data: { customerType: `archived_${customer.customerType || 'customer'}` }
+    });
+  }
 
   return json({ success: true });
 });

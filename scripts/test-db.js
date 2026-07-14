@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); async function main() { const all = await prisma.customer.findMany({ select: { name: true, customerType: true, shopId: true } }); console.log(JSON.stringify(all, null, 2)); } main().finally(() => process.exit(0));

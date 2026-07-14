@@ -5,9 +5,11 @@ import { requireShop } from '@/lib/server/auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const PUT = handle(async (req, { params }) => {
+type Ctx = { params: Promise<{ id: string }> };
+
+export const PUT = handle<Ctx>(async (req, { params }) => {
   const { shop } = await requireShop(req);
-  const id = params.id;
+  const { id } = await params;
   const data = await readBody<{ orderNumber: string, status: string, totalAmount: number }>(req);
 
   if (!id) throw new ApiError(400, 'Order ID is required');
@@ -30,9 +32,9 @@ export const PUT = handle(async (req, { params }) => {
   return json(updated);
 });
 
-export const DELETE = handle(async (req, { params }) => {
+export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { shop } = await requireShop(req);
-  const id = params.id;
+  const { id } = await params;
 
   if (!id) throw new ApiError(400, 'Order ID is required');
 

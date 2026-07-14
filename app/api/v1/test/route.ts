@@ -1,0 +1,1 @@
+import { NextResponse } from 'next/server'; import prisma from '@/lib/server/prisma'; export const dynamic = 'force-dynamic'; export async function GET() { const data = await prisma.customer.findMany({ where: { customerType: 'party' } }); return NextResponse.json({ count: data.length, data }); }

@@ -68,11 +68,11 @@ export default function OrdersPage() {
         status: editingOrder.status,
         totalAmount: parseFloat(editingOrder.totalAmount)
       });
-      toast.success('Order updated successfully');
+      toast.success(t('orderUpdatedSuccessfully') || 'Order updated successfully');
       setEditingOrder(null);
       fetchOrders();
     } catch (err) {
-      toast.error('Failed to update order');
+      toast.error(t('updateError') || 'Failed to update order');
     } finally {
       setEditSaving(false);
     }
@@ -82,11 +82,11 @@ export default function OrdersPage() {
     setDeleteSaving(true);
     try {
       await api.delete(`/orders/${deletingOrder.id}`);
-      toast.success('Order deleted successfully');
+      toast.success(t('orderDeletedSuccessfully') || 'Order deleted successfully');
       setDeletingOrder(null);
       fetchOrders();
     } catch (err) {
-      toast.error('Failed to delete order');
+      toast.error(t('deleteError') || 'Failed to delete order');
     } finally {
       setDeleteSaving(false);
     }
@@ -155,7 +155,7 @@ export default function OrdersPage() {
                   <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colOrderNumber')}</th>
                   <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colStatus')}</th>
                   <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">{t('colAmount')}</th>
-                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">{t('colActions') || 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -206,7 +206,7 @@ export default function OrdersPage() {
             <div className="p-4 border-b border-slate-200 dark:border-slate-800">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Pencil size={18} className="text-emerald-500" />
-                Edit Order
+                {t('editOrder') || 'Edit Order'}
               </h2>
             </div>
             <div className="p-5 space-y-4">
@@ -229,9 +229,9 @@ export default function OrdersPage() {
               </div>
             </div>
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
-              <button type="button" onClick={() => setEditingOrder(null)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors">Cancel</button>
+              <button type="button" onClick={() => setEditingOrder(null)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors">{t('cancel') || 'Cancel'}</button>
               <button type="submit" disabled={editSaving} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 transition-colors flex items-center gap-2">
-                {editSaving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : 'Save Changes'}
+                {editSaving ? <><Loader2 size={16} className="animate-spin" /> {t('saving') || 'Saving...'}</> : (t('saveOrder') || 'Save Changes')}
               </button>
             </div>
           </form>
@@ -246,12 +246,12 @@ export default function OrdersPage() {
               <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center mx-auto mb-5">
                 <Trash2 size={32} />
               </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Order?</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">Are you sure you want to delete order <strong className="text-slate-700 dark:text-slate-300">{deletingOrder.orderNumber}</strong>? This action cannot be undone.</p>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t('deleteOrder') || 'Delete Order'}?</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">{t('confirmDeleteOrder') || 'Are you sure you want to delete order'} <strong className="text-slate-700 dark:text-slate-300">{deletingOrder.orderNumber}</strong>? {t('cannotBeUndone') || 'This action cannot be undone.'}</p>
               <div className="flex gap-3 w-full">
-                <button onClick={() => setDeletingOrder(null)} className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+                <button onClick={() => setDeletingOrder(null)} className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors">{t('cancel') || 'Cancel'}</button>
                 <button onClick={handleDelete} disabled={deleteSaving} className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                  {deleteSaving ? <><Loader2 size={16} className="animate-spin" /> Deleting</> : 'Delete Order'}
+                  {deleteSaving ? <><Loader2 size={16} className="animate-spin" /> {t('deleting') || 'Deleting'}</> : (t('deleteOrder') || 'Delete Order')}
                 </button>
               </div>
             </div>

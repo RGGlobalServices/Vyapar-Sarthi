@@ -105,7 +105,7 @@
   },
   "Products": {
     "title": "साठा व्यवस्थापन",
-    "addProduct": "उत्पाद जोडा",
+    "addProduct": "उत्पादन जोडा",
     "searchPlaceholder": "उत्पादने शोधा...",
     "wholesaleTitle": "उत्पादन मास्टर डेटा",
     "wholesaleSubtitle": "तुमची उत्पादन कॅटलॉग व्यवस्थापित करा. खरेदीद्वारे स्टॉक अपडेट केला जातो.",
@@ -196,7 +196,7 @@
     "pricingCodes": "किंमत आणि कोड",
     "sellingPriceSale": "विक्री किंमत (विक्री)",
     "costPricePurchase": "खरेदी किंमत (खरेदी)",
-    "mrp": "MRP",
+    "mrp": "एमआरपी",
     "barcodeSku": "बारकोड / SKU",
     "hsnCode": "HSN कोड",
     "taxUnits": "कर आणि एकके",
@@ -225,7 +225,12 @@
     "bulkEditProducts": "एकत्रित उत्पादने संपादित करा",
     "leaveFieldsBlank": "तुम्हाला बदल करायचे नसल्यास फील्ड रिकामे सोडा.",
     "applyToAll": "सर्वांना लागू करा",
-    "confirmBulkDelete": "तुम्हाला खात्री आहे की तुम्ही निवडलेली उत्पादने हटवू इच्छिता?"
+    "confirmBulkDelete": "तुम्हाला खात्री आहे की तुम्ही निवडलेली उत्पादने हटवू इच्छिता?",
+    "deleteProduct": "उत्पादन हटवा",
+    "confirmDelete": "तुम्हाला नक्की हे उत्पादन हटवायचे आहे का?",
+    "productCreated": "उत्पादन यशस्वीरित्या जोडले",
+    "productUpdated": "उत्पादन यशस्वीरित्या अपडेट केले",
+    "productDeleted": "उत्पादन यशस्वीरित्या हटवले"
   },
   "Stock": {
     "title": "साठा व इन्वेंटरी",
@@ -259,7 +264,7 @@
     "hideArchived": "संग्रहित लपवा",
     "existingProduct": "विद्यमान उत्पाद",
     "newProduct": "नवीन उत्पाद",
-    "selectProduct": "उत्पाद निवडा *",
+    "selectProduct": "उत्पादन निवडा",
     "chooseProduct": "— उत्पाद निवडा —",
     "quantityAdd": "जोडण्याचे प्रमाण *",
     "note": "नोंद (ऐच्छिक)",
@@ -267,7 +272,7 @@
     "addStock": "साठा जोडा",
     "cancel": "रद्द करा",
     "quantityRemove": "काढण्याचे प्रमाण *",
-    "reason": "कारण (ऐच्छिक)",
+    "reason": "कारण",
     "reasonHint": "उदा. नुकसान, विकले, कालबाह्य",
     "removeStock": "साठा काढा",
     "newStockWill": "नवीन साठा",
@@ -310,7 +315,7 @@
     "sellingPrice": "विक्री किंमत",
     "stockValue": "स्टॉक मूल्य",
     "receiveStock": "स्टॉक प्राप्त करा",
-    "transferStock": "स्टॉक ट्रान्सफर करा",
+    "transferStock": "स्टॉक ट्रान्सफर",
     "adjustStock": "स्टॉक समायोजित करा",
     "printBarcode": "बारकोड प्रिंट करा",
     "exportExcel": "एक्सेल एक्सपोर्ट करा",
@@ -340,7 +345,7 @@
     "transferQuantity": "ट्रान्सफर प्रमाण *",
     "reasonOptional": "कारण (पर्यायी)",
     "transferReasonHint": "उदा. स्टॉक संतुलित करणे",
-    "confirmTransfer": "ट्रान्सफरची पुष्टी करा",
+    "confirmTransfer": "हस्तांतरण",
     "selectSupplier": "पुरवठादार निवडा",
     "quantityRequired": "प्रमाण *",
     "unitCostRequired": "युनिट किंमत (₹) *",
@@ -353,7 +358,16 @@
     "expired": "कालबाह्य",
     "theft": "चोरी",
     "lost": "हरवलेले",
-    "openingBalance": "सुरुवातीची शिल्लक"
+    "openingBalance": "सुरुवातीची शिल्लक",
+    "selectGodown": "गोदाम निवडा",
+    "quantity": "प्रमाण",
+    "saveAdjustment": "समायोजन जतन करा",
+    "stockAdjustedSuccessfully": "स्टॉक यशस्वीरित्या समायोजित केला",
+    "stockInSuccess": "स्टॉक यशस्वीरित्या जोडला",
+    "stockOutSuccess": "स्टॉक यशस्वीरित्या काढला",
+    "transferSuccess": "स्टॉक यशस्वीरित्या हस्तांतरित केला",
+    "fromGodown": "कडून (गोदाम)",
+    "toGodown": "पर्यंत (गोदाम)"
   },
   "Udhar": {
     "title": "उधार खाते (वही)",
@@ -1137,12 +1151,12 @@
     "cameraPermissionError": "कॅमेरा ऍक्सेस करू शकलो नाही. कृपया कॅमेरा परवानग्या द्या."
   },
   "Orders": {
-    "title": "ऑर्डर",
-    "subtitle": "घाऊक ऑर्डर व्यवस्थापित करा",
+    "title": "ऑर्डर्स",
+    "subtitle": "तुमच्या विक्री ऑर्डर्स व्यवस्थापित करा",
     "newOrder": "नवीन ऑर्डर",
     "orderNumber": "ऑर्डर क्रमांक",
     "orderNumberPlaceholder": "ORD-001",
-    "totalAmount": "एकूण रक्कम (₹)",
+    "totalAmount": "एकूण रक्कम",
     "cancel": "रद्द करा",
     "saving": "जतन करत आहे...",
     "saveOrder": "ऑर्डर जतन करा",
@@ -1153,7 +1167,15 @@
     "colAmount": "रक्कम",
     "loadError": "ऑर्डर लोड करण्यात अयशस्वी",
     "createSuccess": "ऑर्डर यशस्वीरित्या तयार केली",
-    "createError": "ऑर्डर तयार करण्यात अयशस्वी"
+    "createError": "ऑर्डर तयार करण्यात अयशस्वी",
+    "addOrder": "ऑर्डर जोडा",
+    "editOrder": "ऑर्डर संपादित करा",
+    "deleteOrder": "ऑर्डर हटवा",
+    "orderStatus": "स्थिती",
+    "confirmDeleteOrder": "तुम्हाला नक्की ही ऑर्डर हटवायची आहे का?",
+    "orderDeletedSuccessfully": "ऑर्डर यशस्वीरित्या हटवली",
+    "customer": "ग्राहक",
+    "paymentType": "पेमेंट प्रकार"
   },
   "Expenses": {
     "title": "खर्च",
@@ -1217,5 +1239,17 @@
     "creditDays": "क्रेडिट दिवस",
     "creditDaysFull": "क्रेडिट दिवस",
     "saveParty": "पार्टी जतन करा"
+  },
+  "Transfers": {
+    "title": "स्टॉक ट्रान्सफर",
+    "subtitle": "गोदामांमधील हस्तांतरण व्यवस्थापित करा",
+    "transferStock": "स्टॉक ट्रान्सफर",
+    "newTransfer": "नवीन ट्रान्सफर",
+    "date": "तारीख",
+    "product": "उत्पादन",
+    "from": "कडून",
+    "to": "पर्यंत",
+    "quantity": "प्रमाण",
+    "status": "स्थिती"
   }
 }

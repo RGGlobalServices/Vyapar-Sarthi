@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2 } from 'lucide-react';
+import { useState } from 'react';
+import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import useSWR from 'swr';
+import toast from 'react-hot-toast';
+
+const fetcher = (url: string) => api.get(url, { cache: 'no-store' }).then(res => res.data);
 
 type Party = {
   id: string;
@@ -24,40 +28,94 @@ type Party = {
 export default function PartyPage() {
   const t = useTranslations('Party');
   const activeShopId = useBusinessStore(s => s.activeShopId);
-  const [parties, setParties] = useState<Party[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  const { data: partiesData = [], mutate: mutateParties, isLoading } = useSWR(
+    activeShopId ? `/crm/customers?type=party&_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const parties: Party[] = Array.isArray(partiesData) ? partiesData : [];
+  console.log("SWR partiesData:", partiesData);
 
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showNewParty, setShowNewParty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Edit / Delete states
+  const [editingParty, setEditingParty] = useState<Party | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  
+  const [deletingParty, setDeletingParty] = useState<Party | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [form, setForm] = useState({ name: '', shopName: '', mobile: '', gst: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
 
-  useEffect(() => {
-    fetchParties();
-  }, [activeShopId]);
-
-  const fetchParties = async () => {
-    try {
-      const res = await api.get('/crm/customers?type=party');
-      setParties(res.data);
-    } catch (e) {
-      console.error('Failed to load parties', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCreateParty = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
     try {
       await api.post('/crm/customers', { ...form, customerType: 'party' });
-      fetchParties();
+      toast.success(t('partyCreated') || 'Party added successfully');
+      await mutateParties();
       setShowNewParty(false);
       setForm({ name: '', shopName: '', mobile: '', gst: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
     } catch (e) {
       console.error(e);
+      toast.error('Failed to add party');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openEditModal = () => {
+    if (!selectedParty) return;
+    setForm({
+      name: selectedParty.name,
+      shopName: selectedParty.shopName || '',
+      mobile: selectedParty.mobile || '',
+      gst: selectedParty.gst || '',
+      address: selectedParty.address || '',
+      creditLimit: (selectedParty.creditLimit || 0).toString(),
+      creditDays: (selectedParty.creditDays || 0).toString(),
+      openingBalance: '0'
+    });
+    setEditingParty(selectedParty);
+  };
+
+  const handleEditParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingParty) return;
+    setIsEditing(true);
+    try {
+      await api.put(`/crm/customers/${editingParty.id}`, { ...form, customerType: 'party' });
+      toast.success('Party updated successfully');
+      await mutateParties();
+      setEditingParty(null);
+      setSelectedParty(null);
+      setForm({ name: '', shopName: '', mobile: '', gst: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to update party');
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleDeleteParty = async () => {
+    if (!deletingParty) return;
+    setIsDeleting(true);
+    try {
+      await api.delete(`/crm/customers/${deletingParty.id}`);
+      toast.success('Party deleted successfully');
+      mutateParties();
+      setDeletingParty(null);
+      setSelectedParty(null);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to delete party');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -94,7 +152,7 @@ export default function PartyPage() {
           />
         </div>
 
-        {loading ? (
+        {isLoading ? (
           <div className="flex justify-center p-12">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
           </div>
@@ -153,12 +211,28 @@ export default function PartyPage() {
                   {selectedParty.address && <span className="flex items-center gap-1"><MapPin size={14}/> {selectedParty.address}</span>}
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedParty(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openEditModal}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  title="Edit Party"
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  onClick={() => setDeletingParty(selectedParty)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                  title="Delete Party"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button
+                  onClick={() => setSelectedParty(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="p-4 grid grid-cols-2 gap-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
@@ -206,7 +280,7 @@ export default function PartyPage() {
           onClose={() => setShowPayment(false)}
           onSuccess={() => {
             setShowPayment(false);
-            fetchParties();
+            mutateParties();
             setSelectedParty(null);
           }}
         />
@@ -258,8 +332,85 @@ export default function PartyPage() {
                     <input type="number" value={form.creditDays} onChange={e=>setForm({...form, creditDays: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
                   </div>
                 </div>
-                <button type="submit" className="w-full h-12 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">{t('saveParty')}</button>
+                <button type="submit" disabled={isSaving} className="w-full h-12 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-70 flex items-center justify-center gap-2 transition-colors">
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : t('saveParty')}
+                </button>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Party Modal */}
+      {editingParty && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Pencil size={18} className="text-indigo-500" />
+                Edit Party
+              </h2>
+              <button onClick={() => { setEditingParty(null); setForm({ name: '', shopName: '', mobile: '', gst: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' }); }}><X size={20} className="text-slate-400 hover:text-slate-700 transition-colors"/></button>
+            </div>
+            <div className="overflow-y-auto">
+              <form onSubmit={handleEditParty} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-bold mb-1">{t('shopBusinessName')}</label>
+                  <input required value={form.shopName} onChange={e=>setForm({...form, shopName: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" placeholder={t('shopNamePlaceholder')} />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">{t('ownerName')}</label>
+                  <input required value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-1">{t('mobile')}</label>
+                    <input value={form.mobile} onChange={e=>setForm({...form, mobile: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">{t('gstin')}</label>
+                    <input value={form.gst} onChange={e=>setForm({...form, gst: e.target.value.toUpperCase()})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={15} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">{t('address')}</label>
+                  <input value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-1 truncate" title={t('creditLimitFull')}>{t('creditLimit')}</label>
+                    <input type="number" value={form.creditLimit} onChange={e=>setForm({...form, creditLimit: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1 truncate" title={t('creditDaysFull')}>{t('creditDays')}</label>
+                    <input type="number" value={form.creditDays} onChange={e=>setForm({...form, creditDays: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
+                  </div>
+                </div>
+                <button type="submit" disabled={isEditing} className="w-full h-12 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-70 flex items-center justify-center gap-2 transition-colors">
+                  {isEditing ? <Loader2 size={20} className="animate-spin" /> : 'Save Changes'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation */}
+      {deletingParty && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-xl flex flex-col overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center mx-auto mb-5">
+                <Trash2 size={32} />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Party?</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">Are you sure you want to delete <strong className="text-slate-700 dark:text-slate-300">{deletingParty.shopName || deletingParty.name}</strong>? This will not delete their associated ledgers but will remove them from the active parties list. This action cannot be undone.</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setDeletingParty(null)} className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+                <button onClick={handleDeleteParty} disabled={isDeleting} className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                  {isDeleting ? <><Loader2 size={16} className="animate-spin" /> Deleting</> : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

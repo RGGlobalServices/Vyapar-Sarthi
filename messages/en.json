@@ -298,7 +298,14 @@
     "bulkEditProducts": "Bulk Edit Products",
     "leaveFieldsBlank": "Leave fields blank if you do not want to change them.",
     "applyToAll": "Apply to all",
-    "confirmBulkDelete": "Are you sure you want to delete the selected products?"
+    "confirmBulkDelete": "Are you sure you want to delete the selected products?",
+    "saveProduct": "Save Product",
+    "deleteProduct": "Delete Product",
+    "baseUnit": "Base Unit",
+    "confirmDelete": "Are you sure you want to delete this product?",
+    "productCreated": "Product added successfully",
+    "productUpdated": "Product updated successfully",
+    "productDeleted": "Product deleted successfully"
   },
   "Stock": {
     "title": "Stock & Inventory",
@@ -332,7 +339,7 @@
     "hideArchived": "Hide Archived",
     "existingProduct": "Existing Product",
     "newProduct": "New Product",
-    "selectProduct": "Select Product *",
+    "selectProduct": "Select Product",
     "chooseProduct": "— choose product —",
     "quantityAdd": "Quantity to Add *",
     "note": "Note (optional)",
@@ -340,7 +347,7 @@
     "addStock": "Add Stock",
     "cancel": "Cancel",
     "quantityRemove": "Quantity to Remove *",
-    "reason": "Reason (optional)",
+    "reason": "Reason",
     "reasonHint": "e.g. Damaged, sold, expired",
     "removeStock": "Remove Stock",
     "newStockWill": "New stock",
@@ -413,7 +420,7 @@
     "transferQuantity": "Transfer Quantity *",
     "reasonOptional": "Reason (Optional)",
     "transferReasonHint": "e.g. Rebalancing stock",
-    "confirmTransfer": "Confirm Transfer",
+    "confirmTransfer": "Transfer",
     "selectSupplier": "Select Supplier",
     "quantityRequired": "Quantity *",
     "unitCostRequired": "Unit Cost (₹) *",
@@ -426,7 +433,16 @@
     "expired": "Expired",
     "theft": "Theft",
     "lost": "Lost",
-    "openingBalance": "Opening Balance"
+    "openingBalance": "Opening Balance",
+    "selectGodown": "Select Godown",
+    "quantity": "Quantity",
+    "saveAdjustment": "Save Adjustment",
+    "stockAdjustedSuccessfully": "Stock adjusted successfully",
+    "stockInSuccess": "Stock added successfully",
+    "stockOutSuccess": "Stock removed successfully",
+    "transferSuccess": "Stock transferred successfully",
+    "fromGodown": "From Godown",
+    "toGodown": "To Godown"
   },
   "Udhar": {
     "title": "Udhar Khata (Ledger)",
@@ -1133,11 +1149,11 @@
   },
   "Orders": {
     "title": "Orders",
-    "subtitle": "Manage wholesale orders",
+    "subtitle": "Manage your sales orders",
     "newOrder": "New Order",
     "orderNumber": "Order Number",
     "orderNumberPlaceholder": "ORD-001",
-    "totalAmount": "Total Amount (₹)",
+    "totalAmount": "Total Amount",
     "cancel": "Cancel",
     "saving": "Saving...",
     "saveOrder": "Save Order",
@@ -1148,7 +1164,15 @@
     "colAmount": "Amount",
     "loadError": "Failed to load orders",
     "createSuccess": "Order created successfully",
-    "createError": "Failed to create order"
+    "createError": "Failed to create order",
+    "addOrder": "Add Order",
+    "editOrder": "Edit Order",
+    "deleteOrder": "Delete Order",
+    "orderStatus": "Status",
+    "confirmDeleteOrder": "Are you sure you want to delete this order?",
+    "orderDeletedSuccessfully": "Order deleted successfully",
+    "customer": "Customer",
+    "paymentType": "Payment Type"
   },
   "Expenses": {
     "title": "Expenses",
@@ -1212,5 +1236,17 @@
     "creditDays": "Cr. Days",
     "creditDaysFull": "Credit Days",
     "saveParty": "Save Party"
+  },
+  "Transfers": {
+    "title": "Stock Transfers",
+    "subtitle": "Manage inter-godown transfers",
+    "transferStock": "Transfer Stock",
+    "newTransfer": "New Transfer",
+    "date": "Date",
+    "product": "Product",
+    "from": "From",
+    "to": "To",
+    "quantity": "Quantity",
+    "status": "Status"
   }
 }

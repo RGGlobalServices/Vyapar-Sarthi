@@ -183,7 +183,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       // Restore active shop from localStorage (safe here — client-only, inside useEffect)
       const storedId = typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null;
       const validId = storedId && shops.find(s => s.id === storedId) ? storedId : null;
-      set({ allShops: shops, activeShopId: validId });
+      const autoId = validId || (shops.length > 0 ? shops[0].id : null);
+      
+      if (!validId && autoId && typeof window !== 'undefined') {
+        localStorage.setItem('ks_active_shop_id', autoId);
+      }
+      
+      set({ allShops: shops, activeShopId: autoId });
     } catch {}
   },
 

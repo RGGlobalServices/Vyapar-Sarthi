@@ -64,30 +64,35 @@ export default function ReceiveDrawer({
       return;
     }
 
-    // Fire and forget so UI closes instantly
-    api.post('/purchases', {
-      supplierId: form.supplierId,
-      invoiceNumber: form.invoiceNumber,
-      date: form.date,
-      warehouseId: form.warehouseId,
-      items: [{
+    setLoading(true);
+    try {
+      await api.post('/purchases', {
+        supplierId: form.supplierId,
+        invoiceNumber: form.invoiceNumber,
+        date: form.date,
+        warehouseId: form.warehouseId,
+        items: [{
+          productId: product.id,
+          quantity: Number(form.quantity),
+          cost: Number(form.cost),
+          batchNumber: form.batchNumber || undefined,
+          expiryDate: form.expiryDate || undefined
+        }]
+      });
+
+      onSuccess({
+        type: 'receive',
         productId: product.id,
         quantity: Number(form.quantity),
-        cost: Number(form.cost),
-        batchNumber: form.batchNumber || undefined,
-        expiryDate: form.expiryDate || undefined
-      }]
-    }).catch(err => {
+        warehouseId: form.warehouseId
+      });
+      onClose();
+    } catch (err: any) {
       console.error('[API Error] Receive:', err);
-    });
-
-    onSuccess({
-      type: 'receive',
-      productId: product.id,
-      quantity: Number(form.quantity),
-      warehouseId: form.warehouseId
-    });
-    onClose();
+      setError(err.response?.data?.error || err.message || 'Failed to receive stock');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
