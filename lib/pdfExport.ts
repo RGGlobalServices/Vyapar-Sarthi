@@ -1,3 +1,5 @@
+import { saveOrShareBlob } from '@/lib/nativeSave';
+
 export async function exportReportPDF({
   shopName,
   dateRange,
@@ -106,5 +108,8 @@ export async function exportReportPDF({
   }
 
   // Save the PDF
-  doc.save(`Business_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+  const filename = `Business_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+  const blob: Blob = doc.output('blob');
+  if (await saveOrShareBlob(blob, filename)) return;
+  doc.save(filename);
 }

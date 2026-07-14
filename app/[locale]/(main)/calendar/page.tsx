@@ -315,7 +315,7 @@ export default function CalendarPage() {
                         {e.customerName && <><span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" /><span className="truncate">{e.customerName}</span></>}
                       </div>
                     </div>
-                    <button className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-2 text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 rounded-lg transition-all active:scale-95"><Pencil size={15} /></button>
+                    <button className="opacity-100 p-2 text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 rounded-lg transition-all active:scale-95"><Pencil size={15} /></button>
                   </div>
                 );
               })}

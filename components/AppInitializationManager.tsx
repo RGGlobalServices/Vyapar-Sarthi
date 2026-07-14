@@ -80,16 +80,23 @@ export default function AppInitializationManager() {
           await LocalNotifications.requestPermissions();
         }
 
-        // Camera / Filesystem: still only ask once, since these are prompted
-        // contextually elsewhere in the app when actually needed (barcode
-        // scan, document upload) — no need to front-load them on every launch.
-        const hasRequestedOthers = localStorage.getItem('app_permissions_requested');
-        if (!hasRequestedOthers) {
+        // Camera: check actual OS-level status rather than a local "did we
+        // ask before" flag, same reasoning as notifications above — if the
+        // user denied it on first install (or revoked it later in system
+        // settings), we want to re-prompt on next launch instead of leaving
+        // barcode scanning silently broken forever.
+        const camStatus = await Camera.checkPermissions();
+        if (camStatus.camera !== 'granted') {
           await Camera.requestPermissions();
-          if ((Filesystem as any).requestPermissions) {
+        }
+
+        // Filesystem: only relevant on Android ≤12 (scoped storage on 13+
+        // needs no runtime prompt), and only if the plugin exposes it.
+        if ((Filesystem as any).checkPermissions && (Filesystem as any).requestPermissions) {
+          const fsStatus = await (Filesystem as any).checkPermissions();
+          if (fsStatus?.publicStorage !== 'granted') {
             await (Filesystem as any).requestPermissions();
           }
-          localStorage.setItem('app_permissions_requested', 'true');
         }
       } catch (error) {
         console.error('Failed to request permissions on startup', error);

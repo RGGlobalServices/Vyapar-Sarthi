@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { Download } from 'lucide-react';
+import { saveOrShareBlob } from '@/lib/nativeSave';
 
 interface ExportConfig {
   filename?: string;
@@ -10,7 +11,7 @@ interface ExportConfig {
 }
 
 export function useExport() {
-  const exportToCSV = useCallback(({ filename = 'report', columns, data }: ExportConfig) => {
+  const exportToCSV = useCallback(async ({ filename = 'report', columns, data }: ExportConfig) => {
     const headers = columns.map(c => c.label).join(',');
     const rows = data.map(row =>
       columns.map(col => {
@@ -24,22 +25,28 @@ export function useExport() {
 
     const csv = `${headers}\n${rows}`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const name = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+    if (await saveOrShareBlob(blob, name)) return;
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', name);
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
   }, []);
 
-  const exportToJSON = useCallback(({ filename = 'report', data }: { filename?: string; data: any[] }) => {
+  const exportToJSON = useCallback(async ({ filename = 'report', data }: { filename?: string; data: any[] }) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const name = `${filename}_${new Date().toISOString().split('T')[0]}.json`;
+    if (await saveOrShareBlob(blob, name)) return;
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.json`);
+    link.setAttribute('download', name);
     document.body.appendChild(link);
     link.click();
     link.remove();

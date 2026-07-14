@@ -608,7 +608,7 @@ export default function WholesaleBillingUI() {
                     ₹{item.total.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100">
+                    <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
                       <Trash2 size={16} />
                     </button>
                   </td>
