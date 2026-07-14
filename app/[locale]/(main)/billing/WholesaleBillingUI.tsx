@@ -159,18 +159,20 @@ export default function WholesaleBillingUI() {
   }, [isWholesale]);
 
   // When Wholesale/Retail toggle changes, update all prices in cart
+  const prevIsWholesale = useRef(isWholesale);
   useEffect(() => {
-    let hasChanges = false;
-    items.forEach(item => {
-      const product = products.find(p => p.id === item.id);
-      if (product) {
-        const newPrice = getPrice(product, item.variant || undefined, isWholesale);
-        if (item.price !== newPrice) {
-          updatePrice(item.id as any, newPrice, item.variant);
-          hasChanges = true;
+    if (prevIsWholesale.current !== isWholesale) {
+      prevIsWholesale.current = isWholesale;
+      items.forEach(item => {
+        const product = products.find(p => p.id === item.id);
+        if (product) {
+          const newPrice = getPrice(product, item.variant || undefined, isWholesale);
+          if (item.price !== newPrice) {
+            updatePrice(item.id as any, newPrice, item.variant);
+          }
         }
-      }
-    });
+      });
+    }
   }, [isWholesale, products, getPrice, items, updatePrice]);
 
   const addToCart = useCallback((product: any, variant?: string) => {
