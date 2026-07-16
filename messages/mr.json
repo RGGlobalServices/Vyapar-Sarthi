@@ -665,7 +665,18 @@
     "enterNamePlaceholder": "नाव प्रविष्ट करा किंवा रिक्त सोडा",
     "billWillBeSent": "बिल पाठवले जाईल",
     "whatsappNumberLabel": "WhatsApp नंबर",
-    "emailFieldLabel": "ईमेल"
+    "emailFieldLabel": "ईमेल",
+    "payableAmount": "देय रक्कम",
+    "collectedAmount": "जमा",
+    "goesToUdhar": "उधारमध्ये जाईल",
+    "addedToUdhar": "उधारमध्ये जोडले",
+    "udharHint": "उर्वरित रक्कम ग्राहकाच्या उधार खात्यात जोडली जाईल. पुढील टप्प्यात ग्राहकाचे नाव आवश्यक आहे.",
+    "paidByMethod": "{method} ने पेमेंट",
+    "payNow": "आता पेमेंट",
+    "payLater": "नंतर (उधार)",
+    "receivedVia": "कशाने मिळाले",
+    "partiallyPaid": "अर्धवट पेमेंट",
+    "fullyPaid": "पूर्ण पेमेंट"
   },
   "BillSlip": {
     "storeNameFallback": "किराणा स्टोअर",

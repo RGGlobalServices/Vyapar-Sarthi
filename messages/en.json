@@ -568,7 +568,18 @@
     "enterNamePlaceholder": "Enter name or leave blank",
     "billWillBeSent": "Bill will be sent",
     "whatsappNumberLabel": "WhatsApp Number",
-    "emailFieldLabel": "Email"
+    "emailFieldLabel": "Email",
+    "payableAmount": "Payable Amount",
+    "collectedAmount": "Collected",
+    "goesToUdhar": "Goes to Udhar",
+    "addedToUdhar": "Added to Udhar",
+    "udharHint": "The remaining amount will be added to the customer's udhar ledger. Customer name is required on the next step.",
+    "paidByMethod": "Paid by {method}",
+    "payNow": "Pay Now",
+    "payLater": "Pay Later (Udhar)",
+    "receivedVia": "Received via",
+    "partiallyPaid": "Partially Paid",
+    "fullyPaid": "Fully Paid"
   },
   "BillSlip": {
     "storeNameFallback": "Kirana Store",

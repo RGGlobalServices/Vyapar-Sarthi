@@ -12,11 +12,9 @@ import {
   User, X, Printer, Calculator as CalcIcon, FileText, Smartphone,
   CheckCircle, Loader2, ArrowRight, MessageCircle, Download, AlertCircle
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 
-const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 const CartQuantityInput = ({ item, updateQuantity, removeItem }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
   useEffect(() => {
@@ -91,7 +89,6 @@ export default function WholesaleBillingUI() {
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [showCamera, setShowCamera] = useState(false);
   // Defaults to Retail (sellingPrice, a real margin) rather than Wholesale
   // (wholesaleCost — the shop's own purchase/cost price, not a discounted
   // selling price — there is no separate "wholesale selling price" field in
@@ -546,12 +543,6 @@ export default function WholesaleBillingUI() {
             )}
           </div>
           <button
-            onClick={() => setShowCamera(true)}
-            className="px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <Scan size={20} /> {t('mobileScanner') || 'Mobile Scanner'}
-          </button>
-          <button
             onClick={() => setShowManualAdd(true)}
             className="px-4 py-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-xl font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors flex items-center gap-2 shadow-sm"
           >
@@ -705,18 +696,6 @@ export default function WholesaleBillingUI() {
           </div>
         </div>
       </div>
-
-      {/* Camera Scanner Modal (Continuous) */}
-      {showCamera && (
-        <CameraScanner
-          continuous={true}
-          onScan={(barcode) => {
-            const product = products.find(p => p.barcode === barcode);
-            if (product) addToCart(product);
-          }}
-          onClose={() => setShowCamera(false)}
-        />
-      )}
 
       {/* Manual Add Modal */}
       {showManualAdd && (
