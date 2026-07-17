@@ -8,7 +8,36 @@ interface SmartTranslatorProps {
   className?: string;
 }
 
+// Resolved translations, keyed by `${locale}:${text}`. A miss that fell back to
+// the original text is still cached here, so it is never re-requested.
 const cache: Record<string, string> = {};
+// In-flight requests, so the many cells that render the same product name (and
+// rapid re-renders) share a single network call instead of each firing one —
+// the free-tier translation API is only a few requests/minute.
+const inFlight: Record<string, Promise<string>> = {};
+
+function requestTranslation(text: string, locale: string): Promise<string> {
+  const key = `${locale}:${text}`;
+  if (cache[key]) return Promise.resolve(cache[key]);
+  if (key in inFlight) return inFlight[key];
+
+  const p = fetch('/api/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, targetLocale: locale }),
+  })
+    .then(res => res.json())
+    .then(data => {
+      const result = data?.translated || text;
+      cache[key] = result; // cache even when it equals the original → no retries
+      return result;
+    })
+    .catch(() => text) // network error: keep the original, don't cache (allow one retry)
+    .finally(() => { delete inFlight[key]; });
+
+  inFlight[key] = p;
+  return p;
+}
 
 export default function SmartTranslator({ text, locale, className }: SmartTranslatorProps) {
   const [translated, setTranslated] = useState<string>(translateData(text, locale));
@@ -24,28 +53,9 @@ export default function SmartTranslator({ text, locale, className }: SmartTransl
         return;
       }
 
-      // 2. Check cache
-      const cacheKey = `${locale}:${text}`;
-      if (cache[cacheKey]) {
-        if (isMounted) setTranslated(cache[cacheKey]);
-        return;
-      }
-
-      // 3. AI Translation as fallback
-      try {
-        const res = await fetch('/api/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, targetLocale: locale }),
-        });
-        const data = await res.json();
-        if (data.translated && isMounted) {
-          cache[cacheKey] = data.translated;
-          setTranslated(data.translated);
-        }
-      } catch (err) {
-        console.error('AI Translation failed:', err);
-      }
+      // 2 & 3. AI translation as fallback — deduped and cached across all cells.
+      const result = await requestTranslation(text, locale);
+      if (isMounted) setTranslated(result);
     }
 
     fetchTranslation();

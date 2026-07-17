@@ -33,18 +33,14 @@ export function generateWhatsAppText(bill: {
   amountPaid?: number;
   remainingAmount?: number;
   isEmi?: boolean;
-  emiMonths?: number;
-  emiDownPayment?: number;
-  emiMonthlyAmount?: number;
-  emiInterestRate?: number;
-  emiTotalAmount?: number;
+  emiProvider?: string;
   splitPayments?: { cash?: number; upi?: number; card?: number; udhar?: number };
   pdfUrl?: string;
   gst?: string;
   pan?: string;
   t: (key: string) => string;
 }): string {
-  const { t, storeName, billNumber, date, customerName, items, total, discount, amountPaid, remainingAmount, isEmi, emiMonths, emiDownPayment, emiMonthlyAmount, emiTotalAmount, splitPayments } = bill;
+  const { t, storeName, billNumber, date, customerName, items, total, discount, amountPaid, remainingAmount, isEmi, emiProvider, splitPayments } = bill;
   const subtotal = items.reduce((acc, item) => acc + item.total, 0);
   const paid = amountPaid ?? total;
   const parts: string[] = [];
@@ -70,10 +66,9 @@ export function generateWhatsAppText(bill: {
   parts.push(`\n*${t('total')} ₹${total}*`);
   
   if (isEmi) {
-    parts.push(`\n${t('emiDetails')}`);
-    parts.push(`${t('downPayment')} ₹${emiDownPayment ?? 0}`);
-    parts.push(`${t('monthlyEmi')} x ${emiMonths}: ₹${emiMonthlyAmount ?? 0}${t('mo')}`);
-    parts.push(`${t('totalPayable')} ₹${emiTotalAmount ?? 0}`);
+    parts.push(`\n*${t('paymentMode')}* EMI${emiProvider ? ` (${emiProvider})` : ''}`);
+    parts.push(`${t('collected')} ₹${total}`);
+    parts.push(`*${t('paymentStatus')} ${t('paid')}*`);
   } else {
     parts.push(`\n*${t('paymentMode')}*`);
     const isSplit = bill.paymentMethod === 'Split';

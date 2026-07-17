@@ -593,7 +593,7 @@ function DashboardInner() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">
-                    {item.qty === 0 ? <span className="text-red-500">0 {t('unitsSold')}</span> : `${item.qty} {t('unitsSold')}`}
+                    {item.qty === 0 ? <span className="text-red-500">0 {t('unitsSold')}</span> : `${item.qty} ${t('unitsSold')}`}
                   </p>
                   <p className="text-[10px] text-orange-600 dark:text-orange-500/80 font-bold">{item.current_stock} {t('inStock')}</p>
                 </div>

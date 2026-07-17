@@ -24,18 +24,7 @@ import dynamic from 'next/dynamic';
 import WholesaleProductsUI from './WholesaleProductsUI';
 import useSWR from 'swr';
 
-const fetchProductsMapped = (url: string) => api.get(url).then(res => res.data.map((p: any) => ({
-  id: p.id, name: p.name, category: p.category,
-  stock: p.currentStock, minStock: p.minStock,
-  mrp: p.mrp, sellingPrice: p.sellingPrice, cost: p.wholesaleCost,
-  unit: p.baseUnit || 'Unit',
-  expiry_date: p.expiryDate, batch_number: p.batch_number,
-  drug_schedule: p.drug_schedule, model_number: p.model_number,
-  warranty_months: p.warranty_months, gender: p.gender,
-  shade: p.shade, size_variants: p.size_variants,
-  is_loose: p.is_loose,
-  metadata: p.metadata,
-})));
+import { fetchProductsMapped } from '@/lib/fetchers';
 
 const BarcodeQRModal = dynamic(() => import('@/components/BarcodeQRModal'), { ssr: false });
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });

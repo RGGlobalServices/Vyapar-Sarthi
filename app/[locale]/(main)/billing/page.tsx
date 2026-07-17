@@ -12,7 +12,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {
   Search, Scan, Trash2, Plus, Minus, CreditCard, IndianRupee,
   User, X, Printer, Calculator as CalcIcon, PlusCircle, Download,
-  AlertCircle, CheckCircle, Zap, MessageCircle, ShieldCheck, Loader2, Smartphone
+  AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone
 } from 'lucide-react';
 import api from '@/lib/api';
 import {cn} from '@/lib/utils';
@@ -108,7 +108,7 @@ function StandardBillingUI() {
     items, addItem, removeItem, updateQuantity, updatePrice, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, collectedAmount,
-    remainingAmount, isEmi,
+    remainingAmount, isEmi, setIsEmi,
     paymentMethod, setPaymentMethod,
     udharAdvance, setUdharAdvance,
     udharAdvanceMethod, setUdharAdvanceMethod
@@ -140,10 +140,11 @@ function StandardBillingUI() {
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
-  // EMI state (electronics)
-  const [emiMonths, setEmiMonths] = useState(6);
-  const [emiDownPayment, setEmiDownPayment] = useState(0);
-  const [emiInterestRate, setEmiInterestRate] = useState(0);
+  // EMI: the sale is financed by a bank / finance provider (Bajaj Finserv, HDFC…).
+  // The provider pays the shop in full; interest, tenure and monthly installments
+  // are between the customer and the provider — not the shop's concern — so the
+  // shop only records which provider financed it.
+  const [emiProvider, setEmiProvider] = useState('');
 
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -161,23 +162,12 @@ function StandardBillingUI() {
     }
   }, [swrProducts]);
 
-  // isEmi is provided by useBillingEngine
-  const emiPrincipal = Math.max(0, total - emiDownPayment);
-  const emiMonthlyRate = emiInterestRate / 100 / 12;
-  const emiMonthlyAmount = emiInterestRate > 0 && emiMonthlyRate > 0
-    ? Math.round(emiPrincipal * emiMonthlyRate * Math.pow(1 + emiMonthlyRate, emiMonths) / (Math.pow(1 + emiMonthlyRate, emiMonths) - 1))
-    : Math.round(emiPrincipal / emiMonths);
-  const emiTotalAmount = emiMonthlyAmount * emiMonths + emiDownPayment;
-
-  const effectiveAmountPaid = isEmi ? emiDownPayment : collectedAmount;
+  // isEmi is provided by useBillingEngine. On an EMI sale the finance provider
+  // settles the shop in full, so the amount paid is simply the bill total.
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
-
-  useEffect(() => {
-    if (isEmi) setEmiDownPayment(Math.round(total * 0.2));
-  }, [isEmi, total]);
 
   const handlePrint = () => window.print();
 
@@ -378,7 +368,7 @@ function StandardBillingUI() {
       }
 
       // Only capture printable characters
-      if (e.key.length === 1) {
+      if (e.key && e.key.length === 1) {
         barcodeBuffer += e.key;
       }
 
@@ -465,8 +455,9 @@ function StandardBillingUI() {
         total_amount: total,
         total_profit: items.reduce((acc, item) => acc + ((item.profit || 0) * item.quantity), 0),
         payment_type: isEmi ? 'EMI' : paymentTypeForApi,
-        amount_paid: isEmi ? emiDownPayment : collectedAmount,
-        payment_details: isEmi ? {} : { ...splitPayments, udhar: remainingAmount },
+        // Finance provider settles the shop in full on an EMI sale.
+        amount_paid: isEmi ? total : collectedAmount,
+        payment_details: isEmi ? { provider: emiProvider.trim() || undefined } : { ...splitPayments, udhar: remainingAmount },
       };
 
       const res = await api.post('/billing/', salePayload);
@@ -481,19 +472,15 @@ function StandardBillingUI() {
         items: [...items],
         total,
         discount,
-        amountPaid: isEmi ? emiDownPayment : collectedAmount,
+        amountPaid: isEmi ? total : collectedAmount,
         remainingAmount,
         paymentMethod: isEmi ? 'EMI' : paymentTypeForApi,
         splitPayments: isEmi ? undefined : { ...splitPayments, udhar: remainingAmount },
         billNumber,
         date: new Date().toLocaleDateString(),
-        // EMI extras
+        // EMI: only the provider matters to the shop.
         isEmi,
-        emiMonths: isEmi ? emiMonths : undefined,
-        emiDownPayment: isEmi ? emiDownPayment : undefined,
-        emiMonthlyAmount: isEmi ? emiMonthlyAmount : undefined,
-        emiInterestRate: isEmi ? emiInterestRate : undefined,
-        emiTotalAmount: isEmi ? emiTotalAmount : undefined,
+        emiProvider: isEmi ? (emiProvider.trim() || undefined) : undefined,
         // New features
         invoiceFormat: profile.invoiceFormat || 'thermal80',
         businessType: profile.businessType || 'kirana',
@@ -946,82 +933,6 @@ function StandardBillingUI() {
 
 
 
-        {/* EMI Configuration (electronics only) */}
-        {isEmi && (
-          <Card className="bg-sky-500/5 border-sky-500/30">
-            <CardContent className="p-4 space-y-4">
-              <div className="flex items-center gap-2 text-sky-400 font-bold text-sm">
-                <Zap size={16} />
-                EMI Configuration
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Down Payment (₹)</label>
-                <input
-                  type="number" min={0} max={total}
-                  className="w-full bg-slate-900 border border-sky-500/40 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 text-sm"
-                  value={emiDownPayment}
-                  onChange={e => setEmiDownPayment(Math.min(total, Math.max(0, Number(e.target.value))))}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">EMI Tenure</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[3, 6, 9, 12, 18, 24, 36, 48].map(m => (
-                    <button
-                      key={m} type="button"
-                      onClick={() => setEmiMonths(m)}
-                      className={cn(
-                        'py-1.5 rounded-lg text-xs font-bold border transition-colors',
-                        emiMonths === m
-                          ? 'bg-sky-500 border-sky-500 text-slate-900'
-                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-sky-500/40'
-                      )}
-                    >
-                      {m}m
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Interest Rate (% per annum, 0 = No Cost)</label>
-                <input
-                  type="number" min={0} max={36} step={0.1}
-                  className="w-full bg-slate-900 border border-sky-500/40 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 text-sm"
-                  value={emiInterestRate}
-                  onChange={e => setEmiInterestRate(Math.max(0, Number(e.target.value)))}
-                />
-              </div>
-
-              {/* EMI Summary */}
-              <div className="bg-slate-900 rounded-xl p-3 space-y-2 border border-slate-800">
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Principal Amount</span>
-                  <span className="text-slate-200 font-semibold">₹{emiPrincipal.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Down Payment</span>
-                  <span className="text-emerald-400 font-semibold">₹{emiDownPayment.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400 border-t border-slate-800 pt-2">
-                  <span className="font-bold text-sky-400">Monthly EMI</span>
-                  <span className="font-black text-sky-400 text-base">₹{emiMonthlyAmount.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Total Payable ({emiMonths} months)</span>
-                  <span>₹{emiTotalAmount.toLocaleString('en-IN')}</span>
-                </div>
-                {emiInterestRate === 0 && (
-                  <div className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 rounded px-2 py-1">
-                    <ShieldCheck size={10} />No Cost EMI — No interest charged
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Order Summary */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1048,19 +959,7 @@ function StandardBillingUI() {
               <span className="text-3xl font-black text-emerald-500">₹{total.toLocaleString('en-IN')}</span>
             </div>
 
-            {isEmi ? (
-              <div className="border-t border-slate-800 pt-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Due Today (Down Payment)</span>
-                  <span className="text-emerald-400 font-bold">₹{emiDownPayment.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-sky-400 font-semibold">Monthly EMI × {emiMonths}</span>
-                  <span className="text-sky-400 font-black">₹{emiMonthlyAmount.toLocaleString('en-IN')}/mo</span>
-                </div>
-              </div>
-            ) : (
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-4">
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{t('payableAmount') || 'Payable Amount'}</span>
                   <span className="text-2xl font-black text-slate-900 dark:text-white">₹{total.toLocaleString('en-IN')}</span>
@@ -1070,13 +969,13 @@ function StandardBillingUI() {
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('paymentMethod') || 'Payment Method'}</div>
                   <div className="grid grid-cols-2 gap-3">
                     {paymentOptions.map(option => {
-                      const isSelected = paymentMethod === option.id;
+                      const isSelected = !isEmi && paymentMethod === option.id;
                       const isUdhar = option.id === 'udhar';
                       return (
                         <button
                           key={option.id}
                           type="button"
-                          onClick={() => setPaymentMethod(option.id)}
+                          onClick={() => { setPaymentMethod(option.id); setIsEmi(false); }}
                           aria-pressed={isSelected}
                           className={cn(
                             "flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95",
@@ -1092,8 +991,11 @@ function StandardBillingUI() {
                         </button>
                       );
                     })}
+
                   </div>
                 </div>
+
+
 
                 {isUdharSale && (
                   <div className="rounded-xl border border-orange-200 dark:border-orange-500/20 bg-orange-50/50 dark:bg-orange-500/5 p-3 space-y-3">
@@ -1168,8 +1070,8 @@ function StandardBillingUI() {
                     </p>
                   )}
                 </div>
+
               </div>
-            )}
           </CardContent>
         </Card>
 
@@ -1303,18 +1205,7 @@ function StandardBillingUI() {
                   <span>Total Bill</span>
                   <span className="text-slate-900 dark:text-slate-200 font-bold">₹{total.toLocaleString('en-IN')}</span>
                 </div>
-                {isEmi ? (
-                  <>
-                    <div className="flex justify-between text-sm text-slate-400">
-                      <span>Down Payment Today</span>
-                      <span className="text-emerald-400 font-bold">₹{emiDownPayment.toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
-                      <span className="text-sky-400 font-semibold">EMI ({emiMonths} months)</span>
-                      <span className="text-sky-400 font-black">₹{emiMonthlyAmount.toLocaleString('en-IN')}/mo</span>
-                    </div>
-                  </>
-                ) : (
+
                   <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
                     <div className="flex justify-between text-sm items-center">
                       <span className="text-slate-600 dark:text-slate-400">{t('paymentMethod') || 'Payment Method'}</span>
@@ -1338,7 +1229,6 @@ function StandardBillingUI() {
                       </div>
                     )}
                   </div>
-                )}
               </div>
 
               {/* Customer Name + Mobile */}
@@ -1346,8 +1236,7 @@ function StandardBillingUI() {
                 <div className="relative">
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
                     Customer Name{' '}
-                    {remainingAmount > 0 && !isEmi && <span className="text-orange-400 normal-case font-normal">*Required for Udhar</span>}
-                    {isEmi && <span className="text-sky-400 normal-case font-normal">*Required for EMI tracking</span>}
+                    {remainingAmount > 0 && <span className="text-orange-400 normal-case font-normal">*Required for Udhar</span>}
                   </label>
                   <input
                     type="text"
@@ -1416,7 +1305,7 @@ function StandardBillingUI() {
               </div>
 
               {/* Udhar info */}
-              {!isEmi && remainingAmount > 0 && customerName.trim() && (
+              {remainingAmount > 0 && customerName.trim() && (
                 <div className={cn(
                   'flex items-start gap-3 rounded-xl px-4 py-3 text-sm',
                   udharInfo?.type === 'existing'
@@ -1433,14 +1322,9 @@ function StandardBillingUI() {
                 </div>
               )}
 
-              {isEmi && customerName.trim() && (
-                <div className="flex items-start gap-3 rounded-xl px-4 py-3 text-sm bg-sky-500/10 border border-sky-500/20 text-sky-400">
-                  <Zap size={16} className="mt-0.5 flex-shrink-0" />
-                  <span>EMI of ₹{emiMonthlyAmount.toLocaleString('en-IN')}/month for {emiMonths} months will be recorded for <strong>{customerName.trim()}</strong>.</span>
-                </div>
-              )}
 
-              {!isEmi && remainingAmount > 0 && !customerName.trim() && (
+
+              {remainingAmount > 0 && !customerName.trim() && (
                 <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 text-xs text-slate-600 dark:text-slate-500">
                   <AlertCircle size={13} />
                   Enter customer name to save ₹{remainingAmount} to Udhar Khata.
@@ -1456,12 +1340,10 @@ function StandardBillingUI() {
                 </button>
                 <button
                   onClick={handleConfirmBill}
-                  disabled={isGeneratingBill || (!isEmi && remainingAmount > 0 && !customerName.trim())}
+                  disabled={isGeneratingBill || (remainingAmount > 0 && !customerName.trim())}
                   className={cn(
                     'flex-[2] py-3 rounded-xl font-black text-base transition-all active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2',
-                    isEmi
-                      ? 'bg-sky-500 text-slate-900 hover:bg-sky-400 shadow-sky-500/20'
-                      : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400 shadow-emerald-500/20'
+                    'bg-emerald-500 text-slate-900 hover:bg-emerald-400 shadow-emerald-500/20'
                   )}
                 >
                   {isGeneratingBill ? (
@@ -1522,7 +1404,7 @@ function StandardBillingUI() {
               {lastBill.isEmi && (
                 <div className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-400">
                   <Zap size={13} />
-                  EMI: ₹{lastBill.emiMonthlyAmount?.toLocaleString('en-IN')}/mo × {lastBill.emiMonths} months
+                  Paid via EMI{lastBill.emiProvider ? ` · ${lastBill.emiProvider}` : ''}
                 </div>
               )}
 

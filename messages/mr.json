@@ -676,7 +676,11 @@
     "payLater": "नंतर (उधार)",
     "receivedVia": "कशाने मिळाले",
     "partiallyPaid": "अर्धवट पेमेंट",
-    "fullyPaid": "पूर्ण पेमेंट"
+    "fullyPaid": "पूर्ण पेमेंट",
+    "financeProvider": "फायनान्स प्रोव्हायडर",
+    "optional": "ऐच्छिक",
+    "financedViaEmi": "EMI द्वारे वित्तपुरवठा",
+    "emiHint": "फायनान्स कंपनी संपूर्ण बिल भरते. व्याज आणि मासिक हप्ते तेच सांभाळतात."
   },
   "BillSlip": {
     "storeNameFallback": "किराणा स्टोअर",

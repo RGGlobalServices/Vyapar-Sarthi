@@ -676,7 +676,11 @@
     "payLater": "बाद में (उधार)",
     "receivedVia": "किससे प्राप्त",
     "partiallyPaid": "आंशिक भुगतान",
-    "fullyPaid": "पूर्ण भुगतान"
+    "fullyPaid": "पूर्ण भुगतान",
+    "financeProvider": "फाइनेंस प्रोवाइडर",
+    "optional": "वैकल्पिक",
+    "financedViaEmi": "EMI द्वारा वित्तपोषित",
+    "emiHint": "फाइनेंस कंपनी पूरा बिल चुकाती है। ब्याज और मासिक किस्तें वही संभालती है।"
   },
   "BillSlip": {
     "storeNameFallback": "किराना स्टोर",

@@ -6,6 +6,8 @@ stock, udhar, staff and reports.
 This manual describes the app as a shop owner sees it. It does not cover
 installation or development — see the project `README.md` for that.
 
+> हिंदी में: [हिंदी मैनुअल](hi/README.md)
+
 ## Start here
 
 | Guide | What it covers |

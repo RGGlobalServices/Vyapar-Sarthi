@@ -22,6 +22,7 @@ const PATH_TO_TOOL: Record<string, string> = {
 };
 
 import Sidebar from '@/components/Sidebar';
+import SWRProvider from '@/components/SWRProvider';
 import { useRealtimeSync } from '@/lib/hooks/useRealtimeSync';
 
 function TrialCountdownTracker({ profile }: { profile: any }) {
@@ -258,6 +259,7 @@ export default function MainLayoutClient({
   }, [pathname, currentPackageConfig, profile.id, mounted, role, router]);
 
   return (
+    <SWRProvider>
     <section className="flex min-h-screen">
       {!mounted ? (
         <aside className="w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen sticky top-0 z-30 hidden md:flex">
@@ -350,5 +352,6 @@ export default function MainLayoutClient({
       </div>
       <AIFloatingButton />
     </section>
+    </SWRProvider>
   );
 }

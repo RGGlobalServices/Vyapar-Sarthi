@@ -16,6 +16,8 @@ import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, BUSINESS_CONFIGS } from '@/lib/businessConfig';
 import { getPackageConfig } from '@/lib/config/packageConfig';
+import { preload } from 'swr';
+import { fetchJson, fetchProductsMapped } from '@/lib/fetchers';
 import { isSubscriptionEnded, isAllowedWhenEnded } from '@/lib/subscriptionAccess';
 import { canUseReferEarn, canUseManpower } from '@/lib/planGates';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -50,11 +52,36 @@ const UdharIcon = ({ size = 24, className = "" }) => (
   </svg>
 );
 
-export default function Sidebar({ 
-  locale, 
-  isMobileOpen, 
-  setIsMobileOpen 
-}: { 
+// Warm a section's data while the pointer is still on its sidebar link, so the
+// screen has it by the time the click lands.
+//
+// Only sections whose page reads these exact SWR keys are listed, and each key
+// is paired with the fetcher that page uses — SWR caches by key alone, so
+// prefetching with a different fetcher would leave the wrong data shape behind.
+// The other sections fetch via useEffect and read no SWR cache, so there is
+// nothing to warm for them until they are converted.
+function prefetchForSection(sectionKey: string, activeShopId: string | null) {
+  switch (sectionKey) {
+    case 'products':
+      preload('/products', fetchProductsMapped);
+      break;
+    case 'party':
+      if (activeShopId) {
+        preload(`/crm/customers?type=party&_shop=${activeShopId}`, fetchJson);
+      }
+      break;
+    case 'purchases':
+      preload('/purchases', fetchJson);
+      preload('/suppliers', fetchJson);
+      break;
+  }
+}
+
+export default function Sidebar({
+  locale,
+  isMobileOpen,
+  setIsMobileOpen
+}: {
   locale: string;
   isMobileOpen?: boolean;
   setIsMobileOpen?: (val: boolean) => void;
@@ -264,8 +291,10 @@ export default function Sidebar({
 
         {/* Shop dropdown */}
         {showShopMenu && (
-          <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-50 overflow-hidden">
-            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1">Your Shops</p>
+          <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-50 overflow-hidden flex flex-col max-h-[60vh]">
+            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1 flex-shrink-0">Your Shops</p>
+            {/* Scrolls when the shop list is long; header above and Add button below stay put. */}
+            <div className="overflow-y-auto flex-1 min-h-0">
             {allShops.map(shop => (
               <div key={shop.id} className="relative group">
                 <button 
@@ -306,6 +335,7 @@ export default function Sidebar({
                 )}
               </div>
             ))}
+            </div>
 
             {/* Add new shop — opens the full details modal */}
             <button onClick={() => { setShopForm(emptyShopForm); setShowNewShop(true); setShowShopMenu(false); }}
@@ -372,7 +402,14 @@ export default function Sidebar({
             );
           }
           return (
-            <Link key={item.key} href={item.href} className={linkClass} onClick={() => setIsMobileOpen?.(false)}>
+            <Link
+              key={item.key}
+              href={item.href}
+              className={linkClass}
+              onClick={() => setIsMobileOpen?.(false)}
+              onMouseEnter={() => prefetchForSection(item.key, activeShopId)}
+              onTouchStart={() => prefetchForSection(item.key, activeShopId)}
+            >
               <div className="flex items-center gap-3 flex-1">
                 <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
                 <span className="text-sm">

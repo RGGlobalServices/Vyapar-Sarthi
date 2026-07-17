@@ -4,8 +4,12 @@ import { GoogleGenAI } from '@google/genai';
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(request: Request) {
+  // Kept in scope so the catch can degrade to the original text.
+  let text = '';
   try {
-    const { text, targetLocale } = await request.json();
+    const body = await request.json();
+    text = body?.text || '';
+    const targetLocale = body?.targetLocale;
 
     if (!text || !targetLocale) {
       return NextResponse.json({ error: 'Text and targetLocale are required' }, { status: 400 });
@@ -44,7 +48,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ translated });
   } catch (error) {
-    console.error('Translation error:', error);
-    return NextResponse.json({ error: 'Failed to translate', translated: null }, { status: 500 });
+    // Gemini's free tier allows only a few requests/minute, so rate-limit (429)
+    // failures are routine. Degrade gracefully: return the original text with a
+    // 200 so the client renders something sensible AND caches it, instead of
+    // getting a 500 and re-firing the request on every re-render. Log quota
+    // errors quietly — they are expected, not exceptional.
+    const status = (error as { status?: number })?.status;
+    if (status !== 429) console.error('Translation error:', error);
+    return NextResponse.json({ translated: text || null });
   }
 }

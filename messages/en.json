@@ -579,7 +579,11 @@
     "payLater": "Pay Later (Udhar)",
     "receivedVia": "Received via",
     "partiallyPaid": "Partially Paid",
-    "fullyPaid": "Fully Paid"
+    "fullyPaid": "Fully Paid",
+    "financeProvider": "Finance Provider",
+    "optional": "optional",
+    "financedViaEmi": "Financed via EMI",
+    "emiHint": "The finance provider pays the full bill amount. Interest and monthly instalments are handled by them."
   },
   "BillSlip": {
     "storeNameFallback": "Kirana Store",
