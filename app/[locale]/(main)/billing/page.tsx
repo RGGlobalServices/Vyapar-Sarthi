@@ -40,8 +40,8 @@ function getLoosePresets(unit: string) {
 const CartQuantityInputRetail = ({ item, updateQuantity, removeItem }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
   useEffect(() => {
-    if (Number(localVal) !== item.quantity) setLocalVal(item.quantity.toString());
-  }, [item.quantity, localVal]);
+    setLocalVal(item.quantity.toString());
+  }, [item.quantity]);
 
   return (
     <input
@@ -69,8 +69,8 @@ const CartQuantityInputRetail = ({ item, updateQuantity, removeItem }: any) => {
 const CartPriceInputRetail = ({ item, updatePrice }: any) => {
   const [localVal, setLocalVal] = useState(item.price.toString());
   useEffect(() => {
-    if (Number(localVal) !== item.price) setLocalVal(item.price.toString());
-  }, [item.price, localVal]);
+    setLocalVal(item.price.toString());
+  }, [item.price]);
 
   return (
     <input

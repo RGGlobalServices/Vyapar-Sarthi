@@ -18,8 +18,8 @@ import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 const CartQuantityInput = ({ item, updateQuantity, removeItem }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
   useEffect(() => {
-    if (Number(localVal) !== item.quantity) setLocalVal(item.quantity.toString());
-  }, [item.quantity, localVal]);
+    setLocalVal(item.quantity.toString());
+  }, [item.quantity]);
 
   return (
     <input
@@ -47,8 +47,8 @@ const CartQuantityInput = ({ item, updateQuantity, removeItem }: any) => {
 const CartPriceInput = ({ item, updatePrice }: any) => {
   const [localVal, setLocalVal] = useState(item.price.toString());
   useEffect(() => {
-    if (Number(localVal) !== item.price) setLocalVal(item.price.toString());
-  }, [item.price, localVal]);
+    setLocalVal(item.price.toString());
+  }, [item.price]);
 
   return (
     <input
