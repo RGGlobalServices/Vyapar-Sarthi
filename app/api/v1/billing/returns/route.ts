@@ -15,7 +15,7 @@ export const POST = handle(async (req) => {
 
   const sale = await prisma.sale.findUnique({
     where: { id: bill_id },
-    include: { items: { include: { product: true } } },
+    include: { items: { include: { product: true } }, customer: true },
   });
 
   if (!sale) throw new ApiError(404, 'Bill not found');
@@ -39,8 +39,8 @@ export const POST = handle(async (req) => {
         amount: ret.quantity * (ret.price || saleItem.pricePerUnit || 0),
         note: JSON.stringify({
           billId: sale.id,
-          invoiceNumber: sale.invoiceNumber,
-          customerName: sale.customerName || 'Guest',
+          invoiceNumber: sale.invoice_number,
+          customerName: sale.customer?.name || 'Guest',
           paymentType: sale.paymentType,
           saleDate: sale.createdAt
         }),

@@ -21,7 +21,7 @@ export function sendEmail(to: string, subject: string, html: string) {
     console.log(`[EMAIL] To: ${to}`);
     console.log(`[EMAIL] Subject: ${subject}`);
     console.log(`[EMAIL] Body: ${html.slice(0, 500)}`);
-    return;
+    return Promise.resolve();
   }
   return t.sendMail({ from: config.smtpUser, to, subject, html });
 }

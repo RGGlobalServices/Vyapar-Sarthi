@@ -42,7 +42,7 @@ export default function ProfitSplitChart({ cashProfit, udharProfit }: Props) {
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number) => [`₹${Math.round(value).toLocaleString('en-IN')}`, 'Profit']}
+              formatter={(value: any) => [`₹${Math.round(Number(value || 0)).toLocaleString('en-IN')}`, 'Profit']}
               contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
             />
           </PieChart>

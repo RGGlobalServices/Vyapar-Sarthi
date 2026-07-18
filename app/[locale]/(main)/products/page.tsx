@@ -49,6 +49,8 @@ type Product = {
   shade?: string;
   size_variants?: string;
   is_loose?: boolean;
+  gstPercent?: number;
+  hsnCode?: string;
   metadata?: any;
 };
 
@@ -367,6 +369,8 @@ function LegacyProductsUI() {
       gender: product.gender || 'Unisex',
       shade: product.shade || '',
       size_variants: parseSizeVariants(product.size_variants),
+      gstPercent: Number(product.gstPercent || 0),
+      hsnCode: product.hsnCode || '',
     });
     // Load per-size pricing from metadata. Default it ON for variant products (colour/size or a
     // category with a spec matrix) so per-spec price fields are visible without hunting for a toggle.
