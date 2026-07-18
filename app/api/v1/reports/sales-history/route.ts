@@ -68,8 +68,8 @@ export async function GET(req: NextRequest) {
       sale.items.forEach(item => {
         current.qty += item.quantity || 0;
 
-        const prodId = item.productId || 'unknown';
-        const prodName = item.product?.name || 'Unknown Product';
+        const prodId = item.productId || (sale.isManual ? 'manual' : 'unknown');
+        const prodName = item.product?.name || (sale.isManual ? 'Manual Bill' : 'Unknown Product');
         const prodCat = item.product?.category || 'Uncategorized';
         
         const pCurrent = productMap.get(prodId) || { id: prodId, name: prodName, category: prodCat, qty: 0, revenue: 0, profit: 0 };

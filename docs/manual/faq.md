@@ -59,9 +59,9 @@ history in your reports. Deleting cannot be undone. See [Stock](stock.md).
 
 ## Account
 
-**Can I use more than one shop?**
-Yes on Vyapar (up to 3) and Udyog (unlimited). Each shop keeps its own
-products, stock, bills and udhar — nothing is shared.
+**Can I use the same account for multiple branches?**
+
+Yes on Vyapar (up to 5) and Udyog (unlimited). Each shop keeps its own inventory, customers, and reports. You can switch between them easily from the top left corner.
 
 **My subscription expired. Did I lose my data?**
 No. Your data is intact. You keep access to Billing, Products, Stock and

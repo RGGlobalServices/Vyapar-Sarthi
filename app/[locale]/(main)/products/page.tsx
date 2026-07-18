@@ -61,6 +61,7 @@ function buildEmptyForm(btype: string) {
     expiry_date: '', batch_number: '', drug_schedule: 'OTC',
     model_number: '', warranty_months: '', gender: 'Unisex',
     shade: '', size_variants: {} as Record<string, number>,
+    gstPercent: 0, hsnCode: ''
   };
 }
 
@@ -1103,6 +1104,24 @@ function LegacyProductsUI() {
                     </span>
                   </div>
                 )}
+                
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">HSN Code</label>
+                    <input className={modalInp} placeholder="HSN/SAC Code" value={editForm.hsnCode || ''} onChange={e => setEditForm(f => ({ ...f, hsnCode: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">GST %</label>
+                    <select className={modalSel} value={editForm.gstPercent || 0} onChange={e => setEditForm(f => ({ ...f, gstPercent: Number(e.target.value) }))}>
+                      <option value={0}>0% (Exempt)</option>
+                      <option value={5}>5%</option>
+                      <option value={12}>12%</option>
+                      <option value={18}>18%</option>
+                      <option value={28}>28%</option>
+                    </select>
+                  </div>
+                </div>
+
               </section>
 
               <div className="flex gap-4 pt-2">
@@ -1415,6 +1434,24 @@ function LegacyProductsUI() {
                     </span>
                   </div>
                 )}
+                
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">HSN Code</label>
+                    <input className={modalInp} placeholder="HSN/SAC Code" value={form.hsnCode || ''} onChange={e => setForm(f => ({ ...f, hsnCode: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">GST %</label>
+                    <select className={modalSel} value={form.gstPercent || 0} onChange={e => setForm(f => ({ ...f, gstPercent: Number(e.target.value) }))}>
+                      <option value={0}>0% (Exempt)</option>
+                      <option value={5}>5%</option>
+                      <option value={12}>12%</option>
+                      <option value={18}>18%</option>
+                      <option value={28}>28%</option>
+                    </select>
+                  </div>
+                </div>
+
               </section>
 
               {/* ── Inventory Assignment ── */}

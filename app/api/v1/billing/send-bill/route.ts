@@ -18,18 +18,18 @@ export const POST = handle(async (req) => {
 
   if (phone) {
     const message = buildBillMessage({ storeName, billNumber, customerName, total, pdfUrl });
-    results.whatsapp = await sendWhatsApp({ to: phone, body: message, mediaUrl: pdfUrl || null });
+    sendWhatsApp({ to: phone, body: message, mediaUrl: pdfUrl || null }).catch(err => {
+      console.error('WhatsApp send error:', err);
+    });
+    results.whatsapp = { success: true, note: 'Sending in background' };
   }
 
   if (email) {
-    try {
-      await sendBillEmail({ to: email, customerName, storeName, billNumber, total, items: items || [], pdfUrl });
-      results.email = { success: true };
-    } catch (err) {
+    sendBillEmail({ to: email, customerName, storeName, billNumber, total, items: items || [], pdfUrl }).catch(err => {
       const msg = err instanceof Error ? err.message : 'unknown';
       console.error('Bill email error:', msg);
-      results.email = { success: false, error: msg };
-    }
+    });
+    results.email = { success: true, note: 'Sending in background' };
   }
 
   return json({ detail: 'Bill send attempted', results });

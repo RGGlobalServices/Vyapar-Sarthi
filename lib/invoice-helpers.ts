@@ -39,14 +39,14 @@ export function getInvoiceColumns(businessType: BusinessType | string): InvoiceC
       break;
     case 'clothes':
     case 'shoes':
-      if (businessType === 'clothes') {
-        cols.push({
-          id: 'color',
-          labelKey: 'color',
-          align: 'center',
-          render: (item) => item.color || '-'
-        });
-      }
+      // Both categories support colour × size variants (businessConfig.hasColors),
+      // so both need the colour column — it isn't clothes-specific.
+      cols.push({
+        id: 'color',
+        labelKey: 'color',
+        align: 'center',
+        render: (item) => item.color || '-'
+      });
       cols.push({
         id: 'size',
         labelKey: 'size',

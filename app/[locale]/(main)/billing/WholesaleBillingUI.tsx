@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useUdharStore, useAuthStore } from '@/lib/store';
 import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
@@ -10,10 +10,14 @@ import { cn } from '@/lib/utils';
 import {
   Search, Scan, Trash2, Plus, Minus, CreditCard, IndianRupee,
   User, X, Printer, Calculator as CalcIcon, FileText, Smartphone,
-  CheckCircle, Loader2, ArrowRight, MessageCircle, Download, AlertCircle
+  CheckCircle, Loader2, ArrowRight, MessageCircle, Download, AlertCircle, FileUp
 } from 'lucide-react';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
+import { computeGst } from '@/lib/gst';
+import ManualBillUpload from '@/components/ManualBillUpload';
+import DiscountInput from '@/components/DiscountInput';
+import { splitVariantKey } from '@/components/ColorSizeVariantGrid';
 
 const CartQuantityInput = ({ item, updateQuantity, removeItem }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
@@ -97,8 +101,19 @@ export default function WholesaleBillingUI() {
   // noticed and flipped this toggle.
   const [isWholesale, setIsWholesale] = useState(false);
 
+  // GST / Non-GST billing. Default non-GST. Wholesale is usually B2B GST-registered,
+  // so this matters here even more than on retail.
+  const [billType, setBillType] = useState<'non_gst' | 'gst'>('non_gst');
+  const [gstInterState, setGstInterState] = useState(false); // false = CGST+SGST, true = IGST
+  const isGstBill = billType === 'gst';
+  const gst = useMemo(
+    () => computeGst(items as any, discount, gstInterState),
+    [items, discount, gstInterState]
+  );
+
   // Manual Add
   const [showManualAdd, setShowManualAdd] = useState(false);
+  const [showManualBillUpload, setShowManualBillUpload] = useState(false);
   const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '' });
 
   // Checkout Modal
@@ -180,17 +195,23 @@ export default function WholesaleBillingUI() {
       const defaultQty = product.is_loose ? 0.5 : 1;
       const price = getPrice(product, variant);
       const cost = product.wholesaleCost || 0;
-      
+      const { color, size } = variant ? splitVariantKey(variant) : { color: '', size: '' };
+
       addItem({
         id: product.id || Math.random().toString(),
         name: product.name,
         unit: product.baseUnit || product.unit,
         variant,
+        color: color || undefined,
+        size: size || undefined,
         quantity: defaultQty,
         price,
         profit: price - cost,
         total: Math.round(price * defaultQty),
         is_loose: !!product.is_loose,
+        // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
+        gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
+        hsnCode: product.hsnCode ?? product.hsn_code ?? '',
       });
     }
     setSearch('');
@@ -439,6 +460,9 @@ export default function WholesaleBillingUI() {
         payment_type: 'Split',
         amount_paid: collectedAmount,
         payment_details: { ...splitPayments, udhar: remainingAmount },
+        bill_type: billType,
+        gst_amount: isGstBill ? gst.totalGst : null,
+        gst_details: isGstBill ? gst : null,
       };
 
       const res = await api.post('/billing/', payload);
@@ -457,6 +481,9 @@ export default function WholesaleBillingUI() {
         splitPayments: { ...splitPayments, udhar: remainingAmount },
         billNumber,
         date: new Date().toLocaleDateString(),
+        // GST invoice data (undefined for non-GST → invoice renders normally)
+        billType,
+        gstBreakdown: isGstBill ? gst : undefined,
       };
       setLastBill(billData);
 
@@ -548,6 +575,12 @@ export default function WholesaleBillingUI() {
           >
             <Plus size={20} /> {t('quickAdd') || 'Quick Add'} <span className="text-[10px] bg-emerald-200/50 dark:bg-emerald-900 px-1.5 rounded ml-1">Ctrl+K</span>
           </button>
+          <button
+            onClick={() => setShowManualBillUpload(true)}
+            className="px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-sm"
+          >
+            <FileUp size={20} /> {t('manualBill') || 'Manual Bill'}
+          </button>
         </div>
 
         {/* Cart Table */}
@@ -636,7 +669,35 @@ export default function WholesaleBillingUI() {
         {/* Summary Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5 flex flex-col flex-1">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4">{t('orderSummary')}</h2>
-          
+
+          {/* Billing type: Non-GST (default) or GST tax invoice */}
+          <div className="mb-4">
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setBillType('non_gst')}
+                aria-pressed={!isGstBill}
+                className={cn('py-2 rounded-lg text-xs font-bold transition-all', !isGstBill ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+              >
+                {t('nonGstInvoice') || 'Non-GST Invoice'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillType('gst')}
+                aria-pressed={isGstBill}
+                className={cn('py-2 rounded-lg text-xs font-bold transition-all', isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500')}
+              >
+                {t('gstInvoice') || 'GST Invoice'}
+              </button>
+            </div>
+            {isGstBill && (
+              <label className="flex items-center gap-2 mt-2 text-xs text-slate-500 cursor-pointer select-none">
+                <input type="checkbox" checked={gstInterState} onChange={e => setGstInterState(e.target.checked)} className="accent-indigo-500" />
+                {t('interStateIgst') || 'Inter-state sale (IGST)'}
+              </label>
+            )}
+          </div>
+
           <div className="space-y-3 flex-1">
             <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
               <span>{t('itemsCount', { count: items.length })}</span>
@@ -644,15 +705,32 @@ export default function WholesaleBillingUI() {
             </div>
             <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 items-center">
               <span>{t('discount')}</span>
-              <input
-                type="number"
-                className="w-20 text-right py-1 px-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
-                value={discount || ''}
-                onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-                placeholder="0"
-              />
+              <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
             
+            {/* GST tax summary — prices are GST-inclusive, so this breaks the same total into taxable + tax. */}
+            {isGstBill && items.length > 0 && gst.totalGst > 0 && (
+              <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/5 p-3 space-y-1.5 text-xs mt-3">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                  <span>{t('taxableValue') || 'Taxable Value'}</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.taxable.toLocaleString('en-IN')}</span>
+                </div>
+                {gstInterState ? (
+                  <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>IGST</span><span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.igst.toLocaleString('en-IN')}</span></div>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>CGST</span><span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.cgst.toLocaleString('en-IN')}</span></div>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>SGST</span><span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.sgst.toLocaleString('en-IN')}</span></div>
+                  </>
+                )}
+                <div className="flex justify-between pt-1 border-t border-indigo-200/60 dark:border-indigo-500/20 font-bold text-indigo-600 dark:text-indigo-400">
+                  <span>{t('totalGst') || 'Total GST'}</span>
+                  <span>₹{gst.totalGst.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            )}
+
+
             <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
               <div className="flex justify-between items-end">
                 <span className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('totalPayable')}</span>
@@ -697,6 +775,32 @@ export default function WholesaleBillingUI() {
         </div>
       </div>
 
+      {/* Manual Bill Upload */}
+      {showManualBillUpload && profile?.id && (
+        <ManualBillUpload
+          shopId={profile.id}
+          businessType={profile.businessType}
+          onClose={() => setShowManualBillUpload(false)}
+          onSaved={(billData) => {
+            const fullBillData = {
+              ...billData,
+              invoiceFormat: profile.invoiceFormat || 'thermal80',
+              businessType: profile.businessType || 'kirana',
+              showQrCode: profile.showQrCode || false,
+              invoiceFooter: profile.invoiceFooter || undefined,
+            };
+            setLastBill(fullBillData);
+            setShowManualBillUpload(false);
+            setShowBillModal(true);
+            // Matches the regular sale flow: a mobile number and/or email
+            // entered on the manual bill triggers the same auto-share.
+            if (billData.customerMobile || billData.customerEmail) {
+              autoSendAfterBill(fullBillData, billData.customerMobile || '', billData.customerEmail || '');
+            }
+          }}
+        />
+      )}
+
       {/* Manual Add Modal */}
       {showManualAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -740,6 +844,36 @@ export default function WholesaleBillingUI() {
             </div>
             
             <form onSubmit={handleCheckout} className="p-6 space-y-5">
+              {/* Invoice type — asked explicitly here, the last step before the bill
+                  is generated, so it's never skipped by scrolling past the summary. */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">{t('invoiceType') || 'Invoice Type'}</label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setBillType('non_gst')}
+                    aria-pressed={!isGstBill}
+                    className={cn('py-2.5 rounded-lg text-xs font-bold transition-all', !isGstBill ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                  >
+                    {t('nonGstInvoice') || 'Non-GST Invoice'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBillType('gst')}
+                    aria-pressed={isGstBill}
+                    className={cn('py-2.5 rounded-lg text-xs font-bold transition-all', isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500')}
+                  >
+                    {t('gstInvoice') || 'GST Invoice'}
+                  </button>
+                </div>
+                {isGstBill && (
+                  <label className="flex items-center gap-2 mt-2 text-xs text-slate-500 cursor-pointer select-none">
+                    <input type="checkbox" checked={gstInterState} onChange={e => setGstInterState(e.target.checked)} className="accent-indigo-500" />
+                    {t('interStateIgst') || 'Inter-state sale (IGST)'}
+                  </label>
+                )}
+              </div>
+
               <div className="relative">
                 <label className="text-xs font-bold text-slate-500 mb-1 block">
                   {t('nameLabel')}

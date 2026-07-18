@@ -112,7 +112,11 @@ export async function POST(req: NextRequest) {
           try {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
             const barcode = getVal(row, ['barcode', 'sku']);
-            if (!name) { skipped++; continue; }
+            if (!name) { 
+              skipped++; 
+              rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`);
+              continue; 
+            }
             const barcodeStr = barcode ? String(barcode) : null;
 
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
@@ -190,7 +194,11 @@ export async function POST(req: NextRequest) {
         }
         for (const row of data) {
           const name = getVal(row, ['suppliername', 'name', 'supplier', 'vendor', 'partyname', 'party']);
-          if (!name) { skipped++; continue; }
+          if (!name) { 
+            skipped++; 
+            rowErrors.push(`Skipped - Missing supplier name in row`);
+            continue; 
+          }
           await prisma.supplier.create({
             data: {
               shopId,
@@ -219,7 +227,11 @@ export async function POST(req: NextRequest) {
           const row = data[i];
           try {
             const name = getVal(row, ['customername', 'name', 'customer', 'client', 'partyname', 'party']);
-            if (!name) { skipped++; continue; }
+            if (!name) { 
+              skipped++; 
+              rowErrors.push(`Row ${i + 1}: Skipped - Missing customer name`);
+              continue; 
+            }
             const mobile = String(getVal(row, ['mobile', 'phone']) || '').trim();
             const openingBalance = parseFloat(getVal(row, ['openingbalance', 'balance', 'openingudhar', 'udhar']) || 0);
 

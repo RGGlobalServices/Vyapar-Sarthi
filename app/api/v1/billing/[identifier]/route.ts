@@ -27,7 +27,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       shopId,
     },
     include: {
-      items: { include: { product: { select: { name: true } } } },
+      items: { include: { product: { select: { name: true, hsnCode: true, gstPercent: true } } } },
       customer: { select: { name: true } },
     },
   });
@@ -42,7 +42,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       sale = await prisma.sale.findFirst({
         where: { id: raw[0].id },
         include: {
-          items: { include: { product: { select: { name: true } } } },
+          items: { include: { product: { select: { name: true, hsnCode: true, gstPercent: true } } } },
           customer: { select: { name: true } },
         },
       });
@@ -58,15 +58,22 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     payment_type: sale.paymentType,
     amount_paid: sale.amountPaid,
     payment_details: sale.paymentDetails,
+    bill_type: sale.billType,
+    gst_amount: sale.gstAmount,
+    gst_details: sale.gstDetails,
+    is_manual: sale.isManual,
+    bill_image_url: sale.billImageUrl,
     customer_name: sale.customer?.name || null,
     created_at: sale.createdAt,
     items: sale.items.map((item) => ({
       id: item.id,
       product_id: item.productId,
-      name: item.product?.name || 'Unknown',
+      name: item.product?.name || (sale.isManual ? 'Manual Bill' : 'Unknown'),
       price_per_unit: item.pricePerUnit,
       quantity: item.quantity,
       total: (item.pricePerUnit || 0) * (item.quantity || 0),
+      hsnCode: item.product?.hsnCode || '',
+      gstPercent: item.product?.gstPercent || 0,
     })),
   });
 });

@@ -10,6 +10,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: '#10b981',
 };
 export const metadata: Metadata = {
   title: {
@@ -50,9 +51,9 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: '/icon.png',
-    apple: '/apple-icon.png', // Optional: add an apple touch icon
+    apple: '/icon.png', 
   },
-  manifest: '/manifest.json', // Useful for PWA
+  manifest: '/manifest.json', 
 };
 
 export default function RootLayout({

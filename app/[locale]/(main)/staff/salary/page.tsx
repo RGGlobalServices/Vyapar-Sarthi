@@ -68,7 +68,7 @@ export default function SalaryPage() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {salaries.map(s => (
                 <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <td className="px-6 py-4 text-sm font-medium">{new Date(s.paidAt).toLocaleDateString()}</td>
+                  <td className="px-6 py-4 text-sm font-medium">{new Date(s.paidAt).toLocaleDateString('en-GB')}</td>
                   <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{s.staff?.name}</td>
                   <td className="px-6 py-4 text-sm font-medium">{s.monthYear}</td>
                   <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{s.paymentMode}</td>

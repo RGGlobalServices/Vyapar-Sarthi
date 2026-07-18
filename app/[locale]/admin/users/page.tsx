@@ -22,6 +22,7 @@ interface User {
   shop: any;
   referralCode: string | null;
   referralCount: number;
+  maxShops?: number | null;
 }
 
 export default function AdminUsersPage() {
@@ -68,6 +69,27 @@ export default function AdminUsersPage() {
       await api.delete(`/admin/users/${userId}`);
       setUsers(prev => prev.filter(u => u.id !== userId));
     } catch { alert('Failed to delete user'); }
+  }
+
+  async function updateMaxShops(userId: number, currentMax: number | null) {
+    const newVal = window.prompt(
+      'Enter new max shops limit for this user (leave blank for plan default):',
+      currentMax !== null && currentMax !== undefined ? String(currentMax) : ''
+    );
+    if (newVal === null) return; // cancelled
+    
+    const maxShops = newVal.trim() === '' ? null : parseInt(newVal, 10);
+    if (newVal.trim() !== '' && (isNaN(maxShops as number) || (maxShops as number) < 1)) {
+      alert('Please enter a valid positive number or leave blank.');
+      return;
+    }
+
+    try {
+      await api.patch(`/admin/users/${userId}`, { maxShops });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, maxShops } : u));
+    } catch {
+      alert('Failed to update shop limit');
+    }
   }
 
   const filtered = users.filter(u =>
@@ -123,6 +145,7 @@ export default function AdminUsersPage() {
                   <th className="px-6 py-4 font-black">User</th>
                   <th className="px-6 py-4 font-black">Store</th>
                   <th className="px-6 py-4 font-black">Plan</th>
+                  <th className="px-6 py-4 font-black">Limit</th>
                   <th className="px-6 py-4 font-black">Status</th>
                   <th className="px-6 py-4 font-black">Referrals</th>
                   <th className="px-6 py-4 font-black">Joined</th>
@@ -149,6 +172,14 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-xs font-bold text-slate-300 capitalize">{user.shop?.subscriptionPlan || '-'}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => updateMaxShops(user.id, user.maxShops ?? null)}
+                        className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors border border-indigo-500/30 bg-indigo-500/10 px-2 py-1 rounded"
+                      >
+                        {user.maxShops !== null && user.maxShops !== undefined ? user.maxShops : 'Default'}
+                      </button>
                     </td>
                     <td className="px-6 py-4">
                       <span className={cn('text-xs font-black px-2.5 py-1 rounded-full', user.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20')}>

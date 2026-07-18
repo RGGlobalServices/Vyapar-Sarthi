@@ -79,6 +79,11 @@ export const POST = handle(async (req) => {
           amountPaid,
           paymentDetails,
           invoice_number,
+          billType: body.bill_type === 'gst' ? 'gst' : 'non_gst',
+          gstAmount: body.gst_amount != null ? Number(body.gst_amount) : null,
+          gstDetails: body.gst_details ?? undefined,
+          billImageUrl: body.bill_image_url || null,
+          isManual: body.is_manual === true,
           createdAt: body.created_at ? new Date(body.created_at) : undefined,
           items: {
             create: items.map((item: any) => ({
@@ -217,15 +222,6 @@ export const POST = handle(async (req) => {
         });
       }
 
-      await tx.activityLog.create({
-        data: {
-          shopId: shop.id,
-          action: 'bill_created',
-          entityId: created.id,
-          details: { invoice: invoice_number, total: totalAmount }
-        }
-      });
-
       return created;
     }, {
       maxWait: 10000, // 10 seconds
@@ -233,13 +229,25 @@ export const POST = handle(async (req) => {
     });
 
     try {
-      await prisma.$transaction(async (tx) => {
+      prisma.$transaction(async (tx) => {
         await checkLargeTransactionAlert(tx, shop.id, totalAmount, 'sale', invoice_number);
-        // Extract unique product IDs
-        const productIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId)));
-        await checkLowStockAlerts(tx, shop.id, productIds as string[]);
-      });
-    } catch(e) { console.error('Notification failed', e); }
+        // Extract unique product IDs. Manual bills carry no real product (product_id
+        // is null), which would otherwise land a null in a Prisma `in` filter and error.
+        const productIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId).filter(Boolean)));
+        if (productIds.length) await checkLowStockAlerts(tx, shop.id, productIds as string[]);
+      }).catch(e => console.error('Notification failed', e));
+
+      // Asynchronously log the activity outside the transaction to prevent blocking
+      prisma.activityLog.create({
+        data: {
+          shopId: shop.id,
+          action: 'bill_created',
+          entityId: sale.id,
+          details: { invoice: invoice_number, total: totalAmount }
+        }
+      }).catch(e => console.error('Activity log failed', e));
+
+    } catch(e) {}
 
   } catch (err: any) {
     console.error('Billing error:', err?.message, err?.stack);
@@ -273,6 +281,11 @@ export const GET = handle(async (req) => {
       payment_type: s.paymentType,
       amount_paid: s.amountPaid,
       payment_details: s.paymentDetails,
+      bill_type: s.billType,
+      gst_amount: s.gstAmount,
+      gst_details: s.gstDetails,
+      is_manual: s.isManual,
+      bill_image_url: s.billImageUrl,
       customer_name: s.customer?.name || null,
       customer_mobile: s.customer?.mobile || null,
       customer_email: s.customer?.email || null,

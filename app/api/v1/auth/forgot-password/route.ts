@@ -24,6 +24,6 @@ export const POST = handle(async (req) => {
     data: { passwordResetToken: hashedOtp, passwordResetExpiry: expiry },
   });
 
-  await sendPasswordResetOTP(user.email, otp, user.name || user.fullName || 'User');
+  sendPasswordResetOTP(user.email, otp, user.name || user.fullName || 'User').catch(console.error);
   return json({ ok: true });
 });

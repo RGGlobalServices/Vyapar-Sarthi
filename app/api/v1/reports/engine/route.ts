@@ -153,10 +153,14 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
   }
 
   if (reportType === 'gst') {
+    // Prices are GST-inclusive, so extract the embedded tax:
+    //   taxable = gross / (1 + rate/100),  gst = gross - taxable.
+    // Only actual GST invoices (bill_type = 'gst') count toward the GST summary.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT COALESCE(p.gst_percent, 0)::float as gst_rate,
-        SUM(si.price_per_unit * si.quantity)::float as taxable_value,
-        SUM(si.price_per_unit * si.quantity * COALESCE(p.gst_percent, 0) / 100)::float as gst_amount,
+        SUM(si.price_per_unit * si.quantity / (1 + COALESCE(p.gst_percent, 0) / 100))::float as taxable_value,
+        SUM(si.price_per_unit * si.quantity
+            - si.price_per_unit * si.quantity / (1 + COALESCE(p.gst_percent, 0) / 100))::float as gst_amount,
         SUM(si.quantity)::float as qty
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
@@ -164,10 +168,54 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
       WHERE s.shop_id = ${shop.id}::uuid
         AND s.created_at >= ${startDate}
         AND s.created_at <= ${endDate}
+        AND s.bill_type = 'gst'
+        AND COALESCE(p.gst_percent, 0) > 0
       GROUP BY gst_rate
       ORDER BY gst_rate
     `;
-    return json({ rows: rows.map(r => ({ ...r, gst_rate: Number(r.gst_rate), taxable_value: Number(r.taxable_value), gst_amount: Number(r.gst_amount) })) });
+    const mapped = rows.map(r => ({
+      gst_rate: Number(r.gst_rate),
+      taxable_value: Math.round(Number(r.taxable_value) * 100) / 100,
+      gst_amount: Math.round(Number(r.gst_amount) * 100) / 100,
+      cgst: Math.round((Number(r.gst_amount) / 2) * 100) / 100,
+      sgst: Math.round((Number(r.gst_amount) / 2) * 100) / 100,
+      qty: Number(r.qty),
+    }));
+    const totalTaxable = Math.round(mapped.reduce((a, r) => a + r.taxable_value, 0) * 100) / 100;
+    const totalGst = Math.round(mapped.reduce((a, r) => a + r.gst_amount, 0) * 100) / 100;
+    // Count of GST invoices in the period.
+    const gstInvoiceCount = await prisma.sale.count({
+      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate }, billType: 'gst' },
+    });
+    return json({ rows: mapped, totalTaxable, totalGst, gstInvoiceCount });
+  }
+
+  if (reportType === 'gst_register') {
+    // Invoice-wise GST register — the level of detail actually needed to file a
+    // GST return (GSTR-1 etc.), as opposed to the rate-wise summary above.
+    // Reads gst_details / gst_amount as stored at billing time, so the export
+    // always matches the numbers the customer's invoice showed.
+    const sales = await prisma.sale.findMany({
+      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate }, billType: 'gst' },
+      orderBy: { createdAt: 'asc' },
+      include: { customer: { select: { name: true, gst: true } } },
+    });
+    const rows = sales.map(s => {
+      const g: any = s.gstDetails || {};
+      return {
+        date: s.createdAt,
+        invoice_number: s.invoice_number,
+        customer_name: s.customer?.name || 'Walk-in',
+        customer_gstin: s.customer?.gst || '',
+        taxable_value: Number(g.taxable ?? 0),
+        cgst: Number(g.cgst ?? 0),
+        sgst: Number(g.sgst ?? 0),
+        igst: Number(g.igst ?? 0),
+        total_gst: Number(g.totalGst ?? s.gstAmount ?? 0),
+        total_amount: Number(s.totalAmount ?? 0),
+      };
+    });
+    return json({ rows });
   }
 
   return json({ error: 'Unknown report_type' }, 400);

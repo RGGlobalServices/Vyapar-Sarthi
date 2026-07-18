@@ -47,6 +47,7 @@ export const GET = handle(async (req) => {
       storeName: u.storeName || '',
       mobile: u.mobile || '',
       isActive: !!u.isActive,
+      maxShops: u.maxShops,
       createdAt: u.createdAt,
       shop: (u.uuid && shopMap[u.uuid]) || null,
       referralCode: (u.uuid && rcMap[u.uuid]?.code) || null,

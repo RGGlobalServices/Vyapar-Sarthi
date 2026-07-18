@@ -38,9 +38,11 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     total_profit: sale.totalProfit,
     payment_type: sale.paymentType,
     created_at: sale.createdAt,
+    is_manual: sale.isManual,
+    bill_image_url: sale.billImageUrl,
     items: sale.items.map(item => ({
       id: item.id,
-      product_name: item.product?.name || 'Unknown Product',
+      product_name: item.product?.name || (sale.isManual ? 'Manual Bill' : 'Unknown Product'),
       category: item.product?.category || 'Uncategorized',
       variant: item.variant,
       quantity: item.quantity,

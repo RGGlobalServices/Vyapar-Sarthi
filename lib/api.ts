@@ -95,7 +95,9 @@ async function request(url: string, options: RequestInit = {}) {
         const text = await response.text().catch(() => '');
         errorData = { detail: text || `HTTP Error ${response.status}` };
       }
-      const err = new Error(`Request failed with status ${response.status}`);
+      
+      const errorMessage = errorData?.error || errorData?.detail || `Request failed with status ${response.status}`;
+      const err = new Error(errorMessage);
       (err as any).response = { status: response.status, data: errorData };
       console.error(`[API] Error ${response.status} on ${url}:`, err);
       throw err;

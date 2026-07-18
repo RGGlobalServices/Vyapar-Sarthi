@@ -24,6 +24,7 @@ model User {
   passwordResetExpiry DateTime?     @map("password_reset_expiry") @db.Timestamptz(6)
   profitViewPassword  String?       @map("profit_view_password") @db.VarChar
   adminPin            String?       @map("admin_pin") @db.VarChar
+  maxShops            Int?          @map("max_shops")
   toolUsages          ToolUsage[]
   sessions            UserSession[]
 
@@ -286,6 +287,14 @@ model Sale {
   paymentDetails Json?      @default("{}") @map("payment_details")
   createdAt      DateTime?  @default(now()) @map("created_at") @db.Timestamptz(6)
   invoice_number String?    @unique @db.VarChar
+  // GST / Non-GST billing. billType: 'gst' | 'non_gst' (default non_gst).
+  // gstDetails holds the tax breakdown { taxable, cgst, sgst, igst, rate, interState }.
+  billType       String?    @default("non_gst") @map("bill_type") @db.VarChar
+  gstAmount      Float?     @map("gst_amount")
+  gstDetails     Json?      @map("gst_details")
+  // Manual bill upload: reference to the stored bill image/PDF and a manual flag.
+  billImageUrl   String?    @map("bill_image_url") @db.VarChar
+  isManual       Boolean?   @default(false) @map("is_manual")
   items          SaleItem[]
   customer       Customer?  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   shop           Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)

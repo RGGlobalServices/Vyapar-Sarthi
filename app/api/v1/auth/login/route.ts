@@ -38,12 +38,12 @@ export const POST = handle(async (req) => {
   // lastSeen) instead of inserting a new row every login — otherwise the
   // same browser piles up a fresh "Active" entry on every single sign-in.
   const existingSession = await prisma.userSession.findFirst({
-    where: { userId: user.id, device, browser, ip: cleanIp },
+    where: { userId: user.id, device, browser },
   });
   const session = existingSession
     ? await prisma.userSession.update({
         where: { id: existingSession.id },
-        data: { lastSeen: new Date() },
+        data: { lastSeen: new Date(), ip: cleanIp },
       })
     : await prisma.userSession.create({
         data: { userId: user.id, device, os, browser, ip: cleanIp },

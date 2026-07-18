@@ -95,6 +95,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     mobile: user.mobile || '',
     businessType: user.businessType || '',
     isActive: !!user.isActive,
+    maxShops: user.maxShops,
     createdAt: user.createdAt,
     shop: shop || null,
     referralCode: referralCode || null,
@@ -145,4 +146,28 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   ]);
 
   return json({ detail: 'User and all related data deleted successfully' });
+});
+
+export const PATCH = handle<Ctx>(async (req, { params }) => {
+  await requireAdmin(req);
+  const userId = parseInt((await params).userId, 10);
+  if (!Number.isFinite(userId)) throw new ApiError(400, 'Invalid user id');
+  
+  const body = await req.json();
+  const updateData: any = {};
+  
+  if (body.maxShops !== undefined) {
+    updateData.maxShops = body.maxShops === null ? null : parseInt(body.maxShops, 10);
+  }
+  
+  if (Object.keys(updateData).length === 0) {
+    throw new ApiError(400, 'No valid fields provided for update');
+  }
+
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: updateData
+  });
+
+  return json(user);
 });

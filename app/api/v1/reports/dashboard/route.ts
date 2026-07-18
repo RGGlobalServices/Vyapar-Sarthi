@@ -39,7 +39,12 @@ export const GET = handle(async (req) => {
     customers,
     productsCount,
     returnsSummary,
-    returnsByReason
+    returnsByReason,
+    returnsProfitLost,
+    realizedProfitData,
+    udharPaymentsData,
+    marginData,
+    udharGivenData
   ] = await Promise.all([
     prisma.sale.aggregate({
       where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
@@ -67,7 +72,48 @@ export const GET = handle(async (req) => {
       where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
       _count: { id: true },
-    })
+    }),
+    prisma.$queryRaw<{ profit_lost: number }[]>`
+      SELECT SUM(
+        r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.wholesale_cost, 0))
+      )::float as profit_lost
+      FROM material_returns r
+      LEFT JOIN products p ON r.product_id = p.id
+      WHERE r.shop_id = ${shop.id}::uuid AND r.date >= ${startDate} AND r.date <= ${endDate}
+    `,
+    prisma.$queryRaw<{ realized_sales_profit: number }[]>`
+      SELECT SUM(
+        CASE 
+          WHEN total_amount > 0 THEN (amount_paid / total_amount) * total_profit
+          ELSE 0
+        END
+      )::float as realized_sales_profit
+      FROM sales
+      WHERE shop_id = ${shop.id}::uuid AND created_at >= ${startDate} AND created_at <= ${endDate}
+    `,
+    prisma.$queryRaw<{ total_udhar_paid: number }[]>`
+      SELECT SUM(t.amount)::float as total_udhar_paid
+      FROM customer_transactions t
+      JOIN customers c ON t.customer_id = c.id
+      WHERE c.shop_id = ${shop.id}::uuid 
+        AND t.type = 'payment'
+        AND t.created_at >= ${startDate} 
+        AND t.created_at <= ${endDate}
+    `,
+    prisma.$queryRaw<{ total_profit: number, total_amount: number }[]>`
+      SELECT SUM(total_profit)::float as total_profit, SUM(total_amount)::float as total_amount
+      FROM sales
+      WHERE shop_id = ${shop.id}::uuid
+    `,
+    prisma.$queryRaw<{ total_udhar_given: number }[]>`
+      SELECT SUM(t.amount)::float as total_udhar_given
+      FROM customer_transactions t
+      JOIN customers c ON t.customer_id = c.id
+      WHERE c.shop_id = ${shop.id}::uuid 
+        AND t.type = 'udhar'
+        AND t.created_at >= ${startDate} 
+        AND t.created_at <= ${endDate}
+    `
   ]);
 
   const [
@@ -141,12 +187,28 @@ export const GET = handle(async (req) => {
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
+  const returnsProfit = Number((returnsProfitLost as any[])[0]?.profit_lost || 0);
+  const returnsAmount = returnsSummary._sum.amount || 0;
+
+  // Realized Profit Calculation
+  const realizedSalesProfit = Number((realizedProfitData as any[])[0]?.realized_sales_profit || 0);
+  const udharPaid = Number((udharPaymentsData as any[])[0]?.total_udhar_paid || 0);
+  const allTimeProfit = Number((marginData as any[])[0]?.total_profit || 0);
+  const allTimeSales = Number((marginData as any[])[0]?.total_amount || 0);
+  const avgMargin = allTimeSales > 0 ? (allTimeProfit / allTimeSales) : 0.0;
+  
+  // Realized Profit = (Profit from Cash collected today) + (Udhar Payments collected today * All Time Profit Margin)
+  const finalProfit = realizedSalesProfit + (udharPaid * avgMargin);
 
   const payload: any = {
     summary: {
-      today_sales: salesAndProfit._sum.totalAmount || 0,
-      today_profit: salesAndProfit._sum.totalProfit || 0,
+      today_sales: (salesAndProfit._sum.totalAmount || 0) - returnsAmount,
+      today_profit: finalProfit - returnsProfit,
+      expected_profit: (salesAndProfit._sum.totalProfit || 0) - returnsProfit,
+      cash_profit: finalProfit - returnsProfit,
+      udhar_profit: Math.max(0, (salesAndProfit._sum.totalProfit || 0) - finalProfit),
       total_udhar: totalUdhar,
+      period_udhar: Number((udharGivenData as any[])[0]?.total_udhar_given || 0),
       low_stock_count: lowStockCount,
       returns_amount: returnsSummary._sum.amount || 0,
       returns_count: returnsSummary._count.id || 0,
@@ -168,6 +230,7 @@ export const GET = handle(async (req) => {
       invoice_number: s.invoice_number,
       total_amount: s.totalAmount,
       payment_type: s.paymentType,
+      payment_details: s.paymentDetails,
       customer_name: s.customer?.name,
       customer_mobile: s.customer?.mobile,
       created_at: s.createdAt,

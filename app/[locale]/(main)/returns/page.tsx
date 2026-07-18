@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { 
   Card, 
@@ -17,12 +18,21 @@ import {
   AlertCircle, 
   CheckCircle,
   ArrowRight,
-  History
+  History,
+  X,
+  Download,
+  FileText,
+  IndianRupee,
+  Calendar,
+  Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function ReturnsPage() {
   const t = useTranslations('Returns');
+  const locale = useLocale();
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [bill, setBill] = useState<any>(null);
@@ -33,6 +43,44 @@ export default function ReturnsPage() {
   const [customEndDate, setCustomEndDate] = useState('');
   const [returnsHistory, setReturnsHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedReturn, setSelectedReturn] = useState<any>(null);
+
+  const downloadReturnPDF = (ret: any) => {
+    let noteData: any = {};
+    try {
+      if (ret.note) noteData = JSON.parse(ret.note);
+    } catch (e) {}
+
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text('Return Receipt', 14, 22);
+
+    doc.setFontSize(10);
+    doc.text(`Date: ${new Date(ret.date).toLocaleDateString()}`, 14, 32);
+    if (noteData.invoiceNumber) {
+      doc.text(`Original Invoice: ${noteData.invoiceNumber}`, 14, 38);
+    }
+    if (noteData.customerName) {
+      doc.text(`Customer: ${noteData.customerName}`, 14, 44);
+    }
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Product Name', 'Reason', 'Quantity', 'Total Refund']],
+      body: [
+        [
+          ret.itemName || 'Unknown Item',
+          ret.reason || 'Customer Return',
+          ret.quantity.toString(),
+          `Rs ${ret.amount.toLocaleString()}`
+        ]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [249, 115, 22] } // orange-500
+    });
+
+    doc.save(`Return_Receipt_${ret.id.substring(0, 8)}.pdf`);
+  };
 
   useEffect(() => {
     fetchHistory();
@@ -381,18 +429,34 @@ export default function ReturnsPage() {
                     <th className="px-6 py-3 font-bold">{t('reason') || 'Reason'}</th>
                     <th className="px-6 py-3 font-bold text-right">{t('qty') || 'Qty'}</th>
                     <th className="px-6 py-3 font-bold text-right">{t('value') || 'Value (₹)'}</th>
+                    <th className="px-6 py-3 font-bold text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
                   {returnsHistory.map((r: any) => (
                     <tr key={r.id} className="text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">{new Date(r.date).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 font-bold">{r.itemName}</td>
+                      <td className="px-6 py-4 font-bold">
+                        <button 
+                          onClick={() => setSelectedReturn(r)} 
+                          className="text-emerald-600 dark:text-emerald-400 hover:underline text-left"
+                        >
+                          {r.itemName}
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded text-[10px] font-bold uppercase">{r.reason}</span>
                       </td>
                       <td className="px-6 py-4 text-right font-medium">{r.quantity}</td>
                       <td className="px-6 py-4 text-right font-black text-orange-400">₹{r.amount.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-center">
+                        <button
+                          onClick={() => setSelectedReturn(r)}
+                          className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+                        >
+                          <Eye size={14} /> Details
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -414,6 +478,123 @@ export default function ReturnsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Return Details Modal */}
+      {selectedReturn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText className="text-orange-500" size={20} />
+                  Return Details
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">ID: {selectedReturn.id}</p>
+              </div>
+              <button 
+                onClick={() => setSelectedReturn(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Product Info */}
+              <div className="bg-orange-50 dark:bg-orange-900/10 rounded-xl p-4 border border-orange-100 dark:border-orange-900/20">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-black text-slate-900 dark:text-white text-lg">{selectedReturn.itemName}</h3>
+                    <span className="inline-block bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded text-[10px] font-bold uppercase border border-slate-200 dark:border-slate-700 mt-2">
+                      Reason: {selectedReturn.reason}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-500 font-bold uppercase mb-1">Refund Amount</p>
+                    <p className="text-2xl font-black text-orange-500 flex items-center justify-end">
+                      <IndianRupee size={18} />
+                      {selectedReturn.amount.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-4 pt-3 border-t border-orange-200 dark:border-orange-900/30">
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">Returned Qty</p>
+                    <p className="font-bold text-slate-900 dark:text-white">{selectedReturn.quantity}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">Date</p>
+                    <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                      <Calendar size={12} className="text-slate-400" />
+                      {new Date(selectedReturn.date).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Billing Context */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Package size={16} className="text-emerald-500" /> Original Billing Details
+                </h4>
+                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+                  {(() => {
+                    let noteData: any = null;
+                    try {
+                      if (selectedReturn.note) noteData = JSON.parse(selectedReturn.note);
+                    } catch (e) {}
+
+                    if (noteData) {
+                      return (
+                        <div className="space-y-3 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Invoice Number</span>
+                            <span className="font-bold text-slate-900 dark:text-white">{noteData.invoiceNumber || noteData.billId?.substring(0, 8)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Customer Name</span>
+                            <span className="font-bold text-slate-900 dark:text-white">{noteData.customerName || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Payment Type</span>
+                            <span className="font-bold text-slate-900 dark:text-white capitalize">{noteData.paymentType || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Sale Date</span>
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              {noteData.saleDate ? new Date(noteData.saleDate).toLocaleDateString() : 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      return <p className="text-sm text-slate-500 text-center py-2">Billing details not available for this return.</p>;
+                    }
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
+              <button 
+                onClick={() => setSelectedReturn(null)}
+                className="px-4 py-2 rounded-lg font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                Close
+              </button>
+              <button 
+                onClick={() => downloadReturnPDF(selectedReturn)}
+                className="px-4 py-2 rounded-lg font-bold bg-orange-500 text-white hover:bg-orange-400 transition-colors flex items-center gap-2 shadow-sm shadow-orange-500/20"
+              >
+                <Download size={16} /> Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireUser } from '@/lib/server/auth';
 import { uniqueShopCode } from '@/lib/server/shopCode';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { getPlanLimits } from '@/lib/planGates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,15 @@ export const POST = handle(async (req) => {
   const primaryShop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
   const finalPackageType = packageType || primaryShop?.packageType || 'dukan';
   const finalSubscriptionPlan = subscriptionPlan || primaryShop?.subscriptionPlan || 'trial';
+
+  // Enforce shop limits (fallback to user override if set by admin)
+  const existingShopsCount = await prisma.shop.count({ where: { ownerId: user.uuid! } });
+  const planLimits = getPlanLimits(finalSubscriptionPlan);
+  const allowedShops = user.maxShops ?? planLimits.maxShops;
+
+  if (existingShopsCount >= allowedShops) {
+    throw new ApiError(403, `Maximum shop limit (${allowedShops}) reached for your current plan.`);
+  }
 
   const shopCode = await uniqueShopCode(name.trim());
 

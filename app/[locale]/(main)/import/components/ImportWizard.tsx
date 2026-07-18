@@ -55,95 +55,120 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setIsProcessing(true);
 
     try {
-      // Basic client-side parsing for Excel/CSV
-      const file = selectedFiles[0];
-      if (file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-        const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: 'array' });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-        
-        if (jsonData.length > 0) {
-          const rawHeaders = jsonData[0] as string[];
-          setHeaders(rawHeaders);
-          
-          // Map array data to objects
-          const rows = jsonData.slice(1).map(row => {
-            const obj: any = {};
-            rawHeaders.forEach((h, i) => {
-              obj[h] = (row as any[])[i];
-            });
-            return obj;
-          }).filter(row => Object.values(row).some(v => v !== undefined && v !== null && v !== ''));
-          
-          setPreviewData(rows);
-          validateData(rows, rawHeaders);
-          setStep('preview');
-        }
-      } else {
-        // AI Extraction
-        let fileToSend = file;
+      // Split files by type
+      const spreadsheetFiles = selectedFiles.filter(f => f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+      const aiFiles = selectedFiles.filter(f => !spreadsheetFiles.includes(f));
 
-        // If it's a PDF, convert the first page to an image using client-side pdf.js
-        // This completely bypasses backend PDF parsing errors and allows Nvidia Vision to see the layout perfectly!
-        if (file.type === 'application/pdf') {
-          setLoadingText('Converting PDF to image...');
-          
-          // Load pdf.js dynamically from CDN to avoid Next.js build issues
-          const pdfjs = await new Promise<any>((resolve, reject) => {
-            if ((window as any).pdfjsLib) return resolve((window as any).pdfjsLib);
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            script.onload = () => {
-              (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-              resolve((window as any).pdfjsLib);
-            };
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
+      if (spreadsheetFiles.length > 0) {
+        // Handle all spreadsheets and all sheets within them
+        let allRows: any[] = [];
+        let finalHeaders: string[] = [];
 
-          const arrayBuffer = await file.arrayBuffer();
-          const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-          const page = await pdf.getPage(1);
+        for (const file of spreadsheetFiles) {
+          const buffer = await file.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: 'array' });
           
-          const viewport = page.getViewport({ scale: 2.0 });
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const ctx = canvas.getContext('2d');
-          
-          if (ctx) {
-            await page.render({ canvasContext: ctx, viewport }).promise;
-            const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.9));
-            if (blob) {
-              fileToSend = new File([blob], file.name.replace('.pdf', '.jpg'), { type: 'image/jpeg' });
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            
+            if (jsonData.length > 0) {
+              const rawHeaders = jsonData[0] as string[];
+              if (finalHeaders.length === 0) finalHeaders = rawHeaders; // Keep headers from first sheet/file
+              
+              const rows = jsonData.slice(1).map(row => {
+                const obj: any = {};
+                rawHeaders.forEach((h, i) => {
+                  obj[h] = (row as any[])[i];
+                });
+                return obj;
+              }).filter(row => Object.values(row).some(v => v !== undefined && v !== null && v !== ''));
+              
+              allRows = [...allRows, ...rows];
             }
           }
         }
 
-        setLoadingText('Analyzing document with Nvidia...');
-        const fd = new FormData();
-        fd.append('file', fileToSend);
-        fd.append('targetType', importType);
-        
-        try {
-          const res = await api.post('/wholesale-import/analyze', fd);
-          const data = res.data;
-          
-          if (data.items && data.items.length > 0) {
-            const aiHeaders = Object.keys(data.items[0]);
-            setHeaders(aiHeaders);
-            setPreviewData(data.items);
-            validateData(data.items, aiHeaders);
-          }
+        if (allRows.length > 0) {
+          setHeaders(finalHeaders);
+          setPreviewData(allRows);
+          validateData(allRows, finalHeaders);
           setStep('preview');
-        } catch (err: any) {
-          const errorData = err.response?.data || {};
-          if (errorData.rawAiResponse) {
-            console.error("RAW AI RESPONSE:", errorData.rawAiResponse);
-            throw new Error(`The AI failed to return valid JSON.\n\nError: ${errorData.parseError || errorData.error}\n\nRaw AI Response:\n${errorData.rawAiResponse}`);
+        }
+      } 
+      
+      if (aiFiles.length > 0 && spreadsheetFiles.length === 0) {
+        // AI Extraction for multiple images and multi-page PDFs
+        const filesToSend: File[] = [];
+
+        for (const file of aiFiles) {
+          if (file.type === 'application/pdf') {
+            setLoadingText(`Converting PDF ${file.name}...`);
+            const pdfjs = await new Promise<any>((resolve, reject) => {
+              if ((window as any).pdfjsLib) return resolve((window as any).pdfjsLib);
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+              script.onload = () => {
+                (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                resolve((window as any).pdfjsLib);
+              };
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+            
+            // Limit to max 10 pages per PDF to avoid exceeding token limits
+            const numPages = Math.min(pdf.numPages, 10);
+            
+            for (let i = 1; i <= numPages; i++) {
+              setLoadingText(`Converting PDF ${file.name} (Page ${i} of ${numPages})...`);
+              const page = await pdf.getPage(i);
+              const viewport = page.getViewport({ scale: 2.0 });
+              const canvas = document.createElement('canvas');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              const ctx = canvas.getContext('2d');
+              
+              if (ctx) {
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                if (blob) {
+                  filesToSend.push(new File([blob], `${file.name}-page${i}.jpg`, { type: 'image/jpeg' }));
+                }
+              }
+            }
+          } else {
+            filesToSend.push(file);
           }
-          throw new Error(errorData.error || errorData.detail || err.message || 'AI extraction failed');
+        }
+
+        if (filesToSend.length > 0) {
+          setLoadingText('Analyzing documents with Nvidia...');
+          const fd = new FormData();
+          filesToSend.forEach(f => fd.append('files[]', f));
+          fd.append('targetType', importType);
+          
+          try {
+            const res = await api.post('/wholesale-import/analyze', fd);
+            const data = res.data;
+            
+            if (data.items && data.items.length > 0) {
+              const aiHeaders = Object.keys(data.items[0]);
+              setHeaders(aiHeaders);
+              setPreviewData(data.items);
+              validateData(data.items, aiHeaders);
+            }
+            setStep('preview');
+          } catch (err: any) {
+            const errorData = err.response?.data || {};
+            if (errorData.rawAiResponse) {
+              console.error("RAW AI RESPONSE:", errorData.rawAiResponse);
+              throw new Error(`The AI failed to return valid JSON.\n\nError: ${errorData.parseError || errorData.error}\n\nRaw AI Response:\n${errorData.rawAiResponse}`);
+            }
+            throw new Error(errorData.error || errorData.detail || err.message || 'AI extraction failed');
+          }
         }
       }
     } catch (err: any) {
@@ -211,7 +236,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       {step === 'upload' && (
         <Card className="bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700">
           <CardContent className="p-12">
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".csv,.xlsx,.xls,.pdf,image/*" />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden" accept=".csv,.xlsx,.xls,.pdf,image/*" />
             
             <div 
               onDragOver={(e) => e.preventDefault()}
@@ -251,6 +276,13 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   <Upload size={48} className="text-slate-400 mb-4" />
                   <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Drop your file here</h3>
                   <p className="text-slate-500 text-sm mb-6">Supports CSV, Excel, PDF, and Images</p>
+                  
+                  <div className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl text-center max-w-sm">
+                    <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-400">
+                      💡 Note: For best results with AI Extraction, upload a maximum of 10 PDF pages or 5 photos at a time.
+                    </p>
+                  </div>
+
                   <button className="bg-emerald-500 text-slate-900 px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors">
                     Browse Files
                   </button>

@@ -6,7 +6,7 @@ appear in your sidebar and what limits apply.
 | Package | Price | Built for |
 |---|---|---|
 | **Dukaan** | ₹299/month | A single retail shop |
-| **Vyapar** | ₹499/month | A growing business, up to 3 shops |
+| **Vyapar** | ₹499/month | A growing business, up to 5 shops |
 | **Udyog** | ₹999/month | Wholesale and distribution |
 
 Your current package is shown as a badge at the top of the sidebar.
@@ -17,7 +17,7 @@ Your current package is shown as a badge at the top of the sidebar.
 |---|---|---|---|
 | Products | Unlimited | Unlimited | Unlimited |
 | Udhar customers | Up to 100 | Unlimited | Unlimited |
-| Shops | 1 | Up to 3 | Unlimited |
+| Shops | 1 | Up to 5 | Unlimited |
 | Auto-send bill on WhatsApp/Email | — | Yes | Yes |
 | Warehouses | — | — | Yes |
 | Dukandar management | — | — | Yes |

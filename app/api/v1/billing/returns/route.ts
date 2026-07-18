@@ -37,6 +37,13 @@ export const POST = handle(async (req) => {
         quantity: ret.quantity,
         reason: ret.reason || 'Customer Return',
         amount: ret.quantity * (ret.price || saleItem.pricePerUnit || 0),
+        note: JSON.stringify({
+          billId: sale.id,
+          invoiceNumber: sale.invoiceNumber,
+          customerName: sale.customerName || 'Guest',
+          paymentType: sale.paymentType,
+          saleDate: sale.createdAt
+        }),
         date: new Date(),
       }
     });

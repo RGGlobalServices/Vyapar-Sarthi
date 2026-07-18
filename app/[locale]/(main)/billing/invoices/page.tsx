@@ -29,6 +29,11 @@ interface Invoice {
   customer_email: string | null;
   created_at: string;
   items?: InvoiceItem[];
+  bill_type?: string | null;
+  gst_amount?: number | null;
+  gst_details?: any;
+  is_manual?: boolean | null;
+  bill_image_url?: string | null;
 }
 
 interface InvoiceItem {
@@ -260,6 +265,11 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
     businessType: profile?.businessType || 'kirana',
     showQrCode: profile?.showQrCode || false,
     invoiceFooter: profile?.invoiceFooter || undefined,
+    billType: invoice.bill_type || 'non_gst',
+    gstBreakdown: invoice.gst_details
+      ? (typeof invoice.gst_details === 'string' ? JSON.parse(invoice.gst_details) : invoice.gst_details)
+      : undefined,
+    isEmi: invoice.payment_type === 'EMI',
   };
 
   const handleDownloadPDF = async () => {
@@ -432,6 +442,21 @@ export default function InvoiceHistoryPage() {
     if (statusFilter === 'Credit') return s === 'credit';
     return true;
   });
+
+  const getFormattedPaymentType = (type: string, details: any) => {
+    if (type !== 'Split' || !details) return type;
+    try {
+      const parsed = typeof details === 'string' ? JSON.parse(details) : details;
+      const modes = [];
+      if (Number(parsed.cash) > 0) modes.push('CASH');
+      if (Number(parsed.upi) > 0) modes.push('UPI');
+      if (Number(parsed.card) > 0) modes.push('CARD');
+      if (Number(parsed.udhar) > 0) modes.push('UDHAR');
+      return modes.length > 0 ? modes.join(' + ') : type;
+    } catch {
+      return type;
+    }
+  };
 
   // ── Duplicate bill into cart
   const handleDuplicate = async (inv: Invoice) => {
@@ -670,8 +695,14 @@ export default function InvoiceHistoryPage() {
                             <IndianRupee size={14} className="text-emerald-500" />
                           </div>
                           <div>
-                            <p className="text-sm font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight">
+                            <p className="text-sm font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight flex items-center gap-1.5">
                               {inv.invoice_number || `INV-${inv.id.substring(0, 8).toUpperCase()}`}
+                              {inv.bill_type === 'gst' && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-wider border border-indigo-500/20">GST</span>
+                              )}
+                              {inv.is_manual && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[8px] font-black uppercase tracking-wider border border-amber-500/20">Manual</span>
+                              )}
                             </p>
                             <p className="text-[10px] text-slate-400">{(inv.items?.length ?? '?')} items</p>
                           </div>
@@ -704,7 +735,7 @@ export default function InvoiceHistoryPage() {
                       {/* Mode */}
                       <td className="px-5 py-3.5 text-center">
                         <span className={cn('px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border', getPaymentBadge(inv.payment_type))}>
-                          {inv.payment_type}
+                          {getFormattedPaymentType(inv.payment_type, inv.payment_details)}
                         </span>
                       </td>
                       {/* Status */}

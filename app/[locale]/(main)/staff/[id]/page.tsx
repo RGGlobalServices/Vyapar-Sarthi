@@ -2,17 +2,21 @@
 
 import { useState, useEffect, use } from 'react';
 import { useRouter } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
-import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, Eye } from 'lucide-react';
+import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, Eye, Download, Share2, Wallet, X, Loader2 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
+import { exportSalarySlipPDF } from '@/lib/pdf/salarySlip';
+import { shareFileOrText } from '@/lib/shareUtils';
 
 export default function StaffProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const isNew = resolvedParams.id === 'new';
   const router = useRouter();
+  const t = useTranslations('Staff');
 
   const [activeTab, setActiveTab] = useState<'profile' | 'attendance' | 'salary'>('profile');
   
@@ -41,22 +45,53 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   const [calcData, setCalcData] = useState({ baseAmount: 0, deductions: 0, bonus: { Performance: 0, Diwali: 0 }, netAmount: 0, paymentMode: 'Cash' });
   const [salaryHistory, setSalaryHistory] = useState<any[]>([]);
 
+  // Advance Salary state
+  const [advanceHistory, setAdvanceHistory] = useState<any[]>([]);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  
+  // Slip Modal state
+  const [showSlipModal, setShowSlipModal] = useState(false);
+  const [slipDuration, setSlipDuration] = useState(1);
+  const [generatingSlip, setGeneratingSlip] = useState(false);
+
   // Attendance state
   const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7));
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [markingAtt, setMarkingAtt] = useState(false);
 
+  const pendingAdvances = advanceHistory.filter(a => !a.deducted);
+  const pendingAdvanceTotal = pendingAdvances.reduce((sum, a) => sum + Number(a.amount), 0);
+
   useEffect(() => {
     if (!isNew) {
       loadStaff();
-      if (activeTab === 'salary') loadSalaryHistory();
+      if (activeTab === 'salary') {
+        loadSalaryHistory();
+        loadAdvanceHistory();
+      }
       if (activeTab === 'attendance') loadAttendance();
     }
   }, [isNew, resolvedParams.id, activeTab]);
 
   useEffect(() => {
-    if (activeTab === 'attendance') loadAttendance();
-  }, [attendanceMonth]);
+    if (activeTab === 'attendance' || (activeTab === 'salary' && form.salaryType === 'daily')) {
+      loadAttendance(calcMonth);
+    }
+  }, [attendanceMonth, calcMonth]);
+
+  // Recalculate salary base when attendance or calcMonth changes for daily wage
+  useEffect(() => {
+    if (form.salaryType === 'daily') {
+      let days = 0;
+      attendanceRecords.forEach(r => {
+        if (r.status === 'Present') days += 1;
+        if (r.status === 'Half Day') days += 0.5;
+      });
+      const base = days * Number(form.salaryAmount || 0);
+      setCalcData(prev => ({ ...prev, baseAmount: base }));
+    }
+  }, [attendanceRecords, form.salaryType, form.salaryAmount]);
 
   async function loadStaff() {
     try {
@@ -75,7 +110,9 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         bankAccount: res.data.bankAccount || { accNo: '', ifsc: '', upi: '' },
         documents: res.data.documents || {}
       });
-      setCalcData(prev => ({ ...prev, baseAmount: res.data.salaryAmount, netAmount: res.data.salaryAmount }));
+      if (res.data.salaryType === 'monthly') {
+        setCalcData(prev => ({ ...prev, baseAmount: res.data.salaryAmount }));
+      }
     } catch (e) {
       console.error(e);
       alert('Failed to load staff');
@@ -93,9 +130,18 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     }
   }
 
-  async function loadAttendance() {
+  async function loadAdvanceHistory() {
     try {
-      const res = await api.get(`/staff/${resolvedParams.id}/attendance?monthYear=${attendanceMonth}`);
+      const res = await api.get(`/staff/${resolvedParams.id}/advance`);
+      setAdvanceHistory(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function loadAttendance(month = attendanceMonth) {
+    try {
+      const res = await api.get(`/staff/${resolvedParams.id}/attendance?monthYear=${month}`);
       setAttendanceRecords(res.data);
     } catch (e) {
       console.error(e);
@@ -151,15 +197,31 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       await api.post(`/staff/${resolvedParams.id}/salary`, {
         monthYear: calcMonth,
         baseAmount: calcData.baseAmount,
-        deductions: calcData.deductions,
+        deductions: calcData.deductions + pendingAdvanceTotal, // deduct advances automatically
         bonus: calcData.bonus,
         netAmount: calcData.netAmount,
-        paymentMode: calcData.paymentMode
+        paymentMode: calcData.paymentMode,
+        advanceIds: pendingAdvances.map(a => a.id)
       });
       alert('Salary marked as paid!');
       loadSalaryHistory();
+      loadAdvanceHistory();
     } catch (e) {
       alert('Failed to pay salary');
+    }
+  }
+
+  async function giveAdvance() {
+    if (!advanceAmount || isNaN(Number(advanceAmount))) return;
+    try {
+      await api.post(`/staff/${resolvedParams.id}/advance`, {
+        amount: Number(advanceAmount)
+      });
+      setShowAdvanceModal(false);
+      setAdvanceAmount('');
+      loadAdvanceHistory();
+    } catch (e) {
+      alert('Failed to give advance');
     }
   }
 
@@ -178,12 +240,59 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     }
   }
 
+  async function handleGenerateSlip(action: 'download' | 'share') {
+    setGeneratingSlip(true);
+    try {
+      const recordsToInclude = salaryHistory.slice(0, slipDuration);
+      if (recordsToInclude.length === 0) {
+        alert(t('noSalaryHistory'));
+        return;
+      }
+      
+      const shopInfo = { name: 'Vyapar Sarthi Store' }; // Can be fetched from user context if available
+      const staffInfo = { name: form.name, role: form.role, joiningDate: form.joiningDate, salaryType: form.salaryType };
+      
+      const pdfFile = await exportSalarySlipPDF({
+        shopInfo,
+        staffInfo,
+        salaryRecords: recordsToInclude,
+        dateRangeString: t(`duration${slipDuration}Month${slipDuration > 1 ? 's' : ''}`) || `Last ${slipDuration} Months`
+      });
+
+      if (action === 'download') {
+        const url = URL.createObjectURL(pdfFile);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pdfFile.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        const shared = await shareFileOrText(pdfFile, `Salary slip for ${form.name}`, `Salary slip for ${form.name}`);
+        if (!shared) {
+          // Native share unsupported, fallback to whatsapp link
+          const url = URL.createObjectURL(pdfFile);
+          alert('Could not open native share. File has been generated.');
+          window.open(url, '_blank');
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to generate slip');
+    } finally {
+      setGeneratingSlip(false);
+      setShowSlipModal(false);
+    }
+  }
+
   // Auto calc net amount when base/deduction/bonus changes
   useEffect(() => {
     const totalBonus = Object.values(calcData.bonus).reduce((a, b) => a + (Number(b) || 0), 0);
-    const net = Number(calcData.baseAmount) - Number(calcData.deductions) + totalBonus;
+    const totalDeds = Number(calcData.deductions) + pendingAdvanceTotal;
+    const net = Number(calcData.baseAmount) - totalDeds + totalBonus;
     setCalcData(prev => ({ ...prev, netAmount: net > 0 ? net : 0 }));
-  }, [calcData.baseAmount, calcData.deductions, calcData.bonus]);
+  }, [calcData.baseAmount, calcData.deductions, calcData.bonus, pendingAdvanceTotal]);
 
   const updateBonus = (key: string, value: number) => {
     setCalcData(prev => ({ ...prev, bonus: { ...prev.bonus, [key]: value } }));
@@ -243,6 +352,18 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Calendar size={14} /> Joining Date</label>
                 <input type="date" value={form.joiningDate} onChange={e => setForm({...form, joiningDate: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Wallet size={14} /> {t('salaryType', { fallback: 'Salary Type' })}</label>
+                <select value={form.salaryType} onChange={e => setForm({...form, salaryType: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
+                  <option value="monthly">{t('monthly', { fallback: 'Monthly' })}</option>
+                  <option value="daily">{t('daily', { fallback: 'Daily' })}</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><IndianRupee size={14} /> {t('baseSalary', { fallback: 'Base Salary' })}</label>
+                <input type="number" value={form.salaryAmount} onChange={e => setForm({...form, salaryAmount: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder={form.salaryType === 'daily' ? 'Per Day (e.g. 300)' : 'Per Month'} />
+              </div>
             </div>
             
             <div className="mt-8 flex justify-between items-center">
@@ -295,7 +416,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
             <div className="bg-emerald-50 dark:bg-emerald-500/10 p-4 border-b border-emerald-100 dark:border-emerald-500/20 text-center">
               <h2 className="font-bold text-emerald-900 dark:text-emerald-100">Quick Mark Today</h2>
-              <p className="text-xs text-emerald-600/70">{new Date().toDateString()}</p>
+              <p className="text-xs text-emerald-600/70">{new Date().toLocaleDateString('en-GB')}</p>
             </div>
             <CardContent className="p-4 flex gap-2">
               {['Present', 'Half Day', 'Absent', 'Leave'].map(status => (
@@ -324,7 +445,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
             <div className="space-y-2">
               {attendanceRecords.map(record => (
                 <div key={record.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <span className="text-sm font-bold text-slate-600">{new Date(record.date).toDateString()}</span>
+                  <span className="text-sm font-bold text-slate-600">{new Date(record.date).toLocaleDateString('en-GB')}</span>
                   <span className={cn("text-xs font-bold px-2 py-1 rounded", 
                     record.status === 'Present' ? 'bg-emerald-100 text-emerald-700' :
                     record.status === 'Absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
@@ -350,16 +471,24 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
               </div>
               
               <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                <span className="text-sm font-bold text-indigo-200">Base Salary</span>
+                <span className="text-sm font-bold text-indigo-200">{t('baseSalary', { fallback: 'Base Salary' })} {form.salaryType === 'daily' && '(Daily calc)'}</span>
                 <span className="font-black">₹{calcData.baseAmount}</span>
               </div>
+              
               <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-red-500/30">
-                <span className="text-sm font-bold text-red-300">Deductions (Absents)</span>
+                <span className="text-sm font-bold text-red-300">{t('deductions', { fallback: 'Deductions' })}</span>
                 <input type="number" value={calcData.deductions} onChange={e => setCalcData({...calcData, deductions: Number(e.target.value)})} className="w-24 px-2 py-1 bg-black/20 rounded text-right font-bold text-red-300 outline-none" />
               </div>
               
+              {pendingAdvanceTotal > 0 && (
+                 <div className="flex justify-between items-center p-3 bg-red-950/40 rounded-lg border border-red-500/50">
+                   <span className="text-sm font-bold text-red-200">{t('deductAdvance', { fallback: 'Deduct Advance' })} (Auto)</span>
+                   <span className="font-black text-red-400">-₹{pendingAdvanceTotal}</span>
+                 </div>
+              )}
+              
               <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                <span className="text-lg font-black">Net Payable</span>
+                <span className="text-lg font-black">{t('netSalary', { fallback: 'Net Payable' })}</span>
                 <span className="text-3xl font-black text-emerald-400">₹{calcData.netAmount.toLocaleString('en-IN')}</span>
               </div>
               
@@ -374,24 +503,112 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
             </div>
           </Card>
           
-          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4">
-            <h3 className="font-bold text-slate-900 dark:text-white mb-4">Payment History</h3>
-            <div className="space-y-2">
-              {salaryHistory.map(pay => (
-                <div key={pay.id} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-white text-sm">{pay.monthYear}</p>
-                    <p className="text-[10px] font-bold text-slate-500">{new Date(pay.paidAt).toLocaleDateString()} • {pay.paymentMode}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Wallet size={16} className="text-amber-500" /> {t('advanceSalary', { fallback: 'Advance Salary' })}
+                </h3>
+                <button onClick={() => setShowAdvanceModal(true)} className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200">
+                  + {t('addAdvance', { fallback: 'Give Advance' })}
+                </button>
+              </div>
+              <div className="space-y-2">
+                {advanceHistory.map(adv => (
+                  <div key={adv.id} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white text-sm">₹{adv.amount}</p>
+                      <p className="text-[10px] font-bold text-slate-500">{new Date(adv.date).toLocaleDateString('en-GB')}</p>
+                    </div>
+                    <div className="text-right">
+                      {adv.deducted ? (
+                        <span className="text-xs font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded">Settled</span>
+                      ) : (
+                        <span className="text-xs font-bold text-amber-500 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded">Pending</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-black text-emerald-600 dark:text-emerald-400">₹{pay.netAmount}</p>
-                    {pay.deductions > 0 && <p className="text-[10px] text-red-500 font-bold">-₹{pay.deductions}</p>}
+                ))}
+                {advanceHistory.length === 0 && <p className="text-center text-slate-500 py-4 text-sm">No advances given.</p>}
+              </div>
+            </Card>
+
+            <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-900 dark:text-white">Payment History</h3>
+                <button onClick={() => setShowSlipModal(true)} className="text-xs font-bold bg-indigo-50 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-100 flex items-center gap-1">
+                  <Download size={14} /> {t('salarySlip', { fallback: 'Salary Slip' })}
+                </button>
+              </div>
+              <div className="space-y-2">
+                {salaryHistory.map(pay => (
+                  <div key={pay.id} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white text-sm">{pay.monthYear}</p>
+                      <p className="text-[10px] font-bold text-slate-500">{new Date(pay.paidAt).toLocaleDateString('en-GB')} • {pay.paymentMode}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-black text-emerald-600 dark:text-emerald-400">₹{pay.netAmount}</p>
+                      {pay.deductions > 0 && <p className="text-[10px] text-red-500 font-bold">-₹{pay.deductions}</p>}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {salaryHistory.length === 0 && <p className="text-center text-slate-500 py-4 text-sm">No payment history.</p>}
+                ))}
+                {salaryHistory.length === 0 && <p className="text-center text-slate-500 py-4 text-sm">{t('noSalaryHistory', { fallback: 'No payment history.' })}</p>}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showAdvanceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t('addAdvance', { fallback: 'Give Advance' })}</h2>
             </div>
-          </Card>
+            <div className="p-4 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Amount (₹)</label>
+                <input type="number" value={advanceAmount} onChange={e => setAdvanceAmount(e.target.value)} className="w-full px-3 py-2 border dark:border-slate-700 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" placeholder="e.g. 500" />
+              </div>
+              <p className="text-xs text-slate-500 font-semibold">This amount will be automatically deducted from the next salary payment.</p>
+            </div>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-800/50">
+              <button onClick={() => setShowAdvanceModal(false)} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
+              <button onClick={giveAdvance} disabled={!advanceAmount} className="px-4 py-2 font-bold bg-amber-500 text-white hover:bg-amber-600 rounded-lg disabled:opacity-50 transition-colors">Give Advance</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSlipModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t('downloadSalarySlip', { fallback: 'Download Salary Slip' })}</h2>
+              <button onClick={() => setShowSlipModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-500"><X size={16} /></button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Select Duration</label>
+                <select value={slipDuration} onChange={e => setSlipDuration(Number(e.target.value))} className="w-full px-3 py-2 border dark:border-slate-700 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold">
+                  <option value={1}>{t('duration1Month', { fallback: 'Last 1 Month' })}</option>
+                  <option value={3}>{t('duration3Months', { fallback: 'Last 3 Months' })}</option>
+                  <option value={6}>{t('duration6Months', { fallback: 'Last 6 Months' })}</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-2 bg-slate-50 dark:bg-slate-800/50">
+              <button onClick={() => handleGenerateSlip('download')} disabled={generatingSlip} className="flex-1 px-4 py-2.5 font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                {generatingSlip ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                Download PDF
+              </button>
+              <button onClick={() => handleGenerateSlip('share')} disabled={generatingSlip} className="flex-1 px-4 py-2.5 font-bold bg-emerald-500 text-white hover:bg-emerald-600 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
+                {generatingSlip ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}
+                {t('shareViaWhatsApp', { fallback: 'Share' })}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

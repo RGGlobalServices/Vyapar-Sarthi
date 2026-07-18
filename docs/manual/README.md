@@ -22,6 +22,7 @@ installation or development — see the project `README.md` for that.
 | [Billing](billing.md) | Making a bill, payment methods, udhar, sharing the bill slip |
 | [Products](products.md) | Your item catalogue, prices, barcodes, variants |
 | [Stock](stock.md) | Stock in/out, low-stock alerts, archiving items |
+| [Products & Stock Fields by Category](products-and-stock-fields.md) | Exactly which fields appear for each of the 8 business categories |
 | [Udhar & Customers](udhar-and-customers.md) | The credit ledger, recording repayments |
 | [Expenses](expenses.md) | Recording shop expenses |
 | [Returns](returns.md) | Taking items back against an invoice |

@@ -7,7 +7,7 @@ import {
   Search, UserPlus, Phone, Calendar, ArrowRight,
   X, Check, Pencil, Trash2, Plus, Minus,
   ArrowDownLeft, ArrowUpRight, ChevronLeft, Trash, Send,
-  Users, Store, Bell, Clock, Mail, MessageSquare,
+  Users, Store, Bell, Clock, Mail, MessageSquare, Download,
   CheckSquare, Square, ChevronRight, Package, IndianRupee,
   Loader2, AlarmClock, FileText,
 } from 'lucide-react';
@@ -20,7 +20,8 @@ import { UdharSlip, generateUdharWhatsAppText } from '@/components/UdharSlip';
 import { canAddUdharCustomer, udharLimitDisplay } from '@/lib/planGates';
 import { useLocale } from 'next-intl';
 import dynamic from 'next/dynamic';
-
+import { exportUdharPDF } from '@/lib/pdf/udharReport';
+import { exportUdharCSV } from '@/lib/csv/udharReport';
 const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieChart'), { ssr: false });
 
 function totalDue(c: UdharCustomer) {
@@ -40,8 +41,10 @@ function relativeDate(iso: string) {
 
 const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
 
-// ─── WhatsApp reminder helper ─────────────────────────────────────────────────
-async function sendWhatsAppReminder(customer: UdharCustomer, shopName: string) {
+// ─── WhatsApp & Email reminder helper ─────────────────────────────────────────
+import { shareFileOrText, generateEmailLink } from '@/lib/shareUtils';
+
+async function shareCustomerLedger(customer: UdharCustomer, shopName: string, channel: 'whatsapp' | 'email') {
   const { default: jsPDF } = await import('jspdf');
   const { default: html2canvas } = await import('html2canvas-pro');
   const due = totalDue(customer);
@@ -81,13 +84,24 @@ async function sendWhatsAppReminder(customer: UdharCustomer, shopName: string) {
     'Please clear your dues at the earliest.',
     '_Powered by Vyapar Sarthi_',
   ].join('\n');
-  if (navigator.share && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Udhar Statement', text: msgLines }); return; } catch {}
+  
+  if (channel === 'email') {
+    if (customer.email) {
+      window.open(generateEmailLink(customer.email, `Udhar Statement - ${shopName}`, msgLines.replace(/\*/g, '').replace(/_/g, '')), '_blank');
+    } else {
+      alert('Customer has no email address.');
+    }
+    return;
   }
-  const phone = (customer.mobile || '').replace(/[^0-9]/g, '');
-  const waNum = phone.length === 10 ? `91${phone}` : phone.length > 10 ? phone : '';
-  const encoded = encodeURIComponent(msgLines);
-  window.open(waNum ? `https://api.whatsapp.com/send?phone=${waNum}&text=${encoded}` : `https://wa.me/?text=${encoded}`, '_blank');
+  
+  // WhatsApp / Default share
+  const shared = await shareFileOrText(file, msgLines, 'Udhar Statement');
+  if (!shared) {
+    const phone = (customer.mobile || '').replace(/[^0-9]/g, '');
+    const waNum = phone.length === 10 ? `91${phone}` : phone.length > 10 ? phone : '';
+    const encoded = encodeURIComponent(msgLines);
+    window.open(waNum ? `https://api.whatsapp.com/send?phone=${waNum}&text=${encoded}` : `https://wa.me/?text=${encoded}`, '_blank');
+  }
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -101,7 +115,7 @@ export default function UdharPage() {
   const [tab, setTab]           = useState<'customers' | 'dukandars'>('customers');
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState<UdharCustomer | null>(null);
-  const [modal, setModal]       = useState<'newCustomer' | 'udhar' | 'payment' | 'editCustomer' | 'autoReminder' | 'bulkRemind' | null>(null);
+  const [modal, setModal]       = useState<'newCustomer' | 'udhar' | 'payment' | 'editCustomer' | 'autoReminder' | 'bulkRemind' | 'exportReport' | null>(null);
   const [recentTx, setRecentTx] = useState<{tx: UdharTransaction, customer: UdharCustomer, newDue: number} | null>(null);
   const slipRef                 = useRef<HTMLDivElement>(null);
   const [deleteId, setDeleteId] = useState<number | string | null>(null);
@@ -140,6 +154,12 @@ export default function UdharPage() {
   const [savingReminder, setSavingReminder] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkChannel, setBulkChannel] = useState<'whatsapp' | 'email'>('whatsapp');
+  
+  // Export Report State
+  const [exportFilter, setExportFilter] = useState({ date: 'all', profile: 'all', format: 'pdf' });
+  const [exportCustomDates, setExportCustomDates] = useState({ start: '', end: '' });
+  const [exportSpecificProfile, setExportSpecificProfile] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchCustomers();
@@ -266,7 +286,7 @@ export default function UdharPage() {
     const targets = customers.filter(c => selectedIds.has(c.id) && totalDue(c) > 0);
     for (const customer of targets) {
       if (bulkChannel === 'whatsapp') {
-        await sendWhatsAppReminder(customer, profile.shopName || 'My Store');
+        await shareCustomerLedger(customer, profile.shopName || 'My Store', 'whatsapp');
         await new Promise(r => setTimeout(r, 600));
       } else {
         const due = totalDue(customer);
@@ -282,6 +302,70 @@ export default function UdharPage() {
     setSelectedIds(new Set());
     setModal(null);
   }
+  async function handleExport(e: React.FormEvent) {
+    e.preventDefault();
+    setExporting(true);
+    try {
+      let filteredCustomers = customers;
+
+      // Profile filter
+      if (exportFilter.profile === 'selected' && selectedIds.size > 0) {
+        filteredCustomers = customers.filter(c => selectedIds.has(c.id));
+      } else if (exportFilter.profile === 'specific' && exportSpecificProfile) {
+        filteredCustomers = customers.filter(c => String(c.id) === exportSpecificProfile);
+      }
+
+      // Date Filter
+      let dateLabel = 'All Time';
+      if (exportFilter.date !== 'all') {
+        const now = new Date();
+        let start = new Date(0);
+        let end = new Date();
+
+        if (exportFilter.date === 'today') {
+          start = new Date(now.setHours(0, 0, 0, 0));
+          dateLabel = 'Today';
+        } else if (exportFilter.date === 'week') {
+          const first = now.getDate() - now.getDay();
+          start = new Date(now.setDate(first));
+          start.setHours(0, 0, 0, 0);
+          dateLabel = 'This Week';
+        } else if (exportFilter.date === 'month') {
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+          dateLabel = 'This Month';
+        } else if (exportFilter.date === 'custom') {
+          start = new Date(exportCustomDates.start);
+          end = new Date(exportCustomDates.end);
+          end.setHours(23, 59, 59, 999);
+          dateLabel = `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
+        }
+
+        // Filter transactions within customer
+        filteredCustomers = filteredCustomers.map(c => ({
+          ...c,
+          transactions: (c.transactions || []).filter((tx: any) => {
+            const txDate = new Date(tx.date).getTime();
+            return txDate >= start.getTime() && txDate <= end.getTime();
+          })
+        }));
+      }
+
+      // Generate
+      if (exportFilter.format === 'pdf') {
+        exportUdharPDF(filteredCustomers, profile.shopName || 'My Store', dateLabel);
+      } else {
+        exportUdharCSV(filteredCustomers, profile.shopName || 'My Store', dateLabel);
+      }
+      
+      setModal(null);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate report');
+    } finally {
+      setExporting(false);
+    }
+  }
+
 
   async function saveAutoReminder(e: React.FormEvent) {
     e.preventDefault();
@@ -488,7 +572,7 @@ export default function UdharPage() {
               {due === 0 && <p className="text-xs text-emerald-400 mt-1">{t('allCleared')}</p>}
             </CardContent>
           </Card>
-          <div className="sm:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="sm:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button onClick={openUdhar}
               className="bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-orange-500/20 transition-colors text-sm active:scale-95">
               <Plus size={16} />{t('addUdhar')}
@@ -498,10 +582,16 @@ export default function UdharPage() {
               <Minus size={16} />{t('recordPayment')}
             </button>
             {due > 0 && (
-              <button onClick={() => sendWhatsAppReminder(customer, profile.shopName || 'My Store')}
-                className="bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-green-500/20 transition-colors text-sm active:scale-95">
-                <Send size={16} /> WhatsApp
-              </button>
+              <>
+                <button onClick={() => shareCustomerLedger(customer, profile.shopName || 'My Store', 'whatsapp')}
+                  className="bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-green-500/20 transition-colors text-sm active:scale-95">
+                  <Send size={16} /> WhatsApp
+                </button>
+                <button onClick={() => shareCustomerLedger(customer, profile.shopName || 'My Store', 'email')}
+                  className="bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-blue-500/20 transition-colors text-sm active:scale-95">
+                  <Mail size={16} /> Email
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -725,6 +815,10 @@ export default function UdharPage() {
         <div className="flex items-center gap-2">
           {tab === 'customers' && (
             <>
+              <button onClick={() => setModal('exportReport')}
+                className="px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                <Download size={16} /> Export
+              </button>
               <button
                 onClick={() => { setSelectMode(s => !s); setSelectedIds(new Set()); }}
                 className={cn('px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all',
@@ -754,8 +848,8 @@ export default function UdharPage() {
         </div>
       </div>
 
-      {/* Tabs — always visible */}
-      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
+      {/* Tabs — temporarily hidden as per user request */}
+      <div className="hidden gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
         {[
           { key: 'customers', label: t('customersTab') || 'Customers', icon: Users },
           { key: 'dukandars', label: isWholesale ? 'Dukandars' : t('wholesalers') || 'My Wholesalers', icon: Store },
@@ -1158,7 +1252,7 @@ export default function UdharPage() {
         </UModal>
       )}
 
-      {/* Bulk Remind Modal */}
+    {/* Bulk Remind Modal */}
       {modal === 'bulkRemind' && (
         <UModal title={`Send Reminder to ${selectedIds.size} customers`} icon={<Send size={17} className="text-emerald-400" />} onClose={() => setModal(null)}>
           <div className="space-y-4">
@@ -1190,6 +1284,68 @@ export default function UdharPage() {
               </button>
             </div>
           </div>
+        </UModal>
+      )}
+
+      {/* Export Report Modal */}
+      {modal === 'exportReport' && (
+        <UModal title="Export Udhar Report" icon={<Download size={17} className="text-blue-400" />} onClose={() => setModal(null)}>
+          <form onSubmit={handleExport} className="space-y-5">
+            <UField label="Date Range">
+              <select className={inp} value={exportFilter.date} onChange={e => setExportFilter(f => ({ ...f, date: e.target.value }))}>
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom Range...</option>
+              </select>
+            </UField>
+            
+            {exportFilter.date === 'custom' && (
+              <div className="flex gap-3">
+                <UField label="Start Date">
+                  <input type="date" className={inp} required value={exportCustomDates.start} onChange={e => setExportCustomDates(d => ({ ...d, start: e.target.value }))} />
+                </UField>
+                <UField label="End Date">
+                  <input type="date" className={inp} required value={exportCustomDates.end} onChange={e => setExportCustomDates(d => ({ ...d, end: e.target.value }))} />
+                </UField>
+              </div>
+            )}
+
+            <UField label="Profiles">
+              <select className={inp} value={exportFilter.profile} onChange={e => setExportFilter(f => ({ ...f, profile: e.target.value }))}>
+                <option value="all">All Customers</option>
+                {selectedIds.size > 0 && <option value="selected">Selected Customers ({selectedIds.size})</option>}
+                <option value="specific">Specific Customer...</option>
+              </select>
+            </UField>
+
+            {exportFilter.profile === 'specific' && (
+              <UField label="Select Customer">
+                <select className={inp} required value={exportSpecificProfile} onChange={e => setExportSpecificProfile(e.target.value)}>
+                  <option value="">-- Choose Customer --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} {c.mobile ? `(${c.mobile})` : ''}</option>
+                  ))}
+                </select>
+              </UField>
+            )}
+
+            <UField label="Export Format">
+              <div className="flex gap-2">
+                {[{ v: 'pdf', label: 'PDF Report' }, { v: 'csv', label: 'CSV/Excel' }].map(fmt => (
+                  <button type="button" key={fmt.v} onClick={() => setExportFilter(f => ({ ...f, format: fmt.v }))}
+                    className={cn('flex-1 py-2.5 rounded-xl border text-sm font-bold transition-all',
+                      exportFilter.format === fmt.v ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 hover:text-slate-900 dark:text-white'
+                    )}>
+                    {fmt.label}
+                  </button>
+                ))}
+              </div>
+            </UField>
+
+            <UActions onCancel={() => setModal(null)} submitLabel={exporting ? 'Generating…' : 'Download Report'} submitCls="bg-blue-500 text-white hover:bg-blue-400" submitting={exporting} cancelLabel="Cancel" />
+          </form>
         </UModal>
       )}
     </div>

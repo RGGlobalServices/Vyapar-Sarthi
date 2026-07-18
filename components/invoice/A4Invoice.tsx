@@ -36,10 +36,13 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   businessType = 'kirana',
   invoiceFooter,
   showQrCode = false,
+  billType,
+  gstBreakdown,
 }, ref) => {
   const t = useTranslations('BillSlip');
   const subtotal = items.reduce((acc, item) => acc + item.total, 0);
   const paid = amountPaid ?? total;
+  const isGstBill = billType === 'gst';
   
   const columns = getInvoiceColumns(businessType);
 
@@ -69,7 +72,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
         </div>
         
         <div className="text-right">
-          <h2 className="text-4xl font-light text-slate-300 uppercase tracking-widest mb-2">Invoice</h2>
+          <h2 className="text-4xl font-light text-slate-300 uppercase tracking-widest mb-2">{isGstBill ? (t('gstInvoice') || 'GST Invoice') : 'Invoice'}</h2>
           <div className="space-y-1 text-slate-700 flex flex-col items-end">
             <div className="mb-2">
               <Barcode value={billNumber} height={30} displayValue={false} />
@@ -124,6 +127,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
               {columns.map(col => (
                 <th key={col.id} className={`py-3 px-4 text-${col.align} font-bold`}>{t(col.labelKey) || col.labelKey}</th>
               ))}
+              {isGstBill && <th className="py-3 px-4 text-left font-bold">{t('hsn') || 'HSN'}</th>}
+              {isGstBill && <th className="py-3 px-4 text-right font-bold">GST%</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 border-b border-slate-200">
@@ -134,6 +139,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                     {col.render(item)}
                   </td>
                 ))}
+                {isGstBill && <td className="py-4 px-4 text-left text-slate-700">{(item as any).hsnCode || '-'}</td>}
+                {isGstBill && <td className="py-4 px-4 text-right text-slate-700">{Number((item as any).gstPercent) || 0}%</td>}
               </tr>
             ))}
           </tbody>
@@ -176,8 +183,34 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                   <span className="font-semibold">- ₹{discount.toLocaleString('en-IN')}</span>
                 </div>
               )}
+              {/* GST breakdown (prices are GST-inclusive, so this is embedded in the total). */}
+              {isGstBill && gstBreakdown && gstBreakdown.totalGst > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <span>{t('taxableValue') || 'Taxable Value'}</span>
+                    <span className="font-semibold">₹{gstBreakdown.taxable.toLocaleString('en-IN')}</span>
+                  </div>
+                  {gstBreakdown.interState ? (
+                    <div className="flex justify-between">
+                      <span>IGST</span>
+                      <span className="font-semibold">₹{gstBreakdown.igst.toLocaleString('en-IN')}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span>CGST</span>
+                        <span className="font-semibold">₹{gstBreakdown.cgst.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>SGST</span>
+                        <span className="font-semibold">₹{gstBreakdown.sgst.toLocaleString('en-IN')}</span>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </div>
-            
+
             <div className="flex justify-between items-center py-4 border-y border-slate-200 mb-4">
               <span className="text-lg font-bold text-slate-900">{t('total')}</span>
               <span className="text-2xl font-black text-slate-900">₹{total.toLocaleString('en-IN')}</span>

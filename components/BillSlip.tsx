@@ -9,8 +9,29 @@ import { A4Invoice } from './invoice/A4Invoice';
 export interface BillSlipProps extends BaseInvoiceProps {}
 
 export const BillSlip = React.forwardRef<HTMLDivElement, BillSlipProps>((props, ref) => {
-  const { invoiceFormat = 'thermal80' } = props;
+  const { invoiceFormat = 'thermal80', billImageUrl } = props;
   
+  if (billImageUrl) {
+    return (
+      <div ref={ref} className="bg-white text-black p-4 w-full flex flex-col items-center">
+        <div className="w-full text-center mb-4">
+          <h2 className="text-xl font-black">{props.storeName || 'Store Name'}</h2>
+          <p className="text-sm">Manual Bill Receipt</p>
+          <div className="flex justify-between w-full mt-4 text-xs font-bold border-b border-dashed border-gray-300 pb-2">
+            <span>No: {props.billNumber}</span>
+            <span>Date: {props.date}</span>
+          </div>
+        </div>
+        <img src={billImageUrl} alt="Manual Bill Image" className="max-w-full h-auto object-contain border border-gray-200 rounded-md" crossOrigin="anonymous" />
+        <div className="w-full mt-4 text-sm font-bold border-t border-dashed border-gray-300 pt-2 flex flex-col gap-1">
+          <div className="flex justify-between"><span>Customer:</span> <span>{props.customerName || '-'}</span></div>
+          <div className="flex justify-between"><span>Payment Mode:</span> <span>{props.paymentMethod || 'Cash'}</span></div>
+          <div className="flex justify-between text-lg font-black mt-2"><span>Total Amount:</span> <span>₹{props.total}</span></div>
+        </div>
+      </div>
+    );
+  }
+
   if (invoiceFormat === 'a4' || invoiceFormat === 'wholesale') {
     return <A4Invoice ref={ref} {...props} />;
   }
@@ -33,14 +54,13 @@ export function generateWhatsAppText(bill: {
   amountPaid?: number;
   remainingAmount?: number;
   isEmi?: boolean;
-  emiProvider?: string;
   splitPayments?: { cash?: number; upi?: number; card?: number; udhar?: number };
   pdfUrl?: string;
   gst?: string;
   pan?: string;
   t: (key: string) => string;
 }): string {
-  const { t, storeName, billNumber, date, customerName, items, total, discount, amountPaid, remainingAmount, isEmi, emiProvider, splitPayments } = bill;
+  const { t, storeName, billNumber, date, customerName, items, total, discount, amountPaid, remainingAmount, isEmi, splitPayments } = bill;
   const subtotal = items.reduce((acc, item) => acc + item.total, 0);
   const paid = amountPaid ?? total;
   const parts: string[] = [];
@@ -66,7 +86,7 @@ export function generateWhatsAppText(bill: {
   parts.push(`\n*${t('total')} ₹${total}*`);
   
   if (isEmi) {
-    parts.push(`\n*${t('paymentMode')}* EMI${emiProvider ? ` (${emiProvider})` : ''}`);
+    parts.push(`\n*${t('paymentMode')}* EMI`);
     parts.push(`${t('collected')} ₹${total}`);
     parts.push(`*${t('paymentStatus')} ${t('paid')}*`);
   } else {

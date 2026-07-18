@@ -4,11 +4,15 @@ import pdfParse from 'pdf-parse';
 export async function POST(req: NextRequest) {
   try {
     const fd = await req.formData();
-    const file = fd.get('file') as File | null;
+    const files = fd.getAll('files[]') as File[];
+    // Fallback if frontend sends 'file'
+    if (files.length === 0 && fd.has('file')) {
+      files.push(fd.get('file') as File);
+    }
     const targetType = fd.get('targetType') as string || 'mixed';
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    if (files.length === 0) {
+      return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
 
     const apiKey = process.env.NVIDIA_API_KEY || '';
@@ -16,13 +20,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No Nvidia API key configured in environment' }, { status: 500 });
     }
     
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    let mimeType = file.type;
-    if (file.name.endsWith('.csv')) mimeType = 'text/csv';
-    if (!mimeType) mimeType = 'application/octet-stream';
-
     let specificInstructions = '';
     if (targetType === 'purchase') {
       specificInstructions = 'Extract the purchase invoice data STRICTLY conforming to the provided JSON schema. Do NOT include markdown code blocks or explanations.';
@@ -31,18 +28,25 @@ export async function POST(req: NextRequest) {
     }
 
     const jsonSchemaInstructions = `
-Your response MUST be a VALID JSON object containing an "items" array. Each object in the "items" array represents a single row or product extracted from the document.
+Your response MUST be a VALID JSON object containing an "items" array. Each object in the "items" array represents a single row or entity extracted from the document.
+
+Extract EVERYTHING available. Do not skip data!
+- For Products: Include ProductName, Quantity, SellingPrice, CostPrice, MRP, Category, and specific Specification Details (like Size, Color, Model, Warranty, Batch, Expiry).
+- For Customers/Suppliers: Include Name, Address (Village/City), Mobile Number, and any Dates or Years present indicating when they were added or their last transaction.
+
 Example JSON response:
 {
-  "summary": "Successfully extracted invoice data",
+  "summary": "Successfully extracted data",
   "items": [
     {
       "productName": "Tata Salt 1kg",
       "quantity": 50,
-      "unit": "packs",
-      "wholesaleCost": 22.50,
-      "vendorName": "Adani Wilmar (if applicable)",
-      "billDate": "2026-06-28 (if applicable)"
+      "category": "Groceries",
+      "size": "1kg",
+      "customerName": "Ramesh Kumar",
+      "mobile": "9999999999",
+      "address": "Pune",
+      "dateAdded": "2024-05-12"
     }
   ]
 }
@@ -53,19 +57,33 @@ CRITICAL INSTRUCTIONS FOR AI:
 4. Do NOT include any text before '{' or after '}'.`;
 
     let extractedText = '';
-    let isVision = false;
+    let hasImages = false;
+    let imageContents: any[] = [];
 
-    if (mimeType === 'application/pdf') {
-      try {
-        const pdfData = await pdfParse(buffer);
-        extractedText = pdfData.text;
-      } catch (pdfError: any) {
-        throw new Error('This PDF file could not be read. Please convert it to an image (JPG/PNG) and upload again.');
+    for (const file of files) {
+      let mimeType = file.type;
+      if (file.name.endsWith('.csv')) mimeType = 'text/csv';
+      if (!mimeType) mimeType = 'application/octet-stream';
+
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (mimeType === 'application/pdf') {
+        try {
+          const pdfData = await pdfParse(buffer);
+          extractedText += `\n--- PDF: ${file.name} ---\n` + pdfData.text;
+        } catch (pdfError: any) {
+          throw new Error(`The PDF file ${file.name} could not be read. Please convert it to an image (JPG/PNG) and upload again.`);
+        }
+      } else if (mimeType.startsWith('image/')) {
+        hasImages = true;
+        imageContents.push({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` }
+        });
+      } else {
+        extractedText += `\n--- Document: ${file.name} ---\n` + buffer.toString('utf-8');
       }
-    } else if (mimeType.startsWith('image/')) {
-      isVision = true;
-    } else {
-      extractedText = buffer.toString('utf-8');
     }
 
     const prompt = `You are Vyapar Sarthi AI, an expert enterprise data extraction agent. 
@@ -77,15 +95,15 @@ DOCUMENT DATA:
 ${extractedText}`;
 
     let messages = [];
-    const modelName = isVision ? "meta/llama-3.2-11b-vision-instruct" : "meta/llama-3.1-8b-instruct";
+    const modelName = hasImages ? "meta/llama-3.2-11b-vision-instruct" : "meta/llama-3.1-8b-instruct";
 
-    if (isVision) {
+    if (hasImages) {
       messages = [
         {
           role: 'user',
           content: [
             { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }
+            ...imageContents
           ]
         }
       ];

@@ -27,6 +27,8 @@ const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
 
 
 
+
+
 function DashboardInner() {
   const t = useTranslations('Dashboard');
   const locale = useLocale();
@@ -52,7 +54,11 @@ function DashboardInner() {
   const [stats, setStats] = useState({
     today_sales: 0,
     today_profit: 0,
+    expected_profit: 0,
+    cash_profit: 0,
+    udhar_profit: 0,
     total_udhar: 0,
+    period_udhar: 0,
     low_stock_count: 0,
     returns_amount: 0,
     returns_count: 0
@@ -64,8 +70,25 @@ function DashboardInner() {
     topProducts: [],
     fastMoving: [],
     slowMoving: [],
-    returnsByReason: []
+    returnsByReason: [],
+    wholesale: null
   });
+
+  const getFormattedPaymentType = (type: string, details: any) => {
+    if (type !== 'Split' || !details) return type;
+    try {
+      const parsed = typeof details === 'string' ? JSON.parse(details) : details;
+      const modes = [];
+      if (Number(parsed.cash) > 0) modes.push('CASH');
+      if (Number(parsed.upi) > 0) modes.push('UPI');
+      if (Number(parsed.card) > 0) modes.push('CARD');
+      if (Number(parsed.udhar) > 0) modes.push('UDHAR');
+      return modes.length > 0 ? modes.join(' + ') : type;
+    } catch {
+      return type;
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [showProfit, setShowProfit] = useState(true);
 
@@ -188,7 +211,11 @@ function DashboardInner() {
       setStats({
         today_sales: payload.summary?.today_sales ?? 0,
         today_profit: payload.summary?.today_profit ?? 0,
+        expected_profit: payload.summary?.expected_profit ?? 0,
+        cash_profit: payload.summary?.cash_profit ?? 0,
+        udhar_profit: payload.summary?.udhar_profit ?? 0,
         total_udhar: payload.summary?.total_udhar ?? 0,
+        period_udhar: payload.summary?.period_udhar ?? 0,
         low_stock_count: payload.summary?.low_stock_count ?? 0,
         returns_amount: payload.summary?.returns_amount ?? 0,
         returns_count: payload.summary?.returns_count ?? 0,
@@ -409,6 +436,7 @@ function DashboardInner() {
         <StatCard 
           title={t('totalUdhar')} 
           value={`₹ ${Math.round(stats.total_udhar).toLocaleString('en-IN')}`} 
+          subtitle={stats.period_udhar > 0 ? `+ ₹${Math.round(stats.period_udhar).toLocaleString('en-IN')} ${timeframe === t('today') ? 'today' : 'this period'}` : undefined}
           icon={<Wallet className="text-orange-500" />} 
           href="/udhar"
         />
@@ -427,6 +455,8 @@ function DashboardInner() {
       </div>
 
       {data.wholesale && <WholesaleWidgets data={data.wholesale} />}
+
+
 
       {/* Upcoming calendar events */}
       <UpcomingEventsCard />
@@ -521,7 +551,7 @@ function DashboardInner() {
                       {bill.invoice_number || `INV-${bill.id.substring(0, 6)}`}
                     </span>
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                      {bill.payment_type}
+                      {getFormattedPaymentType(bill.payment_type, bill.payment_details)}
                     </span>
                   </div>
                 </div>
@@ -825,15 +855,16 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon, href }: { title: string; value: string; icon: React.ReactNode; href?: string }) {
+function StatCard({ title, value, icon, href, subtitle }: { title: string; value: string; icon: React.ReactNode; href?: string; subtitle?: string }) {
   const card = (
     <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 border-b-slate-200 dark:border-b-slate-800 hover:border-emerald-500/50 transition-all duration-300 cursor-pointer h-full">
       <CardHeader className="flex flex-row items-center justify-between pb-1 md:pb-2 p-4 md:p-6">
         <CardTitle className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest leading-tight">{title}</CardTitle>
         <div className="scale-75 md:scale-100 origin-right">{icon}</div>
       </CardHeader>
-      <CardContent className="px-4 pb-4 md:px-6 md:pb-6 pt-0">
+      <CardContent className="px-4 pb-4 md:px-6 md:pb-6 pt-0 flex flex-col justify-end min-h-[60px]">
         <div className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tighter">{value}</div>
+        {subtitle && <p className="text-[10px] md:text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1">{subtitle}</p>}
       </CardContent>
     </Card>
   );

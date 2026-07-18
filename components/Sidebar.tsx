@@ -115,6 +115,7 @@ export default function Sidebar({
   const [adminPinInput, setAdminPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [verifyingPin, setVerifyingPin] = useState(false);
+  const [shopToDelete, setShopToDelete] = useState<string | null>(null);
 
   const handleRoleToggle = () => {
     if (role === 'admin') {
@@ -132,10 +133,15 @@ export default function Sidebar({
     setPinError('');
     try {
       await api.post('/auth/verify-pin', { pin: adminPinInput });
-      setRole('admin');
+      if (shopToDelete) {
+        await deleteShop(shopToDelete);
+        setShopToDelete(null);
+      } else {
+        setRole('admin');
+      }
       setShowAdminPinModal(false);
     } catch (err: any) {
-      setPinError(err.response?.data?.detail || 'Incorrect Password/PIN');
+      setPinError(err.response?.data?.detail || err.response?.data?.error || err.message || 'Incorrect Password/PIN');
     } finally {
       setVerifyingPin(false);
     }
@@ -163,7 +169,9 @@ export default function Sidebar({
       setShowNewShop(false);
       setShopForm(emptyShopForm);
       setShowShopMenu(false);
-    } catch { alert('Failed to create shop'); }
+    } catch (err: any) {
+      alert(err.response?.data?.detail || err.response?.data?.error || err.message || 'Failed to create shop');
+    }
     finally { setCreatingShop(false); }
   }
 
@@ -316,16 +324,12 @@ export default function Sidebar({
                 
                 {allShops.length > 1 && (
                   <button 
-                    onClick={async (e) => {
+                    onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Are you sure you want to remove shop "${shop.name}"? This action cannot be undone.`)) {
-                        try {
-                          await deleteShop(shop.id);
-                        } catch (err: any) {
-                          console.error('Delete shop error:', err);
-                          alert(err.response?.data?.detail || err.response?.data?.error || err.message || 'Failed to remove shop');
-                        }
-                      }
+                      setShopToDelete(shop.id);
+                      setAdminPinInput('');
+                      setPinError('');
+                      setShowAdminPinModal(true);
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all opacity-100 z-10"
                     title="Remove Shop"
@@ -626,10 +630,14 @@ export default function Sidebar({
       {showAdminPinModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm shadow-xl p-6">
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Admin Access</h2>
-            <p className="text-sm text-slate-500 mb-6">Enter Admin PIN or Login Password to switch to Admin role.</p>
+            <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">
+              {shopToDelete ? 'Confirm Shop Deletion' : 'Enter Admin PIN / Password'}
+            </h3>
+            <p className="text-sm text-slate-500 mb-6">
+              {shopToDelete ? 'Please enter your password to confirm deletion. This action cannot be undone.' : 'You need to enter your admin PIN or login password to switch back to the admin role.'}
+            </p>
             
-            <form onSubmit={handleVerifyPin}>
+            <form onSubmit={handleVerifyPin} className="space-y-4">
               <input
                 type="password"
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -643,17 +651,20 @@ export default function Sidebar({
               <div className="flex gap-3 mt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAdminPinModal(false)}
-                  className="flex-1 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                  onClick={() => {
+                    setShowAdminPinModal(false);
+                    setShopToDelete(null);
+                  }}
+                  className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!adminPinInput || verifyingPin}
-                  className="flex-1 py-2.5 bg-emerald-500 text-slate-900 font-black rounded-xl hover:bg-emerald-400 transition-colors disabled:opacity-50"
+                  className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                 >
-                  {verifyingPin ? 'Verifying...' : 'Unlock'}
+                  {verifyingPin ? 'Verifying...' : shopToDelete ? 'Delete Shop' : 'Verify'}
                 </button>
               </div>
             </form>

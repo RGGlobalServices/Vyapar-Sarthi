@@ -25,6 +25,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [sortOption, setSortOption] = useState('az');
   
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPayment, setShowPayment] = useState(false);
@@ -59,10 +60,19 @@ export default function CustomersPage() {
     }
   };
 
-  const filtered = customers.filter(c => 
-    c.name.toLowerCase().includes(search.toLowerCase()) || 
-    (c.mobile && c.mobile.includes(search))
-  );
+  const filtered = customers
+    .filter(c => 
+      c.name.toLowerCase().includes(search.toLowerCase()) || 
+      (c.mobile && c.mobile.includes(search))
+    )
+    .sort((a, b) => {
+      if (sortOption === 'az') return a.name.localeCompare(b.name);
+      if (sortOption === 'za') return b.name.localeCompare(a.name);
+      // Fallback for new-to-old (id usually correlates with creation time if uuid or sequential, or use createdAt if available)
+      if (sortOption === 'new') return b.id.localeCompare(a.id); 
+      if (sortOption === 'old') return a.id.localeCompare(b.id);
+      return 0;
+    });
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto">
@@ -80,15 +90,29 @@ export default function CustomersPage() {
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-4">
-        <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input
-            type="text"
-            placeholder="Search by name or mobile number..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <input
+              type="text"
+              placeholder="Search by name or mobile number..."
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="sm:w-48">
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value)}
+              className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
+            >
+              <option value="az">A to Z</option>
+              <option value="za">Z to A</option>
+              <option value="new">New to Old</option>
+              <option value="old">Old to New</option>
+            </select>
+          </div>
         </div>
 
         {loading ? (

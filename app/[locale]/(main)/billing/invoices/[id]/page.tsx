@@ -117,6 +117,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
+  const gstDetails = invoice.gst_details
+    ? (typeof invoice.gst_details === 'string' ? JSON.parse(invoice.gst_details) : invoice.gst_details)
+    : undefined;
+
   const billData = {
     items: invoice.items.map((i: any) => ({
       id: i.id,
@@ -124,7 +128,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       unit: i.unit,
       quantity: i.quantity,
       price: i.price_per_unit,
-      total: i.total
+      total: i.total,
+      hsnCode: i.hsnCode || '',
+      gstPercent: i.gstPercent || 0,
     })),
     total: invoice.total_amount,
     paymentMethod: invoice.payment_type,
@@ -135,6 +141,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     storeName: user?.storeName || 'Store',
     customerName: invoice.customer_name || undefined,
     splitPayments: invoice.payment_type === 'Split' ? (typeof invoice.payment_details === 'string' ? JSON.parse(invoice.payment_details) : invoice.payment_details) : undefined,
+    // GST invoice data (from stored bill_type / gst_details)
+    billType: invoice.bill_type || 'non_gst',
+    gstBreakdown: gstDetails,
+    isEmi: invoice.payment_type === 'EMI',
   };
 
   return (
@@ -258,6 +268,37 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </CardContent>
             </Card>
+
+            {/* Original Bill (manual uploads only) */}
+            {invoice.is_manual && invoice.bill_image_url && (
+              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+                <CardHeader className="bg-amber-500/5 border-b border-amber-500/10 p-6">
+                  <CardTitle className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2 uppercase tracking-widest">
+                    Original Bill
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4">
+                  {/\.pdf(\?|$)/i.test(invoice.bill_image_url) ? (
+                    <a
+                      href={invoice.bill_image_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 py-6 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold text-sm border border-dashed border-slate-200 dark:border-slate-700 rounded-xl transition-colors"
+                    >
+                      View uploaded PDF
+                    </a>
+                  ) : (
+                    <a href={invoice.bill_image_url} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={invoice.bill_image_url}
+                        alt="Uploaded bill"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-800 object-contain max-h-80"
+                      />
+                    </a>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Customer Info Card */}
             <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">

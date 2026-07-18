@@ -35,6 +35,7 @@ function KPICard({ label, value, sub, icon: Icon, color = 'emerald', trend }: an
     amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600',
     rose: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600',
     purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600',
+    indigo: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600',
     slate: 'bg-slate-100 dark:bg-slate-800 text-slate-600',
   };
   return (
@@ -76,6 +77,8 @@ function SalesTab({ filters }: { filters: any }) {
   const [byCategory, setByCategory] = useState<any>(null);
   const [byPayment, setByPayment] = useState<any>(null);
   const [byCustomer, setByCustomer] = useState<any>(null);
+  const [gstReport, setGstReport] = useState<any>(null);
+  const [gstRegister, setGstRegister] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [subTab, setSubTab] = useState<'overview' | 'products' | 'categories' | 'customers' | 'payment' | 'gst'>('overview');
 
@@ -83,18 +86,22 @@ function SalesTab({ filters }: { filters: any }) {
     setLoading(true);
     try {
       const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}&group_by=${filters.groupBy}`;
-      const [trend, prod, cat, pay, cust] = await Promise.all([
+      const [trend, prod, cat, pay, cust, gstRes, gstRegRes] = await Promise.all([
         api.get(`/reports/engine?module=sales&report_type=trend&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_product&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_category&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_payment&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_customer&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=gst&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=gst_register&${qs}`),
       ]);
       setData(trend.data);
       setByProduct(prod.data);
       setByCategory(cat.data);
       setByPayment(pay.data);
       setByCustomer(cust.data);
+      setGstReport(gstRes.data);
+      setGstRegister(gstRegRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [filters]);
@@ -112,6 +119,7 @@ function SalesTab({ filters }: { filters: any }) {
     { id: 'categories', label: 'By Category' },
     { id: 'customers', label: 'By Customer' },
     { id: 'payment', label: 'By Payment' },
+    { id: 'gst', label: 'GST' },
   ];
 
   return (
@@ -197,13 +205,106 @@ function SalesTab({ filters }: { filters: any }) {
             <DrillDownChart type="pie" data={byPayment.rows} xKey="method"
               yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={260} />
           </SectionCard>
-          <SectionCard title="Payment Mode Breakdown">
+          <SectionCard
+            title="Payment Mode Breakdown"
+            actions={<ExportButton
+              columns={[
+                { key: 'method', label: 'Method' },
+                { key: 'revenue', label: 'Billed', type: 'currency' },
+                { key: 'collected', label: 'Collected', type: 'currency' },
+                { key: 'count', label: 'Bills', type: 'number' },
+              ]}
+              data={byPayment.rows}
+              filename="payment_mode_breakdown"
+              title="Payment Mode Breakdown"
+            />}
+          >
             <ReportTable columns={[
               { key: 'method', label: 'Method', type: 'badge' },
               { key: 'revenue', label: 'Billed', type: 'currency', sortable: true, align: 'right' },
               { key: 'collected', label: 'Collected', type: 'currency', sortable: true, align: 'right' },
               { key: 'count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
             ]} rows={byPayment.rows} />
+          </SectionCard>
+        </div>
+      )}
+
+      {subTab === 'gst' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <KPICard label="Taxable Value" value={fmt(gstReport?.totalTaxable || 0)} icon={IndianRupee} color="indigo" />
+            <KPICard label="Total GST Collected" value={fmt(gstReport?.totalGst || 0)} icon={TrendingUp} color="indigo" />
+            <KPICard label="GST Invoices" value={String(gstReport?.gstInvoiceCount || 0)} icon={IndianRupee} color="blue" />
+          </div>
+          <SectionCard
+            title="GST Summary (rate-wise)"
+            actions={gstReport?.rows?.length ? <ExportButton
+              columns={[
+                { key: 'gst_rate', label: 'GST Rate %', type: 'number' },
+                { key: 'taxable_value', label: 'Taxable Value', type: 'currency' },
+                { key: 'cgst', label: 'CGST', type: 'currency' },
+                { key: 'sgst', label: 'SGST', type: 'currency' },
+                { key: 'gst_amount', label: 'Total GST', type: 'currency' },
+              ]}
+              data={gstReport.rows}
+              filename="gst_summary"
+              title="GST Summary"
+            /> : undefined}
+          >
+            {gstReport?.rows?.length ? (
+              <ReportTable columns={[
+                { key: 'gst_rate', label: 'Rate %', type: 'number', align: 'right' },
+                { key: 'taxable_value', label: 'Taxable Value', type: 'currency', sortable: true, align: 'right' },
+                { key: 'cgst', label: 'CGST', type: 'currency', align: 'right' },
+                { key: 'sgst', label: 'SGST', type: 'currency', align: 'right' },
+                { key: 'gst_amount', label: 'Total GST', type: 'currency', sortable: true, align: 'right' },
+              ]} rows={gstReport.rows} />
+            ) : gstReport?.gstInvoiceCount > 0 ? (
+              <p className="text-sm text-slate-500 py-8 text-center">
+                {gstReport.gstInvoiceCount} GST invoice{gstReport.gstInvoiceCount > 1 ? 's' : ''} this period, but none of the products sold have a GST% set — so there's no rate to break down by.
+                See the GST Register below for the invoice-wise total, or add GST% to your products for a full rate-wise summary.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-500 py-8 text-center">No GST invoices in this period. Create a bill with GST Invoice selected to see the summary here.</p>
+            )}
+          </SectionCard>
+          <p className="text-[11px] text-slate-400">CGST/SGST shown for same-state sales. Inter-state (IGST) invoices contribute to Total GST but are split as IGST on the invoice itself.</p>
+
+          <SectionCard
+            title="GST Register (Invoice-wise)"
+            actions={gstRegister?.rows?.length ? <ExportButton
+              columns={[
+                { key: 'date', label: 'Date', type: 'date' },
+                { key: 'invoice_number', label: 'Invoice No.' },
+                { key: 'customer_name', label: 'Customer' },
+                { key: 'customer_gstin', label: 'Customer GSTIN' },
+                { key: 'taxable_value', label: 'Taxable Value', type: 'currency' },
+                { key: 'cgst', label: 'CGST', type: 'currency' },
+                { key: 'sgst', label: 'SGST', type: 'currency' },
+                { key: 'igst', label: 'IGST', type: 'currency' },
+                { key: 'total_gst', label: 'Total GST', type: 'currency' },
+                { key: 'total_amount', label: 'Invoice Total', type: 'currency' },
+              ]}
+              data={gstRegister.rows}
+              filename="gst_register"
+              title="GST Register"
+            /> : undefined}
+          >
+            {gstRegister?.rows?.length ? (
+              <ReportTable columns={[
+                { key: 'date', label: 'Date', type: 'date', sortable: true },
+                { key: 'invoice_number', label: 'Invoice No.' },
+                { key: 'customer_name', label: 'Customer' },
+                { key: 'customer_gstin', label: 'GSTIN' },
+                { key: 'taxable_value', label: 'Taxable', type: 'currency', sortable: true, align: 'right' },
+                { key: 'cgst', label: 'CGST', type: 'currency', align: 'right' },
+                { key: 'sgst', label: 'SGST', type: 'currency', align: 'right' },
+                { key: 'igst', label: 'IGST', type: 'currency', align: 'right' },
+                { key: 'total_gst', label: 'Total GST', type: 'currency', sortable: true, align: 'right' },
+              ]} rows={gstRegister.rows} maxHeight="420px" />
+            ) : (
+              <p className="text-sm text-slate-500 py-8 text-center">No GST invoices in this period.</p>
+            )}
           </SectionCard>
         </div>
       )}
@@ -238,6 +339,17 @@ function FinancialsTab({ filters }: { filters: any }) {
 
   const fmt = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
+  // Single source for both the P&L statement's rows and its CSV export.
+  const pnlRows = pnl ? [
+    { label: 'Gross Revenue (Sales)', value: pnl.revenue, bold: false, indent: false, positive: true },
+    { label: 'Cost of Goods Sold', value: pnl.revenue - pnl.gross_profit, bold: false, indent: true, positive: false },
+    { label: 'Gross Profit', value: pnl.gross_profit, bold: true, indent: false, positive: pnl.gross_profit >= 0 },
+    { label: 'Operating Expenses', value: pnl.expenses, bold: false, indent: true, positive: false },
+    { label: 'Staff Salaries', value: pnl.salaries, bold: false, indent: true, positive: false },
+    { label: 'Total Overheads', value: pnl.total_overhead, bold: true, indent: false, positive: false },
+    { label: 'Net Profit / Loss', value: pnl.net_profit, bold: true, indent: false, positive: pnl.net_profit >= 0, highlight: true },
+  ] : [];
+
   return (
     <div className="space-y-6">
       <div className="flex gap-2">
@@ -259,17 +371,17 @@ function FinancialsTab({ filters }: { filters: any }) {
               color={pnl.net_profit >= 0 ? 'emerald' : 'rose'}
               sub={`${(pnl.net_margin || 0).toFixed(1)}% net margin`} />
           </div>
-          <SectionCard title="Profit & Loss Statement">
+          <SectionCard
+            title="Profit & Loss Statement"
+            actions={<ExportButton
+              columns={[{ key: 'label', label: 'Line Item' }, { key: 'value', label: 'Amount', type: 'currency' }]}
+              data={pnlRows.map(r => ({ label: r.label, value: r.positive ? r.value : -Math.abs(r.value || 0) }))}
+              filename="profit_and_loss"
+              title="Profit & Loss Statement"
+            />}
+          >
             <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
-              {[
-                { label: 'Gross Revenue (Sales)', value: pnl.revenue, bold: false, indent: false, positive: true },
-                { label: 'Cost of Goods Sold', value: pnl.revenue - pnl.gross_profit, bold: false, indent: true, positive: false },
-                { label: 'Gross Profit', value: pnl.gross_profit, bold: true, indent: false, positive: pnl.gross_profit >= 0 },
-                { label: 'Operating Expenses', value: pnl.expenses, bold: false, indent: true, positive: false },
-                { label: 'Staff Salaries', value: pnl.salaries, bold: false, indent: true, positive: false },
-                { label: 'Total Overheads', value: pnl.total_overhead, bold: true, indent: false, positive: false },
-                { label: 'Net Profit / Loss', value: pnl.net_profit, bold: true, indent: false, positive: pnl.net_profit >= 0, highlight: true },
-              ].map((row, i) => (
+              {pnlRows.map((row, i) => (
                 <div key={i} className={`flex justify-between items-center py-3 px-2 ${row.highlight ? 'bg-emerald-50 dark:bg-emerald-900/20 rounded-xl' : ''} ${row.indent ? 'ml-4' : ''}`}>
                   <span className={`${row.bold ? 'font-black text-slate-900 dark:text-white' : 'font-medium text-slate-600 dark:text-slate-400'}`}>
                     {row.label}
@@ -381,7 +493,20 @@ function StockTab({ filters }: { filters: any }) {
             <DrillDownChart type="bar" data={valuation.rows} xKey="category"
               yKeys={[{ key: 'stock_value', label: 'Value', color: '#10b981' }]} height={300} />
           </SectionCard>
-          <SectionCard title="Valuation Breakdown">
+          <SectionCard
+            title="Valuation Breakdown"
+            actions={<ExportButton
+              columns={[
+                { key: 'category', label: 'Category' },
+                { key: 'product_count', label: 'Products', type: 'number' },
+                { key: 'total_qty', label: 'Qty', type: 'number' },
+                { key: 'stock_value', label: 'Value', type: 'currency' },
+              ]}
+              data={valuation.rows}
+              filename="stock_valuation"
+              title="Stock Valuation"
+            />}
+          >
             <ReportTable columns={[
               { key: 'category', label: 'Category', sortable: true },
               { key: 'product_count', label: 'Products', type: 'number', sortable: true, align: 'right' },
@@ -441,11 +566,27 @@ function ExpensesTab({ filters }: { filters: any }) {
         <KPICard label="Total Transactions" value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SectionCard title="Daily Expense Trend">
+        <SectionCard
+          title="Daily Expense Trend"
+          actions={data?.trend?.length ? <ExportButton
+            columns={[{ key: 'date', label: 'Date', type: 'date' }, { key: 'amount', label: 'Expenses', type: 'currency' }]}
+            data={data.trend}
+            filename="daily_expense_trend"
+            title="Daily Expense Trend"
+          /> : undefined}
+        >
           <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
             yKeys={[{ key: 'amount', label: 'Expenses', color: '#ef4444' }]} height={240} />
         </SectionCard>
-        <SectionCard title="By Category">
+        <SectionCard
+          title="By Category"
+          actions={byCategory?.rows?.length ? <ExportButton
+            columns={[{ key: 'category', label: 'Category' }, { key: 'amount', label: 'Amount', type: 'currency' }]}
+            data={byCategory.rows}
+            filename="expenses_by_category"
+            title="Expenses by Category"
+          /> : undefined}
+        >
           <DrillDownChart type="pie" data={byCategory?.rows || []} xKey="category"
             yKeys={[{ key: 'amount', label: 'Amount' }]} height={240} />
         </SectionCard>
@@ -576,7 +717,20 @@ function StaffTab({ filters }: { filters: any }) {
             rows={(payroll?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—' }))}
             maxHeight="380px" />
         </SectionCard>
-        <SectionCard title="Attendance Log">
+        <SectionCard
+          title="Attendance Log"
+          actions={<ExportButton
+            columns={[
+              { key: 'staff', label: 'Staff' },
+              { key: 'date', label: 'Date', type: 'date' },
+              { key: 'status', label: 'Status' },
+              { key: 'notes', label: 'Notes' },
+            ]}
+            data={(attendance?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—', notes: r.reason || '' }))}
+            filename="attendance_log"
+            title="Attendance Log"
+          />}
+        >
           <ReportTable
             columns={[
               { key: 'staff', label: 'Staff', sortable: false },

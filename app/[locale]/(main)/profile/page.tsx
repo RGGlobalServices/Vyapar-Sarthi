@@ -43,7 +43,13 @@ export default function ProfilePage() {
   const [cpError, setCpError]       = useState('');
   const [cpOk, setCpOk]             = useState(false);
 
-
+  // Forgot password
+  const [fpOpen, setFpOpen]           = useState(false);
+  const [fpStep, setFpStep]           = useState<'idle' | 'otp' | 'reset'>('idle');
+  const [fpOtp, setFpOtp]             = useState('');
+  const [fpResetToken, setFpResetToken] = useState('');
+  const [fpLoading, setFpLoading]     = useState(false);
+  const [fpError, setFpError]         = useState('');
 
   useEffect(() => {
     (async () => {
@@ -124,6 +130,45 @@ export default function ProfilePage() {
     } catch (err: any) {
       setCpError(err.response?.data?.detail || 'Failed to change password.');
     } finally { setCpLoading(false); }
+  };
+
+  const handleSendOtp = async () => {
+    setFpLoading(true); setFpError('');
+    try {
+      await api.post('/auth/forgot-password', { email: user?.email });
+      setFpStep('otp');
+    } catch (err: any) {
+      setFpError(err.response?.data?.detail || 'Failed to send OTP.');
+    } finally { setFpLoading(false); }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fpOtp || fpOtp.length !== 6) { setFpError('Enter the 6-digit OTP.'); return; }
+    setFpLoading(true); setFpError('');
+    try {
+      const resp = await api.post('/auth/verify-otp', { email: user?.email, otp: fpOtp });
+      setFpResetToken(resp.data.resetToken);
+      setFpStep('reset');
+    } catch (err: any) {
+      setFpError(err.response?.data?.detail || 'Incorrect OTP.');
+    } finally { setFpLoading(false); }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cpNew || cpNew.length < 6) { setFpError('Password must be at least 6 characters.'); return; }
+    if (cpNew !== cpConfirm) { setFpError('Passwords do not match.'); return; }
+    setFpLoading(true); setFpError('');
+    try {
+      await api.post('/auth/reset-password', { resetToken: fpResetToken, newPassword: cpNew });
+      setCpOk(true); // Re-use cpOk for success message
+      setFpOpen(false); setCpOpen(false); setFpStep('idle');
+      setCpNew(''); setCpConfirm(''); setFpOtp('');
+      setTimeout(() => setCpOk(false), 2000);
+    } catch (err: any) {
+      setFpError(err.response?.data?.detail || 'Failed to reset password.');
+    } finally { setFpLoading(false); }
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading profile...</div>;
@@ -370,11 +415,88 @@ export default function ProfilePage() {
                     <AlertCircle size={14} /> {cpError}
                   </div>
                 )}
-                <button type="submit" disabled={cpLoading}
-                  className="px-6 py-2.5 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
-                  {cpLoading ? <><Loader2 size={15} className="animate-spin" /> {t('saving')}</> : <><Lock size={15} /> {t('updatePwdBtn')}</>}
-                </button>
-              </form>
+                  <div className="flex items-center justify-between">
+                    <button type="submit" disabled={cpLoading}
+                      className="px-6 py-2.5 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50">
+                      {cpLoading ? <><Loader2 size={15} className="animate-spin" /> {t('saving')}</> : <><Lock size={15} /> {t('updatePwdBtn')}</>}
+                    </button>
+                    <button type="button" onClick={() => { setFpOpen(true); handleSendOtp(); }} className="text-sm font-bold text-emerald-500 hover:text-emerald-600 transition-colors">
+                      Forgot Password?
+                    </button>
+                  </div>
+                </form>
+            )}
+            
+            {/* Forgot Password Flow */}
+            {fpOpen && (
+              <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-emerald-500" /> Reset Password via Email
+                  </h3>
+                  <button onClick={() => { setFpOpen(false); setFpStep('idle'); setFpError(''); }} className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white font-bold">
+                    Cancel
+                  </button>
+                </div>
+                
+                {fpStep === 'otp' && (
+                  <form onSubmit={handleVerifyOtp} className="space-y-4">
+                    <p className="text-sm text-slate-500">We've sent a 6-digit OTP to <b>{user?.email}</b>. Please enter it below.</p>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-500 uppercase">Enter OTP</label>
+                      <input type="text" maxLength={6} value={fpOtp}
+                        onChange={e => { setFpOtp(e.target.value.replace(/\D/g, '')); setFpError(''); }}
+                        placeholder="123456"
+                        className="w-full sm:w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors text-center tracking-[0.5em] font-mono" />
+                    </div>
+                    {fpError && (
+                      <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm">
+                        <AlertCircle size={14} /> {fpError}
+                      </div>
+                    )}
+                    <button type="submit" disabled={fpLoading || fpOtp.length !== 6}
+                      className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 transition-all disabled:opacity-50">
+                      {fpLoading ? 'Verifying...' : 'Verify OTP'}
+                    </button>
+                  </form>
+                )}
+
+                {fpStep === 'reset' && (
+                  <form onSubmit={handleResetPassword} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-500 uppercase">New Password</label>
+                        <input type={cpShow ? 'text' : 'password'} value={cpNew}
+                          onChange={e => { setCpNew(e.target.value); setFpError(''); }}
+                          placeholder="New password"
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-500 uppercase">Confirm Password</label>
+                        <input type={cpShow ? 'text' : 'password'} value={cpConfirm}
+                          onChange={e => { setCpConfirm(e.target.value); setFpError(''); }}
+                          placeholder="Confirm new password"
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
+                      </div>
+                    </div>
+                    {fpError && (
+                      <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm">
+                        <AlertCircle size={14} /> {fpError}
+                      </div>
+                    )}
+                    <button type="submit" disabled={fpLoading}
+                      className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 transition-all disabled:opacity-50">
+                      {fpLoading ? 'Saving...' : 'Set New Password'}
+                    </button>
+                  </form>
+                )}
+
+                {fpStep === 'idle' && fpLoading && (
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 size={15} className="animate-spin" /> Sending OTP to {user?.email}...
+                  </div>
+                )}
+              </div>
             )}
           </CardContent>
         )}

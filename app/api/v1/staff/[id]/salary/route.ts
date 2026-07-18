@@ -39,17 +39,28 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   if (b.baseAmount == null) throw new ApiError(400, 'baseAmount is required');
   if (b.netAmount == null) throw new ApiError(400, 'netAmount is required');
 
-  const payment = await prisma.salaryPayment.create({
-    data: {
-      staffId: id,
-      monthYear: b.monthYear,
-      baseAmount: parseFloat(b.baseAmount),
-      deductions: b.deductions ? parseFloat(b.deductions) : 0,
-      bonus: b.bonus ? JSON.stringify(b.bonus) : null,
-      netAmount: parseFloat(b.netAmount),
-      paymentMode: b.paymentMode || 'Cash',
-      paidAt: b.paidAt ? new Date(b.paidAt) : new Date(),
-    },
+  const payment = await prisma.$transaction(async (tx) => {
+    const p = await tx.salaryPayment.create({
+      data: {
+        staffId: id,
+        monthYear: b.monthYear,
+        baseAmount: parseFloat(b.baseAmount),
+        deductions: b.deductions ? parseFloat(b.deductions) : 0,
+        bonus: b.bonus ? JSON.stringify(b.bonus) : null,
+        netAmount: parseFloat(b.netAmount),
+        paymentMode: b.paymentMode || 'Cash',
+        paidAt: b.paidAt ? new Date(b.paidAt) : new Date(),
+      },
+    });
+
+    if (b.advanceIds && Array.isArray(b.advanceIds) && b.advanceIds.length > 0) {
+      await tx.advanceSalary.updateMany({
+        where: { id: { in: b.advanceIds }, staffId: id },
+        data: { deducted: true, deductedFromSalaryId: p.id }
+      });
+    }
+
+    return p;
   });
 
   return json(payment, 201);

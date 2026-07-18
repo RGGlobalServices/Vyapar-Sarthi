@@ -1,6 +1,6 @@
 'use client';
-import {useState, useEffect, useRef, useCallback} from 'react';
-import useSWR from 'swr';
+import {useState, useEffect, useRef, useCallback, useMemo} from 'react';
+import useSWR, { mutate } from 'swr';
 import WholesaleBillingUI from './WholesaleBillingUI';
 import {useTranslations, useLocale} from 'next-intl';
 import {useCartStore, useUdharStore, useAuthStore} from '@/lib/store';
@@ -12,7 +12,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {
   Search, Scan, Trash2, Plus, Minus, CreditCard, IndianRupee,
   User, X, Printer, Calculator as CalcIcon, PlusCircle, Download,
-  AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone
+  AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone, FileUp
 } from 'lucide-react';
 import api from '@/lib/api';
 import {cn} from '@/lib/utils';
@@ -20,6 +20,10 @@ import {BillSlip, generateWhatsAppText} from '@/components/BillSlip';
 import {uploadInvoiceToSupabase} from '@/lib/supabaseStorage';
 import Calculator from '@/components/Calculator';
 import {performSmartSearch} from '@/lib/smartSearch';
+import {computeGst} from '@/lib/gst';
+import ManualBillUpload from '@/components/ManualBillUpload';
+import DiscountInput from '@/components/DiscountInput';
+import {splitVariantKey, isColorSizeVariants} from '@/components/ColorSizeVariantGrid';
 
 // Gram/ml equivalent label for a quantity in base unit
 function looseEquivLabel(qty: number, unit: string): string {
@@ -130,6 +134,7 @@ function StandardBillingUI() {
   const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '', barcode: '' });
   const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
+  const [showManualBillUpload, setShowManualBillUpload] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -140,11 +145,18 @@ function StandardBillingUI() {
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
-  // EMI: the sale is financed by a bank / finance provider (Bajaj Finserv, HDFC…).
-  // The provider pays the shop in full; interest, tenure and monthly installments
-  // are between the customer and the provider — not the shop's concern — so the
-  // shop only records which provider financed it.
-  const [emiProvider, setEmiProvider] = useState('');
+  // EMI: the sale is financed by a bank / finance provider. The provider pays the
+  // shop in full; interest, tenure and monthly instalments are the provider's
+  // concern, not the shop's.
+
+  // GST / Non-GST billing. Default non-GST (normal retail invoice).
+  const [billType, setBillType] = useState<'non_gst' | 'gst'>('non_gst');
+  const [gstInterState, setGstInterState] = useState(false); // false = CGST+SGST, true = IGST
+  const isGstBill = billType === 'gst';
+  const gst = useMemo(
+    () => computeGst(items as any, discount, gstInterState),
+    [items, discount, gstInterState]
+  );
 
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -320,16 +332,26 @@ function StandardBillingUI() {
         }
       } catch { /* fall back to flat price */ }
     }
+    // `variant` is the raw stock key — a plain size ("M") or, for colour/size
+    // products, a composite "Colour / Size" key (see ColorSizeVariantGrid). Split
+    // it here so the cart row and the printed invoice can show Colour and Size
+    // as their own columns instead of leaving them blank.
+    const { color, size } = variant ? splitVariantKey(variant) : { color: '', size: '' };
     addItem({
       id: product.id || Math.random(),
       name: product.name,
       unit: product.baseUnit || product.unit,
       variant,
+      color: color || undefined,
+      size: size || undefined,
       quantity: defaultQty,
       price: price || 0,
       profit: (price || 0) - cost,
       total: Math.round((price || 0) * defaultQty),
       is_loose: !!product.is_loose,
+      // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
+      gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
+      hsnCode: product.hsnCode ?? product.hsn_code ?? '',
     });
     setSearch('');
     setSearchResults([]);
@@ -457,7 +479,10 @@ function StandardBillingUI() {
         payment_type: isEmi ? 'EMI' : paymentTypeForApi,
         // Finance provider settles the shop in full on an EMI sale.
         amount_paid: isEmi ? total : collectedAmount,
-        payment_details: isEmi ? { provider: emiProvider.trim() || undefined } : { ...splitPayments, udhar: remainingAmount },
+        payment_details: isEmi ? {} : { ...splitPayments, udhar: remainingAmount },
+        bill_type: billType,
+        gst_amount: isGstBill ? gst.totalGst : null,
+        gst_details: isGstBill ? gst : null,
       };
 
       const res = await api.post('/billing/', salePayload);
@@ -478,9 +503,10 @@ function StandardBillingUI() {
         splitPayments: isEmi ? undefined : { ...splitPayments, udhar: remainingAmount },
         billNumber,
         date: new Date().toLocaleDateString(),
-        // EMI: only the provider matters to the shop.
         isEmi,
-        emiProvider: isEmi ? (emiProvider.trim() || undefined) : undefined,
+        // GST invoice data (undefined for non-GST — invoice components then render normally)
+        billType,
+        gstBreakdown: isGstBill ? gst : undefined,
         // New features
         invoiceFormat: profile.invoiceFormat || 'thermal80',
         businessType: profile.businessType || 'kirana',
@@ -490,6 +516,13 @@ function StandardBillingUI() {
       setLastBill(billData);
 
       // Udhar tracking is now natively processed in the /billing/ route backend
+      
+      // Invalidate dashboard caches to ensure new sale/udhar is immediately visible
+      mutate(
+        (key: any) => typeof key === 'string' && key.startsWith('/reports/dashboard'),
+        undefined,
+        { revalidate: true }
+      );
 
       clearCart();
       setShowCustomerModal(false);
@@ -654,6 +687,13 @@ function StandardBillingUI() {
             <PlusCircle size={20} />
             <span className="hidden md:inline">{t('manualAdd') || 'Manual Add'}</span>
           </button>
+          <button
+            onClick={() => setShowManualBillUpload(true)}
+            className="px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+          >
+            <FileUp size={20} />
+            <span className="hidden md:inline">{t('manualBill') || 'Manual Bill'}</span>
+          </button>
         </div>
 
         {showManualAdd && (
@@ -812,7 +852,12 @@ function StandardBillingUI() {
                     </td>
                     {bizConfig.hasSizes && (
                       <td className="px-4 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {item.variant || '-'}
+                        {item.color ? (
+                          <span className="flex flex-col leading-tight">
+                            <span className="text-[10px] uppercase text-slate-500 dark:text-slate-400 font-bold">{item.color}</span>
+                            <span>{item.size || item.variant}</span>
+                          </span>
+                        ) : (item.size || item.variant || '-')}
                       </td>
                     )}
                     {bizConfig.hasBatch && (
@@ -937,23 +982,86 @@ function StandardBillingUI() {
         {/* Order Summary */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
           <CardContent className="p-6 space-y-4">
+            {/* Billing type: Non-GST (default) or GST invoice */}
+            <div>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setBillType('non_gst')}
+                  aria-pressed={!isGstBill}
+                  className={cn(
+                    'py-2 rounded-lg text-xs font-bold transition-all',
+                    !isGstBill ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'
+                  )}
+                >
+                  {t('nonGstInvoice') || 'Non-GST Invoice'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillType('gst')}
+                  aria-pressed={isGstBill}
+                  className={cn(
+                    'py-2 rounded-lg text-xs font-bold transition-all',
+                    isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'
+                  )}
+                >
+                  {t('gstInvoice') || 'GST Invoice'}
+                </button>
+              </div>
+              {isGstBill && (
+                <label className="flex items-center gap-2 mt-2 text-xs text-slate-500 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={gstInterState}
+                    onChange={e => setGstInterState(e.target.checked)}
+                    className="accent-indigo-500"
+                  />
+                  {t('interStateIgst') || 'Inter-state sale (IGST)'}
+                </label>
+              )}
+            </div>
+
             <div className="flex justify-between text-slate-500 dark:text-slate-400">
               <span>{t('subtotal')}</span>
               <span>₹{subtotal.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
               <span>{t('discount')}</span>
-              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1">
-                <span className="text-emerald-500">₹</span>
-                  <input
-                    type="number" min={0}
-                    className="w-16 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
-                    value={discount === 0 ? '' : discount}
-                    placeholder="0"
-                    onChange={(e) => setDiscount(e.target.value === '' ? 0 : Number(e.target.value))}
-                  />
-              </div>
+              <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
+            {/* GST tax summary — shown for GST invoices. Prices are GST-inclusive,
+                so this breaks the same total into taxable value + embedded tax. */}
+            {isGstBill && items.length > 0 && gst.totalGst > 0 && (
+              <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/5 p-3 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                  <span>{t('taxableValue') || 'Taxable Value'}</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.taxable.toLocaleString('en-IN')}</span>
+                </div>
+                {gstInterState ? (
+                  <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                    <span>IGST</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.igst.toLocaleString('en-IN')}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>CGST</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.cgst.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>SGST</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.sgst.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between pt-1 border-t border-indigo-200/60 dark:border-indigo-500/20 font-bold text-indigo-600 dark:text-indigo-400">
+                  <span>{t('totalGst') || 'Total GST'}</span>
+                  <span>₹{gst.totalGst.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            )}
+
+
             <div className="border-t border-slate-200 dark:border-slate-800 pt-4 flex justify-between items-center">
               <span className="text-xl font-bold text-slate-900 dark:text-slate-200">{t('total')}</span>
               <span className="text-3xl font-black text-emerald-500">₹{total.toLocaleString('en-IN')}</span>
@@ -991,9 +1099,29 @@ function StandardBillingUI() {
                         </button>
                       );
                     })}
-
+                    {isElectronics && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEmi(true)}
+                        aria-pressed={isEmi}
+                        className={cn(
+                          "flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95",
+                          isEmi
+                            ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400"
+                            : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-300 dark:hover:border-slate-700"
+                        )}
+                      >
+                        <Zap size={20} />EMI
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {isEmi && (
+                  <p className="text-[10px] font-medium text-sky-500/80 leading-relaxed -mt-2">
+                    {t('emiHint') || 'The finance provider pays the full bill amount to your shop. Interest and monthly instalments are handled by them.'}
+                  </p>
+                )}
 
 
 
@@ -1047,13 +1175,15 @@ function StandardBillingUI() {
 
                 <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-slate-500">{t('collectedAmount') || 'Collected'}</span>
-                    <span className="text-lg font-black text-emerald-500">₹{collectedAmount.toLocaleString('en-IN')}</span>
+                    <span className="text-sm font-semibold text-slate-500">{isEmi ? (t('financedViaEmi') || 'Financed via EMI') : (t('collectedAmount') || 'Collected')}</span>
+                    <span className="text-lg font-black text-emerald-500">₹{(isEmi ? total : collectedAmount).toLocaleString('en-IN')}</span>
                   </div>
 
                   <div className="mt-2 flex justify-between items-center bg-slate-50 dark:bg-slate-950 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
                     <span className="text-xs font-bold text-slate-500">Status</span>
-                    {!isUdharSale ? (
+                    {isEmi ? (
+                      <span className="text-xs font-black text-sky-600 dark:text-sky-400 bg-sky-500/10 px-2 py-1 rounded">{t('paidByMethod', { method: 'EMI' }) || 'Paid by EMI'}</span>
+                    ) : !isUdharSale ? (
                       <span className="text-xs font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">{t('paidByMethod', { method: paymentMethodLabel }) || `Paid by ${paymentMethodLabel}`}</span>
                     ) : collectedAmount === 0 ? (
                       <span className="text-xs font-black text-orange-500 bg-orange-500/10 px-2 py-1 rounded">Unpaid / Udhar</span>
@@ -1096,13 +1226,47 @@ function StandardBillingUI() {
         </div>
       </div>
 
+      {/* Manual Bill Upload */}
+      {showManualBillUpload && mounted && profile.id && (
+        <ManualBillUpload
+          shopId={profile.id}
+          businessType={profile.businessType}
+          onClose={() => setShowManualBillUpload(false)}
+          onSaved={(billData) => {
+            const fullBillData = {
+              ...billData,
+              invoiceFormat: profile.invoiceFormat || 'thermal80',
+              businessType: profile.businessType || 'kirana',
+              showQrCode: profile.showQrCode || false,
+              invoiceFooter: profile.invoiceFooter || undefined,
+            };
+            setLastBill(fullBillData);
+            setShowManualBillUpload(false);
+            setShowBillModal(true);
+            // Matches the regular sale flow: a mobile number and/or email
+            // entered on the manual bill triggers the same auto-share.
+            if (billData.customerMobile || billData.customerEmail) {
+              autoSendAfterBill(fullBillData, billData.customerMobile || '', billData.customerEmail || '');
+            }
+          }}
+        />
+      )}
+
       {/* Variant Selection Modal */}
       {variantSelectionProduct && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-sm shadow-2xl">
             <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between py-4">
               <CardTitle className="text-slate-900 dark:text-slate-200 text-lg flex items-center gap-2">
-                Select Size
+                {(() => {
+                  let sizes: Record<string, number> = {};
+                  try {
+                    sizes = typeof variantSelectionProduct.size_variants === 'string'
+                      ? JSON.parse(variantSelectionProduct.size_variants)
+                      : (variantSelectionProduct.size_variants || {});
+                  } catch {}
+                  return isColorSizeVariants(sizes) ? 'Select Colour & Size' : 'Select Size';
+                })()}
               </CardTitle>
               <button onClick={() => setVariantSelectionProduct(null)} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200">
                 <X size={20} />
@@ -1115,7 +1279,7 @@ function StandardBillingUI() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {(() => {
-                  let sizes = {};
+                  let sizes: Record<string, number> = {};
                   try {
                     sizes = typeof variantSelectionProduct.size_variants === 'string'
                       ? JSON.parse(variantSelectionProduct.size_variants)
@@ -1128,18 +1292,19 @@ function StandardBillingUI() {
                       : (variantSelectionProduct.metadata || {});
                     sizePrices = meta?.size_prices || {};
                   } catch {}
-                  return Object.entries(sizes).map(([size, qty]) => {
+                  return Object.entries(sizes).map(([key, qty]) => {
                     const stock = Number(qty) || 0;
                     const isOutOfStock = stock <= 0;
-                    const sp = sizePrices[size];
+                    const { color, size } = splitVariantKey(key);
+                    const sp = sizePrices[key];
                     const sizePrice = sp && (sp.sellingPrice > 0 || sp.mrp > 0)
                       ? (sp.sellingPrice || sp.mrp)
                       : (variantSelectionProduct.sellingPrice || Number(variantSelectionProduct.price) || 0);
                     return (
                       <button
-                        key={size}
+                        key={key}
                         onClick={() => {
-                          addToCart(variantSelectionProduct, size);
+                          addToCart(variantSelectionProduct, key);
                           setVariantSelectionProduct(null);
                         }}
                         className={cn(
@@ -1149,6 +1314,7 @@ function StandardBillingUI() {
                             : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30 hover:border-emerald-500 dark:hover:border-emerald-500 text-slate-900 dark:text-slate-100 shadow-sm'
                         )}
                       >
+                        {color && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{color}</span>}
                         <span className="font-bold">{size}</span>
                         {sizePrice > 0 && <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">₹{sizePrice}</span>}
                         <span className={cn('text-[10px] font-semibold', isOutOfStock ? 'text-red-400' : 'text-slate-400 dark:text-slate-500')}>
@@ -1199,6 +1365,47 @@ function StandardBillingUI() {
               </button>
             </CardHeader>
             <CardContent className="p-6 space-y-5 overflow-y-auto">
+              {/* Invoice type — asked explicitly here, the last step before the bill
+                  is generated, so it's never skipped by scrolling past the order
+                  summary above. Shares billType/gstInterState with that toggle. */}
+              {!isEmi && (
+                <div>
+                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
+                    {t('invoiceType') || 'Invoice Type'}
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setBillType('non_gst')}
+                      aria-pressed={!isGstBill}
+                      className={cn(
+                        'py-2.5 rounded-lg text-xs font-bold transition-all',
+                        !isGstBill ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'
+                      )}
+                    >
+                      {t('nonGstInvoice') || 'Non-GST Invoice'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBillType('gst')}
+                      aria-pressed={isGstBill}
+                      className={cn(
+                        'py-2.5 rounded-lg text-xs font-bold transition-all',
+                        isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'
+                      )}
+                    >
+                      {t('gstInvoice') || 'GST Invoice'}
+                    </button>
+                  </div>
+                  {isGstBill && (
+                    <label className="flex items-center gap-2 mt-2 text-xs text-slate-500 cursor-pointer select-none">
+                      <input type="checkbox" checked={gstInterState} onChange={e => setGstInterState(e.target.checked)} className="accent-indigo-500" />
+                      {t('interStateIgst') || 'Inter-state sale (IGST)'}
+                    </label>
+                  )}
+                </div>
+              )}
+
               {/* Summary */}
               <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
@@ -1211,8 +1418,8 @@ function StandardBillingUI() {
                       <span className="text-slate-600 dark:text-slate-400">{t('paymentMethod') || 'Payment Method'}</span>
                       <span className={cn(
                         "font-black",
-                        paymentMethod === 'udhar' ? "text-orange-500" : "text-emerald-500"
-                      )}>{paymentMethodLabel}</span>
+                        isEmi ? "text-sky-500" : paymentMethod === 'udhar' ? "text-orange-500" : "text-emerald-500"
+                      )}>{isEmi ? 'EMI' : paymentMethodLabel}</span>
                     </div>
                     {isPartialUdhar && (
                       <div className="flex justify-between text-sm mt-2 items-center bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1.5 rounded border border-emerald-200 dark:border-emerald-500/20">
@@ -1404,7 +1611,7 @@ function StandardBillingUI() {
               {lastBill.isEmi && (
                 <div className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-400">
                   <Zap size={13} />
-                  Paid via EMI{lastBill.emiProvider ? ` · ${lastBill.emiProvider}` : ''}
+                  Paid via EMI
                 </div>
               )}
 
