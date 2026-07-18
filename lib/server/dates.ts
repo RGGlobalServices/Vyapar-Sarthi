@@ -1,10 +1,12 @@
 export function startOfDay(d: Date | string | number): Date {
+  if (typeof d === 'string' && d.includes('T')) return new Date(d);
   const date = new Date(d);
   date.setHours(0, 0, 0, 0);
   return date;
 }
 
 export function endOfDay(d: Date | string | number): Date {
+  if (typeof d === 'string' && d.includes('T')) return new Date(d);
   const date = new Date(d);
   date.setHours(23, 59, 59, 999);
   return date;

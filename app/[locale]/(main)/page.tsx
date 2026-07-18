@@ -147,22 +147,25 @@ function DashboardInner() {
       start.setDate(1); // Start of month
     } else if (timeframe === t('custom')) {
       if (appliedCustomDates.start && appliedCustomDates.end) {
-        return { start_date: appliedCustomDates.start, end_date: appliedCustomDates.end };
+        // If it's a custom date string (YYYY-MM-DD), we should parse it to local bounds
+        const d1 = new Date(appliedCustomDates.start);
+        d1.setHours(0, 0, 0, 0);
+        const d2 = new Date(appliedCustomDates.end);
+        d2.setHours(23, 59, 59, 999);
+        return { start_date: d1.toISOString(), end_date: d2.toISOString() };
       }
     }
     
-    const formatDate = (d: Date) => {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
+    // Set start of day for start date
+    start.setHours(0, 0, 0, 0);
+    // Set end of day for end date
+    end.setHours(23, 59, 59, 999);
 
     return { 
-      start_date: formatDate(start), 
-      end_date: formatDate(end) 
+      start_date: start.toISOString(), 
+      end_date: end.toISOString() 
     };
-  }, [timeframe, appliedCustomDates]);
+  }, [timeframe, appliedCustomDates, t]);
 
   const getDynamicTitle = (baseLabel: string) => {
     const labelMap: Record<string, string> = {

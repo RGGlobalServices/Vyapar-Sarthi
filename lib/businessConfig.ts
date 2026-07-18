@@ -69,7 +69,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     hasExpiryRequired: false,
     hasBatch: false,
     hasDrugSchedule: false,
-    hasSizes: true,
+    hasSizes: false,
     hasShades: false,
     hasWarranty: false,
     hasModel: false,
