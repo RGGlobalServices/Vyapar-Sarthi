@@ -16,7 +16,7 @@ function CustomerSalesView({ entityId }: { entityId: string }) {
   useEffect(() => {
     const fetchSales = async () => {
       try {
-        const res = await api.get(`/crm/customers/${entityId}/sales`);
+        const res = await api.get(`/customers/${entityId}/history`);
         setSales(res.data);
       } catch (e) {
         console.error('Failed to fetch sales history', e);
