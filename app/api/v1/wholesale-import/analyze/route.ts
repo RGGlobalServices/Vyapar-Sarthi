@@ -51,9 +51,11 @@ export async function POST(req: NextRequest) {
 Your response MUST be a VALID JSON object containing an "items" array. Each object in the "items" array represents a single row or entity extracted from the document.
 
 Extract EVERYTHING available. Do not skip data!
-- For Products: Include ProductName, Quantity, SellingPrice, CostPrice, MRP.
+- For Products/Stock: Include ProductName, Quantity, SellingPrice, CostPrice, MRP.
 ${businessSpecificFields}
 - For Customers/Suppliers: Include Name, Address (Village/City), Mobile Number, and any Dates or Years present indicating when they were added or their last transaction.
+- For Sales History: Include ProductName, Quantity, SellingPrice (also known as Rate or Price), CustomerName, Mobile, InvoiceNumber, Date, and PaymentType.
+- For Ledger/Udhar: Include PartyName, Type, Mobile, and OpeningBalance (Amount).
 
 Example JSON response:
 {
