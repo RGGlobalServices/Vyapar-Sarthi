@@ -77,7 +77,9 @@ CRITICAL INSTRUCTIONS FOR AI:
 1. Return ONLY valid JSON matching the schema.
 2. Do NOT include any explanations, greetings, or conversational text.
 3. Do NOT wrap the JSON inside markdown code blocks (no \`\`\`json).
-4. Do NOT include any text before '{' or after '}'.`;
+4. Do NOT include any text before '{' or after '}'.
+5. If a value is missing from the document, leave it empty (e.g., null or ""). DO NOT use placeholder words like "string", "Not explicit", "N/A", or "Unknown".
+6. Extract the actual values exactly as they appear in the document.\`;
 
     let extractedText = '';
     let hasImages = false;
