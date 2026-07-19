@@ -262,6 +262,7 @@ model Customer {
   creditLimit           Float?                  @default(0) @map("credit_limit")
   birthday              DateTime?               @db.Date
   notes                 String?                 @db.VarChar
+  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   customer_transactions customer_transactions[]
   shop                  Shop?                   @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
