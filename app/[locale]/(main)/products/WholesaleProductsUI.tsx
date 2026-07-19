@@ -622,11 +622,12 @@ export default function WholesaleProductsUI() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {filteredProducts.map((p: any) => {
-                    const stock = (p.godownProducts && p.godownProducts.length > 0)
+                    const rawStock = (p.godownProducts && p.godownProducts.length > 0)
                       ? p.godownProducts.reduce((sum: number, gp: any) => sum + gp.quantity, 0)
                       : (p.currentStock || 0);
+                    const stock = Math.max(0, rawStock);
                     const minStock = p.minStock || 5;
-                    const isOutOfStock = stock <= 0;
+                    const isOutOfStock = rawStock <= 0;
                     const isLowStock = stock > 0 && stock <= minStock;
                     const warehouseCount = p._count?.godownProducts || 0;
                     const isSelected = selectedIds.includes(p.id);

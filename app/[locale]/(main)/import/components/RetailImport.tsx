@@ -19,6 +19,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import { isSubscriptionEnded } from '@/lib/subscriptionAccess';
 import api from '@/lib/api';
+import ImportSummary, { ImportSummaryData } from './ImportSummary';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export default function RetailImport() {
   const bizConfig = getBusinessConfig(profile.businessType);
   const { files, addFile, deleteFile } = useImportStore();
   const { addUdharFromImport }         = useUdharStore();
-  const { items, mergeFromImport, mergePurchaseBill } = useStockStore();
+  const { items } = useStockStore();
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -109,8 +110,10 @@ export default function RetailImport() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [deleteId, setDeleteId]     = useState<number | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [importSummary, setImportSummary] = useState<ImportSummaryData | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const lastImportNameRef = useRef<string>('Import');
 
   // merge modal state
   const [mergeOpts, setMergeOpts] = useState<MergeOptions>({
@@ -291,151 +294,224 @@ export default function RetailImport() {
     if (!apiResult || pendingFiles.length === 0 || isSaving) return;
     setIsSaving(true);
     setApiError('');
-    
+
     try {
       const dateISO = new Date(mergeOpts.date).toISOString();
 
-      // Merge into Udhar store
-    if (mergeOpts.khata && apiResult.khata?.length > 0) {
-      for (const k of apiResult.khata as ImportedKhataEntry[]) {
-        if (k.customerName && k.amount > 0) {
-          const entryDate = k.date ? new Date(k.date).toISOString() : dateISO;
-          await addUdharFromImport(k.customerName, k.amount, k.note, entryDate);
+      // ── 1. Save Udhar / Khata entries ──────────────────────────────────
+      if (mergeOpts.khata && apiResult.khata?.length > 0) {
+        for (const k of apiResult.khata as ImportedKhataEntry[]) {
+          if (k.customerName && k.amount > 0) {
+            const entryDate = k.date ? new Date(k.date).toISOString() : dateISO;
+            await addUdharFromImport(k.customerName, k.amount, k.note, entryDate);
+          }
         }
       }
-    }
 
-    // Merge into Stock store
-    if (mergeOpts.stock && apiResult.stock?.length > 0) {
-      await mergeFromImport(apiResult.stock as ImportedStockEntry[], dateISO);
-    }
+      // ── 2. Save Stock / Purchase products via dedicated API ────────────
+      // Collect all products from both stock[] and purchase[].items arrays.
+      const allProducts: any[] = [];
 
-    // Merge Purchase bills into Stock store
-    if (mergeOpts.purchase && apiResult.purchase?.length > 0) {
-      for (const p of apiResult.purchase) {
-        if (p.items && p.items.length > 0) {
-          const itemsToSave = p.items.map((item: any) => {
-            let sv = item.size_variants;
-            if (typeof sv === 'string' && sv.trim()) {
-              const parts = sv.split(',').map(part => part.trim().split(':'));
-              const obj: any = {};
-              for (const part of parts) {
-                if (part.length === 2) {
-                   obj[part[0].trim()] = parseInt(part[1].trim()) || 0;
-                }
-              }
-              sv = obj;
-            }
-            // Update quantity based on sizes if sizes exist
-            let qty = item.quantity;
-            if (sv && typeof sv === 'object' && Object.keys(sv).length > 0) {
-               qty = Object.values(sv).reduce((sum: number, val: any) => sum + (parseInt(val) || 0), 0);
-            }
-            return {
-              ...item,
-              quantity: qty,
-              size_variants: sv && typeof sv === 'object' && Object.keys(sv).length > 0 ? JSON.stringify(sv) : null
-            };
+      if (mergeOpts.stock && apiResult.stock?.length > 0) {
+        for (const s of apiResult.stock) {
+          if (!s.productName) continue;
+          allProducts.push({
+            productName: s.productName,
+            category: s.category || null,
+            unit: s.unit || null,
+            quantity: Number(s.quantity) || 0,
+            wholesaleCost: Number(s.wholesaleCost) || 0,
+            mrp: Number(s.mrp) || 0,
+            sellingPrice: Number(s.sellingPrice) || Number(s.mrp) || 0,
+            expiryDate: s.expiryDate || null,
+            batch_number: s.batch_number || null,
+            drug_schedule: s.drug_schedule || null,
+            model_number: s.model_number || null,
+            warranty_months: s.warranty_months || null,
+            gender: s.gender || null,
+            shade: s.shade || null,
+            size_variants: s.size_variants || null,
+            barcode: s.barcode || s.sku || null,
+            hsnCode: s.hsnCode || s.hsn_code || null,
+            gstPercent: Number(s.gstPercent) || 0,
+            minStock: Number(s.minStock) || 0,
+            brand: s.brand || null,
           });
-          const billDate = p.billDate ? new Date(p.billDate).toISOString() : dateISO;
-          await mergePurchaseBill(itemsToSave, billDate, p.vendorName || 'Unknown Vendor');
         }
       }
-    }
 
-    // Save Imported Sales to DB
-    if (mergeOpts.sales && apiResult.sales?.length > 0) {
-      for (const s of apiResult.sales) {
-        try {
-          const startDate = s.date ? new Date(s.date) : new Date(dateISO);
-          let endDate = s.endDate ? new Date(s.endDate) : null;
-          if (!s.date && mergeOpts.endDate) {
-            endDate = new Date(mergeOpts.endDate);
-          }
-          
-          let itemsWithIds = [];
-          if (s.items && s.items.length > 0) {
-            itemsWithIds = s.items.map((item: any) => {
-              const existing = items.find(i => i.name.toLowerCase() === item.productName?.toLowerCase());
-              return {
-                ...item,
-                productId: existing ? existing.id : undefined,
-              };
+      if (mergeOpts.purchase && apiResult.purchase?.length > 0) {
+        for (const bill of apiResult.purchase) {
+          if (!bill.items?.length) continue;
+          for (const item of bill.items) {
+            if (!item.productName) continue;
+            // Resolve size_variants qty
+            let sv = item.size_variants;
+            let totalQtyFromSizes = 0;
+            if (sv && typeof sv === 'object' && !Array.isArray(sv)) {
+              totalQtyFromSizes = Object.values(sv).reduce(
+                (sum: number, v: any) => sum + (parseFloat(String(v)) || 0),
+                0
+              );
+            } else if (typeof sv === 'string' && sv.trim() && sv.includes(':')) {
+              sv = null; // let the API parse it
+            }
+            allProducts.push({
+              productName: item.productName,
+              category: item.category || null,
+              unit: item.unit || null,
+              quantity: totalQtyFromSizes > 0 ? totalQtyFromSizes : (Number(item.quantity) || 0),
+              wholesaleCost: Number(item.wholesaleCost) || 0,
+              mrp: Number(item.mrp) || Number(item.suggestedSellingPrice) || 0,
+              sellingPrice: Number(item.suggestedSellingPrice) || Number(item.mrp) || 0,
+              expiryDate: item.expiryDate || null,
+              batch_number: item.batch_number || null,
+              drug_schedule: item.drug_schedule || null,
+              model_number: item.model_number || null,
+              warranty_months: item.warranty_months || null,
+              gender: item.gender || null,
+              shade: item.shade || null,
+              size_variants: item.size_variants || null,
+              barcode: item.barcode || item.sku || null,
+              hsnCode: item.hsnCode || item.hsn_code || null,
+              gstPercent: Number(item.gstPercent) || 0,
+              minStock: Number(item.minStock) || 0,
+              brand: item.brand || null,
             });
-          } else {
-            // Default generic item for imported sales that only have a total amount
-            itemsWithIds = [{
-              productName: 'Imported Sale',
-              category: 'Import',
-              quantity: 1,
-              unit: 'Unit',
-              pricePerUnit: s.totalAmount || 0,
-              marginPerUnit: s.totalProfit || 0
-            }];
           }
+        }
+      }
 
-          if (endDate && endDate > startDate) {
-            // Distribute across days
-            const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-            const dailyAmount = (s.totalAmount || 0) / daysDiff;
-            const dailyProfit = (s.totalProfit || 0) / daysDiff;
-            
-            for (let i = 0; i < daysDiff; i++) {
-              const current = new Date(startDate);
-              current.setDate(startDate.getDate() + i);
-              
-              const dailyItems = itemsWithIds.map((item: any) => ({
-                ...item,
-                pricePerUnit: item.pricePerUnit ? item.pricePerUnit / daysDiff : 0,
-                marginPerUnit: item.marginPerUnit ? item.marginPerUnit / daysDiff : 0
-              }));
+      let importSummaryData: ImportSummaryData | null = null;
 
+      if (allProducts.length > 0) {
+        const processRes = await fetch('/api/v1/import/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            importName: importName.trim(),
+            fileName: pendingFiles.length > 1 ? 'Multiple Files' : (pendingFiles[0]?.file.name || ''),
+            source: mergeOpts.purchase && !mergeOpts.stock ? 'purchase' : mergeOpts.stock && !mergeOpts.purchase ? 'stock' : 'mixed',
+            products: allProducts,
+          }),
+        });
+
+        const processData = await processRes.json();
+        if (!processRes.ok) {
+          throw new Error(processData.error || 'Failed to save products to database');
+        }
+
+        importSummaryData = {
+          importedCount: processData.importedCount ?? 0,
+          updatedCount: processData.updatedCount ?? 0,
+          skippedCount: processData.skippedCount ?? 0,
+          failedCount: processData.failedCount ?? 0,
+          totalRows: processData.totalRows ?? allProducts.length,
+          processingMs: processData.processingMs ?? 0,
+          errors: processData.errors ?? [],
+        };
+      }
+
+      // ── 3. Save Imported Sales to DB ───────────────────────────────────
+      if (mergeOpts.sales && apiResult.sales?.length > 0) {
+        for (const s of apiResult.sales) {
+          try {
+            const startDate = s.date ? new Date(s.date) : new Date(dateISO);
+            let endDate = s.endDate ? new Date(s.endDate) : null;
+            if (!s.date && mergeOpts.endDate) {
+              endDate = new Date(mergeOpts.endDate);
+            }
+
+            let itemsWithIds: any[] = [];
+            if (s.items && s.items.length > 0) {
+              itemsWithIds = s.items.map((item: any) => {
+                const existing = items.find((i) => i.name.toLowerCase() === item.productName?.toLowerCase());
+                return { ...item, productId: existing ? existing.id : undefined };
+              });
+            } else {
+              itemsWithIds = [{
+                productName: 'Imported Sale',
+                category: 'Import',
+                quantity: 1,
+                unit: 'Unit',
+                pricePerUnit: s.totalAmount || 0,
+                marginPerUnit: s.totalProfit || 0,
+              }];
+            }
+
+            if (endDate && endDate > startDate) {
+              const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+              const dailyAmount = (s.totalAmount || 0) / daysDiff;
+              const dailyProfit = (s.totalProfit || 0) / daysDiff;
+              for (let i = 0; i < daysDiff; i++) {
+                const current = new Date(startDate);
+                current.setDate(startDate.getDate() + i);
+                const dailyItems = itemsWithIds.map((item: any) => ({
+                  ...item,
+                  pricePerUnit: item.pricePerUnit ? item.pricePerUnit / daysDiff : 0,
+                  marginPerUnit: item.marginPerUnit ? item.marginPerUnit / daysDiff : 0,
+                }));
+                await api.post('/billing', {
+                  items: dailyItems,
+                  total_amount: dailyAmount,
+                  total_profit: dailyProfit,
+                  payment_type: s.paymentMethod || s.paymentType || 'Mixed',
+                  created_at: current.toISOString(),
+                });
+              }
+            } else {
               await api.post('/billing', {
-                items: dailyItems,
-                total_amount: dailyAmount,
-                total_profit: dailyProfit,
+                items: itemsWithIds,
+                total_amount: s.totalAmount || 0,
+                total_profit: s.totalProfit || 0,
                 payment_type: s.paymentMethod || s.paymentType || 'Mixed',
-                created_at: current.toISOString(),
+                created_at: startDate.toISOString(),
               });
             }
-          } else {
-            // Single day record
-            await api.post('/billing', {
-              items: itemsWithIds,
-              total_amount: s.totalAmount || 0,
-              total_profit: s.totalProfit || 0,
-              payment_type: s.paymentMethod || s.paymentType || 'Mixed',
-              created_at: startDate.toISOString(),
-            });
+          } catch (err) {
+            console.error('[Import] Failed to save imported sale:', err);
           }
-        } catch (err) {
-          console.error('Failed to save imported sale:', err);
         }
       }
-    }
 
-    // Save the import record
-    const record: ImportedFileData = {
-      id:         Date.now(),
-      name:       importName.trim(),
-      fileName:   pendingFiles.length > 1 ? 'Multiple Files' : pendingFiles[0]?.file.name || '',
-      fileType:   apiResult.fileType ?? 'other',
-      dataType:   apiResult.dataType ?? 'unknown',
-      summary:    apiResult.summary  ?? '',
-      rawText:    apiResult.rawText  ?? '',
-      khata:      apiResult.khata    ?? [],
-      stock:      apiResult.stock    ?? [],
-      sales:      apiResult.sales    ?? [],
-      loans:      apiResult.loans    ?? [],
-      importedAt: new Date().toISOString(),
-    };
-    addFile(record);
+      // ── 4. Record in local import history ─────────────────────────────
+      const record: ImportedFileData = {
+        id:         Date.now(),
+        name:       importName.trim(),
+        fileName:   pendingFiles.length > 1 ? 'Multiple Files' : pendingFiles[0]?.file.name || '',
+        fileType:   apiResult.fileType ?? 'other',
+        dataType:   apiResult.dataType ?? 'unknown',
+        summary:    apiResult.summary  ?? '',
+        rawText:    apiResult.rawText  ?? '',
+        khata:      apiResult.khata    ?? [],
+        stock:      apiResult.stock    ?? [],
+        sales:      apiResult.sales    ?? [],
+        loans:      apiResult.loans    ?? [],
+        importedAt: new Date().toISOString(),
+      };
+      addFile(record);
 
-    setPendingFiles([]); setApiResult(null); setImportName('');
-    setStep('done');
-    setTimeout(() => setStep('target'), 1800);
+      // ── 5. Show summary or go to done ─────────────────────────────────
+      lastImportNameRef.current = importName.trim() || 'Import';
+      setPendingFiles([]);
+      setApiResult(null);
+      setImportName('');
+
+      if (importSummaryData) {
+        setImportSummary(importSummaryData);
+        setStep('target');
+      } else {
+        setStep('done');
+        setTimeout(() => setStep('target'), 1800);
+      }
+      
+      // Invalidate products cache globally so they show up immediately in the Product module
+      import('swr').then(({ mutate }) => {
+        mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
+        mutate(key => typeof key === 'string' && key.startsWith('/master-data'), undefined, { revalidate: true });
+      });
     } catch (err: any) {
-      console.error(err);
+      console.error('[Import] Save failed:', err);
       setApiError(err instanceof Error ? err.message : (err.message || String(err)));
     } finally {
       setIsSaving(false);
@@ -1156,6 +1232,17 @@ export default function RetailImport() {
             </div>
           </div>
         </div>
+      )}
+      {importSummary && (
+        <ImportSummary
+          data={importSummary}
+          importName={lastImportNameRef.current}
+          onClose={() => setImportSummary(null)}
+          onViewProducts={() => {
+            setImportSummary(null);
+            window.location.href = `/${locale}/products`;
+          }}
+        />
       )}
     </div>
   );

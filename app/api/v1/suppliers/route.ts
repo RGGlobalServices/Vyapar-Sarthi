@@ -11,9 +11,7 @@ export async function GET(req: Request) {
     // Only allow wholesale (udyog) plan users to access these routes, or all plans if backward compat requires it?
     // The instruction says "this changes want for only Udyog plan other two plan keep same dont change there"
     // So we can enforce it.
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     const suppliers = await prisma.supplier.findMany({
       where: { shopId: auth.shop.id },
@@ -32,9 +30,7 @@ export async function POST(req: Request) {
     const auth = await requireShop(req);
     await ensureWholesaleTables();
 
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     const data = await req.json();
 

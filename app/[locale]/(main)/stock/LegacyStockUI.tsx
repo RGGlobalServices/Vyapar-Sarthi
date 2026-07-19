@@ -130,7 +130,7 @@ export default function LegacyStockUI() {
   const stats = useMemo(() => ({
     total:      items.filter(i => !i.archived).length,
     lowStock:   items.filter(i => !i.archived && i.current > 0 && i.current <= i.min).length,
-    outOfStock: items.filter(i => !i.archived && i.current === 0).length,
+    outOfStock: items.filter(i => !i.archived && i.current <= 0).length,
   }), [items]);
 
   function openEditModal(item: StockItem) {
@@ -364,6 +364,12 @@ export default function LegacyStockUI() {
     return 'bg-red-500/10 text-red-400';
   }
 
+  function getStatus(item: StockItem) {
+    if (item.current <= 0) return 'out';
+    if (item.current <= item.min) return 'low';
+    return 'ok';
+  }
+
   function renderRows(rows: StockItem[]) {
     return rows.map(item => {
       const status = getStatus(item);
@@ -375,7 +381,7 @@ export default function LegacyStockUI() {
             {bizConfig.hasSizes ? (
               <div>
                 <button onClick={() => openEditModal(item)} className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer">
-                  {item.current}
+                  {Math.max(0, item.current)}
                 </button>
                 {(() => {
                   const sv = parseSizeVariants((item as any).size_variants);
@@ -396,7 +402,7 @@ export default function LegacyStockUI() {
                 className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
                 title="Click to adjust stock"
               >
-                {item.current}
+                {Math.max(0, item.current)}
               </button>
             )}
           </td>
@@ -489,8 +495,8 @@ export default function LegacyStockUI() {
                   {i.category && <span className="block text-[11px] text-slate-500 truncate">{i.category}</span>}
                 </span>
                 <span className="flex items-center gap-2 flex-shrink-0">
-                  <span className={cn('text-sm font-semibold', i.current === 0 ? 'text-red-400' : i.current <= i.min ? 'text-orange-400' : 'text-slate-600 dark:text-slate-300')}>
-                    {i.current} {i.unit}
+                  <span className={cn('text-sm font-semibold', i.current <= 0 ? 'text-red-400' : i.current <= i.min ? 'text-orange-400' : 'text-slate-600 dark:text-slate-300')}>
+                    {Math.max(0, i.current)} {i.unit}
                   </span>
                   {active && <Check size={15} className="text-emerald-500" />}
                 </span>
@@ -820,7 +826,7 @@ export default function LegacyStockUI() {
               <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-xl px-5 py-4">
                 <div>
                   <p className="text-xs text-slate-400 mb-0.5">Current Stock</p>
-                  <p className="text-3xl font-black text-emerald-400">{editModal.hasSizes ? totalFromSizes(editModal.sizes) : editModal.item.current}</p>
+                  <p className="text-3xl font-black text-emerald-400">{editModal.hasSizes ? Math.max(0, totalFromSizes(editModal.sizes)) : Math.max(0, editModal.item.current)}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-500">Unit</p>

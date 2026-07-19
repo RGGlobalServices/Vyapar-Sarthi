@@ -8,9 +8,7 @@ export async function POST(req: Request) {
     const auth = await requireShop(req);
     await ensureWholesaleTables();
 
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     const data = await req.json();
     const { productId, fromWarehouseId, toWarehouseId, quantity, reason, notes } = data;

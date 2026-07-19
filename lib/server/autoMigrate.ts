@@ -133,6 +133,27 @@ export async function runAutoMigrations() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+
+    // Create import_logs table for audit trail
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS import_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        import_name VARCHAR NOT NULL,
+        file_name VARCHAR,
+        source VARCHAR NOT NULL DEFAULT 'stock',
+        total_rows INTEGER NOT NULL DEFAULT 0,
+        imported_count INTEGER NOT NULL DEFAULT 0,
+        updated_count INTEGER NOT NULL DEFAULT 0,
+        skipped_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        errors JSONB DEFAULT '[]'::jsonb,
+        processing_ms INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS ix_import_logs_shop_created ON import_logs(shop_id, created_at DESC);
+    `);
+
     
     console.log('[AutoMigrate] Database schema checked successfully.');
   } catch (err) {

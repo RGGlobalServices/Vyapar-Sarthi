@@ -112,6 +112,9 @@ export default function UdharPage() {
   const { customers, loading, fetchCustomers, addCustomer, updateCustomer, deleteCustomer, addTransaction, deleteTransaction } = useUdharStore();
   const isWholesale = profile.subscriptionPlan === 'wholesale';
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const [tab, setTab]           = useState<'customers' | 'dukandars'>('customers');
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState<UdharCustomer | null>(null);
@@ -125,9 +128,10 @@ export default function UdharPage() {
   const [addCustomerSuccess, setAddCustomerSuccess] = useState(false);
   const [addingTx, setAddingTx] = useState(false);
 
-  // Multi-select
+  // Multi-select & Sort
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [selectMode, setSelectMode]   = useState(false);
+  const [sortOrder, setSortOrder]     = useState('new_to_old');
 
   // Dukandar tab state
   const [dukandars, setDukandars]         = useState<any[]>([]);
@@ -255,13 +259,42 @@ export default function UdharPage() {
     }
   }
 
-  const filtered = useMemo(() =>
-    customers.filter(c => {
+  const filtered = useMemo(() => {
+    let res = customers.filter(c => {
       const match = c.name.toLowerCase().includes(search.toLowerCase()) || c.mobile.includes(search);
       if (search.trim().length > 0) return match;
       return match && (totalDue(c) !== 0 || (c.transactions && c.transactions.length > 0));
-    }),
-  [customers, search]);
+    });
+
+    res.sort((a, b) => {
+      if (sortOrder === 'a_to_z') return a.name.localeCompare(b.name);
+      if (sortOrder === 'z_to_a') return b.name.localeCompare(a.name);
+      
+      const getLatestTxDate = (c: any) => {
+        if (!c.transactions || c.transactions.length === 0) return 0;
+        return Math.max(...c.transactions.map((t: any) => new Date(t.date).getTime()));
+      };
+
+      if (sortOrder === 'recent_tx') {
+        return getLatestTxDate(b) - getLatestTxDate(a);
+      }
+      
+      const getSortDate = (c: any) => {
+        const txDate = getLatestTxDate(c);
+        const createdDate = c.createdAt ? new Date(c.createdAt).getTime() : 0;
+        return Math.max(txDate, createdDate);
+      };
+
+      const dateA = getSortDate(a);
+      const dateB = getSortDate(b);
+      
+      if (sortOrder === 'old_to_new') return dateA - dateB;
+      // Default: new_to_old (Recently Added / Recent Activity)
+      return dateB - dateA;
+    });
+
+    return res;
+  }, [customers, search, sortOrder]);
 
   const totalOutstanding = useMemo(() => customers.reduce((s, c) => s + totalDue(c), 0), [customers]);
 
@@ -523,6 +556,8 @@ export default function UdharPage() {
   }
 
   // ─── Customer detail view ──────────────────────────────────────────────────
+  if (!mounted) return <div className="h-full flex items-center justify-center p-10"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
+
   if (selected) {
     const customer = customers.find(c => c.id === selected.id) ?? selected;
     const due = totalDue(customer);
@@ -893,12 +928,25 @@ export default function UdharPage() {
             </div>
           )}
 
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <input type="text" placeholder={t('searchPlaceholder')}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-              value={search} onChange={e => setSearch(e.target.value)} />
+          {/* Search & Sort */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input type="text" placeholder={t('searchPlaceholder')}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <select
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500 min-w-[200px]"
+              value={sortOrder}
+              onChange={e => setSortOrder(e.target.value)}
+            >
+              <option value="new_to_old">Recently Added</option>
+              <option value="old_to_new">Oldest Added</option>
+              <option value="a_to_z">Alphabetical (A to Z)</option>
+              <option value="z_to_a">Alphabetical (Z to A)</option>
+              <option value="recent_tx">Recent Transactions</option>
+            </select>
           </div>
 
           {/* Customer cards */}

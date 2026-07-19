@@ -12,9 +12,7 @@ export const dynamic = 'force-dynamic';
 // GET /godowns
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
-  if (shop.subscriptionPlan !== 'wholesale') {
-    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
-  }
+
   await ensureGodownTables();
   const rows = await dbGodowns(shop.id);
   return json(rows);
@@ -23,9 +21,7 @@ export const GET = handle(async (req) => {
 // POST /godowns
 export const POST = handle(async (req) => {
   const { user, shop } = await requireShop(req);
-  if (shop.subscriptionPlan !== 'wholesale') {
-    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
-  }
+
   const { name, location } = await readBody(req);
   if (!name?.trim()) throw new ApiError(400, 'name is required');
 

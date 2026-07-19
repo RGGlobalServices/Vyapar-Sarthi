@@ -144,6 +144,8 @@ function StandardBillingUI() {
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string | number>>(new Set());
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [outOfStockItem, setOutOfStockItem] = useState<any>(null);
+  const [recommendedProducts, setRecommendedProducts] = useState<any[]>([]);
 
   // EMI: the sale is financed by a bank / finance provider. The provider pays the
   // shop in full; interest, tenure and monthly instalments are the provider's
@@ -302,7 +304,33 @@ function StandardBillingUI() {
     }
   };
 
-  const addToCart = useCallback((product: any, variant?: string) => {
+  const addToCart = useCallback((product: any, variant?: string, forceAdd = false) => {
+    // 1. Check Out of Stock first
+    const stock = Math.max(0, product.currentStock || 0);
+    if (stock <= 0 && !forceAdd) {
+      setOutOfStockItem(product);
+      
+      // Compute recommendations
+      let recs = products.filter(p => p.id !== product.id && (p.currentStock || 0) > 0);
+      
+      if (product.category) {
+        // Try same category
+        const sameCat = recs.filter(p => p.category === product.category);
+        if (sameCat.length > 0) recs = sameCat;
+      }
+
+      // Try same size if applicable
+      const targetSize = product.metadata?.size || (variant ? splitVariantKey(variant).size : null);
+      if (targetSize) {
+        const sameSize = recs.filter(p => p.metadata?.size === targetSize || p.size === targetSize);
+        // Prioritize same size, but if none exist, keep category recs
+        if (sameSize.length > 0) recs = sameSize;
+      }
+
+      setRecommendedProducts(recs.slice(0, 4));
+      return;
+    }
+
     // Prompt for a variant when the business uses sizes OR this product carries its own
     // variant breakdown (colour/size, type/watt, net-weight) — works for any category.
     let productVariants: Record<string, number> = {};
@@ -1689,6 +1717,70 @@ function StandardBillingUI() {
                   History
                 </a>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Out of Stock & Recommendation Modal */}
+      {outOfStockItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOutOfStockItem(null)} />
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-900/20">
+              <span className="text-rose-600 dark:text-rose-400 font-black text-lg flex items-center gap-2">
+                <AlertCircle size={22} /> Out of Stock!
+              </span>
+              <button onClick={() => setOutOfStockItem(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-5 flex-1 overflow-y-auto">
+              <div className="mb-6 text-center">
+                <p className="text-slate-700 dark:text-slate-300 font-medium">
+                  Sorry, <span className="font-bold">{outOfStockItem.name}</span> is currently out of stock.
+                </p>
+                <p className="text-sm text-slate-500 mt-1">You cannot add it to the bill. However, you can add one of these recommended alternatives:</p>
+              </div>
+
+              {recommendedProducts.length > 0 ? (
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Recommended Alternatives</h3>
+                  {recommendedProducts.map(rec => (
+                    <div key={rec.id} className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <div>
+                        <div className="font-bold text-sm text-slate-900 dark:text-white">{rec.name}</div>
+                        <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">{Math.max(0, rec.currentStock || 0)} In Stock</span>
+                          <span>•</span>
+                          <span>₹{rec.sellingPrice || rec.price || 0}</span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setOutOfStockItem(null);
+                          addToCart(rec, undefined, false);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-500/20 dark:hover:bg-emerald-500/30 dark:text-emerald-400 rounded-lg text-xs font-bold transition-colors shadow-sm"
+                      >
+                        Add to Bill
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  No similar products found in stock.
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-between gap-3">
+               <div className="flex-1"></div>
+               <button onClick={() => setOutOfStockItem(null)} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors">
+                 Close
+               </button>
             </div>
           </div>
         </div>

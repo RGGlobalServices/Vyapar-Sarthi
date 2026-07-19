@@ -7,9 +7,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { id } = await params;
     const auth = await requireShop(req);
     
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     const data = await req.json();
 
@@ -48,9 +46,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const { id } = await params;
     const auth = await requireShop(req);
 
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     await prisma.supplier.delete({
       where: { id, shopId: auth.shop.id },

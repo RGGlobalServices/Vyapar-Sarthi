@@ -110,6 +110,7 @@ model Shop {
   cashBooks               CashBook[]
   dailyClosings           DailyClosing[]
   activityLogs            ActivityLog[]
+  importLogs              ImportLog[]
 
   @@index([name], map: "ix_shops_name")
   @@index([ownerId], map: "ix_shops_owner_id")
@@ -932,4 +933,28 @@ model ActivityLog {
 
   @@index([shopId, createdAt(sort: Desc)])
   @@map("activity_logs")
+}
+
+// ─── Import Log ──────────────────────────────────────────────────────────────
+// Tracks every AI-import session: who, when, how many rows succeeded/failed.
+
+model ImportLog {
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
+  importName    String    @map("import_name") @db.VarChar
+  fileName      String?   @map("file_name") @db.VarChar
+  source        String    @db.VarChar // 'stock' | 'purchase' | 'mixed'
+  totalRows     Int       @map("total_rows")
+  importedCount Int       @default(0) @map("imported_count")
+  updatedCount  Int       @default(0) @map("updated_count")
+  skippedCount  Int       @default(0) @map("skipped_count")
+  failedCount   Int       @default(0) @map("failed_count")
+  errors        Json?     @default("[]")
+  processingMs  Int?      @map("processing_ms")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt(sort: Desc)])
+  @@map("import_logs")
 }

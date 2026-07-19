@@ -11,9 +11,7 @@ export async function GET(req: Request) {
     const auth = await requireShop(req);
     await ensureWholesaleTables();
 
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     const invoices = await prisma.purchaseInvoice.findMany({
       where: { shopId: auth.shop.id },
@@ -40,9 +38,7 @@ export async function POST(req: Request) {
     await ensureWholesaleTables();
     await ensureGodownTables();
 
-    if (auth.shop.subscriptionPlan !== 'wholesale') {
-      return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-    }
+
 
     const data = await req.json();
     const { supplierId, invoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;

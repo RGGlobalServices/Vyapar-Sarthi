@@ -26,6 +26,7 @@ export const GET = handle(async (req) => {
     mobile: c.mobile || '',
     email: c.email || '',
     totalDue: c.totalDue || 0,
+    createdAt: c.created_at ? c.created_at.toISOString() : new Date().toISOString(),
     transactions: (c.customer_transactions || []).reverse().map((t) => ({
       id: t.id,
       type: t.type || 'udhar',

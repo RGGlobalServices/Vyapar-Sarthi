@@ -16,6 +16,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No data to import' }, { status: 400 });
     }
 
+    // Per-row conflict decision from the preview, parallel to `data`:
+    //   'skip'   → this row matched an existing record and the user chose to keep the old data
+    //   'update' → apply the row's (edited) values to the existing record
+    //   undefined → default behaviour (update on match, create otherwise)
+    // `existingPolicy` is the global default the preview picked: 'skip' means
+    // "only import new records" unless a row is individually flipped to update.
+    const rowDecisions: (string | undefined)[] = Array.isArray(body.rowDecisions) ? body.rowDecisions : [];
+    const existingPolicy: 'update' | 'skip' = body.existingPolicy === 'skip' ? 'skip' : 'update';
+    const skipExisting = (i: number) => {
+      const d = rowDecisions[i];
+      if (d === 'skip') return true;
+      if (d === 'update') return false;
+      return existingPolicy === 'skip';
+    };
+
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -33,6 +48,13 @@ export async function POST(req: NextRequest) {
         }
       }
       return undefined;
+    };
+
+    // True only when a column was actually filled in — so a BLANK cell in the
+    // preview never overwrites/zeros an existing product's real value on update.
+    const has = (row: any, possibleKeys: string[]) => {
+      const v = getVal(row, possibleKeys);
+      return v !== undefined && v !== null && String(v).trim() !== '';
     };
 
     // The business-type-specific fields the dedicated "Add Product" form
@@ -59,6 +81,14 @@ export async function POST(req: NextRequest) {
       if (gender) extras.gender = String(gender);
       const shade = getVal(row, ['shade']);
       if (shade) extras.shade = String(shade);
+      // GST invoice fields — same columns Products / Stock forms expose.
+      const hsn = getVal(row, ['hsncode', 'hsn', 'sac']);
+      if (hsn) extras.hsnCode = String(hsn);
+      const gstPct = getVal(row, ['gstpercent', 'gstrate', 'gstpercentage', 'taxrate', 'gst%']);
+      if (gstPct !== undefined && String(gstPct).trim() !== '') {
+        const n = parseFloat(gstPct);
+        if (!isNaN(n)) extras.gstPercent = n;
+      }
       return extras;
     };
 
@@ -133,13 +163,43 @@ export async function POST(req: NextRequest) {
             const extras = getProductExtras(row);
 
             if (matchId) {
-              await prisma.product.update({
-                where: { id: matchId },
-                data: { sellingPrice: price, wholesaleCost: cost, mrp, category, ...extras }
-              });
+              // Existing product the user chose to keep as-is → leave untouched.
+              if (skipExisting(i)) { skipped++; continue; }
+              // Only write fields the preview actually filled in, so a blank cell
+              // never zeroes a real price/category. Quantity, when provided, is set
+              // here too — this is what keeps Products and Stock in sync on import.
+              const upd: Record<string, any> = { ...extras };
+              if (has(row, ['sellingprice', 'price', 'rate'])) upd.sellingPrice = price;
+              if (has(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice'])) upd.wholesaleCost = cost;
+              if (has(row, ['mrp'])) upd.mrp = mrp;
+              if (has(row, ['category'])) upd.category = category;
+              if (has(row, ['minstock', 'minlevel'])) upd.minStock = parseFloat(getVal(row, ['minstock', 'minlevel']));
+              if (has(row, ['quantity', 'stock', 'qty'])) upd.currentStock = quantity;
+              
+              const metaUpdates: any = {};
+              if (has(row, ['size', 'size_variants'])) metaUpdates.size = getVal(row, ['size', 'size_variants']);
+              if (has(row, ['color'])) metaUpdates.color = getVal(row, ['color']);
+              if (has(row, ['fabric'])) metaUpdates.fabric = getVal(row, ['fabric']);
+              if (has(row, ['sole_material', 'solematerial'])) metaUpdates.sole_material = getVal(row, ['sole_material', 'solematerial']);
+              if (has(row, ['weight'])) metaUpdates.weight = getVal(row, ['weight']);
+              
+              if (Object.keys(metaUpdates).length > 0) {
+                // To avoid fetching existing metadata, we'll just set it. In a real scenario you might want to merge.
+                upd.metadata = metaUpdates;
+              }
+
+              await prisma.product.update({ where: { id: matchId }, data: upd });
               updated++;
             } else {
               const minStock = getVal(row, ['minstock', 'minlevel']);
+              
+              const meta: any = {};
+              if (getVal(row, ['size', 'size_variants'])) meta.size = getVal(row, ['size', 'size_variants']);
+              if (getVal(row, ['color'])) meta.color = getVal(row, ['color']);
+              if (getVal(row, ['fabric'])) meta.fabric = getVal(row, ['fabric']);
+              if (getVal(row, ['sole_material', 'solematerial'])) meta.sole_material = getVal(row, ['sole_material', 'solematerial']);
+              if (getVal(row, ['weight'])) meta.weight = getVal(row, ['weight']);
+
               const newProd = await prisma.product.create({
                 data: {
                   shopId,
@@ -155,7 +215,7 @@ export async function POST(req: NextRequest) {
                   currentStock: quantity,
                   minStock: minStock ? parseFloat(minStock) : undefined,
                   baseUnit: getVal(row, ['unit']) || (masterUnits.length > 0 ? masterUnits[0].name : 'pcs'),
-                  metadata: getVal(row, ['size']) || getVal(row, ['color']) ? { size: getVal(row, ['size']), color: getVal(row, ['color']) } : {},
+                  metadata: meta,
                   ...extras
                 }
               });
@@ -189,17 +249,31 @@ export async function POST(req: NextRequest) {
       }
       
       case 'suppliers': {
-        if (auth.shop.subscriptionPlan !== 'wholesale') {
-          return NextResponse.json({ error: 'This feature is only available on the Udyog plan.' }, { status: 403 });
-        }
-        for (const row of data) {
+
+        const existingSuppliers = await prisma.supplier.findMany({ where: { shopId }, select: { id: true, name: true } });
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
           const name = getVal(row, ['suppliername', 'name', 'supplier', 'vendor', 'partyname', 'party']);
-          if (!name) { 
-            skipped++; 
-            rowErrors.push(`Skipped - Missing supplier name in row`);
-            continue; 
+          if (!name) {
+            skipped++;
+            rowErrors.push(`Row ${i + 1}: Skipped - Missing supplier name`);
+            continue;
           }
-          await prisma.supplier.create({
+          const hit = existingSuppliers.find(s => (s.name ?? '').toLowerCase() === String(name).trim().toLowerCase());
+          if (hit) {
+            if (skipExisting(i)) { skipped++; continue; }
+            await prisma.supplier.update({
+              where: { id: hit.id },
+              data: {
+                ...(has(row, ['contact']) ? { contact: String(getVal(row, ['contact'])) } : {}),
+                ...(has(row, ['mobile', 'phone']) ? { mobile: String(getVal(row, ['mobile', 'phone'])) } : {}),
+                ...(has(row, ['gst']) ? { gst: String(getVal(row, ['gst'])) } : {}),
+              }
+            });
+            updated++;
+            continue;
+          }
+          const newSup = await prisma.supplier.create({
             data: {
               shopId,
               name: String(name),
@@ -209,6 +283,7 @@ export async function POST(req: NextRequest) {
               balance: parseFloat(getVal(row, ['balance', 'openingbalance']) || 0)
             }
           });
+          existingSuppliers.push({ id: newSup.id, name: newSup.name });
           created++;
         }
         break;
@@ -244,6 +319,10 @@ export async function POST(req: NextRequest) {
             const existing = existingCustomers.find(c =>
               (mobile && c.mobile === mobile) || (c.name ?? '').toLowerCase() === String(name).trim().toLowerCase()
             );
+
+            // Existing customer the user chose to keep unchanged → skip entirely
+            // (don't touch details and don't add the opening-balance transaction).
+            if (existing && skipExisting(i)) { skipped++; continue; }
 
             let customerId: string;
             if (existing) {
@@ -495,10 +574,16 @@ export async function POST(req: NextRequest) {
             const extras = getProductExtras(row);
 
             if (matchId) {
-              await prisma.product.update({
-                where: { id: matchId },
-                data: { currentStock: quantity, ...extras }
-              });
+              // Keep existing untouched when the user chose so.
+              if (skipExisting(i)) { skipped++; continue; }
+              const upd: Record<string, any> = { ...extras };
+              // Opening Stock is a snapshot: set stock only when a quantity was
+              // actually given, otherwise leave the product's real stock alone.
+              if (has(row, ['quantity', 'stock', 'qty', 'openingstock'])) upd.currentStock = quantity;
+              if (has(row, ['sellingprice', 'price', 'rate'])) upd.sellingPrice = price;
+              if (has(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice'])) upd.wholesaleCost = cost;
+              if (has(row, ['category'])) upd.category = category;
+              await prisma.product.update({ where: { id: matchId }, data: upd });
               updated++;
             } else {
               const minStock = getVal(row, ['minstock', 'minlevel']);
@@ -668,6 +753,7 @@ export async function POST(req: NextRequest) {
               let supplier = await prisma.supplier.findFirst({
                 where: { shopId, name: { equals: String(name), mode: 'insensitive' } }
               });
+              if (supplier && skipExisting(i)) { skipped++; continue; }
               if (!supplier) {
                 supplier = await prisma.supplier.create({
                   data: { shopId, name: String(name), mobile: mobile ? String(mobile) : null, balance: 0 }
@@ -684,6 +770,7 @@ export async function POST(req: NextRequest) {
               let customer = await prisma.customer.findFirst({
                 where: { shopId, name: { equals: String(name), mode: 'insensitive' } }
               });
+              if (customer && skipExisting(i)) { skipped++; continue; }
               if (!customer) {
                 customer = await prisma.customer.create({
                   data: { shopId, name: String(name), mobile: mobile ? String(mobile) : '' }

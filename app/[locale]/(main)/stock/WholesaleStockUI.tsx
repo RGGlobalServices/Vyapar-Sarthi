@@ -258,16 +258,12 @@ export default function WholesaleStockUI() {
 
       // 2. Fallbacks
       const productBatches = (batches || []).filter((b: any) => b.productId === p.id);
-      let rawQty = 0;
-      if (hasWarehouseData) {
-        rawQty = warehouseQty; // Source of truth: sum of all warehouses
-      } else if (productBatches.length > 0) {
-        rawQty = productBatches.reduce((sum: number, b: any) => sum + (b.quantity || b.currentStock || 0), 0);
-      } else {
-        rawQty = (p.currentStock || 0);
-      }
+      const rawQty = hasWarehouseData 
+        ? warehouseQty 
+        : (productBatches.length > 0 ? productBatches.reduce((sum: number, b: any) => sum + (b.quantity || b.currentStock || 0), 0) : (p.currentStock || 0));
 
-      const qty = rawQty; // Show actual stock so user can see true balance
+      const qty = Math.max(0, rawQty); // Cap at 0 for display
+      const isOutOfStock = rawQty <= 0;
 
       const price = p.wholesaleCost || p.sellingPrice || 0;
       const val = qty * price;

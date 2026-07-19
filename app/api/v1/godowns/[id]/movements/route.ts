@@ -10,9 +10,6 @@ type Ctx = { params: Promise<{ id: string }> };
 export const GET = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
-  if (shop.subscriptionPlan !== 'wholesale') {
-    throw new ApiError(403, 'This feature is only available on the Udyog plan.');
-  }
 
   const movements = (await prisma.$queryRaw`
     SELECT m.id, m.type, m.quantity, m.created_at, 

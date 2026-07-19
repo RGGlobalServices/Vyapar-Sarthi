@@ -170,6 +170,7 @@ export interface UdharCustomer {
   mobile: string;
   email: string;
   totalDue?: number;
+  createdAt?: string;
   transactions: UdharTransaction[];
 }
 
@@ -198,7 +199,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
     }
     try {
       const res = await api.get('/customers');
-      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0 }));
+      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0, createdAt: c.createdAt || '' }));
       set({ customers, loading: false });
     } catch {
       set({ loading: false });
@@ -211,7 +212,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
   silentRefresh: async () => {
     try {
       const res = await api.get('/customers');
-      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0 }));
+      const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0, createdAt: c.createdAt || '' }));
       set({ customers });
     } catch { /* keep optimistic state */ }
   },
@@ -220,7 +221,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
   // server id (awaited) so chained flows (bill/import) can add a transaction.
   addCustomer: async (name, mobile, email = '') => {
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const optimistic: UdharCustomer = { id: tempId, name, mobile, email, totalDue: 0, transactions: [] };
+    const optimistic: UdharCustomer = { id: tempId, name, mobile, email, totalDue: 0, transactions: [], createdAt: new Date().toISOString() };
     set((state) => ({ customers: [optimistic, ...state.customers] }));
     try {
       const res = await api.post('/customers', { name, mobile, email });

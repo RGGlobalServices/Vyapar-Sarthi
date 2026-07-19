@@ -38,6 +38,9 @@ export async function POST(req: NextRequest) {
     if (bizConfig.hasDrugSchedule) { extraItemFields.push('drug_schedule'); extraSchemaFields += ', "drug_schedule": "String"'; }
     if (bizConfig.hasModel) { extraItemFields.push('model_number'); extraSchemaFields += ', "model_number": "String"'; }
     if (bizConfig.hasWarranty) { extraItemFields.push('warranty_months'); extraSchemaFields += ', "warranty_months": 0'; }
+    if (bizConfig.hasFabric) { extraItemFields.push('fabric'); extraSchemaFields += ', "fabric": "String"'; }
+    if (bizConfig.hasSoleMaterial) { extraItemFields.push('sole_material'); extraSchemaFields += ', "sole_material": "String"'; }
+    if (businessTypeStr === 'kirana') { extraItemFields.push('weight', 'unit'); extraSchemaFields += ', "weight": "String", "unit": "String"'; }
 
     let businessInstructions = '';
     if (extraItemFields.length > 0) {

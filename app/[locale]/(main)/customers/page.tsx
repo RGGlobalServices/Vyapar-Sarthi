@@ -25,7 +25,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [sortOption, setSortOption] = useState('az');
+  const [sortOption, setSortOption] = useState('new');
   
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPayment, setShowPayment] = useState(false);
@@ -65,13 +65,31 @@ export default function CustomersPage() {
       c.name.toLowerCase().includes(search.toLowerCase()) || 
       (c.mobile && c.mobile.includes(search))
     )
-    .sort((a, b) => {
-      if (sortOption === 'az') return a.name.localeCompare(b.name);
-      if (sortOption === 'za') return b.name.localeCompare(a.name);
-      // Fallback for new-to-old (id usually correlates with creation time if uuid or sequential, or use createdAt if available)
-      if (sortOption === 'new') return b.id.localeCompare(a.id); 
-      if (sortOption === 'old') return a.id.localeCompare(b.id);
-      return 0;
+    .sort((a: any, b: any) => {
+      if (sortOption === 'az') return (a.name || '').localeCompare(b.name || '');
+      if (sortOption === 'za') return (b.name || '').localeCompare(a.name || '');
+      
+      const getLatestTxDate = (c: any) => {
+        if (!c.customer_transactions || c.customer_transactions.length === 0) return 0;
+        return Math.max(...c.customer_transactions.map((t: any) => new Date(t.created_at).getTime()));
+      };
+
+      if (sortOption === 'recent_tx') {
+        return getLatestTxDate(b) - getLatestTxDate(a);
+      }
+      
+      const getSortDate = (c: any) => {
+        const txDate = getLatestTxDate(c);
+        const createdDate = c.created_at ? new Date(c.created_at).getTime() : 0;
+        return Math.max(txDate, createdDate);
+      };
+
+      const dateA = getSortDate(a);
+      const dateB = getSortDate(b);
+      
+      if (sortOption === 'old') return dateA - dateB;
+      // Default: new (Recently Added / Recent Activity)
+      return dateB - dateA;
     });
 
   return (
@@ -107,10 +125,11 @@ export default function CustomersPage() {
               onChange={(e) => setSortOption(e.target.value)}
               className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
             >
-              <option value="az">A to Z</option>
-              <option value="za">Z to A</option>
-              <option value="new">New to Old</option>
-              <option value="old">Old to New</option>
+              <option value="new">Recently Added</option>
+              <option value="old">Oldest Added</option>
+              <option value="az">Alphabetical (A to Z)</option>
+              <option value="za">Alphabetical (Z to A)</option>
+              <option value="recent_tx">Recent Transactions</option>
             </select>
           </div>
         </div>
