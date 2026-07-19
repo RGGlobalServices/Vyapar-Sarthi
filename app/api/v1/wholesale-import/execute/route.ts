@@ -674,12 +674,22 @@ export async function POST(req: NextRequest) {
             const customerMobile = getVal(row, ['mobile', 'phone', 'customermobile']);
             let customerId: string | null = null;
             if (customerName) {
-              let customer = await prisma.customer.findFirst({
-                where: { shopId, name: { equals: String(customerName), mode: 'insensitive' } }
-              });
+              const cleanName = String(customerName).trim();
+              const cleanMobile = customerMobile ? String(customerMobile).trim() : '';
+              let customer = null;
+              if (cleanMobile) {
+                customer = await prisma.customer.findFirst({
+                  where: { shopId, mobile: cleanMobile }
+                });
+              }
+              if (!customer) {
+                customer = await prisma.customer.findFirst({
+                  where: { shopId, name: { equals: cleanName, mode: 'insensitive' } }
+                });
+              }
               if (!customer) {
                 customer = await prisma.customer.create({
-                  data: { shopId, name: String(customerName), mobile: customerMobile ? String(customerMobile) : '' }
+                  data: { shopId, name: cleanName, mobile: cleanMobile }
                 });
               }
               customerId = customer.id;
@@ -699,14 +709,19 @@ export async function POST(req: NextRequest) {
 
             const totalAmount = quantity * price;
 
-            await prisma.sale.create({
+            const rawPaymentType = String(getVal(row, ['paymenttype', 'paymentmode', 'mode']) || 'Cash');
+            const isUdhar = rawPaymentType.toLowerCase().includes('udhar') || rawPaymentType.toLowerCase().includes('credit');
+            const paymentType = isUdhar ? 'Udhar' : rawPaymentType;
+            const amountPaid = isUdhar ? 0 : totalAmount;
+
+            const sale = await prisma.sale.create({
               data: {
                 shopId,
                 customerId,
                 totalAmount,
                 totalProfit: 0,
-                paymentType: getVal(row, ['paymenttype', 'paymentmode', 'mode']) || 'Cash',
-                amountPaid: totalAmount,
+                paymentType,
+                amountPaid,
                 invoice_number: invoiceNumber,
                 createdAt: saleDate,
                 items: {
@@ -720,6 +735,22 @@ export async function POST(req: NextRequest) {
                 }
               }
             });
+
+            if (isUdhar && customerId) {
+              await prisma.customer.update({
+                where: { id: customerId },
+                data: { totalDue: { increment: totalAmount } }
+              });
+              await prisma.customer_transactions.create({
+                data: {
+                  customer_id: customerId,
+                  type: 'udhar',
+                  amount: totalAmount,
+                  note: `Imported Udhar Sale ${invoiceNumber}`,
+                  bill_number: invoiceNumber
+                }
+              });
+            }
             created++;
           } catch (rowErr: any) {
             console.error(`Import row ${i + 1} failed [sales]:`, JSON.stringify(row), rowErr.message, rowErr.meta);
