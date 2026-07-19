@@ -638,7 +638,7 @@ export async function POST(req: NextRequest) {
         // in the catalog is a data error, not something to silently invent.
         const existingProducts = await prisma.product.findMany({
           where: { shopId },
-          select: { id: true, name: true, barcode: true }
+          select: { id: true, name: true, barcode: true, wholesaleCost: true }
         });
         const fuse = new Fuse(existingProducts, { keys: ['name', 'barcode'], threshold: 0.3 });
         const barcodeMap = new Map<string, string>();
@@ -660,9 +660,16 @@ export async function POST(req: NextRequest) {
             const barcode = getVal(row, ['barcode', 'sku']);
             const barcodeStr = barcode ? String(barcode) : null;
             let productId: string | null = barcodeStr ? barcodeMap.get(barcodeStr) ?? null : null;
+            let productCost = 0;
             if (!productId) {
               const results = fuse.search(String(productName));
-              if (results.length > 0) productId = results[0].item.id;
+              if (results.length > 0) {
+                productId = results[0].item.id;
+                productCost = Number(results[0].item.wholesaleCost) || 0;
+              }
+            } else {
+              const p = existingProducts.find(x => x.id === productId);
+              productCost = p ? (Number(p.wholesaleCost) || 0) : 0;
             }
             if (!productId) {
               const newProduct = await prisma.product.create({
@@ -678,6 +685,7 @@ export async function POST(req: NextRequest) {
                 }
               });
               productId = newProduct.id;
+              productCost = price * 0.8;
             }
 
             const customerName = getVal(row, ['customername', 'customer', 'partyname', 'party']);
@@ -724,6 +732,9 @@ export async function POST(req: NextRequest) {
 
             let totalAmount = quantity * price;
             if (isNaN(totalAmount)) totalAmount = 0;
+            
+            const marginPerUnit = Math.max(0, price - productCost);
+            const totalProfit = quantity * marginPerUnit;
 
             const rawPaymentType = String(getVal(row, ['paymenttype', 'paymentmode', 'mode']) || 'Cash');
             const isUdhar = rawPaymentType.toLowerCase().includes('udhar') || rawPaymentType.toLowerCase().includes('credit');
@@ -735,7 +746,7 @@ export async function POST(req: NextRequest) {
                 shopId,
                 customerId,
                 totalAmount,
-                totalProfit: 0,
+                totalProfit,
                 paymentType,
                 amountPaid,
                 invoice_number: invoiceNumber,
@@ -746,7 +757,7 @@ export async function POST(req: NextRequest) {
                     unit: getVal(row, ['unit']) || 'pcs',
                     quantity,
                     pricePerUnit: price,
-                    marginPerUnit: 0
+                    marginPerUnit
                   }]
                 }
               }
