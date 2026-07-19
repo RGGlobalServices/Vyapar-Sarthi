@@ -64,12 +64,15 @@ Example JSON response:
     {
       "productName": "Tata Salt 1kg",
       "quantity": 50,
+      "sellingPrice": 20,
       "category": "Groceries",
       ${businessSpecificSchema ? businessSpecificSchema + ',' : ''}
       "customerName": "Ramesh Kumar",
       "mobile": "9999999999",
       "address": "Pune",
-      "dateAdded": "2024-05-12"
+      "invoiceNumber": "INV-101",
+      "date": "2024-05-12",
+      "paymentType": "UPI"
     }
   ]
 }
@@ -79,7 +82,7 @@ CRITICAL INSTRUCTIONS FOR AI:
 3. Do NOT wrap the JSON inside markdown code blocks (no \`\`\`json).
 4. Do NOT include any text before '{' or after '}'.
 5. If a value is missing from the document, leave it empty (e.g., null or ""). DO NOT use placeholder words like "string", "Not explicit", "N/A", or "Unknown".
-6. Extract the actual values exactly as they appear in the document.\`;
+6. Extract the actual values exactly as they appear in the document.`;
 
     let extractedText = '';
     let hasImages = false;

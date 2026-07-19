@@ -91,15 +91,15 @@ export function getImportTemplate(importType: string, businessType?: string): Im
       ];
     case 'sales':
       return [
-        { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname'] },
+        { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname', 'product'] },
         { label: 'Barcode', aliases: ['sku'] },
         { label: 'Quantity', aliases: ['qty'], numeric: true },
         { label: 'Selling Price', aliases: ['price', 'rate', 'unitprice'], numeric: true },
         { label: 'Customer Name', aliases: ['customer', 'partyname', 'party'] },
         { label: 'Mobile', aliases: ['phone', 'customermobile'] },
-        { label: 'Invoice Number', aliases: ['billnumber', 'invoice'] },
-        { label: 'Date', aliases: ['billdate', 'saledate'] },
-        { label: 'Payment Type', aliases: ['paymentmode', 'mode'] },
+        { label: 'Invoice Number', aliases: ['billnumber', 'invoice', 'invoicenumber', 'invoiceno', 'inv', 'number'] },
+        { label: 'Date', aliases: ['billdate', 'saledate', 'date'] },
+        { label: 'Payment Type', aliases: ['paymentmode', 'mode', 'payment', 'paymenttype'] },
       ];
     default:
       return [];
