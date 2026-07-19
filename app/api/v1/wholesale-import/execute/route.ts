@@ -665,9 +665,19 @@ export async function POST(req: NextRequest) {
               if (results.length > 0) productId = results[0].item.id;
             }
             if (!productId) {
-              skipped++;
-              rowErrors.push(`Row ${i + 1}: Product "${productName}" not found in catalog — import it first via Product Catalog.`);
-              continue;
+              const newProduct = await prisma.product.create({
+                data: {
+                  shopId,
+                  name: String(productName),
+                  barcode: barcodeStr ?? undefined,
+                  baseUnit: getVal(row, ['unit']) || 'pcs',
+                  sellingPrice: price,
+                  wholesaleCost: price * 0.8,
+                  category: 'Imported Sales',
+                  currentStock: 0
+                }
+              });
+              productId = newProduct.id;
             }
 
             const customerName = getVal(row, ['customername', 'customer', 'partyname', 'party']);
@@ -703,7 +713,12 @@ export async function POST(req: NextRequest) {
             const rawDate = getVal(row, ['date', 'billdate', 'saledate']);
             let saleDate: Date | undefined;
             if (rawDate) {
-              const parsed = Date.parse(rawDate);
+              let dStr = String(rawDate);
+              if (/^\d{2}[-/]\d{2}[-/]\d{4}/.test(dStr)) {
+                const [d, m, y] = dStr.split(/[-/]/);
+                dStr = `${y}-${m}-${d}`;
+              }
+              const parsed = Date.parse(dStr);
               if (!isNaN(parsed)) saleDate = new Date(parsed);
             }
 
