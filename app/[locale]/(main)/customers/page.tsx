@@ -1,12 +1,73 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText } from 'lucide-react';
+import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+
+// --- CustomerSalesView Component ---
+function CustomerSalesView({ entityId }: { entityId: string }) {
+  const [sales, setSales] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSales = async () => {
+      try {
+        const res = await api.get(`/crm/customers/${entityId}/sales`);
+        setSales(res.data);
+      } catch (e) {
+        console.error('Failed to fetch sales history', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (entityId) fetchSales();
+  }, [entityId]);
+
+  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-emerald-500" /></div>;
+  
+  if (sales.length === 0) return (
+    <div className="text-center py-12 text-slate-500">
+      <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+      <p>No sales history found for this customer.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 p-4">
+      {sales.map((sale: any) => (
+        <div key={sale.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+          <div className="flex justify-between items-start mb-3 border-b border-slate-100 dark:border-slate-700/50 pb-3">
+            <div>
+              <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-xs">{sale.invoice_number}</span>
+              </p>
+              <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                <Calendar size={10} /> {new Date(sale.created_at).toLocaleDateString()}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-black text-emerald-600 dark:text-emerald-400">₹{(sale.total_amount || 0).toLocaleString()}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {sale.items?.map((item: any, idx: number) => (
+              <div key={idx} className="flex justify-between items-center text-xs">
+                <span className="text-slate-600 dark:text-slate-300">
+                  {item.quantity}x {item.product_name}
+                </span>
+                <span className="font-medium text-slate-900 dark:text-white">₹{(item.total || 0).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 type Customer = {
   id: string;
@@ -30,6 +91,7 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [activeTab, setActiveTab] = useState<'ledger' | 'sales'>('ledger');
   
   const [form, setForm] = useState({ name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
 
@@ -192,7 +254,7 @@ export default function CustomersPage() {
                 </div>
               </div>
               <button 
-                onClick={() => setSelectedCustomer(null)}
+                onClick={() => { setSelectedCustomer(null); setActiveTab('ledger'); }}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white"
               >
                 <X size={18} />
@@ -225,11 +287,27 @@ export default function CustomersPage() {
               </div>
             </div>
             
+            <div className="flex bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 gap-4">
+              <button
+                onClick={() => setActiveTab('ledger')}
+                className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'ledger' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+              >
+                Ledger Timeline
+              </button>
+              <button
+                onClick={() => setActiveTab('sales')}
+                className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'sales' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+              >
+                All Sales History
+              </button>
+            </div>
+
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-slate-900">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <ReceiptText size={16} /> Ledger Timeline
-              </h3>
-              <LedgerView entityId={selectedCustomer.id} entityType="customer" />
+              {activeTab === 'ledger' ? (
+                <LedgerView entityId={selectedCustomer.id} entityType="customer" />
+              ) : (
+                <CustomerSalesView entityId={selectedCustomer.id} />
+              )}
             </div>
           </div>
         </div>
