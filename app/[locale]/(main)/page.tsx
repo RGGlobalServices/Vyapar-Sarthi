@@ -560,7 +560,7 @@ function DashboardInner() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-black text-slate-900 dark:text-slate-100">
-                    ₹{bill.total_amount.toLocaleString()}
+                    ₹{(bill.total_amount || 0).toLocaleString()}
                   </span>
                   <Eye size={14} className="text-slate-400 dark:text-slate-600 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
                 </div>

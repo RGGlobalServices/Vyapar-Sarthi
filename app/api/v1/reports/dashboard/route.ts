@@ -228,7 +228,7 @@ export const GET = handle(async (req) => {
     recentBills: recentBills.map((s) => ({
       id: s.id,
       invoice_number: s.invoice_number,
-      total_amount: s.totalAmount,
+      total_amount: s.totalAmount || 0,
       payment_type: s.paymentType,
       payment_details: s.paymentDetails,
       customer_name: s.customer?.name,

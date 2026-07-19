@@ -722,7 +722,8 @@ export async function POST(req: NextRequest) {
               if (!isNaN(parsed)) saleDate = new Date(parsed);
             }
 
-            const totalAmount = quantity * price;
+            let totalAmount = quantity * price;
+            if (isNaN(totalAmount)) totalAmount = 0;
 
             const rawPaymentType = String(getVal(row, ['paymenttype', 'paymentmode', 'mode']) || 'Cash');
             const isUdhar = rawPaymentType.toLowerCase().includes('udhar') || rawPaymentType.toLowerCase().includes('credit');
