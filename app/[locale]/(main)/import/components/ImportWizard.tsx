@@ -4,9 +4,9 @@ import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import Fuse from 'fuse.js';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { useUdharStore } from '@/lib/store';
 import { getImportTemplate, applyTemplate } from '@/lib/importTemplates';
 
 type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' | 'sales' | 'ledger';
@@ -309,11 +309,18 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
       setSummary(res.data.summary);
       setStep('done');
-      // Invalidate products cache globally so they show up immediately in the Product module
+      // Invalidate all related caches globally so they show up immediately in their respective modules
       import('swr').then(({ mutate }) => {
         mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
         mutate(key => typeof key === 'string' && key.startsWith('/master-data'), undefined, { revalidate: true });
+        mutate(key => typeof key === 'string' && key.startsWith('/customers'), undefined, { revalidate: true });
+        mutate(key => typeof key === 'string' && key.startsWith('/godowns'), undefined, { revalidate: true });
+        mutate(key => typeof key === 'string' && key.startsWith('/billing'), undefined, { revalidate: true });
+        mutate(key => typeof key === 'string' && key.startsWith('/suppliers'), undefined, { revalidate: true });
+        mutate(key => typeof key === 'string' && key.startsWith('/activity'), undefined, { revalidate: true });
       });
+      // Refresh global zustand store for Udhar
+      useUdharStore.getState().silentRefresh();
     } catch (err: any) {
       const errorData = err.response?.data || {};
       alert('Import failed: ' + (errorData.error || errorData.detail || err.message));
