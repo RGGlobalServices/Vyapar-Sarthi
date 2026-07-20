@@ -30,7 +30,7 @@ export default function SalesHistoryPage() {
   const t = useTranslations('Reports'); // Or specific translation namespace
   const { profile } = useBusinessStore();
   const [loading, setLoading] = useState(true);
-  const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month' | 'quarter' | 'year'>('month');
+  const [timeframe, setTimeframe] = useState<'all' | 'day' | 'week' | 'month' | 'quarter' | 'year'>('all');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   
@@ -154,18 +154,18 @@ export default function SalesHistoryPage() {
       <div className="flex flex-col xl:flex-row gap-4 xl:items-center">
         {/* Timeframe Selector */}
         <div className="flex flex-wrap gap-2 bg-slate-100 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/50 w-fit">
-          {(['day', 'week', 'month', 'quarter', 'year'] as const).map(tf => (
+          {(['all', 'day', 'week', 'month', 'quarter', 'year'] as const).map(tf => (
             <button
               key={tf}
               onClick={() => setTimeframe(tf)}
               className={cn(
                 'px-5 py-2 rounded-lg text-sm font-bold capitalize transition-all',
-                timeframe === tf 
-                  ? 'bg-white dark:bg-slate-900 text-emerald-500 shadow-md ring-1 ring-slate-200 dark:ring-slate-700' 
+                timeframe === tf
+                  ? 'bg-white dark:bg-slate-900 text-emerald-500 shadow-md ring-1 ring-slate-200 dark:ring-slate-700'
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
               )}
             >
-              By {tf}
+              {tf === 'all' ? 'All Time' : `By ${tf}`}
             </button>
           ))}
         </div>

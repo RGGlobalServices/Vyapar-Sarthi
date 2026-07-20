@@ -41,6 +41,26 @@ function getLoosePresets(unit: string) {
   if (u === 'gram') return [{l:'50g', v:50},{l:'100g', v:100},{l:'250g', v:250},{l:'500g', v:500}];
   return [{l:'0.25', v:0.25},{l:'0.5', v:0.5},{l:'1', v:1},{l:'2', v:2}];
 }
+
+// Resolve a product's sellable stock from whatever shape it arrives in.
+// Returns { known } = whether stock could be determined at all, and { qty } =
+// the amount. A sale is only blocked as "out of stock" when known && qty <= 0 —
+// a product with no stock field present is treated as unknown (allowed), so we
+// never falsely flag items that simply came from an incomplete source.
+function resolveStock(p: any): { known: boolean; qty: number } {
+  if (!p) return { known: false, qty: 0 };
+  // Variant products track stock per size/colour in size_variants.
+  let sv: any = p.size_variants ?? p.sizeVariants;
+  if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
+  if (sv && typeof sv === 'object' && Object.keys(sv).length > 0) {
+    const sum = Object.values(sv).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
+    return { known: true, qty: sum };
+  }
+  const raw = p.currentStock ?? p.current_stock ?? p.stock;
+  if (raw === undefined || raw === null || raw === '') return { known: false, qty: 0 };
+  const n = Number(raw);
+  return { known: true, qty: isFinite(n) ? n : 0 };
+}
 const CartQuantityInputRetail = ({ item, updateQuantity, removeItem }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
   useEffect(() => {
@@ -305,13 +325,19 @@ function StandardBillingUI() {
   };
 
   const addToCart = useCallback((product: any, variant?: string, forceAdd = false) => {
-    // 1. Check Out of Stock first
-    const stock = Math.max(0, product.currentStock || 0);
-    if (stock <= 0 && !forceAdd) {
+    // 1. Check Out of Stock first.
+    // Resolve stock robustly: variant products track stock per size in
+    // size_variants; simple products in currentStock. Field names may arrive in
+    // camelCase or snake_case depending on the source. Crucially we only block a
+    // sale when stock is POSITIVELY KNOWN to be <= 0 — if a product object simply
+    // lacks any stock field (came from an incomplete/manual source), we allow it
+    // rather than falsely flagging every such item as "out of stock".
+    const { known, qty: stock } = resolveStock(product);
+    if (known && stock <= 0 && !forceAdd) {
       setOutOfStockItem(product);
-      
+
       // Compute recommendations
-      let recs = products.filter(p => p.id !== product.id && (p.currentStock || 0) > 0);
+      let recs = products.filter(p => { const r = resolveStock(p); return p.id !== product.id && (!r.known || r.qty > 0); });
       
       if (product.category) {
         // Try same category
@@ -690,15 +716,31 @@ function StandardBillingUI() {
                         {product.is_loose && <span className="text-[9px] bg-amber-500/20 text-amber-400 font-black px-1.5 py-0.5 rounded uppercase">{tP('looseBadge')}</span>}
                       </div>
                       <p className="text-xs text-slate-500">
-                        {product.category} · {product.base_unit}
+                        {product.category} · {product.baseUnit ?? product.base_unit}
                         {product.is_loose && <span className="ml-1 text-amber-400">· sell by weight</span>}
                         {product.model_number && <span className="ml-1 text-sky-400">· {product.model_number}</span>}
                         {product.warranty_months && <span className="ml-1 text-emerald-400">· {product.warranty_months}m warranty</span>}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-emerald-500">₹{product.selling_price}</p>
+                      <p className="font-bold text-emerald-500">₹{product.sellingPrice ?? product.selling_price}</p>
                       <p className="text-[10px] text-slate-500">MRP: ₹{product.mrp}</p>
+                      {(() => {
+                        // Remaining stock + low-stock indicator, right under the MRP.
+                        const { known, qty } = resolveStock(product);
+                        if (!known) return null;
+                        const minStock = Number(product.minStock ?? product.min_stock ?? 0);
+                        const isOut = qty <= 0;
+                        const isLow = !isOut && minStock > 0 && qty <= minStock;
+                        return (
+                          <p className={cn(
+                            'text-[10px] font-bold mt-0.5',
+                            isOut ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'
+                          )}>
+                            {isOut ? 'Out of stock' : `${qty} in stock${isLow ? ' · Low' : ''}`}
+                          </p>
+                        );
+                      })()}
                     </div>
                   </button>
                 ))}

@@ -202,8 +202,12 @@ export const GET = handle(async (req) => {
 
   const payload: any = {
     summary: {
-      today_sales: (salesAndProfit._sum.totalAmount || 0) - returnsAmount,
-      today_profit: finalProfit - returnsProfit,
+      // Sales & Profit headline cards are GROSS (actual sales made / profit earned).
+      // Returns are surfaced in their own dedicated "Returns" card (returns_amount),
+      // so netting them in here would double-count and — on a day with returns but
+      // no sales — wrongly show a negative "Today's Sales".
+      today_sales: salesAndProfit._sum.totalAmount || 0,
+      today_profit: finalProfit,
       expected_profit: (salesAndProfit._sum.totalProfit || 0) - returnsProfit,
       cash_profit: finalProfit - returnsProfit,
       udhar_profit: Math.max(0, (salesAndProfit._sum.totalProfit || 0) - finalProfit),

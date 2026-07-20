@@ -55,6 +55,7 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
         defaultSaleUnitId: b.defaultSaleUnitId ?? b.default_sale_unit_id,
         defaultPurchaseUnitId: b.defaultPurchaseUnitId ?? b.default_purchase_unit_id,
         maxStock: b.maxStock ?? b.max_stock,
+        conversionFactor: b.conversionFactor ?? b.conversion_factor,
         wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,
       },
     });

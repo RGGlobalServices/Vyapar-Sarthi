@@ -13,6 +13,7 @@ export type BusinessType =
   | 'clothes'
   | 'electric'
   | 'electronics'
+  | 'liquor'
   | 'general';
 
 export interface BusinessConfig {
@@ -39,6 +40,7 @@ export interface BusinessConfig {
   hasWireSpecs: boolean;  // Electric
   hasVoltWatt: boolean;   // Electric
   hasSoleMaterial: boolean; // Shoes
+  hasLiquorSpecs?: boolean;  // Liquor — brand, volume, alcohol %, bottle type + case⇄bottle conversion
   defaultCategories: string[];
   defaultUnits: string[];
   productPlaceholder: string;
@@ -296,6 +298,41 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholderHi: 'जैसे सैमसंग गैलेक्सी S23',
     productPlaceholderMr: 'उदा. सॅमसंग गॅलेक्सी S23',
     hasSpecs: true,
+  },
+  liquor: {
+    type: 'liquor',
+    label: 'Beer Bar & Wine Shop',
+    labelHi: 'बीयर बार और वाइन शॉप',
+    labelMr: 'बिअर बार आणि वाईन शॉप',
+    emoji: '🍺',
+    color: 'rose',
+    gradient: 'from-rose-600 to-amber-600',
+    description: 'Liquor retail — beer, wine, spirits, soft drinks, snacks & cigarettes',
+    features: ['Volume-wise stock (90ml–1000ml)', 'Brand & alcohol % tracking', 'Case ⇄ bottle conversion', 'Batch + barcode billing', 'Fast barcode POS', 'Supplier & purchase tracking'],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: true,          // batch number + supplier tracking on each stock lot
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    // Volume × Bottle Type variant matrix (resolved per category in LIQUOR_RULES),
+    // e.g. Whisky → 90/180/375/750/1000 ml × Bottle/Nip/Pint/Case.
+    hasSpecs: true,
+    hasLiquorSpecs: true,    // shows Brand / Volume / Alcohol % / Bottle Type + Case⇄Bottle conversion
+    defaultCategories: ['Beer', 'Wine', 'Whisky', 'Rum', 'Vodka', 'Gin', 'Brandy', 'Scotch', 'Water Bottle', 'Soft Drinks', 'Snacks', 'Cigarettes'],
+    defaultUnits: ['Bottle', 'Can', 'PET', 'Peg', 'Pack', 'Case', 'Carton', 'Piece', 'Unit'],
+    productPlaceholder: 'e.g. Kingfisher Premium (650ml)',
+    productPlaceholderHi: 'जैसे किंगफिशर प्रीमियम (650ml)',
+    productPlaceholderMr: 'उदा. किंगफिशर प्रीमियम (650ml)',
+    sizeChart: ['90ml', '180ml', '275ml', '330ml', '375ml', '500ml', '650ml', '750ml', '1000ml'],
+    defaultPackage: 'dukan',
   },
   general: {
     type: 'general',
@@ -607,6 +644,23 @@ const COSMETIC_RULES: SpecRule[] = [
   },
 ];
 
+// Liquor / bar (BevQ, retail-liquor style): Volume × Bottle Type. Spirits are
+// stocked by nip/pint/full-bottle volume; beer & soft drinks by can/bottle/PET.
+const LIQUOR_RULES: SpecRule[] = [
+  {
+    match: ['beer', 'cider', 'lager', 'ale', 'stout'],
+    spec: { typeLabel: 'Volume', typeOptions: ['330ml', '500ml', '650ml'], sizeLabel: 'Type', sizeChart: ['Bottle', 'Can', 'PET', 'Pint', 'Pack of 6', 'Case'] },
+  },
+  {
+    match: ['whisky', 'whiskey', 'rum', 'vodka', 'gin', 'brandy', 'scotch', 'wine', 'liquor', 'liqueur', 'spirit', 'tequila', 'champagne', 'sherry', 'port'],
+    spec: { typeLabel: 'Volume', typeOptions: ['90ml', '180ml', '375ml', '500ml', '750ml', '1000ml'], sizeLabel: 'Type', sizeChart: ['Bottle', 'Nip', 'Pint', 'Quart', 'Case'] },
+  },
+  {
+    match: ['water', 'soft drink', 'soda', 'cola', 'juice', 'tonic', 'drink', 'mixer', 'energy'],
+    spec: { typeLabel: 'Volume', typeOptions: ['200ml', '250ml', '330ml', '500ml', '750ml', '1L', '2L'], sizeLabel: 'Type', sizeChart: ['Bottle', 'Can', 'PET', 'Tetra', 'Pack'] },
+  },
+];
+
 /**
  * Resolve the spec matrix for a product based on its (free-text) CATEGORY and the shop's
  * business type. The same word can mean different things per business (e.g. "Tablet" =
@@ -624,6 +678,7 @@ export function getCategoryVariantSpec(category: string | undefined | null, busi
   switch (businessType) {
     case 'medical':  rules = [...MEDICAL_RULES, ...APPLIANCE_RULES]; break;
     case 'boutique': rules = COSMETIC_RULES; break; // cosmetics only — apparel/footwear have their own shop types
+    case 'liquor':   rules = LIQUOR_RULES; break;   // volume × bottle-type
     case 'general':  rules = [...APPAREL_RULES, ...FOOTWEAR_RULES, ...COSMETIC_RULES, ...APPLIANCE_RULES]; break;
     default:         rules = APPLIANCE_RULES; // electronics, electric
   }

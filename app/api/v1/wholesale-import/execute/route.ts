@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import Fuse from 'fuse.js';
+import { parseFlexibleDate } from '@/lib/server/dates';
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,8 +10,12 @@ export async function POST(req: NextRequest) {
     if (auth instanceof NextResponse) return auth;
     const shopId = auth.shop.id;
 
+    const startedAt = Date.now();
     const body = await req.json();
     const { importType, data, godownId } = body;
+    // Optional job metadata from the wizard for the ImportLog (recovery/audit).
+    const fileName: string | null = body.fileName ? String(body.fileName) : null;
+    const extractionStats = body.stats && typeof body.stats === 'object' ? body.stats : null;
 
     if (!data || !Array.isArray(data) || data.length === 0) {
       return NextResponse.json({ error: 'No data to import' }, { status: 400 });
@@ -88,6 +93,31 @@ export async function POST(req: NextRequest) {
       if (gstPct !== undefined && String(gstPct).trim() !== '') {
         const n = parseFloat(gstPct);
         if (!isNaN(n)) extras.gstPercent = n;
+      }
+      // Brand is a real column (shared by electronics/clothes/liquor). Alcohol %,
+      // volume and bottle type are liquor-specific → stored in the metadata JSON
+      // so no schema change is needed, matching the Add Product form.
+      const brand = getVal(row, ['brand', 'company', 'make', 'manufacturer']);
+      if (brand) extras.brand = String(brand);
+      const liquorMeta: Record<string, any> = {};
+      const alcohol = getVal(row, ['alcoholpercentage', 'alcoholpercent', 'alcohol', 'abv']);
+      if (alcohol !== undefined && String(alcohol).trim() !== '') liquorMeta.alcoholPercentage = String(alcohol).replace(/[^0-9.]/g, '');
+      const volume = getVal(row, ['volume', 'volumeml', 'ml', 'packsize']);
+      if (volume !== undefined && String(volume).trim() !== '') liquorMeta.volume = String(volume);
+      const bottleType = getVal(row, ['bottletype', 'packaging', 'container', 'pack']);
+      if (bottleType) liquorMeta.bottleType = String(bottleType);
+      // Reorder level is the point at which stock should be replenished → minStock.
+      const reorder = getVal(row, ['reorderlevel', 'reorder', 'reorderpoint']);
+      if (reorder !== undefined && String(reorder).trim() !== '') {
+        const n = parseFloat(reorder);
+        if (!isNaN(n)) extras.minStock = n;
+      }
+      if (Object.keys(liquorMeta).length > 0) extras.metadata = liquorMeta;
+      // Unit conversion (e.g. 1 Case = 12 Bottles) → conversionFactor column.
+      const conv = getVal(row, ['unitspercase', 'conversionfactor', 'unitspercarton', 'packqty', 'bottlespercase']);
+      if (conv !== undefined && String(conv).trim() !== '') {
+        const n = parseFloat(conv);
+        if (!isNaN(n) && n > 0) extras.conversionFactor = n;
       }
       return extras;
     };
@@ -391,12 +421,8 @@ export async function POST(req: NextRequest) {
         const supplierName = getVal(firstRow, ['supplier', 'vendorname', 'vendor', 'suppliername']) || 'Unknown Supplier';
         const invoiceNumber = getVal(firstRow, ['invoicenumber', 'billnumber', 'invoice']) || `INV-${Date.now()}`;
         
-        let billDate = new Date();
         const rawDate = getVal(firstRow, ['invoicedate', 'billdate', 'date']);
-        if (rawDate) {
-          const parsed = Date.parse(rawDate);
-          if (!isNaN(parsed)) billDate = new Date(parsed);
-        }
+        const billDate = parseFlexibleDate(rawDate) || new Date();
 
         let dbSupplier = await prisma.supplier.findFirst({
           where: { shopId, name: { equals: supplierName, mode: 'insensitive' } }
@@ -633,9 +659,10 @@ export async function POST(req: NextRequest) {
       }
 
       case 'sales': {
-        // Each row = one historical sale (one product, one line item). We do
-        // NOT create products here — a sale for a product that doesn't exist
-        // in the catalog is a data error, not something to silently invent.
+        // Each row = one historical sale (one product line item). The pipeline
+        // is idempotent and self-healing: products and customers are auto-created
+        // if missing, amounts are reconciled from price OR line total, and bills
+        // already imported are skipped so re-uploading never duplicates sales.
         const existingProducts = await prisma.product.findMany({
           where: { shopId },
           select: { id: true, name: true, barcode: true, wholesaleCost: true }
@@ -644,18 +671,46 @@ export async function POST(req: NextRequest) {
         const barcodeMap = new Map<string, string>();
         for (const p of existingProducts) if (p.barcode) barcodeMap.set(p.barcode, p.id);
 
-        const usedInvoiceNumbers = new Set<string>(
+        // Existing invoice numbers (lower-cased) so re-importing the same file
+        // SKIPS already-imported bills instead of creating duplicate rows.
+        const existingInvoices = new Set<string>(
           (await prisma.sale.findMany({ where: { shopId }, select: { invoice_number: true } }))
-            .map(s => s.invoice_number).filter(Boolean) as string[]
+            .map(s => (s.invoice_number || '').trim().toLowerCase()).filter(Boolean)
         );
+        const seenThisRun = new Set<string>();
+        let duplicateCount = 0;
+        // Reuse one customer record for repeated names within this file.
+        const customerCache = new Map<string, string>();
+
+        // Strip ₹ / commas / spaces before parsing a money or quantity cell.
+        const parseNum = (v: any): number => {
+          if (v === undefined || v === null || String(v).trim() === '') return NaN;
+          const n = parseFloat(String(v).replace(/[₹,\s]/g, ''));
+          return isFinite(n) ? n : NaN;
+        };
 
         for (let i = 0; i < data.length; i++) {
           const row = data[i];
           try {
-            const productName = getVal(row, ['productname', 'name', 'description', 'item']);
-            const quantity = parseFloat(getVal(row, ['quantity', 'qty']) || 0);
-            const price = parseFloat(getVal(row, ['sellingprice', 'price', 'rate', 'unitprice']) || 0);
-            if (!productName || quantity <= 0) { skipped++; continue; }
+            const productName = getVal(row, ['productname', 'name', 'description', 'item', 'product']);
+            if (!productName || String(productName).trim() === '') {
+              skipped++;
+              rowErrors.push(`Row ${i + 1}: missing product name — skipped`);
+              continue;
+            }
+
+            // Quantity defaults to 1 (a sale of "one") when the file omits it,
+            // rather than silently dropping the row.
+            let quantity = parseNum(getVal(row, ['quantity', 'qty', 'nos', 'units', 'pcs']));
+            if (!isFinite(quantity) || quantity <= 0) quantity = 1;
+
+            // A sales row may carry a per-unit price, a line total, or both.
+            // Reconcile them so a sale is never recorded as ₹0 when the file
+            // actually holds a value (the main cause of "sales not showing").
+            let price = parseNum(getVal(row, ['sellingprice', 'price', 'rate', 'unitprice', 'sellprice', 'mrp']));
+            const lineTotal = parseNum(getVal(row, ['amount', 'total', 'totalamount', 'saleamount', 'netamount', 'grandtotal', 'value', 'billamount', 'lineamount', 'subtotal']));
+            if (!isFinite(price) && isFinite(lineTotal)) price = lineTotal / quantity;
+            if (!isFinite(price)) price = 0;
 
             const barcode = getVal(row, ['barcode', 'sku']);
             const barcodeStr = barcode ? String(barcode) : null;
@@ -688,50 +743,63 @@ export async function POST(req: NextRequest) {
               productCost = price * 0.8;
             }
 
-            const customerName = getVal(row, ['customername', 'customer', 'partyname', 'party']);
-            const customerMobile = getVal(row, ['mobile', 'phone', 'customermobile']);
+            // Upsert the buyer into the CRM (Customers) — match on mobile first,
+            // then name; create if new. This is what puts imported buyers into
+            // the Customers module so they're linked to their sales history.
+            const customerName = getVal(row, ['customername', 'customer', 'partyname', 'party', 'buyer']);
+            const customerMobile = getVal(row, ['mobile', 'phone', 'customermobile', 'contact', 'mobilenumber']);
             let customerId: string | null = null;
-            if (customerName) {
-              const cleanName = String(customerName).trim();
-              const cleanMobile = customerMobile ? String(customerMobile).trim() : '';
-              let customer = null;
-              if (cleanMobile) {
-                customer = await prisma.customer.findFirst({
-                  where: { shopId, mobile: cleanMobile }
-                });
+            const cleanName = customerName ? String(customerName).trim() : '';
+            const cleanMobile = customerMobile ? String(customerMobile).replace(/\D/g, '').trim() : '';
+            if (cleanName || cleanMobile) {
+              const cacheKey = cleanMobile ? `m:${cleanMobile}` : `n:${cleanName.toLowerCase()}`;
+              const cached = customerCache.get(cacheKey);
+              if (cached) {
+                customerId = cached;
+              } else {
+                let customer = null;
+                if (cleanMobile) {
+                  customer = await prisma.customer.findFirst({ where: { shopId, mobile: cleanMobile } });
+                }
+                if (!customer && cleanName) {
+                  customer = await prisma.customer.findFirst({
+                    where: { shopId, name: { equals: cleanName, mode: 'insensitive' } }
+                  });
+                }
+                if (!customer) {
+                  customer = await prisma.customer.create({
+                    data: { shopId, name: cleanName || `Customer ${cleanMobile}`, mobile: cleanMobile || null }
+                  });
+                }
+                customerId = customer.id;
+                customerCache.set(cacheKey, customerId);
               }
-              if (!customer) {
-                customer = await prisma.customer.findFirst({
-                  where: { shopId, name: { equals: cleanName, mode: 'insensitive' } }
-                });
-              }
-              if (!customer) {
-                customer = await prisma.customer.create({
-                  data: { shopId, name: cleanName, mobile: cleanMobile }
-                });
-              }
-              customerId = customer.id;
             }
 
-            let invoiceNumber = getVal(row, ['invoicenumber', 'billnumber', 'invoice']);
-            invoiceNumber = invoiceNumber ? String(invoiceNumber) : `HIST-${Date.now()}-${i}`;
-            if (usedInvoiceNumbers.has(invoiceNumber)) invoiceNumber = `${invoiceNumber}-${Date.now()}`;
-            usedInvoiceNumbers.add(invoiceNumber);
-
-            const rawDate = getVal(row, ['date', 'billdate', 'saledate']);
-            let saleDate: Date | undefined;
-            if (rawDate) {
-              let dStr = String(rawDate);
-              if (/^\d{2}[-/]\d{2}[-/]\d{4}/.test(dStr)) {
-                const [d, m, y] = dStr.split(/[-/]/);
-                dStr = `${y}-${m}-${d}`;
+            // Idempotent import: a bill we've already got (or that repeats within
+            // this same file) is skipped, so re-uploading never multiplies sales.
+            const rawInvoice = getVal(row, ['invoicenumber', 'billnumber', 'invoice', 'billno', 'invoiceno']);
+            let invoiceNumber = rawInvoice ? String(rawInvoice).trim() : '';
+            if (invoiceNumber) {
+              const invKey = invoiceNumber.toLowerCase();
+              if (existingInvoices.has(invKey) || seenThisRun.has(invKey)) {
+                duplicateCount++;
+                skipped++;
+                continue;
               }
-              const parsed = Date.parse(dStr);
-              if (!isNaN(parsed)) saleDate = new Date(parsed);
+              seenThisRun.add(invKey);
+            } else {
+              invoiceNumber = `HIST-${Date.now()}-${i}`;
             }
 
-            let totalAmount = quantity * price;
-            if (isNaN(totalAmount)) totalAmount = 0;
+            // Sales history is always in the past → preferPast repairs
+            // day/month-swapped dates that would otherwise land in the future.
+            const rawDate = getVal(row, ['date', 'billdate', 'saledate', 'invoicedate']);
+            const saleDate = parseFlexibleDate(rawDate, { preferPast: true });
+
+            // Prefer an explicit line total from the file; else quantity × price.
+            let totalAmount = isFinite(lineTotal) ? lineTotal : quantity * price;
+            if (!isFinite(totalAmount)) totalAmount = 0;
             
             const marginPerUnit = Math.max(0, price - productCost);
             const totalProfit = quantity * marginPerUnit;
@@ -784,6 +852,9 @@ export async function POST(req: NextRequest) {
             skipped++;
             rowErrors.push(`Row ${i + 1}: ${rowErr.message || 'Failed to import'}`);
           }
+        }
+        if (duplicateCount > 0) {
+          rowErrors.push(`${duplicateCount} row(s) skipped — bill already imported (duplicate invoice number).`);
         }
         break;
       }
@@ -861,12 +932,65 @@ export async function POST(req: NextRequest) {
         break;
     }
 
+    const processingMs = Date.now() - startedAt;
+
+    // Durable import log doubles as the streaming JOB record for progress &
+    // resume. The wizard streams the file in batches:
+    //   • first batch  → no importLogId ⇒ CREATE the job with the FULL totalRows
+    //   • later batches → pass importLogId ⇒ INCREMENT the running counts
+    // processed = imported+updated+skipped+failed; job is resumable while
+    // processed < totalRows (no status column needed — the cursor is derivable).
+    const jobTotalRows = Number(body.totalRows) > 0 ? Number(body.totalRows) : data.length;
+    let importLogId: string | null = body.importLogId ? String(body.importLogId) : null;
+
+    if (importLogId) {
+      // Append this batch's errors (read-modify-write; batches run sequentially).
+      const existing = await prisma.importLog.findUnique({ where: { id: importLogId }, select: { errors: true } }).catch(() => null);
+      const prevErrors = Array.isArray(existing?.errors) ? (existing!.errors as any[]) : [];
+      await prisma.importLog.update({
+        where: { id: importLogId },
+        data: {
+          importedCount: { increment: created },
+          updatedCount: { increment: updated },
+          skippedCount: { increment: skipped },
+          failedCount: { increment: rowErrors.length },
+          processingMs: { increment: processingMs },
+          errors: [...prevErrors, ...rowErrors].slice(0, 500),
+        },
+      }).catch((e) => console.error('Failed to update ImportLog:', e));
+    } else {
+      const importLog = await prisma.importLog.create({
+        data: {
+          shopId,
+          importName: `${importType} import`,
+          fileName,
+          source: importType,
+          totalRows: jobTotalRows,
+          importedCount: created,
+          updatedCount: updated,
+          skippedCount: skipped,
+          failedCount: rowErrors.length,
+          errors: rowErrors.slice(0, 500),
+          processingMs,
+        },
+      }).catch((e) => { console.error('Failed to write ImportLog:', e); return null; });
+      importLogId = importLog?.id ?? null;
+    }
+
+    // Fine-grained activity trail keeps the full metric object (flexible JSON).
     await prisma.activityLog.create({
       data: {
         shopId,
         userId: auth.user.uuid,
         action: 'import_completed',
-        details: { importType, totalProcessed: data.length, created, updated, skipped, errorCount: rowErrors.length }
+        details: {
+          importType, fileName,
+          totalProcessed: data.length,
+          created, updated, skipped, errorCount: rowErrors.length,
+          processingMs,
+          rowsPerSecond: processingMs > 0 ? Math.round((data.length / processingMs) * 1000) : null,
+          extraction: extractionStats, // pages / chunks / dedup from analyze
+        }
       }
     }).catch((e) => console.error('Failed to log import activity:', e));
 
@@ -876,7 +1000,11 @@ export async function POST(req: NextRequest) {
         created,
         updated,
         skipped,
-        rowErrors
+        failed: rowErrors.length,
+        rowErrors,
+        processingMs,
+        rowsPerSecond: processingMs > 0 ? Math.round((data.length / processingMs) * 1000) : null,
+        importLogId,
       }
     });
 

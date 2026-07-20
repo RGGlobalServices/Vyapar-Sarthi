@@ -43,6 +43,7 @@ export const GET = handle(async (req) => {
         barcode: true,
         sellingPrice: true,
         currentStock: true,
+        minStock: true,
         category: true,
       },
       skip,
@@ -118,6 +119,7 @@ export const POST = handle(async (req) => {
         defaultPurchaseUnitId: b.defaultPurchaseUnitId ?? b.default_purchase_unit_id,
         maxStock: b.maxStock ?? b.max_stock,
         wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,
+        conversionFactor: b.conversionFactor ?? b.conversion_factor,
       },
     });
     return json(product, 201);

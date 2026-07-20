@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse';
+import { importConfig } from '@/lib/importConfig';
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
     } else if (businessTypeStr === 'electric' || businessTypeStr === 'electronics') {
       businessSpecificFields = '- Must extract Model Number, Warranty (in months), Technical Specs (like Watt, Volt, Capacity), Brand, and Category.';
       businessSpecificSchema = '"model_number": "string", "warranty_months": "number"';
+    } else if (businessTypeStr === 'liquor') {
+      businessSpecificFields = '- Must extract Brand, Volume (e.g. 90ml/180ml/375ml/650ml/750ml), Alcohol Percentage (ABV %), Bottle Type (Bottle/Can/PET), Category (Beer/Wine/Whisky/Rum/Vodka/Gin/Brandy/Scotch/Soft Drinks/Snacks/Cigarettes), MRP, Purchase Price, Barcode, and Batch Number. For supplier liquor invoices also extract units-per-case for unit conversion.';
+      businessSpecificSchema = '"brand": "string", "volume": "string", "alcoholPercentage": "string", "bottleType": "string"';
     } else {
       businessSpecificFields = '- Extract Brand, Category, Unit, and any specific variants/models.';
     }
@@ -114,13 +118,21 @@ CRITICAL INSTRUCTIONS FOR AI:
       }
     }
 
-    const prompt = `You are Vyapar Sarthi AI, an expert enterprise data extraction agent. 
+    // Build a prompt for one slice of document data. Text is processed in
+    // chunks (see below) so every row is extracted regardless of file size —
+    // for images, dataText is empty and the image itself carries the data.
+    const buildPrompt = (dataText: string) => `You are Vyapar Sarthi AI, an expert enterprise data extraction agent.
 Target Data Type: ${targetType.toUpperCase()}
 ${specificInstructions}
 ${jsonSchemaInstructions}
 
+EXTRACTION RULES:
+- Extract EVERY row present in the data below. Do not stop early, do not summarise, do not truncate.
+- If a table row wraps across lines, treat it as one product.
+- Return ALL rows you can see — there is no row limit.
+
 DOCUMENT DATA:
-${extractedText}`;
+${dataText}`;
 
     const purchaseSchema = {
       type: "json_schema" as const,
@@ -162,8 +174,9 @@ ${extractedText}`;
     };
 
     // One Nvidia chat-completion call → returns the raw message content string.
+    // max_tokens is high so a chunk's worth of rows never gets cut off mid-JSON.
     const callNvidia = async (messages: any[], model: string): Promise<string> => {
-      const requestBody: any = { model, messages, temperature: 0, max_tokens: 4096 };
+      const requestBody: any = { model, messages, temperature: 0, max_tokens: importConfig.aiMaxTokens };
       requestBody.response_format = targetType === 'purchase' ? purchaseSchema : { type: 'json_object' };
       const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
         method: 'POST',
@@ -211,24 +224,86 @@ ${extractedText}`;
       }
     };
 
-    // Any extracted document text → one text-model call.
-    if (extractedText.trim()) {
-      try {
-        collect(await callNvidia([{ role: 'user', content: prompt }], 'meta/llama-3.1-8b-instruct'));
-      } catch (e: any) { perCallErrors.push(`Text: ${e.message}`); }
+    // ── Split the full document text into row-sized chunks ──────────────────
+    // A single call can only emit ~8k tokens, so a long product list would get
+    // cut off mid-array and every row after that would be lost. Instead we slice
+    // the text into batches of rows, extract each independently, and merge — so
+    // 100% of rows are processed no matter how large the file is.
+    const LINES_PER_CHUNK = importConfig.chunkSize;   // configurable rows per AI call
+    const MAX_CHUNKS = importConfig.maxChunks;        // effectively unbounded (memory-guard only)
+    const chunkText = (text: string): string[] => {
+      const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+      if (lines.length <= LINES_PER_CHUNK) return lines.length ? [lines.join('\n')] : [];
+      // Prepend ONLY the first line (the column header) to each chunk for context.
+      // Never repeat DATA rows into other chunks — that is what inflated the row
+      // count (e.g. 80 rows reported as 141). Bodies are strictly non-overlapping.
+      const headerLine = lines[0];
+      const chunks: string[] = [];
+      for (let i = 1; i < lines.length && chunks.length < MAX_CHUNKS; i += LINES_PER_CHUNK) {
+        const body = lines.slice(i, i + LINES_PER_CHUNK).join('\n');
+        chunks.push(`${headerLine}\n${body}`);
+      }
+      return chunks;
+    };
+
+    // Build the full task list: every text chunk + every image page. Nothing is
+    // skipped — a large multi-page PDF becomes many tasks, all of which must run.
+    type Task = { label: string; run: () => Promise<string> };
+    const tasks: Task[] = [];
+
+    const textChunks = extractedText.trim() ? chunkText(extractedText) : [];
+    textChunks.forEach((chunk, idx) => {
+      tasks.push({
+        label: `Text chunk ${idx + 1}/${textChunks.length}`,
+        run: () => callNvidia([{ role: 'user', content: buildPrompt(chunk) }], 'meta/llama-3.1-8b-instruct'),
+      });
+    });
+
+    const MAX_IMAGES = importConfig.maxImages; // each image = one page of a scanned/photographed doc
+    const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
+    imagesToProcess.forEach((img, idx) => {
+      tasks.push({
+        label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
+        run: () => callNvidia(
+          [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, img] }],
+          'meta/llama-3.2-11b-vision-instruct'
+        ),
+      });
+    });
+
+    // Run tasks with bounded concurrency (fast, but avoids hammering the API),
+    // then RETRY any that failed — configurable pass count so we never silently
+    // drop rows.
+    const CONCURRENCY = importConfig.maxConcurrentWorkers;
+    const runTask = async (t: Task): Promise<{ label: string; raw?: string; error?: string }> => {
+      try { return { label: t.label, raw: await t.run() }; }
+      catch (e: any) { return { label: t.label, error: e?.message || 'failed' }; }
+    };
+    const runAll = async (list: Task[]) => {
+      const out: { label: string; raw?: string; error?: string }[] = [];
+      for (let i = 0; i < list.length; i += CONCURRENCY) {
+        out.push(...await Promise.all(list.slice(i, i + CONCURRENCY).map(runTask)));
+      }
+      return out;
+    };
+
+    let results = await runAll(tasks);
+    // Retry failed chunks/pages up to retryCount times before giving up.
+    for (let attempt = 0; attempt < importConfig.retryCount; attempt++) {
+      const failedTasks = tasks.filter((t) => results.find(r => r.label === t.label)?.error);
+      if (failedTasks.length === 0) break;
+      const retry = await runAll(failedTasks);
+      results = results.map(r => retry.find(rr => rr.label === r.label && rr.raw) || r);
     }
 
-    // Each image → its own vision-model call (cap to keep total time sane).
-    const MAX_IMAGES = 30;
-    const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
-    for (let idx = 0; idx < imagesToProcess.length; idx++) {
-      try {
-        const messages = [{ role: 'user', content: [{ type: 'text', text: prompt }, imagesToProcess[idx]] }];
-        collect(await callNvidia(messages, 'meta/llama-3.2-11b-vision-instruct'));
-      } catch (e: any) {
-        perCallErrors.push(`Page/Image ${idx + 1}: ${e.message}`);
-      }
+    // Merge every successful task's rows (in task order) and record failures.
+    for (const r of results) {
+      if (r.raw) { try { collect(r.raw); } catch (e: any) { perCallErrors.push(`${r.label}: parse ${e.message}`); } }
+      else if (r.error) { perCallErrors.push(`${r.label}: ${r.error}`); }
     }
+
+    const totalTasks = tasks.length;
+    const failedCount = results.filter(r => r.error).length;
 
     if (aggregatedItems.length === 0) {
       return NextResponse.json({
@@ -240,10 +315,45 @@ ${extractedText}`;
       }, { status: 422 });
     }
 
+    // Deduplicate rows the AI may have emitted twice (chunk boundaries, a
+    // repeated header, or a vision model re-reading a table). We key on the
+    // ENTIRE normalized row so only genuine exact-duplicate rows are dropped and
+    // legitimately-distinct rows (different customer, qty, etc.) are all kept —
+    // this is what corrects an inflated count like "80 rows shown as 141".
+    const normalizeRow = (it: any): string => {
+      if (!it || typeof it !== 'object') return String(it);
+      const entries = Object.keys(it).sort().map(k => {
+        const v = it[k];
+        return `${k.toLowerCase()}=${String(v ?? '').trim().toLowerCase()}`;
+      });
+      return entries.join('|');
+    };
+    const seenKeys = new Set<string>();
+    const dedupedItems = aggregatedItems.filter((it: any) => {
+      const key = normalizeRow(it);
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+    const duplicatesRemoved = aggregatedItems.length - dedupedItems.length;
+
     return NextResponse.json({
-      summary: `Extracted ${aggregatedItems.length} items from ${imagesToProcess.length || 1} document(s)${imageContents.length > MAX_IMAGES ? ` (first ${MAX_IMAGES} images processed)` : ''}`,
+      summary: `Extracted ${dedupedItems.length} rows from ${totalTasks} section(s) `
+        + `(${textChunks.length} text chunk(s), ${imagesToProcess.length} page image(s))`
+        + `${failedCount > 0 ? ` — ${failedCount} section(s) failed after retry` : ''}`
+        + `${duplicatesRemoved > 0 ? `, ${duplicatesRemoved} duplicate(s) removed` : ''}`
+        + `${imageContents.length > MAX_IMAGES ? ` (first ${MAX_IMAGES} images processed)` : ''}`,
+      stats: {
+        sectionsTotal: totalTasks,
+        sectionsFailed: failedCount,
+        textChunks: textChunks.length,
+        pageImages: imagesToProcess.length,
+        rowsExtracted: aggregatedItems.length,
+        rowsAfterDedup: dedupedItems.length,
+        duplicatesRemoved,
+      },
       ...header,
-      items: aggregatedItems,
+      items: dedupedItems,
       partialErrors: perCallErrors.length ? perCallErrors : undefined,
     });
 

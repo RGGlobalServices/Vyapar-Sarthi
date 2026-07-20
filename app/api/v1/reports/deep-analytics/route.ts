@@ -17,9 +17,16 @@ export const GET = handle(async (req) => {
   let end = new Date(today);
   end.setHours(23, 59, 59, 999);
   
+  // 'all' = the entire sales history, regardless of when it happened. This is the
+  // Sales-History screen's default so imported historical (and even future-dated)
+  // sales are visible without the shopkeeper having to guess a date range.
+  const isAllTime = q.timeframe === 'all' && !q.startDate && !q.endDate;
+
   if (q.startDate) {
     start = new Date(q.startDate);
     start.setHours(0, 0, 0, 0);
+  } else if (isAllTime) {
+    start = new Date('2000-01-01T00:00:00.000Z');
   } else if (q.timeframe === 'week') {
     start.setDate(today.getDate() - 6);
   } else if (q.timeframe === 'month') {
@@ -33,6 +40,9 @@ export const GET = handle(async (req) => {
   if (q.endDate) {
     end = new Date(q.endDate);
     end.setHours(23, 59, 59, 999);
+  } else if (isAllTime) {
+    // Far future so back-dated OR future-dated imported sales are all included.
+    end = new Date('2100-01-01T00:00:00.000Z');
   }
 
   // 1. Sales Trend & KPIs (via SQL Aggregation)

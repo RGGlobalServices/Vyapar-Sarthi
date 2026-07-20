@@ -50,6 +50,15 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   }, [importType]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [extractionStats, setExtractionStats] = useState<any>(null);
+  // Live streaming-import progress (null when not saving).
+  const [progress, setProgress] = useState<null | {
+    processed: number; total: number; created: number; updated: number; skipped: number; failed: number;
+    batch: number; totalBatches: number; rps: number; etaSec: number; stage: string;
+  }>(null);
+  // Set when a streaming import was interrupted so the user can resume (no restart).
+  const [resumeState, setResumeState] = useState<null | { importLogId: string | null; offset: number }>(null);
 
   // Shared entry point for both spreadsheet and AI-extracted rows: reshape into
   // the canonical template (so missing columns show as blank/fillable), then ask
@@ -59,6 +68,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     const { rows, headers: displayHeaders } = applyTemplate(rawRows, rawHeaders, template);
     setHeaders(displayHeaders);
     setPreviewData(rows);
+    // Select EVERY extracted row by default so the whole file imports — never
+    // just the first screenful. The user can still deselect individual rows.
+    setSelectedRows(rows.map((_, i) => i));
     setRowDecisions(new Array(rows.length).fill(undefined));
     setRowMatches([]);
     validateData(rows, displayHeaders);
@@ -153,26 +165,44 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-            
-            // Each page becomes one image, processed as its own AI call on the
-            // server (the vision model takes one image per prompt). Cap at 25 so a
-            // huge PDF doesn't run for minutes; the server caps total images too.
-            const numPages = Math.min(pdf.numPages, 25);
-            
-            for (let i = 1; i <= numPages; i++) {
-              setLoadingText(`Converting PDF ${file.name} (Page ${i} of ${numPages})...`);
-              const page = await pdf.getPage(i);
-              const viewport = page.getViewport({ scale: 2.0 });
-              const canvas = document.createElement('canvas');
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              const ctx = canvas.getContext('2d');
-              
-              if (ctx) {
-                await page.render({ canvasContext: ctx, viewport }).promise;
-                const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.9));
-                if (blob) {
-                  filesToSend.push(new File([blob], `${file.name}-page${i}.jpg`, { type: 'image/jpeg' }));
+
+            // Decide once how to read this PDF: sample the first pages for real,
+            // selectable text. A text-based PDF (exported report / invoice) is
+            // sent RAW so the server extracts EVERY page's text — no page cap,
+            // no lossy rasterisation. Only a scanned/image PDF falls back to
+            // rendering each page to an image for vision OCR.
+            let sampledText = '';
+            const sampleCount = Math.min(pdf.numPages, 3);
+            for (let i = 1; i <= sampleCount; i++) {
+              try {
+                const tc = await (await pdf.getPage(i)).getTextContent();
+                sampledText += tc.items.map((it: any) => it.str).join(' ');
+              } catch {}
+            }
+            const hasRealText = sampledText.replace(/\s/g, '').length > 40;
+
+            if (hasRealText) {
+              // Server pdf-parse reads all pages; chunker processes all rows.
+              setLoadingText(`Reading PDF ${file.name} (${pdf.numPages} pages)...`);
+              filesToSend.push(file);
+            } else {
+              // Scanned PDF → render each page to an image for OCR. Cap matches
+              // the server's per-request image limit so pages aren't dropped.
+              const numPages = Math.min(pdf.numPages, 60);
+              for (let i = 1; i <= numPages; i++) {
+                setLoadingText(`Converting scanned PDF ${file.name} (Page ${i} of ${numPages})...`);
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 2.0 });
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  await page.render({ canvasContext: ctx, viewport }).promise;
+                  const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                  if (blob) {
+                    filesToSend.push(new File([blob], `${file.name}-page${i}.jpg`, { type: 'image/jpeg' }));
+                  }
                 }
               }
             }
@@ -191,7 +221,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
           try {
             const res = await api.post('/wholesale-import/analyze', fd);
             const data = res.data;
-            
+            if (data.stats) setExtractionStats(data.stats);
+
             if (data.items && data.items.length > 0) {
               const aiHeaders = Object.keys(data.items[0]);
               await loadRows(data.items, aiHeaders);
@@ -241,8 +272,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      // Only select up to the first 50 rows since we only render 50 editable rows for now
-      setSelectedRows(previewData.slice(0, 50).map((_, i) => i));
+      // Select ALL rows (not just the rendered preview) so the entire file imports.
+      setSelectedRows(previewData.map((_, i) => i));
     } else {
       setSelectedRows([]);
     }
@@ -305,6 +336,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         godownId: selectedGodown,
         existingPolicy,
         rowDecisions,
+        fileName: files[0]?.name || null,
+        stats: extractionStats,
       });
 
       setSummary(res.data.summary);
@@ -344,6 +377,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         <Card className="bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700">
           <CardContent className="p-12">
             <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden" accept=".csv,.xlsx,.xls,.pdf,image/*" />
+            {/* Camera capture — on a phone this opens the rear camera directly so
+                the shopkeeper can photograph a supplier bill / stock list. */}
+            <input type="file" ref={cameraInputRef} onChange={handleFileChange} className="hidden" accept="image/*" capture="environment" />
             
             <div 
               onDragOver={(e) => e.preventDefault()}
@@ -386,13 +422,22 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   
                   <div className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl text-center max-w-sm">
                     <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-400">
-                      💡 Note: AI reads each page/photo one by one, so multi-page PDFs and multiple photos now work. Up to ~25 pages or 25 photos per upload — larger batches just take longer.
+                      💡 Note: The AI reads the ENTIRE file — every page and every row — before showing results. Text PDFs are read in full (all pages, hundreds/thousands of rows); scanned PDFs and photos are read page-by-page. Large files just take a little longer.
                     </p>
                   </div>
 
-                  <button className="bg-emerald-500 text-slate-900 px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors">
-                    Browse Files
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <button className="bg-emerald-500 text-slate-900 px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors">
+                      Browse Files
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click(); }}
+                      className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-6 py-2.5 rounded-xl font-bold hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                    >
+                      <Camera size={18} /> Take Photo
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -525,7 +570,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <th className="px-3 py-3 w-10 sticky left-0 bg-slate-50 dark:bg-slate-800 z-20 border-r border-slate-200 dark:border-slate-700 text-center">
                       <input 
                         type="checkbox" 
-                        checked={selectedRows.length === Math.min(previewData.length, 50) && previewData.length > 0}
+                        checked={selectedRows.length === previewData.length && previewData.length > 0}
                         onChange={handleSelectAll}
                         className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                       />

@@ -52,6 +52,9 @@ type Product = {
   gstPercent?: number;
   hsnCode?: string;
   metadata?: any;
+  brand?: string;
+  conversionFactor?: number;
+  conversion_factor?: number;
 };
 
 function buildEmptyForm(btype: string) {
@@ -63,7 +66,9 @@ function buildEmptyForm(btype: string) {
     expiry_date: '', batch_number: '', drug_schedule: 'OTC',
     model_number: '', warranty_months: '', gender: 'Unisex',
     shade: '', size_variants: {} as Record<string, number>,
-    gstPercent: 0, hsnCode: ''
+    gstPercent: 0, hsnCode: '',
+    // Liquor (Beer Bar & Wine Shop) fields
+    brand: '', alcohol_percentage: '', bottle_type: '', conversion_factor: ''
   };
 }
 
@@ -305,7 +310,13 @@ function LegacyProductsUI() {
     e.preventDefault();
     const sizeVariantsJson = addVariantActive ? serializeSizeVariants(form.size_variants) : undefined;
     const stockQty = addVariantActive ? totalFromSizes(form.size_variants) : Number(form.stock);
-    const metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePrices, Object.keys(sizePrices).length > 0) : undefined;
+    let metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePrices, Object.keys(sizePrices).length > 0) : undefined;
+    // Liquor: alcohol % & bottle type ride along in the metadata JSON (no schema change).
+    if (bizConfig.hasLiquorSpecs && (form.alcohol_percentage || form.bottle_type)) {
+      metadataPayload = { ...(metadataPayload || {}),
+        alcoholPercentage: form.alcohol_percentage || undefined,
+        bottleType: form.bottle_type || undefined };
+    }
     // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
     try {
       const res = await api.post('/products', {
@@ -325,6 +336,8 @@ function LegacyProductsUI() {
         shade: form.shade || null,
         size_variants: sizeVariantsJson || null,
         metadata: metadataPayload,
+        brand: form.brand || null,
+        conversion_factor: form.conversion_factor ? Number(form.conversion_factor) : null,
       });
 
       // If a godown was selected, assign the initial stock to it
@@ -371,6 +384,10 @@ function LegacyProductsUI() {
       size_variants: parseSizeVariants(product.size_variants),
       gstPercent: Number(product.gstPercent || 0),
       hsnCode: product.hsnCode || '',
+      brand: product.brand || '',
+      alcohol_percentage: String((product.metadata as any)?.alcoholPercentage ?? ''),
+      bottle_type: String((product.metadata as any)?.bottleType ?? ''),
+      conversion_factor: String(product.conversionFactor ?? product.conversion_factor ?? ''),
     });
     // Load per-size pricing from metadata. Default it ON for variant products (colour/size or a
     // category with a spec matrix) so per-spec price fields are visible without hunting for a toggle.
@@ -390,9 +407,15 @@ function LegacyProductsUI() {
     try {
       const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
       const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
-      const editMetadata = editVariantActive
+      let editMetadata = editVariantActive
         ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePrices, Object.keys(editSizePrices).length > 0)
         : undefined;
+      // Preserve/refresh liquor extras in the metadata JSON.
+      if (bizConfig.hasLiquorSpecs) {
+        editMetadata = { ...(editProduct.metadata || {}), ...(editMetadata || {}),
+          alcoholPercentage: editForm.alcohol_percentage || undefined,
+          bottleType: editForm.bottle_type || undefined };
+      }
       // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
       await api.put(`/products/${editProduct.id}`, {
         name: editForm.name,
@@ -413,6 +436,8 @@ function LegacyProductsUI() {
         shade: editForm.shade || null,
         size_variants: sizeVariantsJson || null,
         metadata: editMetadata,
+        brand: editForm.brand || null,
+        conversion_factor: editForm.conversion_factor ? Number(editForm.conversion_factor) : null,
       });
       await mutateProducts();
       setShowEditModal(false);
@@ -700,6 +725,7 @@ function LegacyProductsUI() {
                   {bizConfig.hasWarranty && <th className="px-6 py-4">Warranty</th>}
                   {bizConfig.hasShades && <th className="px-6 py-4">Shade</th>}
                   {bizConfig.hasGender && <th className="px-6 py-4">Gender</th>}
+                  {bizConfig.hasLiquorSpecs && <th className="px-6 py-4">Brand / ABV</th>}
                   <th className="px-6 py-4 text-right">{t('colMRP')}</th>
                   <th className="px-6 py-4 text-right">{t('colSelling')}</th>
                   <th className="px-6 py-4 text-right">{t('colStockValue')}</th>
@@ -805,6 +831,12 @@ function LegacyProductsUI() {
                       )}
                       {bizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-500 dark:text-pink-400">{product.shade || '—'}</td>}
                       {bizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.gender || '—'}</td>}
+                      {bizConfig.hasLiquorSpecs && (
+                        <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">
+                          {product.brand || '—'}
+                          {(product.metadata as any)?.alcoholPercentage && <span className="ml-1 text-rose-500 dark:text-rose-400 font-semibold">· {(product.metadata as any).alcoholPercentage}%</span>}
+                        </td>
+                      )}
                       <td className="px-6 py-4 text-right text-slate-500 dark:text-slate-400">
                         {hasPerSizePricing
                           ? <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size</span>
@@ -963,6 +995,31 @@ function LegacyProductsUI() {
                         <input type="number" min="0" className={modalInp} placeholder="12" value={editForm.warranty_months} onChange={e => setEditForm(f => ({ ...f, warranty_months: e.target.value }))} />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Liquor — Beer Bar & Wine Shop */}
+                {bizConfig.hasLiquorSpecs && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Brand</label>
+                      <input className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Alcohol %</label>
+                      <input type="number" min="0" step="0.1" className={modalInp} placeholder="e.g. 5 / 42.8" value={editForm.alcohol_percentage} onChange={e => setEditForm(f => ({ ...f, alcohol_percentage: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Bottle Type</label>
+                      <select className={modalSel} value={editForm.bottle_type} onChange={e => setEditForm(f => ({ ...f, bottle_type: e.target.value }))}>
+                        <option value="">Select...</option>
+                        {['Bottle', 'Can', 'PET', 'Tetra', 'Pack'].map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Units per Case (1 Case = ? {editForm.unit})</label>
+                      <input type="number" min="0" className={modalInp} placeholder="e.g. 12" value={editForm.conversion_factor} onChange={e => setEditForm(f => ({ ...f, conversion_factor: e.target.value }))} />
+                    </div>
                   </div>
                 )}
               </section>
@@ -1278,6 +1335,34 @@ function LegacyProductsUI() {
                           value={form.warranty_months} onChange={e => setForm(f => ({ ...f, warranty_months: e.target.value }))} />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Liquor — Beer Bar & Wine Shop */}
+                {bizConfig.hasLiquorSpecs && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Brand</label>
+                      <input className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride"
+                        value={form.brand} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Alcohol %</label>
+                      <input type="number" min="0" step="0.1" className={modalInp} placeholder="e.g. 5 / 42.8"
+                        value={form.alcohol_percentage} onChange={e => setForm(f => ({ ...f, alcohol_percentage: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Bottle Type</label>
+                      <select className={modalInp} value={form.bottle_type} onChange={e => setForm(f => ({ ...f, bottle_type: e.target.value }))}>
+                        <option value="">Select...</option>
+                        {['Bottle', 'Can', 'PET', 'Tetra', 'Pack'].map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Units per Case (1 Case = ? {form.unit})</label>
+                      <input type="number" min="0" className={modalInp} placeholder="e.g. 12"
+                        value={form.conversion_factor} onChange={e => setForm(f => ({ ...f, conversion_factor: e.target.value }))} />
+                    </div>
                   </div>
                 )}
               </section>
