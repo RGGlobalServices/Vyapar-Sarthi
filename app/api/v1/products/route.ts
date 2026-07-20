@@ -27,7 +27,9 @@ export const GET = handle(async (req) => {
       {
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
-          { barcode: { equals: q } }
+          // `contains` (not `equals`) so a typed/partial barcode or SKU still matches,
+          // not only an exact hardware-scanner read.
+          { barcode: { contains: q, mode: 'insensitive' } },
         ]
       }
     ];
@@ -55,8 +57,11 @@ export const GET = handle(async (req) => {
     });
   }
 
-  const [products, total] = await Promise.all([
-    prisma.product.findMany({ 
+  // Stock added in the last 24h per product → drives the "+N newly added" badge
+  // in the Products/Stock lists. One grouped query, indexed on (shop, type, created).
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [products, total, recentAdds] = await Promise.all([
+    prisma.product.findMany({
       where,
       include: {
         godownProducts: true,
@@ -70,15 +75,26 @@ export const GET = handle(async (req) => {
       take: limit,
       orderBy: { name: 'asc' }
     }),
-    pageStr || limitStr ? prisma.product.count({ where }) : Promise.resolve(0)
+    pageStr || limitStr ? prisma.product.count({ where }) : Promise.resolve(0),
+    prisma.stockLog.groupBy({
+      by: ['productId'],
+      where: { shopId: shop.id, quantity: { gt: 0 }, createdAt: { gte: since }, type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment'] } },
+      _sum: { quantity: true },
+    }).catch(() => [] as any[]),
   ]);
-  
-  if (pageStr || limitStr) {
-    return json({ data: products, total, page, limit });
+
+  const recentMap = new Map<string, number>();
+  for (const r of recentAdds as any[]) {
+    if (r.productId) recentMap.set(r.productId, Number(r._sum?.quantity) || 0);
   }
-  
+  const withRecent = products.map((p: any) => ({ ...p, recentlyAdded: recentMap.get(p.id) || 0 }));
+
+  if (pageStr || limitStr) {
+    return json({ data: withRecent, total, page, limit });
+  }
+
   // Backwards compatibility for endpoints that expect an array
-  return json(products);
+  return json(withRecent);
 });
 
 export const POST = handle(async (req) => {
@@ -122,6 +138,14 @@ export const POST = handle(async (req) => {
         conversionFactor: b.conversionFactor ?? b.conversion_factor,
       },
     });
+    // Record the opening stock as a stock-in movement so the Products/Stock lists
+    // can surface a "+N newly added" badge (and for the audit trail).
+    const openingQty = Number(product.currentStock) || 0;
+    if (openingQty > 0) {
+      await prisma.stockLog.create({
+        data: { shopId: shop.id, productId: product.id, type: 'in', quantity: openingQty, note: 'Opening stock' },
+      }).catch((e) => console.error('Failed to write opening StockLog:', e));
+    }
     return json(product, 201);
   } catch (error: any) {
     if (error.code === 'P2002' && error.meta?.target?.includes('barcode')) {

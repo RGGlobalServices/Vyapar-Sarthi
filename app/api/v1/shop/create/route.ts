@@ -40,6 +40,9 @@ export const POST = handle(async (req) => {
       packageType: finalPackageType,
       subscriptionPlan: finalSubscriptionPlan,
       subscriptionStatus: primaryShop?.subscriptionStatus || 'active',
+      subscriptionExpiry: primaryShop?.subscriptionExpiry || null,
+      subscriptionTrialEnds: primaryShop?.subscriptionTrialEnds || null,
+      trialPaused: primaryShop?.trialPaused || false,
       setupComplete: false,
     },
   });

@@ -413,7 +413,9 @@ function StandardBillingUI() {
   }, [addItem, bizConfig.hasSizes]);
 
   const handleScan = useCallback((barcode: string) => {
-    const product = products.find(p => p.barcode === barcode || p.sku === barcode);
+    const scanned = String(barcode).trim().toLowerCase();
+    const product = products.find(p =>
+      (p.barcode || '').toLowerCase() === scanned || (p.sku || '').toLowerCase() === scanned);
     if (product) {
       addToCart(product);
     } else {

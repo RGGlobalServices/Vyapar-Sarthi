@@ -55,6 +55,8 @@ type Product = {
   brand?: string;
   conversionFactor?: number;
   conversion_factor?: number;
+  recentlyAdded?: number;
+  barcode?: string;
 };
 
 function buildEmptyForm(btype: string) {
@@ -769,11 +771,12 @@ function LegacyProductsUI() {
                         }
                       });
                     }
-                    if (hasValidCostAndPrice && totalCostValue > 0) {
-                      profit = ((totalSellingValue - totalCostValue) / totalCostValue * 100).toFixed(1);
+                    if (hasValidCostAndPrice && totalSellingValue > 0) {
+                      // Profit margin = profit ÷ selling price (accounting standard), not markup on cost.
+                      profit = ((totalSellingValue - totalCostValue) / totalSellingValue * 100).toFixed(1);
                     }
-                  } else if (product.cost > 0) {
-                    profit = ((product.sellingPrice - product.cost) / product.cost * 100).toFixed(1);
+                  } else if (product.cost > 0 && product.sellingPrice > 0) {
+                    profit = ((product.sellingPrice - product.cost) / product.sellingPrice * 100).toFixed(1);
                   }
 
                   return (
@@ -812,6 +815,11 @@ function LegacyProductsUI() {
                             </div>
                           ) : (
                             <>{product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit} locale={locale} /></span></>
+                          )}
+                          {(product.recentlyAdded ?? 0) > 0 && (
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title="Recently added stock (last 24h)">
+                              +{product.recentlyAdded}
+                            </span>
                           )}
                           {isLowStock && <AlertCircle size={14} />}
                         </div>
@@ -1157,11 +1165,11 @@ function LegacyProductsUI() {
                     <input type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} />
                   </div>
                 </div>
-                {editForm.sellingPrice && editForm.cost && Number(editForm.cost) > 0 && (
+                {editForm.sellingPrice && editForm.cost && Number(editForm.sellingPrice) > 0 && (
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
                     <span className="text-xs font-semibold text-emerald-500/70">Profit Margin</span>
                     <span className="text-lg font-black text-emerald-400">
-                      {(((Number(editForm.sellingPrice) - Number(editForm.cost)) / Number(editForm.cost)) * 100).toFixed(1)}%
+                      {(((Number(editForm.sellingPrice) - Number(editForm.cost)) / Number(editForm.sellingPrice)) * 100).toFixed(1)}%
                     </span>
                   </div>
                 )}
@@ -1515,11 +1523,11 @@ function LegacyProductsUI() {
                       value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} />
                   </div>
                 </div>
-                {form.sellingPrice && form.cost && Number(form.cost) > 0 && (
+                {form.sellingPrice && form.cost && Number(form.sellingPrice) > 0 && (
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
                     <span className="text-xs font-semibold text-emerald-500/70">{t('profit')}</span>
                     <span className="text-lg font-black text-emerald-400">
-                      {(((Number(form.sellingPrice) - Number(form.cost)) / Number(form.cost)) * 100).toFixed(1)}%
+                      {(((Number(form.sellingPrice) - Number(form.cost)) / Number(form.sellingPrice)) * 100).toFixed(1)}%
                     </span>
                   </div>
                 )}

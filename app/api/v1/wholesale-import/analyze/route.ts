@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse';
+import * as XLSX from 'xlsx';
 import { importConfig } from '@/lib/importConfig';
 
 export async function POST(req: NextRequest) {
@@ -46,20 +47,20 @@ export async function POST(req: NextRequest) {
 
     let specificInstructions = '';
     if (targetType === 'purchase') {
-      specificInstructions = 'Extract the purchase invoice data STRICTLY conforming to the provided JSON schema. Do NOT include markdown code blocks or explanations.';
+      specificInstructions = 'Extract the purchase invoice data STRICTLY conforming to the provided JSON schema. The data may be messy, handwritten, or informal (e.g., a "kacha bill"). Use your intelligence to infer the Item Name, Quantity, Price, and Total even if column headers are missing or unclear. Do NOT include markdown code blocks or explanations.';
     } else {
-      specificInstructions = `Extract all tabular data relevant to the ${targetType} category.`;
+      specificInstructions = `Extract all data relevant to the ${targetType} category. The document may be a photo of a handwritten notebook, an informal note, a kacha bill, or a structured table. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible.`;
     }
 
     const jsonSchemaInstructions = `
 Your response MUST be a VALID JSON object containing an "items" array. Each object in the "items" array represents a single row or entity extracted from the document.
 
-Extract EVERYTHING available. Do not skip data!
-- For Products/Stock: Include ProductName, Quantity, SellingPrice, CostPrice, MRP.
+The document could be a photo of a handwritten notebook, an informal "kacha bill", or a structured table. Extract EVERYTHING available. Do not skip data!
+- For Products/Stock: Include ProductName, Quantity, SellingPrice, CostPrice, MRP. Look for scribbled lists or informal rows.
 ${businessSpecificFields}
 - For Customers/Suppliers: Include Name, Address (Village/City), Mobile Number, and any Dates or Years present indicating when they were added or their last transaction.
 - For Sales History: Include ProductName, Quantity, SellingPrice (also known as Rate or Price), CustomerName, Mobile, InvoiceNumber, Date, and PaymentType.
-- For Ledger/Udhar: Include PartyName, Type, Mobile, and OpeningBalance (Amount).
+- For Ledger/Udhar: Include PartyName, Type, Mobile, and OpeningBalance (Amount). Look for natural language like "Ramesh ko 500 dia" and map it to Name: Ramesh, Amount: 500.
 
 Example JSON response:
 {
@@ -95,6 +96,8 @@ CRITICAL INSTRUCTIONS FOR AI:
     for (const file of files) {
       let mimeType = file.type;
       if (file.name.endsWith('.csv')) mimeType = 'text/csv';
+      if (file.name.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (file.name.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
       if (!mimeType) mimeType = 'application/octet-stream';
 
       const arrayBuffer = await file.arrayBuffer();
@@ -103,9 +106,12 @@ CRITICAL INSTRUCTIONS FOR AI:
       if (mimeType === 'application/pdf') {
         try {
           const pdfData = await pdfParse(buffer);
+          if (!pdfData.text || pdfData.text.trim().length < 20) {
+            throw new Error(`The PDF file ${file.name} appears to be a scanned image with no text. Please convert it to an image (JPG/PNG) or upload a photo of it so our Vision AI can read the handwriting.`);
+          }
           extractedText += `\n--- PDF: ${file.name} ---\n` + pdfData.text;
         } catch (pdfError: any) {
-          throw new Error(`The PDF file ${file.name} could not be read. Please convert it to an image (JPG/PNG) and upload again.`);
+          throw new Error(pdfError.message || `The PDF file ${file.name} could not be read. Please convert it to an image (JPG/PNG) and upload again.`);
         }
       } else if (mimeType.startsWith('image/')) {
         hasImages = true;
@@ -113,6 +119,15 @@ CRITICAL INSTRUCTIONS FOR AI:
           type: "image_url",
           image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` }
         });
+      } else if (mimeType === 'text/csv' || mimeType.includes('excel') || mimeType.includes('spreadsheet')) {
+        try {
+          const workbook = XLSX.read(buffer, { type: 'buffer' });
+          const sheetName = workbook.SheetNames[0];
+          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+          extractedText += `\n--- Spreadsheet: ${file.name} ---\n` + csv;
+        } catch (e: any) {
+          throw new Error(`Could not parse spreadsheet ${file.name}: ${e.message}`);
+        }
       } else {
         extractedText += `\n--- Document: ${file.name} ---\n` + buffer.toString('utf-8');
       }

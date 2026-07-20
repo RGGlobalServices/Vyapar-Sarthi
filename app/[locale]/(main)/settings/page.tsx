@@ -102,17 +102,24 @@ function SettingsPageInner() {
         setSettings(prev => ({ ...prev, ...res.data }));
         setUserProfile(profileRes.data);
         setSessions(sessionsRes.data || []);
-        
-        if ('Notification' in window) {
-          setPermission(Notification.permission);
-          const registration = await navigator.serviceWorker.ready;
-          const subscription = await registration.pushManager.getSubscription();
-          setIsSubscribed(!!subscription);
-        }
       } catch (err) {
         console.error('Failed to load settings:', err);
       } finally {
         setLoading(false);
+      }
+
+      // Check push subscription asynchronously without blocking the UI
+      if ('Notification' in window && 'serviceWorker' in navigator) {
+        try {
+          setPermission(Notification.permission);
+          const registration = await navigator.serviceWorker.getRegistration();
+          if (registration) {
+            const subscription = await registration.pushManager.getSubscription();
+            setIsSubscribed(!!subscription);
+          }
+        } catch (err) {
+          console.error('Failed to get push subscription:', err);
+        }
       }
     };
     load();
@@ -132,15 +139,23 @@ function SettingsPageInner() {
   const handleTogglePush = async () => {
     try {
       if (isSubscribed) {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        await subscription?.unsubscribe();
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          const subscription = await registration.pushManager.getSubscription();
+          await subscription?.unsubscribe();
+        }
         setIsSubscribed(false);
       } else {
         const result = await Notification.requestPermission();
         setPermission(result);
         if (result === 'granted') {
-          const registration = await navigator.serviceWorker.ready;
+          const registration = await navigator.serviceWorker.getRegistration();
+          if (!registration) {
+            throw new Error('Push notifications require a Service Worker, which was not found in this environment.');
+          }
+          if (!registration.active) {
+            throw new Error('The Service Worker is not active yet. This is normal in development mode. In production, please refresh and try again.');
+          }
           const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
           
           if (!vapidKey) {
@@ -162,7 +177,12 @@ function SettingsPageInner() {
       }
     } catch (err) {
       console.error('Push error:', err);
-      alert('Failed to update push subscription: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (msg.includes('no active Service Worker')) {
+        alert('Push notifications require an active Service Worker. This is usually disabled in development mode or private browsing.');
+      } else {
+        alert('Failed to update push subscription: ' + msg);
+      }
     }
   };
 

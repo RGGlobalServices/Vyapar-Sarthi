@@ -383,6 +383,11 @@ export default function LegacyStockUI() {
                 <button onClick={() => openEditModal(item)} className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer">
                   {Math.max(0, item.current)}
                 </button>
+                {(item.recentlyAdded ?? 0) > 0 && (
+                  <span className="ml-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title="Recently added stock (last 24h)">
+                    +{item.recentlyAdded}
+                  </span>
+                )}
                 {(() => {
                   const sv = parseSizeVariants((item as any).size_variants);
                   const entries = Object.entries(sv).filter(([,q]) => Number(q) > 0);
@@ -397,13 +402,20 @@ export default function LegacyStockUI() {
                 })()}
               </div>
             ) : (
-              <button
-                onClick={() => openEditModal(item)}
-                className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
-                title="Click to adjust stock"
-              >
-                {Math.max(0, item.current)}
-              </button>
+              <span className="inline-flex items-center gap-1.5">
+                <button
+                  onClick={() => openEditModal(item)}
+                  className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
+                  title="Click to adjust stock"
+                >
+                  {Math.max(0, item.current)}
+                </button>
+                {(item.recentlyAdded ?? 0) > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title="Recently added stock (last 24h)">
+                    +{item.recentlyAdded}
+                  </span>
+                )}
+              </span>
             )}
           </td>
           <td className="px-6 py-4 text-slate-400">{item.min}</td>

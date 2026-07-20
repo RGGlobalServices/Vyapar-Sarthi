@@ -33,5 +33,13 @@ export const fetchProductsMapped = (url: string) =>
       size_variants: p.size_variants,
       is_loose: p.is_loose,
       metadata: p.metadata,
+      // The REAL stored barcode — without this the Barcode/QR modal shows an
+      // unsaved PRD-<id> fallback that no scan or search can ever match.
+      barcode: p.barcode,
+      gstPercent: p.gstPercent,
+      hsnCode: p.hsnCode,
+      brand: p.brand,
+      conversionFactor: p.conversionFactor,
+      recentlyAdded: p.recentlyAdded,
     }))
   );

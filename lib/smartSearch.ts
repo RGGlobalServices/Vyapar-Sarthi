@@ -72,9 +72,12 @@ export function performSmartSearch(products: Product[], query: string): Product[
   const q = query.toLowerCase().trim();
 
   // 1. Direct matches (Highest priority)
-  const directMatches = products.filter(p => 
-    (p.name || '').toLowerCase().includes(q) || 
-    p.barcode?.includes(q) ||
+  // `q` is already lower-cased, so barcode/SKU must be lower-cased too — otherwise
+  // an uppercase barcode like "PRD-64F4E74D" never matches a typed query.
+  const directMatches = products.filter(p =>
+    (p.name || '').toLowerCase().includes(q) ||
+    (p.barcode || '').toLowerCase().includes(q) ||
+    (p.sku || '').toLowerCase().includes(q) ||
     (p.category || '').toLowerCase().includes(q)
   );
 

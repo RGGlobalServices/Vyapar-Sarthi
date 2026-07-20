@@ -234,7 +234,9 @@ export async function POST(req: NextRequest) {
                 data: {
                   shopId,
                   name: String(name),
-                  barcode: barcodeStr ?? undefined,
+                  // Always store a barcode so the product is searchable/scannable
+                  // in Billing — generate one when the file doesn't provide it.
+                  barcode: barcodeStr ?? `BAR-${Date.now()}-${i}`,
                   sellingPrice: price,
                   wholesaleCost: cost,
                   mrp,
@@ -252,6 +254,12 @@ export async function POST(req: NextRequest) {
               matchId = newProd.id;
               if (barcodeStr) barcodeIndex.set(barcodeStr, matchId);
               created++;
+              // Log the imported opening stock so the "+N newly added" badge shows.
+              if (quantity > 0) {
+                await prisma.stockLog.create({
+                  data: { shopId, productId: matchId, type: 'import', quantity, note: 'Imported opening stock' },
+                }).catch(() => {});
+              }
             }
 
             if (godownId && quantity > 0 && matchId) {

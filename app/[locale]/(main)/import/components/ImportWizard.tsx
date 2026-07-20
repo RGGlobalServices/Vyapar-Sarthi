@@ -49,6 +49,27 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     }
   }, [importType]);
 
+  // Recovery: if a previous streaming import for this type was interrupted, restore
+  // the saved rows and surface a "Resume from row X" button — never restart at row 1.
+  useEffect(() => {
+    try {
+      const key = `ks_import_job_${importType}`;
+      const cp = localStorage.getItem(key);
+      const dataRaw = localStorage.getItem(`${key}_data`);
+      if (!cp || !dataRaw) return;
+      const { importLogId, offset, total } = JSON.parse(cp);
+      const saved = JSON.parse(dataRaw);
+      if (saved?.rows?.length && (offset ?? 0) < (total ?? saved.rows.length)) {
+        setHeaders(saved.headers || []);
+        setPreviewData(saved.rows);
+        setRowDecisions(saved.decisions || new Array(saved.rows.length).fill(undefined));
+        setResumeState({ importLogId: importLogId || null, offset: offset || 0 });
+        setStep('preview');
+      }
+    } catch { /* ignore corrupt/absent checkpoint */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importType]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [extractionStats, setExtractionStats] = useState<any>(null);
@@ -327,22 +348,79 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setErrors(newErrors);
   };
 
-  const handleExecuteImport = async () => {
-    setIsProcessing(true);
-    try {
-      const res = await api.post('/wholesale-import/execute', {
-        importType,
-        data: previewData,
-        godownId: selectedGodown,
-        existingPolicy,
-        rowDecisions,
-        fileName: files[0]?.name || null,
-        stats: extractionStats,
-      });
+  // Configurable client batch size (mirrors server databaseBatchSize).
+  const DB_BATCH_SIZE = Math.max(1, Number(process.env.NEXT_PUBLIC_IMPORT_DB_BATCH_SIZE) || 100);
+  const RESUME_KEY = `ks_import_job_${importType}`;
 
-      setSummary(res.data.summary);
+  /**
+   * Streaming import: the file is saved in batches of DB_BATCH_SIZE rows, one
+   * request per batch, each incrementing a single durable ImportLog job. Progress
+   * (rows / batch / speed / ETA) updates live and a checkpoint is persisted after
+   * every batch so a failure resumes from the next unsaved row — never page 1.
+   */
+  const handleExecuteImport = async (startOffset = 0, existingLogId: string | null = null) => {
+    setIsProcessing(true);
+    setResumeState(null);
+    const total = previewData.length;
+    const totalBatches = Math.ceil(total / DB_BATCH_SIZE);
+    const t0 = Date.now();
+    let importLogId = existingLogId;
+    let offset = startOffset;
+    const acc = { created: 0, updated: 0, skipped: 0, failed: 0 };
+    const allErrors: string[] = [];
+    setProgress({ processed: offset, total, created: 0, updated: 0, skipped: 0, failed: 0,
+      batch: Math.floor(offset / DB_BATCH_SIZE), totalBatches, rps: 0, etaSec: 0, stage: 'Saving products…' });
+
+    // Persist the dataset ONCE so a tab reload mid-import can restore rows and
+    // resume. Guarded — very large files may exceed localStorage; in-session
+    // resume still works even if this write is skipped.
+    if (startOffset === 0) {
+      try {
+        localStorage.setItem(`${RESUME_KEY}_data`, JSON.stringify({ rows: previewData, decisions: rowDecisions, headers, fileName: files[0]?.name || null, importType }));
+      } catch { /* quota — reload-resume unavailable for this file, in-session still works */ }
+    }
+
+    try {
+      for (let b = Math.floor(offset / DB_BATCH_SIZE); offset < total; b++) {
+        const slice = previewData.slice(offset, offset + DB_BATCH_SIZE);
+        const sliceDecisions = rowDecisions.slice(offset, offset + DB_BATCH_SIZE);
+        // Retry the batch up to 2 times; on final failure we stop and offer resume.
+        let res: any = null;
+        for (let attempt = 0; attempt < 2 && !res; attempt++) {
+          try {
+            res = await api.post('/wholesale-import/execute', {
+              importType, data: slice, godownId: selectedGodown, existingPolicy,
+              rowDecisions: sliceDecisions,
+              fileName: files[0]?.name || null,
+              stats: offset === 0 ? extractionStats : null,
+              totalRows: total,
+              importLogId,
+            });
+          } catch (e) {
+            if (attempt === 1) throw e;
+          }
+        }
+        const s = res.data.summary || {};
+        importLogId = s.importLogId || importLogId;
+        acc.created += s.created || 0; acc.updated += s.updated || 0;
+        acc.skipped += s.skipped || 0; acc.failed += (s.failed ?? (s.rowErrors?.length || 0));
+        if (Array.isArray(s.rowErrors)) allErrors.push(...s.rowErrors);
+
+        offset = Math.min(offset + DB_BATCH_SIZE, total);
+        const elapsed = (Date.now() - t0) / 1000;
+        const doneThisRun = offset - startOffset;
+        const rps = elapsed > 0 ? doneThisRun / elapsed : 0;
+        setProgress({ processed: offset, total, ...acc, batch: b + 1, totalBatches,
+          rps: Math.round(rps), etaSec: rps > 0 ? Math.round((total - offset) / rps) : 0, stage: 'Saving products…' });
+
+        // Durable checkpoint → resume-from-here if the tab reloads mid-import.
+        try { localStorage.setItem(RESUME_KEY, JSON.stringify({ importLogId, offset, total, fileName: files[0]?.name || null })); } catch {}
+      }
+
+      localStorage.removeItem(RESUME_KEY);
+      try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
+      setSummary({ totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors });
       setStep('done');
-      // Invalidate all related caches globally so they show up immediately in their respective modules
       import('swr').then(({ mutate }) => {
         mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
         mutate(key => typeof key === 'string' && key.startsWith('/master-data'), undefined, { revalidate: true });
@@ -352,13 +430,15 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         mutate(key => typeof key === 'string' && key.startsWith('/suppliers'), undefined, { revalidate: true });
         mutate(key => typeof key === 'string' && key.startsWith('/activity'), undefined, { revalidate: true });
       });
-      // Refresh global zustand store for Udhar
       useUdharStore.getState().silentRefresh();
     } catch (err: any) {
+      // Completed batches are already saved server-side. Offer to resume from `offset`.
+      setResumeState({ importLogId, offset });
       const errorData = err.response?.data || {};
-      alert('Import failed: ' + (errorData.error || errorData.detail || err.message));
+      alert(`Import paused at row ${offset} of ${total}. ${offset} rows already saved — click "Resume Import" to continue from here.\n\n${errorData.error || errorData.detail || err.message || ''}`);
     } finally {
       setIsProcessing(false);
+      setProgress(null);
     }
   };
 
@@ -468,19 +548,54 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     ))}
                   </select>
                 )}
-                <button onClick={() => setStep('upload')} className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <button onClick={() => setStep('upload')} disabled={isProcessing} className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
                   Cancel
                 </button>
-                <button
-                  onClick={handleExecuteImport}
-                  disabled={isProcessing || errors.length > 0 || willImportCount === 0}
-                  className="px-6 py-2 bg-emerald-500 text-slate-900 rounded-lg font-bold hover:bg-emerald-400 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                  Import {willImportCount} record{willImportCount === 1 ? '' : 's'}
-                </button>
+                {resumeState ? (
+                  <button
+                    onClick={() => handleExecuteImport(resumeState.offset, resumeState.importLogId)}
+                    disabled={isProcessing}
+                    className="px-6 py-2 bg-amber-500 text-slate-900 rounded-lg font-bold hover:bg-amber-400 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                    Resume from row {resumeState.offset}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleExecuteImport()}
+                    disabled={isProcessing || errors.length > 0 || willImportCount === 0}
+                    className="px-6 py-2 bg-emerald-500 text-slate-900 rounded-lg font-bold hover:bg-emerald-400 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                    Import {willImportCount} record{willImportCount === 1 ? '' : 's'}
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* ── Live Progress Engine ── */}
+            {progress && (
+              <div className="mb-5 p-5 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/60 dark:bg-emerald-500/5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                    <Loader2 size={15} className="animate-spin" /> {progress.stage}
+                  </span>
+                  <span className="text-sm font-mono text-slate-600 dark:text-slate-300">
+                    {progress.processed} / {progress.total} rows
+                  </span>
+                </div>
+                <div className="h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                  <div className="h-full bg-emerald-500 transition-all duration-300"
+                    style={{ width: `${progress.total ? Math.round((progress.processed / progress.total) * 100) : 0}%` }} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div><span className="text-slate-500">Batch</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.batch} / {progress.totalBatches}</span></div>
+                  <div><span className="text-slate-500">Saved</span><br /><span className="font-bold text-emerald-600 dark:text-emerald-400">{progress.created + progress.updated}</span></div>
+                  <div><span className="text-slate-500">Speed</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.rps} rows/s</span></div>
+                  <div><span className="text-slate-500">ETA</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.etaSec > 0 ? `${progress.etaSec}s` : '—'}</span></div>
+                </div>
+              </div>
+            )}
 
             {/* Conflict policy — only relevant when some rows already exist */}
             {existingCount > 0 && (

@@ -3,7 +3,7 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { getPayuConfig, responseHash } from '@/lib/server/payu';
 import { readForm } from '@/lib/server/http';
-import { packageTypeForPlan } from '@/lib/planGates';
+import { packageTypeForPlan, getPlanLimits } from '@/lib/planGates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -56,38 +56,48 @@ export async function POST(req: Request) {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + config.billingCycleDays);
 
-      const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
-      if (shop) {
-        await prisma.shop.update({
-          where: { id: shop.id },
-          data: {
-            subscriptionPlan: plan,
-            packageType: packageTypeForPlan(plan),
-            subscriptionStatus: 'active',
-            subscriptionExpiry: expiry,
-            nextBillingDate: expiry,
-            billingAmount: planAmount,
-            lastTxnId: payuData.txnid,
-            // Record the first paid charge once, for the money-back window.
-            firstChargeDate: shop.firstChargeDate ?? new Date(),
-            subscriptionCancelledAt: null,
-            cancellationReason: null,
-          },
-        });
+      const shops = await prisma.shop.findMany({ where: { ownerId: user.uuid! } });
+      if (shops.length > 0) {
+        // Use the first shop for recording the payment transaction
+        const mainShop = shops[0];
 
-        await prisma.paymentTransaction.create({
-          data: {
-            shopId: shop.id,
-            userId: user.uuid,
-            txnid: payuData.txnid,
-            mihpayid: payuData.mihpayid || null,
-            plan,
-            amount: planAmount,
-            type: 'subscription',
-            status: 'success',
-            mode: payuData.mode || null,
-            payuResponse: JSON.stringify(payuData).slice(0, 5000),
-          },
+        await prisma.$transaction(async (tx) => {
+          await tx.shop.updateMany({
+            where: { ownerId: user.uuid! },
+            data: {
+              subscriptionPlan: plan,
+              packageType: packageTypeForPlan(plan),
+              subscriptionStatus: 'active',
+              subscriptionExpiry: expiry,
+              nextBillingDate: expiry,
+              billingAmount: planAmount,
+              lastTxnId: payuData.txnid,
+              firstChargeDate: mainShop.firstChargeDate ?? new Date(),
+              subscriptionCancelledAt: null,
+              cancellationReason: null,
+            },
+          });
+
+          const limits = getPlanLimits(plan);
+          await tx.user.update({
+            where: { id: user.id },
+            data: { maxShops: limits.maxShops === Infinity ? null : limits.maxShops }
+          });
+
+          await tx.paymentTransaction.create({
+            data: {
+              shopId: mainShop.id,
+              userId: user.uuid,
+              txnid: payuData.txnid,
+              mihpayid: payuData.mihpayid || null,
+              plan,
+              amount: planAmount,
+              type: 'subscription',
+              status: 'success',
+              mode: payuData.mode || null,
+              payuResponse: JSON.stringify(payuData).slice(0, 5000),
+            },
+          });
         });
       }
     }

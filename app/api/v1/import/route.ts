@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse';
+import * as XLSX from 'xlsx';
 import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 
 export async function POST(req: NextRequest) {
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest) {
     let mimeType = file.type;
     // Fix common mime type issues
     if (file.name.endsWith('.csv')) mimeType = 'text/csv';
+    if (file.name.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (file.name.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
     if (!mimeType) mimeType = 'application/octet-stream';
 
     let extraItemFields = [];
@@ -50,13 +53,13 @@ export async function POST(req: NextRequest) {
     // Build the prompt based on targetType
     let specificInstructions = '';
     if (targetType === 'sales') {
-      specificInstructions = 'Focus specifically on extracting sales transactions, dates, total amounts, and payment methods. If dates or total amounts are unclear or missing, you must still create a sales entry but explicitly flag the missing fields with the string "MISSING".';
+      specificInstructions = 'Focus specifically on extracting sales transactions, dates, total amounts, and payment methods. The document may be a handwritten slip or notebook. If dates or total amounts are unclear or missing, you must still create a sales entry but explicitly flag the missing fields with the string "MISSING".';
     } else if (targetType === 'purchase') {
-      specificInstructions = `Focus on extracting a purchase invoice. Extract vendorName, billDate, totalAmount, and EVERY individual product under "items". For each product, infer a logical "category" (e.g. Grocery, Dairy, Snacks). Extract "wholesaleCost" (the cost per unit on the bill). Intelligently calculate "suggestedSellingPrice" by adding a ~15% margin to wholesale cost. Ensure items array contains all products.${businessInstructions}`;
+      specificInstructions = `Focus on extracting a purchase invoice. Extract vendorName, billDate, totalAmount, and EVERY individual product under "items". For each product, infer a logical "category" (e.g. Grocery, Dairy, Snacks). Extract "wholesaleCost" (the cost per unit on the bill). Intelligently calculate "suggestedSellingPrice" by adding a ~15% margin to wholesale cost. Ensure items array contains all products. Do not skip data because a column is missing!${businessInstructions}`;
     } else if (targetType === 'stock') {
-      specificInstructions = `Focus on extracting bulk inventory. CRITICAL: 1. Extract EVERY SINGLE ITEM. 2. Infer "category". 3. Smart Pricing: Set "mrp" and "sellingPrice". Intelligently estimate "wholesaleCost". 4. Ignore symbols. 5. Extract expiryDate.${businessInstructions}`;
+      specificInstructions = `Focus on extracting bulk inventory from lists, kacha bills, or notebooks. CRITICAL: 1. Extract EVERY SINGLE ITEM. 2. Infer "category". 3. Smart Pricing: Set "mrp" and "sellingPrice". Intelligently estimate "wholesaleCost". 4. Ignore symbols. 5. Extract expiryDate.${businessInstructions}`;
     } else if (targetType === 'khata') {
-      specificInstructions = 'Focus on extracting ledger (Udhar Khata) entries showing customer names, amounts they owe, dates, and any notes about the transaction.';
+      specificInstructions = 'Focus on extracting ledger (Udhar Khata) entries showing customer names, amounts they owe, dates, and any notes about the transaction. The document is likely a photo of a handwritten notebook. Read natural language (e.g., "Ramesh ko 500 dia") and extract it as a row.';
     }
 
     const jsonSchemaInstructions = `
@@ -78,21 +81,36 @@ Your response MUST be a VALID JSON object matching the following structure:
 
     // Fast local PDF parsing
     if (mimeType === 'application/pdf') {
-      const pdfData = await pdfParse(buffer);
-      extractedText = pdfData.text;
+      try {
+        const pdfData = await pdfParse(buffer);
+        if (!pdfData.text || pdfData.text.trim().length < 20) {
+            throw new Error(`The PDF file ${file.name} appears to be a scanned image with no text. Please convert it to an image (JPG/PNG) or upload a photo of it so our Vision AI can read the handwriting.`);
+        }
+        extractedText = pdfData.text;
+      } catch (pdfError: any) {
+        throw new Error(pdfError.message || `The PDF file ${file.name} could not be read. Please convert it to an image (JPG/PNG) and upload again.`);
+      }
     } else if (mimeType.startsWith('image/')) {
       isVision = true;
+    } else if (mimeType === 'text/csv' || mimeType.includes('excel') || mimeType.includes('spreadsheet')) {
+        try {
+          const workbook = XLSX.read(buffer, { type: 'buffer' });
+          const sheetName = workbook.SheetNames[0];
+          extractedText = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+        } catch (e: any) {
+          throw new Error(`Could not parse spreadsheet ${file.name}: ${e.message}`);
+        }
     } else {
       extractedText = buffer.toString('utf-8'); // CSV, txt, etc.
     }
 
-    const prompt = `You are an expert data entry assistant named Vyapar Sarthi AI. You extract structured data from images, PDFs, CSVs, and Excel files. 
+    const prompt = `You are an expert data entry assistant named Vyapar Sarthi AI. You extract structured data from messy images, informal handwritten notebooks, PDFs, CSVs, and Excel files. 
 
 Target Data Type: ${targetType.toUpperCase()}
 ${specificInstructions}
 ${jsonSchemaInstructions}
 
-Please analyze the attached document data and return the required JSON object. If you are unsure about an extraction, append " (Please Verify)" to the value. If a required field is missing, set booleans like missingPrice or missingDate to true, and put 0 for missing numbers.
+Please analyze the attached document data and return the required JSON object. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible. If you are unsure about an extraction, append " (Please Verify)" to the value. If a required field is missing, set booleans like missingPrice or missingDate to true, and put 0 for missing numbers.
 
 DOCUMENT DATA:
 ${extractedText}`;

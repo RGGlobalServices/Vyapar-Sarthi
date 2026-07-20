@@ -363,6 +363,7 @@ export interface StockItem {
   shade?: string | null;
   size_variants?: string | null;
   metadata?: any;
+  recentlyAdded?: number;
 }
 
 export interface StockLogEntry {
@@ -426,6 +427,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
         shade: p.shade || null,
         size_variants: p.size_variants || null,
         metadata: p.metadata ?? null,
+        recentlyAdded: p.recentlyAdded || 0,
       }));
 
       const log = (logRes.data || []).map((l: any) => ({
@@ -468,6 +470,8 @@ export const useStockStore = create<StockStore>((set, get) => ({
       shade: item.shade || null,
       size_variants: item.size_variants || null,
       metadata: item.metadata ?? null,
+      // New product's opening stock is entirely "newly added" → show +N instantly.
+      recentlyAdded: Number(item.current) > 0 ? Number(item.current) : 0,
     };
     set((state) => ({ items: [optimistic, ...state.items] }));
     try {
@@ -572,7 +576,14 @@ export const useStockStore = create<StockStore>((set, get) => ({
       date: now.toLocaleDateString(),
     };
     set((state) => ({
-      items: state.items.map((i) => (i.id === id ? { ...i, current: (i.current || 0) + delta, ...pricingPatch } : i)),
+      items: state.items.map((i) => (i.id === id ? {
+        ...i,
+        current: (i.current || 0) + delta,
+        // Optimistically bump the "+N recently added" badge on a stock-IN so it
+        // appears instantly, without waiting for the next server refetch.
+        recentlyAdded: delta > 0 ? (i.recentlyAdded || 0) + delta : (i.recentlyAdded || 0),
+        ...pricingPatch,
+      } : i)),
       log: [logEntry, ...state.log],
     }));
 
