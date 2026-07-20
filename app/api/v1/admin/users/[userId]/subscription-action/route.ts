@@ -18,12 +18,27 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, 'User not found');
 
-  const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
-  if (!shop) throw new ApiError(404, 'Shop not found for this user');
+  const shops = await prisma.shop.findMany({ where: { ownerId: user.uuid! } });
+  if (shops.length === 0) throw new ApiError(404, 'No shops found for this user');
 
-  await prisma.shop.update({
-    where: { id: shop.id },
-    data: { subscriptionStatus: action === 'barrier' ? 'barrier' : 'active' },
+  const updateData: any = {
+    subscriptionStatus: action === 'barrier' ? 'barrier' : 'active',
+  };
+
+  if (action === 'activate') {
+    let maxExpiry = Date.now();
+    for (const s of shops) {
+      if (s.subscriptionExpiry && s.subscriptionExpiry.getTime() > maxExpiry) {
+        maxExpiry = s.subscriptionExpiry.getTime();
+      }
+    }
+    // Extend by 30 days
+    updateData.subscriptionExpiry = new Date(Math.max(Date.now(), maxExpiry) + 30 * 86400000);
+  }
+
+  await prisma.shop.updateMany({
+    where: { ownerId: user.uuid! },
+    data: updateData,
   });
 
   return json({ detail: `Subscription ${action === 'barrier' ? 'barrier set' : 'activated'} successfully` });

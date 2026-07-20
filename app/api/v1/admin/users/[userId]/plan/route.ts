@@ -40,8 +40,9 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   }
   if (status) updateData.subscriptionStatus = status;
   
-  if (expiryDays !== undefined) {
-    updateData.subscriptionExpiry = new Date(maxExpiry + expiryDays * 86400000);
+  if (expiryDays !== undefined && expiryDays !== null && !Number.isNaN(expiryDays)) {
+    const baseExpiry = Math.max(Date.now(), maxExpiry);
+    updateData.subscriptionExpiry = new Date(baseExpiry + expiryDays * 86400000);
   }
 
   // Trial modifications
