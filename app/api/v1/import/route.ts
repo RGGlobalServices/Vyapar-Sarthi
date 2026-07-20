@@ -110,7 +110,13 @@ Target Data Type: ${targetType.toUpperCase()}
 ${specificInstructions}
 ${jsonSchemaInstructions}
 
-Please analyze the attached document data and return the required JSON object. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible. If you are unsure about an extraction, append " (Please Verify)" to the value. If a required field is missing, set booleans like missingPrice or missingDate to true, and put 0 for missing numbers.
+CRITICAL RULES:
+1. DO NOT SKIP OR IGNORE ANY ROWS. You MUST extract EVERY SINGLE ITEM, TRANSACTION, OR LEDGER ENTRY found in the document. 
+2. Process the ENTIRE document from start to finish. Do not summarize.
+3. For handwritten notebooks (especially Udhar Khata or sales), carefully read the messy handwriting and infer customer names and amounts.
+4. If some fields (like price or quantity) are missing or illegible, DO NOT skip the row. Just extract what you can logically infer.
+5. If you are unsure about an extraction, append " (Please Verify)" to the string value. 
+6. If a required field is missing, set booleans like missingPrice or missingDate to true, and put 0 for missing numbers.
 
 DOCUMENT DATA:
 ${extractedText}`;
@@ -118,7 +124,7 @@ ${extractedText}`;
     let resultData = null;
 
     let messages = [];
-    let modelName = isVision ? "meta/llama-3.2-11b-vision-instruct" : "meta/llama-3.1-8b-instruct";
+    let modelName = isVision ? "meta/llama-3.2-90b-vision-instruct" : "meta/llama-3.1-70b-instruct";
 
     if (isVision) {
       messages = [
