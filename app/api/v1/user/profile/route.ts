@@ -139,7 +139,7 @@ export const PATCH = handle(async (req) => {
     }
   }
 
-  let updatedUser = user;
+  let updatedUser: any = user;
   if (Object.keys(updates).length > 0) {
     updatedUser = await prisma.user.update({ where: { id: user.id }, data: updates });
   }
