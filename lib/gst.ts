@@ -33,22 +33,36 @@ export interface GstBreakdown {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+export type DiscountInput = number | { type?: 'fixed' | 'percent'; value?: number } | null | undefined;
+
 /**
  * Break a GST-inclusive bill into taxable value + tax.
  *
  * @param items    cart lines with per-item gstPercent
- * @param discount whole-bill discount (spread proportionally across lines)
+ * @param discountInput whole-bill discount (spread proportionally across lines)
  * @param interState true → IGST, false → CGST + SGST (half each)
  */
 export function computeGst(
   items: GstLineItem[],
-  discount = 0,
+  discountInput: DiscountInput = 0,
   interState = false
 ): GstBreakdown {
   const subtotal = items.reduce((a, i) => a + (i.total || 0), 0);
+
+  let discountNum = 0;
+  if (typeof discountInput === 'number') {
+    discountNum = discountInput;
+  } else if (discountInput && typeof discountInput === 'object') {
+    if (discountInput.type === 'percent') {
+      discountNum = subtotal * ((discountInput.value || 0) / 100);
+    } else {
+      discountNum = discountInput.value || 0;
+    }
+  }
+
   // Scale every line down by the same ratio so a bill-level discount reduces
   // each line's taxable + tax proportionally.
-  const scale = subtotal > 0 ? Math.max(0, subtotal - discount) / subtotal : 0;
+  const scale = subtotal > 0 ? Math.max(0, subtotal - discountNum) / subtotal : 0;
 
   const byRate = new Map<number, { taxable: number; gst: number }>();
   let taxable = 0;
