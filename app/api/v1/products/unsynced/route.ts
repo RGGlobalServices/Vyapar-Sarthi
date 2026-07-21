@@ -111,7 +111,6 @@ export const POST = handle(async (req) => {
       baseUnit: body.baseUnit || 'Piece',
       currentStock: initialStock,
       barcode: body.barcode?.trim() || null,
-      sku: body.sku?.trim() || null,
     },
   });
 
