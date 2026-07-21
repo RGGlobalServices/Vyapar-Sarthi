@@ -31,6 +31,8 @@ export interface GstBreakdown {
   groups: GstRateGroup[]; // rate-wise summary for the tax table
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export type DiscountInput = number | { type?: string; value?: number } | null | undefined;
 
 /**
