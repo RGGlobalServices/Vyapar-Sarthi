@@ -19,9 +19,15 @@ export default function DiscountInput({
   setDiscount,
 }: {
   subtotal: number;
-  discount: number;
-  setDiscount: (value: number) => void;
+  discount: any;
+  setDiscount: (value: any) => void;
 }) {
+  const numericDiscount = typeof discount === 'number'
+    ? discount
+    : discount?.type === 'percentage' || discount?.type === 'percent'
+      ? Math.round((subtotal * (discount?.value || 0)) / 100)
+      : (discount?.value || 0);
+
   const [mode, setMode] = useState<'amount' | 'percent'>('amount');
   const [percentInput, setPercentInput] = useState('');
 
@@ -39,7 +45,7 @@ export default function DiscountInput({
     if (next === mode) return;
     if (next === 'percent') {
       // One-time conversion so an existing ₹ discount shows as its equivalent %.
-      const pct = subtotal > 0 ? (discount / subtotal) * 100 : 0;
+      const pct = subtotal > 0 ? (numericDiscount / subtotal) * 100 : 0;
       setPercentInput(pct === 0 ? '' : String(Math.round(pct * 100) / 100));
     }
     setMode(next);
@@ -70,7 +76,7 @@ export default function DiscountInput({
             <input
               type="number" min={0}
               className="w-16 bg-transparent text-emerald-600 dark:text-emerald-500 font-bold outline-none text-right"
-              value={discount === 0 ? '' : discount}
+              value={numericDiscount === 0 ? '' : numericDiscount}
               placeholder="0"
               onChange={e => setDiscount(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
             />
@@ -88,8 +94,8 @@ export default function DiscountInput({
           </>
         )}
       </div>
-      {mode === 'percent' && discount > 0 && (
-        <span className="text-[10px] text-slate-400 whitespace-nowrap">₹{discount.toLocaleString('en-IN')}</span>
+      {mode === 'percent' && numericDiscount > 0 && (
+        <span className="text-[10px] text-slate-400 whitespace-nowrap">₹{numericDiscount.toLocaleString('en-IN')}</span>
       )}
     </div>
   );
