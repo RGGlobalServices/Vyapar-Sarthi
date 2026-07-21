@@ -31,9 +31,7 @@ export interface GstBreakdown {
   groups: GstRateGroup[]; // rate-wise summary for the tax table
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-export type DiscountInput = number | { type?: 'fixed' | 'percent'; value?: number } | null | undefined;
+export type DiscountInput = number | { type?: string; value?: number } | null | undefined;
 
 /**
  * Break a GST-inclusive bill into taxable value + tax.
@@ -53,10 +51,12 @@ export function computeGst(
   if (typeof discountInput === 'number') {
     discountNum = discountInput;
   } else if (discountInput && typeof discountInput === 'object') {
-    if (discountInput.type === 'percent') {
-      discountNum = subtotal * ((discountInput.value || 0) / 100);
+    const discType = discountInput.type;
+    const discVal = discountInput.value || 0;
+    if (discType === 'percent' || discType === 'percentage') {
+      discountNum = subtotal * (discVal / 100);
     } else {
-      discountNum = discountInput.value || 0;
+      discountNum = discVal;
     }
   }
 
