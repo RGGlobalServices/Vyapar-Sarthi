@@ -105,7 +105,6 @@ export const POST = handle(async (req) => {
       shopId: shop.id,
       name: body.name.trim(),
       category: body.category?.trim() || 'General',
-      subcategory: body.subCategory?.trim() || body.subcategory?.trim() || null,
       wholesaleCost: costPrice,
       sellingPrice: sellingPrice,
       mrp: mrp,
