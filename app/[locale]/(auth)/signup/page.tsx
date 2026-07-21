@@ -119,7 +119,9 @@ export default function SignupPage() {
         email: form.email,
         password: form.password,
         full_name: form.ownerName,
+        storeName: form.storeName,
         shop_name: form.storeName,
+        businessType: form.businessType,
         business_type: form.businessType,
         paid_plan: getCookie('ks_paid_plan'),
         paid_txnid: getCookie('ks_paid_txnid')

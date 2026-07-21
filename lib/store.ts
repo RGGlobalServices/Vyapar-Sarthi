@@ -19,6 +19,7 @@ interface AuthStore {
   user: AuthUser | null;
   role: 'admin' | 'staff';
   setRole: (role: 'admin' | 'staff') => void;
+  updateUser: (updates: Partial<AuthUser>) => void;
   loadFromStorage: () => void;
   logout: () => Promise<void>;
 }
@@ -32,6 +33,29 @@ export const useAuthStore = create<AuthStore>((set) => ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('ks_role', role);
     }
+  },
+
+  updateUser: (updates) => {
+    set((state) => {
+      if (!state.user) return state;
+      const updated = { ...state.user, ...updates };
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('ks_auth');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (updates.email !== undefined) parsed.email = updates.email;
+            if (updates.name !== undefined) parsed.name = updates.name;
+            if (updates.mobile !== undefined) parsed.mobile = updates.mobile;
+            if (updates.storeName !== undefined) parsed.storeName = updates.storeName;
+            localStorage.setItem('ks_auth', JSON.stringify(parsed));
+          }
+        } catch (e) {
+          console.error('Error updating ks_auth in localStorage', e);
+        }
+      }
+      return { user: updated };
+    });
   },
 
   loadFromStorage: () => {
@@ -146,7 +170,12 @@ export const useCartStore = create<CartStore>((set) => ({
     return {
       carts: {
         ...state.carts,
-        [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, price, total: i.quantity * price } : i)
+        [shopId]: shopCart.map((i) => {
+          if (sameLine(i, id, variant)) {
+            return { ...i, price, profit: price - i.cost, total: i.quantity * price };
+          }
+          return i;
+        })
       }
     };
   }),

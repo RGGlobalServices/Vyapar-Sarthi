@@ -114,7 +114,8 @@ function LegacyProductsUI() {
     return () => clearTimeout(handler);
   }, [search]);
 
-  const swrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
+  const baseSwrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
+  const swrKey = activeShopId ? `${baseSwrKey}${baseSwrKey.includes('?') ? '&' : '?'}shop=${activeShopId}` : null;
   const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<Product[]>(swrKey, fetchProductsMapped);
   
   const [saving, setSaving] = useState(false);
@@ -175,12 +176,82 @@ function LegacyProductsUI() {
   // ── Add-product godown/shop assignment ──────────────────────────────────
   const [addToGodownId, setAddToGodownId] = useState('');
 
-  // ── Godown / shop view ───────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState<'all' | 'godown' | 'shop'>('all');
+  // ── Godown / shop / unsynced view ───────────────────────────────────────
+  const [viewMode, setViewMode] = useState<'all' | 'unsynced' | 'godown' | 'shop'>('all');
   const [godowns, setGodowns] = useState<any[]>([]);
   const [selectedGodownId, setSelectedGodownId] = useState('');
   const [godownData, setGodownData] = useState<any | null>(null);
   const [loadingGodown, setLoadingGodown] = useState(false);
+
+  // Unsynced manual items
+  const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
+  const { data: unsyncedRes, mutate: mutateUnsynced, isLoading: loadingUnsynced } = useSWR(
+    activeShopId ? ['/products/unsynced', activeShopId] : null,
+    fetcher
+  );
+  const unsyncedItems = unsyncedRes?.data || [];
+
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncingItem, setSyncingItem] = useState<any>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncForm, setSyncForm] = useState({
+    name: '',
+    category: 'General',
+    subCategory: '',
+    costPrice: '',
+    mrp: '',
+    sellingPrice: '',
+    baseUnit: 'Piece',
+    initialStock: '',
+    barcode: '',
+    sku: ''
+  });
+
+  const handleOpenSyncModal = (item: any) => {
+    setSyncingItem(item);
+    setSyncForm({
+      name: item.variant || '',
+      category: 'General',
+      subCategory: '',
+      costPrice: String(item.costPrice || 0),
+      mrp: String(item.sellingPrice || 0),
+      sellingPrice: String(item.sellingPrice || 0),
+      baseUnit: item.unit || 'Piece',
+      initialStock: '10',
+      barcode: '',
+      sku: ''
+    });
+    setSyncModalOpen(true);
+  };
+
+  const handleSyncSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!syncForm.name) return;
+    setSyncLoading(true);
+    try {
+      await api.post('/products/unsynced', {
+        name: syncForm.name,
+        variantKey: syncingItem?.key,
+        category: syncForm.category,
+        subCategory: syncForm.subCategory,
+        costPrice: Number(syncForm.costPrice) || 0,
+        mrp: Number(syncForm.mrp) || 0,
+        sellingPrice: Number(syncForm.sellingPrice) || 0,
+        baseUnit: syncForm.baseUnit,
+        initialStock: Number(syncForm.initialStock) || 0,
+        barcode: syncForm.barcode,
+        sku: syncForm.sku,
+      });
+      mutateUnsynced();
+      mutateProducts();
+      setSyncModalOpen(false);
+      setSyncingItem(null);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to sync product');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   async function loadGodowns() {
     try { const r = await api.get('/godowns'); setGodowns(r.data || []); } catch {}
@@ -340,6 +411,8 @@ function LegacyProductsUI() {
         metadata: metadataPayload,
         brand: form.brand || null,
         conversion_factor: form.conversion_factor ? Number(form.conversion_factor) : null,
+        gstPercent: Number(form.gstPercent) || 0,
+        hsnCode: form.hsnCode || null,
       });
 
       // If a godown was selected, assign the initial stock to it
@@ -440,6 +513,8 @@ function LegacyProductsUI() {
         metadata: editMetadata,
         brand: editForm.brand || null,
         conversion_factor: editForm.conversion_factor ? Number(editForm.conversion_factor) : null,
+        gstPercent: Number(editForm.gstPercent) || 0,
+        hsnCode: editForm.hsnCode || null,
       });
       await mutateProducts();
       setShowEditModal(false);
@@ -498,6 +573,7 @@ function LegacyProductsUI() {
       <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
         {[
           { key: 'all', label: 'All Products', icon: Package },
+          { key: 'unsynced', label: `Unsynced Items (${unsyncedItems.length})`, icon: AlertCircle },
           ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
           ...(allShops.length > 1 ? [{ key: 'shop', label: 'By Shop', icon: Store }] : []),
         ].map(({ key, label, icon: Icon }) => (
@@ -508,6 +584,204 @@ function LegacyProductsUI() {
           </button>
         ))}
       </div>
+
+      {/* ── Unsynced Items view ── */}
+      {viewMode === 'unsynced' && (
+        <div className="space-y-4">
+          <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between text-amber-600 dark:text-amber-400 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertCircle size={18} />
+              <span>These items were added manually during billing. Click <strong>Sync to Product Master</strong> to register them into permanent stock catalog.</span>
+            </div>
+          </div>
+
+          {loadingUnsynced ? (
+            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-emerald-500" size={28} /></div>
+          ) : unsyncedItems.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center shadow-sm">
+              <Package className="w-12 h-12 mx-auto mb-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-bold">No unsynced items found</p>
+              <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">All billing items are fully synced to master products.</p>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+                    <tr>
+                      <th className="px-5 py-3">Quick Item Name</th>
+                      <th className="px-5 py-3">Cost Price</th>
+                      <th className="px-5 py-3">Selling Price</th>
+                      <th className="px-5 py-3">Unit</th>
+                      <th className="px-5 py-3">Total Sold Qty</th>
+                      <th className="px-5 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {unsyncedItems.map((uItem: any) => (
+                      <tr key={uItem.key} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="px-5 py-3 font-bold">{uItem.variant}</td>
+                        <td className="px-5 py-3 text-slate-500 font-mono">₹{uItem.costPrice}</td>
+                        <td className="px-5 py-3 text-emerald-600 dark:text-emerald-400 font-bold font-mono">₹{uItem.sellingPrice}</td>
+                        <td className="px-5 py-3 text-slate-500">{uItem.unit}</td>
+                        <td className="px-5 py-3 font-bold">{uItem.totalQtySold}</td>
+                        <td className="px-5 py-3 text-right">
+                          <button
+                            onClick={() => handleOpenSyncModal(uItem)}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 ml-auto transition-all active:scale-95 shadow-sm"
+                          >
+                            <Plus size={14} /> Sync to Product Master
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sync to Master Product Modal */}
+      {syncModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Package className="text-emerald-500" size={20} /> Register Quick Item to Master Catalog
+              </h3>
+              <button onClick={() => setSyncModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSyncSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Product Name</label>
+                <input
+                  type="text" required
+                  className={modalInp}
+                  value={syncForm.name}
+                  onChange={e => setSyncForm({ ...syncForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Category</label>
+                  <input
+                    type="text" required
+                    className={modalInp}
+                    value={syncForm.category}
+                    onChange={e => setSyncForm({ ...syncForm, category: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Sub Category</label>
+                  <input
+                    type="text" placeholder="Optional"
+                    className={modalInp}
+                    value={syncForm.subCategory}
+                    onChange={e => setSyncForm({ ...syncForm, subCategory: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Cost Price (₹)</label>
+                  <input
+                    type="number" step="any" required
+                    className={modalInp}
+                    value={syncForm.costPrice}
+                    onChange={e => setSyncForm({ ...syncForm, costPrice: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">MRP (₹)</label>
+                  <input
+                    type="number" step="any" required
+                    className={modalInp}
+                    value={syncForm.mrp}
+                    onChange={e => setSyncForm({ ...syncForm, mrp: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Sell Price (₹)</label>
+                  <input
+                    type="number" step="any" required
+                    className={modalInp}
+                    value={syncForm.sellingPrice}
+                    onChange={e => setSyncForm({ ...syncForm, sellingPrice: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Unit</label>
+                  <select
+                    className={modalSel}
+                    value={syncForm.baseUnit}
+                    onChange={e => setSyncForm({ ...syncForm, baseUnit: e.target.value })}
+                  >
+                    {bizConfig.defaultUnits.map(u => <option key={u} value={u}>{translateData(u, locale) || u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Initial Stock Qty</label>
+                  <input
+                    type="number" required
+                    className={modalInp}
+                    value={syncForm.initialStock}
+                    onChange={e => setSyncForm({ ...syncForm, initialStock: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Barcode</label>
+                  <input
+                    type="text" placeholder="Optional"
+                    className={modalInp}
+                    value={syncForm.barcode}
+                    onChange={e => setSyncForm({ ...syncForm, barcode: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">SKU</label>
+                  <input
+                    type="text" placeholder="Optional"
+                    className={modalInp}
+                    value={syncForm.sku}
+                    onChange={e => setSyncForm({ ...syncForm, sku: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSyncModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={syncLoading}
+                  className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {syncLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  Save to Product Catalog
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── Godown view ── */}
       {viewMode === 'godown' && (
@@ -753,6 +1027,9 @@ function LegacyProductsUI() {
                     : (product.cost > 0 ? product.stock * product.cost : product.stock * product.sellingPrice);
 
                   let profit: string | null = null;
+                  const gstRate = product.gstPercent || 0;
+                  const gstMultiplier = 1 + gstRate / 100;
+
                   if (hasPerSizePricing) {
                     let totalCostValue = 0;
                     let totalSellingValue = 0;
@@ -763,20 +1040,25 @@ function LegacyProductsUI() {
                       activeSizes.forEach(([sz, qty]) => {
                         const variantCost = sizePriceData[sz]?.cost || 0;
                         const variantSell = sizePriceData[sz]?.sellingPrice || product.sellingPrice || 0;
+                        const baseVariantSell = variantSell / gstMultiplier;
                         if (variantCost > 0 && variantSell > 0) {
                           hasValidCostAndPrice = true;
                           const weight = qty > 0 ? qty : 1;
                           totalCostValue += weight * variantCost;
-                          totalSellingValue += weight * variantSell;
+                          totalSellingValue += weight * baseVariantSell;
                         }
                       });
                     }
-                    if (hasValidCostAndPrice && totalSellingValue > 0) {
-                      // Profit margin = profit ÷ selling price (accounting standard), not markup on cost.
-                      profit = ((totalSellingValue - totalCostValue) / totalSellingValue * 100).toFixed(1);
+                    if (hasValidCostAndPrice && totalCostValue > 0) {
+                      // Shopkeepers typically calculate profit as Markup on Cost, not Margin on Selling Price.
+                      // They also usually want it calculated on the raw entered values.
+                      profit = ((totalSellingValue - totalCostValue) / totalCostValue * 100).toFixed(1);
                     }
                   } else if (product.cost > 0 && product.sellingPrice > 0) {
-                    profit = ((product.sellingPrice - product.cost) / product.sellingPrice * 100).toFixed(1);
+                    const baseSp = product.sellingPrice / gstMultiplier;
+                    // If baseSp < product.cost, they are selling at a loss if cost is exclusive. 
+                    // To match shopkeeper expectations, we calculate markup on cost.
+                    profit = ((baseSp - product.cost) / product.cost * 100).toFixed(1);
                   }
 
                   return (
@@ -1169,7 +1451,14 @@ function LegacyProductsUI() {
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
                     <span className="text-xs font-semibold text-emerald-500/70">Profit Margin</span>
                     <span className="text-lg font-black text-emerald-400">
-                      {(((Number(editForm.sellingPrice) - Number(editForm.cost)) / Number(editForm.sellingPrice)) * 100).toFixed(1)}%
+                      {(() => {
+                        const gstRate = editForm.gstPercent || 0;
+                        const sp = Number(editForm.sellingPrice) || 0;
+                        const cp = Number(editForm.cost) || 0;
+                        const baseSp = sp / (1 + gstRate / 100);
+                        if (baseSp <= 0) return '0.0';
+                        return (((baseSp - cp) / baseSp) * 100).toFixed(1);
+                      })()}%
                     </span>
                   </div>
                 )}
@@ -1527,7 +1816,14 @@ function LegacyProductsUI() {
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
                     <span className="text-xs font-semibold text-emerald-500/70">{t('profit')}</span>
                     <span className="text-lg font-black text-emerald-400">
-                      {(((Number(form.sellingPrice) - Number(form.cost)) / Number(form.sellingPrice)) * 100).toFixed(1)}%
+                      {(() => {
+                        const gstRate = form.gstPercent || 0;
+                        const sp = Number(form.sellingPrice) || 0;
+                        const cp = Number(form.cost) || 0;
+                        const baseSp = sp / (1 + gstRate / 100);
+                        if (baseSp <= 0) return '0.0';
+                        return (((baseSp - cp) / baseSp) * 100).toFixed(1);
+                      })()}%
                     </span>
                   </div>
                 )}

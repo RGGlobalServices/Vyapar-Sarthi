@@ -292,8 +292,34 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.gst !== undefined) apiUpdates.gst = updates.gst;
       if (updates.pan !== undefined) apiUpdates.pan = updates.pan;
       if (updates.subscriptionPlan !== undefined) apiUpdates.subscriptionPlan = updates.subscriptionPlan;
+
       await api.patch('/shop/profile', apiUpdates);
+
+      // Also sync user profile endpoint to guarantee bidirectional sync
+      if (updates.mobile !== undefined || updates.shopName !== undefined || updates.businessType !== undefined) {
+        try {
+          await api.patch('/user/profile', {
+            mobile: updates.mobile,
+            storeName: updates.shopName,
+            businessType: updates.businessType,
+          });
+        } catch { /* ignore user patch error if shop patch succeeded */ }
+      }
+
       set(state => ({ profile: { ...state.profile, ...updates } }));
+
+      // Synchronize client ks_auth local storage
+      try {
+        const storedAuthStr = localStorage.getItem('ks_auth');
+        if (storedAuthStr) {
+          const storedAuth = JSON.parse(storedAuthStr);
+          if (updates.mobile !== undefined) storedAuth.mobile = updates.mobile;
+          if (updates.shopName !== undefined) storedAuth.storeName = updates.shopName;
+          if (updates.businessType !== undefined) storedAuth.businessType = updates.businessType;
+          localStorage.setItem('ks_auth', JSON.stringify(storedAuth));
+        }
+      } catch {}
+
       if (updates.businessType) cacheType(updates.businessType);
       if (updates.subscriptionPlan) cachePlan(updates.subscriptionPlan);
     } catch (err) {

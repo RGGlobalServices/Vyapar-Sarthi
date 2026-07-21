@@ -124,7 +124,7 @@ function StandardBillingUI() {
   const tBill = useTranslations('BillSlip');
   const tP = useTranslations('Products');
   const locale = useLocale();
-  const {profile} = useBusinessStore();
+  const {profile, activeShopId} = useBusinessStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   
@@ -151,7 +151,7 @@ function StandardBillingUI() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [lastBill, setLastBill] = useState<any>(null);
   const [showCalculator, setShowCalculator] = useState(false);
-  const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '', barcode: '' });
+  const [manualProduct, setManualProduct] = useState({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '', barcode: '' });
   const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [showManualBillUpload, setShowManualBillUpload] = useState(false);
@@ -187,8 +187,8 @@ function StandardBillingUI() {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Use SWR for instant cache loading
-  const fetcher = (url: string) => api.get(url).then(res => res.data);
-  const { data: swrProducts = [] } = useSWR('/products', fetcher, { revalidateOnFocus: true });
+  const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
+  const { data: swrProducts = [] } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher, { revalidateOnFocus: true });
   
   useEffect(() => {
     if (swrProducts && swrProducts.length > 0) {
@@ -460,8 +460,21 @@ function StandardBillingUI() {
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;
-    addToCart({ name: manualProduct.name, sellingPrice: Number(manualProduct.price), baseUnit: manualProduct.unit, wholesaleCost: 0, barcode: manualProduct.barcode }, manualProduct.variant || undefined);
-    setManualProduct({ name: '', price: '', unit: 'Unit', variant: '', barcode: '' });
+    const sellingPrice = Number(manualProduct.price) || 0;
+    const costPrice = Number(manualProduct.costPrice) || 0;
+    const mrp = Number(manualProduct.mrp) || sellingPrice;
+
+    addToCart({
+      name: manualProduct.name,
+      sellingPrice,
+      wholesaleCost: costPrice,
+      mrp,
+      baseUnit: manualProduct.unit,
+      barcode: manualProduct.barcode,
+      isManualItem: true,
+    }, manualProduct.variant || undefined);
+
+    setManualProduct({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '', barcode: '' });
     setShowManualAdd(false);
     setTimeout(() => searchInputRef.current?.focus(), 100);
   };
@@ -519,7 +532,7 @@ function StandardBillingUI() {
         variant: item.variant || null,
         quantity: item.quantity,
         price_per_unit: item.price,
-        margin_per_unit: item.profit || 0,
+        purchase_price: item.cost || 0,
       }));
 
       const salePayload = {
@@ -530,8 +543,8 @@ function StandardBillingUI() {
         customer_mobile: customerMobile.trim() || null,
         customer_email: customerEmail.trim() || null,
         items: saleItems,
+        discount: discount,
         total_amount: total,
-        total_profit: items.reduce((acc, item) => acc + ((item.profit || 0) * item.quantity), 0),
         payment_type: isEmi ? 'EMI' : paymentTypeForApi,
         // Finance provider settles the shop in full on an EMI sale.
         amount_paid: isEmi ? total : collectedAmount,
@@ -759,20 +772,20 @@ function StandardBillingUI() {
             <PlusCircle size={20} />
             <span className="hidden md:inline">{t('manualAdd') || 'Manual Add'}</span>
           </button>
-          <button
+          {/* <button
             onClick={() => setShowManualBillUpload(true)}
             className="px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
           >
             <FileUp size={20} />
             <span className="hidden md:inline">{t('manualBill') || 'Manual Bill'}</span>
-          </button>
+          </button> */}
         </div>
 
         {showManualAdd && (
           <Card className="bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30 animate-in slide-in-from-top-2 duration-200 shadow-sm">
             <CardContent className="p-4">
               <form onSubmit={handleManualAdd} className="flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-[200px]">
+                <div className="flex-1 min-w-[180px]">
                   <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Product Name</label>
                   <input
                     type="text" required placeholder="Enter item name..."
@@ -782,7 +795,7 @@ function StandardBillingUI() {
                   />
                 </div>
                 {bizConfig.hasSizes && (
-                  <div className="w-28">
+                  <div className="w-24">
                     <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Size/Variant</label>
                     <input
                       type="text" placeholder="e.g. M, L"
@@ -792,11 +805,29 @@ function StandardBillingUI() {
                     />
                   </div>
                 )}
-                <div className="w-28">
-                  <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Price (₹)</label>
+                <div className="w-24">
+                  <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Cost Price (₹)</label>
                   <input
-                    type="number" required placeholder="0"
+                    type="number" placeholder="0" step="any"
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                    value={manualProduct.costPrice}
+                    onChange={e => setManualProduct({...manualProduct, costPrice: e.target.value})}
+                  />
+                </div>
+                <div className="w-24">
+                  <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">MRP (₹)</label>
+                  <input
+                    type="number" placeholder="0" step="any"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                    value={manualProduct.mrp}
+                    onChange={e => setManualProduct({...manualProduct, mrp: e.target.value})}
+                  />
+                </div>
+                <div className="w-24">
+                  <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Sell Price (₹)</label>
+                  <input
+                    type="number" required placeholder="0" step="any"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors font-bold text-emerald-600 dark:text-emerald-400"
                     value={manualProduct.price}
                     onChange={e => setManualProduct({...manualProduct, price: e.target.value})}
                   />

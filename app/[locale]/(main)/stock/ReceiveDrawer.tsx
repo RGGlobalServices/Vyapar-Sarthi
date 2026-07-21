@@ -6,7 +6,11 @@ import api from '@/lib/api';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 
-const fetcher = (url: string) => api.get(url).then(res => res.data);
+import { useBusinessStore } from '@/lib/businessStore';
+const fetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data);
+};
 
 export default function ReceiveDrawer({ 
   product, 
@@ -23,7 +27,8 @@ export default function ReceiveDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  const { data: suppliersData = [], mutate: mutateSuppliers, isLoading: sLoad } = useSWR('/suppliers', fetcher);
+  const { activeShopId } = useBusinessStore();
+  const { data: suppliersData = [], mutate: mutateSuppliers, isLoading: sLoad } = useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
   
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);

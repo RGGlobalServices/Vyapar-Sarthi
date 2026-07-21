@@ -16,7 +16,10 @@ import SmartTranslator from '@/components/SmartTranslator';
 import ProductDetailsSheet from './ProductDetailsSheet';
 import useSWR from 'swr';
 
-const fetcher = (url: string) => api.get(url).then(res => res.data);
+const fetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data);
+};
 
 type WholesaleProduct = {
   id: string;
@@ -88,7 +91,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
 
 export default function WholesaleProductsUI() {
   const t = useTranslations('Products');
-  const { profile } = useBusinessStore();
+  const { profile, activeShopId } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
 
   const emptyProduct = buildEmptyProduct(profile.businessType);
@@ -100,10 +103,11 @@ export default function WholesaleProductsUI() {
     return () => clearTimeout(handler);
   }, [search]);
 
-  const swrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
+  const baseSwrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
+  const swrKey = activeShopId ? `${baseSwrKey}${baseSwrKey.includes('?') ? '&' : '?'}shop=${activeShopId}` : null;
   const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<WholesaleProduct[]>(swrKey, fetcher);
   
-  const { data: masterData, mutate: mutateMasterData } = useSWR('/master-data', fetcher);
+  const { data: masterData, mutate: mutateMasterData } = useSWR(activeShopId ? ['/master-data', activeShopId] : null, fetcher);
 
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -862,7 +866,7 @@ export default function WholesaleProductsUI() {
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('gstPercent') || 'GST %'}</label>
                       <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        value={form.gstPercent} onChange={e => setForm({...form, gstPercent: Number(e.target.value)})}>
+                        value={form.gstPercent || 0} onChange={e => setForm({...form, gstPercent: Number(e.target.value)})}>
                         <option value={0}>0% (Exempt)</option>
                         <option value={5}>5%</option>
                         <option value={12}>12%</option>

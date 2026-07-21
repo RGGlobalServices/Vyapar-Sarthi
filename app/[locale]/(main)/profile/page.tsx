@@ -22,7 +22,7 @@ import { ALL_BUSINESS_TYPES } from '@/lib/businessConfig';
 export default function ProfilePage() {
   const t = useTranslations('Profile');
   const { profile, fetchProfile, updateProfile } = useBusinessStore();
-  const { user } = useAuthStore();
+  const { user, updateUser } = useAuthStore();
   const router = useRouter();
   const locale = useLocale();
 
@@ -32,6 +32,15 @@ export default function ProfilePage() {
   const [shop, setShop]         = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit Email
+  const [emailOpen, setEmailOpen]       = useState(false);
+  const [newEmail, setNewEmail]         = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
+  const [emailShowPwd, setEmailShowPwd] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailError, setEmailError]     = useState('');
+  const [emailOk, setEmailOk]           = useState(false);
 
   // Change password
   const [cpOpen, setCpOpen]         = useState(false);
@@ -52,6 +61,58 @@ export default function ProfilePage() {
   const [fpError, setFpError]         = useState('');
 
   useEffect(() => {
+    if (user?.email) {
+      setNewEmail(user.email);
+    }
+  }, [user?.email]);
+
+  const handleUpdateEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailError('');
+    setEmailOk(false);
+
+    const trimmed = newEmail.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    if (!trimmed || !emailRegex.test(trimmed)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+
+    if (trimmed === user?.email?.toLowerCase()) {
+      setEmailError('New email address is identical to your current email.');
+      return;
+    }
+
+    if (!emailPassword) {
+      setEmailError('Current password is required to change your email.');
+      return;
+    }
+
+    setEmailLoading(true);
+    try {
+      const res = await api.patch('/user/profile', {
+        email: trimmed,
+        currentPassword: emailPassword
+      });
+
+      const updatedEmail = res.data?.user?.email || trimmed;
+      updateUser({ email: updatedEmail });
+      setEmailOk(true);
+      setEmailPassword('');
+      showStatus('success', 'Email address updated successfully!');
+      setTimeout(() => {
+        setEmailOk(false);
+        setEmailOpen(false);
+      }, 2000);
+    } catch (err: any) {
+      setEmailError(err.response?.data?.detail || 'Failed to update email address.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  useEffect(() => {
     (async () => {
       try {
         await fetchProfile();
@@ -62,13 +123,15 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (profile) {
+      const bType = profile.businessType || (profile as any).business_type || 'kirana';
       setShop({
         id: profile.id,
         name: profile.shopName,
         address: profile.address,
         mobile: profile.mobile,
         logo_url: profile.logoUrl,
-        business_type: profile.businessType,
+        business_type: bType,
+        businessType: bType,
         package_type: profile.packageType,
         gst: profile.gst || '',
         pan: profile.pan || '',
@@ -284,7 +347,11 @@ export default function ProfilePage() {
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <select
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
-                      value={shop?.business_type || 'kirana'} onChange={e => setShop({ ...shop, business_type: e.target.value })}>
+                      value={shop?.business_type || shop?.businessType || 'kirana'}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setShop(s => ({ ...s, business_type: val, businessType: val }));
+                      }}>
                       <option value="" disabled>{t('selectType')}</option>
                       {ALL_BUSINESS_TYPES.map(config => (
                         <option key={config.type} value={config.type}>
@@ -332,29 +399,127 @@ export default function ProfilePage() {
 
           <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                <User size={20} className="text-blue-500" /> {t('personalInfo')}
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                  <User size={20} className="text-blue-500" /> {t('personalInfo')}
+                </CardTitle>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailOpen(v => !v);
+                    setEmailError('');
+                    setEmailOk(false);
+                    if (user?.email) setNewEmail(user.email);
+                  }}
+                  className="text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors"
+                >
+                  {emailOpen ? t('cancel') : 'Edit Email'}
+                </button>
+              </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">{t('fullName')}</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                  <input type="text" disabled
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 outline-none opacity-80 dark:opacity-60 transition-colors"
-                    value={user?.name || ''} />
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('fullName')}</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input type="text" disabled
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 outline-none opacity-80 dark:opacity-60 transition-colors"
+                      value={user?.name || ''} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('email')}</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input type="email" disabled
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 outline-none opacity-80 dark:opacity-60 transition-colors"
+                      value={user?.email || ''} />
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">{t('email')}</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                  <input type="email" disabled
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 outline-none opacity-80 dark:opacity-60 transition-colors"
-                    value={user?.email || ''} />
+
+              {/* Email Update Form */}
+              {emailOpen && (
+                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2">
+                  {emailOk ? (
+                    <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl px-4 py-3 text-sm">
+                      <CheckCircle size={15} /> Email address updated successfully!
+                    </div>
+                  ) : (
+                    <form onSubmit={handleUpdateEmail} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase">New Email Address</label>
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                            <input
+                              type="email"
+                              required
+                              value={newEmail}
+                              onChange={e => { setNewEmail(e.target.value); setEmailError(''); }}
+                              placeholder="name@example.com"
+                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase">Current Password</label>
+                          <div className="relative">
+                            <input
+                              type={emailShowPwd ? 'text' : 'password'}
+                              required
+                              value={emailPassword}
+                              onChange={e => { setEmailPassword(e.target.value); setEmailError(''); }}
+                              placeholder="Required for security"
+                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEmailShowPwd(v => !v)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                            >
+                              {emailShowPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {emailError && (
+                        <div className="flex items-center gap-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl px-4 py-3 text-sm">
+                          <AlertCircle size={14} /> {emailError}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setEmailOpen(false); setEmailError(''); }}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={emailLoading}
+                          className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50"
+                        >
+                          {emailLoading ? (
+                            <>
+                              <Loader2 size={15} className="animate-spin" /> Updating Email…
+                            </>
+                          ) : (
+                            <>
+                              <Save size={15} /> Update Email Address
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </div>

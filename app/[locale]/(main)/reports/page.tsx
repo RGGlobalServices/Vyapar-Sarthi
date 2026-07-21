@@ -72,6 +72,7 @@ function SectionCard({ title, children, actions }: any) {
 
 // ── SALES TAB ──────────────────────────────────────────────────────────────
 function SalesTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const [data, setData] = useState<any>(null);
   const [byProduct, setByProduct] = useState<any>(null);
   const [byCategory, setByCategory] = useState<any>(null);
@@ -104,7 +105,7 @@ function SalesTab({ filters }: { filters: any }) {
       setGstRegister(gstRegRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -314,6 +315,7 @@ function SalesTab({ filters }: { filters: any }) {
 
 // ── FINANCIALS TAB ─────────────────────────────────────────────────────────
 function FinancialsTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const [pnl, setPnl] = useState<any>(null);
   const [daybook, setDaybook] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -331,7 +333,7 @@ function FinancialsTab({ filters }: { filters: any }) {
       setDaybook(dbRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -423,6 +425,7 @@ function FinancialsTab({ filters }: { filters: any }) {
 
 // ── STOCK TAB ─────────────────────────────────────────────────────────────
 function StockTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const [data, setData] = useState<any>(null);
   const [valuation, setValuation] = useState<any>(null);
   const [deadStock, setDeadStock] = useState<any>(null);
@@ -443,7 +446,7 @@ function StockTab({ filters }: { filters: any }) {
       setDeadStock(dead.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -537,6 +540,7 @@ function StockTab({ filters }: { filters: any }) {
 
 // ── EXPENSES TAB ──────────────────────────────────────────────────────────
 function ExpensesTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const [data, setData] = useState<any>(null);
   const [byCategory, setByCategory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -553,7 +557,7 @@ function ExpensesTab({ filters }: { filters: any }) {
       setByCategory(cat.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -609,6 +613,7 @@ function ExpensesTab({ filters }: { filters: any }) {
 
 // ── CRM TAB ───────────────────────────────────────────────────────────────
 function CRMTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const { profile } = useBusinessStore();
   const isUdyog = profile?.subscriptionPlan === 'wholesale';
   const [outstanding, setOutstanding] = useState<any>(null);
@@ -629,7 +634,7 @@ function CRMTab({ filters }: { filters: any }) {
       setSuppliers(sup.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters, isUdyog]);
+  }, [filters, isUdyog, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -674,6 +679,7 @@ function CRMTab({ filters }: { filters: any }) {
 
 // ── STAFF TAB ─────────────────────────────────────────────────────────────
 function StaffTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const [payroll, setPayroll] = useState<any>(null);
   const [attendance, setAttendance] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -690,7 +696,7 @@ function StaffTab({ filters }: { filters: any }) {
       setAttendance(att.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -748,6 +754,7 @@ function StaffTab({ filters }: { filters: any }) {
 
 // ── PURCHASES TAB ─────────────────────────────────────────────────────────
 function PurchasesTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
   const [data, setData] = useState<any>(null);
   const [bySupplier, setBySupplier] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -764,7 +771,7 @@ function PurchasesTab({ filters }: { filters: any }) {
       setBySupplier(sup.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, activeShopId]);
 
   useEffect(() => { load(); }, [load]);
 

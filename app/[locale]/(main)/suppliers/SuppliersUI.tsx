@@ -8,11 +8,16 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import useSWR from 'swr';
 
-const fetcher = (url: string) => api.get(url).then(res => res.data || []);
+import { useBusinessStore } from '@/lib/businessStore';
+const fetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data || []);
+};
 
 export default function SuppliersUI() {
   const t = useTranslations('Suppliers');
-  const { data: suppliers = [], mutate: mutateSuppliers, isLoading: loading } = useSWR('/suppliers', fetcher);
+  const { activeShopId } = useBusinessStore();
+  const { data: suppliers = [], mutate: mutateSuppliers, isLoading: loading } = useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<'edit' | 'delete' | null>(null);
   const [form, setForm] = useState<any>({});

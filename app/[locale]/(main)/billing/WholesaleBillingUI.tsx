@@ -114,7 +114,27 @@ export default function WholesaleBillingUI() {
   // Manual Add
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [showManualBillUpload, setShowManualBillUpload] = useState(false);
-  const [manualProduct, setManualProduct] = useState({ name: '', price: '', unit: 'Unit', variant: '' });
+  const [manualProduct, setManualProduct] = useState({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '' });
+
+  const handleManualAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualProduct.name || !manualProduct.price) return;
+    const sellingPrice = Number(manualProduct.price) || 0;
+    const costPrice = Number(manualProduct.costPrice) || 0;
+    const mrp = Number(manualProduct.mrp) || sellingPrice;
+
+    addToCart({
+      name: manualProduct.name,
+      sellingPrice,
+      wholesaleCost: costPrice,
+      mrp,
+      baseUnit: manualProduct.unit,
+      isManualItem: true,
+    }, manualProduct.variant || undefined);
+
+    setManualProduct({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '' });
+    setShowManualAdd(false);
+  };
 
   // Checkout Modal
   const [showCheckout, setShowCheckout] = useState(false);
@@ -236,7 +256,7 @@ export default function WholesaleBillingUI() {
         size: size || undefined,
         quantity: defaultQty,
         price,
-        profit: price - cost,
+        profit: (price / (1 + (Number(product.gstPercent ?? product.gst_percent ?? 0) || 0) / 100)) - cost,
         total: Math.round(price * defaultQty),
         is_loose: !!product.is_loose,
         // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
@@ -477,7 +497,7 @@ export default function WholesaleBillingUI() {
         variant: item.variant || null,
         quantity: item.quantity,
         price_per_unit: item.price,
-        margin_per_unit: item.profit || 0,
+        purchase_price: item.cost || 0,
       }));
 
       const payload = {
@@ -485,8 +505,8 @@ export default function WholesaleBillingUI() {
         customer_mobile: customerMobile.trim() || null,
         customer_email: customerEmail.trim() || null,
         items: saleItems,
+        discount: discount,
         total_amount: total,
-        total_profit: items.reduce((acc, item) => acc + ((item.profit || 0) * item.quantity), 0),
         payment_type: 'Split',
         amount_paid: collectedAmount,
         payment_details: { ...splitPayments, udhar: remainingAmount },
@@ -535,24 +555,6 @@ export default function WholesaleBillingUI() {
     }
   };
 
-  const handleManualAddSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualProduct.name || !manualProduct.price) return;
-    addItem({
-      id: Math.random().toString(),
-      name: manualProduct.name,
-      unit: manualProduct.unit,
-      variant: manualProduct.variant || undefined,
-      quantity: 1,
-      price: Number(manualProduct.price),
-      profit: 0,
-      total: Number(manualProduct.price),
-      is_loose: false,
-    });
-    setManualProduct({ name: '', price: '', unit: 'Unit', variant: '' });
-    setShowManualAdd(false);
-    searchInputRef.current?.focus();
-  };
 
   return (
     <div className="min-h-[calc(100vh-80px)] lg:h-[calc(100vh-80px)] flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
@@ -605,12 +607,12 @@ export default function WholesaleBillingUI() {
           >
             <Plus size={20} /> {t('quickAdd') || 'Quick Add'} <span className="text-[10px] bg-emerald-200/50 dark:bg-emerald-900 px-1.5 rounded ml-1">Ctrl+K</span>
           </button>
-          <button
+          {/* <button
             onClick={() => setShowManualBillUpload(true)}
             className="px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-sm"
           >
             <FileUp size={20} /> {t('manualBill') || 'Manual Bill'}
-          </button>
+          </button> */}
         </div>
 
         {/* Cart Table */}
@@ -848,9 +850,21 @@ export default function WholesaleBillingUI() {
                 <input required autoFocus className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
                   value={manualProduct.name} onChange={e => setManualProduct({...manualProduct, name: e.target.value})} />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">Cost Price (₹)</label>
+                  <input type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                    value={manualProduct.costPrice} onChange={e => setManualProduct({...manualProduct, costPrice: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">MRP (₹)</label>
+                  <input type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                    value={manualProduct.mrp} onChange={e => setManualProduct({...manualProduct, mrp: e.target.value})} />
+                </div>
+              </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">Selling Price</label>
-                <input required type="number" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Selling Price (₹)</label>
+                <input required type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-emerald-600 dark:text-emerald-400"
                   value={manualProduct.price} onChange={e => setManualProduct({...manualProduct, price: e.target.value})} />
               </div>
               <button type="submit" className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-colors text-sm shadow-sm">

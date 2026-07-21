@@ -9,12 +9,12 @@ import { cn } from '@/lib/utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
-const fetcher = (url: string) => api.get(url).then(res => res.data);
-const godownsFetcher = (url: string) => api.get(url).then(res => res.data?.data || res.data);
+const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
+const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
 export default function PurchasesPage() {
   const t = useTranslations('Purchases');
-  const { profile } = useBusinessStore();
+  const { profile, activeShopId } = useBusinessStore();
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -39,27 +39,27 @@ export default function PurchasesPage() {
   const shouldFetchDetails = profile.subscriptionPlan === 'wholesale' && showAdd;
 
   const { data: invoices = [], mutate: mutateInvoices, isLoading } = useSWR(
-    profile.subscriptionPlan === 'wholesale' ? '/purchases' : null,
+    profile.subscriptionPlan === 'wholesale' && activeShopId ? ['/purchases', activeShopId] : null,
     fetcher
   );
 
   const { data: suppliersData = [], mutate: mutateSuppliers } = useSWR(
-    shouldFetchDetails ? '/suppliers' : null,
+    shouldFetchDetails && activeShopId ? ['/suppliers', activeShopId] : null,
     fetcher
   );
 
   const { data: warehouses = [] } = useSWR(
-    shouldFetchDetails ? '/godowns' : null,
+    shouldFetchDetails && activeShopId ? ['/godowns', activeShopId] : null,
     godownsFetcher
   );
 
   const { data: products = [] } = useSWR(
-    shouldFetchDetails ? '/products' : null,
+    shouldFetchDetails && activeShopId ? ['/products', activeShopId] : null,
     fetcher
   );
 
   const { data: masterData } = useSWR(
-    shouldFetchDetails ? '/master-data' : null,
+    shouldFetchDetails && activeShopId ? ['/master-data', activeShopId] : null,
     fetcher
   );
 

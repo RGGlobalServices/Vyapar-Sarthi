@@ -13,7 +13,11 @@ import api from '@/lib/api';
 import useSWR, { useSWRConfig } from 'swr';
 import ReceiveDrawer from '../stock/ReceiveDrawer';
 
-const fetcher = (url: string) => api.get(url).then(res => res.data);
+const fetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data);
+};
+import { useBusinessStore } from '@/lib/businessStore';
 
 export default function ProductDetailsSheet({
   productId,
@@ -32,8 +36,9 @@ export default function ProductDetailsSheet({
   
   const { mutate } = useSWRConfig();
   
+  const { activeShopId } = useBusinessStore();
   const [showReceive, setShowReceive] = useState(false);
-  const { data: godowns = [] } = useSWR('/godowns', fetcher);
+  const { data: godowns = [] } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, fetcher);
 
   useEffect(() => {
     if (productId) fetchDetails();

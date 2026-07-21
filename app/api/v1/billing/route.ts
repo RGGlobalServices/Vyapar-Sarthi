@@ -3,6 +3,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { checkLargeTransactionAlert, checkLowStockAlerts } from '@/lib/server/notificationsEngine';
+import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,8 +14,53 @@ export const POST = handle(async (req) => {
   const body = await readBody(req);
   const customerId = (body.customer_id && body.customer_id !== '') ? body.customer_id : null;
   const items = body.items;
-  const totalAmount = isNaN(body.total_amount) ? 0 : body.total_amount;
-  const totalProfit = isNaN(body.total_profit) ? 0 : body.total_profit;
+
+  if (!items || !items.length) throw new ApiError(400, 'No items in bill');
+  
+  // Validation: Check for negative or zero quantities and prices
+  for (const item of items) {
+    if (item.quantity <= 0) throw new ApiError(400, `Invalid quantity for item ${item.product_id || item.productId}`);
+    const price = item.price_per_unit ?? item.pricePerUnit;
+    if (price < 0) throw new ApiError(400, `Invalid price for item ${item.product_id || item.productId}`);
+  }
+
+  // Fetch product purchase costs & GST rates from DB for authoritative financial calculation
+  const productIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId).filter(Boolean)));
+  const products = productIds.length > 0
+    ? await prisma.product.findMany({ where: { id: { in: productIds as string[] } } })
+    : [];
+  const productMap = new Map(products.map(p => [p.id, p]));
+
+  const inputLineItems: InputLineItem[] = items.map((i: any) => {
+    const pid = i.product_id || i.productId;
+    const dbProduct = pid ? productMap.get(pid) : null;
+    const sp = Number(i.price_per_unit ?? i.pricePerUnit ?? i.price) || 0;
+    const cp = Number(i.purchase_price ?? i.purchasePrice ?? i.cost ?? dbProduct?.wholesaleCost) || 0;
+    const gstRate = Number(i.gst_percent ?? i.gstPercent ?? dbProduct?.gstPercent) || 0;
+
+    return {
+      productId: pid || null,
+      unit: i.unit || dbProduct?.baseUnit || null,
+      variant: i.variant || null,
+      quantity: Number(i.quantity) || 0,
+      sellingPrice: sp,
+      purchasePrice: cp,
+      gstPercent: gstRate,
+      hsnCode: i.hsn_code || i.hsnCode || dbProduct?.hsnCode || null,
+    };
+  });
+
+  const billType: BillType = body.bill_type === 'gst' ? 'gst' : 'non_gst';
+  const discountInput: DiscountInput = typeof body.discount === 'object' && body.discount !== null
+    ? { type: body.discount.type, value: Number(body.discount.value) || 0 }
+    : { type: 'fixed', value: Number(body.discount) || 0 };
+
+  const calcResult = calculateInvoice(inputLineItems, discountInput, billType);
+
+  const totalAmount = calcResult.discountedSubtotal;
+  const totalProfit = calcResult.totalProfit;
+  const gstAmount = billType === 'gst' ? calcResult.totalGst : null;
+
   const paymentType = body.payment_type || 'Cash';
   const amountPaid = typeof body.amount_paid !== 'undefined' ? Number(body.amount_paid) : (paymentType === 'Udhar' ? 0 : totalAmount);
   const paymentDetails = body.payment_details || {};
@@ -22,14 +68,6 @@ export const POST = handle(async (req) => {
 
   if (outstandingAmount > 0 && (!customerId && !body.customer_name)) {
     throw new ApiError(400, 'Customer is required for Udhar / Outstanding amounts');
-  }
-
-  if (!items || !items.length) throw new ApiError(400, 'No items in bill');
-  
-  // Validation: Check for negative or zero quantities and prices
-  for (const item of items) {
-    if (item.quantity <= 0) throw new ApiError(400, `Invalid quantity for item ${item.product_id || item.productId}`);
-    if (item.price_per_unit < 0 || item.pricePerUnit < 0) throw new ApiError(400, `Invalid price for item ${item.product_id || item.productId}`);
   }
 
   const invoice_number = `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
@@ -79,21 +117,25 @@ export const POST = handle(async (req) => {
           amountPaid,
           paymentDetails,
           invoice_number,
-          billType: body.bill_type === 'gst' ? 'gst' : 'non_gst',
-          gstAmount: body.gst_amount != null ? Number(body.gst_amount) : null,
+          billType,
+          gstAmount,
           gstDetails: body.gst_details ?? undefined,
           billImageUrl: body.bill_image_url || null,
           isManual: body.is_manual === true,
           createdAt: body.created_at ? new Date(body.created_at) : undefined,
           items: {
-            create: items.map((item: any) => ({
-              productId: item.product_id || item.productId,
-              unit: item.unit,
-              variant: item.variant || null,
-              quantity: item.quantity,
-              pricePerUnit: item.price_per_unit || item.pricePerUnit,
-              marginPerUnit: item.margin_per_unit || item.marginPerUnit,
-            })),
+            create: calcResult.items.map((cItem, idx) => {
+              const rawItem = items[idx] || {};
+              const rawName = rawItem.name || rawItem.product_name || rawItem.title || rawItem.itemName;
+              return {
+                productId: cItem.productId,
+                unit: cItem.unit,
+                variant: cItem.variant || (cItem.productId ? null : rawName),
+                quantity: cItem.quantity,
+                pricePerUnit: cItem.sellingPrice,
+                marginPerUnit: cItem.marginPerUnit,
+              };
+            }),
           },
         },
         include: { items: true },

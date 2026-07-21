@@ -30,12 +30,14 @@ function ProfitabilityTab({ product }: { product: any }) {
     const recentSales = sales.filter((m: any) => new Date(m.created_at) >= cutoff);
     const totalUnitsSold = recentSales.reduce((sum: number, m: any) => sum + Math.abs(m.quantity), 0);
     const sellingPrice = product.sellingPrice || 0;
+    const gstRate = product.gstPercent || 0;
+    const baseSellingPrice = sellingPrice / (1 + gstRate / 100);
     const costPrice = product.wholesaleCost || 0;
     
-    const totalRevenue = totalUnitsSold * sellingPrice;
+    const totalRevenue = totalUnitsSold * baseSellingPrice;
     const totalCogs = totalUnitsSold * costPrice;
     const grossProfit = totalRevenue - totalCogs;
-    const margin = sellingPrice > 0 ? ((sellingPrice - costPrice) / sellingPrice) * 100 : 0;
+    const margin = baseSellingPrice > 0 ? ((baseSellingPrice - costPrice) / baseSellingPrice) * 100 : 0;
     
     const chartData: any[] = [];
     const grouped = recentSales.reduce((acc: any, m: any) => {
@@ -49,8 +51,8 @@ function ProfitabilityTab({ product }: { product: any }) {
       const q = qty as number;
       chartData.push({
         date,
-        revenue: q * sellingPrice,
-        profit: q * (sellingPrice - costPrice),
+        revenue: q * baseSellingPrice,
+        profit: q * (baseSellingPrice - costPrice),
         qty: q
       });
     }
@@ -128,9 +130,20 @@ function ProfitabilityTab({ product }: { product: any }) {
   );
 }
 
-const fetcher = (url: string) => api.get(url).then(res => res.data);
-const godownsFetcher = (url: string) => api.get(url).then(res => res.data?.data || res.data);
-const safeFetcher = (url: string) => api.get(url).then(res => res.data).catch(() => []);
+const fetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data);
+};
+const godownsFetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data?.data || res.data);
+};
+const safeFetcher = (url: string | string[]) => {
+  if (!url) return Promise.resolve([]);
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data).catch(() => []);
+};
+import { useBusinessStore } from '@/lib/businessStore';
 
 export default function WholesaleStockUI() {
   const [mounted, setMounted] = useState(false);
@@ -153,13 +166,14 @@ export default function WholesaleStockUI() {
   const [actionModal, setActionModal] = useState<string | null>(null); // 'receive', 'transfer', 'adjust'
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
 
-  const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR('/products', fetcher);
+  const { activeShopId } = useBusinessStore();
+  const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher);
   const { data: batches = [], isLoading: bLoad, isValidating: bValid, mutate: mutateBatches } = useSWR(null, safeFetcher); // Mock for now
-  const { data: godowns = [], isLoading: gLoad, isValidating: gValid, mutate: mutateGodowns } = useSWR('/godowns', godownsFetcher);
-  const { data: movements = [], isLoading: mLoad, isValidating: mValid, mutate: mutateMovements } = useSWR('/stock/movements', safeFetcher);
+  const { data: godowns = [], isLoading: gLoad, isValidating: gValid, mutate: mutateGodowns } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, godownsFetcher);
+  const { data: movements = [], isLoading: mLoad, isValidating: mValid, mutate: mutateMovements } = useSWR(activeShopId ? ['/stock/movements', activeShopId] : null, safeFetcher);
   
   // Prefetch suppliers so Receive Drawer opens instantly with data
-  useSWR('/suppliers', fetcher);
+  useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
 
   const handleDataRefresh = (opt?: any) => {
     if (opt) {

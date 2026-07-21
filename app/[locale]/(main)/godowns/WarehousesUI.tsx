@@ -12,16 +12,19 @@ import AdjustDrawer from '../stock/AdjustDrawer';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
 
-const fetcher = (url: string) => api.get(url).then(res => res.data?.data || res.data);
+const fetcher = (url: string | string[]) => {
+  const target = Array.isArray(url) ? url[0] : url;
+  return api.get(target).then(res => res.data?.data || res.data);
+};
 
 const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors shadow-sm';
 
 export default function WarehousesUI() {
   const t = useTranslations('Godowns');
   const router = useRouter();
-  const { profile } = useBusinessStore();
+  const { profile, activeShopId } = useBusinessStore();
   const config = getBusinessConfig(profile.businessType);
-  const { data: warehouses = [], mutate: mutateWarehouses, isLoading: loading } = useSWR('/godowns', fetcher);
+  const { data: warehouses = [], mutate: mutateWarehouses, isLoading: loading } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, fetcher);
   const [selected, setSelected] = useState<any | null>(null);
   
   // Modals
@@ -42,7 +45,7 @@ export default function WarehousesUI() {
   
   // Movements
   const { data: movements = [], mutate: mutateMovements, isLoading: loadingMovements } = useSWR(
-    selected ? `/godowns/${selected.id}/movements` : null,
+    selected && activeShopId ? [`/godowns/${selected.id}/movements`, activeShopId] : null,
     fetcher
   );
 

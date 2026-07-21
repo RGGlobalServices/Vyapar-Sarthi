@@ -22,12 +22,41 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
   const product = await prisma.product.findFirst({ where: { id: productId, shopId: shop.id } });
   if (!product) throw new ApiError(404, 'Product not found');
   try {
+    let finalSizeVariants = b.size_variants ?? b.sizeVariants;
+    if (finalSizeVariants !== undefined && finalSizeVariants !== null) {
+      try {
+        const incoming = typeof finalSizeVariants === 'string' ? JSON.parse(finalSizeVariants) : finalSizeVariants;
+        const existing = typeof product.size_variants === 'string' ? JSON.parse(product.size_variants) : (product.size_variants || {});
+        const merged: Record<string, number> = {};
+        for (const key of Object.keys(incoming)) {
+          merged[key] = existing[key] ?? 0;
+        }
+        finalSizeVariants = JSON.stringify(merged);
+      } catch (e) {}
+    }
+
+    let finalVariants = b.variants;
+    if (finalVariants !== undefined && Array.isArray(finalVariants)) {
+      try {
+        const existing = Array.isArray(product.variants) 
+          ? product.variants 
+          : (typeof product.variants === 'string' ? JSON.parse(product.variants || '[]') : []);
+        finalVariants = finalVariants.map((incomingVariant: any) => {
+          const matched = existing.find((ev: any) => ev.color === incomingVariant.color && ev.size === incomingVariant.size);
+          return {
+            ...incomingVariant,
+            quantity: matched ? (matched.quantity ?? 0) : 0,
+            stock: matched ? (matched.stock ?? 0) : 0
+          };
+        });
+      } catch (e) {}
+    }
+
     const updated = await prisma.product.update({
       where: { id: productId },
       data: {
         name: b.name,
         category: b.category,
-        currentStock: b.current_stock ?? b.currentStock,
         minStock: b.min_stock ?? b.minStock,
         mrp: b.mrp,
         sellingPrice: b.selling_price ?? b.sellingPrice,
@@ -42,9 +71,9 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
         warranty_months: b.warranty_months ?? b.warrantyMonths,
         gender: b.gender,
         shade: b.shade,
-        size_variants: b.size_variants ?? b.sizeVariants,
+        size_variants: finalSizeVariants,
         metadata: b.metadata !== undefined ? b.metadata : undefined,
-        variants: b.variants !== undefined ? b.variants : undefined,
+        variants: finalVariants,
         brand: b.brand,
         hsnCode: b.hsnCode ?? b.hsn_code,
         productType: b.productType ?? b.product_type,

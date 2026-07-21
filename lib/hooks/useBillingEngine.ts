@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useCartStore, CartItem } from '@/lib/store';
+import { calculateInvoice, InputLineItem, BillType, DiscountInput } from '@/lib/financialEngine';
 
 const EMPTY_ARRAY: CartItem[] = [];
 
@@ -28,7 +29,8 @@ export function useBillingEngine(
   const updatePriceInStore = useCartStore((state) => state.updatePrice);
   const clearCartInStore = useCartStore((state) => state.clearCart);
 
-  const [discount, setDiscount] = useState(initialDiscount);
+  const [discount, setDiscount] = useState<number | DiscountInput>(initialDiscount);
+  const [billType, setBillType] = useState<BillType>('non_gst');
   const [isEmi, setIsEmi] = useState(false);
   const [manualSplit, setManualSplit] = useState(ZERO_SPLIT);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -36,9 +38,26 @@ export function useBillingEngine(
   const [udharAdvance, setUdharAdvance] = useState(0);
   const [udharAdvanceMethod, setUdharAdvanceMethod] = useState<CollectedMethod>('cash');
 
-  // Financial Calculations
-  const subtotal = useMemo(() => items.reduce((acc, item) => acc + item.total, 0), [items]);
-  const total = Math.max(0, subtotal - discount);
+  // Financial Calculations via Centralized Financial Engine
+  const invoiceCalc = useMemo(() => {
+    const inputItems: InputLineItem[] = items.map(item => ({
+      productId: typeof item.id === 'string' ? item.id : null,
+      unit: item.unit,
+      variant: item.variant,
+      quantity: item.quantity,
+      sellingPrice: item.price,
+      purchasePrice: item.cost || (item as any).purchasePrice || 0,
+      gstPercent: (item as any).gstPercent,
+      hsnCode: (item as any).hsnCode,
+    }));
+    return calculateInvoice(inputItems, discount, billType);
+  }, [items, discount, billType]);
+
+  const subtotal = invoiceCalc.grossSubtotal;
+  const total = invoiceCalc.discountedSubtotal;
+  const totalDiscount = invoiceCalc.totalDiscount;
+  const totalProfit = invoiceCalc.totalProfit;
+  const totalGst = invoiceCalc.totalGst;
 
   // Never let an advance typed against a bigger cart outlive the cart shrinking.
   const effectiveUdharAdvance = Math.min(Math.max(0, udharAdvance), total);
@@ -104,6 +123,8 @@ export function useBillingEngine(
     items,
     discount,
     setDiscount,
+    billType,
+    setBillType,
     splitPayments,
     setSplitPayments: setManualSplit,
     paymentMethod,
@@ -117,6 +138,10 @@ export function useBillingEngine(
     // Derived Calculations
     subtotal,
     total,
+    totalDiscount,
+    totalProfit,
+    totalGst,
+    invoiceCalc,
     collectedAmount,
     remainingAmount,
     isEmi,

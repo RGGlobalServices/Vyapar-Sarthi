@@ -34,7 +34,7 @@ function DashboardInner() {
   const locale = useLocale();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { fetchProfile } = useBusinessStore();
+  const { fetchProfile, activeShopId, profile } = useBusinessStore();
   const { role } = useAuthStore();
 
   const [paymentBanner, setPaymentBanner] = useState<{ plan: string } | null>(null);
@@ -201,9 +201,9 @@ function DashboardInner() {
   };
 
   const { start_date, end_date } = getDates();
-  const fetcher = (url: string) => api.get(url).then(res => res.data);
+  const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
   const { data: dashboardPayload, mutate: mutateDashboard } = useSWR(
-    `/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, 
+    activeShopId ? [`/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, activeShopId] : null, 
     fetcher, 
     { revalidateOnFocus: true }
   );
@@ -278,18 +278,19 @@ function DashboardInner() {
     if (showTopProductsModal && fullTopProducts.length === 0) {
       loadFullTopProducts();
     }
-  }, [showTopProductsModal, fullTopProducts.length]);
+  }, [showTopProductsModal, fullTopProducts.length, activeShopId]);
 
   useEffect(() => {
     if (showStockAlertsModal && fullStockAlerts.length === 0) {
       loadFullStockAlerts();
     }
-  }, [showStockAlertsModal, fullStockAlerts.length]);
+  }, [showStockAlertsModal, fullStockAlerts.length, activeShopId]);
 
-  // Reset modal data when timeframe changes so it fetches fresh data
+  // Reset modal data when timeframe or shop changes so it fetches fresh data
   useEffect(() => {
     setFullTopProducts([]);
-  }, [timeframe, appliedCustomDates]);
+    setFullStockAlerts([]);
+  }, [timeframe, appliedCustomDates, activeShopId]);
 
   useEffect(() => {
     initData(true, false);

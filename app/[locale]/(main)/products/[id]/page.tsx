@@ -194,7 +194,14 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-400 font-medium">Profit Margin</span>
                 <span className="text-sm font-bold text-emerald-400">
-                  {(product.cost || product.wholesaleCost) > 0 ? ((((product.price || product.sellingPrice || 0) - (product.cost || product.wholesaleCost || 0)) / (product.cost || product.wholesaleCost || 1)) * 100).toFixed(1) : 0}%
+                  {(() => {
+                    const cost = product.cost || product.wholesaleCost || 0;
+                    const price = product.price || product.sellingPrice || 0;
+                    const gst = product.gstPercent || 0;
+                    const basePrice = price / (1 + gst / 100);
+                    if (basePrice <= 0) return '0.0';
+                    return (((basePrice - cost) / basePrice) * 100).toFixed(1);
+                  })()}%
                 </span>
               </div>
             </div>
