@@ -350,7 +350,7 @@ export default function ProfilePage() {
                       value={shop?.business_type || shop?.businessType || 'kirana'}
                       onChange={e => {
                         const val = e.target.value;
-                        setShop(s => ({ ...s, business_type: val, businessType: val }));
+                        setShop((s: any) => ({ ...s, business_type: val, businessType: val }));
                       }}>
                       <option value="" disabled>{t('selectType')}</option>
                       {ALL_BUSINESS_TYPES.map(config => (
