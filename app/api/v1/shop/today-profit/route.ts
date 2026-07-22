@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { startOfDay, endOfDay } from '@/lib/server/dates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,10 +21,8 @@ export const POST = handle(async (req) => {
   if (!valid) throw new ApiError(401, 'Incorrect profit password.');
 
   // Today's sales
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date();
-  todayEnd.setHours(23, 59, 59, 999);
+  const todayStart = startOfDay();
+  const todayEnd = endOfDay();
 
   const sales = await prisma.sale.findMany({
     where: { shopId: shop.id, createdAt: { gte: todayStart, lte: todayEnd } },

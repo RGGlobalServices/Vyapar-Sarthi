@@ -133,7 +133,20 @@ export default function ReturnsPage() {
       setBill(res.data);
       // Initialize returnable items (quantity 0 initially)
       if (res.data.items) {
-        setReturnItems(res.data.items.map((item: any) => ({ ...item, returnQty: 0, returnReason: 'Customer Return' })));
+        const availableItems = res.data.items
+          .filter((item: any) => (item.quantity - (item.returned_quantity || 0)) > 0)
+          .map((item: any) => ({ 
+            ...item, 
+            availableQty: item.quantity - (item.returned_quantity || 0),
+            returnQty: 0, 
+            returnReason: 'Customer Return' 
+          }));
+        
+        setReturnItems(availableItems);
+        
+        if (availableItems.length === 0) {
+          alert(t('allReturned') || 'All items from this invoice have already been returned.');
+        }
       } else {
         setReturnItems([]);
       }
@@ -293,7 +306,7 @@ export default function ReturnsPage() {
                     <div key={idx} className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors flex items-center justify-between gap-4">
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 dark:text-slate-200">{item.name || `Product #${item.product_id}`}</h4>
-                        <p className="text-xs text-slate-500">{t('price') || 'Price'}: ₹{item.price_per_unit} | {t('purchased') || 'Purchased'}: {item.quantity}</p>
+                        <p className="text-xs text-slate-500">{t('price') || 'Price'}: ₹{item.price_per_unit} | {t('purchased') || 'Purchased'}: {item.quantity} {item.returned_quantity > 0 ? `| Returned: ${item.returned_quantity} | Avail: ${item.availableQty}` : ''}</p>
                         {item.returnQty > 0 && (
                           <div className="mt-2">
                             <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">{t('reason') || 'Reason'}</label>
@@ -325,7 +338,7 @@ export default function ReturnsPage() {
                             {item.returnQty}
                           </span>
                           <button 
-                            onClick={() => setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: Math.min(item.quantity, it.returnQty + 1) } : it))}
+                            onClick={() => setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: Math.min(item.availableQty, it.returnQty + 1) } : it))}
                             className="w-8 h-8 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                           >
                             +

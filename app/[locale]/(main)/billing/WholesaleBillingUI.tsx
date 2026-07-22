@@ -256,6 +256,7 @@ export default function WholesaleBillingUI() {
         size: size || undefined,
         quantity: defaultQty,
         price,
+        cost: cost || 0,
         profit: (price / (1 + (Number(product.gstPercent ?? product.gst_percent ?? 0) || 0) / 100)) - cost,
         total: Math.round(price * defaultQty),
         is_loose: !!product.is_loose,

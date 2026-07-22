@@ -140,17 +140,22 @@ export function calculateInvoice(
 
     let taxableAmount = 0;
     let gstAmount = 0;
+    let profitTaxableAmount = 0;
 
     if (billType === 'gst' && item.gstPercent > 0) {
       taxableAmount = round2(discountedTotal / (1 + item.gstPercent / 100));
       gstAmount = round2(discountedTotal - taxableAmount);
+      profitTaxableAmount = taxableAmount;
     } else {
       taxableAmount = discountedTotal;
       gstAmount = 0;
+      profitTaxableAmount = item.gstPercent > 0 
+        ? round2(discountedTotal / (1 + item.gstPercent / 100))
+        : discountedTotal;
     }
 
     const purchaseCostTotal = round2(item.purchasePrice * item.quantity);
-    const netProfit = round2(taxableAmount - purchaseCostTotal);
+    const netProfit = round2(profitTaxableAmount - purchaseCostTotal);
     const marginPerUnit = item.quantity > 0 ? round2(netProfit / item.quantity) : 0;
 
     totalGst += gstAmount;

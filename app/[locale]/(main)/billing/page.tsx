@@ -400,6 +400,7 @@ function StandardBillingUI() {
       size: size || undefined,
       quantity: defaultQty,
       price: price || 0,
+      cost: cost || 0,
       profit: (price || 0) - cost,
       total: Math.round((price || 0) * defaultQty),
       is_loose: !!product.is_loose,

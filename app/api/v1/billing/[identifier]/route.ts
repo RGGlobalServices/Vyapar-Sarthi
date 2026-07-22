@@ -51,6 +51,29 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
   if (!sale) throw new ApiError(404, 'Invoice not found');
 
+  const priorReturns = await prisma.materialReturn.findMany({
+    where: {
+      shopId,
+      note: {
+        contains: sale.id
+      }
+    }
+  });
+
+  const returnedQuantities: Record<string, number> = {};
+  for (const r of priorReturns) {
+    let noteData: any = {};
+    try {
+      if (r.note) noteData = JSON.parse(r.note);
+    } catch (e) {}
+    
+    // Match by saleItemId first, then productId, then itemName
+    const key = noteData?.saleItemId || r.productId || r.itemName;
+    if (key) {
+      returnedQuantities[key] = (returnedQuantities[key] || 0) + r.quantity;
+    }
+  }
+
   return json({
     id: sale.id,
     invoice_number: sale.invoice_number,
@@ -65,15 +88,19 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     bill_image_url: sale.billImageUrl,
     customer_name: sale.customer?.name || null,
     created_at: sale.createdAt,
-    items: sale.items.map((item) => ({
-      id: item.id,
-      product_id: item.productId,
-      name: item.product?.name || (sale.isManual ? 'Manual Bill' : 'Unknown'),
-      price_per_unit: item.pricePerUnit,
-      quantity: item.quantity,
-      total: (item.pricePerUnit || 0) * (item.quantity || 0),
-      hsnCode: item.product?.hsnCode || '',
-      gstPercent: item.product?.gstPercent || 0,
-    })),
+    items: sale.items.map((item) => {
+      const returnedQty = returnedQuantities[item.id] || returnedQuantities[item.productId || ''] || returnedQuantities[item.product?.name || ''] || 0;
+      return {
+        id: item.id,
+        product_id: item.productId,
+        name: item.product?.name || (sale!.isManual ? 'Manual Bill' : 'Unknown'),
+        price_per_unit: item.pricePerUnit,
+        quantity: item.quantity,
+        returned_quantity: returnedQty,
+        total: (item.pricePerUnit || 0) * (item.quantity || 0),
+        hsnCode: item.product?.hsnCode || '',
+        gstPercent: item.product?.gstPercent || 0,
+      };
+    }),
   });
 });

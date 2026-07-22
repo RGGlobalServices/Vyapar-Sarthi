@@ -42,7 +42,8 @@ export const POST = handle(async (req) => {
           invoiceNumber: sale.invoice_number,
           customerName: sale.customer?.name || 'Guest',
           paymentType: sale.paymentType,
-          saleDate: sale.createdAt
+          saleDate: sale.createdAt,
+          saleItemId: saleItem.id
         }),
         date: new Date(),
       }

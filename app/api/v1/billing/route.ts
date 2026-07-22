@@ -35,7 +35,7 @@ export const POST = handle(async (req) => {
     const pid = i.product_id || i.productId;
     const dbProduct = pid ? productMap.get(pid) : null;
     const sp = Number(i.price_per_unit ?? i.pricePerUnit ?? i.price) || 0;
-    const cp = Number(i.purchase_price ?? i.purchasePrice ?? i.cost ?? dbProduct?.wholesaleCost) || 0;
+    const cp = Number(i.purchase_price) || Number(i.purchasePrice) || Number(i.cost) || Number(dbProduct?.wholesaleCost) || 0;
     const gstRate = Number(i.gst_percent ?? i.gstPercent ?? dbProduct?.gstPercent) || 0;
 
     return {
