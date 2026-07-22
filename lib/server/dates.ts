@@ -1,4 +1,4 @@
-export function startOfDay(d: Date | string | number): Date {
+export function startOfDay(d: Date | string | number = new Date()): Date {
   const date = new Date(d);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -10,7 +10,7 @@ export function startOfDay(d: Date | string | number): Date {
   return new Date(`${formattedDate}T00:00:00+05:30`);
 }
 
-export function endOfDay(d: Date | string | number): Date {
+export function endOfDay(d: Date | string | number = new Date()): Date {
   const date = new Date(d);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -22,7 +22,7 @@ export function endOfDay(d: Date | string | number): Date {
   return new Date(`${formattedDate}T23:59:59.999+05:30`);
 }
 
-export function formatDate(d: Date | string | number): string {
+export function formatDate(d: Date | string | number = new Date()): string {
   const date = new Date(d);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
