@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "main": "main.js",
   "scripts": {
-    "dev": "npx dotenv-cli -e .env.local -- cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev -p 3000",
+    "dev": "npx dotenv-cli -e .env.local -- cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev -p 3001",
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=2048 next build",
     "start": "next start",
     "lint": "eslint .",

@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -37,6 +37,16 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [bulkEditField, setBulkEditField] = useState<string>('');
   const [bulkEditValue, setBulkEditValue] = useState<string>('');
+
+  // Preview pagination — every row is editable, not just the first 50.
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const totalPages = Math.max(1, Math.ceil(previewData.length / pageSize));
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, previewData.length);
 
   useEffect(() => {
     if (['product', 'purchase', 'stock'].includes(importType)) {
@@ -208,8 +218,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               filesToSend.push(file);
             } else {
               // Scanned PDF → render each page to an image for OCR. Cap matches
-              // the server's per-request image limit so pages aren't dropped.
-              const numPages = Math.min(pdf.numPages, 60);
+              // the server's per-request image limit (env-configurable) so
+              // pages aren't silently dropped on 100+ page documents.
+              const maxImages = Math.max(1, Number(process.env.NEXT_PUBLIC_IMPORT_MAX_IMAGES) || 200);
+              const numPages = Math.min(pdf.numPages, maxImages);
               for (let i = 1; i <= numPages; i++) {
                 setLoadingText(`Converting scanned PDF ${file.name} (Page ${i} of ${numPages})...`);
                 const page = await pdf.getPage(i);
@@ -698,7 +710,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {previewData.slice(0, 50).map((row, i) => {
+                  {previewData.slice(pageStart, pageEnd).map((row, localIdx) => {
+                    const i = pageStart + localIdx;
                     const match = rowMatches[i];
                     const action = effectiveAction(i);
                     const isExisting = match?.status === 'existing';
@@ -706,8 +719,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     return (
                     <tr key={i} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-300 group ${action === 'skip' ? 'opacity-45' : ''} ${isSelected ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''}`}>
                       <td className="px-3 py-1 whitespace-nowrap sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800 text-center">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={isSelected}
                           onChange={() => handleSelectRow(i)}
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
@@ -756,8 +769,79 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 </tbody>
               </table>
             </div>
-            {previewData.length > 50 && (
-              <p className="text-center text-sm text-slate-500 mt-4">Showing first 50 rows (editable) — remaining {previewData.length - 50} rows will still be imported as-is.</p>
+
+            {/* Pagination — every row is now editable across pages */}
+            {previewData.length > 0 && (
+              <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 px-1">
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  Showing <span className="font-bold text-slate-700 dark:text-slate-200">{pageStart + 1}</span>–<span className="font-bold text-slate-700 dark:text-slate-200">{pageEnd}</span> of <span className="font-bold text-slate-700 dark:text-slate-200">{previewData.length}</span> rows
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                    Rows per page
+                    <select
+                      value={pageSize}
+                      onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {[25, 50, 100, 200, 500].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      title="First page"
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-emerald-600 hover:border-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronsLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      title="Previous page"
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-emerald-600 hover:border-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <div className="flex items-center gap-1 px-2 text-sm text-slate-600 dark:text-slate-300">
+                      <span>Page</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={totalPages}
+                        value={currentPage}
+                        onChange={e => {
+                          const v = parseInt(e.target.value, 10);
+                          if (!Number.isNaN(v)) setCurrentPage(Math.max(1, Math.min(totalPages, v)));
+                        }}
+                        className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-center text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <span>of <span className="font-bold text-slate-700 dark:text-slate-200">{totalPages}</span></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      title="Next page"
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-emerald-600 hover:border-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      title="Last page"
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-emerald-600 hover:border-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronsRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>

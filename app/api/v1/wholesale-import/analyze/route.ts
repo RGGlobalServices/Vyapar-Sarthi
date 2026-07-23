@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
+import { GoogleGenAI } from '@google/genai';
 import { importConfig } from '@/lib/importConfig';
 
 export async function POST(req: NextRequest) {
@@ -18,10 +19,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
 
-    const apiKey = process.env.NVIDIA_API_KEY || '';
-    if (!apiKey) {
-      return NextResponse.json({ error: 'No Nvidia API key configured in environment' }, { status: 500 });
+    const nvidiaKey = process.env.NVIDIA_API_KEY || '';
+    const geminiKey = process.env.GEMINI_API_KEY || '';
+    if (!nvidiaKey && !geminiKey) {
+      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY (recommended) or NVIDIA_API_KEY.' }, { status: 500 });
     }
+    // Gemini is preferred: accurate on messy Indian invoices/handwriting, fast,
+    // and a huge context window means fewer chunks. Falls back to Nvidia.
+    const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
     
     let businessSpecificFields = '';
     let businessSpecificSchema = '';
@@ -47,7 +52,22 @@ export async function POST(req: NextRequest) {
 
     let specificInstructions = '';
     if (targetType === 'purchase') {
-      specificInstructions = 'Extract the purchase invoice data STRICTLY conforming to the provided JSON schema. The data may be messy, handwritten, or informal (e.g., a "kacha bill"). Use your intelligence to infer the Item Name, Quantity, Price, and Total even if column headers are missing or unclear. Do NOT include markdown code blocks or explanations.';
+      // Purchase-invoice-specific rules. Indian GST invoices (Tax Invoice /
+      // Kacha Bill / photographed supplier bills) look like:
+      //   • Header block: supplier name, GSTIN, invoice number, date
+      //   • Line items: description, HSN/SAC, qty, unit, price/unit,
+      //     discount, taxable amount, GST%, total
+      // We need field names that match the execute route's aliases exactly —
+      // 'unitCost' (NOT sellingPrice, since this is what YOU paid the supplier).
+      specificInstructions = [
+        'This is a PURCHASE INVOICE (Indian GST tax invoice / supplier bill / kacha bill).',
+        'Extract the supplier header AND every line item.',
+        'For EACH item, output these exact field names: productName, hsnCode, quantity, unit, unitCost (price per unit YOU paid the supplier, NOT selling price), gstPercent, amount (line total after discount+GST), barcode (leave empty if not present).',
+        'For each item also copy the header onto the row: supplier (business name at top), invoiceNumber, invoiceDate (as YYYY-MM-DD if possible).',
+        'unitCost is the per-unit purchase rate before GST — usually labelled "Price/Unit" or "Rate". Do NOT put the total in unitCost.',
+        'Skip pure summary rows (Subtotal / Round Off / Grand Total / Tax Summary / signature) — only extract actual product rows.',
+        'If HSN/SAC has slash (e.g. HSN/SAC), take just the code number.',
+      ].join(' ');
     } else {
       specificInstructions = `Extract all data relevant to the ${targetType} category. The document may be a photo of a handwritten notebook, an informal note, a kacha bill, or a structured table. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible.`;
     }
@@ -92,6 +112,10 @@ CRITICAL INSTRUCTIONS FOR AI:
     let extractedText = '';
     let hasImages = false;
     let imageContents: any[] = [];
+    // PDFs that text-extraction couldn't read — sent to Gemini as inline
+    // documents (native PDF OCR) as a last-resort fallback. Handles corrupt
+    // XRef tables, scanned PDFs, images-only PDFs, etc.
+    const pdfFallbackDocs: { name: string; b64: string }[] = [];
 
     for (const file of files) {
       let mimeType = file.type;
@@ -104,27 +128,86 @@ CRITICAL INSTRUCTIONS FOR AI:
       const buffer = Buffer.from(arrayBuffer);
 
       if (mimeType === 'application/pdf') {
+        // Three-tier extraction. Each tier is best-effort — a tier failing
+        // must never abort the pipeline; only escalate to the next tier. Only
+        // after ALL tiers have been tried do we surface an error.
+        //   1. pdf-parse   — fast, works on well-formed text PDFs
+        //   2. pdfjs-dist  — forgiving; handles malformed XRef tables
+        //   3. Gemini PDF  — native PDF OCR; handles scanned/image-only PDFs
+        //                    and anything text extraction cannot read
+        let pdfText = '';
+        const failures: string[] = [];
+
         try {
           const pdfData = await pdfParse(buffer);
-          if (!pdfData.text || pdfData.text.trim().length < 20) {
-            throw new Error(`The PDF file ${file.name} appears to be a scanned image with no text. Please convert it to an image (JPG/PNG) or upload a photo of it so our Vision AI can read the handwriting.`);
+          pdfText = pdfData.text || '';
+        } catch (e: any) {
+          failures.push(`pdf-parse: ${e?.message || e}`);
+        }
+
+        if (!pdfText || pdfText.trim().length < 20) {
+          try {
+            const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+            const loadingTask = pdfjsLib.getDocument({
+              data: new Uint8Array(buffer),
+              disableFontFace: true,
+              useSystemFonts: false,
+              isEvalSupported: false,
+            });
+            const pdf = await loadingTask.promise;
+            const parts: string[] = [];
+            for (let p = 1; p <= pdf.numPages; p++) {
+              try {
+                const page = await pdf.getPage(p);
+                const tc = await page.getTextContent();
+                parts.push(tc.items.map((it: any) => it.str).join(' '));
+              } catch { /* skip unreadable page */ }
+            }
+            pdfText = parts.join('\n');
+          } catch (e: any) {
+            failures.push(`pdfjs-dist: ${e?.message || e}`);
           }
-          extractedText += `\n--- PDF: ${file.name} ---\n` + pdfData.text;
-        } catch (pdfError: any) {
-          throw new Error(pdfError.message || `The PDF file ${file.name} could not be read. Please convert it to an image (JPG/PNG) and upload again.`);
+        }
+
+        if (pdfText.trim().length >= 20) {
+          // Text extraction succeeded via tier 1 or 2.
+          extractedText += `\n--- PDF: ${file.name} ---\n` + pdfText;
+        } else {
+          // Both text tiers failed OR text is too thin (scanned PDF).
+          // Escalate to Gemini native PDF OCR — no local parsing needed.
+          const pdfSizeMb = buffer.length / (1024 * 1024);
+          if (gemini && pdfSizeMb <= 18) {
+            pdfFallbackDocs.push({ name: file.name, b64: buffer.toString('base64') });
+            continue;
+          }
+          const detail = failures.length ? ` [${failures.join(' | ')}]` : '';
+          throw new Error(
+            gemini
+              ? `PDF ${file.name} is ${pdfSizeMb.toFixed(1)} MB — too large for direct AI OCR (max 18 MB). Please split it or export pages as images.${detail}`
+              : `The PDF file ${file.name} has no readable text. Set GEMINI_API_KEY for automatic PDF OCR, or export each page as an image (JPG/PNG) and upload again.${detail}`
+          );
         }
       } else if (mimeType.startsWith('image/')) {
         hasImages = true;
         imageContents.push({
           type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` }
+          image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` },
+          mimeType,
+          b64: buffer.toString('base64'),
         });
       } else if (mimeType === 'text/csv' || mimeType.includes('excel') || mimeType.includes('spreadsheet')) {
         try {
           const workbook = XLSX.read(buffer, { type: 'buffer' });
-          const sheetName = workbook.SheetNames[0];
-          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-          extractedText += `\n--- Spreadsheet: ${file.name} ---\n` + csv;
+          // Read EVERY sheet — a workbook of category tabs (Groceries, Dairy…)
+          // must not lose all but the first sheet. Sheets are concatenated with
+          // headed markers so the AI can distinguish them if useful.
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false, strip: true });
+            if (csv.trim()) {
+              extractedText += `\n--- Spreadsheet: ${file.name} :: Sheet: ${sheetName} ---\n` + csv;
+            }
+          }
         } catch (e: any) {
           throw new Error(`Could not parse spreadsheet ${file.name}: ${e.message}`);
         }
@@ -190,14 +273,30 @@ ${dataText}`;
 
     // One Nvidia chat-completion call → returns the raw message content string.
     // max_tokens is high so a chunk's worth of rows never gets cut off mid-JSON.
+    // An AbortController enforces importConfig.timeoutMs so a hung upstream
+    // request can never block a whole batch forever.
     const callNvidia = async (messages: any[], model: string): Promise<string> => {
+      if (!nvidiaKey) throw new Error('Nvidia API key not configured');
       const requestBody: any = { model, messages, temperature: 0, max_tokens: importConfig.aiMaxTokens };
       requestBody.response_format = targetType === 'purchase' ? purchaseSchema : { type: 'json_object' };
-      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(requestBody),
-      });
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), importConfig.timeoutMs);
+      let response: Response;
+      try {
+        response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${nvidiaKey}` },
+          body: JSON.stringify(requestBody),
+          signal: ac.signal,
+        });
+      } catch (e: any) {
+        if (e?.name === 'AbortError') {
+          throw new Error(`Nvidia API call timed out after ${importConfig.timeoutMs}ms`);
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
       const responseText = await response.text();
       let data;
       try { data = JSON.parse(responseText); }
@@ -205,6 +304,87 @@ ${dataText}`;
       if (!response.ok) throw new Error(data.error?.message || data.detail || `Nvidia API Error ${response.status}`);
       return data.choices?.[0]?.message?.content || '';
     };
+
+    // Parse Gemini's retryDelay hint (e.g. "4.242585419s") from a 429 error.
+    // Returns ms to wait, capped so we don't stall the whole request forever.
+    const parseRetryDelayMs = (err: any): number | null => {
+      const msg = err?.message || String(err || '');
+      if (!/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) return null;
+      const m = msg.match(/retryDelay[^0-9]*([0-9.]+)s/i);
+      const parsed = m ? Math.ceil(parseFloat(m[1]) * 1000) : 5000;
+      return Math.min(parsed, 15000); // cap at 15s per attempt
+    };
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    // Gemini model chain — tries each model in order. If the primary model
+    // returns a quota / rate-limit error (429), automatically falls through
+    // to the next model. Comma-separated env override:
+    //   IMPORT_GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-flash-lite
+    // Defaults reflect the current (2026) stable free-tier lineup — do not
+    // hard-code deprecated 1.5/2.0 IDs. Add newer 3.x models to the front
+    // of the env chain to opt in.
+    const geminiChain = (process.env.IMPORT_GEMINI_MODELS || process.env.IMPORT_GEMINI_MODEL
+      || 'gemini-2.5-flash,gemini-2.5-flash-lite')
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    // One Gemini generateContent invocation with per-attempt timeout, retry
+    // on transient 429s (respecting the retryDelay hint), and automatic
+    // fall-through to the next model in the chain on hard quota failure.
+    const callGeminiOnce = async (contents: any, kind: string): Promise<string> => {
+      if (!gemini) throw new Error('Gemini API key not configured');
+      const attempt = async (model: string): Promise<string> => {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), importConfig.timeoutMs);
+        try {
+          const resp = await gemini.models.generateContent({
+            model,
+            contents,
+            config: { responseMimeType: 'application/json', temperature: 0 },
+          });
+          return resp.text || '';
+        } catch (e: any) {
+          if (e?.name === 'AbortError') {
+            throw new Error(`Gemini ${kind} call to ${model} timed out after ${importConfig.timeoutMs}ms`);
+          }
+          throw e;
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      const lastErrors: string[] = [];
+      for (const model of geminiChain) {
+        // Up to 3 attempts per model, honoring server-provided retryDelay on 429.
+        let quotaDead = false;
+        for (let i = 0; i < 3; i++) {
+          try { return await attempt(model); }
+          catch (e: any) {
+            const msg = e?.message || String(e);
+            const wait = parseRetryDelayMs(e);
+            if (wait !== null && i < 2 && !/limit:\s*0|PerDay/i.test(msg)) {
+              await sleep(wait);
+              continue;
+            }
+            lastErrors.push(`${model}: ${msg.slice(0, 240)}`);
+            // Hard quota (day-limit or literal "limit: 0") → escalate to next model.
+            if (wait !== null) quotaDead = true;
+            break;
+          }
+        }
+        if (!quotaDead) break; // non-quota errors: don't burn every model
+      }
+      throw new Error(`Gemini ${kind} call failed: ${lastErrors.join(' | ')}`);
+    };
+
+    const callGeminiText = (promptText: string) => callGeminiOnce(promptText, 'text');
+    const callGeminiPdf = (promptText: string, b64: string) => callGeminiOnce(
+      [{ role: 'user', parts: [{ text: promptText }, { inlineData: { mimeType: 'application/pdf', data: b64 } }] }],
+      'pdf',
+    );
+    const callGeminiVision = (promptText: string, mime: string, b64: string) => callGeminiOnce(
+      [{ role: 'user', parts: [{ text: promptText }, { inlineData: { mimeType: mime, data: b64 } }] }],
+      'vision',
+    );
 
     // Parse the AI's JSON, with a jsonrepair fallback. Throws on unrecoverable output.
     const parseAiJson = (textOutput: string): any => {
@@ -231,11 +411,25 @@ ${dataText}`;
     const collect = (raw: string) => {
       lastRaw = raw;
       const r = parseAiJson(raw);
-      if (Array.isArray(r?.items)) aggregatedItems.push(...r.items);
       if (targetType === 'purchase') {
+        // Capture header first so we can bake it into each item — the wizard
+        // only forwards data.items to /execute, and /execute reads the
+        // supplier / invoice fields from firstRow, so header MUST live on
+        // each row (not just the top-level of the analyze response).
         for (const k of ['supplier', 'invoiceNumber', 'invoiceDate', 'warehouse']) {
           if (!header[k] && r?.[k]) header[k] = r[k];
         }
+        if (Array.isArray(r?.items)) {
+          const withHeader = r.items.map((it: any) => ({
+            supplier: it.supplier || r.supplier || header.supplier || undefined,
+            invoiceNumber: it.invoiceNumber || r.invoiceNumber || header.invoiceNumber || undefined,
+            invoiceDate: it.invoiceDate || r.invoiceDate || header.invoiceDate || undefined,
+            ...it,
+          }));
+          aggregatedItems.push(...withHeader);
+        }
+      } else {
+        if (Array.isArray(r?.items)) aggregatedItems.push(...r.items);
       }
     };
 
@@ -266,23 +460,44 @@ ${dataText}`;
     type Task = { label: string; run: () => Promise<string> };
     const tasks: Task[] = [];
 
+    // Provider selection — Gemini is preferred when configured (accurate on
+    // messy Indian invoices, fast, generous context). Falls back to Nvidia
+    // llama with an 8B default that is proven working on Nvidia's free tier.
+    // Override either model via env: IMPORT_GEMINI_MODEL / IMPORT_TEXT_MODEL.
+    const useGemini = !!gemini;
+    const textModel = process.env.IMPORT_TEXT_MODEL || 'meta/llama-3.1-8b-instruct';
+    const visionModel = process.env.IMPORT_VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
+
     const textChunks = extractedText.trim() ? chunkText(extractedText) : [];
     textChunks.forEach((chunk, idx) => {
       tasks.push({
         label: `Text chunk ${idx + 1}/${textChunks.length}`,
-        run: () => callNvidia([{ role: 'user', content: buildPrompt(chunk) }], 'meta/llama-3.1-8b-instruct'),
+        run: () => useGemini
+          ? callGeminiText(buildPrompt(chunk))
+          : callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel),
       });
     });
 
     const MAX_IMAGES = importConfig.maxImages; // each image = one page of a scanned/photographed doc
     const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
-    imagesToProcess.forEach((img, idx) => {
+    imagesToProcess.forEach((img: any, idx) => {
       tasks.push({
         label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
-        run: () => callNvidia(
-          [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, img] }],
-          'meta/llama-3.2-11b-vision-instruct'
-        ),
+        run: () => useGemini
+          ? callGeminiVision(buildPrompt(''), img.mimeType, img.b64)
+          : callNvidia(
+              [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, { type: img.type, image_url: img.image_url }] }],
+              visionModel
+            ),
+      });
+    });
+
+    // Direct-PDF fallback tasks — one call per PDF that text-extraction couldn't
+    // read. Gemini reads the raw PDF including scanned pages via native OCR.
+    pdfFallbackDocs.forEach((doc, idx) => {
+      tasks.push({
+        label: `PDF direct-OCR ${idx + 1}/${pdfFallbackDocs.length} (${doc.name})`,
+        run: () => callGeminiPdf(buildPrompt(''), doc.b64),
       });
     });
 

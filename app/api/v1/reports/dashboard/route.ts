@@ -6,13 +6,15 @@ import { getDateRange } from '@/lib/server/dates';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Simple in-memory cache for dashboard data
+// Simple in-memory cache for dashboard data. Bounded LRU so the map cannot
+// grow unbounded across shops/date-ranges over the lifetime of the process.
 interface CacheEntry {
   data: any;
   timestamp: number;
 }
 const dashboardCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 2000; // 2 seconds
+const CACHE_MAX_ENTRIES = 500;
 
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
@@ -44,12 +46,13 @@ export const GET = handle(async (req) => {
     _sum: { totalDue: true }
   });
   
+  // Low-stock count must match the low-stock list criteria below so the
+  // dashboard badge and list agree.
   const productsCount = await prisma.$queryRaw<{ count: number }[]>`
-    SELECT COUNT(*)::int as count 
-    FROM products 
-    WHERE shop_id = ${shop.id}::uuid 
-      AND current_stock <= min_stock 
-      AND current_stock > 0
+    SELECT COUNT(*)::int as count
+    FROM products
+    WHERE shop_id = ${shop.id}::uuid
+      AND current_stock <= min_stock
       AND min_stock > 0
   `;
   
@@ -179,7 +182,7 @@ export const GET = handle(async (req) => {
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
-  const returnsProfit = Number((returnsProfitLost as any[])[0]?.profit_lost || 0);
+  let returnsProfit = Number((returnsProfitLost as any[])[0]?.profit_lost || 0);
   const returnsAmount = returnsSummary._sum.amount || 0;
 
   // Realized Profit Calculation
@@ -189,24 +192,27 @@ export const GET = handle(async (req) => {
   const allTimeSales = Number((marginData as any[])[0]?.total_amount || 0);
   const avgMargin = allTimeSales > 0 ? (allTimeProfit / allTimeSales) : 0.0;
   
+  if (returnsAmount > 0 && returnsProfit === 0) {
+    const todayGrossSales = salesAndProfit._sum.totalAmount || 0;
+    const todayGrossProfit = salesAndProfit._sum.totalProfit || 0;
+    const todayMargin = todayGrossSales > 0 ? (todayGrossProfit / todayGrossSales) : avgMargin;
+    returnsProfit = returnsAmount * todayMargin;
+  }
+  
   // Realized Profit = (Profit from Cash collected today) + (Udhar Payments collected today * All Time Profit Margin)
   const finalProfit = realizedSalesProfit + (udharPaid * avgMargin);
 
   const payload: any = {
     summary: {
-      // Sales & Profit headline cards are GROSS (actual sales made / profit earned).
-      // Returns are surfaced in their own dedicated "Returns" card (returns_amount),
-      // so netting them in here would double-count and — on a day with returns but
-      // no sales — wrongly show a negative "Today's Sales".
-      today_sales: salesAndProfit._sum.totalAmount || 0,
-      today_profit: finalProfit,
+      today_sales: (salesAndProfit._sum.totalAmount || 0) - returnsAmount,
+      today_profit: (salesAndProfit._sum.totalProfit || 0) - returnsProfit,
       expected_profit: (salesAndProfit._sum.totalProfit || 0) - returnsProfit,
       cash_profit: finalProfit - returnsProfit,
       udhar_profit: Math.max(0, (salesAndProfit._sum.totalProfit || 0) - finalProfit),
       total_udhar: totalUdhar,
       period_udhar: Number((udharGivenData as any[])[0]?.total_udhar_given || 0),
       low_stock_count: lowStockCount,
-      returns_amount: returnsSummary._sum.amount || 0,
+      returns_amount: returnsAmount,
       returns_count: returnsSummary._count.id || 0,
     },
     returnsByReason: returnsByReason.map(r => ({
@@ -289,7 +295,11 @@ export const GET = handle(async (req) => {
     };
   }
 
-  // Cache result
+  // Cache result with bounded size (LRU: oldest key drops when full).
+  if (dashboardCache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = dashboardCache.keys().next().value;
+    if (oldest !== undefined) dashboardCache.delete(oldest);
+  }
   dashboardCache.set(cacheKey, {
     data: payload,
     timestamp: Date.now()

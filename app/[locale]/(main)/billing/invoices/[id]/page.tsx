@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, use, useRef } from 'react';
-import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
@@ -35,16 +34,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const handleDownloadPDF = async () => {
     if (!invoice || !componentRef.current) return;
     setDownloading(true);
+    let clone: HTMLElement | null = null;
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import('html2canvas-pro'),
         import('jspdf'),
       ]);
 
-      // Create a clean clone
-      const clone = componentRef.current.cloneNode(true) as HTMLElement;
-      
-      // CRITICAL: Remove the 'hidden' or 'display: none' styles/classes from the clone
+      clone = componentRef.current.cloneNode(true) as HTMLElement;
       clone.classList.remove('hidden');
       clone.style.display = 'block';
       clone.style.position = 'fixed';
@@ -56,33 +53,32 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       clone.style.visibility = 'visible';
       document.body.appendChild(clone);
 
-      // Wait for layout
       await new Promise(r => setTimeout(r, 200));
-      
-      const canvas = await html2canvas(clone, { 
+
+      const canvas = await html2canvas(clone, {
         scale: 3,
         useCORS: true,
         backgroundColor: '#ffffff',
         windowWidth: 320
       });
-      
+
       const imgData = canvas.toDataURL('image/png');
       const pdfWidth = 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      const pdf = new jsPDF({ 
-        orientation: 'portrait', 
-        unit: 'mm', 
-        format: [pdfWidth, pdfHeight] 
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [pdfWidth, pdfHeight]
       });
-      
+
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`bill-${invoice.id.substring(0, 8)}.pdf`);
-      document.body.removeChild(clone);
     } catch (err) {
       console.error('PDF Download Error', err);
       alert('Failed to generate PDF');
     } finally {
+      if (clone && clone.parentNode) clone.parentNode.removeChild(clone);
       setDownloading(false);
     }
   };
@@ -121,8 +117,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     ? (typeof invoice.gst_details === 'string' ? JSON.parse(invoice.gst_details) : invoice.gst_details)
     : undefined;
 
+  const items = Array.isArray(invoice.items) ? invoice.items : [];
+  const totalAmount = Number(invoice.total_amount) || 0;
+
   const billData = {
-    items: invoice.items.map((i: any) => ({
+    items: items.map((i: any) => ({
       id: i.id,
       name: i.name,
       unit: i.unit,
@@ -132,10 +131,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       hsnCode: i.hsnCode || '',
       gstPercent: i.gstPercent || 0,
     })),
-    total: invoice.total_amount,
+    total: totalAmount,
     paymentMethod: invoice.payment_type,
-    amountPaid: invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : invoice.total_amount),
-    remainingAmount: Math.max(0, invoice.total_amount - (invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : invoice.total_amount))),
+    amountPaid: invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : totalAmount),
+    remainingAmount: Math.max(0, totalAmount - (invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : totalAmount))),
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
     date: new Date(invoice.created_at).toLocaleDateString(),
     storeName: user?.storeName || 'Store',
@@ -216,21 +215,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   <thead className="bg-slate-100 dark:bg-slate-800/30 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-6 py-4">Product Name</th>
+                      <th className="px-6 py-4 text-center">HSN</th>
                       <th className="px-6 py-4 text-center">Qty</th>
                       <th className="px-6 py-4 text-right">Price</th>
+                      <th className="px-6 py-4 text-right">GST %</th>
                       <th className="px-6 py-4 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-slate-900 dark:text-slate-200">
-                    {invoice.items.map((item: any) => (
+                    {items.map((item: any) => (
                       <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold">{item.name}</div>
                           <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
                         </td>
+                        <td className="px-6 py-4 text-center text-slate-500 font-medium">{item.hsnCode || '-'}</td>
                         <td className="px-6 py-4 text-center font-black">{item.quantity}</td>
-                        <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">₹{item.price_per_unit.toLocaleString('en-IN')}</td>
-                        <td className="px-6 py-4 text-right font-black">₹{item.total.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">₹{(Number(item.price_per_unit) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">{item.gstPercent ? `${item.gstPercent}%` : '-'}</td>
+                        <td className="px-6 py-4 text-right font-black">₹{(Number(item.total) || 0).toLocaleString('en-IN')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -251,7 +254,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               <CardContent className="p-6 space-y-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500 font-medium tracking-tight">Total Items</span>
-                  <span className="text-slate-900 dark:text-slate-100 font-bold">{invoice.items.length}</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold">{items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500 font-medium tracking-tight">Payment Status</span>
@@ -264,7 +267,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 </div>
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
                   <span className="text-sm font-bold text-slate-400 uppercase tracking-widest pb-1">Grand Total</span>
-                  <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{invoice.total_amount.toLocaleString('en-IN')}</span>
+                  <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{totalAmount.toLocaleString('en-IN')}</span>
                 </div>
               </CardContent>
             </Card>

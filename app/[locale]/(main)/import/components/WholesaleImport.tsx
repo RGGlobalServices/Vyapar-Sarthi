@@ -48,21 +48,21 @@ export default function WholesaleImport() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
-        <ImportCard 
+        <ImportCard
           icon={<Package className="text-blue-500" size={32} />}
           title="Product Catalog"
           desc="Bulk-add products from Excel/CSV, or upload PDFs/photos for AI extraction. New products get their stock set in one go."
           onClick={() => setSelectedType('product')}
         />
 
-        {isUdyog && (
-          <ImportCard
-            icon={<ShoppingCart className="text-emerald-500" size={32} />}
-            title="Purchase Invoice"
-            desc="Upload vendor bills (PDF/Image) for AI extraction and automatic inventory updates."
-            onClick={() => setSelectedType('purchase')}
-          />
-        )}
+        {/* Purchase Invoice — available on all plans (Dukan, Vyapar, Udyog).
+            Scans supplier bills (PDF/photo) and auto-updates Products + Stock. */}
+        <ImportCard
+          icon={<ShoppingCart className="text-emerald-500" size={32} />}
+          title="Purchase Invoice"
+          desc="Scan vendor bills (PDF/photo) with AI — products are created and their stock is increased automatically in Products & Stock."
+          onClick={() => setSelectedType('purchase')}
+        />
 
         <ImportCard
           icon={<FileSpreadsheet className="text-purple-500" size={32} />}

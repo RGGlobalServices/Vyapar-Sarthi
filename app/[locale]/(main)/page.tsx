@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense, useMemo } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import useSWR from 'swr';
 import { useTranslations, useLocale } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -44,12 +44,12 @@ function DashboardInner() {
     if (searchParams.get('payment_success') === '1') {
       const plan = searchParams.get('plan') || 'shop';
       setPaymentBanner({ plan });
-      fetchProfile(); // refresh subscription plan in store
-      // Clean URL without reload
+      fetchProfile();
       router.replace(`/${locale}`, { scroll: false });
-      setTimeout(() => setPaymentBanner(null), 8000);
+      const t = setTimeout(() => setPaymentBanner(null), 8000);
+      return () => clearTimeout(t);
     }
-  }, []);
+  }, [searchParams, fetchProfile, router, locale]);
 
   const [stats, setStats] = useState({
     today_sales: 0,
@@ -231,28 +231,34 @@ function DashboardInner() {
         fastMoving: payload.fastMoving || [],
         slowMoving: payload.slowMoving || [],
         returnsByReason: payload.returnsByReason || [],
+        wholesale: payload.wholesale || null,
       });
       setLoading(false);
     }
   }, [dashboardPayload]);
 
   const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
-    if (showSpinner && !dashboardPayload) setLoading(true);
+    if (showSpinner) setLoading(true);
     if (forceRefresh) {
       await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}&refresh=true`);
     }
     await mutateDashboard();
     setLoading(false);
-  }, [mutateDashboard, dashboardPayload, start_date, end_date]);
+  }, [mutateDashboard, start_date, end_date]);
+
+  const [topProductsError, setTopProductsError] = useState(false);
+  const [stockAlertsError, setStockAlertsError] = useState(false);
 
   const loadFullTopProducts = async () => {
     setLoadingFullTop(true);
+    setTopProductsError(false);
     const { start_date, end_date } = getDates();
     try {
       const res = await api.get(`/reports/top-products?limit=50&start_date=${start_date}&end_date=${end_date}`);
       setFullTopProducts(res.data.items || []);
     } catch (e) {
       console.error("Failed to load full top products", e);
+      setTopProductsError(true);
     } finally {
       setLoadingFullTop(false);
     }
@@ -260,31 +266,29 @@ function DashboardInner() {
 
   const loadFullStockAlerts = async () => {
     setLoadingFullAlerts(true);
+    setStockAlertsError(false);
     try {
-      // The current low-stock endpoint might be limited to 5. 
-      // We should check if we need a different endpoint or a limit param.
-      // Based on backend reports.py: get_low_stock is .limit(5).
-      // I should update backend to allow custom limit or have an "all" version.
       const res = await api.get('/reports/low-stock?limit=100');
       setFullStockAlerts(res.data || []);
     } catch (e) {
       console.error("Failed to load full stock alerts", e);
+      setStockAlertsError(true);
     } finally {
       setLoadingFullAlerts(false);
     }
   };
 
   useEffect(() => {
-    if (showTopProductsModal && fullTopProducts.length === 0) {
+    if (showTopProductsModal && fullTopProducts.length === 0 && !topProductsError) {
       loadFullTopProducts();
     }
-  }, [showTopProductsModal, fullTopProducts.length, activeShopId]);
+  }, [showTopProductsModal, fullTopProducts.length, activeShopId, topProductsError]);
 
   useEffect(() => {
-    if (showStockAlertsModal && fullStockAlerts.length === 0) {
+    if (showStockAlertsModal && fullStockAlerts.length === 0 && !stockAlertsError) {
       loadFullStockAlerts();
     }
-  }, [showStockAlertsModal, fullStockAlerts.length, activeShopId]);
+  }, [showStockAlertsModal, fullStockAlerts.length, activeShopId, stockAlertsError]);
 
   // Reset modal data when timeframe or shop changes so it fetches fresh data
   useEffect(() => {
@@ -438,9 +442,9 @@ function DashboardInner() {
           />
         )}
         <StatCard 
-          title={t('totalUdhar')} 
-          value={`₹ ${Math.round(stats.total_udhar).toLocaleString('en-IN')}`} 
-          subtitle={stats.period_udhar > 0 ? `+ ₹${Math.round(stats.period_udhar).toLocaleString('en-IN')} ${timeframe === t('today') ? 'today' : 'this period'}` : undefined}
+          title={timeframe === t('today') ? "TODAY'S UDHAR" : "PERIOD UDHAR"} 
+          value={`₹ ${Math.round(stats.period_udhar).toLocaleString('en-IN')}`} 
+          subtitle={`+ ₹${Math.round(stats.total_udhar).toLocaleString('en-IN')} total udhar`}
           icon={<Wallet className="text-orange-500" />} 
           href="/udhar"
         />
@@ -647,7 +651,7 @@ function DashboardInner() {
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col lg:col-span-2">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <RefreshCw size={16} className="text-purple-500 dark:text-purple-400" /> {t('materialReturns')} ({getDynamicTitle('').trim()})
+              <RefreshCw size={16} className="text-purple-500 dark:text-purple-400" /> {t('materialReturns')} ({timeframe})
             </CardTitle>
             <Link href="/returns" className="text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 px-3 py-1 rounded-full font-bold transition-colors">
               {t('manageReturns')}

@@ -421,9 +421,9 @@ export async function POST(req: NextRequest) {
       }
 
       case 'purchase': {
-        if (auth.shop.packageType === 'dukan') {
-          return NextResponse.json({ error: 'This feature is only available on the Vyapar and Udyog plans.' }, { status: 403 });
-        }
+        // Purchase invoice import is available on all plans (Dukan, Vyapar,
+        // Udyog): it creates/updates products and increases their stock, which
+        // every plan already supports.
         if (data.length === 0) break;
         const firstRow = data[0];
         const supplierName = getVal(firstRow, ['supplier', 'vendorname', 'vendor', 'suppliername']) || 'Unknown Supplier';
