@@ -24,7 +24,43 @@ import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
 import { splitVariantKey } from '@/components/ColorSizeVariantGrid';
 
-const CartQuantityInput = ({ item, updateQuantity, removeItem }: any) => {
+// Resolve a product's sellable stock from whatever shape it arrives in.
+// Returns { known } = whether stock could be determined at all, and { qty } =
+// the amount. A sale is only blocked as "out of stock" when known && qty <= 0 —
+// a product with no stock field present is treated as unknown (allowed), so we
+// never falsely flag items that simply came from an incomplete source.
+function resolveStock(p: any): { known: boolean; qty: number } {
+  if (!p) return { known: false, qty: 0 };
+  let sv: any = p.size_variants ?? p.sizeVariants;
+  if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
+  if (sv && typeof sv === 'object' && Object.keys(sv).length > 0) {
+    const sum = Object.values(sv).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
+    return { known: true, qty: sum };
+  }
+  const raw = p.currentStock ?? p.current_stock ?? p.stock;
+  if (raw === undefined || raw === null || raw === '') return { known: false, qty: 0 };
+  const n = Number(raw);
+  return { known: true, qty: isFinite(n) ? n : 0 };
+}
+
+// Sellable stock remaining for one specific cart line — for a variant item this
+// is that variant's own size_variants count, not the product's combined total,
+// so a cart line can never be pushed past what's actually left of that size/colour.
+function resolveStockForItem(item: any, products: any[]): { known: boolean; qty: number } {
+  const product = products.find(p => p.id === item.id);
+  if (!product) return { known: false, qty: 0 };
+  if (item.variant) {
+    let sv: any = product.size_variants ?? product.sizeVariants;
+    if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
+    if (sv && typeof sv === 'object' && Object.prototype.hasOwnProperty.call(sv, item.variant)) {
+      const n = Number(sv[item.variant]);
+      return { known: true, qty: isFinite(n) ? n : 0 };
+    }
+  }
+  return resolveStock(product);
+}
+
+const CartQuantityInput = ({ item, updateQuantity, removeItem, maxQty }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
   useEffect(() => {
     setLocalVal(item.quantity.toString());
@@ -37,18 +73,23 @@ const CartQuantityInput = ({ item, updateQuantity, removeItem }: any) => {
       value={localVal}
       onChange={(e) => {
         setLocalVal(e.target.value);
-        const num = Number(e.target.value);
+        let num = Number(e.target.value);
         if (!isNaN(num)) {
+          if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
           updateQuantity(item.id, num, item.variant);
         }
       }}
       onBlur={(e) => {
-        const num = Number(e.target.value);
+        let num = Number(e.target.value);
         if (num <= 0 || e.target.value === '') removeItem(item.id, item.variant);
-        else setLocalVal(num.toString());
+        else {
+          if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
+          setLocalVal(num.toString());
+        }
       }}
       step="any"
       min="0"
+      max={typeof maxQty === 'number' ? maxQty : undefined}
     />
   );
 };
@@ -227,13 +268,13 @@ export default function WholesaleBillingUI() {
 
   const addToCart = useCallback((product: any, variant?: string, forceAdd = false) => {
     // 1. Check Out of Stock first
-    const stock = Math.max(0, product.currentStock || 0);
-    if (stock <= 0 && !forceAdd) {
+    const { known, qty: stock } = resolveStock(product);
+    if (known && stock <= 0 && !forceAdd) {
       setOutOfStockItem(product);
-      
+
       // Compute recommendations
-      let recs = products.filter(p => p.id !== product.id && (p.currentStock || 0) > 0);
-      
+      let recs = products.filter(p => { const r = resolveStock(p); return p.id !== product.id && (!r.known || r.qty > 0); });
+
       if (product.category) {
         // Try same category
         const sameCat = recs.filter(p => p.category === product.category);
@@ -254,6 +295,11 @@ export default function WholesaleBillingUI() {
 
     const existingItem = items.find(i => i.id === product.id && i.variant === variant);
     if (existingItem) {
+      const lineStock = resolveStockForItem(existingItem, products);
+      if (lineStock.known && existingItem.quantity + 1 > lineStock.qty) {
+        setOutOfStockItem(product);
+        return;
+      }
       updateQuantity(existingItem.id, existingItem.quantity + 1, variant);
     } else {
       const defaultQty = product.is_loose ? 0.5 : 1;
@@ -689,12 +735,19 @@ export default function WholesaleBillingUI() {
                     <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
                   </td>
                 </tr>
-              ) : items.map((item, idx) => (
+              ) : items.map((item, idx) => {
+                const lineStock = resolveStockForItem(item, products);
+                const maxQty = lineStock.known ? lineStock.qty : undefined;
+                const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
+                return (
                 <tr key={`${item.id}-${item.variant}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
                   <td className="px-4 py-3 text-slate-400">{idx + 1}</td>
                   <td className="px-4 py-3">
                     <p className="font-bold text-slate-900 dark:text-white">{item.name}</p>
                     {item.variant && <p className="text-xs text-slate-500">{item.variant}</p>}
+                    {atMax && (
+                      <p className="text-[10px] text-amber-500 font-semibold">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
@@ -705,8 +758,17 @@ export default function WholesaleBillingUI() {
                       }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
                         <Minus size={14} />
                       </button>
-                      <CartQuantityInput item={item} updateQuantity={updateQuantity} removeItem={removeItem} />
-                      <button onClick={() => updateQuantity(item.id as any, item.quantity + (item.is_loose ? 0.5 : 1), item.variant)} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors">
+                      <CartQuantityInput item={item} updateQuantity={updateQuantity} removeItem={removeItem} maxQty={maxQty} />
+                      <button
+                        onClick={() => {
+                          const newQty = item.quantity + (item.is_loose ? 0.5 : 1);
+                          if (typeof maxQty === 'number' && newQty > maxQty) return;
+                          updateQuantity(item.id as any, newQty, item.variant);
+                        }}
+                        disabled={atMax}
+                        title={atMax ? (t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`) : undefined}
+                        className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-800"
+                      >
                         <Plus size={14} />
                       </button>
                     </div>
@@ -723,7 +785,8 @@ export default function WholesaleBillingUI() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

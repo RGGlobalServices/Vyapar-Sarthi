@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText } from 'lucide-react';
+import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
+import DocumentViewerModal from '@/components/DocumentViewerModal';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 
@@ -69,6 +70,8 @@ function CustomerSalesView({ entityId }: { entityId: string }) {
   );
 }
 
+type CustomerDocument = { id: string; url: string; uploadedAt: string };
+
 type Customer = {
   id: string;
   name: string;
@@ -78,6 +81,7 @@ type Customer = {
   creditDays: number;
   creditLimit: number;
   address: string;
+  documents?: CustomerDocument[];
 };
 
 export default function CustomersPage() {
@@ -92,8 +96,51 @@ export default function CustomersPage() {
   const [showPayment, setShowPayment] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [activeTab, setActiveTab] = useState<'ledger' | 'sales'>('ledger');
-  
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
+
   const [form, setForm] = useState({ name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
+
+  function updateCustomerDocuments(customerId: string, documents: CustomerDocument[]) {
+    setSelectedCustomer(prev => (prev && prev.id === customerId ? { ...prev, documents } : prev));
+    setCustomers(prev => prev.map(c => (c.id === customerId ? { ...c, documents } : c)));
+  }
+
+  async function handleUploadDocument(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!selectedCustomer || !e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    e.target.value = '';
+    setUploadingDoc(true);
+    const body = new FormData();
+    body.append('file', file);
+    body.append('folder', 'customer-docs');
+    try {
+      const res = await api.post('/upload', body);
+      if (res.data.url) {
+        const next = [...(selectedCustomer.documents || []), { id: crypto.randomUUID(), url: res.data.url, uploadedAt: new Date().toISOString() }];
+        await api.patch(`/customers/${selectedCustomer.id}`, { documents: next });
+        updateCustomerDocuments(selectedCustomer.id, next);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Upload failed. Please try again.');
+    } finally {
+      setUploadingDoc(false);
+    }
+  }
+
+  async function handleDeleteDocument(docId: string) {
+    if (!selectedCustomer) return;
+    if (!confirm('Remove this document?')) return;
+    const next = (selectedCustomer.documents || []).filter(d => d.id !== docId);
+    try {
+      await api.patch(`/customers/${selectedCustomer.id}`, { documents: next });
+      updateCustomerDocuments(selectedCustomer.id, next);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete document. Please try again.');
+    }
+  }
 
   useEffect(() => {
     fetchCustomers();
@@ -286,7 +333,60 @@ export default function CustomersPage() {
                 </div>
               </div>
             </div>
-            
+
+            {/* Documents: photos / bill PDFs */}
+            <div className="px-4 sm:px-6 py-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Documents</h3>
+                <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${uploadingDoc ? 'bg-slate-100 text-slate-400 dark:bg-slate-800' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20'}`}>
+                  {uploadingDoc ? (
+                    <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Plus size={14} />
+                  )}
+                  Add
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={handleUploadDocument}
+                    disabled={uploadingDoc}
+                  />
+                </label>
+              </div>
+              {(selectedCustomer.documents || []).length === 0 ? (
+                <p className="text-xs text-slate-500">No documents uploaded yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(selectedCustomer.documents || []).map(doc => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300"
+                    >
+                      <FileImage size={14} className="text-slate-400 shrink-0" />
+                      <span>
+                        {new Date(doc.uploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <button
+                        onClick={() => setViewingDoc({ url: doc.url, label: 'Document' })}
+                        title="View document"
+                        className="p-1 rounded text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                      >
+                        <Eye size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDocument(doc.id)}
+                        title="Delete document"
+                        className="p-1 rounded text-slate-500 hover:text-red-500"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 gap-4">
               <button
                 onClick={() => setActiveTab('ledger')}
@@ -311,6 +411,10 @@ export default function CustomersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {viewingDoc && (
+        <DocumentViewerModal url={viewingDoc.url} label={viewingDoc.label} onClose={() => setViewingDoc(null)} />
       )}
 
       {showPayment && selectedCustomer && (

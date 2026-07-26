@@ -530,7 +530,7 @@
     "saveRow": "Save",
     "savedRow": "Saved",
     "notCountedYet": "Not counted yet",
-    "registerHint": "Enter today's Receive and Close (physical count). Sale is worked out automatically, and tomorrow's Opening carries forward from today's Close.",
+    "registerHint": "Opening, Receive and Close all update on their own (Close = Opening + Receive − Sale, live as you sell) — you can also edit any of them and hit Save if you need to correct something. Receive adds straight to your shop's stock, and tomorrow's Opening carries forward from today's Close automatically. Every update is timestamped — download the PDF for a full date/time-wise breakdown.",
     "noProductsForRegister": "No products to show for this date.",
     "downloadPdf": "Download as PDF",
     "downloadExcel": "Download as Excel",

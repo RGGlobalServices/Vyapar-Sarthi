@@ -455,7 +455,7 @@
     "saveRow": "सेव्ह करा",
     "savedRow": "सेव्ह झाले",
     "notCountedYet": "अजून मोजले नाही",
-    "registerHint": "आजचे Receive आणि Close (मोजून) भरा. Sale आपोआप काढली जाईल, आणि उद्याची Opening आजच्या Close वरून पुढे जाईल.",
+    "registerHint": "Opening, Receive आणि Close तिन्ही आपोआप अपडेट होतात (Close = Opening + Receive − Sale, सेल होईल तसे लाइव्ह) — हवे असल्यास ते स्वतः बदलून Save देखील करू शकता. Receive थेट दुकानाच्या साठ्यात जमा होते, आणि उद्याची Opening आजच्या Close वरून आपोआप पुढे जाईल. प्रत्येक अपडेटची वेळ (date-time) नोंदवली जाते — संपूर्ण date-time wise तपशील PDF डाउनलोड करून पाहा.",
     "noProductsForRegister": "या तारखेसाठी कोणतीही उत्पादने नाहीत.",
     "downloadPdf": "PDF डाउनलोड करा",
     "downloadExcel": "Excel डाउनलोड करा",

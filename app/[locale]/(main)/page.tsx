@@ -132,8 +132,10 @@ function DashboardInner() {
         note: 'Quick refill from dashboard'
       });
       
-      // Refresh data
-      initData();
+      // Refresh data in the background — no spinner, so the stock-alerts
+      // modal (which sits on top of the dashboard) doesn't get blown away
+      // by the full-page skeleton while it's open.
+      initData(false);
       loadFullStockAlerts();
       
       // Clear value
@@ -219,9 +221,9 @@ function DashboardInner() {
   const { start_date, end_date } = getDates();
   const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
   const { data: dashboardPayload, mutate: mutateDashboard } = useSWR(
-    activeShopId ? [`/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, activeShopId] : null, 
-    fetcher, 
-    { revalidateOnFocus: true }
+    activeShopId ? [`/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, activeShopId] : null,
+    fetcher,
+    { revalidateOnFocus: true, keepPreviousData: true }
   );
 
   useEffect(() => {
@@ -328,10 +330,12 @@ function DashboardInner() {
     setFullStockAlerts([]);
   }, [timeframe, appliedCustomDates, activeShopId]);
 
-  useEffect(() => {
-    initData(true, false);
-    // Removed: window 'focus' listener that caused silent refetch on every tab switch
-  }, [initData]);
+  // No mount-triggered fetch here: useSWR already fetches automatically as
+  // soon as `activeShopId` makes the key non-null, and the effect above
+  // syncs `stats`/`data`/`loading` off `dashboardPayload` once it arrives.
+  // Calling mutateDashboard() again here just duplicated that first request
+  // and forced the full-page skeleton back on every mount/tab-focus, even
+  // when SWR already had fresh cached data to show instantly.
 
   if (loading) {
     return (

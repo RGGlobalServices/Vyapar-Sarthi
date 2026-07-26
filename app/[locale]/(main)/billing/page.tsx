@@ -82,7 +82,24 @@ function resolveStock(p: any): { known: boolean; qty: number } {
   const n = Number(raw);
   return { known: true, qty: isFinite(n) ? n : 0 };
 }
-const CartQuantityInputRetail = ({ item, updateQuantity, removeItem }: any) => {
+
+// Sellable stock remaining for one specific cart line — for a variant item this
+// is that variant's own size_variants count, not the product's combined total,
+// so a cart line can never be pushed past what's actually left of that size/colour.
+function resolveStockForItem(item: any, products: any[]): { known: boolean; qty: number } {
+  const product = products.find(p => p.id === item.id);
+  if (!product) return { known: false, qty: 0 };
+  if (item.variant) {
+    let sv: any = product.size_variants ?? product.sizeVariants;
+    if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
+    if (sv && typeof sv === 'object' && Object.prototype.hasOwnProperty.call(sv, item.variant)) {
+      const n = Number(sv[item.variant]);
+      return { known: true, qty: isFinite(n) ? n : 0 };
+    }
+  }
+  return resolveStock(product);
+}
+const CartQuantityInputRetail = ({ item, updateQuantity, removeItem, maxQty }: any) => {
   const [localVal, setLocalVal] = useState(item.quantity.toString());
   useEffect(() => {
     setLocalVal(item.quantity.toString());
@@ -93,18 +110,23 @@ const CartQuantityInputRetail = ({ item, updateQuantity, removeItem }: any) => {
       type="number"
       step="any"
       min="0"
+      max={typeof maxQty === 'number' ? maxQty : undefined}
       value={localVal}
       onChange={(e) => {
         setLocalVal(e.target.value);
-        const num = Number(e.target.value);
+        let num = Number(e.target.value);
         if (!isNaN(num)) {
+          if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
           updateQuantity(item.id, num, item.variant);
         }
       }}
       onBlur={(e) => {
-        const num = Number(e.target.value);
+        let num = Number(e.target.value);
         if (num <= 0 || e.target.value === '') removeItem(item.id, item.variant);
-        else setLocalVal(num.toString());
+        else {
+          if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
+          setLocalVal(num.toString());
+        }
       }}
       className="w-20 bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-700/50 rounded px-2 py-1 text-center text-emerald-600 dark:text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
     />
@@ -1063,11 +1085,14 @@ function StandardBillingUI() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {items.map((item) => (
+                {items.map((item) => {
+                  const stockInfo = resolveStockForItem(item, products);
+                  const maxQty = stockInfo.known ? stockInfo.qty : undefined;
+                  return (
                   <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-4">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         className="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500 cursor-pointer w-4 h-4"
                         checked={selectedItemIds.has(item.id)}
                         onChange={(e) => {
@@ -1122,7 +1147,7 @@ function StandardBillingUI() {
                         <div className="flex flex-col gap-1.5 min-w-[150px]">
                           {/* Quantity input */}
                           <div className="flex items-center gap-1">
-                            <CartQuantityInputRetail item={item} updateQuantity={updateQuantity} removeItem={removeItem} />
+                            <CartQuantityInputRetail item={item} updateQuantity={updateQuantity} removeItem={removeItem} maxQty={maxQty} />
                             <span className="text-xs text-slate-500">{item.unit}</span>
                             {looseEquivLabel(item.quantity, item.unit) && (
                               <span className="text-[10px] text-amber-400 font-bold">
@@ -1135,9 +1160,12 @@ function StandardBillingUI() {
                             {t('ratePerUnit')}: <span className="text-emerald-600 dark:text-emerald-400 font-bold">₹{item.price}</span> {t('per')} {item.unit}
                             {' · '}<span className="text-amber-500 dark:text-amber-300 font-semibold">= ₹{item.total.toFixed(2)}</span>
                           </p>
+                          {typeof maxQty === 'number' && (
+                            <p className="text-[10px] text-amber-500 font-semibold">{t('inStock') || 'In stock'}: {maxQty} {item.unit}</p>
+                          )}
                           {/* Preset buttons */}
                           <div className="flex flex-wrap gap-1">
-                            {getLoosePresets(item.unit).map(p => (
+                            {getLoosePresets(item.unit).filter(p => typeof maxQty !== 'number' || p.v <= maxQty).map(p => (
                               <button
                                 key={p.l}
                                 onClick={() => updateQuantity(item.id, p.v, item.variant)}
@@ -1160,11 +1188,23 @@ function StandardBillingUI() {
                           }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
                             <Minus size={14}/>
                           </button>
-                          <CartQuantityInputRetail item={item} updateQuantity={updateQuantity} removeItem={removeItem} />
-                          <button onClick={() => updateQuantity(item.id, item.quantity + 1, item.variant)} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors">
+                          <CartQuantityInputRetail item={item} updateQuantity={updateQuantity} removeItem={removeItem} maxQty={maxQty} />
+                          <button
+                            onClick={() => {
+                              const newQty = item.quantity + 1;
+                              if (typeof maxQty === 'number' && newQty > maxQty) return;
+                              updateQuantity(item.id, newQty, item.variant);
+                            }}
+                            disabled={typeof maxQty === 'number' && item.quantity >= maxQty}
+                            title={typeof maxQty === 'number' && item.quantity >= maxQty ? (t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`) : undefined}
+                            className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-800"
+                          >
                             <Plus size={14}/>
                           </button>
                         </div>
+                      )}
+                      {typeof maxQty === 'number' && !item.is_loose && item.quantity >= maxQty && (
+                        <p className="text-[10px] text-amber-500 font-semibold mt-1">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -1177,7 +1217,8 @@ function StandardBillingUI() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                   {items.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-20 text-center text-slate-500">

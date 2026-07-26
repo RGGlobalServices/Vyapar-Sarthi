@@ -9,6 +9,13 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { exportDailyStockRegisterPDF } from '@/lib/pdf/dailyStockRegister';
 
+interface RegisterHistoryEntry {
+  type: 'receive' | 'close';
+  quantity: number;
+  note: string | null;
+  at: string;
+}
+
 interface RegisterRow {
   productId: string;
   name: string | null;
@@ -21,6 +28,11 @@ interface RegisterRow {
   closing: number | null;
   sold: number | null;
   saved: boolean;
+  history: RegisterHistoryEntry[];
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 function todayStr() {
@@ -36,8 +48,11 @@ export default function DailyStockRegister() {
   const [rows, setRows] = useState<RegisterRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  // Per-row draft edits (received/closing as raw input strings) and per-row save state.
-  const [drafts, setDrafts] = useState<Record<string, { received: string; closing: string }>>({});
+  // Per-row Opening / Receive / Close drafts (raw input strings) — all three
+  // are editable, and Save persists whatever's currently in all of them.
+  const [openingDrafts, setOpeningDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [closingDrafts, setClosingDrafts] = useState<Record<string, string>>({});
   const [rowStatus, setRowStatus] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({});
 
   const load = useCallback(async (d: string) => {
@@ -46,14 +61,17 @@ export default function DailyStockRegister() {
       const res = await api.get(`/stock/daily-register?date=${d}`);
       const data: { rows: RegisterRow[] } = res.data;
       setRows(data.rows || []);
-      const nextDrafts: Record<string, { received: string; closing: string }> = {};
+      const nextOpeningDrafts: Record<string, string> = {};
+      const nextDrafts: Record<string, string> = {};
+      const nextClosingDrafts: Record<string, string> = {};
       for (const r of data.rows || []) {
-        nextDrafts[r.productId] = {
-          received: String(r.received ?? 0),
-          closing: r.closing == null ? '' : String(r.closing),
-        };
+        nextOpeningDrafts[r.productId] = String(r.opening ?? 0);
+        nextDrafts[r.productId] = String(r.received ?? 0);
+        nextClosingDrafts[r.productId] = r.closing != null ? String(r.closing) : '';
       }
+      setOpeningDrafts(nextOpeningDrafts);
       setDrafts(nextDrafts);
+      setClosingDrafts(nextClosingDrafts);
       setRowStatus({});
     } catch {
       setRows([]);
@@ -70,26 +88,36 @@ export default function DailyStockRegister() {
     return rows.filter(r => (r.name || '').toLowerCase().includes(q) || (r.category || '').toLowerCase().includes(q));
   }, [rows, search]);
 
-  function updateDraft(productId: string, field: 'received' | 'closing', value: string) {
-    setDrafts(d => ({ ...d, [productId]: { ...d[productId], [field]: value } }));
+  function updateOpeningDraft(productId: string, value: string) {
+    setOpeningDrafts(d => ({ ...d, [productId]: value }));
+    setRowStatus(s => ({ ...s, [productId]: 'idle' }));
+  }
+
+  function updateDraft(productId: string, value: string) {
+    setDrafts(d => ({ ...d, [productId]: value }));
+    setRowStatus(s => ({ ...s, [productId]: 'idle' }));
+  }
+
+  function updateClosingDraft(productId: string, value: string) {
+    setClosingDrafts(d => ({ ...d, [productId]: value }));
     setRowStatus(s => ({ ...s, [productId]: 'idle' }));
   }
 
   async function saveRow(row: RegisterRow) {
-    const draft = drafts[row.productId];
-    if (!draft) return;
-    const received = Number(draft.received) || 0;
-    const closing = draft.closing === '' ? null : Number(draft.closing);
+    const opening = Number(openingDrafts[row.productId]) || 0;
+    const received = Number(drafts[row.productId]) || 0;
+    const closingRaw = closingDrafts[row.productId];
+    const closingQty = closingRaw === '' || closingRaw === undefined ? null : Number(closingRaw);
     setRowStatus(s => ({ ...s, [row.productId]: 'saving' }));
     try {
-      await api.post('/stock/daily-register', {
+      const res = await api.post('/stock/daily-register', {
         date,
-        entries: [{ productId: row.productId, openingQty: row.opening, receivedQty: received, closingQty: closing }],
+        entries: [{ productId: row.productId, openingQty: opening, receivedQty: received, closingQty }],
       });
-      const total = row.opening + received;
-      // Sale stays wired to actual billing (row.sold), independent of the manually entered Close.
+      const total = opening + received;
+      const newHistory: RegisterHistoryEntry[] = res.data?.newHistoryByProduct?.[row.productId] || [];
       setRows(rs => rs.map(r => r.productId === row.productId
-        ? { ...r, received, total, closing, saved: true }
+        ? { ...r, opening, received, total, closing: closingQty, saved: true, history: [...r.history, ...newHistory] }
         : r));
       setRowStatus(s => ({ ...s, [row.productId]: 'saved' }));
     } catch {
@@ -97,23 +125,33 @@ export default function DailyStockRegister() {
     }
   }
 
+  function historyLabel(h: RegisterHistoryEntry) {
+    const time = formatTime(h.at);
+    return h.type === 'receive'
+      ? `${time} Received ${h.quantity > 0 ? '+' : ''}${h.quantity}`
+      : `${time} Counted ${h.quantity}`;
+  }
+
   function downloadCSV() {
     if (filteredRows.length === 0) return;
-    const headers = ['Product', 'Category', 'Rate', 'Opening', 'Receive', 'Total', 'Close', 'Sale'];
+    const headers = ['Product', 'Category', 'Rate', 'Opening', 'Receive', 'Total', 'Close', 'Sale', 'Updates (date-time wise)'];
     const csvRows = filteredRows.map(row => {
-      const draft = drafts[row.productId] || { received: '0', closing: '' };
-      const receivedNum = Number(draft.received) || 0;
-      const total = row.opening + receivedNum;
-      const closingNum = draft.closing === '' ? '' : Number(draft.closing);
+      const openingNum = Number(openingDrafts[row.productId]) || 0;
+      const receivedNum = Number(drafts[row.productId]) || 0;
+      const total = openingNum + receivedNum;
+      const closingDraft = closingDrafts[row.productId];
+      const closingNum = closingDraft === undefined || closingDraft === '' ? '' : Number(closingDraft);
+      const updates = (row.history || []).map(historyLabel).join(' | ');
       return [
         `"${(row.name || '').replace(/"/g, '""')}"`,
         `"${(row.category || '').replace(/"/g, '""')}"`,
         row.rate != null ? row.rate.toFixed(2) : '',
-        row.opening,
+        openingNum,
         receivedNum,
         total,
         closingNum,
         row.sold ?? '',
+        `"${updates.replace(/"/g, '""')}"`,
       ].join(',');
     });
     const csvString = [headers.join(','), ...csvRows].join('\n');
@@ -131,11 +169,16 @@ export default function DailyStockRegister() {
   function downloadPDF() {
     if (filteredRows.length === 0) return;
     const pdfRows = filteredRows.map(row => {
-      const draft = drafts[row.productId] || { received: '0', closing: '' };
-      const receivedNum = Number(draft.received) || 0;
-      const total = row.opening + receivedNum;
-      const closingNum = draft.closing === '' ? null : Number(draft.closing);
-      return { name: row.name, category: row.category, unit: row.unit, rate: row.rate, opening: row.opening, received: receivedNum, total, closing: closingNum, sold: row.sold };
+      const openingNum = Number(openingDrafts[row.productId]) || 0;
+      const receivedNum = Number(drafts[row.productId]) || 0;
+      const total = openingNum + receivedNum;
+      const closingDraft = closingDrafts[row.productId];
+      const closingNum = closingDraft === undefined || closingDraft === '' ? null : Number(closingDraft);
+      return {
+        name: row.name, category: row.category, unit: row.unit, rate: row.rate,
+        opening: openingNum, received: receivedNum, total, closing: closingNum, sold: row.sold,
+        history: row.history || [],
+      };
     });
     exportDailyStockRegisterPDF(pdfRows, profile.shopName, date);
   }
@@ -202,11 +245,16 @@ export default function DailyStockRegister() {
                 ) : filteredRows.length === 0 ? (
                   <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-500">{t('noProductsForRegister')}</td></tr>
                 ) : filteredRows.map(row => {
-                  const draft = drafts[row.productId] || { received: '0', closing: '' };
-                  const receivedNum = Number(draft.received) || 0;
-                  const total = row.opening + receivedNum;
+                  const openingDraft = openingDrafts[row.productId] ?? '0';
+                  const openingNum = Number(openingDraft) || 0;
+                  const receivedDraft = drafts[row.productId] ?? '0';
+                  const receivedNum = Number(receivedDraft) || 0;
+                  const total = openingNum + receivedNum;
+                  const closingDraft = closingDrafts[row.productId] ?? '';
                   const sold = row.sold;
                   const status = rowStatus[row.productId] || 'idle';
+                  const receiveHistory = (row.history || []).filter(h => h.type === 'receive');
+                  const closeHistory = (row.history || []).filter(h => h.type === 'close');
                   return (
                     <tr key={row.productId} className="text-slate-900 dark:text-slate-200">
                       <td className="px-4 py-2.5">
@@ -217,24 +265,45 @@ export default function DailyStockRegister() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400">{row.rate != null ? `₹${row.rate.toFixed(2)}` : '—'}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-600 dark:text-slate-300">{row.opening}</td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-4 py-2.5 text-right align-top">
                         <input
                           type="number"
                           className="w-20 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          value={draft.received}
-                          onChange={e => updateDraft(row.productId, 'received', e.target.value)}
+                          value={openingDraft}
+                          onChange={e => updateOpeningDraft(row.productId, e.target.value)}
                         />
                       </td>
+                      <td className="px-4 py-2.5 text-right align-top">
+                        <input
+                          type="number"
+                          className="w-20 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          value={receivedDraft}
+                          onChange={e => updateDraft(row.productId, e.target.value)}
+                        />
+                        {receiveHistory.length > 0 && (
+                          <div className="mt-1 text-[10px] text-slate-400 leading-tight text-right">
+                            {receiveHistory.map((h, i) => (
+                              <div key={i}>{formatTime(h.at)}: {h.quantity > 0 ? '+' : ''}{h.quantity}</div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-right font-semibold text-slate-600 dark:text-slate-300">{total}</td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-4 py-2.5 text-right align-top">
                         <input
                           type="number"
                           placeholder={t('notCountedYet')}
                           className="w-24 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-[10px]"
-                          value={draft.closing}
-                          onChange={e => updateDraft(row.productId, 'closing', e.target.value)}
+                          value={closingDraft}
+                          onChange={e => updateClosingDraft(row.productId, e.target.value)}
                         />
+                        {closeHistory.length > 0 && (
+                          <div className="mt-1 text-[10px] text-slate-400 leading-tight text-right">
+                            {closeHistory.map((h, i) => (
+                              <div key={i}>{formatTime(h.at)}: {h.quantity}</div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className={cn('px-4 py-2.5 text-right font-bold', sold == null ? 'text-slate-400' : sold > 0 ? 'text-emerald-500' : sold < 0 ? 'text-red-400' : 'text-slate-400')}>
                         {sold == null ? '—' : sold}

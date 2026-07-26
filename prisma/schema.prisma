@@ -102,6 +102,7 @@ model Shop {
   sales                   Sale[]
   stockLogs               StockLog[]
   dailyStockEntries       DailyStockEntry[]
+  dailyRegisterLogs       DailyRegisterLog[]
   godowns                 Godown[]
   paymentTransactions     PaymentTransaction[]
   materialReturns         MaterialReturn[]
@@ -238,6 +239,7 @@ model Product {
   batches          Batch[]
   purchaseItems    PurchaseItem[]
   dailyStockEntries DailyStockEntry[]
+  dailyRegisterLogs DailyRegisterLog[]
 
   // --- New Master Data Relational Fields ---
   categoryId            String?          @map("category_id") @db.Uuid
@@ -287,6 +289,7 @@ model Customer {
   creditLimit           Float?                  @default(0) @map("credit_limit")
   birthday              DateTime?               @db.Date
   notes                 String?                 @db.VarChar
+  documents             Json?                   @default("[]")
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   customer_transactions customer_transactions[]
@@ -967,6 +970,26 @@ model DailyStockEntry {
   @@unique([shopId, productId, date])
   @@index([shopId, date], map: "ix_daily_stock_entries_shop_date")
   @@map("daily_stock_entries")
+}
+
+// One row per individual Receive/Close edit made on a Daily Register entry —
+// an audit trail of exactly when each update happened, distinct from
+// DailyStockEntry which only holds the latest saved values for the day.
+model DailyRegisterLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  shopId    String   @map("shop_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  date      DateTime @db.Date
+  type      String   @db.VarChar
+  quantity  Float
+  note      String?  @db.VarChar
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, productId, date], map: "ix_daily_register_logs_shop_product_date")
+  @@map("daily_register_logs")
 }
 
 model ActivityLog {

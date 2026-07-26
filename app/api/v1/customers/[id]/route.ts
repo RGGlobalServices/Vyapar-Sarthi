@@ -27,6 +27,24 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
   return json({ id: updated.id, name: updated.name, mobile: updated.mobile });
 });
 
+// PATCH /customers/:id — update the uploaded documents list (photos/PDFs)
+export const PATCH = handle<Ctx>(async (req, { params }) => {
+  const { id } = await params;
+  const { shop } = await requireShop(req);
+  const customer = await prisma.customer.findFirst({ where: { id, shopId: shop.id } });
+  if (!customer) throw new ApiError(404, 'Customer not found');
+
+  const { documents } = await readBody(req);
+  const updated = await prisma.customer.update({
+    where: { id },
+    data: {
+      ...(documents !== undefined && { documents }),
+    },
+  });
+
+  return json({ id: updated.id, documents: updated.documents });
+});
+
 // DELETE /customers/:id
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
