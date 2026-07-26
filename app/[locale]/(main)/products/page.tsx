@@ -408,7 +408,6 @@ function LegacyProductsUI() {
         mrp: Number(form.mrp) || 0,
         selling_price: Number(form.sellingPrice) || 0,
         wholesale_cost: Number(form.cost) || 0, base_unit: form.unit || 'Unit',
-        barcode: `BAR-${Date.now()}`,
         is_loose: form.is_loose,
         expiry_date: form.expiry_date || null,
         batch_number: form.batch_number || null,
@@ -423,7 +422,7 @@ function LegacyProductsUI() {
         conversion_factor: form.conversion_factor ? Number(form.conversion_factor) : null,
         gstPercent: Number(form.gstPercent) || 0,
         hsnCode: form.hsnCode || null,
-        barcode: form.barcode?.trim() || undefined,
+        barcode: form.barcode?.trim() || `BAR-${Date.now()}`,
         sku: form.sku?.trim() || null,
         cartonBarcode: form.cartonBarcode?.trim() || null,
       });
