@@ -63,7 +63,7 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
   vyapar: {
     maxProducts: Infinity,
     maxUdharCustomers: Infinity,
-    maxShops: 5,
+    maxShops: 3,
     autoSend: true,
     multiShop: true,
     godowns: false,

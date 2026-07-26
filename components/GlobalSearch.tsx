@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { Search, Loader2, Package, Users, ShoppingCart, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 
 export default function GlobalSearch({ locale }: { locale: string }) {
+  const t = useTranslations('GlobalSearch');
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -73,13 +75,16 @@ export default function GlobalSearch({ locale }: { locale: string }) {
     setQuery('');
   };
 
+  const searchTargetLabel = isWholesale ? t('parties') : t('customers');
+  const searchPlaceholder = t('searchPlaceholder', { type: searchTargetLabel });
+
   return (
     <div className="relative w-full max-w-md hidden md:block" ref={wrapperRef}>
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input 
+        <input
           type="text"
-          placeholder={`Search products, suppliers, ${isWholesale ? 'parties' : 'customers'} (Cmd+K)`}
+          placeholder={searchPlaceholder}
           className="w-full bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-slate-900 dark:text-slate-100"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -95,7 +100,7 @@ export default function GlobalSearch({ locale }: { locale: string }) {
             {/* Products */}
             {results.products?.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2"><Package size={12}/> Products</h3>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2"><Package size={12}/> {t('products')}</h3>
                 <div className="space-y-1">
                   {results.products.map(p => (
                     <button key={p.id} onClick={() => handleSelect(`/products/${p.id}`)} className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex justify-between items-center group">
@@ -113,12 +118,12 @@ export default function GlobalSearch({ locale }: { locale: string }) {
             {/* Suppliers */}
             {results.suppliers?.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2"><Users size={12}/> Suppliers</h3>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2"><Users size={12}/> {t('suppliers')}</h3>
                 <div className="space-y-1">
                   {results.suppliers.map(s => (
                     <button key={s.id} onClick={() => handleSelect('/suppliers')} className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group">
                       <p className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-500 transition-colors">{s.name}</p>
-                      <p className="text-[10px] text-slate-500">{s.contact || s.mobile || 'No contact info'}</p>
+                      <p className="text-[10px] text-slate-500">{s.contact || s.mobile || t('noContactInfo')}</p>
                     </button>
                   ))}
                 </div>
@@ -129,13 +134,13 @@ export default function GlobalSearch({ locale }: { locale: string }) {
             {results.customers?.length > 0 && (
               <div>
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex items-center gap-2">
-                  <User size={12}/> {isWholesale ? 'Parties' : 'Customers'}
+                  <User size={12}/> {isWholesale ? t('parties') : t('customers')}
                 </h3>
                 <div className="space-y-1">
                   {results.customers.map(c => (
                     <button key={c.id} onClick={() => handleSelect('/udhar')} className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group">
                       <p className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-500 transition-colors">{c.name}</p>
-                      <p className="text-[10px] text-slate-500">{c.mobile || 'No phone'}</p>
+                      <p className="text-[10px] text-slate-500">{c.mobile || t('noPhone')}</p>
                     </button>
                   ))}
                 </div>
@@ -144,7 +149,7 @@ export default function GlobalSearch({ locale }: { locale: string }) {
 
             {results.products?.length === 0 && results.suppliers?.length === 0 && results.customers?.length === 0 && (
               <div className="p-4 text-center text-slate-500 text-sm">
-                No results found for "{query}"
+                {t('noResultsFor', { query })}
               </div>
             )}
 

@@ -93,7 +93,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       return {
         id: item.id,
         product_id: item.productId,
-        name: item.product?.name || (sale!.isManual ? 'Manual Bill' : 'Unknown'),
+        name: item.product?.name || item.itemName || item.variant || (sale!.isManual ? 'Manual Bill' : 'Unknown'),
         price_per_unit: item.pricePerUnit,
         quantity: item.quantity,
         returned_quantity: returnedQty,

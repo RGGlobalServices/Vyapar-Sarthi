@@ -20,16 +20,29 @@ export default function Providers({
 
   useEffect(() => {
     setMounted(true);
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then((registration) => {
-          console.log('Service Worker registered with scope:', registration.scope);
-        })
-        .catch((error) => {
-          console.error('Service Worker registration failed:', error);
-        });
+    if (!('serviceWorker' in navigator)) return;
+
+    // Serwist only emits public/sw.js during `next build` (it is disabled in
+    // development — see next.config.js). Registering in dev would fetch the
+    // 404 HTML page and fail with an "unsupported MIME type" SecurityError,
+    // so in dev we instead tear down any worker left over from a production
+    // build. A stale worker keeps serving a precache manifest that points at
+    // build hashes which no longer exist ("bad-precaching-response").
+    if (process.env.NODE_ENV === 'development') {
+      navigator.serviceWorker.getRegistrations()
+        .then((regs) => regs.forEach((r) => r.unregister()))
+        .catch(() => {});
+      return;
     }
+
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('Service Worker registered with scope:', registration.scope);
+      })
+      .catch((error) => {
+        console.error('Service Worker registration failed:', error);
+      });
   }, []);
 
   return (

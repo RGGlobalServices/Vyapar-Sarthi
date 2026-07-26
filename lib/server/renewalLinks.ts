@@ -5,6 +5,7 @@ interface RenewalPayload {
   shopId: string;
   plan: string;
   amount: number;
+  cycle: 'monthly' | 'yearly';
   exp: number; // Unix timestamp (ms)
 }
 
@@ -12,11 +13,17 @@ function hmac(data: string): string {
   return crypto.createHmac('sha256', config.cronSecret).update(data).digest('hex');
 }
 
-export function generateRenewalToken(shopId: string, plan: string, amount: number): string {
+export function generateRenewalToken(
+  shopId: string,
+  plan: string,
+  amount: number,
+  cycle: 'monthly' | 'yearly' = 'monthly',
+): string {
   const payload: RenewalPayload = {
     shopId,
     plan,
     amount,
+    cycle,
     exp: Date.now() + 72 * 60 * 60 * 1000, // 72 hours
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');

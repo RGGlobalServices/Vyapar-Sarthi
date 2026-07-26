@@ -9,8 +9,10 @@ import api from '@/lib/api';
 
 
 export default function MasterDataPage() {
-  const t = useTranslations('Common');
+  const t = useTranslations('MasterData');
   const [activeTab, setActiveTab] = useState<'categories' | 'brands' | 'units'>('categories');
+  const tabLabel: Record<string, string> = { categories: t('categoriesTab'), brands: t('brandsTab'), units: t('unitsTab') };
+  const singularLabel: Record<string, string> = { categories: t('categorySingular'), brands: t('brandSingular'), units: t('unitSingular') };
   const [data, setData] = useState<any>({ categories: [], brands: [], units: [] });
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +32,7 @@ export default function MasterDataPage() {
       const res = await api.get('/master-data');
       setData(res.data);
     } catch (e) {
-      toast.error('Failed to load master data');
+      toast.error(t('failedToLoadMasterData'));
     } finally {
       setLoading(false);
     }
@@ -38,13 +40,13 @@ export default function MasterDataPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return toast.error('Name is required');
+    if (!name.trim()) return toast.error(t('nameRequired'));
 
     const payload: any = { type: activeTab, name };
 
     if (activeTab === 'brands') payload.manufacturer = isManufacturer;
     if (activeTab === 'units') {
-      if (!shortName) return toast.error('Short name is required');
+      if (!shortName) return toast.error(t('shortNameRequired'));
       payload.shortName = shortName;
       payload.baseUnitId = baseUnitId || null;
       payload.conversionFactor = conversionFactor;
@@ -52,7 +54,7 @@ export default function MasterDataPage() {
 
     try {
       await api.post('/master-data', payload);
-      toast.success(`${activeTab} created successfully`);
+      toast.success(t('createdSuccessfully', { type: tabLabel[activeTab] }));
       setName('');
       setShortName('');
       setConversionFactor(1);
@@ -60,26 +62,26 @@ export default function MasterDataPage() {
       setIsManufacturer(false);
       fetchMasterData();
     } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Failed to create');
+      toast.error(e.response?.data?.error || t('failedToCreate'));
     }
   };
 
   const handleDelete = async (id: string, type: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
+    if (!confirm(t('confirmDeleteItem'))) return;
     try {
       await api.delete(`/master-data?type=${type}&id=${id}`);
-      toast.success('Deleted successfully');
+      toast.success(t('deletedSuccessfully'));
       fetchMasterData();
     } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Failed to delete');
+      toast.error(e.response?.data?.error || t('failedToDelete'));
     }
   };
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6 fade-in">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Master Data</h1>
-        <p className="text-slate-500">Configure global Categories, Brands, and Units for the Inventory Engine.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t('pageTitle')}</h1>
+        <p className="text-slate-500">{t('pageSubtitle')}</p>
       </div>
 
       <div className="flex space-x-2 border-b border-slate-200 dark:border-slate-800 pb-px">
@@ -93,7 +95,7 @@ export default function MasterDataPage() {
                 : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
             }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tabLabel[tab]}
             {activeTab === tab && (
               <span className="absolute bottom-0 left-0 w-full h-0.5 bg-emerald-500 rounded-t-md" />
             )}
@@ -104,14 +106,14 @@ export default function MasterDataPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-1 shadow-sm h-fit">
           <CardHeader>
-            <CardTitle>Create {activeTab.charAt(0).toUpperCase() + activeTab.slice(1, -1)}</CardTitle>
-            <CardDescription>Add a new entry to the database.</CardDescription>
+            <CardTitle>{t('createEntry', { type: singularLabel[activeTab] })}</CardTitle>
+            <CardDescription>{t('addEntryHint')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name *</label>
-                <input className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300" value={name} onChange={(e: any) => setName(e.target.value)} required placeholder="e.g. Electronics" />
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('nameLabel')}</label>
+                <input className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300" value={name} onChange={(e: any) => setName(e.target.value)} required placeholder={t('namePlaceholder')} />
               </div>
 
               {activeTab === 'brands' && (
@@ -123,24 +125,24 @@ export default function MasterDataPage() {
                     onChange={(e) => setIsManufacturer(e.target.checked)}
                     className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                   />
-                  <label htmlFor="isManufacturer" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Is Manufacturer?</label>
+                  <label htmlFor="isManufacturer" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{t('isManufacturer')}</label>
                 </div>
               )}
 
               {activeTab === 'units' && (
                 <>
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Short Name *</label>
-                    <input className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300" value={shortName} onChange={(e: any) => setShortName(e.target.value)} required placeholder="e.g. pc" />
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('shortNameLabel')}</label>
+                    <input className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300" value={shortName} onChange={(e: any) => setShortName(e.target.value)} required placeholder={t('shortNamePlaceholder')} />
                   </div>
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Base Unit (Optional)</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('baseUnitLabel')}</label>
                     <select
                       value={baseUnitId}
                       onChange={(e) => setBaseUnitId(e.target.value)}
                       className="w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                     >
-                      <option value="">None (This is a base unit)</option>
+                      <option value="">{t('noneBaseUnit')}</option>
                       {data.units.map((u: any) => (
                         <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>
                       ))}
@@ -148,7 +150,7 @@ export default function MasterDataPage() {
                   </div>
                   {baseUnitId && (
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Conversion Factor</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('conversionFactorLabel')}</label>
                       <input
                         className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300"
                         type="number"
@@ -157,10 +159,10 @@ export default function MasterDataPage() {
                         value={conversionFactor}
                         onChange={(e: any) => setConversionFactor(Number(e.target.value))}
                         required
-                        placeholder="e.g. 12"
+                        placeholder={t('conversionFactorPlaceholder')}
                       />
                       <p className="text-xs text-slate-500">
-                        1 {name || 'New Unit'} = {conversionFactor} {data.units.find((u:any) => u.id === baseUnitId)?.name || 'Base Unit'}
+                        {t('conversionPreview', { name: name || t('newUnit'), factor: conversionFactor, baseUnit: data.units.find((u:any) => u.id === baseUnitId)?.name || t('baseUnitFallback') })}
                       </p>
                     </div>
                   )}
@@ -169,7 +171,7 @@ export default function MasterDataPage() {
 
               <button type="submit" className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-emerald-600 text-slate-50 hover:bg-emerald-700 h-10 px-4 py-2 w-full">
                 <Plus size={16} className="mr-2" />
-                Add Entry
+                {t('addEntryBtn')}
               </button>
             </form>
           </CardContent>
@@ -177,29 +179,29 @@ export default function MasterDataPage() {
 
         <Card className="md:col-span-2 shadow-sm">
           <CardHeader>
-            <CardTitle>Existing {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</CardTitle>
+            <CardTitle>{t('existingEntries', { type: tabLabel[activeTab] })}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="py-8 text-center text-slate-500">Loading...</div>
+              <div className="py-8 text-center text-slate-500">{t('loadingText')}</div>
             ) : data[activeTab].length === 0 ? (
               <div className="py-8 text-center text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
-                No entries found. Create one to get started.
+                {t('noEntriesFound')}
               </div>
             ) : (
               <div className="rounded-md border border-slate-200 dark:border-slate-800">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500">
                     <tr>
-                      <th className="px-4 py-3 font-medium">Name</th>
-                      {activeTab === 'brands' && <th className="px-4 py-3 font-medium">Type</th>}
+                      <th className="px-4 py-3 font-medium">{t('nameHeader')}</th>
+                      {activeTab === 'brands' && <th className="px-4 py-3 font-medium">{t('typeHeader')}</th>}
                       {activeTab === 'units' && (
                         <>
-                          <th className="px-4 py-3 font-medium">Short Name</th>
-                          <th className="px-4 py-3 font-medium">Conversion</th>
+                          <th className="px-4 py-3 font-medium">{t('shortNameHeader')}</th>
+                          <th className="px-4 py-3 font-medium">{t('conversionHeader')}</th>
                         </>
                       )}
-                      <th className="px-4 py-3 font-medium text-right">Actions</th>
+                      <th className="px-4 py-3 font-medium text-right">{t('actionsHeader')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -210,11 +212,11 @@ export default function MasterDataPage() {
                           <td className="px-4 py-3 text-slate-500">
                             {item.manufacturer ? (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                Manufacturer
+                                {t('manufacturerBadge')}
                               </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                                Brand
+                                {t('brandBadge')}
                               </span>
                             )}
                           </td>
@@ -223,7 +225,7 @@ export default function MasterDataPage() {
                           <>
                             <td className="px-4 py-3 text-slate-500">{item.shortName}</td>
                             <td className="px-4 py-3 text-slate-500">
-                              {item.baseUnitId ? `1 = ${item.conversionFactor} ${item.baseUnit?.shortName}` : 'Base Unit'}
+                              {item.baseUnitId ? `1 = ${item.conversionFactor} ${item.baseUnit?.shortName}` : t('baseUnitFallback')}
                             </td>
                           </>
                         )}
@@ -231,7 +233,7 @@ export default function MasterDataPage() {
                           <button
                             onClick={() => handleDelete(item.id, activeTab.slice(0, -1))}
                             className="text-red-500 hover:text-red-700 transition-colors p-1"
-                            title="Delete"
+                            title={t('deleteTitle')}
                           >
                             <Trash2 size={16} />
                           </button>

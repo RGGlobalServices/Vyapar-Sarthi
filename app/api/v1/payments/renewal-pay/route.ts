@@ -2,6 +2,7 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { isTestMode, getPayuConfig, requestHash } from '@/lib/server/payu';
 import { verifyRenewalToken } from '@/lib/server/renewalLinks';
+import { getPlanLabel } from '@/lib/subscriptionPricing';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token') || '';
 
-  let payload: { shopId: string; plan: string; amount: number };
+  let payload: { shopId: string; plan: string; amount: number; cycle?: 'monthly' | 'yearly' };
   try {
     payload = verifyRenewalToken(token);
   } catch {
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { shopId, plan, amount } = payload;
+  const cycle = payload.cycle === 'yearly' ? 'yearly' : 'monthly';
 
   // Verify the shop still needs renewal (not already active).
   const shop = await prisma.shop.findUnique({ where: { id: shopId } });
@@ -51,15 +53,16 @@ export async function GET(req: NextRequest) {
   const phone = owner?.mobile || '';
 
   const txnid = `TXN_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const productinfo = config.planLabels[plan] || `${plan} Plan`;
+  const productinfo = getPlanLabel(plan, cycle);
   const udf1 = plan;
+  const udf3 = cycle;
 
   if (isTestMode()) {
-    return NextResponse.redirect(`${config.appUrl}/payment?plan=${plan}&test_renew=1`);
+    return NextResponse.redirect(`${config.appUrl}/payment?plan=${plan}&cycle=${cycle}&test_renew=1`);
   }
 
   const { key, salt } = getPayuConfig();
-  const hash = requestHash(key, txnid, amount.toString(), productinfo, firstname, email, salt, udf1);
+  const hash = requestHash(key, txnid, amount.toString(), productinfo, firstname, email, salt, udf1, '', udf3);
 
   const fields: Record<string, string> = {
     key,
@@ -73,6 +76,7 @@ export async function GET(req: NextRequest) {
     furl: `${config.appUrl}/api/v1/payments/payu-failure`,
     hash,
     udf1,
+    udf3,
   };
 
   const inputs = Object.entries(fields)

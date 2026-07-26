@@ -4,15 +4,17 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { packageTypeForPlan, getPlanLimits } from '@/lib/planGates';
+import { MONTHLY_BASE_PRICES, type BillingCycle } from '@/lib/subscriptionPricing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const POST = handle(async (req) => {
   const { shop, user } = await requireShop(req);
-  const { plan, trial_end } = await readBody(req);
+  const { plan, trial_end, cycle: cycleRaw } = await readBody(req);
+  const cycle: BillingCycle = cycleRaw === 'yearly' ? 'yearly' : 'monthly';
 
-  if (plan && !(plan in config.planAmounts)) throw new ApiError(400, 'Invalid plan');
+  if (plan && !(plan in MONTHLY_BASE_PRICES)) throw new ApiError(400, 'Invalid plan');
 
   const expiry = trial_end ? new Date(trial_end) : new Date();
   if (!trial_end) expiry.setDate(expiry.getDate() + config.trialDays);
@@ -27,6 +29,7 @@ export const POST = handle(async (req) => {
         packageType: packageTypeForPlan(activatedPlan),
         subscriptionStatus: 'active',
         subscriptionExpiry: expiry,
+        billingCycle: cycle,
       },
     });
 

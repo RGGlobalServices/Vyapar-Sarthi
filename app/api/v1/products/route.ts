@@ -27,9 +27,13 @@ export const GET = handle(async (req) => {
       {
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
-          // `contains` (not `equals`) so a typed/partial barcode or SKU still matches,
-          // not only an exact hardware-scanner read.
+          // `contains` (not `equals`) so a typed/partial code still matches,
+          // not only an exact hardware-scanner read. Covers every identifier a
+          // shop might key an item by: company barcode, SKU, carton barcode, HSN.
           { barcode: { contains: q, mode: 'insensitive' } },
+          { sku: { contains: q, mode: 'insensitive' } },
+          { cartonBarcode: { contains: q, mode: 'insensitive' } },
+          { hsnCode: { contains: q, mode: 'insensitive' } },
         ]
       }
     ];
@@ -43,10 +47,16 @@ export const GET = handle(async (req) => {
         id: true,
         name: true,
         barcode: true,
+        sku: true,
+        cartonBarcode: true,
+        hsnCode: true,
         sellingPrice: true,
         currentStock: true,
         minStock: true,
         category: true,
+        baseUnit: true,
+        mrp: true,
+        createdAt: true,
       },
       skip,
       take: limit,
@@ -113,6 +123,8 @@ export const POST = handle(async (req) => {
         wholesaleCost: b.wholesale_cost ?? b.wholesaleCost,
         baseUnit: b.base_unit ?? b.baseUnit,
         barcode: b.barcode,
+        sku: b.sku ?? null,
+        cartonBarcode: b.cartonBarcode ?? b.carton_barcode ?? null,
         is_loose: b.is_loose ?? b.isLoose,
         expiryDate: b.expiry_date ?? b.expiryDate,
         batch_number: b.batch_number ?? b.batchNumber,

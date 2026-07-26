@@ -42,7 +42,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     bill_image_url: sale.billImageUrl,
     items: sale.items.map(item => ({
       id: item.id,
-      product_name: item.product?.name || (sale.isManual ? 'Manual Bill' : 'Unknown Product'),
+      product_name: item.product?.name || item.itemName || item.variant || (sale.isManual ? 'Manual Bill' : 'Unknown Product'),
       category: item.product?.category || 'Uncategorized',
       variant: item.variant,
       quantity: item.quantity,

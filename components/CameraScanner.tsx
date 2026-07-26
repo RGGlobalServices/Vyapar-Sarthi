@@ -1,9 +1,12 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { X, Camera, AlertCircle } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
+import { X, Camera, AlertCircle, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSafeTranslations } from '@/lib/i18n/useSafeTranslations';
+import { playScanBeep } from '@/lib/useBarcodeScanner';
 
 interface CameraScannerProps {
   onScan: (result: string) => void;
@@ -11,9 +14,22 @@ interface CameraScannerProps {
   continuous?: boolean;
 }
 
+// A denied camera permission never re-prompts on its own — Android/iOS both
+// require the user to flip it on from the app's system settings screen. On
+// web there is no such screen to deep-link to, so that path only applies
+// inside the native app shell.
+function openAppSettings() {
+  if (!Capacitor.isNativePlatform()) return;
+  NativeSettings.open({
+    optionAndroid: AndroidSettings.ApplicationDetails,
+    optionIOS: IOSSettings.App,
+  }).catch(() => {});
+}
+
 export default function CameraScanner({ onScan, onClose, continuous = false }: CameraScannerProps) {
   const { safeT } = useSafeTranslations('Scanner');
   const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannedOnce = useRef(false);
   const lastScanned = useRef<{ text: string; time: number } | null>(null);
@@ -84,18 +100,26 @@ export default function CameraScanner({ onScan, onClose, continuous = false }: C
       } catch (err) {
         if (mounted) {
           console.error('Scanner start error:', err);
-          setError(safeT('cameraPermissionError', 'Could not access camera. Please allow camera permissions.'));
+          // NotAllowedError means the OS-level prompt already fired and was
+          // denied (or was denied on an earlier visit) — calling getUserMedia
+          // again will not show it a second time, so guide the user to
+          // settings instead of repeating a request that can't succeed.
+          if ((err as any)?.name === 'NotAllowedError') {
+            setPermissionDenied(true);
+            setError(safeT('cameraPermissionError', 'Camera access is blocked. Allow it in Settings to scan.'));
+          } else {
+            setError(safeT('cameraGenericError', 'Could not access camera. Please try again.'));
+          }
         }
       }
     };
 
     startCamera();
 
+    // Synthesised rather than loaded from /beep.mp3 — that file does not exist
+    // in public/, so every scan has been silently failing to make a sound.
     function playBeep() {
-      try {
-        const audio = new Audio('/beep.mp3');
-        audio.play().catch(() => {});
-      } catch (e) {}
+      playScanBeep(true);
     }
 
     if (!initDone) {
@@ -165,7 +189,21 @@ export default function CameraScanner({ onScan, onClose, continuous = false }: C
           <div className="text-center p-6 bg-red-500/10 border border-red-500/30 rounded-2xl max-w-sm">
             <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
             <p className="text-white font-bold mb-2">{safeT('cameraError', 'Camera Error')}</p>
-            <p className="text-slate-400 text-sm">{error}</p>
+            <p className="text-slate-400 text-sm mb-4">{error}</p>
+            {permissionDenied && (
+              Capacitor.isNativePlatform() ? (
+                <button
+                  onClick={openAppSettings}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors"
+                >
+                  <Settings size={16} /> {safeT('openSettings', 'Open App Settings')}
+                </button>
+              ) : (
+                <p className="text-slate-500 text-xs">
+                  {safeT('cameraSettingsHint', 'Go to your browser or system settings and allow camera access for this site.')}
+                </p>
+              )
+            )}
           </div>
         ) : (
           <>
@@ -176,8 +214,11 @@ export default function CameraScanner({ onScan, onClose, continuous = false }: C
               dangerouslySetInnerHTML={{ __html: '' }} 
             />
             
-            {/* Viewfinder Overlay/Guides */}
-            <div className="relative z-10 w-[70vw] max-w-[250px] aspect-square pointer-events-none">
+            {/* Viewfinder Overlay/Guides — the huge box-shadow spread paints solid
+                background everywhere outside this box, so the live camera feed is
+                only visible through this square "cutout"; the rest reads as the
+                normal dark scanner background instead of a full-screen preview. */}
+            <div className="relative z-10 w-[70vw] max-w-[250px] aspect-square rounded-2xl shadow-[0_0_0_100vmax_rgba(2,6,23,0.94)] pointer-events-none">
               {/* Scanning reticle */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-full h-0.5 bg-red-500/80 shadow-[0_0_15px_#ef4444] animate-[scan_1.5s_ease-in-out_infinite]" />

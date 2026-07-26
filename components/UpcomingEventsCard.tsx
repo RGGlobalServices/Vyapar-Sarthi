@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { CalendarDays, ArrowDownLeft, ArrowUpRight, Bell, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -26,17 +26,19 @@ const META: Record<EventType, { chip: string; icon: any }> = {
   udhar_reminder: { chip: 'bg-orange-500/15 text-orange-400 ring-orange-500/30',    icon: Bell },
 };
 
-function dayLabel(iso: string) {
+function dayLabel(iso: string, t: ReturnType<typeof useTranslations<'NotificationBell'>>) {
   const d = new Date(iso); d.setHours(0, 0, 0, 0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((+d - +today) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Tomorrow';
-  if (diff > 1 && diff < 7) return `In ${diff} days`;
+  if (diff === 0) return t('today');
+  if (diff === 1) return t('tomorrow');
+  if (diff > 1 && diff < 7) return t('inDays', { days: diff });
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 export default function UpcomingEventsCard() {
+  const t = useTranslations('Dashboard');
+  const tBell = useTranslations('NotificationBell');
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -59,11 +61,11 @@ export default function UpcomingEventsCard() {
     <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-          <CalendarDays size={16} className="text-sky-500 dark:text-sky-400" /> Upcoming Events
+          <CalendarDays size={16} className="text-sky-500 dark:text-sky-400" /> {t('upcomingEvents')}
         </h3>
         <button onClick={() => router.push(`/${locale}/calendar`)}
           className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 font-medium">
-          View all <ChevronRight size={13} />
+          {t('viewAll')} <ChevronRight size={13} />
         </button>
       </div>
       <div className="grid sm:grid-cols-2 gap-2">
@@ -78,7 +80,7 @@ export default function UpcomingEventsCard() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{e.title}</p>
                 <p className="text-[11px] text-slate-500">
-                  {dayLabel(e.eventDate)}
+                  {dayLabel(e.eventDate, tBell)}
                   {e.amount != null ? ` · ₹${Number(e.amount).toLocaleString('en-IN')}` : ''}
                 </p>
               </div>

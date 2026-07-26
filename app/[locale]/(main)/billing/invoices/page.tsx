@@ -81,6 +81,7 @@ const PAGE_SIZE = 20;
 
 // ─── Return Dialog ────────────────────────────────────────────────────────────
 function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose: () => void; onDone: () => void }) {
+  const t = useTranslations('Invoices');
   const [returnItems, setReturnItems] = useState<Array<{ item_id: string; name: string; quantity: number; maxQty: number; price: number; selected: boolean }>>([]);
   const [reason, setReason] = useState('Customer Return');
   const [loading, setLoading] = useState(false);
@@ -104,17 +105,17 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
 
   const handleSubmit = async () => {
     const toReturn = returnItems.filter(i => i.selected && i.quantity > 0);
-    if (!toReturn.length) return alert('Select at least one item to return.');
+    if (!toReturn.length) return alert(t('selectAtLeastOneItem'));
     setLoading(true);
     try {
       await api.post('/billing/returns', {
         bill_id: invoice.id,
         items: toReturn.map(i => ({ item_id: i.item_id, quantity: i.quantity, reason, price: i.price })),
       });
-      alert('Return processed successfully! Stock has been updated.');
+      alert(t('returnProcessedSuccess'));
       onDone();
     } catch (e: any) {
-      alert(e?.response?.data?.detail || 'Return failed. Please try again.');
+      alert(e?.response?.data?.detail || t('returnFailed'));
     } finally {
       setLoading(false);
     }
@@ -230,6 +231,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
   const [sharing, setSharing] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
   const tBill = useTranslations('BillSlip');
+  const t = useTranslations('Invoices');
 
   const paid = invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : invoice.total_amount);
   const remaining = Math.max(0, invoice.total_amount - paid);
@@ -300,14 +302,14 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
       document.body.removeChild(clone);
     } catch (e) {
       console.error(e);
-      alert('PDF generation failed.');
+      alert(t('pdfGenerationFailed'));
     } finally {
       setDownloading(false);
     }
   };
 
   const handleWhatsApp = async () => {
-    if (!invoice.customer_mobile) return alert('No mobile number for this customer.');
+    if (!invoice.customer_mobile) return alert(t('noMobileNumber'));
     setSharing(true);
     try {
       const text = generateWhatsAppText({
@@ -377,6 +379,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InvoiceHistoryPage() {
+  const t = useTranslations('Invoices');
   const locale = useLocale();
   const router = useRouter();
   const { user, role } = useAuthStore();
@@ -477,19 +480,19 @@ export default function InvoiceHistoryPage() {
       }
       router.push('/billing' as any);
     } catch (e) {
-      alert('Failed to load invoice for duplication.');
+      alert(t('failedToLoadInvoiceForDuplication'));
     }
   };
 
   // ── Delete (soft-delete via activityLog — API level)
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this invoice? This action will be logged in the audit trail.')) return;
+    if (!confirm(t('confirmDeleteInvoice'))) return;
     setDeleting(id);
     try {
       await api.delete(`/billing/${id}`);
       setInvoices(prev => prev.filter(i => i.id !== id));
     } catch (e: any) {
-      alert(e?.response?.data?.detail || 'Delete failed. You may not have permission.');
+      alert(e?.response?.data?.detail || t('deleteFailedNoPermission'));
     } finally {
       setDeleting(null);
     }
@@ -540,7 +543,7 @@ export default function InvoiceHistoryPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={16} />
             <input
               type="text"
-              placeholder="Search by Invoice No, Customer Name, Mobile..."
+              placeholder={t('searchInvoicePlaceholder')}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
@@ -749,28 +752,28 @@ export default function InvoiceHistoryPage() {
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => handlePreview(inv)}
-                            title="View Invoice"
+                            title={t('viewInvoice')}
                             className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
                           >
                             <Eye size={13} />
                           </button>
                           <Link
                             href={`/billing/invoices/${inv.id}` as any}
-                            title="Full Details"
+                            title={t('fullDetails')}
                             className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
                           >
                             <FileText size={13} />
                           </Link>
                           <button
                             onClick={() => handleDuplicate(inv)}
-                            title="Duplicate Bill"
+                            title={t('duplicateBill')}
                             className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-sky-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
                           >
                             <Copy size={13} />
                           </button>
                           <button
                             onClick={() => setReturnInvoice(inv)}
-                            title="Return / Refund"
+                            title={t('returnRefund')}
                             className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
                           >
                             <RotateCcw size={13} />
@@ -778,7 +781,7 @@ export default function InvoiceHistoryPage() {
                           {role === 'admin' && (
                             <button
                               onClick={() => handleDelete(inv.id)}
-                              title="Delete (Admin)"
+                              title={t('deleteAdmin')}
                               disabled={isDeleting}
                               className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all disabled:opacity-50"
                             >

@@ -10,19 +10,21 @@ export const POST = handle(async (req) => {
   
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
-  
+  const folderRaw = formData.get('folder');
+  const folder = typeof folderRaw === 'string' && /^[a-z-]+$/.test(folderRaw) ? folderRaw : 'staff-docs';
+
   if (!file) {
     throw new ApiError(400, 'No file uploaded');
   }
 
   // Reuses the 'invoices' bucket (already provisioned and writable with the
-  // anon key — see lib/supabaseStorage.ts) under a staff-docs/ prefix, since
+  // anon key — see lib/supabaseStorage.ts) under a per-caller prefix, since
   // a dedicated 'staff_documents' bucket was never created in Supabase.
   const BUCKET_NAME = 'invoices';
 
   // Generate a unique filename using crypto.randomUUID
   const fileExt = (file.name.split('.').pop() || '').toLowerCase();
-  const fileName = `staff-docs/${shop.id}/${crypto.randomUUID()}.${fileExt}`;
+  const fileName = `${folder}/${shop.id}/${crypto.randomUUID()}.${fileExt}`;
 
   // Some pickers (mobile camera/gallery intents especially) report an empty
   // file.type. A missing/generic Content-Type makes browsers force-download

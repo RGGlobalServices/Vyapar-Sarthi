@@ -130,7 +130,10 @@ export const POST = handle(async (req) => {
               return {
                 productId: cItem.productId,
                 unit: cItem.unit,
-                variant: cItem.variant || (cItem.productId ? null : rawName),
+                variant: cItem.variant || null,
+                // Manual items (no product_id) have no product row to name them —
+                // store what the shopkeeper typed so bills/history/PDFs can show it.
+                itemName: cItem.productId ? null : (rawName || null),
                 quantity: cItem.quantity,
                 pricePerUnit: cItem.sellingPrice,
                 marginPerUnit: cItem.marginPerUnit,

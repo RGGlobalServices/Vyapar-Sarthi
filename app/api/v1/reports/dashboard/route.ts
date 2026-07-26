@@ -1,7 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
-import { getDateRange } from '@/lib/server/dates';
+import { getDateRange, startOfDay, endOfDay, formatDate } from '@/lib/server/dates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,8 +38,58 @@ export const GET = handle(async (req) => {
   // (max clients reached in session mode - max clients are limited to pool_size: 15)
   const salesAndProfit = await prisma.sale.aggregate({
     where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
-    _sum: { totalAmount: true, totalProfit: true },
+    // amountPaid is what actually came into the drawer; totalAmount includes
+    // the udhar portion that has not been paid yet.
+    _sum: { totalAmount: true, totalProfit: true, amountPaid: true },
   });
+
+  const expensesAgg = await prisma.expense.aggregate({
+    where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+    _sum: { amount: true },
+    _count: { id: true },
+  });
+
+  // Today's and this-month's expenses are shown on the dashboard regardless
+  // of the selected timeframe filter, so they use their own fixed date
+  // bounds instead of the query's startDate/endDate.
+  const todayStart = startOfDay();
+  const todayEnd = endOfDay();
+  const [todayYear, todayMonth] = formatDate().split('-');
+  const monthStart = startOfDay(`${todayYear}-${todayMonth}-01`);
+
+  const todayExpensesAgg = await prisma.expense.aggregate({
+    where: { shopId: shop.id, date: { gte: todayStart, lte: todayEnd } },
+    _sum: { amount: true },
+    _count: { id: true },
+  });
+
+  const monthExpensesAgg = await prisma.expense.aggregate({
+    where: { shopId: shop.id, date: { gte: monthStart, lte: todayEnd } },
+    _sum: { amount: true },
+    _count: { id: true },
+  });
+
+  // Per-bill payment split, so collection can be reported by mode. A 'Split'
+  // bill carries the breakdown in paymentDetails; anything else put its whole
+  // paid amount through one mode.
+  const salePayments = await prisma.sale.findMany({
+    where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+    select: { paymentType: true, paymentDetails: true, amountPaid: true },
+  });
+
+  // Udhar-side money in. There is no payment-mode column on
+  // customer_transactions — /crm/payments records it in the note as
+  // "Payment via UPI - ...", so the mode is recovered from there and falls
+  // back to Cash (the overwhelmingly common case) when absent.
+  const udharPaymentRows = await prisma.$queryRaw<{ amount: number; note: string | null; type: string }[]>`
+    SELECT t.amount::float AS amount, t.note, t.type
+    FROM customer_transactions t
+    JOIN customers c ON t.customer_id = c.id
+    WHERE c.shop_id = ${shop.id}::uuid
+      AND t.type IN ('payment', 'advance')
+      AND t.created_at >= ${startDate}
+      AND t.created_at <= ${endDate}
+  `;
   
   const customers = await prisma.customer.aggregate({
     where: { shopId: shop.id },
@@ -202,6 +252,66 @@ export const GET = handle(async (req) => {
   // Realized Profit = (Profit from Cash collected today) + (Udhar Payments collected today * All Time Profit Margin)
   const finalProfit = realizedSalesProfit + (udharPaid * avgMargin);
 
+  // ── Cash-flow figures a shopkeeper closes the day on ──────────────────────
+  // Deliberately about MONEY MOVED, not billed value:
+  //   salesCollection — the paid portion of this period's bills (udhar excluded)
+  //   udharCollection — old dues recovered in this period
+  //   totalCollection — everything that came in, less refunds paid out
+  //   netInHand       — what should actually be left after expenses
+  const salesCollection = salesAndProfit._sum.amountPaid || 0;
+  const expensesAmount = expensesAgg._sum.amount || 0;
+
+  // ── Split every rupee collected by HOW it arrived ────────────────────────
+  const modes = { cash: 0, upi: 0, card: 0, other: 0 };
+  const bucketFor = (raw: string | null | undefined): keyof typeof modes => {
+    const m = String(raw || '').toLowerCase();
+    if (m.includes('cash')) return 'cash';
+    if (m.includes('upi') || m.includes('gpay') || m.includes('phonepe') || m.includes('paytm')) return 'upi';
+    if (m.includes('card') || m.includes('debit') || m.includes('credit')) return 'card';
+    return 'other';
+  };
+
+  for (const s of salePayments) {
+    const paid = Number(s.amountPaid) || 0;
+    if (paid <= 0) continue;
+    const details: any = typeof s.paymentDetails === 'string'
+      ? (() => { try { return JSON.parse(s.paymentDetails as string); } catch { return null; } })()
+      : s.paymentDetails;
+
+    // Udhar inside a split bill is credit extended, not money received.
+    const cash = Number(details?.cash) || 0;
+    const upi = Number(details?.upi) || 0;
+    const card = Number(details?.card) || 0;
+    const splitTotal = cash + upi + card;
+
+    if (splitTotal > 0) {
+      modes.cash += cash;
+      modes.upi += upi;
+      modes.card += card;
+      // A rounding gap between the split lines and what was actually paid.
+      if (paid > splitTotal) modes.other += paid - splitTotal;
+    } else {
+      modes[bucketFor(s.paymentType)] += paid;
+    }
+  }
+
+  // Money received in the Udhar section: dues cleared plus any advance.
+  let udharCollection = 0;
+  let advanceCollection = 0;
+  for (const row of udharPaymentRows) {
+    const amt = Number(row.amount) || 0;
+    if (amt <= 0) continue;
+    if (row.type === 'advance') advanceCollection += amt;
+    else udharCollection += amt;
+    // note looks like "Payment via UPI - remark"
+    const viaMatch = /via\s+([a-z]+)/i.exec(row.note || '');
+    modes[bucketFor(viaMatch?.[1] || 'cash')] += amt;
+  }
+
+  const totalCollection = salesCollection + udharCollection + advanceCollection - returnsAmount;
+  const netInHand = totalCollection - expensesAmount;
+  const netProfit = (salesAndProfit._sum.totalProfit || 0) - returnsProfit - expensesAmount;
+
   const payload: any = {
     summary: {
       today_sales: (salesAndProfit._sum.totalAmount || 0) - returnsAmount,
@@ -214,6 +324,24 @@ export const GET = handle(async (req) => {
       low_stock_count: lowStockCount,
       returns_amount: returnsAmount,
       returns_count: returnsSummary._count.id || 0,
+      // New cash-flow KPIs
+      sales_collection: salesCollection,
+      udhar_collection: udharCollection,
+      advance_collection: advanceCollection,
+      total_collection: totalCollection,
+      expenses_amount: expensesAmount,
+      expenses_count: expensesAgg._count.id || 0,
+      today_expenses_amount: todayExpensesAgg._sum.amount || 0,
+      today_expenses_count: todayExpensesAgg._count.id || 0,
+      month_expenses_amount: monthExpensesAgg._sum.amount || 0,
+      month_expenses_count: monthExpensesAgg._count.id || 0,
+      net_in_hand: netInHand,
+      net_profit: netProfit,
+      // How the money arrived, and from where.
+      collection_cash: modes.cash,
+      collection_upi: modes.upi,
+      collection_card: modes.card,
+      collection_other: modes.other,
     },
     returnsByReason: returnsByReason.map(r => ({
       reason: r.reason,

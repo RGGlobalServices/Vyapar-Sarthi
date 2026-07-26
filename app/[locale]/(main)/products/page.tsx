@@ -18,6 +18,7 @@ import type { SizePriceEntry } from '@/components/SizeVariantGrid';
 import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey } from '@/components/ColorSizeVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
+import { useCategories } from '@/lib/useCategories';
 
 import { QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -69,6 +70,8 @@ function buildEmptyForm(btype: string) {
     model_number: '', warranty_months: '', gender: 'Unisex',
     shade: '', size_variants: {} as Record<string, number>,
     gstPercent: 0, hsnCode: '',
+    // Scannable identifiers — help desktop barcode billing.
+    barcode: '', sku: '', cartonBarcode: '',
     // Liquor (Beer Bar & Wine Shop) fields
     brand: '', alcohol_percentage: '', bottle_type: '', conversion_factor: ''
   };
@@ -247,7 +250,7 @@ function LegacyProductsUI() {
       setSyncModalOpen(false);
       setSyncingItem(null);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to sync product');
+      alert(err.response?.data?.detail || t('failedToSyncProduct'));
     } finally {
       setSyncLoading(false);
     }
@@ -280,7 +283,7 @@ function LegacyProductsUI() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch {
-      alert('Camera access denied.');
+      alert(t('cameraAccessDenied'));
       setShowCamera(false);
     }
   };
@@ -320,7 +323,7 @@ function LegacyProductsUI() {
         mrp: d.mrp?.toString() || '', sellingPrice: d.selling_price?.toString() || '',
       }));
     } catch {
-      alert('AI could not read the product. Please try another photo.');
+      alert(t('aiCouldNotReadProduct'));
     } finally {
       setScanning(false);
       if (scanInputRef.current) scanInputRef.current.value = '';
@@ -336,6 +339,13 @@ function LegacyProductsUI() {
   }, []);
 
   const categories = useMemo(() => Array.from(new Set(products.map(p => p.category))).sort(), [products]);
+
+  // Saved master categories + the ones already on products + business defaults.
+  // `saveCategory` persists anything the user types so it is offered next time.
+  const { suggestions: categorySuggestions, saveCategory } = useCategories(
+    profile.businessType,
+    categories.filter(Boolean) as string[],
+  );
   const activeFilters = [filterCategory, filterStatus].filter(Boolean).length;
 
   const filtered = useMemo(() => products.filter(p => {
@@ -413,6 +423,9 @@ function LegacyProductsUI() {
         conversion_factor: form.conversion_factor ? Number(form.conversion_factor) : null,
         gstPercent: Number(form.gstPercent) || 0,
         hsnCode: form.hsnCode || null,
+        barcode: form.barcode?.trim() || undefined,
+        sku: form.sku?.trim() || null,
+        cartonBarcode: form.cartonBarcode?.trim() || null,
       });
 
       // If a godown was selected, assign the initial stock to it
@@ -426,6 +439,9 @@ function LegacyProductsUI() {
           if (selectedGodownId === addToGodownId) loadGodownDetail(addToGodownId);
         } catch { /* godown assignment is best-effort */ }
       }
+
+      // Remember a newly typed category so it is suggested next time.
+      saveCategory(form.category);
 
       mutateProducts();
       setForm(buildEmptyForm(profile.businessType));
@@ -459,6 +475,9 @@ function LegacyProductsUI() {
       size_variants: parseSizeVariants(product.size_variants),
       gstPercent: Number(product.gstPercent || 0),
       hsnCode: product.hsnCode || '',
+      barcode: (product as any).barcode || '',
+      sku: (product as any).sku || '',
+      cartonBarcode: (product as any).cartonBarcode || '',
       brand: product.brand || '',
       alcohol_percentage: String((product.metadata as any)?.alcoholPercentage ?? ''),
       bottle_type: String((product.metadata as any)?.bottleType ?? ''),
@@ -515,7 +534,11 @@ function LegacyProductsUI() {
         conversion_factor: editForm.conversion_factor ? Number(editForm.conversion_factor) : null,
         gstPercent: Number(editForm.gstPercent) || 0,
         hsnCode: editForm.hsnCode || null,
+        barcode: editForm.barcode?.trim() || undefined,
+        sku: editForm.sku?.trim() || null,
+        cartonBarcode: editForm.cartonBarcode?.trim() || null,
       });
+      saveCategory(editForm.category);
       await mutateProducts();
       setShowEditModal(false);
       setEditProduct(null);
@@ -680,7 +703,7 @@ function LegacyProductsUI() {
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Sub Category</label>
                   <input
-                    type="text" placeholder="Optional"
+                    type="text" placeholder={t('optional')}
                     className={modalInp}
                     value={syncForm.subCategory}
                     onChange={e => setSyncForm({ ...syncForm, subCategory: e.target.value })}
@@ -744,7 +767,7 @@ function LegacyProductsUI() {
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Barcode</label>
                   <input
-                    type="text" placeholder="Optional"
+                    type="text" placeholder={t('optional')}
                     className={modalInp}
                     value={syncForm.barcode}
                     onChange={e => setSyncForm({ ...syncForm, barcode: e.target.value })}
@@ -753,7 +776,7 @@ function LegacyProductsUI() {
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">SKU</label>
                   <input
-                    type="text" placeholder="Optional"
+                    type="text" placeholder={t('optional')}
                     className={modalInp}
                     value={syncForm.sku}
                     onChange={e => setSyncForm({ ...syncForm, sku: e.target.value })}
@@ -896,11 +919,11 @@ function LegacyProductsUI() {
       <div className="flex gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input type="text" placeholder="Search by name, category, or scan barcode..."
+          <input type="text" placeholder={t('searchProductsPlaceholder')}
             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-12 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm transition-colors"
             value={search} onChange={e => setSearch(e.target.value)} />
-          <button 
-            title="Scan Barcode to Find"
+          <button
+            title={t('scanBarcodeToFind')}
             onClick={() => setShowScanner(true)}
             className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 p-1.5 rounded-lg hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
           >
@@ -1099,7 +1122,7 @@ function LegacyProductsUI() {
                             <>{product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit} locale={locale} /></span></>
                           )}
                           {(product.recentlyAdded ?? 0) > 0 && (
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title="Recently added stock (last 24h)">
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title={t('recentlyAddedStock')}>
                               +{product.recentlyAdded}
                             </span>
                           )}
@@ -1151,7 +1174,7 @@ function LegacyProductsUI() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity">
-                          <button onClick={() => setQrProduct(product)} title="Barcode / QR"
+                          <button onClick={() => setQrProduct(product)} title={t('barcodeQrTitle')}
                             className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <QrCode size={14} />
                           </button>
@@ -1247,9 +1270,10 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Category</label>
-                    <input required className={modalInp} value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} list="edit-cat-suggestions" />
+                    <input required className={modalInp} placeholder={t('typeToAddNewCategory')}
+                      value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} list="edit-cat-suggestions" />
                     <datalist id="edit-cat-suggestions">
-                      {bizConfig.defaultCategories.map(c => <option key={c} value={c}>{translateData(c, locale) || c}</option>)}
+                      {categorySuggestions.map(c => <option key={c} value={c}>{translateData(c, locale) || c}</option>)}
                     </datalist>
                   </div>
                   <div>
@@ -1480,6 +1504,12 @@ function LegacyProductsUI() {
                   </div>
                 </div>
 
+                <BarcodeIdentifierFields
+                  barcode={editForm.barcode} sku={editForm.sku} cartonBarcode={editForm.cartonBarcode}
+                  onChange={(k, v) => setEditForm(f => ({ ...f, [k]: v }))}
+                  modalInp={modalInp}
+                />
+
               </section>
 
               <div className="flex gap-4 pt-2">
@@ -1560,10 +1590,10 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldCategory')}</label>
-                    <input required className={modalInp} placeholder={bizConfig.defaultCategories[0]}
+                    <input required className={modalInp} placeholder={`${bizConfig.defaultCategories[0]} — or type a new one`}
                       value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} list="cat-suggestions" />
                     <datalist id="cat-suggestions">
-                      {bizConfig.defaultCategories.map(c => <option key={c} value={c}>{translateData(c, locale) || c}</option>)}
+                      {categorySuggestions.map(c => <option key={c} value={c}>{translateData(c, locale) || c}</option>)}
                     </datalist>
                   </div>
                   <div>
@@ -1845,6 +1875,12 @@ function LegacyProductsUI() {
                   </div>
                 </div>
 
+                <BarcodeIdentifierFields
+                  barcode={form.barcode} sku={form.sku} cartonBarcode={form.cartonBarcode}
+                  onChange={(k, v) => setForm(f => ({ ...f, [k]: v }))}
+                  modalInp={modalInp}
+                />
+
               </section>
 
               {/* ── Inventory Assignment ── */}
@@ -1961,6 +1997,47 @@ function LegacyProductsUI() {
       )}
       </> /* end viewMode === 'all' */
       )}
+    </div>
+  );
+}
+
+/**
+ * The three scannable identifiers shared by the Add and Edit product forms.
+ * Kept as one component so both stay in sync and the desktop barcode scanner
+ * can resolve a product by whichever code the shop actually labels its stock
+ * with — the EAN on the item, an internal SKU, or the barcode on the carton.
+ */
+function BarcodeIdentifierFields({
+  barcode, sku, cartonBarcode, onChange, modalInp,
+}: {
+  barcode?: string; sku?: string; cartonBarcode?: string;
+  onChange: (key: 'barcode' | 'sku' | 'cartonBarcode', value: string) => void;
+  modalInp: string;
+}) {
+  return (
+    <div className="mt-3">
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+        Scan Codes <span className="font-medium normal-case text-slate-400">— for barcode billing</span>
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Company Barcode</label>
+          <input className={modalInp} placeholder="EAN / UPC on the item"
+            value={barcode || ''} onChange={e => onChange('barcode', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">SKU</label>
+          <input className={modalInp} placeholder="Your stock code"
+            value={sku || ''} onChange={e => onChange('sku', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            Carton Barcode <span className="font-medium normal-case text-slate-400">(optional)</span>
+          </label>
+          <input className={modalInp} placeholder="Outer carton code"
+            value={cartonBarcode || ''} onChange={e => onChange('cartonBarcode', e.target.value)} />
+        </div>
+      </div>
     </div>
   );
 }

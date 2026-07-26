@@ -1,5 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { Plus, X, Palette, Scaling } from 'lucide-react';
 
@@ -18,6 +19,7 @@ interface VariantBuilderProps {
 }
 
 export default function VariantBuilder({ value, onChange, sizeChart = [], hasColors = true, hasSizes = true }: VariantBuilderProps) {
+  const t = useTranslations('Products');
   // Extract unique colors and sizes from the current value
   const activeColors = useMemo(() => {
     const c = new Set<string>();
@@ -89,13 +91,13 @@ export default function VariantBuilder({ value, onChange, sizeChart = [], hasCol
           <Palette size={16} className="text-slate-500" />
           <input
             className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm outline-none"
-            placeholder="Add new color (e.g. Red, XL...)"
+            placeholder={t('addColorPlaceholder')}
             value={newColor}
             onChange={e => setNewColor(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addColorRow())}
           />
           <button type="button" onClick={addColorRow} className="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-emerald-600 transition-colors flex items-center gap-1">
-            <Plus size={14} /> Add Color
+            <Plus size={14} /> {t('addColorBtn')}
           </button>
         </div>
       )}
@@ -105,7 +107,7 @@ export default function VariantBuilder({ value, onChange, sizeChart = [], hasCol
         <table className="w-full text-left border-collapse">
           <thead>
             <tr>
-              {hasColors && <th className="p-2 border-b border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 uppercase">Color</th>}
+              {hasColors && <th className="p-2 border-b border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 uppercase">{t('colorHeader')}</th>}
               {hasSizes && columns.map(col => (
                 <th key={col} className="p-2 border-b border-slate-200 dark:border-slate-700 text-center">
                   <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded px-2 py-1 uppercase tracking-wide">
@@ -118,7 +120,7 @@ export default function VariantBuilder({ value, onChange, sizeChart = [], hasCol
           </thead>
           <tbody>
             {rows.map(color => {
-              const displayColor = color === 'Default' ? 'Default Color' : color;
+              const displayColor = color === 'Default' ? t('defaultColor') : color;
               return (
                 <tr key={color} className="group">
                   {hasColors && (
@@ -158,7 +160,7 @@ export default function VariantBuilder({ value, onChange, sizeChart = [], hasCol
 
       {/* Summary */}
       <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg px-4 py-3 border border-slate-200 dark:border-slate-800">
-        <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Variants Stock</span>
+        <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('totalVariantsStock')}</span>
         <span className={cn('text-xl font-black', totalStock === 0 ? 'text-slate-400' : 'text-emerald-500')}>
           {totalStock}
         </span>

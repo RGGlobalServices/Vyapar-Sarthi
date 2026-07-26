@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { packageTypeForPlan } from '@/lib/planGates';
+import { MONTHLY_BASE_PRICES, type BillingCycle } from '@/lib/subscriptionPricing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,9 +13,10 @@ export const dynamic = 'force-dynamic';
 // user is trialing. Once the trial has ended, plan changes must go through PayU.
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
-  const { plan } = await readBody(req);
+  const { plan, cycle: cycleRaw } = await readBody(req);
+  const cycle: BillingCycle = cycleRaw === 'yearly' ? 'yearly' : 'monthly';
 
-  if (!plan || !(plan in config.planAmounts)) throw new ApiError(400, 'Invalid plan');
+  if (!plan || !(plan in MONTHLY_BASE_PRICES)) throw new ApiError(400, 'Invalid plan');
 
   const trialEnd = shop.subscriptionTrialEnds ?? shop.subscriptionExpiry;
   const trialActive =
@@ -28,7 +29,9 @@ export const POST = handle(async (req) => {
 
   const updated = await prisma.shop.update({
     where: { id: shop.id },
-    data: { subscriptionPlan: plan, packageType: packageTypeForPlan(plan) }, // keep trial dates & status untouched
+    // Keep trial dates & status untouched — only remember the plan/cycle choice
+    // so the eventual real charge (after trial ends) uses the right amount.
+    data: { subscriptionPlan: plan, packageType: packageTypeForPlan(plan), billingCycle: cycle },
   });
 
   const body = {

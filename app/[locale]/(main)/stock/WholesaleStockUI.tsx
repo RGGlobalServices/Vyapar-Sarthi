@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  Box, Package, Archive, AlertTriangle, Search, Loader2, ArrowRightLeft, 
-  TrendingDown, Clock, CheckCircle, X, Filter, Download, Printer, 
-  Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp
+import {
+  Box, Package, Archive, AlertTriangle, Search, Loader2, ArrowRightLeft,
+  TrendingDown, Clock, CheckCircle, X, Filter, Download, Printer,
+  Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp, CalendarDays
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import { useTranslations } from 'next-intl';
 import TransferDrawer from './TransferDrawer';
 import AdjustDrawer from './AdjustDrawer';
 import ReceiveDrawer from './ReceiveDrawer';
+import DailyStockRegister from './DailyStockRegister';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -165,6 +166,7 @@ export default function WholesaleStockUI() {
   // Action Modals
   const [actionModal, setActionModal] = useState<string | null>(null); // 'receive', 'transfer', 'adjust'
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [showDailyRegister, setShowDailyRegister] = useState(false);
 
   const { activeShopId } = useBusinessStore();
   const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher);
@@ -334,7 +336,7 @@ export default function WholesaleStockUI() {
 
   const exportExcel = () => {
     if (!filteredItems || filteredItems.length === 0) {
-      alert("No items to export");
+      alert(t('noItemsToExport'));
       return;
     }
 
@@ -382,20 +384,25 @@ export default function WholesaleStockUI() {
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('inventoryDesc')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setShowDailyRegister(v => !v)}
+              className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
+                showDailyRegister ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
+              <CalendarDays size={16} /> {t('dailyRegister')}
+            </button>
             <button onClick={() => {
-              if (!selectedProduct) { alert('Please select a product from the table first.'); return; }
+              if (!selectedProduct) { alert(t('selectProductFirst')); return; }
               setActionModal('receive');
             }} className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-sm">
               <Plus size={16} /> {t('receiveStock')}
             </button>
             <button onClick={() => {
-              if (!selectedProduct) { alert('Please select a product from the table first.'); return; }
+              if (!selectedProduct) { alert(t('selectProductFirst')); return; }
               setActionModal('transfer');
             }} className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white font-bold rounded-xl hover:bg-blue-600 transition-colors shadow-sm text-sm">
               <ArrowRightLeft size={16} /> {t('transferStock')}
             </button>
             <button onClick={() => {
-              if (!selectedProduct) { alert('Please select a product from the table first.'); return; }
+              if (!selectedProduct) { alert(t('selectProductFirst')); return; }
               setActionModal('adjust');
             }} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors shadow-sm text-sm">
               <Edit size={16} /> {t('adjustStock')}
@@ -403,6 +410,9 @@ export default function WholesaleStockUI() {
           </div>
         </div>
 
+        {showDailyRegister ? (
+          <DailyStockRegister />
+        ) : (<>
         {/* Analytics Widgets */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
           {loading && (!data || data.items.length === 0) ? (
@@ -566,6 +576,7 @@ export default function WholesaleStockUI() {
             </table>
           </div>
         </Card>
+        </>)}
       </div>
 
       {/* Slide-out Detailed Panel */}

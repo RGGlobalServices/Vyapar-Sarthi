@@ -18,6 +18,12 @@ export const POST = handle(async (req) => {
   const finalPackageType = packageType || primaryShop?.packageType || 'dukan';
   const finalSubscriptionPlan = subscriptionPlan || primaryShop?.subscriptionPlan || 'trial';
 
+  // Admin can disable shop creation for an account outright, independent of
+  // the numeric cap below.
+  if (user.canAddShop === false) {
+    throw new ApiError(403, 'Adding new shops has been disabled for your account. Contact support.');
+  }
+
   // Enforce shop limits (fallback to user override if set by admin)
   const existingShopsCount = await prisma.shop.count({ where: { ownerId: user.uuid! } });
   const planLimits = getPlanLimits(finalSubscriptionPlan);

@@ -9,7 +9,8 @@ import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, 
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
-import { planLabel, PLAN_LIMITS, PLAN_PRICES, nextUpgrade } from '@/lib/planGates';
+import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
+import { getBaseAmount, getGstAmount, getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
 import { useLocale } from 'next-intl';
 
 // Inner component uses useSearchParams — must be wrapped in Suspense
@@ -24,6 +25,7 @@ function SettingsPageInner() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [activatingPlan, setActivatingPlan] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
 
   // Refresh profile on mount to get latest plan
   useEffect(() => {
@@ -621,7 +623,7 @@ function SettingsPageInner() {
         const PLAN_RANK: Record<string, number> = { starter: 0, shop: 0, vyapar: 1, wholesale: 2 };
         const plans = [
           {
-            key: 'shop', name: 'Dukaan', price: 299, color: 'sky',
+            key: 'shop', name: 'Dukaan', color: 'sky',
             tagline: 'Perfect for small retail stores',
             features: [
               'Unlimited products',
@@ -639,12 +641,12 @@ function SettingsPageInner() {
             ],
           },
           {
-            key: 'vyapar', name: 'Vyapar', price: 499, color: 'indigo', popular: true,
+            key: 'vyapar', name: 'Vyapar', color: 'indigo', popular: true,
             tagline: 'For growing multi-branch businesses',
             features: [
               'Everything in Dukaan',
               'Unlimited Udhar customers',
-              'Multiple shops (up to 5)',
+              'Multiple shops (up to 3)',
               'Auto WhatsApp & Email bills',
               'Staff management & attendance',
               'Data import (Excel, CSV, AI scan)',
@@ -655,7 +657,7 @@ function SettingsPageInner() {
             ],
           },
           {
-            key: 'wholesale', name: 'Udyog', price: 999, color: 'purple',
+            key: 'wholesale', name: 'Udyog', color: 'purple',
             tagline: 'For wholesalers & distributors',
             features: [
               'Everything in Vyapar',
@@ -679,15 +681,37 @@ function SettingsPageInner() {
         };
         return (
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Zap size={16} className="text-emerald-500 dark:text-emerald-400" />
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">{t('availablePlans') || 'Available Plans'}</h2>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Zap size={16} className="text-emerald-500 dark:text-emerald-400" />
+                <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">{t('availablePlans') || 'Available Plans'}</h2>
+              </div>
+              <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs font-bold">
+                <button
+                  onClick={() => setBillingCycle('monthly')}
+                  className={cn('px-3 py-1.5 rounded-lg transition-colors', billingCycle === 'monthly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                >
+                  Monthly
+                </button>
+                <button
+                  onClick={() => setBillingCycle('yearly')}
+                  className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === 'yearly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                >
+                  Yearly
+                  <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {plans.map(plan => {
                 const c = colorMap[plan.color];
                 const isCurrent = currentPlan === plan.key || (plan.key === 'shop' && (currentPlan === 'starter' || !currentPlan));
                 const isUpgrade = !isCurrent && PLAN_RANK[plan.key] > PLAN_RANK[currentPlan];
+                const baseAmount = getBaseAmount(plan.key, billingCycle);
+                const gstAmount = getGstAmount(baseAmount);
+                const totalAmount = getTotalAmount(plan.key, billingCycle);
+                const cycleUnit = billingCycle === 'yearly' ? '/year' : '/month';
+                const paymentHref = `/${locale}/payment?plan=${plan.key}&cycle=${billingCycle}`;
                 return (
                   <div key={plan.key} className={cn('relative rounded-2xl border p-5 flex flex-col gap-4', c.bg, isCurrent ? (isPaid ? 'border-emerald-500/50' : 'border-amber-500/50') : c.border)}>
                     {plan.popular && !isCurrent && (
@@ -710,10 +734,11 @@ function SettingsPageInner() {
                         <span className={cn('text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider', c.badge)}>{plan.name}</span>
                       </div>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className={cn('text-3xl font-black', c.text)}>₹{plan.price}</span>
-                        <span className="text-slate-500 text-sm">/month</span>
+                        <span className={cn('text-3xl font-black', c.text)}>₹{baseAmount}</span>
+                        <span className="text-slate-500 text-sm">{cycleUnit} + GST</span>
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{plan.tagline}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Total incl. GST: ₹{totalAmount} <span className="text-slate-400">(GST ₹{gstAmount})</span></p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{plan.tagline}</p>
                     </div>
                     <ul className="space-y-1.5 flex-1">
                       {plan.features.map(f => (
@@ -729,26 +754,26 @@ function SettingsPageInner() {
                       <div className="w-full py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold text-center">✓ On Trial</div>
                     ) : isTrial ? (
                       // Free plan switch while the trial is running (keeps remaining days).
-                      <a href={`/${locale}/payment?plan=${plan.key}`}
+                      <a href={paymentHref}
                         className={cn('w-full py-2.5 rounded-xl text-sm font-bold text-center transition-all block', c.btn)}>
                         Switch (Free)
                       </a>
                     ) : isUpgrade ? (
-                      <a href={`/${locale}/payment?plan=${plan.key}`}
+                      <a href={paymentHref}
                         className={cn('w-full py-2.5 rounded-xl text-sm font-bold text-center transition-all block', c.btn)}>
-                        Upgrade — ₹{plan.price}/mo
+                        Upgrade — ₹{totalAmount}{cycleUnit}
                       </a>
                     ) : (
-                      <a href={`/${locale}/payment?plan=${plan.key}`}
+                      <a href={paymentHref}
                         className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-300 text-sm font-bold text-center transition-all block">
-                        {isPaid ? `Switch — ₹${plan.price}/mo` : `Subscribe — ₹${plan.price}/mo`}
+                        {isPaid ? `Switch — ₹${totalAmount}${cycleUnit}` : `Subscribe — ₹${totalAmount}${cycleUnit}`}
                       </a>
                     )}
                   </div>
                 );
               })}
             </div>
-            <p className="text-xs text-slate-600 text-center">Billed monthly via PayU · 30-day money-back guarantee · Cancel anytime</p>
+            <p className="text-xs text-slate-600 text-center">Billed {billingCycle} via PayU · 30-day money-back guarantee · Cancel anytime</p>
           </div>
         );
       })()}

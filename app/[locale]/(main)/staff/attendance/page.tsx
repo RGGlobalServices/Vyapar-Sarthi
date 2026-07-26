@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { useRouter, Link } from '@/i18n/routing';
 
 export default function AttendancePage() {
-  const t = useTranslations('Dashboard');
+  const t = useTranslations('Staff');
   const router = useRouter();
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -67,10 +67,10 @@ export default function AttendancePage() {
         reason: attendance[staffId].reason
       }));
       await api.post('/staff/attendance', { date, records });
-      alert('Attendance saved successfully');
+      alert(t('attendanceSavedSuccess'));
       router.push('/staff');
     } catch (e) {
-      alert('Failed to save attendance');
+      alert(t('failedToSaveAttendance'));
     } finally {
       setSaving(false);
     }
@@ -86,9 +86,9 @@ export default function AttendancePage() {
           <div>
             <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
               <CalendarClock className="text-indigo-500" size={32} />
-              Daily Attendance
+              {t('dailyAttendanceTitle')}
             </h1>
-            <p className="text-slate-500 font-medium mt-1">Track presence, absences, and leaves.</p>
+            <p className="text-slate-500 font-medium mt-1">{t('trackPresenceHint')}</p>
           </div>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 shadow-sm">
@@ -104,12 +104,12 @@ export default function AttendancePage() {
 
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex justify-between items-center">
-          <h2 className="font-bold text-slate-700 dark:text-slate-300">Staff List</h2>
-          <button 
+          <h2 className="font-bold text-slate-700 dark:text-slate-300">{t('staffListTitle')}</h2>
+          <button
             onClick={markAllPresent}
             className="text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors flex items-center gap-1"
           >
-            <CheckCircle2 size={14} /> Mark All Present
+            <CheckCircle2 size={14} /> {t('markAllPresentBtn')}
           </button>
         </div>
 
@@ -119,7 +119,7 @@ export default function AttendancePage() {
            </div>
         ) : staffList.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
-            <p>No staff members found.</p>
+            <p>{t('noStaffFound')}</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -149,7 +149,7 @@ export default function AttendancePage() {
                           current.status === 'present' ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-500/50"
                         )}
                       >
-                        <CheckCircle2 size={14} /> Present
+                        <CheckCircle2 size={14} /> {t('presentBtn')}
                       </button>
                       <button 
                         onClick={() => updateAtt(staff.id, 'half_day')}
@@ -157,7 +157,7 @@ export default function AttendancePage() {
                           current.status === 'half_day' ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-500/50"
                         )}
                       >
-                        <Clock size={14} /> Half Day
+                        <Clock size={14} /> {t('halfDayBtn')}
                       </button>
                       <button 
                         onClick={() => updateAtt(staff.id, 'leave')}
@@ -165,7 +165,7 @@ export default function AttendancePage() {
                           current.status === 'leave' ? "bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-sky-500/50"
                         )}
                       >
-                        <FileX size={14} /> Leave
+                        <FileX size={14} /> {t('leaveBtn')}
                       </button>
                       <button 
                         onClick={() => updateAtt(staff.id, 'absent')}
@@ -173,7 +173,7 @@ export default function AttendancePage() {
                           current.status === 'absent' ? "bg-red-500 text-white border-red-500 shadow-md shadow-red-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-red-500/50"
                         )}
                       >
-                        <XCircle size={14} /> Absent
+                        <XCircle size={14} /> {t('absentBtn')}
                       </button>
                     </div>
 
@@ -181,7 +181,7 @@ export default function AttendancePage() {
                     {['half_day', 'absent', 'leave'].includes(current.status) && (
                       <input 
                         type="text" 
-                        placeholder="Reason (Optional)"
+                        placeholder={t('reasonOptionalPlaceholder')}
                         value={current.reason}
                         onChange={(e) => updateAtt(staff.id, current.status, e.target.value)}
                         className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
@@ -200,7 +200,7 @@ export default function AttendancePage() {
           href="/staff"
           className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-6 py-3 rounded-xl font-black hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
         >
-          <ChevronLeft size={20} /> Back
+          <ChevronLeft size={20} /> {t('backBtn')}
         </Link>
         <button
           onClick={handleSave}
@@ -208,7 +208,7 @@ export default function AttendancePage() {
           className="flex items-center gap-2 bg-indigo-500 text-white px-6 py-3 rounded-xl font-black hover:bg-indigo-600 transition-colors shadow-xl shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={20} />}
-          Save Attendance
+          {t('saveAttendanceBtn')}
         </button>
       </div>
     </div>

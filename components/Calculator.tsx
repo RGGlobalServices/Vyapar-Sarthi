@@ -1,8 +1,10 @@
 'use client';
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { X, Delete } from 'lucide-react';
 
 export default function Calculator({ onClose }: { onClose: () => void }) {
+  const t = useTranslations('Billing');
   const [display, setDisplay] = useState('0');
   const [equation, setEquation] = useState('');
 
@@ -21,7 +23,7 @@ export default function Calculator({ onClose }: { onClose: () => void }) {
       setDisplay(String(result));
       setEquation('');
     } catch (e) {
-      setDisplay('Error');
+      setDisplay(t('calcError'));
     }
   };
 
@@ -33,7 +35,7 @@ export default function Calculator({ onClose }: { onClose: () => void }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 w-64 shadow-2xl animate-in zoom-in-95 duration-200">
       <div className="flex justify-between items-center mb-4">
-        <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Calculator</span>
+        <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">{t('calculator')}</span>
         <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
           <X size={16} />
         </button>

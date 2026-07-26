@@ -32,11 +32,11 @@ export default function TransferDrawer({
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.fromWarehouseId || !form.toWarehouseId || !form.quantity) {
-      setError('Please fill all required fields.');
+      setError(t('fillRequiredFields'));
       return;
     }
     if (form.fromWarehouseId === form.toWarehouseId) {
-      setError('Source and destination cannot be the same.');
+      setError(t('sourceDestinationSame'));
       return;
     }
 
@@ -120,7 +120,7 @@ export default function TransferDrawer({
                 value={form.quantity}
                 onChange={e => setForm({...form, quantity: e.target.value})}
                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g. 50"
+                placeholder={t('transferQuantityPlaceholder')}
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{product.baseUnit}</span>
             </div>

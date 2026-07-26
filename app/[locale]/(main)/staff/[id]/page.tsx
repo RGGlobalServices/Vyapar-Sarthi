@@ -115,7 +115,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       }
     } catch (e) {
       console.error(e);
-      alert('Failed to load staff');
+      alert(t('failedToLoadStaff'));
     } finally {
       setLoading(false);
     }
@@ -150,7 +150,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
 
   async function handleSave() {
     if (!form.name || !form.mobile || !form.salaryAmount) {
-      return alert('Name, mobile, and salary amount are required');
+      return alert(t('nameRequiredFields'));
     }
     setSaving(true);
     try {
@@ -159,36 +159,36 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         router.replace(`/staff/${res.data.id}`);
       } else {
         await api.patch(`/staff/${resolvedParams.id}`, form);
-        alert('Saved successfully');
+        alert(t('savedSuccessfully'));
       }
     } catch (e) {
-      alert('Failed to save');
+      alert(t('failedToSave'));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm('Are you sure you want to remove this staff member? This will also delete their attendance history.')) return;
+    if (!confirm(t('confirmRemoveStaff'))) return;
     setDeleting(true);
     try {
       await api.delete(`/staff/${resolvedParams.id}`);
       router.push('/staff');
     } catch (e) {
-      alert('Failed to delete');
+      alert(t('failedToDelete'));
       setDeleting(false);
     }
   }
 
   async function handleDeleteDocument(key: string) {
-    if (!confirm(`Remove ${key.replace(/([A-Z])/g, ' $1').trim()}?`)) return;
+    if (!confirm(t('confirmRemoveDoc', { docName: key.replace(/([A-Z])/g, ' $1').trim() }))) return;
     const documents = { ...form.documents };
     delete documents[key];
     try {
       await api.patch(`/staff/${resolvedParams.id}`, { documents });
       setForm(prev => ({ ...prev, documents }));
     } catch (e) {
-      alert('Failed to delete document');
+      alert(t('failedToDeleteDoc'));
     }
   }
 
@@ -203,11 +203,11 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         paymentMode: calcData.paymentMode,
         advanceIds: pendingAdvances.map(a => a.id)
       });
-      alert('Salary marked as paid!');
+      alert(t('salaryMarkedPaid'));
       loadSalaryHistory();
       loadAdvanceHistory();
     } catch (e) {
-      alert('Failed to pay salary');
+      alert(t('failedToPaySalary'));
     }
   }
 
@@ -221,7 +221,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       setAdvanceAmount('');
       loadAdvanceHistory();
     } catch (e) {
-      alert('Failed to give advance');
+      alert(t('failedToGiveAdvance'));
     }
   }
 
@@ -234,7 +234,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       });
       loadAttendance();
     } catch (e) {
-      alert('Failed to mark attendance');
+      alert(t('failedToMarkAttendance'));
     } finally {
       setMarkingAtt(false);
     }
@@ -273,13 +273,13 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         if (!shared) {
           // Native share unsupported, fallback to whatsapp link
           const url = URL.createObjectURL(pdfFile);
-          alert('Could not open native share. File has been generated.');
+          alert(t('couldNotShareGenerated'));
           window.open(url, '_blank');
         }
       }
     } catch (e) {
       console.error(e);
-      alert('Failed to generate slip');
+      alert(t('failedToGenerateSlip'));
     } finally {
       setGeneratingSlip(false);
       setShowSlipModal(false);
@@ -396,7 +396,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                       </button>
                       <button
                         onClick={() => handleDeleteDocument(key)}
-                        title="Remove document"
+                        title={t('removeDocumentTitle')}
                         className="text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg p-1.5 transition-colors"
                       >
                         <Trash2 size={14} />
@@ -569,7 +569,7 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
             <div className="p-4 space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Amount (₹)</label>
-                <input type="number" value={advanceAmount} onChange={e => setAdvanceAmount(e.target.value)} className="w-full px-3 py-2 border dark:border-slate-700 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" placeholder="e.g. 500" />
+                <input type="number" value={advanceAmount} onChange={e => setAdvanceAmount(e.target.value)} className="w-full px-3 py-2 border dark:border-slate-700 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" placeholder={t('advanceAmountPlaceholder')} />
               </div>
               <p className="text-xs text-slate-500 font-semibold">This amount will be automatically deducted from the next salary payment.</p>
             </div>

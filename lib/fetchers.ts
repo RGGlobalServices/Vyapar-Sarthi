@@ -1,4 +1,5 @@
 import api from '@/lib/api';
+import { withOfflineCache } from '@/lib/offlineCache';
 
 /**
  * SWR fetchers shared between a screen and anything that prefetches for it.
@@ -9,10 +10,11 @@ import api from '@/lib/api';
  * (stock, cost, unit …) would come back undefined.
  */
 
-export const fetchJson = (url: string) => api.get(url).then(res => res.data);
+export const fetchJson = (url: string) =>
+  withOfflineCache(`json:${url}`, () => api.get(url).then(res => res.data));
 
 export const fetchProductsMapped = (url: string) =>
-  api.get(url).then(res =>
+  withOfflineCache(`products-mapped:${url}`, () => api.get(url).then(res =>
     res.data.map((p: any) => ({
       id: p.id,
       name: p.name,
@@ -36,10 +38,13 @@ export const fetchProductsMapped = (url: string) =>
       // The REAL stored barcode — without this the Barcode/QR modal shows an
       // unsaved PRD-<id> fallback that no scan or search can ever match.
       barcode: p.barcode,
+      sku: p.sku,
+      cartonBarcode: p.cartonBarcode,
       gstPercent: p.gstPercent,
       hsnCode: p.hsnCode,
       brand: p.brand,
       conversionFactor: p.conversionFactor,
       recentlyAdded: p.recentlyAdded,
+      createdAt: p.createdAt,
     }))
-  );
+  ));

@@ -1,4 +1,5 @@
 'use client';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, Calendar, CheckCircle, Clock } from 'lucide-react';
 
@@ -19,7 +20,9 @@ export interface ExpiryInfo {
   icon: React.ReactNode;
 }
 
-export function getExpiryInfo(dateStr: string | null | undefined): ExpiryInfo | null {
+type ExpiryT = ReturnType<typeof useTranslations<'Products'>>;
+
+export function getExpiryInfo(dateStr: string | null | undefined, t?: ExpiryT): ExpiryInfo | null {
   if (!dateStr) return null;
   const exp = new Date(dateStr);
   if (isNaN(exp.getTime())) return null;
@@ -30,39 +33,40 @@ export function getExpiryInfo(dateStr: string | null | undefined): ExpiryInfo | 
 
   if (daysLeft < 0) return {
     daysLeft, status: 'expired',
-    label: `Expired ${Math.abs(daysLeft)} days ago`,
+    label: t ? t('expiredDaysAgo', { days: Math.abs(daysLeft) }) : `Expired ${Math.abs(daysLeft)} days ago`,
     color: 'text-red-400', bgColor: 'bg-red-500/15 border-red-500/30',
     icon: <AlertTriangle size={12} className="text-red-400" />,
   };
   if (daysLeft <= 30) return {
     daysLeft, status: 'urgent',
-    label: `Expires in ${daysLeft} days`,
+    label: t ? t('expiresInDays', { days: daysLeft }) : `Expires in ${daysLeft} days`,
     color: 'text-orange-400', bgColor: 'bg-orange-500/15 border-orange-500/30',
     icon: <AlertTriangle size={12} className="text-orange-400" />,
   };
   if (daysLeft <= 180) return {
     daysLeft, status: 'soon',
-    label: `Expires in ${Math.round(daysLeft / 30)} months`,
+    label: t ? t('expiresInMonths', { months: Math.round(daysLeft / 30) }) : `Expires in ${Math.round(daysLeft / 30)} months`,
     color: 'text-yellow-400', bgColor: 'bg-yellow-500/15 border-yellow-500/30',
     icon: <Clock size={12} className="text-yellow-400" />,
   };
   return {
     daysLeft, status: 'safe',
-    label: `Expires in ${Math.round(daysLeft / 30)} months`,
+    label: t ? t('expiresInMonths', { months: Math.round(daysLeft / 30) }) : `Expires in ${Math.round(daysLeft / 30)} months`,
     color: 'text-emerald-400', bgColor: 'bg-emerald-500/15 border-emerald-500/30',
     icon: <CheckCircle size={12} className="text-emerald-400" />,
   };
 }
 
 export default function ExpiryDateField({ value, onChange, required, label, className }: ExpiryDateFieldProps) {
-  const info = getExpiryInfo(value);
+  const t = useTranslations('Products');
+  const info = getExpiryInfo(value, t);
   const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className={cn('space-y-1.5', className)}>
       <label className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">
         <Calendar size={12} className="text-slate-500" />
-        {label ?? 'Expiry Date'}{required && <span className="text-red-400">*</span>}
+        {label ?? t('expiryDateLabel')}{required && <span className="text-red-400">*</span>}
       </label>
       <input
         type="date"
@@ -87,8 +91,9 @@ export default function ExpiryDateField({ value, onChange, required, label, clas
 
 /** Compact expiry badge for table display */
 export function ExpiryBadge({ date }: { date: string | null | undefined }) {
+  const t = useTranslations('Products');
   if (!date) return <span className="text-slate-600 text-xs">—</span>;
-  const info = getExpiryInfo(date);
+  const info = getExpiryInfo(date, t);
   if (!info) return <span className="text-slate-400 text-xs">{date}</span>;
   return (
     <span className={cn(
@@ -96,7 +101,7 @@ export function ExpiryBadge({ date }: { date: string | null | undefined }) {
       info.bgColor, info.color
     )}>
       {info.icon}
-      {info.status === 'expired' ? 'EXPIRED' : info.daysLeft <= 30 ? `${info.daysLeft}d` : date}
+      {info.status === 'expired' ? t('expiredAllCaps') : info.daysLeft <= 30 ? `${info.daysLeft}d` : date}
     </span>
   );
 }

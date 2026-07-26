@@ -33,7 +33,7 @@ export const POST = handle(async (req) => {
       data: {
         shopId: sale.shopId!,
         productId: saleItem.productId ? saleItem.productId : undefined,
-        itemName: ret.name || saleItem.product?.name || 'Unknown Item',
+        itemName: ret.name || saleItem.product?.name || saleItem.itemName || saleItem.variant || 'Unknown Item',
         quantity: ret.quantity,
         reason: ret.reason || 'Customer Return',
         amount: ret.quantity * (ret.price || saleItem.pricePerUnit || 0),

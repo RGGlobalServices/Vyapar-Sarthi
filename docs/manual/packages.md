@@ -6,7 +6,7 @@ appear in your sidebar and what limits apply.
 | Package | Price | Built for |
 |---|---|---|
 | **Dukaan** | ₹299/month | A single retail shop |
-| **Vyapar** | ₹499/month | A growing business, up to 5 shops |
+| **Vyapar** | ₹499/month | A growing business, up to 3 shops |
 | **Udyog** | ₹999/month | Wholesale and distribution |
 
 Your current package is shown as a badge at the top of the sidebar.

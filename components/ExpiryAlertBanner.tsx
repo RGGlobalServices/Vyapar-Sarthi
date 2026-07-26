@@ -1,5 +1,6 @@
 'use client';
 import { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 import { AlertTriangle, Clock, CheckCircle, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStockStore } from '@/lib/store';
@@ -19,16 +20,17 @@ interface ExpiryAlertBannerProps {
 }
 
 export default function ExpiryAlertBanner({ products }: ExpiryAlertBannerProps) {
+  const t = useTranslations('Products');
   const { profile } = useBusinessStore();
   const config = { hasExpiry: true }; // Only rendered for businesses with expiry
 
   const withExpiry = useMemo(() => {
     return products
       .filter(p => p.expiry_date)
-      .map(p => ({ ...p, info: getExpiryInfo(p.expiry_date) }))
+      .map(p => ({ ...p, info: getExpiryInfo(p.expiry_date, t) }))
       .filter(p => p.info && (p.info.status === 'expired' || p.info.status === 'urgent' || p.info.status === 'soon'))
       .sort((a, b) => (a.info?.daysLeft ?? 0) - (b.info?.daysLeft ?? 0));
-  }, [products]);
+  }, [products, t]);
 
   if (withExpiry.length === 0) return null;
 
@@ -42,17 +44,17 @@ export default function ExpiryAlertBanner({ products }: ExpiryAlertBannerProps) 
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-orange-500/5">
         <div className="flex items-center gap-2">
           <AlertTriangle size={16} className="text-orange-400" />
-          <p className="text-sm font-bold text-orange-400">Expiry Alerts</p>
+          <p className="text-sm font-bold text-orange-400">{t('expiryAlerts')}</p>
           <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{withExpiry.length}</span>
         </div>
-        <p className="text-xs text-slate-500">Next {withExpiry.length} product{withExpiry.length > 1 ? 's' : ''} expiring</p>
+        <p className="text-xs text-slate-500">{t('nextProductsExpiring', { count: withExpiry.length })}</p>
       </div>
 
       <div className="divide-y divide-slate-800/50">
         {/* Expired */}
         {expired.length > 0 && (
           <div className="px-5 py-3">
-            <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">🔴 Expired ({expired.length})</p>
+            <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">{t('expiredHeader', { count: expired.length })}</p>
             <div className="space-y-1.5">
               {expired.map(p => (
                 <div key={p.id} className="flex items-center justify-between">
@@ -75,7 +77,7 @@ export default function ExpiryAlertBanner({ products }: ExpiryAlertBannerProps) 
         {/* Urgent (≤30 days) */}
         {urgent.length > 0 && (
           <div className="px-5 py-3">
-            <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-2">🟠 Expires Soon — within 30 days ({urgent.length})</p>
+            <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-2">{t('expiresSoonHeader', { count: urgent.length })}</p>
             <div className="space-y-1.5">
               {urgent.map(p => (
                 <div key={p.id} className="flex items-center justify-between">
@@ -95,7 +97,7 @@ export default function ExpiryAlertBanner({ products }: ExpiryAlertBannerProps) 
         {/* Soon (31–180 days) */}
         {soon.length > 0 && (
           <div className="px-5 py-3">
-            <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-2">🟡 Expiring in 1–6 months ({soon.length})</p>
+            <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-2">{t('expiringMonthsHeader', { count: soon.length })}</p>
             <div className="space-y-1.5">
               {soon.map(p => (
                 <div key={p.id} className="flex items-center justify-between">

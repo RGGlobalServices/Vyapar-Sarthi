@@ -4,6 +4,146 @@ import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { importConfig } from '@/lib/importConfig';
 
+/* ─── Deterministic table reader ─────────────────────────────────────────────
+ *
+ * A machine-generated invoice/stock PDF already contains its table structure in
+ * the glyph coordinates. Handing that to a language model and asking it to
+ * re-derive the columns is strictly worse than reading them: the model has to
+ * guess, and its guess changes between runs (one pass reads quantity from the
+ * Qty column, the next reads it from Disc). For a document that has a real
+ * header row there is nothing to infer, so we map cells to columns positionally
+ * and skip the model entirely. The AI path remains for what it is actually good
+ * at — handwritten notebooks, kacha bills, photos, and any layout with no
+ * recognisable header.
+ *
+ * Input is the "|"-delimited text produced by the layout-aware PDF extractor.
+ */
+
+// Canonical field for a header cell, or null when the column is ignorable.
+function canonicalColumn(raw: string): string | null {
+  const h = raw.toLowerCase().replace(/[^a-z0-9%]/g, '');
+  if (!h) return null;
+  // Serial-number column carries no data.
+  if (['#', 'sr', 'srno', 'sno', 'slno', 'no'].includes(h)) return null;
+  if (/^(item|items|itemname|description|descriptionofgoods|goods|product|productname|particulars)$/.test(h)) return 'productName';
+  if (/^(hsn|hsnsac|sac|hsncode)$/.test(h)) return 'hsnCode';
+  if (/^(qty|quantity|nos|pcs|units)$/.test(h)) return 'quantity';
+  if (/^(unit|uom|units?ofmeasure)$/.test(h)) return 'unit';
+  if (/^(rate|price|priceunit|unitprice|unitcost|purchaserate)$/.test(h)) return 'unitCost';
+  if (/^(disc|discount|discamount|discountamount)$/.test(h)) return 'discount';
+  if (/^(taxable|taxableamount|taxablevalue|taxableamt)$/.test(h)) return 'taxableAmount';
+  if (/^(gst%|gst|gstrate|gstpercent|tax%|taxrate|igst%|gstpct)$/.test(h)) return 'gstPercent';
+  if (/^(amount|total|value|netamount|lineamount|amt)$/.test(h)) return 'amount';
+  if (/^(mrp)$/.test(h)) return 'mrp';
+  if (/^(batch|batchno|batchnumber)$/.test(h)) return 'batch';
+  if (/^(expiry|exp|expirydate|expdate)$/.test(h)) return 'expiryDate';
+  if (/^(barcode|sku|code|itemcode)$/.test(h)) return 'barcode';
+  if (/^(category|group)$/.test(h)) return 'category';
+  if (/^(brand|company|make)$/.test(h)) return 'brand';
+  return null;
+}
+
+const NUMERIC_FIELDS = new Set([
+  'quantity', 'unitCost', 'discount', 'taxableAmount', 'gstPercent', 'amount', 'mrp',
+]);
+
+function toNumber(v: string): number {
+  const n = parseFloat(String(v).replace(/[₹,\s]/g, ''));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Find header rows in the delimited text and read the data rows beneath each
+ * one. Returns [] when no table with a usable header is present, which is the
+ * signal to fall back to the AI extractor.
+ */
+function parseLayoutTables(text: string): any[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const items: any[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].includes('|')) continue;
+    const headerCells = lines[i].split('|').map((c) => c.trim());
+    if (headerCells.length < 3) continue;
+
+    const mapping = headerCells.map(canonicalColumn);
+    // A real product table needs a name column plus at least one number we can
+    // act on. Without that we are looking at an address block, not a table.
+    if (!mapping.includes('productName')) continue;
+    if (!mapping.some((m) => m && NUMERIC_FIELDS.has(m))) continue;
+
+    // Consume data rows until the shape stops matching (totals block, footer…).
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j];
+      if (!line.includes('|')) break;
+      const cells = line.split('|').map((c) => c.trim());
+      // Allow a little raggedness (a blank trailing cell) but not a different table.
+      if (cells.length < headerCells.length - 2 || cells.length > headerCells.length + 2) break;
+
+      const row: any = {};
+      for (let k = 0; k < mapping.length && k < cells.length; k++) {
+        const field = mapping[k];
+        if (!field) continue;
+        const raw = cells[k];
+        if (raw === '') continue;
+        if (NUMERIC_FIELDS.has(field)) {
+          const n = toNumber(raw);
+          if (Number.isFinite(n)) row[field] = n;
+        } else {
+          row[field] = raw;
+        }
+      }
+
+      // Summary lines ("Total | | | 132 | ...") have no product name — stop there.
+      const name = String(row.productName ?? '').trim();
+      if (!name) break;
+      if (/^(total|sub\s*total|subtotal|grand\s*total|round\s*off|tax\s*summary)/i.test(name)) break;
+      // A row with no numbers at all is a continuation/footnote, not a product.
+      if (![...NUMERIC_FIELDS].some((f) => Number.isFinite(row[f]))) continue;
+
+      items.push(row);
+      i = j; // resume scanning after the consumed block
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Pull supplier / invoice number / invoice date out of the block above the
+ * table. Needed because the deterministic path never calls the model, and
+ * /execute reads those fields off each row.
+ */
+function parseInvoiceHeader(text: string): Record<string, string> {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 15);
+  const out: Record<string, string> = {};
+
+  for (const line of lines) {
+    const flat = line.replace(/\s*\|\s*/g, ' ');
+    if (!out.invoiceNumber) {
+      const m = flat.match(/\b(?:invoice|inv|bill)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9/\-_]{2,})/i);
+      // Guard against matching the word "Invoice" inside a title line.
+      if (m && !/^(tax|purchase|sample)$/i.test(m[1])) out.invoiceNumber = m[1];
+    }
+    if (!out.invoiceDate) {
+      const m = flat.match(/\bdate\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})/i);
+      if (m) out.invoiceDate = m[1];
+    }
+  }
+
+  // Supplier: the first substantive line, before any "Invoice:"/"Buyer:" label.
+  for (const line of lines) {
+    const flat = line.replace(/\s*\|\s*/g, ' ').trim();
+    if (!flat || /[:]/.test(flat)) continue;
+    if (/^(tax invoice|invoice|original|duplicate|copy)$/i.test(flat)) continue;
+    if (flat.length < 3 || flat.length > 60) continue;
+    out.supplier = flat;
+    break;
+  }
+
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const fd = await req.formData();
@@ -67,6 +207,8 @@ export async function POST(req: NextRequest) {
         'unitCost is the per-unit purchase rate before GST — usually labelled "Price/Unit" or "Rate". Do NOT put the total in unitCost.',
         'Skip pure summary rows (Subtotal / Round Off / Grand Total / Tax Summary / signature) — only extract actual product rows.',
         'If HSN/SAC has slash (e.g. HSN/SAC), take just the code number.',
+        'HSN codes are 4, 6 or 8 digits and are a SEPARATE column from quantity — never merge them. If you see "6203" in the HSN column and "18" in the Qty column, output hsnCode "6203" and quantity 18, never "620318".',
+        'Also output discount and taxableAmount when the invoice shows them; they are used to cross-check each row.',
       ].join(' ');
     } else {
       specificInstructions = `Extract all data relevant to the ${targetType} category. The document may be a photo of a handwritten notebook, an informal note, a kacha bill, or a structured table. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible.`;
@@ -131,41 +273,75 @@ CRITICAL INSTRUCTIONS FOR AI:
         // Three-tier extraction. Each tier is best-effort — a tier failing
         // must never abort the pipeline; only escalate to the next tier. Only
         // after ALL tiers have been tried do we surface an error.
-        //   1. pdf-parse   — fast, works on well-formed text PDFs
-        //   2. pdfjs-dist  — forgiving; handles malformed XRef tables
-        //   3. Gemini PDF  — native PDF OCR; handles scanned/image-only PDFs
-        //                    and anything text extraction cannot read
+        //   1. pdfjs layout — preserves table columns (see below)
+        //   2. pdf-parse    — flattened text; fallback if pdfjs can't open it
+        //   3. Gemini PDF   — native PDF OCR; scanned/image-only/corrupt PDFs
         let pdfText = '';
         const failures: string[] = [];
 
+        // Layout-aware extraction runs FIRST because flattening a table is
+        // lossy in a way the model cannot reliably undo. pdf-parse (and a naive
+        // pdfjs `items.map(str).join(' ')`) emit one text run per row, so
+        // neighbouring cells fuse: an invoice row with HSN "6203" and quantity
+        // "18" becomes "620318", and the model then has to guess where the code
+        // ends and the quantity begins — usually wrongly. Grouping items by
+        // their Y baseline and inspecting the X gap between them lets us emit a
+        // real "|" column separator instead of guessing.
         try {
-          const pdfData = await pdfParse(buffer);
-          pdfText = pdfData.text || '';
+          const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+          const pdf = await pdfjsLib.getDocument({
+            data: new Uint8Array(buffer),
+            disableFontFace: true,
+            useSystemFonts: false,
+            isEvalSupported: false,
+          }).promise;
+
+          const lines: string[] = [];
+          for (let p = 1; p <= pdf.numPages; p++) {
+            try {
+              const page = await pdf.getPage(p);
+              const tc = await page.getTextContent();
+
+              // Bucket text items into rows keyed by their baseline Y.
+              const rows = new Map<number, { x: number; w: number; s: string }[]>();
+              for (const it of tc.items as any[]) {
+                const s = (it.str ?? '').trim();
+                if (!s) continue;
+                const x = it.transform?.[4] ?? 0;
+                const y = Math.round(it.transform?.[5] ?? 0);
+                if (!rows.has(y)) rows.set(y, []);
+                rows.get(y)!.push({ x, w: it.width ?? 0, s });
+              }
+
+              // PDF Y grows upward, so sort descending for top-to-bottom order.
+              for (const [, cells] of [...rows.entries()].sort((a, b) => b[0] - a[0])) {
+                cells.sort((a, b) => a.x - b.x);
+                let line = '';
+                let prevEnd: number | null = null;
+                for (const c of cells) {
+                  if (prevEnd !== null) {
+                    // A wide horizontal gap means a new column; a small one is
+                    // just intra-cell kerning between word fragments.
+                    line += c.x - prevEnd > 6 ? ' | ' : ' ';
+                  }
+                  line += c.s;
+                  prevEnd = c.x + c.w;
+                }
+                if (line.trim()) lines.push(line.trim());
+              }
+            } catch { /* skip unreadable page, keep the rest */ }
+          }
+          pdfText = lines.join('\n');
         } catch (e: any) {
-          failures.push(`pdf-parse: ${e?.message || e}`);
+          failures.push(`pdfjs-layout: ${e?.message || e}`);
         }
 
         if (!pdfText || pdfText.trim().length < 20) {
           try {
-            const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
-            const loadingTask = pdfjsLib.getDocument({
-              data: new Uint8Array(buffer),
-              disableFontFace: true,
-              useSystemFonts: false,
-              isEvalSupported: false,
-            });
-            const pdf = await loadingTask.promise;
-            const parts: string[] = [];
-            for (let p = 1; p <= pdf.numPages; p++) {
-              try {
-                const page = await pdf.getPage(p);
-                const tc = await page.getTextContent();
-                parts.push(tc.items.map((it: any) => it.str).join(' '));
-              } catch { /* skip unreadable page */ }
-            }
-            pdfText = parts.join('\n');
+            const pdfData = await pdfParse(buffer);
+            pdfText = pdfData.text || '';
           } catch (e: any) {
-            failures.push(`pdfjs-dist: ${e?.message || e}`);
+            failures.push(`pdf-parse: ${e?.message || e}`);
           }
         }
 
@@ -228,6 +404,7 @@ EXTRACTION RULES:
 - Extract EVERY row present in the data below. Do not stop early, do not summarise, do not truncate.
 - If a table row wraps across lines, treat it as one product.
 - Return ALL rows you can see — there is no row limit.
+- A " | " in the data is a COLUMN SEPARATOR taken from the document's own layout. Treat each "|"-delimited value as its own field and never join two of them into one number. The first data line is usually the header row naming those columns.
 
 DOCUMENT DATA:
 ${dataText}`;
@@ -468,7 +645,36 @@ ${dataText}`;
     const textModel = process.env.IMPORT_TEXT_MODEL || 'meta/llama-3.1-8b-instruct';
     const visionModel = process.env.IMPORT_VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
 
-    const textChunks = extractedText.trim() ? chunkText(extractedText) : [];
+    // Read any real table straight from the document's own column layout. When
+    // this succeeds the values are exactly what the PDF contains, so we do NOT
+    // send that text to a model at all — an LLM can only re-derive the columns
+    // by guessing, and a guess that lands on the wrong column (quantity read
+    // from the discount column, say) is silently wrong.
+    const tableItems = extractedText.includes('|') ? parseLayoutTables(extractedText) : [];
+    const usedDeterministicTable = tableItems.length > 0;
+    if (usedDeterministicTable) {
+      if (targetType === 'purchase') {
+        // No model ran, so the header block has to be read from the layout too.
+        for (const [k, v] of Object.entries(parseInvoiceHeader(extractedText))) {
+          if (!header[k] && v) header[k] = v;
+        }
+      }
+      aggregatedItems.push(
+        ...tableItems.map((it) => ({
+          ...(targetType === 'purchase'
+            ? {
+                supplier: header.supplier || undefined,
+                invoiceNumber: header.invoiceNumber || undefined,
+                invoiceDate: header.invoiceDate || undefined,
+              }
+            : {}),
+          ...it,
+        })),
+      );
+    }
+
+    // Only fall back to the model when the layout gave us nothing to read.
+    const textChunks = usedDeterministicTable || !extractedText.trim() ? [] : chunkText(extractedText);
     textChunks.forEach((chunk, idx) => {
       tasks.push({
         label: `Text chunk ${idx + 1}/${textChunks.length}`,
@@ -567,11 +773,75 @@ ${dataText}`;
     });
     const duplicatesRemoved = aggregatedItems.length - dedupedItems.length;
 
+    // ── Arithmetic self-repair for invoice rows ─────────────────────────────
+    // Every GST invoice line satisfies:  taxable = qty × rate − discount
+    // That makes quantity recoverable even when the source text fused columns,
+    // which is the one field a layout glitch corrupts silently (a wrong price
+    // is obvious; a wrong quantity just quietly books the wrong stock).
+    // We only overwrite when the arithmetic is confident: a rate is present and
+    // the recomputed quantity is a near-whole number that disagrees with what
+    // was extracted. An HSN code that swallowed the quantity is trimmed too.
+    let repairedRows = 0;
+    const num = (v: any): number => {
+      if (v === undefined || v === null || v === '') return NaN;
+      const n = parseFloat(String(v).replace(/[₹,\s]/g, ''));
+      return Number.isFinite(n) ? n : NaN;
+    };
+    const pick = (it: any, keys: string[]): any => {
+      for (const k of Object.keys(it)) {
+        const norm = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (keys.includes(norm)) return it[k];
+      }
+      return undefined;
+    };
+
+    for (const it of dedupedItems as any[]) {
+      if (!it || typeof it !== 'object') continue;
+      const rate = num(pick(it, ['unitcost', 'rate', 'price', 'priceperunit', 'unitprice']));
+      const taxable = num(pick(it, ['taxableamount', 'taxable']));
+      const discountRaw = num(pick(it, ['discount', 'disc']));
+      const discount = Number.isFinite(discountRaw) ? discountRaw : 0;
+      if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(taxable)) continue;
+
+      const derived = (taxable + discount) / rate;
+      // Quantities on a real invoice are whole (or near-whole) units.
+      if (!Number.isFinite(derived) || derived <= 0) continue;
+      const rounded = Math.round(derived);
+      if (Math.abs(derived - rounded) > 0.02) continue;
+
+      const qtyKey = Object.keys(it).find(
+        (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'quantity',
+      ) || 'quantity';
+      const current = num(it[qtyKey]);
+
+      if (current !== rounded) {
+        it[qtyKey] = rounded;
+        repairedRows++;
+
+        // "6203" + "18" → "620318". With the true quantity known we can strip
+        // the swallowed digits and restore a valid 4/6/8-digit HSN code.
+        const hsnKey = Object.keys(it).find((k) =>
+          ['hsncode', 'hsn', 'hsnsac', 'sac'].includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')),
+        );
+        if (hsnKey) {
+          const hsn = String(it[hsnKey] ?? '').trim();
+          const suffix = String(rounded);
+          if (hsn.length > 4 && hsn.endsWith(suffix)) {
+            const trimmed = hsn.slice(0, -suffix.length);
+            if ([4, 6, 8].includes(trimmed.length)) it[hsnKey] = trimmed;
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
-      summary: `Extracted ${dedupedItems.length} rows from ${totalTasks} section(s) `
-        + `(${textChunks.length} text chunk(s), ${imagesToProcess.length} page image(s))`
+      summary: (usedDeterministicTable
+        ? `Read ${tableItems.length} rows directly from the document's table layout (exact values, no AI guessing)`
+        : `Extracted ${dedupedItems.length} rows from ${totalTasks} section(s) `
+          + `(${textChunks.length} text chunk(s), ${imagesToProcess.length} page image(s))`)
         + `${failedCount > 0 ? ` — ${failedCount} section(s) failed after retry` : ''}`
         + `${duplicatesRemoved > 0 ? `, ${duplicatesRemoved} duplicate(s) removed` : ''}`
+        + `${repairedRows > 0 ? `, ${repairedRows} quantity/HSN corrected from invoice totals` : ''}`
         + `${imageContents.length > MAX_IMAGES ? ` (first ${MAX_IMAGES} images processed)` : ''}`,
       stats: {
         sectionsTotal: totalTasks,
@@ -581,6 +851,10 @@ ${dataText}`;
         rowsExtracted: aggregatedItems.length,
         rowsAfterDedup: dedupedItems.length,
         duplicatesRemoved,
+        repairedRows,
+        // True when values came straight from the PDF's column layout rather
+        // than from a model — useful when diagnosing a bad import.
+        deterministicTable: usedDeterministicTable,
       },
       ...header,
       items: dedupedItems,

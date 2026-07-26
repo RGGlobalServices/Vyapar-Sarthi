@@ -4,6 +4,7 @@ import prisma from '@/lib/server/prisma';
 import { getPayuConfig, responseHash } from '@/lib/server/payu';
 import { readForm } from '@/lib/server/http';
 import { packageTypeForPlan, getPlanLimits } from '@/lib/planGates';
+import { getBaseAmount, getGstAmount, getTotalAmount, type BillingCycle } from '@/lib/subscriptionPricing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,11 +51,20 @@ export async function POST(req: Request) {
     }
     if (user) {
       const plan = payuData.udf1 || 'shop';
-      const planAmount = parseFloat(payuData.amount) || config.planAmounts[plan] || 0;
+      const cycle: BillingCycle = payuData.udf3 === 'yearly' ? 'yearly' : 'monthly';
+      // Recompute server-side from plan+cycle rather than trusting the posted
+      // amount — same defensive pattern as the previous flat-price fallback.
+      const planAmount = parseFloat(payuData.amount) || getTotalAmount(plan, cycle);
+      const baseAmount = getBaseAmount(plan, cycle);
+      const gstAmount = getGstAmount(baseAmount);
 
-      // One billing cycle (30 days) from the payment date.
+      // One billing cycle from the payment date: 30 days (monthly) or 1 year (yearly).
       const expiry = new Date();
-      expiry.setDate(expiry.getDate() + config.billingCycleDays);
+      if (cycle === 'yearly') {
+        expiry.setFullYear(expiry.getFullYear() + 1);
+      } else {
+        expiry.setDate(expiry.getDate() + config.billingCycleDays);
+      }
 
       const shops = await prisma.shop.findMany({ where: { ownerId: user.uuid! } });
       if (shops.length > 0) {
@@ -71,6 +81,7 @@ export async function POST(req: Request) {
               subscriptionExpiry: expiry,
               nextBillingDate: expiry,
               billingAmount: planAmount,
+              billingCycle: cycle,
               lastTxnId: payuData.txnid,
               firstChargeDate: mainShop.firstChargeDate ?? new Date(),
               subscriptionCancelledAt: null,
@@ -92,6 +103,9 @@ export async function POST(req: Request) {
               mihpayid: payuData.mihpayid || null,
               plan,
               amount: planAmount,
+              billingCycle: cycle,
+              baseAmount,
+              gstAmount,
               type: 'subscription',
               status: 'success',
               mode: payuData.mode || null,

@@ -16,13 +16,7 @@ export const config = {
   payuTestUrl: 'https://test.payu.in/_payment',
   payuRefundUrl: 'https://info.payu.in/merchant/postservice?form=2',
 
-  // Plan amounts (INR)
-  planAmounts: { shop: 299, vyapar: 499, wholesale: 999 } as Record<string, number>,
-  planLabels: {
-    shop: 'Dukaan Plan — ₹299/mo',
-    vyapar: 'Vyapar Plan — ₹499/mo',
-    wholesale: 'Udyog Plan — ₹999/mo',
-  } as Record<string, string>,
+  // Plan pricing/labels live in lib/subscriptionPricing.ts (base + GST, per billing cycle).
   trialInitAmount: 1,        // ₹1 refundable mandate-authentication charge
   trialDays: 7,              // default trial (no referral)
   trialDaysReferral: 14,     // trial when a referral code was applied

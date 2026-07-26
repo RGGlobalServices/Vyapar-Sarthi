@@ -23,6 +23,7 @@ interface User {
   referralCode: string | null;
   referralCount: number;
   maxShops?: number | null;
+  canAddShop?: boolean;
 }
 
 export default function AdminUsersPage() {
@@ -92,6 +93,15 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function toggleCanAddShop(userId: number, current: boolean) {
+    try {
+      await api.patch(`/admin/users/${userId}`, { canAddShop: !current });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, canAddShop: !current } : u));
+    } catch {
+      alert('Failed to update Add Shop permission');
+    }
+  }
+
   const filtered = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     u.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -146,6 +156,7 @@ export default function AdminUsersPage() {
                   <th className="px-6 py-4 font-black">Store</th>
                   <th className="px-6 py-4 font-black">Plan</th>
                   <th className="px-6 py-4 font-black">Limit</th>
+                  <th className="px-6 py-4 font-black">Add Shop</th>
                   <th className="px-6 py-4 font-black">Status</th>
                   <th className="px-6 py-4 font-black">Referrals</th>
                   <th className="px-6 py-4 font-black">Joined</th>
@@ -179,6 +190,19 @@ export default function AdminUsersPage() {
                         className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors border border-indigo-500/30 bg-indigo-500/10 px-2 py-1 rounded"
                       >
                         {user.maxShops !== null && user.maxShops !== undefined ? user.maxShops : 'Default'}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => toggleCanAddShop(user.id, user.canAddShop !== false)}
+                        title="Toggle whether this user can see the Add New Shop button"
+                        className={cn('text-xs font-black px-2.5 py-1 rounded-full transition-colors border',
+                          user.canAddShop !== false
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                            : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                        )}
+                      >
+                        {user.canAddShop !== false ? 'Allowed' : 'Blocked'}
                       </button>
                     </td>
                     <td className="px-6 py-4">

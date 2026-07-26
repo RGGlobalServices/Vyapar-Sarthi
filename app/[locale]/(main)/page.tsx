@@ -11,7 +11,7 @@ import { Link } from '@/i18n/routing';
 import {
   TrendingUp, Wallet, AlertTriangle, ShoppingCart,
   Package, IndianRupee, Calendar, Eye, EyeOff, RefreshCw, X,
-  Sparkles, CheckCircle,
+  Sparkles, CheckCircle, Receipt, Banknote, HandCoins,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { planLabel } from '@/lib/planGates';
@@ -61,7 +61,23 @@ function DashboardInner() {
     period_udhar: 0,
     low_stock_count: 0,
     returns_amount: 0,
-    returns_count: 0
+    returns_count: 0,
+    sales_collection: 0,
+    udhar_collection: 0,
+    advance_collection: 0,
+    total_collection: 0,
+    expenses_amount: 0,
+    expenses_count: 0,
+    today_expenses_amount: 0,
+    today_expenses_count: 0,
+    month_expenses_amount: 0,
+    month_expenses_count: 0,
+    net_in_hand: 0,
+    net_profit: 0,
+    collection_cash: 0,
+    collection_upi: 0,
+    collection_card: 0,
+    collection_other: 0,
   });
   const [data, setData] = useState<any>({
     salesTrend: [],
@@ -128,7 +144,7 @@ function DashboardInner() {
       });
     } catch (e) {
       console.error("Failed to refill stock", e);
-      alert("Failed to update stock");
+      alert(t('failedToUpdateStock'));
     } finally {
       setRefillLoading(null);
     }
@@ -222,6 +238,22 @@ function DashboardInner() {
         low_stock_count: payload.summary?.low_stock_count ?? 0,
         returns_amount: payload.summary?.returns_amount ?? 0,
         returns_count: payload.summary?.returns_count ?? 0,
+        sales_collection: payload.summary?.sales_collection ?? 0,
+        udhar_collection: payload.summary?.udhar_collection ?? 0,
+        advance_collection: payload.summary?.advance_collection ?? 0,
+        total_collection: payload.summary?.total_collection ?? 0,
+        expenses_amount: payload.summary?.expenses_amount ?? 0,
+        expenses_count: payload.summary?.expenses_count ?? 0,
+        today_expenses_amount: payload.summary?.today_expenses_amount ?? 0,
+        today_expenses_count: payload.summary?.today_expenses_count ?? 0,
+        month_expenses_amount: payload.summary?.month_expenses_amount ?? 0,
+        month_expenses_count: payload.summary?.month_expenses_count ?? 0,
+        net_in_hand: payload.summary?.net_in_hand ?? 0,
+        net_profit: payload.summary?.net_profit ?? 0,
+        collection_cash: payload.summary?.collection_cash ?? 0,
+        collection_upi: payload.summary?.collection_upi ?? 0,
+        collection_card: payload.summary?.collection_card ?? 0,
+        collection_other: payload.summary?.collection_other ?? 0,
       });
       setData({
         lowStock: payload.lowStock || [],
@@ -425,6 +457,56 @@ function DashboardInner() {
         </div>
       </div>
 
+      {/* ── Today's money: what came in, what went out, what's left ──
+          Separated from the operational stats below because these are
+          cash-flow figures (money actually moved), not billed value. */}
+      {role !== 'staff' && (
+        <div>
+          <div className="flex items-baseline gap-2 mb-3">
+            <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">
+              {timeframe === t('today') ? t('todaysMoney') : t('periodMoney', { timeframe })}
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
+            <StatCard
+              title={t('totalCollection')}
+              value={`₹ ${Math.round(stats.total_collection).toLocaleString('en-IN')}`}
+              icon={<Banknote className="text-emerald-500" />}
+              href="/reports"
+              accent="emerald"
+              breakdown={[
+                { label: t('cashLabel'), amount: stats.collection_cash },
+                { label: t('upiLabel'), amount: stats.collection_upi },
+                { label: t('cardLabel'), amount: stats.collection_card },
+                { label: t('otherLabel'), amount: stats.collection_other },
+              ]}
+              footnote={t('collectionFootnote', {
+                billing: Math.round(stats.sales_collection).toLocaleString('en-IN'),
+                udhar: Math.round(stats.udhar_collection).toLocaleString('en-IN'),
+                advance: stats.advance_collection > 0 ? t('advanceSuffix', { amount: Math.round(stats.advance_collection).toLocaleString('en-IN') }) : '',
+              })}
+            />
+            <StatCard
+              title={timeframe === t('today') ? t('todaysUdharCollection') : t('periodUdharCollection', { timeframe })}
+              value={`₹ ${Math.round(stats.udhar_collection).toLocaleString('en-IN')}`}
+              subtitle={t('receivedInUdharSection')}
+              icon={<HandCoins className="text-blue-500" />}
+              href="/udhar"
+              accent="blue"
+            />
+            <StatCard
+              title={t('todaysExpenses')}
+              value={`₹ ${Math.round(stats.today_expenses_amount).toLocaleString('en-IN')}`}
+              subtitle={t('plusThisMonth', { amount: Math.round(stats.month_expenses_amount).toLocaleString('en-IN') })}
+              footnote={stats.today_expenses_count > 0 ? t('entriesToday', { count: stats.today_expenses_count }) : t('noExpensesToday')}
+              icon={<Receipt className="text-rose-500" />}
+              href="/expenses"
+              accent="rose"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Main Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-6">
         <StatCard 
@@ -441,10 +523,10 @@ function DashboardInner() {
             href="/reports"
           />
         )}
-        <StatCard 
-          title={timeframe === t('today') ? "TODAY'S UDHAR" : "PERIOD UDHAR"} 
-          value={`₹ ${Math.round(stats.period_udhar).toLocaleString('en-IN')}`} 
-          subtitle={`+ ₹${Math.round(stats.total_udhar).toLocaleString('en-IN')} total udhar`}
+        <StatCard
+          title={timeframe === t('today') ? t('todaysUdharAllCaps') : t('periodUdharAllCaps')}
+          value={`₹ ${Math.round(stats.period_udhar).toLocaleString('en-IN')}`}
+          subtitle={t('plusTotalUdhar', { amount: Math.round(stats.total_udhar).toLocaleString('en-IN') })}
           icon={<Wallet className="text-orange-500" />} 
           href="/udhar"
         />
@@ -498,7 +580,7 @@ function DashboardInner() {
             )) : (
               <div className="py-12 flex flex-col items-center justify-center text-center">
                 <Package size={24} className="text-slate-400 dark:text-slate-700 mb-2" />
-                <p className="text-sm text-slate-500 font-medium tracking-tight">No sales data for {timeframe}</p>
+                <p className="text-sm text-slate-500 font-medium tracking-tight">{t('noSalesDataFor', { timeframe })}</p>
               </div>
             )}
           </CardContent>
@@ -522,7 +604,7 @@ function DashboardInner() {
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{item.category}</p>
                 </div>
                 <span className="text-xs font-black text-red-600 dark:text-red-400 bg-red-500/10 dark:bg-red-400/10 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-400/20">
-                  {item.current_stock} Left
+                  {t('leftSuffix', { count: item.current_stock })}
                 </span>
               </div>
             )) : (
@@ -552,7 +634,7 @@ function DashboardInner() {
               >
                 <div>
                   <p className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tighter group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    {bill.customer_name || 'Walk-in Customer'}
+                    {bill.customer_name || t('walkInCustomer')}
                   </p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono">
@@ -572,7 +654,7 @@ function DashboardInner() {
               </Link>
             )) : (
               <div className="py-10 text-center">
-                <p className="text-sm text-slate-500 font-medium tracking-tight">No recent billing activity</p>
+                <p className="text-sm text-slate-500 font-medium tracking-tight">{t('noRecentBillingActivity')}</p>
               </div>
             )}
           </CardContent>
@@ -600,13 +682,13 @@ function DashboardInner() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">{item.qty} {t('units')}</p>
-                  <p className="text-[10px] text-blue-600 dark:text-blue-500/80 font-bold">₹{item.value.toLocaleString('en-IN')} rev</p>
+                  <p className="text-[10px] text-blue-600 dark:text-blue-500/80 font-bold">₹{item.value.toLocaleString('en-IN')} {t('revSuffix')}</p>
                 </div>
               </div>
             )) : (
               <div className="py-12 flex flex-col items-center justify-center text-center">
                 <Package size={24} className="text-slate-400 dark:text-slate-700 mb-2" />
-                <p className="text-sm text-slate-500 font-medium tracking-tight">No fast moving items found</p>
+                <p className="text-sm text-slate-500 font-medium tracking-tight">{t('noFastMovingItems')}</p>
               </div>
             )}
           </CardContent>
@@ -639,7 +721,7 @@ function DashboardInner() {
             )) : (
               <div className="py-12 flex flex-col items-center justify-center text-center">
                 <CheckCircle size={24} className="text-emerald-400 dark:text-emerald-700 mb-2" />
-                <p className="text-sm text-slate-500 font-medium tracking-tight">No slow moving items found</p>
+                <p className="text-sm text-slate-500 font-medium tracking-tight">{t('noSlowMovingItems')}</p>
               </div>
             )}
           </CardContent>
@@ -699,7 +781,7 @@ function DashboardInner() {
                 <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <TrendingUp className="text-emerald-500" /> {t('all')} {t('topProducts')}
                 </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Sorted by highest revenue ({timeframe})</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">{t('sortedByRevenue', { timeframe })}</p>
               </div>
               <button 
                 onClick={() => setShowTopProductsModal(false)}
@@ -713,17 +795,17 @@ function DashboardInner() {
               {loadingFullTop ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <RefreshCw className="animate-spin text-emerald-500 mb-4" size={32} />
-                  <p className="text-slate-500 dark:text-slate-400 font-medium">Loading full list...</p>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">{t('loadingFullList')}</p>
                 </div>
               ) : fullTopProducts.length > 0 ? (
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-xs uppercase sticky top-0 backdrop-blur-md z-10">
                     <tr>
-                      <th className="px-6 py-4 font-bold">Rank</th>
-                      <th className="px-6 py-4 font-bold">Product</th>
-                      <th className="px-6 py-4 font-bold">Category</th>
-                      <th className="px-6 py-4 font-bold text-right">Revenue</th>
-                      <th className="px-6 py-4 font-bold text-right">Units Sold</th>
+                      <th className="px-6 py-4 font-bold">{t('rankHeader')}</th>
+                      <th className="px-6 py-4 font-bold">{t('productHeader')}</th>
+                      <th className="px-6 py-4 font-bold">{t('categoryHeader')}</th>
+                      <th className="px-6 py-4 font-bold text-right">{t('revenueHeader')}</th>
+                      <th className="px-6 py-4 font-bold text-right">{t('unitsSoldHeader')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
@@ -755,8 +837,8 @@ function DashboardInner() {
               ) : (
                 <div className="py-20 flex flex-col items-center justify-center text-center">
                   <Package size={48} className="text-slate-300 dark:text-slate-800 mb-4" />
-                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">No products found</p>
-                  <p className="text-sm text-slate-500 font-medium mt-1">There were no sales in the selected timeframe.</p>
+                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">{t('noProductsFound')}</p>
+                  <p className="text-sm text-slate-500 font-medium mt-1">{t('noSalesInTimeframe')}</p>
                 </div>
               )}
             </div>
@@ -773,7 +855,7 @@ function DashboardInner() {
                 <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <AlertTriangle className="text-red-500" /> {t('all')} {t('stockAlerts')}
                 </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">Items that have reached minimum stock levels</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">{t('itemsAtMinStockLevel')}</p>
               </div>
               <button 
                 onClick={() => setShowStockAlertsModal(false)}
@@ -787,17 +869,17 @@ function DashboardInner() {
               {loadingFullAlerts ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <RefreshCw className="animate-spin text-red-500 mb-4" size={32} />
-                  <p className="text-slate-500 dark:text-slate-400 font-medium">Checking inventory...</p>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">{t('checkingInventory')}</p>
                 </div>
               ) : fullStockAlerts.length > 0 ? (
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-[10px] uppercase sticky top-0 backdrop-blur-md z-10 border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                      <th className="px-6 py-4 font-black">Product</th>
-                      <th className="px-6 py-4 font-black text-center">In Stock</th>
-                      <th className="px-6 py-4 font-black text-center">Min Level</th>
-                      <th className="px-6 py-4 font-black">Refill Amount</th>
-                      <th className="px-6 py-4 font-black text-right">Action</th>
+                      <th className="px-6 py-4 font-black">{t('productHeader')}</th>
+                      <th className="px-6 py-4 font-black text-center">{t('inStockHeader')}</th>
+                      <th className="px-6 py-4 font-black text-center">{t('minLevelHeader')}</th>
+                      <th className="px-6 py-4 font-black">{t('refillAmountHeader')}</th>
+                      <th className="px-6 py-4 font-black text-right">{t('actionHeader')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
@@ -821,7 +903,7 @@ function DashboardInner() {
                         <td className="px-6 py-4">
                           <input 
                             type="number" 
-                            placeholder="+ Qty"
+                            placeholder={t('qtyPlaceholder')}
                             className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white w-24 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
                             value={refillValues[item.id] || ''}
                             onChange={e => setRefillValues({...refillValues, [item.id]: e.target.value})}
@@ -833,7 +915,7 @@ function DashboardInner() {
                             disabled={refillLoading === item.id || !refillValues[item.id]}
                             className="bg-emerald-500 text-white dark:text-slate-900 px-4 py-1.5 rounded-lg text-xs font-black hover:bg-emerald-400 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95"
                           >
-                            {refillLoading === item.id ? <RefreshCw size={14} className="animate-spin mx-auto" /> : 'Refill'}
+                            {refillLoading === item.id ? <RefreshCw size={14} className="animate-spin mx-auto" /> : t('refillBtn')}
                           </button>
                         </td>
                       </tr>
@@ -843,8 +925,8 @@ function DashboardInner() {
               ) : (
                 <div className="py-20 flex flex-col items-center justify-center text-center">
                   <Package size={48} className="text-slate-300 dark:text-slate-800 mb-4" />
-                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">No stock alerts</p>
-                  <p className="text-sm text-slate-500 font-medium mt-1">Your inventory levels are healthy.</p>
+                  <p className="text-lg text-slate-600 dark:text-slate-300 font-bold">{t('noStockAlerts')}</p>
+                  <p className="text-sm text-slate-500 font-medium mt-1">{t('inventoryHealthy')}</p>
                 </div>
               )}
             </div>
@@ -863,20 +945,71 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon, href, subtitle }: { title: string; value: string; icon: React.ReactNode; href?: string; subtitle?: string }) {
+type Accent = 'slate' | 'emerald' | 'blue' | 'rose' | 'indigo' | 'red';
+
+// Bottom border tints the card by meaning: money-in green, money-out red,
+// the closing figure indigo. Keeps the row scannable at a glance.
+const ACCENT_BAR: Record<Accent, string> = {
+  slate: 'border-b-slate-200 dark:border-b-slate-800',
+  emerald: 'border-b-emerald-500',
+  blue: 'border-b-blue-500',
+  rose: 'border-b-rose-500',
+  indigo: 'border-b-indigo-500',
+  red: 'border-b-red-500',
+};
+
+function StatCard({ title, value, icon, href, subtitle, accent = 'slate', highlight, breakdown, footnote }: {
+  title: string; value: string; icon: React.ReactNode; href?: string; subtitle?: string;
+  accent?: Accent; highlight?: boolean;
+  /** Payment-mode split shown under the value. Zero rows are dropped. */
+  breakdown?: { label: string; amount: number }[];
+  footnote?: string;
+}) {
+  const shownBreakdown = (breakdown || []).filter(b => Math.round(b.amount) > 0);
   const card = (
-    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 border-b-slate-200 dark:border-b-slate-800 hover:border-emerald-500/50 transition-all duration-300 cursor-pointer h-full">
+    <Card className={cn(
+      'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 transition-all duration-300 cursor-pointer h-full hover:border-emerald-500/50',
+      ACCENT_BAR[accent],
+      highlight && 'ring-1 ring-indigo-500/25 shadow-md shadow-indigo-500/5',
+    )}>
       <CardHeader className="flex flex-row items-center justify-between pb-1 md:pb-2 p-4 md:p-6">
         <CardTitle className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest leading-tight">{title}</CardTitle>
         <div className="scale-75 md:scale-100 origin-right">{icon}</div>
       </CardHeader>
       <CardContent className="px-4 pb-4 md:px-6 md:pb-6 pt-0 flex flex-col justify-end min-h-[60px]">
-        <div className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tighter">{value}</div>
-        {subtitle && <p className="text-[10px] md:text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1">{subtitle}</p>}
+        <div className={cn(
+          'text-xl md:text-2xl font-black tracking-tighter',
+          accent === 'red' ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-50',
+        )}>{value}</div>
+        {subtitle && (
+          <p className={cn(
+            'text-[10px] md:text-xs font-bold mt-1',
+            accent === 'rose' ? 'text-rose-600 dark:text-rose-400'
+              : accent === 'red' ? 'text-red-600 dark:text-red-400'
+              : accent === 'blue' ? 'text-blue-600 dark:text-blue-400'
+              : accent === 'indigo' ? 'text-indigo-600 dark:text-indigo-400'
+              : 'text-emerald-600 dark:text-emerald-400',
+          )}>{subtitle}</p>
+        )}
+
+        {shownBreakdown.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {shownBreakdown.map(b => (
+              <span key={b.label}
+                className="text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                {b.label} ₹{Math.round(b.amount).toLocaleString('en-IN')}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {footnote && (
+          <p className="text-[9px] md:text-[10px] font-medium text-slate-400 mt-1.5 leading-tight">{footnote}</p>
+        )}
       </CardContent>
     </Card>
   );
-  
+
   return href ? (
     <Link href={href as any} className="block group">
       {card}

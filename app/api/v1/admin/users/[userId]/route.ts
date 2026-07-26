@@ -96,6 +96,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     businessType: user.businessType || '',
     isActive: !!user.isActive,
     maxShops: user.maxShops,
+    canAddShop: user.canAddShop !== false,
     createdAt: user.createdAt,
     shop: shop || null,
     referralCode: referralCode || null,
@@ -159,7 +160,11 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (body.maxShops !== undefined) {
     updateData.maxShops = body.maxShops === null ? null : parseInt(body.maxShops, 10);
   }
-  
+
+  if (body.canAddShop !== undefined) {
+    updateData.canAddShop = !!body.canAddShop;
+  }
+
   if (Object.keys(updateData).length === 0) {
     throw new ApiError(400, 'No valid fields provided for update');
   }

@@ -9,11 +9,19 @@
 // ("Selling Price") rather than showing two competing columns.
 
 import { getBusinessConfig, BusinessType } from './businessConfig';
+import { mapColumns, refineWithArithmetic, inferRateByArithmetic, ValueProfile } from './importFieldMapper';
 
 export interface ImportColumn {
   label: string;      // canonical header shown in the preview and sent to the server
   aliases: string[];  // other header spellings to pull the value from
   numeric?: boolean;
+  /**
+   * What this column's DATA should look like. Aliases can only recognise
+   * headers we thought of; the profile lets the mapper identify a column from
+   * its values, which is what makes an unfamiliar supplier's bill work — and
+   * what stops a "GST" column holding the tax amount from being read as a rate.
+   */
+  profile?: ValueProfile;
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -21,17 +29,19 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 function productColumns(businessType?: string): ImportColumn[] {
   const cfg = getBusinessConfig((businessType || 'general') as BusinessType);
   const cols: ImportColumn[] = [
-    { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname'] },
-    { label: 'Barcode', aliases: ['sku'] },
-    { label: 'Category', aliases: [] },
-    { label: 'Unit', aliases: [] },
-    { label: 'Quantity', aliases: ['stock', 'qty', 'openingstock'], numeric: true },
-    { label: 'MRP', aliases: [], numeric: true },
-    { label: 'Selling Price', aliases: ['price', 'rate'], numeric: true },
-    { label: 'Cost Price', aliases: ['wholesalecost', 'cost', 'purchaseprice'], numeric: true },
-    { label: 'Min Stock', aliases: ['minlevel', 'minstock'], numeric: true },
-    { label: 'HSN Code', aliases: ['hsn', 'sac'] },
-    { label: 'GST %', aliases: ['gstpercent', 'gstrate', 'taxrate'], numeric: true },
+    { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname', 'itemname', 'particulars', 'goods'], profile: 'name' },
+    { label: 'Barcode', aliases: ['companybarcode', 'itembarcode', 'ean', 'upc'], profile: 'barcode' },
+    { label: 'SKU', aliases: ['skucode', 'itemcode', 'stockcode', 'code', 'articleno', 'articlecode'], profile: 'text' },
+    { label: 'Carton Barcode', aliases: ['cartoncode', 'cartonbarcode', 'boxbarcode', 'outerbarcode', 'casebarcode'], profile: 'barcode' },
+    { label: 'Category', aliases: ['group', 'type'], profile: 'text' },
+    { label: 'Unit', aliases: ['uom', 'packing'], profile: 'unit' },
+    { label: 'Quantity', aliases: ['stock', 'qty', 'openingstock', 'nos', 'pcs', 'units'], numeric: true, profile: 'quantity' },
+    { label: 'MRP', aliases: ['maxretailprice', 'listprice'], numeric: true, profile: 'price' },
+    { label: 'Selling Price', aliases: ['price', 'rate', 'sellingprice', 'sellprice', 'saleprice', 'priceperunit', 'unitprice'], numeric: true, profile: 'price' },
+    { label: 'Cost Price', aliases: ['wholesalecost', 'cost', 'purchaseprice', 'costprice', 'unitcost', 'purchaserate', 'buyingprice'], numeric: true, profile: 'price' },
+    { label: 'Min Stock', aliases: ['minlevel', 'minstock', 'reorderlevel'], numeric: true, profile: 'quantity' },
+    { label: 'HSN Code', aliases: ['hsn', 'sac', 'hsncode', 'hsnsac'], profile: 'hsn' },
+    { label: 'GST %', aliases: ['gstpercent', 'gstpercentage', 'gstrate', 'taxrate', 'gstpct', 'taxpercent', 'gst'], numeric: true, profile: 'gstRate' },
   ];
   // Business-type extras — only the ones that shop actually captures.
   if (cfg.hasExpiry) cols.push({ label: 'Expiry Date', aliases: ['expiry'] });
@@ -51,16 +61,19 @@ export function getImportTemplate(importType: string, businessType?: string): Im
       return productColumns(businessType);
     case 'purchase':
       return [
-        { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname'] },
-        { label: 'Barcode', aliases: ['sku'] },
-        { label: 'Category', aliases: [] },
-        { label: 'Unit', aliases: [] },
-        { label: 'Quantity', aliases: ['qty', 'stock'], numeric: true },
-        { label: 'Unit Cost', aliases: ['cost', 'wholesalecost', 'price', 'rate'], numeric: true },
-        { label: 'GST %', aliases: ['gst', 'gstpercent', 'taxrate'], numeric: true },
-        { label: 'Supplier', aliases: ['vendor', 'vendorname', 'suppliername'] },
-        { label: 'Invoice Number', aliases: ['billnumber', 'invoice'] },
-        { label: 'Date', aliases: ['billdate', 'invoicedate'] },
+        { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname', 'itemname', 'particulars', 'goods'], profile: 'name' },
+        { label: 'Barcode', aliases: ['companybarcode', 'itembarcode', 'ean', 'upc'], profile: 'barcode' },
+        { label: 'SKU', aliases: ['skucode', 'itemcode', 'stockcode', 'code', 'articleno', 'articlecode'], profile: 'text' },
+        { label: 'Carton Barcode', aliases: ['cartoncode', 'cartonbarcode', 'boxbarcode', 'outerbarcode', 'casebarcode'], profile: 'barcode' },
+        { label: 'Category', aliases: ['group', 'type'], profile: 'text' },
+        { label: 'Unit', aliases: ['uom', 'packing'], profile: 'unit' },
+        { label: 'Quantity', aliases: ['qty', 'stock', 'nos', 'pcs', 'units'], numeric: true, profile: 'quantity' },
+        { label: 'Unit Cost', aliases: ['cost', 'wholesalecost', 'price', 'rate', 'unitcost', 'priceperunit', 'unitprice', 'purchaserate'], numeric: true, profile: 'price' },
+        { label: 'HSN Code', aliases: ['hsn', 'sac', 'hsncode', 'hsnsac'], profile: 'hsn' },
+        { label: 'GST %', aliases: ['gstpercent', 'gstpercentage', 'gstrate', 'taxrate', 'gstpct', 'taxpercent', 'gst'], numeric: true, profile: 'gstRate' },
+        { label: 'Supplier', aliases: ['vendor', 'vendorname', 'suppliername'], profile: 'name' },
+        { label: 'Invoice Number', aliases: ['billnumber', 'invoice', 'invoiceno'], profile: 'text' },
+        { label: 'Date', aliases: ['billdate', 'invoicedate'], profile: 'date' },
       ];
     case 'customers':
       return [
@@ -121,16 +134,41 @@ export function applyTemplate(
 
   // Which file headers get consumed by a template column (so we don't also show
   // them again as "extra" columns).
-  const consumed = new Set<string>();
-  const colSourceFor = (col: ImportColumn): string | null => {
-    const wanted = [norm(col.label), ...col.aliases.map(norm)];
-    for (const h of fileHeaders) {
-      if (wanted.includes(norm(h))) return h;
+  // Score every (field, column) pair on header name AND data shape, then take
+  // the best consistent assignment. This is what lets an unfamiliar supplier's
+  // bill map correctly without us having pre-registered its header spellings.
+  let { assignment } = mapColumns(template, fileHeaders, rawRows);
+
+  // Quantity is the field a mis-map corrupts silently, so verify it against the
+  // line arithmetic (amount ≈ quantity × rate) and swap in a better column when
+  // the numbers disagree.
+  const qtyLabel = template.find(c => c.label === 'Quantity')?.label;
+  const rateLabel = template.find(c => c.label === 'Unit Cost' || c.label === 'Selling Price')?.label;
+
+  // A rate column with an unfamiliar name ("Dar", "Bhav") is invisible to both
+  // the alias list and the value profile — three fields all look like money.
+  // The line arithmetic identifies it regardless of its header.
+  if (qtyLabel && rateLabel) {
+    assignment = inferRateByArithmetic(assignment, fileHeaders, rawRows, qtyLabel, rateLabel);
+  }
+
+  if (qtyLabel && rateLabel) {
+    const amountHeader = fileHeaders.find(h =>
+      ['amount', 'total', 'lineamount', 'netamount', 'value'].includes(norm(h)),
+    );
+    if (amountHeader) {
+      assignment = refineWithArithmetic(
+        { ...assignment, __amount: amountHeader },
+        fileHeaders,
+        rawRows,
+        { quantity: qtyLabel, rate: rateLabel, amount: '__amount' },
+      );
+      delete (assignment as any).__amount;
     }
-    return null;
-  };
-  const sources = template.map(col => ({ col, src: colSourceFor(col) }));
-  sources.forEach(s => { if (s.src) consumed.add(s.src); });
+  }
+
+  const sources = template.map(col => ({ col, src: assignment[col.label] ?? null }));
+  const consumed = new Set<string>(sources.map(s => s.src).filter(Boolean) as string[]);
 
   const extraHeaders = fileHeaders.filter(h => !consumed.has(h));
   const headers = [...template.map(c => c.label), ...extraHeaders];

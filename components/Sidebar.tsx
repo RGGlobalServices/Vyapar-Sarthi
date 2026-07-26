@@ -88,7 +88,7 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const { user, loadFromStorage, logout, role, setRole } = useAuthStore();
-  const { profile, fetchProfile, allShops, activeShopId, fetchAllShops, switchShop, createShop, loading, deleteShop } = useBusinessStore();
+  const { profile, fetchProfile, allShops, activeShopId, fetchAllShops, switchShop, createShop, loading, deleteShop, shopLimit } = useBusinessStore();
   const t = useTranslations('Nav');
   const ended = isSubscriptionEnded(profile);
   const [showShopMenu, setShowShopMenu] = useState(false);
@@ -141,7 +141,7 @@ export default function Sidebar({
       }
       setShowAdminPinModal(false);
     } catch (err: any) {
-      setPinError(err.response?.data?.detail || err.response?.data?.error || err.message || 'Incorrect Password/PIN');
+      setPinError(err.response?.data?.detail || err.response?.data?.error || err.message || t('incorrectPin'));
     } finally {
       setVerifyingPin(false);
     }
@@ -170,7 +170,7 @@ export default function Sidebar({
       setShopForm(emptyShopForm);
       setShowShopMenu(false);
     } catch (err: any) {
-      alert(err.response?.data?.detail || err.response?.data?.error || err.message || 'Failed to create shop');
+      alert(err.response?.data?.detail || err.response?.data?.error || err.message || t('failedToCreateShop'));
     }
     finally { setCreatingShop(false); }
   }
@@ -225,6 +225,12 @@ export default function Sidebar({
   const currentPackageConfig = getPackageConfig(profile.packageType);
   const currentBusinessConfig = getBusinessConfig(profile.businessType);
 
+  // Single-shop plans (Dukan) with exactly one shop have nothing to switch
+  // between — accounts grandfathered in with several shops already keep the
+  // switcher so they don't lose access to shops they already created.
+  const canSwitchShops = allShops.length > 1 || shopLimit.multiShop;
+  const ShopHeaderTag = (canSwitchShops ? 'button' : 'div') as 'button' | 'div';
+
   // Filter master list based on allowed modules for this shop's package
   const baseMenuItems = masterMenuItems.filter(item => 
     item.external || currentPackageConfig.modules.includes(item.key)
@@ -254,10 +260,14 @@ export default function Sidebar({
         isMobileOpen ? "translate-x-0" : "-translate-x-full"
       )}>
       <div className="relative border-b border-slate-200 dark:border-slate-800">
-        {/* Shop header + switcher */}
-        <button
-          onClick={() => setShowShopMenu(s => !s)}
-          className="w-full p-4 flex flex-col gap-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/40 transition-colors text-left"
+        {/* Shop header + switcher. Single-shop plans (Dukan) with only one
+            shop have nothing to switch between, so this renders as inert. */}
+        <ShopHeaderTag
+          {...(canSwitchShops ? { onClick: () => setShowShopMenu(s => !s) } : {})}
+          className={cn(
+            "w-full p-4 flex flex-col gap-2 transition-colors text-left",
+            canSwitchShops && "hover:bg-slate-200/50 dark:hover:bg-slate-800/40"
+          )}
         >
           {/* Main Business Identity */}
           <div className="flex items-center gap-3">
@@ -293,14 +303,16 @@ export default function Sidebar({
                 {profile.shopName || (mounted && profile.subscriptionPlan === 'wholesale' ? 'Main Warehouse' : 'Main Store')}
               </span>
             </div>
-            <ChevronDown size={14} className={cn('text-slate-400 group-hover:text-emerald-500 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
+            {canSwitchShops && (
+              <ChevronDown size={14} className={cn('text-slate-400 group-hover:text-emerald-500 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
+            )}
           </div>
-        </button>
+        </ShopHeaderTag>
 
         {/* Shop dropdown */}
-        {showShopMenu && (
+        {canSwitchShops && showShopMenu && (
           <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-50 overflow-hidden flex flex-col max-h-[60vh]">
-            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1 flex-shrink-0">Your Shops</p>
+            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-4 pt-3 pb-1 flex-shrink-0">{t('yourShops')}</p>
             {/* Scrolls when the shop list is long; header above and Add button below stay put. */}
             <div className="overflow-y-auto flex-1 min-h-0">
             {allShops.map(shop => (
@@ -332,7 +344,7 @@ export default function Sidebar({
                       setShowAdminPinModal(true);
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all opacity-100 z-10"
-                    title="Remove Shop"
+                    title={t('removeShop')}
                   >
                     <Trash2 size={13} />
                   </button>
@@ -341,11 +353,18 @@ export default function Sidebar({
             ))}
             </div>
 
-            {/* Add new shop — opens the full details modal */}
-            <button onClick={() => { setShopForm(emptyShopForm); setShowNewShop(true); setShowShopMenu(false); }}
-              className="w-full flex items-center gap-2 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-800 text-xs font-semibold">
-              <Plus size={13} /> Add New Shop
-            </button>
+            {/* Add new shop — opens the full details modal. Hidden once the
+                admin-set or plan shop limit is reached. */}
+            {shopLimit.canAdd ? (
+              <button onClick={() => { setShopForm(emptyShopForm); setShowNewShop(true); setShowShopMenu(false); }}
+                className="w-full flex items-center gap-2 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-800 text-xs font-semibold">
+                <Plus size={13} /> {t('addNewShop')}
+              </button>
+            ) : (
+              <p className="px-4 py-3 text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-800 text-center">
+                {shopLimit.max ? t('shopLimitReached', { max: shopLimit.max }) : t('shopCreationDisabled')}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -368,15 +387,15 @@ export default function Sidebar({
         {isSwitchingShop && (
           <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center pt-10">
             <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
-            <p className="text-sm font-bold text-slate-700 dark:text-slate-300 text-center px-4">Switching to <br/><span className="text-emerald-600">{switchingToName}</span>...</p>
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300 text-center px-4">{t('switchingTo', { name: switchingToName })}</p>
           </div>
         )}
-        
+
         {allShops.length === 0 && !loading && (
           <div className="py-8 px-4 text-center bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800/50 my-4 mx-2">
             <Store className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400">Create your first Shop</p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-500/80 mt-1">Click the button above to get started</p>
+            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400">{t('createFirstShop')}</p>
+            <p className="text-xs text-emerald-600 dark:text-emerald-500/80 mt-1">{t('createFirstShopHint')}</p>
           </div>
         )}
 
@@ -546,17 +565,17 @@ export default function Sidebar({
                 <Store size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Add New Shop</h2>
-                <p className="text-xs text-slate-500">Enter your business details</p>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('addNewShop')}</h2>
+                <p className="text-xs text-slate-500">{t('enterBusinessDetails')}</p>
               </div>
             </div>
 
             {/* Shop name */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shop / Store Name <span className="text-red-500 dark:text-red-400">*</span></label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('shopStoreName')} <span className="text-red-500 dark:text-red-400">*</span></label>
               <input autoFocus
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                placeholder="e.g. Rahul Kirana Store"
+                placeholder={t('shopNamePlaceholder')}
                 value={shopForm.name}
                 onChange={e => setShopForm(f => ({ ...f, name: e.target.value }))}
               />
@@ -564,7 +583,7 @@ export default function Sidebar({
 
             {/* Business category */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Business Category <span className="text-red-500 dark:text-red-400">*</span></label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('businessCategory')} <span className="text-red-500 dark:text-red-400">*</span></label>
               <select
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 value={shopForm.businessType}
@@ -579,10 +598,10 @@ export default function Sidebar({
             <div className="grid grid-cols-2 gap-3">
               {/* Contact mobile */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Contact Number</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('contactNumber')}</label>
                 <input
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  placeholder="10-digit number"
+                  placeholder={t('contactNumberPlaceholder')}
                   inputMode="numeric"
                   value={shopForm.mobile}
                   onChange={e => setShopForm(f => ({ ...f, mobile: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
@@ -591,10 +610,10 @@ export default function Sidebar({
 
               {/* GST */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">GST Number</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('gstNumber')}</label>
                 <input
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 uppercase"
-                  placeholder="Optional"
+                  placeholder={t('optional')}
                   value={shopForm.gst}
                   onChange={e => setShopForm(f => ({ ...f, gst: e.target.value.toUpperCase() }))}
                 />
@@ -603,10 +622,10 @@ export default function Sidebar({
 
             {/* Address */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shop Address</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('shopAddress')}</label>
               <textarea rows={2}
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
-                placeholder="Shop no., street, area, city, pincode"
+                placeholder={t('shopAddressPlaceholder')}
                 value={shopForm.address}
                 onChange={e => setShopForm(f => ({ ...f, address: e.target.value }))}
               />
@@ -616,11 +635,11 @@ export default function Sidebar({
             <div className="flex gap-3 pt-1">
               <button onClick={() => { setShowNewShop(false); setShopForm(emptyShopForm); }} disabled={creatingShop}
                 className="flex-1 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all disabled:opacity-50">
-                Cancel
+                {t('cancel')}
               </button>
               <button onClick={handleCreateShop} disabled={!shopForm.name.trim() || creatingShop}
                 className="flex-1 py-2.5 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl text-sm hover:bg-emerald-600 dark:hover:bg-emerald-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-                {creatingShop ? 'Creating…' : 'Create Shop'}
+                {creatingShop ? t('creating') : t('createShopBtn')}
               </button>
             </div>
           </div>
@@ -631,23 +650,23 @@ export default function Sidebar({
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm shadow-xl p-6">
             <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">
-              {shopToDelete ? 'Confirm Shop Deletion' : 'Enter Admin PIN / Password'}
+              {shopToDelete ? t('confirmShopDeletion') : t('enterAdminPin')}
             </h3>
             <p className="text-sm text-slate-500 mb-6">
-              {shopToDelete ? 'Please enter your password to confirm deletion. This action cannot be undone.' : 'You need to enter your admin PIN or login password to switch back to the admin role.'}
+              {shopToDelete ? t('confirmDeletionHint') : t('enterAdminPinHint')}
             </p>
-            
+
             <form onSubmit={handleVerifyPin} className="space-y-4">
               <input
                 type="password"
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                placeholder="Enter PIN / Password"
+                placeholder={t('enterPinPasswordPlaceholder')}
                 value={adminPinInput}
                 onChange={e => setAdminPinInput(e.target.value)}
                 autoFocus
               />
               {pinError && <p className="text-red-500 text-xs font-medium mb-4">{pinError}</p>}
-              
+
               <div className="flex gap-3 mt-4">
                 <button
                   type="button"
@@ -657,14 +676,14 @@ export default function Sidebar({
                   }}
                   className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={!adminPinInput || verifyingPin}
                   className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                 >
-                  {verifyingPin ? 'Verifying...' : shopToDelete ? 'Delete Shop' : 'Verify'}
+                  {verifyingPin ? t('verifying') : shopToDelete ? t('deleteShopBtn') : t('verify')}
                 </button>
               </div>
             </form>

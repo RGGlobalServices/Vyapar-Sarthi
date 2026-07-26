@@ -47,6 +47,7 @@
     "autoprefixer": "^10.4.21",
     "bcryptjs": "^3.0.0",
     "buffer": "^6.0.3",
+    "capacitor-native-settings": "^8.1.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "fuse.js": "^7.4.2",

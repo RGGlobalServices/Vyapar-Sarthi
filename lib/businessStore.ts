@@ -39,12 +39,22 @@ interface BusinessProfile {
   showQrCode: boolean;
 }
 
+export interface ShopLimit {
+  canAdd: boolean;
+  max: number | null; // null = unlimited
+  current: number;
+  multiShop: boolean;
+}
+
+const DEFAULT_SHOP_LIMIT: ShopLimit = { canAdd: true, max: null, current: 0, multiShop: true };
+
 interface BusinessStore {
   profile: BusinessProfile;
   loading: boolean;
   // Multi-shop
   allShops: ShopSummary[];
   activeShopId: string | null;
+  shopLimit: ShopLimit;
   fetchProfile: (force?: boolean) => Promise<void>;
   fetchAllShops: () => Promise<void>;
   switchShop: (shopId: string, preventReload?: boolean) => Promise<void>;
@@ -149,6 +159,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   loading: false,
   allShops: [],
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
+  shopLimit: DEFAULT_SHOP_LIMIT,
 
   fetchProfile: async (force = false) => {
     // Skip if we fetched recently (e.g. tab focus fires repeatedly)
@@ -170,7 +181,12 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   fetchAllShops: async () => {
     try {
       const res = await api.get('/shop/my-shops');
-      const shops: ShopSummary[] = (res.data || []).map((s: any) => ({
+      // `/shop/my-shops` returns { shops, shopLimit }; fall back to treating
+      // the payload itself as the shop array for resilience against a stale
+      // cached response shape.
+      const rawShops = Array.isArray(res.data) ? res.data : (res.data?.shops || []);
+      const shopLimit: ShopLimit = Array.isArray(res.data) ? DEFAULT_SHOP_LIMIT : (res.data?.shopLimit || DEFAULT_SHOP_LIMIT);
+      const shops: ShopSummary[] = rawShops.map((s: any) => ({
         id: s.id,
         name: s.name ?? '',
         shopCode: s.shop_code ?? s.shopCode ?? null,
@@ -189,7 +205,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         localStorage.setItem('ks_active_shop_id', autoId);
       }
       
-      set({ allShops: shops, activeShopId: autoId });
+      set({ allShops: shops, activeShopId: autoId, shopLimit });
     } catch {}
   },
 

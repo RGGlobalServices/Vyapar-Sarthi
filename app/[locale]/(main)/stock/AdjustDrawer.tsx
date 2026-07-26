@@ -40,7 +40,7 @@ export default function AdjustDrawer({
   const handleAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.warehouseId || !form.difference) {
-      setError('Please fill all required fields.');
+      setError(t('fillRequiredFields'));
       return;
     }
 

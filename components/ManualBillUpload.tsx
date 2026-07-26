@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { X, Camera, ImagePlus, FileText, Loader2, ArrowLeft, IndianRupee, CreditCard, Smartphone, User, AlertCircle, CheckCircle, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -13,19 +14,6 @@ const MAX_FILE_MB = 10;
 
 type Step = 'capture' | 'preview' | 'details';
 type PaymentMode = 'Cash' | 'UPI' | 'Card' | 'Udhar' | 'EMI';
-
-const PAYMENT_MODES: { id: PaymentMode; label: string; icon: React.ReactNode }[] = [
-  { id: 'Cash', label: 'Cash', icon: <IndianRupee size={18} /> },
-  { id: 'UPI', label: 'UPI', icon: <Smartphone size={18} /> },
-  { id: 'Card', label: 'Card', icon: <CreditCard size={18} /> },
-  { id: 'Udhar', label: 'Udhar', icon: <User size={18} /> },
-];
-
-// EMI: a finance provider (Bajaj Finserv, HDFC, ...) settles the bill in full;
-// interest and instalments are between the provider and the customer, not the
-// shop's concern — matches how EMI works as a payment method on the main
-// billing screen. Only offered to electronics shopkeepers.
-const EMI_MODE: { id: PaymentMode; label: string; icon: React.ReactNode } = { id: 'EMI', label: 'EMI', icon: <Zap size={18} /> };
 
 export interface ManualBillSavedData {
   items: { id: string; name: string; unit: string; quantity: number; price: number; total: number; profit: number }[];
@@ -54,7 +42,21 @@ interface ManualBillUploadProps {
 }
 
 export default function ManualBillUpload({ shopId, businessType, onClose, onSaved }: ManualBillUploadProps) {
+  const t = useTranslations('ManualBillUpload');
+  const tBilling = useTranslations('Billing');
+  const tBillSlip = useTranslations('BillSlip');
   const isElectronics = businessType === 'electronics';
+  const PAYMENT_MODES: { id: PaymentMode; label: string; icon: React.ReactNode }[] = [
+    { id: 'Cash', label: tBilling('cash'), icon: <IndianRupee size={18} /> },
+    { id: 'UPI', label: tBilling('upi'), icon: <Smartphone size={18} /> },
+    { id: 'Card', label: tBilling('card'), icon: <CreditCard size={18} /> },
+    { id: 'Udhar', label: tBilling('udhar'), icon: <User size={18} /> },
+  ];
+  // EMI: a finance provider (Bajaj Finserv, HDFC, ...) settles the bill in full;
+  // interest and instalments are between the provider and the customer, not the
+  // shop's concern — matches how EMI works as a payment method on the main
+  // billing screen. Only offered to electronics shopkeepers.
+  const EMI_MODE: { id: PaymentMode; label: string; icon: React.ReactNode } = { id: 'EMI', label: tBillSlip('emi'), icon: <Zap size={18} /> };
   const paymentModes = isElectronics ? [...PAYMENT_MODES, EMI_MODE] : PAYMENT_MODES;
   const { customers: udharCustomers, fetchCustomers } = useUdharStore();
 
@@ -90,11 +92,11 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
     if (!f) return;
     const typeOk = ACCEPTED_TYPES.includes(f.type) || /\.(jpe?g|png|pdf)$/i.test(f.name);
     if (!typeOk) {
-      setFileError('Only JPG, JPEG, PNG or PDF files are supported.');
+      setFileError(t('onlyJpgPngPdf'));
       return;
     }
     if (f.size > MAX_FILE_MB * 1024 * 1024) {
-      setFileError(`File is too large. Maximum size is ${MAX_FILE_MB}MB.`);
+      setFileError(t('fileTooLarge', { mb: MAX_FILE_MB }));
       return;
     }
     setFile(f);
@@ -120,7 +122,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
     try {
       const billImageUrl = await uploadManualBillFile(file, shopId);
       if (!billImageUrl) {
-        throw new Error('Could not upload the bill file. Check your connection and try again.');
+        throw new Error(t('couldNotUploadFile'));
       }
 
       const payload = {
@@ -150,7 +152,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
       const remainingAmount = isUdhar ? amountNum : 0;
 
       onSaved({
-        items: [{ id: 'manual', name: 'Manual Bill', unit: 'Bill', quantity: 1, price: amountNum, total: amountNum, profit: 0 }],
+        items: [{ id: 'manual', name: t('manualBillTitle'), unit: 'Bill', quantity: 1, price: amountNum, total: amountNum, profit: 0 }],
         total: amountNum,
         discount: 0,
         amountPaid: isUdhar ? 0 : amountNum,
@@ -168,7 +170,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
         billImageUrl,
       });
     } catch (err: any) {
-      setSaveError(err?.response?.data?.detail || err?.message || 'Failed to save the bill. Please try again.');
+      setSaveError(err?.response?.data?.detail || err?.message || t('failedToSaveBill'));
     } finally {
       setSaving(false);
     }
@@ -193,7 +195,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
                 <ArrowLeft size={18} />
               </button>
             )}
-            <h2 className="text-slate-900 dark:text-slate-100 font-bold text-lg">Manual Bill</h2>
+            <h2 className="text-slate-900 dark:text-slate-100 font-bold text-lg">{t('manualBillTitle')}</h2>
           </div>
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-900 dark:hover:text-slate-200">
             <X size={22} />
@@ -205,7 +207,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
           {step === 'capture' && (
             <div className="space-y-4">
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Upload or capture a handwriting bill to quickly record the sale and share it with your customer via WhatsApp or Email.
+                {t('uploadOrCaptureHint')}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -214,7 +216,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
                   className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                 >
                   <Camera size={28} />
-                  <span className="text-sm font-bold">Capture Photo</span>
+                  <span className="text-sm font-bold">{t('capturePhoto')}</span>
                 </button>
                 <button
                   type="button"
@@ -222,10 +224,10 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
                   className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                 >
                   <ImagePlus size={28} />
-                  <span className="text-sm font-bold">Upload Image</span>
+                  <span className="text-sm font-bold">{t('uploadImage')}</span>
                 </button>
               </div>
-              <p className="text-[10px] text-slate-400 text-center">Supported: JPG, JPEG, PNG, PDF · up to {MAX_FILE_MB}MB</p>
+              <p className="text-[10px] text-slate-400 text-center">{t('supportedFormats', { mb: MAX_FILE_MB })}</p>
               {fileError && (
                 <div className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2 text-xs text-rose-500">
                   <AlertCircle size={14} className="shrink-0" />
@@ -271,14 +273,14 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
                   onClick={reset}
                   className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700"
                 >
-                  Retake / Change
+                  {t('retakeChange')}
                 </button>
                 <button
                   type="button"
                   onClick={() => { fetchCustomers(); setStep('details'); }}
                   className="flex-1 py-2.5 bg-emerald-500 text-white dark:text-slate-900 rounded-xl font-bold text-sm hover:bg-emerald-400"
                 >
-                  Continue
+                  {t('continueBtn')}
                 </button>
               </div>
             </div>
@@ -290,14 +292,14 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
               {/* Customer (optional) */}
               <div className="relative">
                 <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
-                  Customer{' '}
+                  {t('customerLabel')}{' '}
                   <span className="normal-case font-normal text-slate-400">
-                    {isUdhar ? '(required for Udhar)' : '(optional)'}
+                    {isUdhar ? t('requiredForUdhar') : t('optionalLabel')}
                   </span>
                 </label>
                 <input
                   type="text"
-                  placeholder="Search or enter customer name..."
+                  placeholder={t('searchOrEnterCustomerName')}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                   value={customerName}
                   onChange={e => {
@@ -333,13 +335,13 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
-                    Mobile <span className="normal-case font-normal text-slate-400">(optional)</span>
+                    {t('mobileLabel')} <span className="normal-case font-normal text-slate-400">{t('optionalLabel')}</span>
                   </label>
                   <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-emerald-500 transition-colors">
                     <span className="text-slate-500 dark:text-slate-400 text-sm font-bold select-none">+91</span>
                     <input
                       type="tel"
-                      placeholder="10-digit number"
+                      placeholder={t('mobileNumberPlaceholder')}
                       maxLength={10}
                       className="flex-1 min-w-0 bg-transparent text-slate-900 dark:text-slate-100 outline-none text-sm"
                       value={customerMobile}
@@ -349,11 +351,11 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
                 </div>
                 <div>
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
-                    Email <span className="normal-case font-normal text-slate-400">(optional)</span>
+                    {t('emailLabel')} <span className="normal-case font-normal text-slate-400">{t('optionalLabel')}</span>
                   </label>
                   <input
                     type="email"
-                    placeholder="name@example.com"
+                    placeholder={tBilling('customerEmailPlaceholder')}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm transition-colors"
                     value={customerEmail}
                     onChange={e => setCustomerEmail(e.target.value)}
@@ -363,7 +365,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
 
               {/* Amount */}
               <div>
-                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">Bill Amount</label>
+                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">{t('billAmount')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
                   <input
@@ -379,7 +381,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
 
               {/* Payment Mode */}
               <div>
-                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">Payment Mode</label>
+                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">{t('paymentModeLabel')}</label>
                 <div className="grid grid-cols-2 gap-3">
                   {paymentModes.map(mode => {
                     const selected = paymentMode === mode.id;
@@ -410,13 +412,13 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
 
               {isUdhar && (
                 <p className="text-[10px] font-medium text-orange-500/80 leading-relaxed">
-                  This amount will be added to the customer&apos;s udhar ledger. Customer name is required.
+                  {t('udharNoteHint')}
                 </p>
               )}
 
               {isEmi && (
                 <p className="text-[10px] font-medium text-sky-500/80 leading-relaxed">
-                  The finance provider pays the full bill amount to your shop. Interest and monthly instalments are handled by them.
+                  {t('emiNoteHint')}
                 </p>
               )}
 
@@ -434,7 +436,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
                 className="w-full py-3.5 rounded-xl font-black text-base shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-emerald-500 text-white dark:text-slate-900 hover:bg-emerald-400"
               >
                 {saving ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle size={20} />}
-                {saving ? 'Saving...' : 'Save Bill'}
+                {saving ? t('saving') : t('saveBill')}
               </button>
             </div>
           )}

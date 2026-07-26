@@ -4,7 +4,12 @@ generator client {
 
 datasource db {
   provider     = "postgresql"
+  // Runtime queries go through the transaction-mode pooler (port 6543), which
+  // releases the connection after each statement. Session mode (5432) holds a
+  // backend per client and exhausts the instance's connection slots.
   url          = env("DATABASE_URL")
+  // Migrations need a real session, so they use the direct 5432 connection.
+  directUrl    = env("DIRECT_URL")
   relationMode = "foreignKeys"
 }
 
@@ -25,6 +30,7 @@ model User {
   profitViewPassword  String?       @map("profit_view_password") @db.VarChar
   adminPin            String?       @map("admin_pin") @db.VarChar
   maxShops            Int?          @map("max_shops")
+  canAddShop          Boolean?      @default(true) @map("can_add_shop")
   toolUsages          ToolUsage[]
   sessions            UserSession[]
 
@@ -82,6 +88,7 @@ model Shop {
   mandateStatus           String?              @map("mandate_status") @db.VarChar
   nextBillingDate         DateTime?            @map("next_billing_date") @db.Timestamptz(6)
   billingAmount           Float?               @map("billing_amount")
+  billingCycle            String?              @default("monthly") @map("billing_cycle") @db.VarChar
   lastTxnId               String?              @map("last_txn_id") @db.VarChar
   firstChargeDate         DateTime?            @map("first_charge_date") @db.Timestamptz(6)
   gst                     String?              @db.VarChar
@@ -94,6 +101,7 @@ model Shop {
   products                Product[]
   sales                   Sale[]
   stockLogs               StockLog[]
+  dailyStockEntries       DailyStockEntry[]
   godowns                 Godown[]
   paymentTransactions     PaymentTransaction[]
   materialReturns         MaterialReturn[]
@@ -163,6 +171,9 @@ model PaymentTransaction {
   mihpayid     String?  @db.VarChar
   plan         String?  @db.VarChar
   amount       Float
+  billingCycle String?  @map("billing_cycle") @db.VarChar
+  baseAmount   Float?   @map("base_amount")
+  gstAmount    Float?   @map("gst_amount")
   // mandate_registration | recurring | trial | refund
   type         String   @db.VarChar
   // success | failed | pending | refunded
@@ -189,7 +200,15 @@ model Product {
   conversionFactor Float?           @map("conversion_factor")
   minStock         Float?           @map("min_stock")
   currentStock     Float?           @map("current_stock")
-  barcode          String?          @unique(map: "ix_products_barcode") @db.VarChar
+  // Uniqueness is per shop (see @@unique below), NOT global. Real EAN/UPC codes
+  // are shared by every shop that stocks the product, so a global constraint
+  // meant the second shop to add an item hit a unique violation.
+  // "Company Barcode" in the UI — the EAN/UPC printed on the item.
+  barcode          String?          @db.VarChar
+  // Shop's own stock-keeping code, and the barcode printed on an outer carton.
+  // Both are alternative keys the billing scanner can resolve a product by.
+  sku              String?          @db.VarChar
+  cartonBarcode    String?          @map("carton_barcode") @db.VarChar
   expiryDate       String?          @map("expiry_date") @db.VarChar
   batch_number     String?          @db.VarChar
   drug_schedule    String?          @db.VarChar
@@ -206,6 +225,9 @@ model Product {
   hsnCode          String?          @map("hsn_code") @db.VarChar
   productType      String?          @default("single") @map("product_type") @db.VarChar
   gstPercent       Float?           @map("gst_percent")
+  // When the product was first added. Backfilled for pre-existing rows from the
+  // earliest stock activity, so it reflects real history, not the migration date.
+  createdAt        DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
   shop             Shop?            @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   saleItems        SaleItem[]
   stock_logs       StockLog[]
@@ -215,6 +237,7 @@ model Product {
   productVariants  ProductVariant[]
   batches          Batch[]
   purchaseItems    PurchaseItem[]
+  dailyStockEntries DailyStockEntry[]
 
   // --- New Master Data Relational Fields ---
   categoryId            String?          @map("category_id") @db.Uuid
@@ -234,7 +257,9 @@ model Product {
   @@index([category], map: "ix_products_category")
   @@index([name], map: "ix_products_name")
   @@index([shopId], map: "ix_products_shop_id")
-  @@index([shopId, barcode], map: "ix_products_shop_barcode")
+  @@unique([shopId, barcode], map: "ix_products_shop_barcode")
+  @@index([shopId, sku], map: "ix_products_shop_sku")
+  @@index([shopId, cartonBarcode], map: "ix_products_shop_carton")
   @@index([shopId, category], map: "ix_products_shop_category")
   @@index([shopId, name], map: "ix_products_shop_name")
   @@index([categoryId], map: "ix_products_category_id")
@@ -317,6 +342,7 @@ model SaleItem {
   marginPerUnit Float?   @map("margin_per_unit")
   variant       String?  @db.VarChar
   variantId     String?  @map("variant_id") @db.VarChar
+  itemName      String?  @map("item_name") @db.VarChar
   product       Product? @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sale          Sale?    @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -722,6 +748,7 @@ model Supplier {
   balance   Float     @default(0)
   creditDays  Int?    @default(0) @map("credit_days")
   creditLimit Float?  @default(0) @map("credit_limit")
+  documents Json?     @default("[]")
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop                 Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -919,6 +946,27 @@ model DailyClosing {
 
   @@unique([shopId, date])
   @@map("daily_closings")
+}
+
+model DailyStockEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  shopId      String   @map("shop_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  date        DateTime @db.Date
+  openingQty  Float    @default(0) @map("opening_qty")
+  receivedQty Float    @default(0) @map("received_qty")
+  closingQty  Float?   @map("closing_qty")
+  soldQty     Float?   @map("sold_qty")
+  note        String?  @db.VarChar
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, productId, date])
+  @@index([shopId, date], map: "ix_daily_stock_entries_shop_date")
+  @@map("daily_stock_entries")
 }
 
 model ActivityLog {

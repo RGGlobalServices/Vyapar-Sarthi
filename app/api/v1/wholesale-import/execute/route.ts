@@ -87,8 +87,13 @@ export async function POST(req: NextRequest) {
       const shade = getVal(row, ['shade']);
       if (shade) extras.shade = String(shade);
       // GST invoice fields — same columns Products / Stock forms expose.
-      const hsn = getVal(row, ['hsncode', 'hsn', 'sac']);
+      const hsn = getVal(row, ['hsncode', 'hsn', 'sac', 'hsnsac']);
       if (hsn) extras.hsnCode = String(hsn);
+      // Extra scannable identifiers used by the desktop barcode billing flow.
+      const sku = getVal(row, ['sku', 'skucode', 'stockcode', 'articleno', 'articlecode']);
+      if (sku) extras.sku = String(sku).trim();
+      const cartonBc = getVal(row, ['cartonbarcode', 'cartoncode', 'boxbarcode', 'outerbarcode', 'casebarcode']);
+      if (cartonBc) extras.cartonBarcode = String(cartonBc).trim();
       const gstPct = getVal(row, ['gstpercent', 'gstrate', 'gstpercentage', 'taxrate', 'gst%']);
       if (gstPct !== undefined && String(gstPct).trim() !== '') {
         const n = parseFloat(gstPct);
@@ -139,7 +144,7 @@ export async function POST(req: NextRequest) {
         
         for (let i = 0; i < data.length; i++) {
           const row = data[i];
-          const barcode = getVal(row, ['barcode', 'sku']);
+          const barcode = getVal(row, ['barcode']);
           if (barcode) {
             const bcStr = String(barcode).trim();
             if (seenBarcodes.has(bcStr)) {
@@ -171,7 +176,7 @@ export async function POST(req: NextRequest) {
           const row = data[i];
           try {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
-            const barcode = getVal(row, ['barcode', 'sku']);
+            const barcode = getVal(row, ['barcode']);
             if (!name) { 
               skipped++; 
               rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`);
@@ -480,7 +485,7 @@ export async function POST(req: NextRequest) {
 
             if (!name || quantity <= 0) { skipped++; continue; }
 
-            const barcode = getVal(row, ['barcode', 'sku']);
+            const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
             if (!matchId) {
@@ -500,7 +505,10 @@ export async function POST(req: NextRequest) {
                   mrp: unitCost * 1.25,
                   category: getVal(row, ['category']) || 'General',
                   currentStock: quantity,
-                  metadata: getVal(row, ['size']) || getVal(row, ['color']) ? { size: getVal(row, ['size']), color: getVal(row, ['color']) } : {}
+                  metadata: getVal(row, ['size']) || getVal(row, ['color']) ? { size: getVal(row, ['size']), color: getVal(row, ['color']) } : {},
+                  // HSN + SKU + carton barcode from the invoice, so a purchased
+                  // product is billable by any of its codes right away.
+                  ...getProductExtras(row),
                 }
               });
               matchId = newProduct.id;
@@ -594,7 +602,7 @@ export async function POST(req: NextRequest) {
             const quantity = parseFloat(getVal(row, ['quantity', 'stock', 'qty', 'openingstock']) || 0);
             if (!name) { skipped++; continue; }
 
-            const barcode = getVal(row, ['barcode', 'sku']);
+            const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
             if (!matchId) {
@@ -720,7 +728,7 @@ export async function POST(req: NextRequest) {
             if (!isFinite(price) && isFinite(lineTotal)) price = lineTotal / quantity;
             if (!isFinite(price)) price = 0;
 
-            const barcode = getVal(row, ['barcode', 'sku']);
+            const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let productId: string | null = barcodeStr ? barcodeMap.get(barcodeStr) ?? null : null;
             let productCost = 0;

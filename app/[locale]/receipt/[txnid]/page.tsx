@@ -99,12 +99,18 @@ export default async function ReceiptPage({ params }: { params: Promise<{ txnid:
                 <tr>
                   <td className="py-5">
                     <p className="font-bold text-slate-900 text-lg">Subscription - {planLabel(tx.plan || 'shop')} Plan</p>
-                    <p className="text-slate-500 text-sm mt-1">1 Month Access</p>
+                    <p className="text-slate-500 text-sm mt-1">{tx.billingCycle === 'yearly' ? '1 Year Access' : '1 Month Access'}</p>
                   </td>
                   <td className="py-5 text-right font-bold text-xl text-slate-900">
-                    ₹{tx.amount.toFixed(2)}
+                    ₹{(tx.baseAmount ?? tx.amount).toFixed(2)}
                   </td>
                 </tr>
+                {tx.baseAmount != null && tx.gstAmount != null && (
+                  <tr>
+                    <td className="py-3 text-slate-500 text-sm">GST (18%)</td>
+                    <td className="py-3 text-right text-slate-500 text-sm">₹{tx.gstAmount.toFixed(2)}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

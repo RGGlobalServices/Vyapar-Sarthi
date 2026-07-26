@@ -212,7 +212,7 @@ export default function WholesaleProductsUI() {
       setShowInlineMasterModal(false);
       setInlineMasterForm({ name: '', shortName: '' });
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to save master data');
+      alert(err.response?.data?.error || t('failedToSaveMasterData'));
     } finally {
       setInlineMasterSaving(false);
     }
@@ -220,7 +220,7 @@ export default function WholesaleProductsUI() {
 
   const handleBulkSave = async () => {
     if (!bulkForm.category && !bulkForm.brand) {
-      alert("Please enter at least one field to update.");
+      alert(t('enterAtLeastOneField'));
       return;
     }
     setSaving(true);
@@ -232,7 +232,7 @@ export default function WholesaleProductsUI() {
       setBulkForm({});
       setSelectedIds([]);
     } catch (err: any) {
-      alert(`Error: ${err.message || 'Failed to bulk update'}`);
+      alert(t('errorPrefix', { msg: err.message || t('failedToBulkUpdate') }));
     } finally {
       setSaving(false);
     }
@@ -247,7 +247,7 @@ export default function WholesaleProductsUI() {
     try {
       await api.delete(`/products/${id}`);
     } catch (err: any) {
-      alert(`Error: ${err.message || 'Failed to delete product'}`);
+      alert(t('errorPrefix', { msg: err.message || t('failedToDeleteProduct') }));
       mutateProducts(); // Rollback
     } finally {
       mutateProducts(); // Sync
@@ -266,7 +266,7 @@ export default function WholesaleProductsUI() {
       await api.delete(`/products/bulk?ids=${selectedIds.join(',')}`);
       setSelectedIds([]);
     } catch (err: any) {
-      alert(`Error: ${err.message || 'Failed to bulk delete'}`);
+      alert(t('errorPrefix', { msg: err.message || t('failedToBulkDelete') }));
       mutateProducts(); // Rollback
     } finally {
       mutateProducts(); // Sync
@@ -332,8 +332,8 @@ export default function WholesaleProductsUI() {
       mutateProducts();
     } catch (err: any) {
       console.error('Failed to save product', err);
-      const msg = err?.response?.data?.detail || err.message || 'Failed to save product. Check for duplicate barcodes or missing fields.';
-      alert(`Error: ${msg}`);
+      const msg = err?.response?.data?.detail || err.message || t('failedToSaveProductDuplicate');
+      alert(t('errorPrefix', { msg }));
       mutateProducts(); // Rollback on error
     } finally {
       setSaving(false);
@@ -440,14 +440,14 @@ export default function WholesaleProductsUI() {
             <button
               onClick={() => setViewMode('table')}
               className={cn("p-2 rounded-md flex items-center justify-center transition-all", viewMode === 'table' ? "bg-white dark:bg-slate-700 shadow-sm text-emerald-600" : "text-slate-500 hover:text-slate-700")}
-              title="Table View"
+              title={t('tableView')}
             >
               <List size={18} />
             </button>
             <button
               onClick={() => setViewMode('grid')}
               className={cn("p-2 rounded-md flex items-center justify-center transition-all", viewMode === 'grid' ? "bg-white dark:bg-slate-700 shadow-sm text-emerald-600" : "text-slate-500 hover:text-slate-700")}
-              title="Grid View"
+              title={t('gridView')}
             >
               <LayoutGrid size={18} />
             </button>

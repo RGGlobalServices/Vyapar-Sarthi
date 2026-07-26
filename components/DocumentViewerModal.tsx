@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { X, Download, FileWarning, Loader2 } from 'lucide-react';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'bmp'];
@@ -14,6 +15,7 @@ export default function DocumentViewerModal({
   label: string;
   onClose: () => void;
 }) {
+  const t = useTranslations('DocumentViewerModal');
   const ext = (url.split('.').pop() || '').split('?')[0].toLowerCase();
   const isImage = IMAGE_EXTS.includes(ext);
   const isPdf = ext === 'pdf';
@@ -116,14 +118,14 @@ export default function DocumentViewerModal({
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              title="Download"
+              title={t('downloadTitle')}
               className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <Download size={18} />
             </a>
             <button
               onClick={onClose}
-              title="Close"
+              title={t('closeTitle')}
               className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <X size={18} />
@@ -134,22 +136,22 @@ export default function DocumentViewerModal({
           {!previewable ? (
             <div className="text-center p-8 text-slate-500">
               <FileWarning size={40} className="mx-auto mb-3 text-slate-400" />
-              <p className="font-bold text-slate-700 dark:text-slate-300">Preview not available</p>
-              <p className="text-sm mt-1">This file type can&apos;t be previewed in-browser. Use the download button above.</p>
+              <p className="font-bold text-slate-700 dark:text-slate-300">{t('previewNotAvailable')}</p>
+              <p className="text-sm mt-1">{t('previewNotAvailableHint')}</p>
             </div>
           ) : (
             <>
               {status === 'loading' && (
                 <div className="text-center text-slate-500">
                   <Loader2 size={32} className="mx-auto mb-3 animate-spin text-indigo-500" />
-                  <p className="text-sm font-medium">Loading preview…</p>
+                  <p className="text-sm font-medium">{t('loadingPreview')}</p>
                 </div>
               )}
               {status === 'error' && (
                 <div className="text-center p-8 text-slate-500">
                   <FileWarning size={40} className="mx-auto mb-3 text-red-400" />
-                  <p className="font-bold text-slate-700 dark:text-slate-300">Couldn&apos;t load preview</p>
-                  <p className="text-sm mt-1">The file may be unreachable right now. Use the download button above to try directly.</p>
+                  <p className="font-bold text-slate-700 dark:text-slate-300">{t('couldNotLoadPreview')}</p>
+                  <p className="text-sm mt-1">{t('couldNotLoadPreviewHint')}</p>
                 </div>
               )}
               {isImage && status === 'ready' && blobUrl && (

@@ -45,7 +45,7 @@ export default function ReceiveDrawer({
       setIsAddingSupplier(false);
       setNewSupplierName('');
     } catch (err: any) {
-      alert('Failed to add supplier: ' + (err.response?.data?.error || err.message));
+      alert(t('failedToAddSupplier', { msg: err.response?.data?.error || err.message }));
     } finally {
       setIsSavingSupplier(false);
     }
@@ -65,7 +65,7 @@ export default function ReceiveDrawer({
   const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.warehouseId || !form.supplierId || !form.quantity || !form.cost) {
-      setError('Please fill all required fields.');
+      setError(t('fillRequiredFields'));
       return;
     }
 
@@ -94,7 +94,7 @@ export default function ReceiveDrawer({
       onClose();
     } catch (err: any) {
       console.error('[API Error] Receive:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to receive stock');
+      setError(err.response?.data?.error || err.message || t('failedToReceiveStock'));
     } finally {
       setLoading(false);
     }
@@ -143,14 +143,14 @@ export default function ReceiveDrawer({
                 <input 
                   type="text" 
                   autoFocus
-                  placeholder="Enter supplier name..." 
+                  placeholder={t('enterSupplierNamePlaceholder')}
                   value={newSupplierName}
                   onChange={e => setNewSupplierName(e.target.value)}
                   className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                   disabled={isSavingSupplier}
                 />
                 <button type="button" onClick={saveNewSupplier} disabled={!newSupplierName || isSavingSupplier} className="px-3 bg-emerald-500 text-white rounded-lg font-bold flex items-center justify-center min-w-[60px] hover:bg-emerald-600 transition-colors">
-                  {isSavingSupplier ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
+                  {isSavingSupplier ? <Loader2 size={16} className="animate-spin" /> : t('saveBtn')}
                 </button>
                 <button type="button" onClick={() => setIsAddingSupplier(false)} disabled={isSavingSupplier} className="px-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                   <X size={16} />
@@ -164,7 +164,7 @@ export default function ReceiveDrawer({
                   onChange={e => setForm({...form, supplierId: e.target.value})}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="">{sLoad ? 'Loading suppliers...' : t('selectSupplier')}</option>
+                  <option value="">{sLoad ? t('loadingSuppliers') : t('selectSupplier')}</option>
                   {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <button type="button" onClick={() => setIsAddingSupplier(true)} className="px-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">+</button>
@@ -184,7 +184,7 @@ export default function ReceiveDrawer({
                   value={form.quantity}
                   onChange={e => setForm({...form, quantity: e.target.value})}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500"
-                  placeholder="e.g. 100"
+                  placeholder={t('quantityPlaceholder')}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{product.baseUnit}</span>
               </div>

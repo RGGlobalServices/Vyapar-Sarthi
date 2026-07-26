@@ -3,6 +3,7 @@ import { config } from './config';
 import { generateRenewalToken } from './renewalLinks';
 import { sendWhatsApp } from './whatsapp';
 import { sendRenewalEmail } from './email';
+import { getTotalAmount, type BillingCycle } from '../subscriptionPricing';
 
 export type ProcessResult = {
   remindersSent: number;
@@ -78,7 +79,8 @@ export async function processDueSubscriptions(): Promise<ProcessResult> {
         result.details.push({ shopId: shop.id, action: `reminder_${remaining}d` });
 
         // Send outbound WhatsApp + email with a one-click renewal link.
-        await sendRenewalOutbound(shop.ownerId, shop.id, shop.subscriptionPlan || 'shop', planName, remaining).catch(
+        const billingCycle: BillingCycle = shop.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+        await sendRenewalOutbound(shop.ownerId, shop.id, shop.subscriptionPlan || 'shop', planName, remaining, billingCycle).catch(
           (err) => console.error('[BILLING] Outbound renewal send error:', err),
         );
       }
@@ -96,12 +98,13 @@ async function sendRenewalOutbound(
   plan: string,
   planName: string,
   daysLeft: number,
+  cycle: BillingCycle = 'monthly',
 ) {
   const owner = await prisma.user.findFirst({ where: { uuid: ownerId } });
   if (!owner) return;
 
-  const amount = config.planAmounts[plan] ?? config.planAmounts['shop'];
-  const token = generateRenewalToken(shopId, plan, amount);
+  const amount = getTotalAmount(plan, cycle);
+  const token = generateRenewalToken(shopId, plan, amount, cycle);
   const renewalUrl = `${config.appUrl}/api/v1/payments/renewal-pay?token=${token}`;
   const name = owner.name || 'there';
   const when = daysLeft === 0 ? 'aaj' : `${daysLeft} din mein`;

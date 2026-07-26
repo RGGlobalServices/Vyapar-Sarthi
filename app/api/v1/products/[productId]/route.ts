@@ -63,6 +63,8 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
         wholesaleCost: b.wholesale_cost ?? b.wholesaleCost,
         baseUnit: b.base_unit ?? b.baseUnit,
         barcode: b.barcode,
+        sku: b.sku !== undefined ? b.sku : undefined,
+        cartonBarcode: (b.cartonBarcode ?? b.carton_barcode) !== undefined ? (b.cartonBarcode ?? b.carton_barcode) : undefined,
         is_loose: b.is_loose ?? b.isLoose,
         expiryDate: b.expiry_date ?? b.expiryDate,
         batch_number: b.batch_number ?? b.batchNumber,

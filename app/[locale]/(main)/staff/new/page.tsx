@@ -53,14 +53,14 @@ export default function AddStaffPage() {
       }
     } catch (err) {
       console.error(err);
-      alert('Upload failed');
+      alert(t('uploadFailed'));
     } finally {
       setUploadingDoc(null);
     }
   };
 
   const handleRemoveDoc = (docType: string) => {
-    if (!confirm('Remove this document?')) return;
+    if (!confirm(t('confirmRemoveDocument'))) return;
     if (docType === 'photoUrl') {
       setFormData(p => ({ ...p, photoUrl: '' }));
     } else {
@@ -135,7 +135,7 @@ export default function AddStaffPage() {
               type="button"
               onClick={() => handleRemoveDoc(docType)}
               disabled={isUploading}
-              title="Remove document"
+              title={t('removeDocumentTitle')}
               className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
             >
               <Trash2 size={16} />
@@ -168,7 +168,7 @@ export default function AddStaffPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Full Name *</label>
-                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="e.g. Ramesh Kumar" />
+                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder={t('namePlaceholder')} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Mobile Number *</label>
@@ -176,7 +176,7 @@ export default function AddStaffPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Emergency Contact</label>
-                <input type="tel" value={formData.emergencyContact} onChange={e => setFormData({...formData, emergencyContact: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Optional" />
+                <input type="tel" value={formData.emergencyContact} onChange={e => setFormData({...formData, emergencyContact: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder={t('optionalPlaceholder')} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Role</label>
@@ -215,15 +215,15 @@ export default function AddStaffPage() {
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Bank Account No.</label>
-                <input type="text" value={formData.bankAccount.accNo} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, accNo: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="Optional" />
+                <input type="text" value={formData.bankAccount.accNo} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, accNo: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder={t('optionalPlaceholder')} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">IFSC Code</label>
-                <input type="text" value={formData.bankAccount.ifsc} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, ifsc: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="Optional" />
+                <input type="text" value={formData.bankAccount.ifsc} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, ifsc: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder={t('optionalPlaceholder')} />
               </div>
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">UPI ID</label>
-                <input type="text" value={formData.bankAccount.upi} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, upi: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="user@upi" />
+                <input type="text" value={formData.bankAccount.upi} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, upi: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder={t('upiPlaceholder')} />
               </div>
             </div>
           </CardContent>

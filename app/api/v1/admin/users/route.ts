@@ -48,6 +48,7 @@ export const GET = handle(async (req) => {
       mobile: u.mobile || '',
       isActive: !!u.isActive,
       maxShops: u.maxShops,
+      canAddShop: u.canAddShop !== false,
       createdAt: u.createdAt,
       shop: (u.uuid && shopMap[u.uuid]) || null,
       referralCode: (u.uuid && rcMap[u.uuid]?.code) || null,

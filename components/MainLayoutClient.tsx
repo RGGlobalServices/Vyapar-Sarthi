@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { usePathname } from '@/i18n/routing';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
@@ -14,6 +15,9 @@ import { useRouter } from '@/i18n/routing';
 import toast from 'react-hot-toast';
 import { getPackageConfig } from '@/lib/config/packageConfig';
 import { getBusinessConfig } from '@/lib/businessConfig';
+import { useOnlineStatus, useOfflineQueueCount } from '@/lib/useOnlineStatus';
+import { flushOfflineSales } from '@/lib/offlineSync';
+import { WifiOff, RefreshCw as SyncIcon } from 'lucide-react';
 
 // Map URL segment → tool key for usage tracking
 const PATH_TO_TOOL: Record<string, string> = {
@@ -26,6 +30,7 @@ import SWRProvider from '@/components/SWRProvider';
 import { useRealtimeSync } from '@/lib/hooks/useRealtimeSync';
 
 function TrialCountdownTracker({ profile }: { profile: any }) {
+  const t = useTranslations('MainLayout');
   const [timeLeft, setTimeLeft] = useState<string>('');
 
   useEffect(() => {
@@ -83,13 +88,14 @@ function TrialCountdownTracker({ profile }: { profile: any }) {
     )}>
       <Clock size={14} className={cn(!profile.trialPaused && !isEnded && "animate-pulse")} />
       <span>
-        {profile.trialPaused ? 'Trial: Paused' : `Trial Ends: ${timeLeft}`}
+        {profile.trialPaused ? t('trialPaused') : t('trialEnds', { time: isEnded ? t('countdownEnded') : timeLeft })}
       </span>
     </div>
   );
 }
 
 function PaymentReminderBanner({ profile, locale }: { profile: any, locale: string }) {
+  const t = useTranslations('MainLayout');
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   
   useEffect(() => {
@@ -112,11 +118,11 @@ function PaymentReminderBanner({ profile, locale }: { profile: any, locale: stri
         <div className="flex items-center gap-2">
           <AlertTriangle size={20} className="flex-shrink-0" />
           <span className="text-sm font-bold leading-tight">
-            Subscription Expired. Some features are locked.
+            {t('subscriptionExpiredBanner')}
           </span>
         </div>
         <a href={paymentLink} className="bg-white text-red-600 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-red-50 transition-colors shadow-sm">
-          Pay Now to Unlock
+          {t('payNowToUnlock')}
         </a>
       </div>
     );
@@ -125,22 +131,51 @@ function PaymentReminderBanner({ profile, locale }: { profile: any, locale: stri
   if (daysLeft !== null && daysLeft <= 3 && daysLeft >= 0 && !profile.trialPaused) {
     const isToday = daysLeft === 0;
     const earlyPaymentLink = `${paymentLink}&force_pay=1`;
+    const plan = isTrial ? t('freeTrial') : t('subscription');
     return (
       <div className="bg-amber-500 text-slate-900 px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg z-40 relative">
         <div className="flex items-center gap-2">
           <Clock size={20} className="flex-shrink-0" />
           <span className="text-sm font-bold leading-tight">
-            {isTrial ? 'Free trial' : 'Subscription'} ends {isToday ? 'today' : `in ${daysLeft} day${daysLeft > 1 ? 's' : ''}`}. Renew to keep all features.
+            {isToday ? t('endsTodayMsg', { plan }) : t('endsInDaysMsg', { plan, days: daysLeft })}
           </span>
         </div>
         <a href={earlyPaymentLink} className="bg-slate-900 text-amber-500 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-slate-800 transition-colors shadow-sm">
-          Pay Now
+          {t('payNow')}
         </a>
       </div>
     );
   }
 
   return null;
+}
+
+function OfflineStatusBanner() {
+  const t = useTranslations('MainLayout');
+  const isOnline = useOnlineStatus();
+  const pendingCount = useOfflineQueueCount();
+
+  if (isOnline && pendingCount === 0) return null;
+
+  if (!isOnline) {
+    return (
+      <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
+        <WifiOff size={14} className="text-amber-400" />
+        <span>
+          {t('offlineBase')}
+          {pendingCount > 0 && t('offlinePendingSuffix', { count: pendingCount })}
+        </span>
+      </div>
+    );
+  }
+
+  // Back online but the queue hasn't drained yet (e.g. sync just kicked off).
+  return (
+    <div className="bg-emerald-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
+      <SyncIcon size={14} className="animate-spin" />
+      <span>{t('syncingBills', { count: pendingCount })}</span>
+    </div>
+  );
 }
 
 import GlobalSearch from './GlobalSearch';
@@ -152,6 +187,7 @@ export default function MainLayoutClient({
   locale: string;
   children: React.ReactNode;
 }) {
+  const t = useTranslations('MainLayout');
   const pathname = usePathname();
   const { loadFromStorage, user, role } = useAuthStore();
   const { profile, fetchProfile, activeShopId } = useBusinessStore();
@@ -179,6 +215,15 @@ export default function MainLayoutClient({
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // Replay any bills that were saved locally while offline. Runs once on
+  // mount (covers "was already back online when the app opened") and again
+  // every time the browser fires 'online' (covers "reconnected mid-session").
+  useEffect(() => {
+    flushOfflineSales();
+    window.addEventListener('online', flushOfflineSales);
+    return () => window.removeEventListener('online', flushOfflineSales);
+  }, []);
 
   // Refresh profile on tab focus/visibility to pick up plan changes from landing page.
   // Throttled: at most once per 30 s to avoid hammering the API on rapid tab switches.
@@ -251,7 +296,7 @@ export default function MainLayoutClient({
       
       if (!alwaysAllowed.includes(moduleName)) {
         if (!currentPackageConfig.modules.includes(moduleName) || staffRestricted) {
-          toast.error(`Module '${moduleName}' is not available in your ${currentPackageConfig.label}`);
+          toast.error(t('moduleNotAvailable', { module: moduleName, plan: currentPackageConfig.label }));
           router.replace('/');
         }
       }
@@ -310,6 +355,7 @@ export default function MainLayoutClient({
             <NotificationBell />
           </div>
         </header>
+        {mounted && <OfflineStatusBanner />}
         {mounted && <PaymentReminderBanner profile={profile} locale={locale} />}
         <main key={activeShopId || 'default'} className="flex-1 p-3 md:p-8">
           <div className={cn(!mounted || (ended && !isExcludedRoute) ? 'hidden' : 'block')}>
@@ -328,16 +374,16 @@ export default function MainLayoutClient({
                 <Clock size={40} className="text-rose-600 dark:text-rose-400" />
               </div>
               <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-4">
-                Subscription Ended
+                {t('subscriptionEndedTitle')}
               </h2>
               <p className="text-slate-600 dark:text-slate-400 text-lg mb-8 leading-relaxed">
-                Your subscription has ended. Please renew to continue accessing this section.
+                {t('subscriptionEndedBody')}
               </p>
               <a
                 href={`/${locale}/payment?plan=shop`}
                 className="inline-flex items-center gap-2 bg-emerald-500 text-slate-900 font-bold px-8 py-4 rounded-xl hover:bg-emerald-400 hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl shadow-emerald-500/20"
               >
-                Renew Subscription
+                {t('renewSubscription')}
               </a>
             </div>
           )}
@@ -345,7 +391,7 @@ export default function MainLayoutClient({
         <footer className="border-t border-slate-200 dark:border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-shrink-0 bg-slate-50 dark:bg-slate-900/50">
           <p className="text-xs text-slate-500 dark:text-slate-600" suppressHydrationWarning>
             © {new Date().getFullYear()}{' '}
-            <span className="text-slate-700 dark:text-slate-400 font-semibold">{mounted ? (profile.shopName || 'Vyapar Sarthi') : 'Vyapar Sarthi'}</span>. All rights reserved.
+            <span className="text-slate-700 dark:text-slate-400 font-semibold">{mounted ? (profile.shopName || 'Vyapar Sarthi') : 'Vyapar Sarthi'}</span>. {t('allRightsReserved')}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-700">Vyapar Sarthi v2.0</p>
         </footer>

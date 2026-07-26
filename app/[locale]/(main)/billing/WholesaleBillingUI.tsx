@@ -7,6 +7,11 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useBarcodeScanner, playScanBeep, matchProductByCode } from '@/lib/useBarcodeScanner';
+import nextDynamic from 'next/dynamic';
+// Keeps html5-qrcode out of the server bundle and off the initial payload.
+const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { ssr: false });
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Search, Scan, Trash2, Plus, Minus, CreditCard, IndianRupee,
   User, X, Printer, Calculator as CalcIcon, FileText, Smartphone,
@@ -113,6 +118,15 @@ export default function WholesaleBillingUI() {
 
   // Manual Add
   const [showManualAdd, setShowManualAdd] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<
+    { status: 'ok' | 'error' | 'pending'; text: string } | null
+  >(null);
+  // Stops a slow lookup for an earlier scan clobbering a later one.
+  const scanSeqRef = useRef(0);
+  // Camera scanning is only useful on a phone — a desktop counter already has
+  // a real USB/Bluetooth barcode scanner (handled by useBarcodeScanner below).
+  const isMobile = useIsMobile();
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [showManualBillUpload, setShowManualBillUpload] = useState(false);
   const [manualProduct, setManualProduct] = useState({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '' });
 
@@ -270,22 +284,64 @@ export default function WholesaleBillingUI() {
     searchInputRef.current?.focus();
   }, [items, addItem, updateQuantity, getPrice]);
 
-  const handleScan = useCallback((barcode: string) => {
-    const product = products.find(p => p.barcode === barcode);
-    if (product) {
-      addToCart(product);
+  const handleScan = useCallback(async (barcode: string) => {
+    const raw = String(barcode).trim();
+    const seq = ++scanSeqRef.current;
+
+    const local = matchProductByCode(products, raw);
+    if (local) {
+      addToCart(local);
+      playScanBeep(true);
+      setScanFeedback({ status: 'ok', text: local.name });
+      return;
+    }
+
+    // A non-empty list below the 2000-row cap is the whole catalogue, so a local
+    // miss is genuinely "not found" — answer instantly. An empty list is still
+    // loading, so fall through to the (bounded) server lookup instead.
+    if (products.length > 0 && products.length < 2000) {
+      playScanBeep(false);
+      setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
+      return;
+    }
+
+    // Large catalogue: look up, but bound the wait so the counter never hangs.
+    setScanFeedback({ status: 'pending', text: `Looking up ${raw}…` });
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 4000);
+      const res = await api.get(`/products/barcode/${encodeURIComponent(raw)}`, { signal: ac.signal });
+      clearTimeout(timer);
+      if (seq !== scanSeqRef.current) return; // superseded by a newer scan
+      const found = res.data;
+      if (found?.id) {
+        addToCart(found);
+        playScanBeep(true);
+        setScanFeedback({ status: 'ok', text: found.name });
+        return;
+      }
+      throw new Error('not found');
+    } catch {
+      if (seq !== scanSeqRef.current) return;
+      // Previously a miss was silent, so the cashier had no way to tell an
+      // unrecognised code from one that simply hadn't registered.
+      playScanBeep(false);
+      setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
     }
   }, [addToCart, products]);
 
-  // Keyboard Shortcuts & Hardware Scanner
+  // Hardware scanner — shared detection logic (see lib/useBarcodeScanner).
+  useBarcodeScanner({ onScan: handleScan });
+
   useEffect(() => {
-    let barcodeBuffer = '';
-    let lastKeyTime = Date.now();
+    if (!scanFeedback || scanFeedback.status === 'pending') return;
+    const t = setTimeout(() => setScanFeedback(null), 1800);
+    return () => clearTimeout(t);
+  }, [scanFeedback]);
 
+  // Keyboard shortcuts (kept separate from scanning).
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const now = Date.now();
-
-      // Keyboard Shortcuts
       if (e.key === 'F2') {
         e.preventDefault();
         if (items.length > 0 && !showCheckout && !showBillModal) {
@@ -298,31 +354,11 @@ export default function WholesaleBillingUI() {
         e.preventDefault();
         setShowManualAdd(true);
       }
-
-      // Hardware Scanner Logic
-      if (now - lastKeyTime > 50) {
-        barcodeBuffer = '';
-      }
-
-      if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
-        e.preventDefault();
-        handleScan(barcodeBuffer);
-        barcodeBuffer = '';
-        if (document.activeElement instanceof HTMLInputElement) {
-          document.activeElement.blur();
-        }
-        return;
-      }
-
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        barcodeBuffer += e.key;
-      }
-      lastKeyTime = now;
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleScan, items.length, showCheckout, showBillModal]);
+  }, [items.length, showCheckout, showBillModal]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -378,7 +414,7 @@ export default function WholesaleBillingUI() {
       pdf.save(`bill-${lastBill?.billNumber?.replace(/[^a-zA-Z0-9]/g, '') || 'invoice'}.pdf`);
     } catch (error) {
       console.error('Failed to generate PDF', error);
-      alert('Failed to download PDF. Please try again.');
+      alert(t('failedToDownloadPdf'));
     }
   };
 
@@ -420,7 +456,7 @@ export default function WholesaleBillingUI() {
     } catch (error: any) {
       if (error?.name !== 'AbortError') {
         console.error('Failed to share PDF', error);
-        alert('Could not share PDF. Try downloading it instead.');
+        alert(t('couldNotSharePdf'));
       }
     } finally {
       setIsSharing(false);
@@ -481,11 +517,11 @@ export default function WholesaleBillingUI() {
     if (items.length === 0) return;
     
     if (remainingAmount > 0 && !customerName.trim()) {
-      alert("Customer Name is required for Udhar / Remaining balances.");
+      alert(t('customerNameRequiredUdhar'));
       return;
     }
     if (collectedAmount > total) {
-      alert("Collected amount cannot be greater than Total bill.");
+      alert(t('collectedExceedsTotal'));
       return;
     }
     
@@ -494,6 +530,7 @@ export default function WholesaleBillingUI() {
     try {
       const saleItems = items.map(item => ({
         product_id: typeof item.id === 'string' && !item.id.includes('.') ? item.id : null,
+        name: item.name,
         unit: item.unit,
         variant: item.variant || null,
         quantity: item.quantity,
@@ -550,7 +587,7 @@ export default function WholesaleBillingUI() {
 
     } catch (err) {
       console.error('Failed to generate bill', err);
-      alert('Failed to generate bill.');
+      alert(t('failedToGenerateBillShort'));
     } finally {
       setIsGenerating(false);
     }
@@ -564,6 +601,20 @@ export default function WholesaleBillingUI() {
         
         {/* Top Bar: Search & Scanner */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap gap-3 items-center">
+          {/* In-app camera viewfinder — never leaves the bill. Mobile-only:
+              a desktop counter already has a real barcode scanner plugged in,
+              which types straight into this screen via useBarcodeScanner. */}
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setShowCameraScanner(true)}
+              title={t('scanBarcode')}
+              className="shrink-0 flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm transition-colors active:scale-95"
+            >
+              <Scan size={20} />
+              <span className="hidden sm:inline text-sm">Scan</span>
+            </button>
+          )}
           <div className="relative flex-1 min-w-[250px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input
@@ -1185,6 +1236,38 @@ export default function WholesaleBillingUI() {
                </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Camera scanner overlay — continuous, since billing is a rapid run of
+          items and reopening per product would be unusable at a counter. */}
+      {isMobile && showCameraScanner && (
+        <CameraScanner
+          continuous
+          onScan={(code) => handleScan(code)}
+          onClose={() => {
+            setShowCameraScanner(false);
+            setTimeout(() => searchInputRef.current?.focus(), 100);
+          }}
+        />
+      )}
+
+      {/* Scan confirmation — pairs with the beep. */}
+      {scanFeedback && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            'fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-5 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 pointer-events-none',
+            scanFeedback.status === 'ok' ? 'bg-emerald-600 border-emerald-500 text-white'
+              : scanFeedback.status === 'error' ? 'bg-red-600 border-red-500 text-white'
+              : 'bg-slate-800 border-slate-700 text-white',
+          )}
+        >
+          <span className="font-bold text-sm max-w-[60vw] truncate">
+            {scanFeedback.status === 'ok' ? '✓ ' : scanFeedback.status === 'error' ? '✕ ' : '⋯ '}
+            {scanFeedback.text}
+          </span>
         </div>
       )}
     </div>

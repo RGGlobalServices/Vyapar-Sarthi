@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import api from './api';
+import { withOfflineCache } from './offlineCache';
 
 // ─── Auth / Profile Store ──────────────────────────────────────────────────
 
@@ -217,6 +218,29 @@ interface UdharStore {
   addUdharFromImport: (customerName: string, amount: number, note: string, date: string) => Promise<void>;
 }
 
+// Udhar money movements also change what the Dashboard and Customers screens
+// show (total udhar, period udhar, customer dues). Those read through SWR, so
+// nudge their caches to refetch — otherwise the other sections keep rendering
+// pre-mutation numbers until the user reloads the page. Keys may be a plain
+// string or a [url, shopId] tuple, so both shapes are matched.
+function revalidateUdharDependents() {
+  import('swr')
+    .then(({ mutate }) => {
+      mutate(
+        (key) => {
+          const k = Array.isArray(key) ? key[0] : key;
+          return (
+            typeof k === 'string' &&
+            (k.startsWith('/reports/') || k.startsWith('/customers') || k.startsWith('/activity'))
+          );
+        },
+        undefined,
+        { revalidate: true },
+      );
+    })
+    .catch(() => {});
+}
+
 export const useUdharStore = create<UdharStore>((set, get) => ({
   customers: [],
   loading: false,
@@ -258,6 +282,7 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
       set((state) => ({
         customers: state.customers.map((c) => (c.id === tempId ? { ...c, id: realId } : c)),
       }));
+      revalidateUdharDependents();
       return realId;
     } catch (err) {
       set((state) => ({ customers: state.customers.filter((c) => c.id !== tempId) }));
@@ -283,20 +308,33 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
     set((state) => ({ customers: state.customers.filter((c) => c.id !== customerId) }));
     try {
       await api.delete(`/customers/${customerId}`);
+      revalidateUdharDependents();
     } catch (err) {
       set({ customers: prev });
       throw err;
     }
   },
 
-  // Optimistic: the amount + updated due appear instantly (due is derived from
-  // transactions), then the server confirms in the background.
+  // Optimistic: the amount + updated due appear instantly, then the server
+  // confirms in the background.
+  //
+  // `totalDue` MUST be adjusted here as well as pushing the transaction. The UI
+  // reads the server-computed `totalDue` field in preference to re-deriving the
+  // balance from `transactions`, so appending a transaction alone leaves every
+  // total showing a stale number until the page is manually refreshed.
   addTransaction: async (customerId, tx) => {
     const tempTx: UdharTransaction = { ...tx, id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` };
     const prev = get().customers;
+    const delta = tx.type === 'udhar' ? tx.amount : -tx.amount;
     set((state) => ({
       customers: state.customers.map((c) =>
-        c.id === customerId ? { ...c, transactions: [...(c.transactions || []), tempTx] } : c,
+        c.id === customerId
+          ? {
+              ...c,
+              transactions: [...(c.transactions || []), tempTx],
+              totalDue: (c.totalDue || 0) + delta,
+            }
+          : c,
       ),
     }));
     try {
@@ -311,6 +349,11 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
           ),
         }));
       }
+      // Reconcile against server truth (rounding, concurrent edits, other
+      // devices) without flipping the loading spinner, and refresh the other
+      // screens that show these same numbers.
+      get().silentRefresh();
+      revalidateUdharDependents();
     } catch (err) {
       set({ customers: prev });
       throw err;
@@ -319,13 +362,27 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
 
   deleteTransaction: async (customerId, txId) => {
     const prev = get().customers;
+    // Reverse the deleted entry's effect on the running balance too, otherwise
+    // the total keeps counting a transaction that is no longer listed.
+    const removed = prev
+      .find((c) => c.id === customerId)
+      ?.transactions?.find((t) => t.id === txId);
+    const delta = removed ? (removed.type === 'udhar' ? -removed.amount : removed.amount) : 0;
     set((state) => ({
       customers: state.customers.map((c) =>
-        c.id === customerId ? { ...c, transactions: c.transactions.filter((t) => t.id !== txId) } : c,
+        c.id === customerId
+          ? {
+              ...c,
+              transactions: c.transactions.filter((t) => t.id !== txId),
+              totalDue: (c.totalDue || 0) + delta,
+            }
+          : c,
       ),
     }));
     try {
       await api.delete(`/customers/${customerId}/transactions/${txId}`);
+      get().silentRefresh();
+      revalidateUdharDependents();
     } catch (err) {
       set({ customers: prev });
       throw err;
@@ -431,12 +488,15 @@ export const useStockStore = create<StockStore>((set, get) => ({
       set({ loading: true });
     }
     try {
-      const [res, logRes] = await Promise.all([
-        api.get('/products'),
-        api.get('/products/logs/all')
+      // Cached independently: with no connection, the (larger, more useful)
+      // product list should still load from last time even if the activity
+      // log — which nobody needs offline — has nothing cached yet.
+      const [productsData, logsData] = await Promise.all([
+        withOfflineCache('stock-products', () => api.get('/products').then(r => r.data)),
+        withOfflineCache('stock-logs', () => api.get('/products/logs/all').then(r => r.data)).catch(() => []),
       ]);
 
-      const items = res.data.map((p: any) => ({
+      const items = productsData.map((p: any) => ({
         id: p.id,
         name: p.name,
         category: p.category,
@@ -459,7 +519,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
         recentlyAdded: p.recentlyAdded || 0,
       }));
 
-      const log = (logRes.data || []).map((l: any) => ({
+      const log = (logsData || []).map((l: any) => ({
         id: l.id,
         itemName: l.product_name || l.products?.name || 'Product',
         type: l.type,

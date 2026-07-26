@@ -11,13 +11,15 @@ import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariant
 import {
   Search, ArrowDownLeft, ArrowUpRight, AlertTriangle,
   Plus, Trash2, X, Check, Package, Archive, ArchiveRestore,
-  Pencil, ShieldCheck, Trash, Loader2, Warehouse, Store, MapPin, IndianRupee,
+  Pencil, ShieldCheck, Trash, Loader2, Warehouse, Store, MapPin, IndianRupee, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStockStore, StockItem } from '@/lib/store';
+import DailyStockRegister from './DailyStockRegister';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
+import { useCategories } from '@/lib/useCategories';
 
 function getStatus(item: StockItem) {
   if (item.current === 0) return 'out';
@@ -49,6 +51,17 @@ export default function LegacyStockUI() {
   const [search, setSearch]   = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showArchived, setShowArchived] = useState(false);
+
+  // Category suggestions merge the shop's saved list, whatever its stock
+  // already uses, and the business-type defaults; `saveCategory` remembers a
+  // newly typed one so it shows up in the list from then on.
+  const { suggestions: categorySuggestions, saveCategory } = useCategories(
+    profile.businessType,
+    useMemo(
+      () => Array.from(new Set(items.map((i: StockItem) => i.category).filter(Boolean))) as string[],
+      [items],
+    ),
+  );
 
   useEffect(() => {
     fetchStock();
@@ -92,7 +105,7 @@ export default function LegacyStockUI() {
   const [newColors, setNewColors] = useState<string[]>([]);  // colour × size (clothes/shoes) for New Product
 
   // ── Godown / shop view ───────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState<'all' | 'godown' | 'shop'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'godown' | 'shop' | 'daily'>('all');
   const [godowns, setGodowns] = useState<any[]>([]);
   const [selectedGodownId, setSelectedGodownId] = useState('');
   const [godownData, setGodownData] = useState<any | null>(null);
@@ -160,6 +173,8 @@ export default function LegacyStockUI() {
         if (newTotal !== item.current) updates.current = newTotal;
       }
       if (Object.keys(updates).length > 0) await updateItem(item.id, updates);
+      // Remember a newly typed category so it is offered next time.
+      saveCategory(category);
       // Simple +/- adjust only applies to non-sized products.
       const qty = Number(adjQty);
       if (!hasSizes && qty > 0) await adjustStock(item.id, adjType === 'in' ? qty : -qty, adjType === 'in' ? t('stockIn') : t('stockOut'));
@@ -212,6 +227,7 @@ export default function LegacyStockUI() {
       if (!newForm.name.trim()) { setError(t('nameRequired') ?? 'Name required'); setSubmitting(false); return; }
       if (!newVariantActive && (!q || q <= 0)) { setError(t('validAmount') ?? 'Enter a valid quantity.'); setSubmitting(false); return; }
       try {
+        saveCategory(newForm.category);
         await addItem({
           name: newForm.name.trim(),
           category: newForm.category.trim() || 'General',
@@ -384,7 +400,7 @@ export default function LegacyStockUI() {
                   {Math.max(0, item.current)}
                 </button>
                 {(item.recentlyAdded ?? 0) > 0 && (
-                  <span className="ml-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title="Recently added stock (last 24h)">
+                  <span className="ml-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title={t('recentlyAddedStock')}>
                     +{item.recentlyAdded}
                   </span>
                 )}
@@ -406,12 +422,12 @@ export default function LegacyStockUI() {
                 <button
                   onClick={() => openEditModal(item)}
                   className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
-                  title="Click to adjust stock"
+                  title={t('clickToAdjustStock')}
                 >
                   {Math.max(0, item.current)}
                 </button>
                 {(item.recentlyAdded ?? 0) > 0 && (
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title="Recently added stock (last 24h)">
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title={t('recentlyAddedStock')}>
                     +{item.recentlyAdded}
                   </span>
                 )}
@@ -552,6 +568,7 @@ export default function LegacyStockUI() {
           { key: 'all', label: 'All Stock', icon: Package },
           ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
           ...(allShops.length > 1 ? [{ key: 'shop', label: 'By Shop', icon: Store }] : []),
+          { key: 'daily', label: t('dailyRegister'), icon: CalendarDays },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
             className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
@@ -676,6 +693,9 @@ export default function LegacyStockUI() {
           <p className="text-xs text-slate-500">Showing stock for: <strong className="text-slate-300">{profile.shopName}</strong></p>
         </div>
       )}
+
+      {/* ── Daily Stock Register ── */}
+      {viewMode === 'daily' && <DailyStockRegister />}
 
       {/* ── All Stock view (existing) — only show when viewMode === 'all' ── */}
       {viewMode === 'all' && (<>
@@ -928,7 +948,11 @@ export default function LegacyStockUI() {
                   </div>
                   <div>
                     <label className="text-[11px] text-slate-500 mb-1 block">Category</label>
-                    <input className={inp} value={editModal.category} onChange={e => setEditModal(m => m ? { ...m, category: e.target.value } : m)} />
+                    <input className={inp} list="stock-edit-cat-list" placeholder={t('selectOrTypeNew')}
+                      value={editModal.category} onChange={e => setEditModal(m => m ? { ...m, category: e.target.value } : m)} />
+                    <datalist id="stock-edit-cat-list">
+                      {categorySuggestions.map(cat => <option key={cat} value={cat}>{translateData(cat, locale) || cat}</option>)}
+                    </datalist>
                   </div>
                   <div>
                     <label className="text-[11px] text-slate-500 mb-1 block">Unit</label>
@@ -990,9 +1014,9 @@ export default function LegacyStockUI() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">{t('category')}</label>
-                      <input className={inp} list="stock-cat-list" value={newForm.category} onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))} placeholder={t('chooseCategory') || 'Select...'} />
+                      <input className={inp} list="stock-cat-list" value={newForm.category} onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))} placeholder={t('chooseCategory') || 'Select or type a new one'} />
                       <datalist id="stock-cat-list">
-                        {bizConfig.defaultCategories.map(cat => <option key={cat} value={cat}>{translateData(cat, locale) || cat}</option>)}
+                        {categorySuggestions.map(cat => <option key={cat} value={cat}>{translateData(cat, locale) || cat}</option>)}
                       </datalist>
                     </div>
                     <div>

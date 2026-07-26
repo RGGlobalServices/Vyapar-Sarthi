@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -21,6 +22,7 @@ export default function LedgerView({
   entityId: string;
   entityType: 'customer' | 'party' | 'supplier';
 }) {
+  const t = useTranslations('LedgerView');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,7 +52,7 @@ export default function LedgerView({
     return (
       <div className="text-center py-12 text-slate-500">
         <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-        <p>No transactions found.</p>
+        <p>{t('noTransactionsFound')}</p>
       </div>
     );
   }
@@ -73,7 +75,7 @@ export default function LedgerView({
             
             <div className="flex-1 min-w-0">
               <h4 className="font-bold text-slate-900 dark:text-white truncate">
-                {tx.type === 'udhar' ? 'Credit Bill' : tx.type === 'payment' ? 'Payment Received' : tx.type}
+                {tx.type === 'udhar' ? t('creditBill') : tx.type === 'payment' ? t('paymentReceived') : tx.type}
               </h4>
               <p className="text-xs text-slate-500 truncate flex items-center gap-1">
                 {tx.billNumber && <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1 rounded">{tx.billNumber}</span>}

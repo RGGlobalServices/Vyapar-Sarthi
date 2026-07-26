@@ -44,7 +44,7 @@ const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:b
 // ─── WhatsApp & Email reminder helper ─────────────────────────────────────────
 import { shareFileOrText, generateEmailLink } from '@/lib/shareUtils';
 
-async function shareCustomerLedger(customer: UdharCustomer, shopName: string, channel: 'whatsapp' | 'email') {
+async function shareCustomerLedger(customer: UdharCustomer, shopName: string, channel: 'whatsapp' | 'email', t: (key: string, values?: Record<string, any>) => string) {
   const { default: jsPDF } = await import('jspdf');
   const { default: html2canvas } = await import('html2canvas-pro');
   const due = totalDue(customer);
@@ -54,18 +54,18 @@ async function shareCustomerLedger(customer: UdharCustomer, shopName: string, ch
   div.innerHTML = `
     <div style="text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px">
       <h1 style="font-size:17px;font-weight:900">${shopName}</h1>
-      <p style="font-size:9px">UDHAR STATEMENT</p>
+      <p style="font-size:9px">${t('udharStatementTitle')}</p>
     </div>
-    <div style="font-size:9px;margin-bottom:4px">Customer: <strong>${customer.name}</strong></div>
-    ${customer.mobile ? `<div style="font-size:9px;margin-bottom:10px">Mobile: ${customer.mobile}</div>` : ''}
+    <div style="font-size:9px;margin-bottom:4px">${t('customerColonLabel')} <strong>${customer.name}</strong></div>
+    ${customer.mobile ? `<div style="font-size:9px;margin-bottom:10px">${t('mobileColonLabel')} ${customer.mobile}</div>` : ''}
     <table style="width:100%;border-top:1px dashed #000;border-bottom:1px dashed #000;margin-bottom:10px">
-      <thead><tr style="font-size:9px"><th style="text-align:left;padding:4px 0">DATE</th><th>TYPE</th><th style="text-align:right;padding:4px 0">AMT</th></tr></thead>
-      <tbody>${sorted.map((tx: UdharTransaction) => `<tr><td style="font-size:9px;padding:2px 0">${new Date(tx.date).toLocaleDateString()}</td><td style="font-size:9px">${tx.type === 'udhar' ? 'Credit' : 'Payment'}</td><td style="text-align:right;font-size:9px">${tx.type === 'udhar' ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}</td></tr>`).join('')}</tbody>
+      <thead><tr style="font-size:9px"><th style="text-align:left;padding:4px 0">${t('dateColHeader')}</th><th>${t('typeColHeader')}</th><th style="text-align:right;padding:4px 0">${t('amtColHeader')}</th></tr></thead>
+      <tbody>${sorted.map((tx: UdharTransaction) => `<tr><td style="font-size:9px;padding:2px 0">${new Date(tx.date).toLocaleDateString()}</td><td style="font-size:9px">${tx.type === 'udhar' ? t('creditType') : t('paymentTypeLabel')}</td><td style="text-align:right;font-size:9px">${tx.type === 'udhar' ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}</td></tr>`).join('')}</tbody>
     </table>
     <div style="display:flex;justify-content:space-between;font-weight:900;font-size:14px;border-top:1px solid #000;padding-top:4px">
-      <span>OUTSTANDING</span><span>₹${due.toLocaleString('en-IN')}</span>
+      <span>${t('outstandingAllCaps')}</span><span>₹${due.toLocaleString('en-IN')}</span>
     </div>
-    <div style="text-align:center;margin-top:16px;padding-top:8px;border-top:1px dashed #000;font-size:8px">Please clear your outstanding at the earliest.<br/>Powered by Vyapar Sarthi</div>
+    <div style="text-align:center;margin-top:16px;padding-top:8px;border-top:1px dashed #000;font-size:8px">${t('pleaseClearOutstanding')}<br/>${t('poweredByFooter')}</div>
   `;
   document.body.appendChild(div);
   const canvas = await html2canvas(div, { scale: 3, useCORS: true });
@@ -76,26 +76,26 @@ async function shareCustomerLedger(customer: UdharCustomer, shopName: string, ch
   const blob = pdf.output('blob');
   const file = new File([blob], `Udhar_${customer.name.replace(/\s+/g, '_')}.pdf`, { type: 'application/pdf' });
   const msgLines = [
-    `*Udhar Reminder*`,
-    `From: ${shopName}`,
-    `Customer: ${customer.name}`,
-    `Outstanding: *₹${due.toLocaleString('en-IN')}*`,
+    `*${t('udharReminderTitle')}*`,
+    t('fromColonLabel', { shop: shopName }),
+    `${t('customerColonLabel')} ${customer.name}`,
+    `*${t('outstandingColonLabel', { amount: `₹${due.toLocaleString('en-IN')}` })}*`,
     '',
-    'Please clear your dues at the earliest.',
-    '_Powered by Vyapar Sarthi_',
+    t('pleaseClearDues'),
+    `_${t('poweredByFooter')}_`,
   ].join('\n');
-  
+
   if (channel === 'email') {
     if (customer.email) {
-      window.open(generateEmailLink(customer.email, `Udhar Statement - ${shopName}`, msgLines.replace(/\*/g, '').replace(/_/g, '')), '_blank');
+      window.open(generateEmailLink(customer.email, t('udharStatementSubject', { shop: shopName }), msgLines.replace(/\*/g, '').replace(/_/g, '')), '_blank');
     } else {
-      alert('Customer has no email address.');
+      alert(t('customerNoEmail'));
     }
     return;
   }
-  
+
   // WhatsApp / Default share
-  const shared = await shareFileOrText(file, msgLines, 'Udhar Statement');
+  const shared = await shareFileOrText(file, msgLines, t('udharStatementShareTitle'));
   if (!shared) {
     const phone = (customer.mobile || '').replace(/[^0-9]/g, '');
     const waNum = phone.length === 10 ? `91${phone}` : phone.length > 10 ? phone : '';
@@ -107,6 +107,7 @@ async function shareCustomerLedger(customer: UdharCustomer, shopName: string, ch
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function UdharPage() {
   const t = useTranslations('Udhar');
+  const tSlip = useTranslations('UdharSlip');
   const locale = useLocale();
   const { profile } = useBusinessStore();
   const { customers, loading, fetchCustomers, addCustomer, updateCustomer, deleteCustomer, addTransaction, deleteTransaction } = useUdharStore();
@@ -220,7 +221,7 @@ export default function UdharPage() {
       // Refresh summary
       const sRes = await api.get('/dukandar/credit/summary');
       setDukandarSummary(sRes.data || {});
-    } catch { alert('Failed to add credit.'); }
+    } catch { alert(t('failedToAddCredit')); }
     finally { setCreditSaving(false); }
   }
 
@@ -232,7 +233,7 @@ export default function UdharPage() {
       setDukandarCredits(m => ({ ...m, [retailerId]: r.data || [] }));
       const sRes = await api.get('/dukandar/credit/summary');
       setDukandarSummary(sRes.data || {});
-    } catch { alert('Failed to mark as paid.'); }
+    } catch { alert(t('failedToMarkPaid')); }
     finally { setMarkingPaidId(null); }
   }
 
@@ -319,7 +320,7 @@ export default function UdharPage() {
     const targets = customers.filter(c => selectedIds.has(c.id) && totalDue(c) > 0);
     for (const customer of targets) {
       if (bulkChannel === 'whatsapp') {
-        await shareCustomerLedger(customer, profile.shopName || 'My Store', 'whatsapp');
+        await shareCustomerLedger(customer, profile.shopName || 'My Store', 'whatsapp', t);
         await new Promise(r => setTimeout(r, 600));
       } else {
         const due = totalDue(customer);
@@ -393,7 +394,7 @@ export default function UdharPage() {
       setModal(null);
     } catch (err) {
       console.error(err);
-      alert('Failed to generate report');
+      alert(t('failedToGenerateReport'));
     } finally {
       setExporting(false);
     }
@@ -416,10 +417,10 @@ export default function UdharPage() {
         channel: reminderForm.channel,
         message: reminderForm.message || `Reminder: ₹${totalDue(selected).toLocaleString('en-IN')} is due from ${selected.name}`,
       });
-      alert('Auto-reminder set successfully!');
+      alert(t('autoReminderSetSuccess'));
       setModal(null);
     } catch {
-      alert('Failed to set reminder. Please try again.');
+      alert(t('failedToSetReminder'));
     } finally {
       setSavingReminder(false);
     }
@@ -471,9 +472,12 @@ export default function UdharPage() {
     setAddingTx(true);
     try {
       await addTransaction(selected!.id, tx);
-      const customer = customers.find(c => c.id === selected!.id)!;
+      // Read straight from the store: `customers` in this closure is the
+      // pre-mutation render value, and the store now folds the amount into
+      // totalDue itself, so re-adding `amt` here would double-count it.
+      const customer = useUdharStore.getState().customers.find(c => c.id === selected!.id)!;
       setModal(null);
-      setRecentTx({ tx, customer, newDue: totalDue(customer) + amt });
+      setRecentTx({ tx, customer, newDue: totalDue(customer) });
     } catch {
       setTxError(t('addUdharFailed'));
     } finally {
@@ -492,8 +496,11 @@ export default function UdharPage() {
     setAddingTx(true);
     try {
       await addTransaction(selected!.id, tx);
+      // Fresh store read — the store already subtracted the payment from
+      // totalDue, so subtracting `amt` again here would understate the due.
+      const updated = useUdharStore.getState().customers.find(c => c.id === selected!.id) ?? customer;
       setModal(null);
-      setRecentTx({ tx, customer, newDue: totalDue(customer) - amt });
+      setRecentTx({ tx, customer: updated, newDue: totalDue(updated) });
     } catch {
       setTxError(t('paymentFailed'));
     } finally {
@@ -543,6 +550,7 @@ export default function UdharPage() {
         due: recentTx.newDue,
         note: recentTx.tx.note,
         pdfUrl: pdfUrl || undefined,
+        t: tSlip,
       });
 
       const phone = (recentTx.customer.mobile || '').replace(/\D/g, '');
@@ -588,7 +596,7 @@ export default function UdharPage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => { setReminderForm({ date: '', time: '', message: '', channel: 'whatsapp' }); setModal('autoReminder'); }}
-              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors" title="Set Payment Reminder">
+              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors" title={t('setPaymentReminderTitle')}>
               <AlarmClock size={17} />
             </button>
             <button onClick={() => openEdit(customer)} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors"><Pencil size={17} /></button>
@@ -618,13 +626,13 @@ export default function UdharPage() {
             </button>
             {due > 0 && (
               <>
-                <button onClick={() => shareCustomerLedger(customer, profile.shopName || 'My Store', 'whatsapp')}
+                <button onClick={() => shareCustomerLedger(customer, profile.shopName || 'My Store', 'whatsapp', t)}
                   className="bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-green-500/20 transition-colors text-sm active:scale-95">
                   <Send size={16} /> WhatsApp
                 </button>
-                <button onClick={() => shareCustomerLedger(customer, profile.shopName || 'My Store', 'email')}
+                <button onClick={() => shareCustomerLedger(customer, profile.shopName || 'My Store', 'email', t)}
                   className="bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-blue-500/20 transition-colors text-sm active:scale-95">
-                  <Mail size={16} /> Email
+                  <Mail size={16} /> {t('emailBtn')}
                 </button>
               </>
             )}
@@ -689,7 +697,7 @@ export default function UdharPage() {
             <form onSubmit={handleEditCustomer} className="space-y-4">
               <UField label={t('nameLabel')}><input required className={inp} value={custForm.name} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></UField>
               <UField label={t('mobileLabel')}><input className={inp} type="tel" value={custForm.mobile} onChange={e => setCustForm(f => ({ ...f, mobile: e.target.value }))} /></UField>
-              <UField label="Email (for reminders)"><input className={inp} type="email" inputMode="email" placeholder="customer@example.com" value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
+              <UField label={t('emailForRemindersLabel')}><input className={inp} type="email" inputMode="email" placeholder={t('customerEmailPlaceholder')} value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
               {custError && <p className="text-red-400 text-sm">{custError}</p>}
               <UActions onCancel={() => setModal(null)} submitLabel={t('save')} submitCls="bg-emerald-500 text-slate-900 hover:bg-emerald-400" />
             </form>
@@ -719,7 +727,7 @@ export default function UdharPage() {
           </UModal>
         )}
         {modal === 'autoReminder' && (
-          <UModal title="Set Payment Reminder" icon={<AlarmClock size={17} className="text-amber-400" />} onClose={() => setModal(null)}>
+          <UModal title={t('setPaymentReminderTitle')} icon={<AlarmClock size={17} className="text-amber-400" />} onClose={() => setModal(null)}>
             <form onSubmit={saveAutoReminder} className="space-y-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-300">
                 Customer: <span className="font-bold text-slate-900 dark:text-white">{customer.name}</span>
@@ -792,7 +800,7 @@ export default function UdharPage() {
 
         {/* Recent Transaction Receipt Modal */}
         {recentTx && (
-          <UModal title="Receipt Generated" onClose={() => setRecentTx(null)}>
+          <UModal title={t('receiptGeneratedTitle')} onClose={() => setRecentTx(null)}>
             <div className="flex flex-col items-center">
               <div className="border border-slate-200 dark:border-slate-800 p-2 bg-white rounded-lg mb-6 shadow-sm overflow-x-auto w-full flex justify-center">
                 <UdharSlip
@@ -1261,7 +1269,7 @@ export default function UdharPage() {
                   <input type="number" min="1" required inputMode="numeric" className={inp} placeholder="0" value={creditForm.amount} onChange={e => setCreditForm(f => ({ ...f, amount: e.target.value }))} />
                 </UField>
                 <UField label="Description / Items">
-                  <input className={inp} placeholder="e.g. Rice 50kg, Sugar 20kg" value={creditForm.description} onChange={e => setCreditForm(f => ({ ...f, description: e.target.value }))} />
+                  <input className={inp} placeholder={t('descriptionPlaceholder')} value={creditForm.description} onChange={e => setCreditForm(f => ({ ...f, description: e.target.value }))} />
                 </UField>
                 <UField label="Due Date (optional)">
                   <input type="date" className={inp} value={creditForm.dueDate} onChange={e => setCreditForm(f => ({ ...f, dueDate: e.target.value }))} />
@@ -1287,7 +1295,7 @@ export default function UdharPage() {
             <form onSubmit={handleAddCustomer} className="space-y-4">
               <UField label={t('nameLabel')}><input required disabled={addingCustomer} className={inp} placeholder={t('namePlaceholder')} value={custForm.name} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></UField>
               <UField label={t('mobileLabel')}><input className={inp} disabled={addingCustomer} type="tel" placeholder={t('mobilePlaceholder')} value={custForm.mobile} onChange={e => setCustForm(f => ({ ...f, mobile: e.target.value }))} /></UField>
-              <UField label="Email (for reminders)"><input className={inp} disabled={addingCustomer} type="email" inputMode="email" placeholder="customer@example.com" value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
+              <UField label={t('emailForRemindersLabel')}><input className={inp} disabled={addingCustomer} type="email" inputMode="email" placeholder={t('customerEmailPlaceholder')} value={custForm.email} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></UField>
               {custError && <p className="text-red-400 text-sm">{custError}</p>}
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setModal(null)} disabled={addingCustomer} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors text-sm disabled:opacity-50">{t('cancel')}</button>
@@ -1337,7 +1345,7 @@ export default function UdharPage() {
 
       {/* Export Report Modal */}
       {modal === 'exportReport' && (
-        <UModal title="Export Udhar Report" icon={<Download size={17} className="text-blue-400" />} onClose={() => setModal(null)}>
+        <UModal title={t('exportUdharReportTitle')} icon={<Download size={17} className="text-blue-400" />} onClose={() => setModal(null)}>
           <form onSubmit={handleExport} className="space-y-5">
             <UField label="Date Range">
               <select className={inp} value={exportFilter.date} onChange={e => setExportFilter(f => ({ ...f, date: e.target.value }))}>

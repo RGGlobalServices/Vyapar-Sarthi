@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTranslations } from 'next-intl';
 
 interface UdharSlipProps {
   type: 'udhar' | 'payment';
@@ -29,6 +30,8 @@ export const UdharSlip = React.forwardRef<HTMLDivElement, UdharSlipProps>(({
   logoUrl,
   due,
 }, ref) => {
+  const t = useTranslations('UdharSlip');
+  const tBill = useTranslations('BillSlip');
   return (
     <div
       ref={ref}
@@ -44,26 +47,26 @@ export const UdharSlip = React.forwardRef<HTMLDivElement, UdharSlipProps>(({
         )}
         <h1 className="text-[17px] font-black uppercase tracking-tight">{storeName}</h1>
         {storeAddress && <p className="text-[9px] mt-0.5">{storeAddress}</p>}
-        {storeMobile && <p className="text-[9px]">Mob: {storeMobile}</p>}
+        {storeMobile && <p className="text-[9px]">{tBill('mob')} {storeMobile}</p>}
       </div>
 
       <div className="text-center mb-4 text-[13px] font-bold uppercase border border-black rounded-sm py-1">
-        {type === 'payment' ? 'Payment Receipt' : 'Udhar Given'}
+        {type === 'payment' ? t('paymentReceipt') : t('udharGiven')}
       </div>
 
       {/* Meta */}
       <div className="mb-3 space-y-1 text-[10px]">
         <div className="flex justify-between">
-          <span>Date:</span>
+          <span>{t('date')}</span>
           <span className="font-bold">{date}</span>
         </div>
         <div className="flex justify-between">
-          <span>Customer:</span>
+          <span>{tBill('customer')}</span>
           <span className="font-bold uppercase text-right max-w-[150px] truncate">{customerName}</span>
         </div>
         {customerMobile && (
           <div className="flex justify-between">
-            <span>Mobile:</span>
+            <span>{t('mobile')}</span>
             <span>{customerMobile}</span>
           </div>
         )}
@@ -71,21 +74,21 @@ export const UdharSlip = React.forwardRef<HTMLDivElement, UdharSlipProps>(({
 
       {/* Amount Box */}
       <div className="my-4 p-3 border-2 border-black text-center">
-        <p className="text-[10px] mb-1">{type === 'payment' ? 'Amount Received' : 'Amount Given'}</p>
+        <p className="text-[10px] mb-1">{type === 'payment' ? t('amountReceived') : t('amountGiven')}</p>
         <p className="text-xl font-black">₹{amount.toLocaleString('en-IN')}</p>
       </div>
 
       {/* Note */}
       {note && (
         <div className="mb-3 text-[10px] italic bg-gray-50 p-2 border border-dashed border-gray-400">
-          Note: {note}
+          {t('note')} {note}
         </div>
       )}
 
       {/* Balance */}
       <div className="mt-3 pt-2 space-y-1" style={{ borderTop: '1px dashed #000' }}>
         <div className="flex justify-between text-[11px] font-bold">
-          <span>Total Balance Due:</span>
+          <span>{t('totalBalanceDue')}</span>
           <span>₹{due.toLocaleString('en-IN')}</span>
         </div>
       </div>
@@ -93,9 +96,9 @@ export const UdharSlip = React.forwardRef<HTMLDivElement, UdharSlipProps>(({
       {/* Footer */}
       <div className="text-center mt-5 pt-3" style={{ borderTop: '1px dashed #000' }}>
         <p className="font-bold text-[9px] uppercase">
-          {type === 'payment' ? 'THANK YOU FOR YOUR PAYMENT!' : 'PLEASE PAY YOUR DUES ON TIME'}
+          {type === 'payment' ? t('thankYouPayment') : t('pleasePayDues')}
         </p>
-        <p className="text-[7px] mt-2 text-gray-500">Powered by Vyapar Sarthi</p>
+        <p className="text-[7px] mt-2 text-gray-500">{t('poweredBy')}</p>
       </div>
     </div>
   );
@@ -113,24 +116,28 @@ export function generateUdharWhatsAppText(slip: {
   due: number;
   note?: string;
   pdfUrl?: string;
+  t?: (key: string, values?: Record<string, any>) => string;
 }): string {
   const lines: string[] = [];
   const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  const t = slip.t;
 
-  lines.push(`*${slip.storeName ?? 'Store'}*`);
+  lines.push(`*${slip.storeName ?? (t ? t('waStoreFallback') : 'Store')}*`);
   lines.push('');
-  lines.push(slip.type === 'payment' ? '✅ *Payment Received*' : '💸 *Udhar Given*');
-  lines.push(`Customer: ${slip.customerName}`);
-  lines.push(`Date: ${slip.date}`);
+  lines.push(slip.type === 'payment'
+    ? (t ? t('waPaymentReceived') : '✅ *Payment Received*')
+    : (t ? t('waUdharGiven') : '💸 *Udhar Given*'));
+  lines.push(t ? t('waCustomerLabel', { name: slip.customerName }) : `Customer: ${slip.customerName}`);
+  lines.push(t ? t('waDateLabel', { date: slip.date }) : `Date: ${slip.date}`);
   lines.push('');
-  lines.push(`Amount: *${fmt(slip.amount)}*`);
-  if (slip.note) lines.push(`Note: _${slip.note}_`);
+  lines.push(t ? t('waAmountLabel', { amount: fmt(slip.amount) }) : `Amount: *${fmt(slip.amount)}*`);
+  if (slip.note) lines.push(t ? t('waNoteLabel', { note: slip.note }) : `Note: _${slip.note}_`);
   lines.push('');
-  lines.push(`*Total Balance Due: ${fmt(slip.due)}*`);
-  
+  lines.push(t ? t('waTotalBalanceDue', { amount: fmt(slip.due) }) : `*Total Balance Due: ${fmt(slip.due)}*`);
+
   if (slip.pdfUrl) {
     lines.push('');
-    lines.push(`📄 Download Receipt: ${slip.pdfUrl}`);
+    lines.push(t ? t('waDownloadReceipt', { url: slip.pdfUrl }) : `📄 Download Receipt: ${slip.pdfUrl}`);
   }
 
   return lines.join('\n');

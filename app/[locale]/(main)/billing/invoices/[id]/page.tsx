@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
@@ -10,6 +11,7 @@ import { BillSlip } from '@/components/BillSlip';
 import { useAuthStore } from '@/lib/store';
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const t = useTranslations('Invoices');
   const { id } = use(params);
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +78,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       pdf.save(`bill-${invoice.id.substring(0, 8)}.pdf`);
     } catch (err) {
       console.error('PDF Download Error', err);
-      alert('Failed to generate PDF');
+      alert(t('pdfGenerationFailed'));
     } finally {
       if (clone && clone.parentNode) clone.parentNode.removeChild(clone);
       setDownloading(false);
@@ -91,7 +93,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] gap-4">
         <RefreshCw className="animate-spin text-emerald-500" size={40} />
-        <p className="text-slate-400 font-medium">Fetching invoice details...</p>
+        <p className="text-slate-400 font-medium">{t('fetchingDetails')}</p>
       </div>
     );
   }
@@ -103,11 +105,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           <Clock size={40} className="text-slate-400 dark:text-slate-700" />
         </div>
         <div className="text-center">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Invoice Not Found</h2>
-          <p className="text-slate-500 mt-1">This record might have been deleted or moved.</p>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{t('invoiceNotFound')}</h2>
+          <p className="text-slate-500 mt-1">{t('invoiceNotFoundHint')}</p>
         </div>
         <Link href="/billing/invoices" className="bg-emerald-500 text-white dark:text-slate-900 px-8 py-3 rounded-2xl font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
-          Back to History
+          {t('backToHistory')}
         </Link>
       </div>
     );
@@ -165,9 +167,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         {/* Breadcrumbs & Header */}
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
-            <Link href="/" className="hover:text-emerald-500 transition-colors">Dashboard</Link>
+            <Link href="/" className="hover:text-emerald-500 transition-colors">{t('dashboard')}</Link>
             <ChevronRight size={10} />
-            <Link href="/billing/invoices" className="hover:text-emerald-500 transition-colors">Invoices</Link>
+            <Link href="/billing/invoices" className="hover:text-emerald-500 transition-colors">{t('invoicesBreadcrumb')}</Link>
             <ChevronRight size={10} />
             <span className="text-slate-400">INV-{invoice.id.substring(0, 8)}</span>
           </div>
@@ -189,14 +191,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     {invoice.payment_type}
                   </span>
                 </h1>
-                <p className="text-slate-500 text-sm font-medium mt-1">Record created on {new Date(invoice.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                <p className="text-slate-500 text-sm font-medium mt-1">{t('recordCreatedOn', { date: new Date(invoice.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}</p>
               </div>
             </div>
             <button 
               onClick={handlePrint}
               className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-6 py-3 rounded-2xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm"
             >
-              <Printer size={18} /> Print Record
+              <Printer size={18} /> {t('printRecord')}
             </button>
           </div>
         </div>
@@ -207,19 +209,19 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
               <CardHeader className="bg-slate-50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800 p-6">
                 <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2 uppercase tracking-widest">
-                  <Package size={16} className="text-emerald-500" /> Purchased Items
+                  <Package size={16} className="text-emerald-500" /> {t('purchasedItems')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 overflow-x-auto w-full">
                 <table className="w-full text-left min-w-[500px]">
                   <thead className="bg-slate-100 dark:bg-slate-800/30 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                      <th className="px-6 py-4">Product Name</th>
-                      <th className="px-6 py-4 text-center">HSN</th>
-                      <th className="px-6 py-4 text-center">Qty</th>
-                      <th className="px-6 py-4 text-right">Price</th>
-                      <th className="px-6 py-4 text-right">GST %</th>
-                      <th className="px-6 py-4 text-right">Total</th>
+                      <th className="px-6 py-4">{t('colProductName')}</th>
+                      <th className="px-6 py-4 text-center">{t('colHsn')}</th>
+                      <th className="px-6 py-4 text-center">{t('colQty')}</th>
+                      <th className="px-6 py-4 text-right">{t('colPrice')}</th>
+                      <th className="px-6 py-4 text-right">{t('colGstPercent')}</th>
+                      <th className="px-6 py-4 text-right">{t('colTotal')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-slate-900 dark:text-slate-200">
@@ -248,25 +250,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl border-b-4 border-b-emerald-500/20 dark:border-b-emerald-500/20">
               <CardHeader className="bg-emerald-500/5 border-b border-emerald-500/10 p-6">
                 <CardTitle className="text-sm font-bold text-emerald-500 flex items-center gap-2 uppercase tracking-widest">
-                  Bill Summary
+                  {t('billSummary')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 font-medium tracking-tight">Total Items</span>
+                  <span className="text-slate-500 font-medium tracking-tight">{t('totalItems')}</span>
                   <span className="text-slate-900 dark:text-slate-100 font-bold">{items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 font-medium tracking-tight">Payment Status</span>
+                  <span className="text-slate-500 font-medium tracking-tight">{t('paymentStatus')}</span>
                   <span className={cn(
                     "font-bold uppercase tracking-wider text-xs",
                     billData.remainingAmount <= 0 ? "text-emerald-500" : billData.amountPaid > 0 ? "text-amber-500" : "text-orange-500"
                   )}>
-                    {billData.remainingAmount <= 0 ? 'Paid' : billData.amountPaid > 0 ? 'Partially Paid' : 'Credit (Udhar)'}
+                    {billData.remainingAmount <= 0 ? t('paidStatus') : billData.amountPaid > 0 ? t('partiallyPaidStatus') : t('creditUdharStatus')}
                   </span>
                 </div>
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
-                  <span className="text-sm font-bold text-slate-400 uppercase tracking-widest pb-1">Grand Total</span>
+                  <span className="text-sm font-bold text-slate-400 uppercase tracking-widest pb-1">{t('grandTotal')}</span>
                   <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{totalAmount.toLocaleString('en-IN')}</span>
                 </div>
               </CardContent>
@@ -277,7 +279,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
                 <CardHeader className="bg-amber-500/5 border-b border-amber-500/10 p-6">
                   <CardTitle className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2 uppercase tracking-widest">
-                    Original Bill
+                    {t('originalBill')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4">
@@ -288,7 +290,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 py-6 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold text-sm border border-dashed border-slate-200 dark:border-slate-700 rounded-xl transition-colors"
                     >
-                      View uploaded PDF
+                      {t('viewUploadedPdf')}
                     </a>
                   ) : (
                     <a href={invoice.bill_image_url} target="_blank" rel="noopener noreferrer">
@@ -311,7 +313,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     <User size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Customer</p>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('customer')}</p>
                     <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.customer_name}</p>
                   </div>
                 </div>
@@ -320,7 +322,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     <CreditCard size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Payment Mode</p>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('paymentMode')}</p>
                     <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.payment_type}</p>
                   </div>
                 </div>
@@ -329,7 +331,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     <Calendar size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Date</p>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('date')}</p>
                     <p className="text-slate-900 dark:text-slate-100 font-bold">{new Date(invoice.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                   </div>
                 </div>
@@ -346,7 +348,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               ) : (
                 <Download size={18} />
               )}
-              Download PDF Receipt
+              {t('downloadPdfReceipt')}
             </button>
           </div>
         </div>

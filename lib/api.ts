@@ -10,6 +10,40 @@
 // override it if the API is ever hosted on a separate origin.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
+/**
+ * Auto-refresh after writes.
+ *
+ * Every screen used to have to remember to refetch after its own mutation, and
+ * none of them refreshed the *other* screens that show the same figures — so a
+ * new sale left the dashboard totals stale until a manual page reload. Instead
+ * of repeating that at ~80 call sites, any successful write revalidates the
+ * SWR cache centrally here.
+ *
+ * This is cheap: SWR only refetches keys that currently have a mounted
+ * subscriber, so it refreshes what the user is actually looking at, not every
+ * endpoint in the app. Calls are debounced so a burst of writes (a batched
+ * import, for example) collapses into a single revalidation pass.
+ *
+ * Note this cannot help components that hold results in their own useState —
+ * those still need their own refetch after mutating.
+ */
+let revalidateTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRevalidateAll() {
+  if (typeof window === 'undefined') return;
+  if (revalidateTimer) clearTimeout(revalidateTimer);
+  revalidateTimer = setTimeout(() => {
+    revalidateTimer = null;
+    import('swr')
+      .then(({ mutate }) => {
+        // Bare matcher form: revalidates in the background and keeps the
+        // existing data on screen, so no loading spinner flashes.
+        mutate(() => true);
+      })
+      .catch(() => {});
+  }, 300);
+}
+
 async function request(url: string, options: RequestInit = {}) {
   // Extract token from localStorage safely
   const getAuthToken = () => {
@@ -118,6 +152,15 @@ async function request(url: string, options: RequestInit = {}) {
       throw friendlyErr;
     }
     const data = await response.json().catch(() => ({}));
+
+    // A write succeeded — pull the rest of the visible UI back in sync.
+    // Auth calls are excluded: those navigate the app anyway, and revalidating
+    // mid-login/logout just fires requests against a token that is changing.
+    const method = (options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && !url.startsWith('/auth/')) {
+      scheduleRevalidateAll();
+    }
+
     return { data };
   } catch (error: any) {
     if (error.response) throw error;

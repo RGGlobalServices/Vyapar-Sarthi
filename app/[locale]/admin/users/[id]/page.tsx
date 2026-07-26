@@ -290,6 +290,7 @@ export default function AdminUserDetailPage() {
               <div>
                 <p className="text-xs text-slate-500 font-semibold">Plan</p>
                 <p className="text-sm font-black text-slate-100 mt-1 capitalize">{shop.subscriptionPlan || '-'}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5 capitalize">{shop.billingCycle || 'monthly'} billing</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-semibold">Status</p>
@@ -343,6 +344,7 @@ export default function AdminUserDetailPage() {
                     <div>
                       <p className="text-sm font-semibold text-slate-200">
                         ₹{tx.amount} &middot; <span className="capitalize">{tx.plan || 'Unknown'} Plan</span>
+                        {tx.billingCycle && <span className="capitalize text-slate-400"> ({tx.billingCycle})</span>}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {new Date(tx.createdAt).toLocaleString()} &middot; ID: {tx.txnid}

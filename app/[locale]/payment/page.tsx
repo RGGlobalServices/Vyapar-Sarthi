@@ -5,15 +5,12 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, ShieldCheck, AlertTriangle, CheckCircle, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
+import { getBaseAmount, getGstAmount, getTotalAmount, type BillingCycle } from '@/lib/subscriptionPricing';
 
 const PLAN_NAMES: Record<string, string> = {
-  shop:      'Dukaan — ₹299/mo',
-  vyapar:    'Vyapar — ₹499/mo',
-  wholesale: 'Udyog — ₹999/mo',
-};
-
-const PLAN_PRICES: Record<string, number> = {
-  shop: 299, vyapar: 499, wholesale: 999,
+  shop:      'Dukaan',
+  vyapar:    'Vyapar',
+  wholesale: 'Udyog',
 };
 
 function PaymentPageInner() {
@@ -23,10 +20,14 @@ function PaymentPageInner() {
   const formRef = useRef<HTMLFormElement>(null);
 
   const plan = searchParams.get('plan') || 'shop';
+  const cycle: BillingCycle = searchParams.get('cycle') === 'yearly' ? 'yearly' : 'monthly';
   const forcePay = searchParams.get('force_pay') === '1';
   const errorParam = searchParams.get('error');
   const planName = PLAN_NAMES[plan] || plan;
-  const planPrice = PLAN_PRICES[plan] || 0;
+  const baseAmount = getBaseAmount(plan, cycle);
+  const gstAmount = getGstAmount(baseAmount);
+  const planPrice = getTotalAmount(plan, cycle);
+  const cycleUnit = cycle === 'yearly' ? 'year' : 'month';
 
   const [status, setStatus] = useState<'loading' | 'submitting' | 'test' | 'error' | 'switching' | 'switched'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -94,7 +95,7 @@ function PaymentPageInner() {
   async function switchTrialPlan(trialEndRaw: string) {
     setStatus('switching');
     try {
-      const res = await api.post('/shop/switch-plan', { plan });
+      const res = await api.post('/shop/switch-plan', { plan, cycle });
       const ends = res.data?.trialEnds || trialEndRaw;
       const days = Math.max(0, Math.ceil((new Date(ends).getTime() - Date.now()) / 86400000));
       setTrialDaysLeft(days);
@@ -114,6 +115,7 @@ function PaymentPageInner() {
     try {
       const res = await api.post('/payments/create-order', {
         plan,
+        cycle,
         firstname: user?.name || user?.storeName || 'Customer',
         email: user?.email || '',
         phone: user?.mobile || '',
@@ -143,6 +145,7 @@ function PaymentPageInner() {
         hash:        data.hash,
         udf1:        data.udf1 || plan,
         udf2:        data.udf2 || '',
+        udf3:        data.udf3 || cycle,
       });
       setStatus('submitting');
     } catch (err: any) {
@@ -163,7 +166,7 @@ function PaymentPageInner() {
   async function handleTestActivate() {
     setActivating(true);
     try {
-      await api.post('/payments/activate-plan', { plan, trial_end: null, txnid: `TEST_${Date.now()}` });
+      await api.post('/payments/activate-plan', { plan, cycle, trial_end: null, txnid: `TEST_${Date.now()}` });
       setActivated(true);
       // Set plan cookie so middleware allows app access
       document.cookie = `ks_plan=${plan}; path=/; max-age=${60 * 60 * 24 * 7}`;
@@ -206,12 +209,20 @@ function PaymentPageInner() {
                 </>
               ) : (
                 <>
-                  <p className="text-2xl font-black text-emerald-400">₹{planPrice}</p>
-                  <p className="text-xs text-slate-500">per month</p>
+                  <p className="text-2xl font-black text-emerald-400">
+                    ₹{baseAmount} <span className="text-sm font-bold text-slate-400">+ GST</span>
+                  </p>
+                  <p className="text-xs text-slate-500">per {cycleUnit}</p>
                 </>
               )}
             </div>
           </div>
+          {!isTrialSwitch && (
+            <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+              <span className="text-slate-500">Base ₹{baseAmount} + GST (18%) ₹{gstAmount}</span>
+              <span className="font-bold text-white">Total incl. GST: ₹{planPrice}</span>
+            </div>
+          )}
           <div className="mt-3 pt-3 border-t border-slate-800 space-y-1.5">
             {isTrialSwitch ? (
               <>
@@ -225,14 +236,14 @@ function PaymentPageInner() {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <ShieldCheck size={13} />
-                  You'll only pay ₹{planPrice}/mo after the trial ends
+                  You'll only pay ₹{planPrice} (incl. GST)/{cycleUnit} after the trial ends
                 </div>
               </>
             ) : (
               <>
                 <div className="flex items-center gap-2 text-xs text-emerald-400">
                   <CheckCircle size={13} />
-                  1 month of full access — ₹{planPrice}
+                  1 {cycleUnit} of full access — ₹{planPrice} (incl. GST)
                 </div>
                 <div className="flex items-center gap-2 text-xs text-emerald-400">
                   <CheckCircle size={13} />
@@ -322,9 +333,10 @@ function PaymentPageInner() {
               PayU is not configured. In production, the user would be redirected to PayU's secure payment page.
             </p>
             <div className="bg-slate-900 rounded-xl p-3 text-xs font-mono text-slate-400 space-y-1">
-              <p>Plan: <span className="text-emerald-400">{plan}</span></p>
+              <p>Plan: <span className="text-emerald-400">{plan} ({cycle})</span></p>
+              <p>Base: <span className="text-emerald-400">₹{baseAmount}</span> + GST: <span className="text-emerald-400">₹{gstAmount}</span></p>
               <p>Amount: <span className="text-emerald-400">₹{planPrice}</span></p>
-              <p>Validity: <span className="text-emerald-400">30 days</span></p>
+              <p>Validity: <span className="text-emerald-400">{cycle === 'yearly' ? '1 year' : '30 days'}</span></p>
               <p>Renewal: <span className="text-emerald-400">manual — reminder before expiry</span></p>
             </div>
             {activated ? (

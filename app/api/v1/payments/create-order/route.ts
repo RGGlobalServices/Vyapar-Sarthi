@@ -2,17 +2,20 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { isTestMode, getPayuConfig, requestHash } from '@/lib/server/payu';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { MONTHLY_BASE_PRICES, getTotalAmount, getPlanLabel, type BillingCycle } from '@/lib/subscriptionPricing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// One-time PayU payment for a monthly subscription (manual renewal model — PayU
-// auto-debit/SI is not available on this account). Charges the full plan amount;
-// payu-success then activates the plan for one billing cycle (30 days).
+// One-time PayU payment for a subscription (manual renewal model — PayU
+// auto-debit/SI is not available on this account). Charges the full plan
+// amount (base + GST) for the chosen cycle; payu-success then activates the
+// plan for one billing cycle (30 days for monthly, 1 year for yearly).
 export const POST = handle(async (req) => {
-  const { plan, firstname, email, phone } = await readBody(req);
+  const { plan, firstname, email, phone, cycle: cycleRaw } = await readBody(req);
+  const cycle: BillingCycle = cycleRaw === 'yearly' ? 'yearly' : 'monthly';
 
-  if (!plan || !(plan in config.planAmounts)) throw new ApiError(400, 'Invalid plan');
+  if (!plan || !(plan in MONTHLY_BASE_PRICES)) throw new ApiError(400, 'Invalid plan');
 
   const user = await prisma.user.findUnique({ where: { email } });
 
@@ -29,8 +32,8 @@ export const POST = handle(async (req) => {
   }
 
   const txnid = `TXN_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const amount = config.planAmounts[plan];
-  const productinfo = config.planLabels[plan];
+  const amount = getTotalAmount(plan, cycle);
+  const productinfo = getPlanLabel(plan, cycle);
   const name = firstname || user?.name || 'Customer';
   const userEmail = email || user?.email || 'customer@example.com';
   const userPhone = phone || user?.mobile || '';
@@ -46,14 +49,16 @@ export const POST = handle(async (req) => {
       email: userEmail,
       phone: userPhone,
       plan,
+      cycle,
     });
   }
 
   const { key, salt } = getPayuConfig();
   const udf1 = plan;
   const udf2 = user?.uuid || '';
+  const udf3 = cycle;
 
-  const hash = requestHash(key, txnid, amount.toString(), productinfo, name, userEmail, salt, udf1, udf2);
+  const hash = requestHash(key, txnid, amount.toString(), productinfo, name, userEmail, salt, udf1, udf2, udf3);
 
   return json({
     key,
@@ -67,8 +72,10 @@ export const POST = handle(async (req) => {
     furl: `${config.appUrl}/api/v1/payments/payu-failure`,
     hash,
     plan,
+    cycle,
     udf1,
     udf2,
+    udf3,
     paymentUrl: config.payuUrl,
   });
 });

@@ -5,7 +5,7 @@ import {
 } from 'react';
 import { Bell, Check, CheckCheck, CalendarClock, Package, CreditCard, Zap, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -53,23 +53,25 @@ function hashCode(s: string): number {
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
-function relativeTime(iso: string | null): string {
+type BellT = ReturnType<typeof useTranslations<'NotificationBell'>>;
+
+function relativeTime(iso: string | null, t: BellT): string {
   if (!iso) return '';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60)    return 'just now';
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 60)    return t('justNow');
+  if (diff < 3600)  return t('minutesAgo', { m: Math.floor(diff / 60) });
+  if (diff < 86400) return t('hoursAgo', { h: Math.floor(diff / 3600) });
+  if (diff < 604800) return t('daysAgo', { d: Math.floor(diff / 86400) });
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function eventDayLabel(iso: string): string {
+function eventDayLabel(iso: string, t: BellT): string {
   const d = new Date(iso); d.setHours(0, 0, 0, 0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((+d - +today) / 86400000);
-  if (diff <= 0) return 'Today';
-  if (diff === 1) return 'Tomorrow';
-  if (diff < 7)  return `In ${diff} days`;
+  if (diff <= 0) return t('today');
+  if (diff === 1) return t('tomorrow');
+  if (diff < 7)  return t('inDays', { days: diff });
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
@@ -109,6 +111,7 @@ function NotifIcon({ type, unread }: { type: string; unread: boolean }) {
 /* ─── Main Component ───────────────────────────────────────────── */
 
 export default function NotificationBell() {
+  const t = useTranslations('NotificationBell');
   const [notifications, setNotifications] = useState<Notif[]>([]);
   const [calendarData, setCalendarData]   = useState<{ upcoming: any[]; pastPending: any[]; recentCompleted: any[] }>({
     upcoming: [], pastPending: [], recentCompleted: [],
@@ -278,7 +281,7 @@ export default function NotificationBell() {
       {/* Bell button */}
       <button
         onClick={togglePanel}
-        aria-label="Notifications"
+        aria-label={t('ariaLabel')}
         aria-expanded={showPanel}
         className={cn(
           'relative p-2.5 rounded-2xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500',
@@ -314,10 +317,10 @@ export default function NotificationBell() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Notifications</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t('notifications')}</h3>
               {badge > 0 && (
                 <span className="bg-sky-500/10 text-sky-600 dark:text-sky-400 text-[10px] font-bold px-1.5 py-0.5 rounded-md">
-                  {badge} new
+                  {t('newCount', { count: badge })}
                 </span>
               )}
             </div>
@@ -327,7 +330,7 @@ export default function NotificationBell() {
                   onClick={markAllRead}
                   className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
                 >
-                  <CheckCheck className="w-3.5 h-3.5" /> All read
+                  <CheckCheck className="w-3.5 h-3.5" /> {t('allRead')}
                 </button>
               )}
               <button
@@ -348,15 +351,15 @@ export default function NotificationBell() {
                 <span className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-1">
                   <CheckCheck className="w-5 h-5 text-emerald-500" />
                 </span>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">All caught up!</p>
-                <p className="text-xs text-slate-400">No new notifications right now.</p>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t('allCaughtUpTitle')}</p>
+                <p className="text-xs text-slate-400">{t('allCaughtUpSubtitle')}</p>
               </div>
             )}
 
             {/* ── Past-due calendar events ── */}
             {calendarData.pastPending.length > 0 && (
               <section className="border-b border-slate-100 dark:border-slate-800">
-                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Past Due</p>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">{t('pastDue')}</p>
                 {calendarData.pastPending.map((e: any) => (
                   <div key={e.id} className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/50 last:border-none">
                     <div className="flex items-start gap-3">
@@ -365,21 +368,21 @@ export default function NotificationBell() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          Yesterday — <span className="font-bold">{e.title}</span>
+                          {t('yesterday')} — <span className="font-bold">{e.title}</span>
                         </p>
-                        <p className="text-xs text-slate-500 mt-0.5 mb-2">Did you complete it?</p>
+                        <p className="text-xs text-slate-500 mt-0.5 mb-2">{t('didYouCompleteIt')}</p>
                         <div className="flex gap-2">
                           <button
                             onClick={() => markEventCompleted(e, true)}
                             className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold rounded-lg active:scale-95 transition-all"
                           >
-                            Yes, done ✓
+                            {t('yesDone')}
                           </button>
                           <button
                             onClick={() => markEventCompleted(e, false)}
                             className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
                           >
-                            Still pending
+                            {t('stillPending')}
                           </button>
                         </div>
                       </div>
@@ -392,7 +395,7 @@ export default function NotificationBell() {
             {/* ── Upcoming calendar events ── */}
             {calendarData.upcoming.length > 0 && (
               <section className="border-b border-slate-100 dark:border-slate-800">
-                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-sky-500">Upcoming</p>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-sky-500">{t('upcoming')}</p>
                 {calendarData.upcoming.slice(0, 5).map((e: any) => (
                   <div
                     key={e.id}
@@ -405,7 +408,7 @@ export default function NotificationBell() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{e.title}</p>
                       <p className="text-xs text-slate-500">
-                        {eventDayLabel(e.eventDate)}
+                        {eventDayLabel(e.eventDate, t)}
                         {e.amount != null ? ` · ₹${Number(e.amount).toLocaleString('en-IN')}` : ''}
                         {e.customerName ? ` · ${e.customerName}` : ''}
                       </p>
@@ -413,7 +416,7 @@ export default function NotificationBell() {
                     <button
                       onClick={ev => { ev.stopPropagation(); markEventCompleted(e, true); }}
                       className="opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all active:scale-90"
-                      title="Mark done"
+                      title={t('markDone')}
                     >
                       <Check className="w-3.5 h-3.5" />
                     </button>
@@ -426,7 +429,7 @@ export default function NotificationBell() {
             {!isEmpty && unread.length === 0 && calendarData.upcoming.length === 0 && calendarData.pastPending.length === 0 && (
               <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-500/5 border-b border-slate-100 dark:border-slate-800">
                 <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 text-center">
-                  ✓ You're all caught up!
+                  {t('youAreAllCaughtUp')}
                 </p>
               </div>
             )}
@@ -439,6 +442,7 @@ export default function NotificationBell() {
                 unread
                 onMarkRead={() => markRead(n.id)}
                 onClick={() => handleNotificationClick(n)}
+                t={t}
               />
             ))}
 
@@ -450,13 +454,14 @@ export default function NotificationBell() {
                 unread={false}
                 onMarkRead={() => {}}
                 onClick={() => handleNotificationClick(n)}
+                t={t}
               />
             ))}
 
             {/* ── Recently completed events ── */}
             {calendarData.recentCompleted.length > 0 && (
               <section className="border-t border-slate-100 dark:border-slate-800 opacity-50">
-                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Completed</p>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('completed')}</p>
                 {calendarData.recentCompleted.map((e: any) => (
                   <div key={e.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/50 last:border-none">
                     <span className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
@@ -477,12 +482,13 @@ export default function NotificationBell() {
 /* ─── Notification Row ─────────────────────────────────────────── */
 
 function NotifRow({
-  n, unread, onMarkRead, onClick,
+  n, unread, onMarkRead, onClick, t,
 }: {
   n: Notif;
   unread: boolean;
   onMarkRead: () => void;
   onClick: () => void;
+  t: BellT;
 }) {
   return (
     <div
@@ -521,7 +527,7 @@ function NotifRow({
           {n.message}
         </p>
         <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 font-medium">
-          {relativeTime(n.createdAt)}
+          {relativeTime(n.createdAt, t)}
         </p>
       </div>
 
@@ -530,7 +536,7 @@ function NotifRow({
         <button
           onClick={e => { e.stopPropagation(); onMarkRead(); }}
           className="opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 transition-all shrink-0 active:scale-90"
-          title="Mark as read"
+          title={t('markAsRead')}
         >
           <Check className="w-3.5 h-3.5" />
         </button>

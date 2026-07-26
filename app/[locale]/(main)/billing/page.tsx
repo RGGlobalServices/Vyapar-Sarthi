@@ -15,6 +15,12 @@ import {
   AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone, FileUp
 } from 'lucide-react';
 import api from '@/lib/api';
+import { useBarcodeScanner, playScanBeep, matchProductByCode } from '@/lib/useBarcodeScanner';
+import nextDynamic from 'next/dynamic';
+// Camera scanner pulls in html5-qrcode and touches `window`, so it must stay
+// out of the server bundle and off the initial billing payload.
+const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { ssr: false });
+import { useIsMobile } from '@/hooks/use-mobile';
 import {cn} from '@/lib/utils';
 import {BillSlip, generateWhatsAppText} from '@/components/BillSlip';
 import {uploadInvoiceToSupabase} from '@/lib/supabaseStorage';
@@ -24,6 +30,21 @@ import {computeGst} from '@/lib/gst';
 import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
 import {splitVariantKey, isColorSizeVariants} from '@/components/ColorSizeVariantGrid';
+import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
+
+// Short "when was this product added" label for the search dropdown. Recent
+// additions read as "Today"/"Yesterday"/"3d ago" so a shopkeeper can spot a
+// just-added item; older ones show the calendar date. Returns '' when unknown.
+function formatAddedDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 // Gram/ml equivalent label for a quantity in base unit
 function looseEquivLabel(qty: number, unit: string): string {
@@ -153,6 +174,18 @@ function StandardBillingUI() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [manualProduct, setManualProduct] = useState({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '', barcode: '' });
   const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
+  // Brief on-screen confirmation of the last scan — the cashier is usually
+  // looking at the customer, so the beep alone isn't enough to review.
+  const [scanFeedback, setScanFeedback] = useState<
+    { status: 'ok' | 'error' | 'pending'; text: string } | null
+  >(null);
+  // Guards against a slow server lookup for an earlier scan overwriting the
+  // result of a later one when codes are scanned back-to-back.
+  const scanSeqRef = useRef(0);
+  // Camera scanning is only useful on a phone — a desktop counter already has
+  // a real USB/Bluetooth barcode scanner (handled by useBarcodeScanner below).
+  const isMobile = useIsMobile();
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [showManualBillUpload, setShowManualBillUpload] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -186,8 +219,11 @@ function StandardBillingUI() {
   const componentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Use SWR for instant cache loading
-  const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
+  // Use SWR for instant cache loading. Also persisted to localStorage so a
+  // cold app start with no connection yet still has yesterday's catalogue to
+  // search and bill against, instead of an empty product list.
+  const fetcher = ([url, shopId]: [string, string]) =>
+    withOfflineCache(`billing-products:${shopId}`, () => api.get(url).then(res => res.data));
   const { data: swrProducts = [] } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher, { revalidateOnFocus: true });
   
   useEffect(() => {
@@ -267,7 +303,7 @@ function StandardBillingUI() {
       pdf.save(`bill-${lastBill?.billNumber?.replace(/[^a-zA-Z0-9]/g, '') || 'invoice'}.pdf`);
     } catch (error) {
       console.error('Failed to generate PDF', error);
-      alert('Failed to download PDF. Please try again.');
+      alert(t('failedToDownloadPdf'));
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -317,7 +353,7 @@ function StandardBillingUI() {
     } catch (error: any) {
       if (error?.name !== 'AbortError') {
         console.error('Failed to share PDF', error);
-        alert('Could not share PDF. Try downloading it instead.');
+        alert(t('couldNotSharePdf'));
       }
     } finally {
       setIsSharing(false);
@@ -413,50 +449,73 @@ function StandardBillingUI() {
     setVariantSelectionProduct(null);
   }, [addItem, bizConfig.hasSizes]);
 
-  const handleScan = useCallback((barcode: string) => {
-    const scanned = String(barcode).trim().toLowerCase();
-    const product = products.find(p =>
-      (p.barcode || '').toLowerCase() === scanned || (p.sku || '').toLowerCase() === scanned);
-    if (product) {
-      addToCart(product);
-    } else {
-      setUnknownBarcode(barcode);
+  const handleScan = useCallback(async (barcode: string) => {
+    const raw = String(barcode).trim();
+    const seq = ++scanSeqRef.current;
+
+    // The scanner types into whatever has focus; clear it so the code doesn't
+    // linger in the search box and filter the product list.
+    setSearch('');
+    searchInputRef.current?.focus();
+
+    // Fast path — product already in the loaded list, matched by any of its
+    // identifiers (barcode / SKU / carton barcode / unique HSN). No network hop.
+    const local = matchProductByCode(products, raw);
+    if (local) {
+      addToCart(local);
+      playScanBeep(true);
+      setScanFeedback({ status: 'ok', text: local.name });
+      return;
+    }
+
+    // `GET /products` returns at most 2000 rows. A NON-EMPTY list below that cap
+    // is the WHOLE catalogue, so a local miss is genuinely "not found" — answer
+    // instantly and never pay for a network round-trip (the DB is far away and
+    // slow). An EMPTY list means it is still loading, so fall through to the
+    // (bounded) server lookup rather than falsely reporting not-found.
+    if (products.length > 0 && products.length < 2000) {
+      playScanBeep(false);
+      setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
+      setUnknownBarcode(raw);
+      return;
+    }
+
+    // Large catalogue: look it up, but cap the wait so the counter is never
+    // left staring at a spinner if the DB is slow or unreachable.
+    setScanFeedback({ status: 'pending', text: `Looking up ${raw}…` });
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 4000);
+      const res = await api.get(`/products/barcode/${encodeURIComponent(raw)}`, { signal: ac.signal });
+      clearTimeout(timer);
+      if (seq !== scanSeqRef.current) return; // a newer scan superseded this one
+      const found = res.data;
+      if (found?.id) {
+        addToCart(found);
+        playScanBeep(true);
+        setScanFeedback({ status: 'ok', text: found.name });
+        return;
+      }
+      throw new Error('not found');
+    } catch {
+      if (seq !== scanSeqRef.current) return;
+      playScanBeep(false);
+      setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
+      setUnknownBarcode(raw);
     }
   }, [addToCart, products]);
 
-  // Hardware Barcode Scanner integration
+  // Hardware barcode scanner. Detection lives in the shared hook so this screen
+  // and the wholesale one behave identically.
+  useBarcodeScanner({ onScan: handleScan, enabled: !unknownBarcode });
+
+  // Clear the on-screen scan confirmation shortly after it appears. A pending
+  // lookup stays put until it resolves.
   useEffect(() => {
-    let barcodeBuffer = '';
-    let lastKeyTime = Date.now();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const currentTime = Date.now();
-      
-      // If time between keystrokes is > 50ms, it's a human typing. Reset buffer.
-      // Physical hardware scanners typically type at 10-30ms per character.
-      if (currentTime - lastKeyTime > 50) {
-        barcodeBuffer = '';
-      }
-
-      if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
-        e.preventDefault(); // Prevent form submission
-        handleScan(barcodeBuffer);
-        barcodeBuffer = '';
-        searchInputRef.current?.focus();
-        return;
-      }
-
-      // Only capture printable characters
-      if (e.key && e.key.length === 1) {
-        barcodeBuffer += e.key;
-      }
-
-      lastKeyTime = currentTime;
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleScan]);
+    if (!scanFeedback || scanFeedback.status === 'pending') return;
+    const t = setTimeout(() => setScanFeedback(null), 1800);
+    return () => clearTimeout(t);
+  }, [scanFeedback]);
 
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -529,6 +588,7 @@ function StandardBillingUI() {
     try {
       const saleItems = items.map(item => ({
         product_id: typeof item.id === 'string' ? item.id : null,
+        name: item.name,
         unit: item.unit,
         variant: item.variant || null,
         quantity: item.quantity,
@@ -555,9 +615,21 @@ function StandardBillingUI() {
         gst_details: isGstBill ? gst : null,
       };
 
-      const res = await api.post('/billing/', salePayload);
-      const dbSale = res.data;
-      const billNumber = `INV-${dbSale.id.substring(0, 8).toUpperCase()}`;
+      let billNumber: string;
+      let isOfflineBill = false;
+      try {
+        const res = await api.post('/billing/', salePayload);
+        const dbSale = res.data;
+        billNumber = `INV-${dbSale.id.substring(0, 8).toUpperCase()}`;
+      } catch (err) {
+        if (!isNetworkError(err)) throw err; // a real rejection (bad data, auth, etc.) — surface it below as usual
+        // No connection — save the bill locally instead of blocking the sale.
+        // It's automatically replayed against the server once back online
+        // (see lib/offlineSync.ts), decrementing real stock at that point.
+        const queued = queueOfflineSale(salePayload);
+        billNumber = `OFF-${queued.localId.slice(-8).toUpperCase()}`;
+        isOfflineBill = true;
+      }
 
       const billData = {
         customerName: customerName.trim() || undefined,
@@ -574,6 +646,7 @@ function StandardBillingUI() {
         billNumber,
         date: new Date().toLocaleDateString(),
         isEmi,
+        isOfflineBill,
         // GST invoice data (undefined for non-GST — invoice components then render normally)
         billType,
         gstBreakdown: isGstBill ? gst : undefined,
@@ -586,27 +659,34 @@ function StandardBillingUI() {
       setLastBill(billData);
 
       // Udhar tracking is now natively processed in the /billing/ route backend
-      
-      // Invalidate dashboard caches to ensure new sale/udhar is immediately visible
-      mutate(
-        (key: any) => typeof key === 'string' && key.startsWith('/reports/dashboard'),
-        undefined,
-        { revalidate: true }
-      );
+
+      if (!isOfflineBill) {
+        // Invalidate dashboard caches to ensure new sale/udhar is immediately visible
+        mutate(
+          (key: any) => typeof key === 'string' && key.startsWith('/reports/dashboard'),
+          undefined,
+          { revalidate: true }
+        );
+      }
 
       clearCart();
       setShowCustomerModal(false);
       setShowBillModal(true);
 
-      // Auto-send bill via WhatsApp link + email if contact info provided
-      const phone = customerMobile.trim();
-      const email = customerEmail.trim();
-      if (phone || email) {
-        autoSendAfterBill(billData, phone, email);
+      // Auto-send bill via WhatsApp link + email if contact info provided.
+      // Skipped for an offline bill — it uploads the PDF to Supabase, which
+      // needs a connection the cashier doesn't have right now; they can
+      // resend from the bill view once back online.
+      if (!isOfflineBill) {
+        const phone = customerMobile.trim();
+        const email = customerEmail.trim();
+        if (phone || email) {
+          autoSendAfterBill(billData, phone, email);
+        }
       }
     } catch (err) {
       console.error('Failed to record sale:', err);
-      alert('Failed to generate bill. Please check your inventory and try again.');
+      alert(t('failedToGenerateBill'));
     } finally {
       setIsGeneratingBill(false);
     }
@@ -708,6 +788,21 @@ function StandardBillingUI() {
         )}
 
         <div className="flex gap-4 relative">
+          {/* Camera scanning — opens an in-app viewfinder, not the device's
+              camera app, so the cashier never leaves the bill. Mobile-only:
+              a desktop counter already has a real barcode scanner plugged in,
+              which types straight into this screen via useBarcodeScanner. */}
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setShowCameraScanner(true)}
+              title={t('scanBarcode') || 'Scan with camera'}
+              className="shrink-0 flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm transition-colors active:scale-95"
+            >
+              <Scan size={20} />
+              <span className="hidden sm:inline text-sm">Scan</span>
+            </button>
+          )}
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input
@@ -736,6 +831,9 @@ function StandardBillingUI() {
                         {product.is_loose && <span className="ml-1 text-amber-400">· sell by weight</span>}
                         {product.model_number && <span className="ml-1 text-sky-400">· {product.model_number}</span>}
                         {product.warranty_months && <span className="ml-1 text-emerald-400">· {product.warranty_months}m warranty</span>}
+                        {formatAddedDate(product.createdAt) && (
+                          <span className="ml-1 text-slate-400">· Added {formatAddedDate(product.createdAt)}</span>
+                        )}
                       </p>
                     </div>
                     <div className="text-right">
@@ -789,7 +887,7 @@ function StandardBillingUI() {
                 <div className="flex-1 min-w-[180px]">
                   <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Product Name</label>
                   <input
-                    type="text" required placeholder="Enter item name..."
+                    type="text" required placeholder={t('itemNamePlaceholder')}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                     value={manualProduct.name}
                     onChange={e => setManualProduct({...manualProduct, name: e.target.value})}
@@ -799,7 +897,7 @@ function StandardBillingUI() {
                   <div className="w-24">
                     <label className="text-xs text-slate-500 mb-1 block uppercase font-bold">Size/Variant</label>
                     <input
-                      type="text" placeholder="e.g. M, L"
+                      type="text" placeholder={t('sizeVariantPlaceholder')}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg py-2 px-3 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                       value={manualProduct.variant}
                       onChange={e => setManualProduct({...manualProduct, variant: e.target.value})}
@@ -848,6 +946,40 @@ function StandardBillingUI() {
             </CardContent>
           </Card>
         )}
+
+      {/* Camera scanner overlay. `continuous` because billing is a rapid
+          sequence of items — reopening the camera per product would be
+          unusable at a counter. It de-dupes the same code for 2s. */}
+      {isMobile && showCameraScanner && (
+        <CameraScanner
+          continuous
+          onScan={(code) => handleScan(code)}
+          onClose={() => {
+            setShowCameraScanner(false);
+            setTimeout(() => searchInputRef.current?.focus(), 100);
+          }}
+        />
+      )}
+
+      {/* Scan confirmation — pairs with the beep so a mis-scan is caught
+          without the cashier having to hunt through the cart. */}
+      {scanFeedback && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            'fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-5 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 pointer-events-none',
+            scanFeedback.status === 'ok' ? 'bg-emerald-600 border-emerald-500 text-white'
+              : scanFeedback.status === 'error' ? 'bg-red-600 border-red-500 text-white'
+              : 'bg-slate-800 border-slate-700 text-white',
+          )}
+        >
+          {scanFeedback.status === 'ok' ? <CheckCircle size={20} />
+            : scanFeedback.status === 'error' ? <AlertCircle size={20} />
+            : <Loader2 size={20} className="animate-spin" />}
+          <span className="font-bold text-sm max-w-[60vw] truncate">{scanFeedback.text}</span>
+        </div>
+      )}
 
       {/* Unknown Barcode Modal */}
       {unknownBarcode && (
@@ -966,22 +1098,22 @@ function StandardBillingUI() {
                     )}
                     {bizConfig.hasBatch && (
                       <td className="px-4 py-4">
-                        <input type="text" placeholder="Batch..." className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                        <input type="text" placeholder={t('batchPlaceholder')} className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
                       </td>
                     )}
                     {bizConfig.hasExpiry && (
                       <td className="px-4 py-4">
-                        <input type="text" placeholder="MM/YY" className="w-20 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                        <input type="text" placeholder={t('expiryMMYYPlaceholder')} className="w-20 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
                       </td>
                     )}
                     {bizConfig.hasWarranty && (
                       <td className="px-4 py-4">
-                        <input type="text" placeholder="Months" className="w-16 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5 text-center" />
+                        <input type="text" placeholder={t('monthsPlaceholder')} className="w-16 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5 text-center" />
                       </td>
                     )}
                     {isElectronics && (
                       <td className="px-4 py-4">
-                        <input type="text" placeholder="IMEI / SN..." className="w-28 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                        <input type="text" placeholder={t('imeiSnPlaceholder')} className="w-28 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
                       </td>
                     )}
                     <td className="px-6 py-4 text-sm text-slate-400">{item.unit}</td>
@@ -1441,7 +1573,7 @@ function StandardBillingUI() {
                 }} className="flex gap-2">
                   <input 
                     name="custom_size" 
-                    placeholder="Type custom size... e.g. XL" 
+                    placeholder={t('customSizePlaceholder')}
                     className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-slate-200" 
                     autoFocus
                   />
@@ -1551,7 +1683,7 @@ function StandardBillingUI() {
                   </label>
                   <input
                     type="text"
-                    placeholder="Enter customer name..."
+                    placeholder={t('customerNamePlaceholder')}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                     value={customerName}
                     onChange={e => {
@@ -1607,7 +1739,7 @@ function StandardBillingUI() {
                   </label>
                   <input
                     type="email"
-                    placeholder="customer@example.com"
+                    placeholder={t('customerEmailPlaceholder')}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm transition-colors"
                     value={customerEmail}
                     onChange={e => setCustomerEmail(e.target.value)}
@@ -1683,6 +1815,9 @@ function StandardBillingUI() {
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
               <span className="text-emerald-500 dark:text-emerald-400 font-black text-base flex items-center gap-2">
                 <CheckCircle size={18} /> Bill Generated
+                {lastBill.isOfflineBill && (
+                  <span className="text-[9px] bg-amber-500/15 text-amber-500 dark:text-amber-400 px-1.5 py-0.5 rounded uppercase tracking-wide">Offline</span>
+                )}
               </span>
               <button onClick={() => { setShowBillModal(false); setWaUrl(null); setSendStatus(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 p-1 transition-colors">
                 <X size={22} />
@@ -1716,6 +1851,12 @@ function StandardBillingUI() {
                 <div className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-400">
                   <Zap size={13} />
                   Paid via EMI
+                </div>
+              )}
+              {lastBill.isOfflineBill && (
+                <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-xs text-amber-500 dark:text-amber-400">
+                  <AlertCircle size={13} />
+                  Saved on this device — will sync to your account once you're back online.
                 </div>
               )}
 
