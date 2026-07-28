@@ -51,13 +51,35 @@ export function matchProductByCode<T extends {
 }>(products: T[], rawCode: string): T | undefined {
   const code = String(rawCode || '').trim().toLowerCase();
   if (!code) return undefined;
-  const eq = (v: string | null | undefined) => (v || '').trim().toLowerCase() === code;
+  const norm = (v: string | null | undefined) => (v || '').trim().toLowerCase();
+  const eq = (v: string | null | undefined) => norm(v) === code;
 
   const direct = products.find(p => eq(p.barcode) || eq(p.sku) || eq(p.cartonBarcode));
   if (direct) return direct;
 
   const hsnMatches = products.filter(p => eq(p.hsnCode));
-  return hsnMatches.length === 1 ? hsnMatches[0] : undefined;
+  if (hsnMatches.length === 1) return hsnMatches[0];
+
+  // Lenient fallback — real-world barcodes often round-trip through the
+  // catalogue with an added prefix ("BAR-8909106067240") or padding, so strict
+  // equality misses a scan that visibly matches an existing product. Only
+  // used when the substring hit is UNIQUE, so the scanner never silently
+  // grabs the wrong item. Guarded by a 4-char minimum to avoid pathological
+  // matches on tiny SKUs. This mirrors the search dropdown's own substring
+  // behaviour so a barcode that pops up in search also gets found on scan.
+  if (code.length >= 4) {
+    const substringMatches = products.filter(p =>
+      (norm(p.barcode).includes(code)) ||
+      (norm(p.sku).includes(code)) ||
+      (norm(p.cartonBarcode).includes(code)) ||
+      (code.includes(norm(p.barcode)) && norm(p.barcode).length >= 4) ||
+      (code.includes(norm(p.sku)) && norm(p.sku).length >= 4) ||
+      (code.includes(norm(p.cartonBarcode)) && norm(p.cartonBarcode).length >= 4)
+    );
+    if (substringMatches.length === 1) return substringMatches[0];
+  }
+
+  return undefined;
 }
 
 export function useBarcodeScanner({

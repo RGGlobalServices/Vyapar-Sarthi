@@ -538,22 +538,75 @@ function StandardBillingUI() {
     return () => clearTimeout(t);
   }, [scanFeedback]);
 
-  const handleManualAdd = (e: React.FormEvent) => {
+  const handleManualAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;
     const sellingPrice = Number(manualProduct.price) || 0;
     const costPrice = Number(manualProduct.costPrice) || 0;
     const mrp = Number(manualProduct.mrp) || sellingPrice;
+    const barcode = manualProduct.barcode?.trim() || '';
 
-    addToCart({
-      name: manualProduct.name,
-      sellingPrice,
-      wholesaleCost: costPrice,
-      mrp,
-      baseUnit: manualProduct.unit,
-      barcode: manualProduct.barcode,
-      isManualItem: true,
-    }, manualProduct.variant || undefined);
+    // When triggered from the "Product Not Found" barcode-scan modal, the
+    // barcode is prefilled. Persist the product to the catalogue FIRST so
+    // scanning the same barcode a second time finds the real record and just
+    // increments the cart quantity, instead of showing "Not Found" again and
+    // eventually hitting "already exists" on a repeat create attempt.
+    // Without a barcode (i.e. a genuine one-off manual item), fall back to
+    // the original cart-only behaviour.
+    if (barcode) {
+      try {
+        const res = await api.post('/products', {
+          name: manualProduct.name.trim(),
+          category: 'General',
+          current_stock: 0,
+          min_stock: 0,
+          mrp,
+          selling_price: sellingPrice,
+          wholesale_cost: costPrice,
+          base_unit: manualProduct.unit || 'Unit',
+          barcode,
+        });
+        const created = res.data;
+        addToCart(created, manualProduct.variant || undefined);
+        // Refresh billing's own products cache so subsequent local scans of
+        // this barcode short-circuit through the fast path instead of the
+        // network lookup / not-found modal.
+        mutate((key: any) => Array.isArray(key) && key[0] === '/products', undefined, { revalidate: true });
+      } catch (err: any) {
+        // Barcode already registered? Fetch the existing product by barcode
+        // and add IT to cart, so the scan/create round-trip stays smooth
+        // even if the create was retried by a previous session.
+        const msg = err?.response?.data?.detail || err?.message || '';
+        if (String(msg).toLowerCase().includes('already exists')) {
+          try {
+            const lookup = await api.get(`/products/barcode/${encodeURIComponent(barcode)}`);
+            if (lookup.data?.id) {
+              addToCart(lookup.data, manualProduct.variant || undefined);
+              mutate((key: any) => Array.isArray(key) && key[0] === '/products', undefined, { revalidate: true });
+            } else {
+              alert(msg || 'Failed to create product');
+              return;
+            }
+          } catch {
+            alert(msg || 'Failed to create product');
+            return;
+          }
+        } else {
+          alert(msg || 'Failed to create product');
+          return;
+        }
+      }
+    } else {
+      addToCart({
+        name: manualProduct.name,
+        sellingPrice,
+        wholesaleCost: costPrice,
+        mrp,
+        baseUnit: manualProduct.unit,
+        barcode: '',
+        isManualItem: true,
+      }, manualProduct.variant || undefined);
+    }
 
     setManualProduct({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '', barcode: '' });
     setShowManualAdd(false);
