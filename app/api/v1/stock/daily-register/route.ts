@@ -111,9 +111,9 @@ export async function GET(req: Request) {
         });
     const stockAdjByProduct = new Map<string, { at: Date; type: string; quantity: number }[]>();
     for (const l of stockAdjLogs) {
-      if (!l.productId) continue;
+      if (!l.productId || !l.createdAt || !l.type || l.quantity == null) continue;
       const list = stockAdjByProduct.get(l.productId) || [];
-      list.push({ at: l.createdAt || new Date(), type: l.type || 'in', quantity: l.quantity || 0 });
+      list.push({ at: l.createdAt, type: l.type, quantity: l.quantity });
       stockAdjByProduct.set(l.productId, list);
     }
 
