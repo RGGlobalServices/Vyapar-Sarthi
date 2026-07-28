@@ -195,12 +195,13 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
                 <span className="text-sm text-slate-400 font-medium">Profit Margin</span>
                 <span className="text-sm font-bold text-emerald-400">
                   {(() => {
+                    // Markup on Cost — matches the products list's Profit % column.
                     const cost = product.cost || product.wholesaleCost || 0;
                     const price = product.price || product.sellingPrice || 0;
                     const gst = product.gstPercent || 0;
                     const basePrice = price / (1 + gst / 100);
-                    if (basePrice <= 0) return '0.0';
-                    return (((basePrice - cost) / basePrice) * 100).toFixed(1);
+                    if (cost <= 0) return '0.0';
+                    return (((basePrice - cost) / cost) * 100).toFixed(1);
                   })()}%
                 </span>
               </div>

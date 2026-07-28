@@ -88,7 +88,7 @@ export const GET = handle(async (req) => {
     pageStr || limitStr ? prisma.product.count({ where }) : Promise.resolve(0),
     prisma.stockLog.groupBy({
       by: ['productId'],
-      where: { shopId: shop.id, quantity: { gt: 0 }, createdAt: { gte: since }, type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment'] } },
+      where: { shopId: shop.id, quantity: { gt: 0 }, createdAt: { gte: since }, type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment', 'daily_register_receive'] } },
       _sum: { quantity: true },
     }).catch(() => [] as any[]),
   ]);

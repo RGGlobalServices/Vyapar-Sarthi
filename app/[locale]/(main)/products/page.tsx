@@ -197,6 +197,10 @@ function LegacyProductsUI() {
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [syncingItem, setSyncingItem] = useState<any>(null);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [selectedUnsynced, setSelectedUnsynced] = useState<string[]>([]);
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [deleteUnsyncedKey, setDeleteUnsyncedKey] = useState<string | null>(null);
+  const [deletingUnsynced, setDeletingUnsynced] = useState(false);
   const [syncForm, setSyncForm] = useState({
     name: '',
     category: 'General',
@@ -227,6 +231,15 @@ function LegacyProductsUI() {
     setSyncModalOpen(true);
   };
 
+  // Drops the given keys from the unsynced list immediately (no waiting on a
+  // refetch round-trip) while still revalidating in the background to
+  // reconcile with the server.
+  const removeFromUnsyncedCache = (keys: string[]) => {
+    mutateUnsynced((current: any) => current
+      ? { ...current, data: (current.data || []).filter((i: any) => !keys.includes(i.key)) }
+      : current, { revalidate: true });
+  };
+
   const handleSyncSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!syncForm.name) return;
@@ -245,14 +258,76 @@ function LegacyProductsUI() {
         barcode: syncForm.barcode,
         sku: syncForm.sku,
       });
-      mutateUnsynced();
+      if (syncingItem?.key) removeFromUnsyncedCache([syncingItem.key]);
       mutateProducts();
+      setSelectedUnsynced(prev => prev.filter(k => k !== syncingItem?.key));
       setSyncModalOpen(false);
       setSyncingItem(null);
     } catch (err: any) {
       alert(err.response?.data?.detail || t('failedToSyncProduct'));
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  const toggleSelectUnsynced = (key: string) => {
+    setSelectedUnsynced(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  };
+
+  const toggleSelectAllUnsynced = (checked: boolean) => {
+    setSelectedUnsynced(checked ? unsyncedItems.map((i: any) => i.key) : []);
+  };
+
+  // Bulk sync uses each item's own detected name/price/unit as-is — the same
+  // defaults the single-item modal prefills — so multiple quick items can be
+  // registered to the catalog in one action instead of one modal at a time.
+  const handleBulkSyncUnsynced = async () => {
+    if (selectedUnsynced.length === 0) return;
+    setBulkSyncing(true);
+    const keys = [...selectedUnsynced];
+    const failedKeys: string[] = [];
+    const failedNames: string[] = [];
+    try {
+      for (const key of keys) {
+        const item = unsyncedItems.find((i: any) => i.key === key);
+        if (!item) continue;
+        try {
+          await api.post('/products/unsynced', {
+            name: item.variant || 'Uncategorized Item',
+            variantKey: item.key,
+            category: 'General',
+            costPrice: item.costPrice || 0,
+            mrp: item.sellingPrice || 0,
+            sellingPrice: item.sellingPrice || 0,
+            baseUnit: item.unit || 'Piece',
+            initialStock: 10,
+          });
+        } catch {
+          failedKeys.push(key);
+          failedNames.push(item.variant || key);
+        }
+      }
+      const synced = keys.filter(k => !failedKeys.includes(k));
+      removeFromUnsyncedCache(synced);
+      mutateProducts();
+      setSelectedUnsynced(failedKeys);
+      if (failedNames.length > 0) alert(`Could not sync: ${failedNames.join(', ')}`);
+    } finally {
+      setBulkSyncing(false);
+    }
+  };
+
+  const doDeleteUnsynced = async (key: string) => {
+    setDeletingUnsynced(true);
+    try {
+      await api.delete('/products/unsynced', { data: { variantKey: key } });
+      removeFromUnsyncedCache([key]);
+      setSelectedUnsynced(prev => prev.filter(k => k !== key));
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to delete item.');
+    } finally {
+      setDeletingUnsynced(false);
+      setDeleteUnsyncedKey(null);
     }
   };
 
@@ -626,42 +701,107 @@ function LegacyProductsUI() {
               <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">All billing items are fully synced to master products.</p>
             </div>
           ) : (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
-                    <tr>
-                      <th className="px-5 py-3">Quick Item Name</th>
-                      <th className="px-5 py-3">Cost Price</th>
-                      <th className="px-5 py-3">Selling Price</th>
-                      <th className="px-5 py-3">Unit</th>
-                      <th className="px-5 py-3">Total Sold Qty</th>
-                      <th className="px-5 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {unsyncedItems.map((uItem: any) => (
-                      <tr key={uItem.key} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="px-5 py-3 font-bold">{uItem.variant}</td>
-                        <td className="px-5 py-3 text-slate-500 font-mono">₹{uItem.costPrice}</td>
-                        <td className="px-5 py-3 text-emerald-600 dark:text-emerald-400 font-bold font-mono">₹{uItem.sellingPrice}</td>
-                        <td className="px-5 py-3 text-slate-500">{uItem.unit}</td>
-                        <td className="px-5 py-3 font-bold">{uItem.totalQtySold}</td>
-                        <td className="px-5 py-3 text-right">
-                          <button
-                            onClick={() => handleOpenSyncModal(uItem)}
-                            className="bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 ml-auto transition-all active:scale-95 shadow-sm"
-                          >
-                            <Plus size={14} /> Sync to Product Master
-                          </button>
-                        </td>
+            <>
+              {selectedUnsynced.length > 0 && (
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 p-3 rounded-xl flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                    {selectedUnsynced.length} selected
+                  </span>
+                  <button
+                    onClick={handleBulkSyncUnsynced}
+                    disabled={bulkSyncing}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-60"
+                  >
+                    {bulkSyncing ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                    Sync {selectedUnsynced.length} to Product Master
+                  </button>
+                </div>
+              )}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+                      <tr>
+                        <th className="px-5 py-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedUnsynced.length === unsyncedItems.length && unsyncedItems.length > 0}
+                            onChange={e => toggleSelectAllUnsynced(e.target.checked)}
+                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                          />
+                        </th>
+                        <th className="px-5 py-3">Quick Item Name</th>
+                        <th className="px-5 py-3">Cost Price</th>
+                        <th className="px-5 py-3">Selling Price</th>
+                        <th className="px-5 py-3">Unit</th>
+                        <th className="px-5 py-3">Total Sold Qty</th>
+                        <th className="px-5 py-3 text-right">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {unsyncedItems.map((uItem: any) => (
+                        <tr key={uItem.key} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                          <td className="px-5 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedUnsynced.includes(uItem.key)}
+                              onChange={() => toggleSelectUnsynced(uItem.key)}
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-5 py-3 font-bold">{uItem.variant}</td>
+                          <td className="px-5 py-3 text-slate-500 font-mono">₹{uItem.costPrice}</td>
+                          <td className="px-5 py-3 text-emerald-600 dark:text-emerald-400 font-bold font-mono">₹{uItem.sellingPrice}</td>
+                          <td className="px-5 py-3 text-slate-500">{uItem.unit}</td>
+                          <td className="px-5 py-3 font-bold">{uItem.totalQtySold}</td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleOpenSyncModal(uItem)}
+                                className="bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                              >
+                                <Plus size={14} /> Sync to Product Master
+                              </button>
+                              <button
+                                onClick={() => setDeleteUnsyncedKey(uItem.key)}
+                                title="Delete this unsynced item"
+                                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-300 dark:hover:border-red-500/40 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Delete Unsynced Item Confirm */}
+      {deleteUnsyncedKey && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
+                <Trash2 size={18} className="text-red-500 dark:text-red-400" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-900 dark:text-slate-100">Delete this unsynced item?</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">It will be removed from this list permanently and won't be added to the product catalog.</p>
               </div>
             </div>
-          )}
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteUnsyncedKey(null)} disabled={deletingUnsynced} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-60">Cancel</button>
+              <button onClick={() => doDeleteUnsynced(deleteUnsyncedKey)} disabled={deletingUnsynced} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400 disabled:opacity-60 flex items-center justify-center gap-1.5">
+                {deletingUnsynced && <Loader2 size={14} className="animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1475,12 +1615,15 @@ function LegacyProductsUI() {
                     <span className="text-xs font-semibold text-emerald-500/70">Profit Margin</span>
                     <span className="text-lg font-black text-emerald-400">
                       {(() => {
+                        // Markup on Cost — matches how the products list itself
+                        // calculates Profit %, so the modal's live preview never
+                        // disagrees with what you see after saving.
                         const gstRate = editForm.gstPercent || 0;
                         const sp = Number(editForm.sellingPrice) || 0;
                         const cp = Number(editForm.cost) || 0;
                         const baseSp = sp / (1 + gstRate / 100);
-                        if (baseSp <= 0) return '0.0';
-                        return (((baseSp - cp) / baseSp) * 100).toFixed(1);
+                        if (cp <= 0) return '0.0';
+                        return (((baseSp - cp) / cp) * 100).toFixed(1);
                       })()}%
                     </span>
                   </div>
@@ -1846,12 +1989,15 @@ function LegacyProductsUI() {
                     <span className="text-xs font-semibold text-emerald-500/70">{t('profit')}</span>
                     <span className="text-lg font-black text-emerald-400">
                       {(() => {
+                        // Markup on Cost — matches how the products list itself
+                        // calculates Profit %, so the modal's live preview never
+                        // disagrees with what you see after saving.
                         const gstRate = form.gstPercent || 0;
                         const sp = Number(form.sellingPrice) || 0;
                         const cp = Number(form.cost) || 0;
                         const baseSp = sp / (1 + gstRate / 100);
-                        if (baseSp <= 0) return '0.0';
-                        return (((baseSp - cp) / baseSp) * 100).toFixed(1);
+                        if (cp <= 0) return '0.0';
+                        return (((baseSp - cp) / cp) * 100).toFixed(1);
                       })()}%
                     </span>
                   </div>

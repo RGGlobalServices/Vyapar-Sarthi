@@ -17,6 +17,22 @@
   }
 }
 
+/* Native (Capacitor/ML Kit) barcode scanner: the real device camera is
+   rendered by the OS BEHIND the WebView, so the page itself must go fully
+   transparent for it to show through — everything except our own scanner
+   overlay is hidden the same way the print stylesheet above hides everything
+   except #print-area. */
+body.native-scanner-active {
+  background: transparent !important;
+}
+body.native-scanner-active * {
+  visibility: hidden;
+}
+body.native-scanner-active #native-scanner-overlay,
+body.native-scanner-active #native-scanner-overlay * {
+  visibility: visible;
+}
+
 @theme {
   --animate-scan: scan 1.5s ease-in-out infinite alternate;
   --animate-shimmer: shimmer 1.2s ease-in-out infinite;

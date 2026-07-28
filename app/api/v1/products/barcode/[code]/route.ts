@@ -76,7 +76,7 @@ export const GET = handle(async (req, ctx: any) => {
         productId: product.id,
         quantity: { gt: 0 },
         createdAt: { gte: since },
-        type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment'] },
+        type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment', 'daily_register_receive'] },
       },
       _sum: { quantity: true },
     })

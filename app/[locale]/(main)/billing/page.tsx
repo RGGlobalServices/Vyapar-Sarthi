@@ -297,19 +297,18 @@ function StandardBillingUI() {
       const imgData = canvas.toDataURL('image/png');
       const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      const pdf = new jsPDF({ 
-        orientation: 'portrait', 
-        unit: 'mm', 
-        format: isA4 ? 'a4' : [pdfWidth, pdfHeight] 
+
+      // Page size always matches the captured content height exactly. A fixed
+      // 297mm A4 page here would silently clip anything below it — GST bills
+      // add an HSN column plus a tax-summary block, so they run taller than
+      // non-GST bills and were the ones actually hitting that cutoff.
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [pdfWidth, pdfHeight]
       });
-      
-      if (isA4) {
-        // A4 pages might need multiple pages, but for now we scale to fit one page width
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      } else {
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      }
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       
       return { pdf, blob: pdf.output('blob') };
     } finally {

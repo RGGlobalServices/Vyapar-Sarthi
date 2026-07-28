@@ -57,6 +57,7 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       data: {
         name: b.name,
         category: b.category,
+        currentStock: b.current_stock ?? b.currentStock,
         minStock: b.min_stock ?? b.minStock,
         mrp: b.mrp,
         sellingPrice: b.selling_price ?? b.sellingPrice,

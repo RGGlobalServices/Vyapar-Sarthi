@@ -39,36 +39,16 @@ export async function exportDailyStockRegisterPDF(
   doc.text(`Date: ${dateLabel}`, 14, 34);
   doc.text(`Generated On: ${new Date().toLocaleString('en-IN')}`, 14, 40);
 
-  const COLUMN_COUNT = 8;
-  const formatEntryTime = (iso: string) =>
-    new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' });
-
-  const body: any[] = [];
-  for (const r of rows) {
-    body.push([
-      r.name || '',
-      r.category || '',
-      r.rate != null ? r.rate.toFixed(2) : '-',
-      String(r.opening),
-      String(r.received),
-      String(r.total),
-      r.closing != null ? String(r.closing) : '-',
-      r.sold != null ? String(r.sold) : '-',
-    ]);
-
-    // Date-time-wise breakdown: one indented line per actual Receive/Close
-    // edit, so it's clear exactly when each update was made that day.
-    for (const h of r.history || []) {
-      const label = h.type === 'receive'
-        ? `Received ${h.quantity > 0 ? '+' : ''}${h.quantity}`
-        : `Counted stock: ${h.quantity}`;
-      body.push([{
-        content: `      ${formatEntryTime(h.at)} — ${label}`,
-        colSpan: COLUMN_COUNT,
-        styles: { fontSize: 7, textColor: [130, 130, 130], fontStyle: 'italic', fillColor: [255, 255, 255] },
-      }]);
-    }
-  }
+  const body: any[] = rows.map(r => [
+    r.name || '',
+    r.category || '',
+    r.rate != null ? r.rate.toFixed(2) : '-',
+    String(r.opening),
+    String(r.received),
+    String(r.total),
+    r.closing != null ? String(r.closing) : '-',
+    r.sold != null ? String(r.sold) : '-',
+  ]);
 
   autoTable(doc, {
     startY: 46,

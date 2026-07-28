@@ -99,6 +99,24 @@ export async function GET(req: Request) {
       lastCloseByProduct.set(e.productId, priorClose);
     }
 
+    // Manual Stock In / Stock Out adjustments made from the Stock page (legacy
+    // plan) today. Kept per-timestamp, the same way Sale already is, so Stock
+    // In bumps Receive (and Close) and Stock Out pulls Close down — live, even
+    // after the day's row has already been saved once.
+    const stockAdjLogs = shop.subscriptionPlan === 'wholesale'
+      ? []
+      : await prisma.stockLog.findMany({
+          where: { shopId: shop.id, type: { in: ['in', 'out'] }, createdAt: { gte: date, lt: dayEnd } },
+          select: { productId: true, type: true, quantity: true, createdAt: true },
+        });
+    const stockAdjByProduct = new Map<string, { at: Date; type: string; quantity: number }[]>();
+    for (const l of stockAdjLogs) {
+      if (!l.productId) continue;
+      const list = stockAdjByProduct.get(l.productId) || [];
+      list.push({ at: l.createdAt, type: l.type, quantity: l.quantity });
+      stockAdjByProduct.set(l.productId, list);
+    }
+
     // Suggested "received today" — best-effort, editable by the user.
     const receivedSuggestions = new Map<string, number>();
     if (shop.subscriptionPlan === 'wholesale') {
@@ -109,12 +127,10 @@ export async function GET(req: Request) {
       });
       for (const r of rows) receivedSuggestions.set(r.productId as string, r._sum.quantity || 0);
     } else {
-      const rows = await prisma.stockLog.groupBy({
-        by: ['productId'],
-        where: { shopId: shop.id, quantity: { gt: 0 }, createdAt: { gte: date, lt: dayEnd } },
-        _sum: { quantity: true },
-      });
-      for (const r of rows) if (r.productId) receivedSuggestions.set(r.productId, r._sum.quantity || 0);
+      for (const [productId, logs] of stockAdjByProduct) {
+        const total = logs.filter(l => l.type === 'in').reduce((sum, l) => sum + l.quantity, 0);
+        if (total > 0) receivedSuggestions.set(productId, total);
+      }
     }
 
     // Actual quantity billed per product on this date — the authoritative "Sale" figure.
@@ -139,7 +155,15 @@ export async function GET(req: Request) {
 
     const rows = products.map(p => {
       const saved = entryByProduct.get(p.id);
-      const received = saved ? saved.receivedQty : (receivedSuggestions.get(p.id) ?? 0);
+      const adjLogs = stockAdjByProduct.get(p.id) || [];
+      // Stock In after the last saved Receive still bumps Receive (and Total)
+      // live, the same way Sale already keeps Close live between saves.
+      const receiveHistory = (historyByProduct.get(p.id) || []).filter(l => l.type === 'receive');
+      const lastReceiveAt = receiveHistory.length > 0 ? receiveHistory[receiveHistory.length - 1].createdAt : null;
+      const stockInSinceReceive = adjLogs
+        .filter(l => l.type === 'in' && (!lastReceiveAt || l.at > lastReceiveAt))
+        .reduce((sum, l) => sum + l.quantity, 0);
+      const received = saved ? saved.receivedQty + stockInSinceReceive : (receivedSuggestions.get(p.id) ?? 0);
       const sold = billedSoldByProduct.get(p.id) ?? 0;
       // Bootstrap fallback for a product that has never had a register row at
       // all: currentStock is live, so by the time this is read it may already
@@ -164,7 +188,16 @@ export async function GET(req: Request) {
         const soldSinceClose = (saleItemsByProduct.get(p.id) || [])
           .filter(si => !lastCloseAt || si.at > lastCloseAt)
           .reduce((sum, si) => sum + si.quantity, 0);
-        closing = savedClosing - soldSinceClose;
+        // Stock In after the last saved Close raises it back up, Stock Out
+        // (breakage, loss, manual removal) pulls it down — same live re-baselining
+        // Sale already gets.
+        const stockInSinceClose = adjLogs
+          .filter(l => l.type === 'in' && (!lastCloseAt || l.at > lastCloseAt))
+          .reduce((sum, l) => sum + l.quantity, 0);
+        const stockOutSinceClose = adjLogs
+          .filter(l => l.type === 'out' && (!lastCloseAt || l.at > lastCloseAt))
+          .reduce((sum, l) => sum + l.quantity, 0);
+        closing = savedClosing - soldSinceClose + stockInSinceClose - stockOutSinceClose;
       } else {
         closing = isToday ? (p.currentStock ?? (total - sold)) : (total - sold);
       }
@@ -236,7 +269,7 @@ export async function POST(req: Request) {
       } else {
         const rows = await prisma.stockLog.groupBy({
           by: ['productId'],
-          where: { shopId: shop.id, quantity: { gt: 0 }, productId: { in: newProductIds }, createdAt: { gte: date, lt: dayEnd } },
+          where: { shopId: shop.id, type: 'in', productId: { in: newProductIds }, createdAt: { gte: date, lt: dayEnd } },
           _sum: { quantity: true },
         });
         for (const r of rows) if (r.productId) alreadyKnownByProduct.set(r.productId, r._sum.quantity || 0);

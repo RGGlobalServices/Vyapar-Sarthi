@@ -1700,8 +1700,12 @@
     "cameraError": "Camera Error",
     "cameraPermissionError": "Camera access is blocked. Allow it in Settings to scan.",
     "cameraGenericError": "Could not access camera. Please try again.",
+    "cameraNotFoundError": "No camera found on this device.",
+    "cameraInUseError": "Camera is in use by another app. Close it and try again.",
     "openSettings": "Open App Settings",
-    "cameraSettingsHint": "Go to your browser or system settings and allow camera access for this site."
+    "cameraSettingsHint": "Two things can block this — check both: (1) your phone's app permission for Camera, and (2) this site's own camera permission in your browser (tap the lock/info icon next to the address bar → Permissions → Camera → Allow).",
+    "tryAgain": "Try Again",
+    "startingCamera": "Starting camera…"
   },
   "Orders": {
     "title": "Orders",

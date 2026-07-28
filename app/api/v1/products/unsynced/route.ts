@@ -114,14 +114,13 @@ export const POST = handle(async (req) => {
     },
   });
 
-  // 2. Link all past matching manual SaleItems to this new Product ID
+  // 2. Link all past matching manual SaleItems to this new Product ID.
   if (body.variantKey) {
-    const searchVariant = body.variantKey.split('_')[0];
     await prisma.saleItem.updateMany({
       where: {
         sale: { shopId: shop.id },
         productId: null,
-        variant: { equals: searchVariant, mode: 'insensitive' },
+        OR: variantMatchConditions(body.variantKey),
       },
       data: {
         productId: newProduct.id,
@@ -130,4 +129,43 @@ export const POST = handle(async (req) => {
   }
 
   return json({ ok: true, product: newProduct });
+});
+
+// Shared: resolve a grouped key (`${variant}_${unit}`, see GET above) back to
+// the SaleItem match conditions. Split on the LAST underscore so a variant
+// name that itself contains one isn't truncated. The grouped key falls back
+// to "uncategorized item" for a SaleItem whose `variant` is actually NULL
+// (see `item.variant || 'Uncategorized Item'` in GET) — an `equals` match
+// alone can never hit a NULL column, which is why syncing/deleting that
+// bucket used to leave it stuck in the unsynced list forever. Match NULL
+// explicitly in that case.
+function variantMatchConditions(variantKey: string) {
+  const lastUnderscore = variantKey.lastIndexOf('_');
+  const searchVariant = lastUnderscore >= 0 ? variantKey.slice(0, lastUnderscore) : variantKey;
+  const conditions: any[] = [{ variant: { equals: searchVariant, mode: 'insensitive' } }];
+  if (searchVariant === 'uncategorized item') {
+    conditions.push({ variant: null });
+  }
+  return conditions;
+}
+
+// DELETE /api/v1/products/unsynced — Discard an unsynced quick-item bucket:
+// removes those manual SaleItem lines entirely (they were never linked to a
+// real product) so it stops nagging to be synced.
+export const DELETE = handle(async (req) => {
+  const { shop } = await requireShop(req);
+  const body = await readBody<{ variantKey?: string }>(req);
+  if (!body.variantKey) {
+    throw new ApiError(400, 'variantKey is required.');
+  }
+
+  const result = await prisma.saleItem.deleteMany({
+    where: {
+      sale: { shopId: shop.id },
+      productId: null,
+      OR: variantMatchConditions(body.variantKey),
+    },
+  });
+
+  return json({ ok: true, deleted: result.count });
 });

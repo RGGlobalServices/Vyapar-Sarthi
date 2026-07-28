@@ -483,7 +483,8 @@ export async function POST(req: NextRequest) {
             const quantity = parseFloat(getVal(row, ['quantity', 'qty', 'stock']) || 0);
             const unitCost = parseFloat(getVal(row, ['unitcost', 'wholesalecost', 'cost', 'price', 'rate']) || 0);
 
-            if (!name || quantity <= 0) { skipped++; continue; }
+            if (!name) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`); continue; }
+            if (quantity <= 0) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Quantity must be greater than 0 (fill it in and re-import)`); continue; }
 
             const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
@@ -600,7 +601,7 @@ export async function POST(req: NextRequest) {
           try {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
             const quantity = parseFloat(getVal(row, ['quantity', 'stock', 'qty', 'openingstock']) || 0);
-            if (!name) { skipped++; continue; }
+            if (!name) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`); continue; }
 
             const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
@@ -884,7 +885,8 @@ export async function POST(req: NextRequest) {
           try {
             const name = getVal(row, ['partyname', 'name', 'customername', 'suppliername', 'party']);
             const balance = parseFloat(getVal(row, ['openingbalance', 'balance', 'amount']) || 0);
-            if (!name || balance === 0) { skipped++; continue; }
+            if (!name) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Missing party name`); continue; }
+            if (balance === 0) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Opening balance is 0 (fill it in and re-import)`); continue; }
 
             const partyType = String(getVal(row, ['type', 'partytype']) || 'customer').toLowerCase();
             const mobile = getVal(row, ['mobile', 'phone']);

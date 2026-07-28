@@ -7,6 +7,7 @@ import { Loader2, Check, CalendarDays, FileText, FileSpreadsheet } from 'lucide-
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { useStockStore } from '@/lib/store';
 import { exportDailyStockRegisterPDF } from '@/lib/pdf/dailyStockRegister';
 
 interface RegisterHistoryEntry {
@@ -94,7 +95,20 @@ export default function DailyStockRegister() {
   }
 
   function updateDraft(productId: string, value: string) {
-    setDrafts(d => ({ ...d, [productId]: value }));
+    setDrafts(d => {
+      const prevReceived = Number(d[productId]) || 0;
+      const nextReceived = Number(value) || 0;
+      const delta = nextReceived - prevReceived;
+      if (delta !== 0) {
+        setClosingDrafts(cd => {
+          const prevClosing = cd[productId];
+          if (prevClosing === undefined || prevClosing === '') return cd;
+          const prevClosingNum = Number(prevClosing) || 0;
+          return { ...cd, [productId]: String(prevClosingNum + delta) };
+        });
+      }
+      return { ...d, [productId]: value };
+    });
     setRowStatus(s => ({ ...s, [productId]: 'idle' }));
   }
 
@@ -120,6 +134,13 @@ export default function DailyStockRegister() {
         ? { ...r, opening, received, total, closing: closingQty, saved: true, history: [...r.history, ...newHistory] }
         : r));
       setRowStatus(s => ({ ...s, [row.productId]: 'saved' }));
+      // Receive/Close here change Product.currentStock server-side — refresh
+      // both the "All Stock" list (Zustand) and the Products page (SWR) so
+      // they show the new number immediately, without a manual page reload.
+      useStockStore.getState().fetchStock();
+      import('swr').then(({ mutate }) => {
+        mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
+      });
     } catch {
       setRowStatus(s => ({ ...s, [row.productId]: 'error' }));
     }
@@ -253,8 +274,6 @@ export default function DailyStockRegister() {
                   const closingDraft = closingDrafts[row.productId] ?? '';
                   const sold = row.sold;
                   const status = rowStatus[row.productId] || 'idle';
-                  const receiveHistory = (row.history || []).filter(h => h.type === 'receive');
-                  const closeHistory = (row.history || []).filter(h => h.type === 'close');
                   return (
                     <tr key={row.productId} className="text-slate-900 dark:text-slate-200">
                       <td className="px-4 py-2.5">
@@ -280,13 +299,6 @@ export default function DailyStockRegister() {
                           value={receivedDraft}
                           onChange={e => updateDraft(row.productId, e.target.value)}
                         />
-                        {receiveHistory.length > 0 && (
-                          <div className="mt-1 text-[10px] text-slate-400 leading-tight text-right">
-                            {receiveHistory.map((h, i) => (
-                              <div key={i}>{formatTime(h.at)}: {h.quantity > 0 ? '+' : ''}{h.quantity}</div>
-                            ))}
-                          </div>
-                        )}
                       </td>
                       <td className="px-4 py-2.5 text-right font-semibold text-slate-600 dark:text-slate-300">{total}</td>
                       <td className="px-4 py-2.5 text-right align-top">
@@ -297,13 +309,6 @@ export default function DailyStockRegister() {
                           value={closingDraft}
                           onChange={e => updateClosingDraft(row.productId, e.target.value)}
                         />
-                        {closeHistory.length > 0 && (
-                          <div className="mt-1 text-[10px] text-slate-400 leading-tight text-right">
-                            {closeHistory.map((h, i) => (
-                              <div key={i}>{formatTime(h.at)}: {h.quantity}</div>
-                            ))}
-                          </div>
-                        )}
                       </td>
                       <td className={cn('px-4 py-2.5 text-right font-bold', sold == null ? 'text-slate-400' : sold > 0 ? 'text-emerald-500' : sold < 0 ? 'text-red-400' : 'text-slate-400')}>
                         {sold == null ? '—' : sold}
