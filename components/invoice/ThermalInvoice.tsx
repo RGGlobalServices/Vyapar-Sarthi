@@ -151,13 +151,18 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
           )}
         </div>
 
-        {/* Items table — a real bordered table instead of dashed row separators */}
+        {/* Items table — a real bordered table instead of dashed row separators.
+            HSN + GST% columns are appended for a GST bill regardless of
+            business type/category — matching A4Invoice, and giving every
+            shop a properly-formatted tax invoice, not just liquor. */}
         <table className="w-full border-collapse" style={{ ...rule }}>
           <thead>
             <tr className={`${smallTextClass} uppercase`} style={{ backgroundColor: '#eee', borderBottom: '1.5px solid #000' }}>
               {columns.map(col => (
                 <th key={col.id} className={`py-1.5 px-1 text-${col.align} font-bold ${col.width || ''}`}>{t(col.labelKey) || col.labelKey}</th>
               ))}
+              {isGstBill && <th className="py-1.5 px-1 text-left font-bold">{t('hsn') || 'HSN'}</th>}
+              {isGstBill && <th className="py-1.5 px-1 text-right font-bold">GST%</th>}
             </tr>
           </thead>
           <tbody>
@@ -168,6 +173,8 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                     {col.render(item)}
                   </td>
                 ))}
+                {isGstBill && <td className={`py-1 px-1 text-left ${textClass}`}>{(item as any).hsnCode || '-'}</td>}
+                {isGstBill && <td className={`py-1 px-1 text-right ${textClass}`}>{Number((item as any).gstPercent) || 0}%</td>}
               </tr>
             ))}
           </tbody>
@@ -193,8 +200,13 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
           </div>
 
           {/* GST tax summary (rate-wise). Prices are GST-inclusive, so this is the
-              tax embedded in the total above — the total does not change. */}
-          {isGstBill && gstBreakdown && gstBreakdown.totalGst > 0 && (
+              tax embedded in the total above — the total does not change.
+              Shown whenever this is a GST bill, even if every line happens to
+              be 0%/exempt — a "GST Invoice" should always carry the proper tax
+              invoice structure (GSTIN + rate-wise breakdown), not silently
+              look identical to a Non-GST invoice just because a shop hasn't
+              set per-product GST rates yet. */}
+          {isGstBill && gstBreakdown && (
             <div className="mt-2 pt-2 pb-1" style={rule}>
               <div className={`${smallTextClass} font-bold text-center mb-1 uppercase tracking-wide`}>{t('gstSummary') || 'GST Tax Summary'}</div>
               <table className="w-full border-collapse">
@@ -208,7 +220,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                   </tr>
                 </thead>
                 <tbody>
-                  {gstBreakdown.groups.filter(g => g.rate > 0).map(g => (
+                  {gstBreakdown.groups.map(g => (
                     <tr key={g.rate} className={smallTextClass}>
                       <td className="text-left py-0.5">{g.rate}%</td>
                       <td className="text-right py-0.5">₹{g.taxable.toLocaleString('en-IN')}</td>

@@ -183,8 +183,11 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                   <span className="font-semibold">- ₹{discount.toLocaleString('en-IN')}</span>
                 </div>
               )}
-              {/* GST breakdown (prices are GST-inclusive, so this is embedded in the total). */}
-              {isGstBill && gstBreakdown && gstBreakdown.totalGst > 0 && (
+              {/* GST breakdown (prices are GST-inclusive, so this is embedded in
+                  the total). Shown for every GST bill, even at 0% — a proper
+                  tax invoice always carries this structure, regardless of
+                  business type or whether GST rates have been set yet. */}
+              {isGstBill && gstBreakdown && (
                 <>
                   <div className="flex justify-between">
                     <span>{t('taxableValue') || 'Taxable Value'}</span>

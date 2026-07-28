@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BarcodeScanner,
   BarcodeFormat,
@@ -46,6 +47,12 @@ export default function NativeCameraScanner({ onScan, onClose, continuous = fals
   const lastScanned = useRef<{ text: string; time: number } | null>(null);
   const listenerRef = useRef<{ remove: () => Promise<void> } | null>(null);
   const scanningRef = useRef(false);
+  // Portal out of the billing page's own DOM tree — its root wrapper scrolls
+  // internally (overflow-y-auto), and on some Android WebViews a `position:
+  // fixed` descendant of a scrolling ancestor gets clipped to that ancestor's
+  // box instead of the real viewport.
+  const [portalReady, setPortalReady] = useState(false);
+  useEffect(() => { setPortalReady(true); }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -149,7 +156,9 @@ export default function NativeCameraScanner({ onScan, onClose, continuous = fals
     }
   };
 
-  return (
+  if (!portalReady) return null;
+
+  return createPortal(
     <div id="native-scanner-overlay" className="fixed inset-0 z-[300] flex flex-col">
       {/* Header — opaque chrome on top of the transparent live camera feed */}
       <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent absolute top-0 w-full z-10">
@@ -238,6 +247,7 @@ export default function NativeCameraScanner({ onScan, onClose, continuous = fals
           100% { transform: translateY(-130px); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }

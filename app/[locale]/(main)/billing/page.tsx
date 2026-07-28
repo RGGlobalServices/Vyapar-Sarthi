@@ -1306,8 +1306,11 @@ function StandardBillingUI() {
               <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
             {/* GST tax summary — shown for GST invoices. Prices are GST-inclusive,
-                so this breaks the same total into taxable value + embedded tax. */}
-            {isGstBill && items.length > 0 && gst.totalGst > 0 && (
+                so this breaks the same total into taxable value + embedded tax.
+                Shown even when GST rates aren't set on the products yet (0%),
+                so the cashier can see it's missing instead of the section just
+                vanishing and looking like a Non-GST bill. */}
+            {isGstBill && items.length > 0 && (
               <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/5 p-3 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>{t('taxableValue') || 'Taxable Value'}</span>

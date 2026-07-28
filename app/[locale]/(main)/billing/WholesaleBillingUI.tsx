@@ -855,8 +855,11 @@ export default function WholesaleBillingUI() {
               <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
             
-            {/* GST tax summary — prices are GST-inclusive, so this breaks the same total into taxable + tax. */}
-            {isGstBill && items.length > 0 && gst.totalGst > 0 && (
+            {/* GST tax summary — prices are GST-inclusive, so this breaks the same
+                total into taxable + tax. Shown even at 0% so a GST bill always
+                looks like one, regardless of business type or whether GST
+                rates have been set on the products yet. */}
+            {isGstBill && items.length > 0 && (
               <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/5 p-3 space-y-1.5 text-xs mt-3">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>{t('taxableValue') || 'Taxable Value'}</span>

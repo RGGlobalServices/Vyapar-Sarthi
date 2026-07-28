@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,15 @@ export default function WebCameraScanner({ onScan, onClose, continuous = false }
   const [hasFlash, setHasFlash] = useState(false);
   const [initDone, setInitDone] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  // Portal target — document.body only exists client-side, and portaling out
+  // of the billing page's own DOM tree is required: that page's root wrapper
+  // scrolls internally (overflow-y-auto), and on some Android WebViews a
+  // `position: fixed` descendant of a scrolling ancestor gets clipped to that
+  // ancestor's box instead of the real viewport, instead of covering the
+  // whole screen — which is exactly the "scanner only covers part of the
+  // screen, billing page bleeds through" bug this fixes.
+  const [portalReady, setPortalReady] = useState(false);
+  useEffect(() => { setPortalReady(true); }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -198,7 +208,9 @@ export default function WebCameraScanner({ onScan, onClose, continuous = false }
     setActiveCameraId(cameras[nextIndex].id);
   };
 
-  return (
+  if (!portalReady) return null;
+
+  return createPortal(
     <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent absolute top-0 w-full z-10">
@@ -299,6 +311,7 @@ export default function WebCameraScanner({ onScan, onClose, continuous = false }
           100% { transform: translateY(-130px); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }
