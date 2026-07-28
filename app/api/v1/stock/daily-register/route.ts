@@ -113,7 +113,7 @@ export async function GET(req: Request) {
     for (const l of stockAdjLogs) {
       if (!l.productId) continue;
       const list = stockAdjByProduct.get(l.productId) || [];
-      list.push({ at: l.createdAt, type: l.type, quantity: l.quantity });
+      list.push({ at: l.createdAt || new Date(), type: l.type || 'in', quantity: l.quantity || 0 });
       stockAdjByProduct.set(l.productId, list);
     }
 
