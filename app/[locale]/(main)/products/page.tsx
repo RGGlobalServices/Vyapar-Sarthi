@@ -1561,18 +1561,18 @@ function LegacyProductsUI() {
                   )}
                   {editVariantDim ? (
                     <div className="space-y-3">
-                      <ColorPicker colorChart={editVariantDim.options} value={editColors} onChange={handleEditColorsChange} showSwatch={editVariantDim.swatch} />
+                      <ColorPicker colorChart={editVariantDim!.options} value={editColors} onChange={handleEditColorsChange} showSwatch={editVariantDim!.swatch} />
                       <ColorSizeVariantGrid
                         colors={editColors}
-                        sizeChart={Array.from(new Set([...editVariantDim.sizeChart, ...sizesFromVariants(editForm.size_variants)]))}
+                        sizeChart={Array.from(new Set([...editVariantDim!.sizeChart, ...sizesFromVariants(editForm.size_variants)]))}
                         value={editForm.size_variants}
                         onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
                         unitLabel={editForm.unit?.toLowerCase() || 'units'}
                         perSizePricing={editPerSizePricing}
                         sizePrices={editSizePrices}
                         onSizePricesChange={setEditSizePrices}
-                        showSwatch={editVariantDim.swatch}
-                        dimensionLabel={editVariantDim.label}
+                        showSwatch={editVariantDim!.swatch}
+                        dimensionLabel={editVariantDim!.label}
                         additiveMode
                         baseValue={editBaseVariants}
                       />
@@ -1925,18 +1925,18 @@ function LegacyProductsUI() {
                   )}
                   {addVariantDim ? (
                     <div className="space-y-3">
-                      <ColorPicker colorChart={addVariantDim.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim.swatch} />
+                      <ColorPicker colorChart={addVariantDim!.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim!.swatch} />
                       <ColorSizeVariantGrid
                         colors={colors}
-                        sizeChart={addVariantDim.sizeChart}
+                        sizeChart={addVariantDim!.sizeChart}
                         value={form.size_variants}
                         onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
                         unitLabel={form.unit?.toLowerCase() || 'units'}
                         perSizePricing={perSizePricing}
                         sizePrices={sizePrices}
                         onSizePricesChange={setSizePrices}
-                        showSwatch={addVariantDim.swatch}
-                        dimensionLabel={addVariantDim.label}
+                        showSwatch={addVariantDim!.swatch}
+                        dimensionLabel={addVariantDim!.label}
                       />
                     </div>
                   ) : (

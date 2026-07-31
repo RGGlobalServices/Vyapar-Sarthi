@@ -1119,7 +1119,7 @@ export default function LegacyStockUI() {
                       )}
                       {variantDim ? (
                         <div className="space-y-3">
-                          <ColorPicker colorChart={variantDim.options} value={newColors} onChange={handleNewColorsChange} showSwatch={variantDim.swatch} />
+                          <ColorPicker colorChart={variantDim!.options} value={newColors} onChange={handleNewColorsChange} showSwatch={variantDim!.swatch} />
                           <ColorSizeVariantGrid
                             colors={newColors}
                             sizeChart={variantSizeChart}
@@ -1129,8 +1129,8 @@ export default function LegacyStockUI() {
                             perSizePricing={stockPerSizePricing}
                             sizePrices={stockSizePrices}
                             onSizePricesChange={setStockSizePrices}
-                            showSwatch={variantDim.swatch}
-                            dimensionLabel={variantDim.label}
+                            showSwatch={variantDim!.swatch}
+                            dimensionLabel={variantDim!.label}
                           />
                         </div>
                       ) : (
