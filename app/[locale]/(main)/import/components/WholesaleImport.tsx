@@ -48,12 +48,12 @@ export default function WholesaleImport() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
-        <ImportCard
+        {/* <ImportCard
           icon={<Package className="text-blue-500" size={32} />}
           title={t('productCatalogTitle')}
           desc={t('productCatalogDesc')}
           onClick={() => setSelectedType('product')}
-        />
+        /> */}
 
         {/* Purchase Invoice — available on all plans (Dukan, Vyapar, Udyog).
             Scans supplier bills (PDF/photo) and auto-updates Products + Stock. */}
