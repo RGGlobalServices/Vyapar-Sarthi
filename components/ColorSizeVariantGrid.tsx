@@ -180,7 +180,7 @@ export default function ColorSizeVariantGrid({
               unitLabel={unitLabel}
               perSizePricing={perSizePricing}
               additiveMode={additiveMode}
-              baseValue={baseValue ? Object.fromEntries(sizeChart.map(s => [s, baseValue[makeVariantKey(color, s)] || 0]).filter(([, v]) => v > 0)) : undefined}
+              baseValue={baseValue ? Object.fromEntries(sizeChart.map(s => [s, baseValue[makeVariantKey(color, s)] || 0] as [string, number]).filter(([, v]) => v > 0)) : undefined}
               sizePrices={subPrices}
               onChange={v => {
                 const next = { ...value };
