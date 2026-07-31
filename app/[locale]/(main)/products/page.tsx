@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
@@ -124,6 +125,14 @@ function LegacyProductsUI() {
   
   const [saving, setSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Deep-link: /products?add=1 auto-opens the Add-Product modal. Used by the
+  // slimmed Stock In flow so the shopkeeper doesn't have to re-enter the full
+  // product form there — they're bounced to the single canonical Add UI.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('add') === '1') setShowAddModal(true);
+  }, [searchParams]);
   const [form, setForm] = useState(buildEmptyForm(profile.businessType));
   const [showEditModal, setShowEditModal] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
@@ -151,6 +160,10 @@ function LegacyProductsUI() {
   // (colours for apparel, types like LED/Tubelight for electricals).
   const [colors, setColors] = useState<string[]>([]);
   const [editColors, setEditColors] = useState<string[]>([]);
+  // Snapshot of size_variants at the moment startEdit ran — used as the base
+  // for additive-mode inputs so each cell can show "Current: N" as a badge
+  // and treat the typed number as stock being received on top.
+  const [editBaseVariants, setEditBaseVariants] = useState<Record<string, number>>({});
 
   // Build the variant dimensions for a product. Apparel = Colour × Size (always on).
   // Electricals/electronics = a Type × Spec matrix resolved from the product's CATEGORY
@@ -566,7 +579,9 @@ function LegacyProductsUI() {
     setEditPerSizePricing(hasPrices || isVariantProduct);
     setEditSizePrices(existingPrices);
     // Colour × size: derive the selected colours from the existing composite variant keys.
-    setEditColors(colorsFromVariants(parseSizeVariants(product.size_variants)));
+    const parsedVariants = parseSizeVariants(product.size_variants);
+    setEditColors(colorsFromVariants(parsedVariants));
+    setEditBaseVariants(parsedVariants);
     setShowEditModal(true);
   }
   async function handleEditSubmit(e: React.FormEvent) {
@@ -1558,6 +1573,8 @@ function LegacyProductsUI() {
                         onSizePricesChange={setEditSizePrices}
                         showSwatch={editVariantDim.swatch}
                         dimensionLabel={editVariantDim.label}
+                        additiveMode
+                        baseValue={editBaseVariants}
                       />
                     </div>
                   ) : (
@@ -1569,6 +1586,8 @@ function LegacyProductsUI() {
                     perSizePricing={editPerSizePricing}
                     sizePrices={editSizePrices}
                     onSizePricesChange={setEditSizePrices}
+                    additiveMode
+                    baseValue={editBaseVariants}
                   />
                   )}
                 </section>

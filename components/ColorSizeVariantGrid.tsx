@@ -77,6 +77,10 @@ interface ColorSizeVariantGridProps {
   showSwatch?: boolean;
   /** Lower-cased dimension name used in the empty-state hint (e.g. "colour", "type"). */
   dimensionLabel?: string;
+  /** Additive mode: cells show current stock as a badge and the input is a delta.
+   *  Passed through to the per-colour SizeVariantGrid and the legacy row. */
+  additiveMode?: boolean;
+  baseValue?: Record<string, number>;
 }
 
 export default function ColorSizeVariantGrid({
@@ -84,16 +88,67 @@ export default function ColorSizeVariantGrid({
   unitLabel = 'units',
   perSizePricing, sizePrices = {}, onSizePricesChange,
   showSwatch = true, dimensionLabel = 'colour',
+  additiveMode = false, baseValue,
 }: ColorSizeVariantGridProps) {
   const t = useTranslations('Variants');
   const grandTotal = Object.values(value).reduce((s, v) => s + (v || 0), 0);
 
+  // Legacy products (imported before the colour picker, or in a colour-enabled
+  // shop that only tracked sizes) store bare size keys — e.g. {"S":10,"M":3}.
+  // colorsFromVariants() returns [] for those, so without this fallback the
+  // grid renders as "Add at least one option above" while the DB quietly
+  // holds the stock. Surface them under an Unassigned row so the shopkeeper
+  // sees + keeps their existing quantities (and can re-assign to a real
+  // colour by adding it above and clearing the Unassigned cells).
+  const legacySizes = Object.keys(value).filter(k => !k.includes(VARIANT_SEP));
+  const hasLegacy = legacySizes.length > 0;
+  const legacyChart = Array.from(new Set([...sizeChart, ...legacySizes]));
+
   return (
     <div className="space-y-3">
-      {colors.length === 0 && (
+      {colors.length === 0 && !hasLegacy && (
         <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center py-2">
           {t('emptyHint')}
         </p>
+      )}
+
+      {hasLegacy && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/40 p-3 bg-amber-50/40 dark:bg-amber-500/5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wide">
+              {t('unassignedLabel')}
+            </span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">
+              {legacySizes.reduce((s, k) => s + (value[k] || 0), 0)} {unitLabel}
+            </span>
+          </div>
+          <SizeVariantGrid
+            sizeChart={legacyChart}
+            value={Object.fromEntries(legacySizes.map(k => [k, value[k]]))}
+            readOnly={readOnly}
+            unitLabel={unitLabel}
+            perSizePricing={perSizePricing}
+            additiveMode={additiveMode}
+            baseValue={baseValue ? Object.fromEntries(Object.keys(baseValue).filter(k => !k.includes(VARIANT_SEP)).map(k => [k, baseValue[k]])) : undefined}
+            sizePrices={Object.fromEntries(legacySizes.filter(k => sizePrices[k]).map(k => [k, sizePrices[k]]))}
+            onChange={v => {
+              const next = { ...value };
+              // Drop every existing legacy key, then re-add non-zero ones.
+              legacyChart.forEach(s => { if (!s.includes(VARIANT_SEP)) delete next[s]; });
+              Object.entries(v).forEach(([s, q]) => { if (q > 0) next[s] = q; });
+              onChange(next);
+            }}
+            onSizePricesChange={onSizePricesChange ? p => {
+              const next = { ...sizePrices };
+              legacyChart.forEach(s => { if (!s.includes(VARIANT_SEP)) delete next[s]; });
+              Object.entries(p).forEach(([s, entry]) => { next[s] = entry; });
+              onSizePricesChange(next);
+            } : undefined}
+          />
+          <p className="text-[10px] text-amber-700/80 dark:text-amber-300/70">
+            {t('unassignedHint')}
+          </p>
+        </div>
       )}
 
       {colors.map(color => {
@@ -117,12 +172,15 @@ export default function ColorSizeVariantGrid({
               </span>
               <span className="text-[10px] text-slate-400">{colorTotal} {unitLabel}</span>
             </div>
+            {/* Per-colour base map for additive mode — same slicing as subValue. */}
             <SizeVariantGrid
               sizeChart={sizeChart}
               value={subValue}
               readOnly={readOnly}
               unitLabel={unitLabel}
               perSizePricing={perSizePricing}
+              additiveMode={additiveMode}
+              baseValue={baseValue ? Object.fromEntries(sizeChart.map(s => [s, baseValue[makeVariantKey(color, s)] || 0]).filter(([, v]) => v > 0)) : undefined}
               sizePrices={subPrices}
               onChange={v => {
                 const next = { ...value };
