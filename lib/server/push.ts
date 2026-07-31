@@ -44,6 +44,7 @@ export async function sendWebPush(userId: string, payload: PushPayload) {
   const staleEndpoints: string[] = [];
 
   const promises = subscriptions.map(async (sub) => {
+    if (!sub.endpoint || !sub.p256dh || !sub.auth) return;
     try {
       await webpush.sendNotification(
         {

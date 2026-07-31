@@ -29,7 +29,7 @@ export async function GET(req: Request) {
       const sales = await prisma.sale.aggregate({
         where: {
           shopId: shop.id,
-          date: {
+          createdAt: {
             gte: yesterdayStart,
             lte: yesterdayEnd
           }
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
       });
 
       // Calculate yesterday's purchases
-      const purchases = await prisma.purchase.aggregate({
+      const purchases = await prisma.purchaseInvoice.aggregate({
         where: {
           shopId: shop.id,
           date: {
@@ -46,11 +46,11 @@ export async function GET(req: Request) {
             lte: yesterdayEnd
           }
         },
-        _sum: { totalAmount: true }
+        _sum: { totalCost: true }
       });
 
       const totalSales = Number(sales._sum.totalAmount || 0);
-      const totalPurchases = Number(purchases._sum.totalAmount || 0);
+      const totalPurchases = Number(purchases._sum.totalCost || 0);
 
       if (totalSales > 0 || totalPurchases > 0) {
         const title = `Yesterday's Summary`;
