@@ -43,6 +43,7 @@
     "@serwist/next": "^9.5.11",
     "@supabase/supabase-js": "^2.108.2",
     "@swc/core": "^1.15.30",
+    "@types/web-push": "^3.6.4",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
     "autoprefixer": "^10.4.21",
@@ -79,6 +80,7 @@
     "sharp": "^0.35.2",
     "swr": "^2.4.2",
     "tailwind-merge": "^3.5.0",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.12"
   },

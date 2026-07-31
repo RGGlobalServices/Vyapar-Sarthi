@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
-
+import { sendWebPush } from '@/lib/server/push';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -49,16 +49,26 @@ export async function GET(req: Request) {
         });
 
         if (!recentNotif) {
+          const title = `Low Stock: ${p.name || 'Product'}`;
+          const message = `Your stock for ${p.name || 'this product'} has dropped to ${p.currentStock}. Please restock.`;
+          
           await prisma.userNotification.create({
             data: {
               userId: ownerId,
-              title: `Low Stock: ${p.name || 'Product'}`,
-              message: `Your stock for ${p.name || 'this product'} has dropped to ${p.currentStock}. Please restock.`,
+              title,
+              message,
               notificationType: 'LOW_STOCK',
               isRead: false,
               link: `/products/${p.id}`
             }
           });
+          
+          // Check user notification settings
+          const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
+          if (notifSettings?.lowStockAlertEnabled !== false) { // default true or strictly check true
+            await sendWebPush(ownerId, { title, body: message, url: `/products/${p.id}` });
+          }
+          
           notificationsCreated++;
         }
       }
@@ -85,16 +95,25 @@ export async function GET(req: Request) {
 
         if (!recentNotif) {
           const daysLeft = Math.ceil((new Date(b.expiryDate!).getTime() - now) / (1000 * 3600 * 24));
+          const title = `Expiring Soon: ${b.product.name}`;
+          const message = `Batch ${b.batchNumber || 'Unknown'} is expiring in ${daysLeft} days. Quantity left: ${b.quantity}.`;
+          
           await prisma.userNotification.create({
             data: {
               userId: ownerId,
-              title: `Expiring Soon: ${b.product.name}`,
-              message: `Batch ${b.batchNumber || 'Unknown'} is expiring in ${daysLeft} days. Quantity left: ${b.quantity}.`,
+              title,
+              message,
               notificationType: 'BATCH_EXPIRY',
               isRead: false,
               link: `/stock`
             }
           });
+          
+          const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
+          if (notifSettings?.lowStockAlertEnabled !== false) {
+            await sendWebPush(ownerId, { title, body: message, url: `/stock` });
+          }
+          
           notificationsCreated++;
         }
       }
@@ -140,20 +159,27 @@ export async function GET(req: Request) {
         const daysDiff = Math.round((new Date(p.expiryDate).getTime() - now) / (1000 * 3600 * 24));
         const batchSuffix = p.batch_number ? ` (Batch: ${p.batch_number})` : '';
         const stockLabel = `${Number(p.currentStock) || 0} ${p.baseUnit || 'units'}`;
+        const title = isExpired ? `Expired: ${p.name || 'Product'}` : `Expiring in ${daysDiff}d: ${p.name || 'Product'}`;
+        const message = isExpired
+              ? `${p.name || 'Product'}${batchSuffix} expired ${Math.abs(daysDiff)} days ago. ${stockLabel} still in stock — pull from shelves.`
+              : `${p.name || 'Product'}${batchSuffix} expires in ${daysDiff} days. ${stockLabel} in stock — plan a promotion or return to supplier.`;
+              
         await prisma.userNotification.create({
           data: {
             userId: ownerId,
-            title: isExpired
-              ? `Expired: ${p.name || 'Product'}`
-              : `Expiring in ${daysDiff}d: ${p.name || 'Product'}`,
-            message: isExpired
-              ? `${p.name || 'Product'}${batchSuffix} expired ${Math.abs(daysDiff)} days ago. ${stockLabel} still in stock — pull from shelves.`
-              : `${p.name || 'Product'}${batchSuffix} expires in ${daysDiff} days. ${stockLabel} in stock — plan a promotion or return to supplier.`,
+            title,
+            message,
             notificationType: notifType,
             isRead: false,
             link: `/expiry`,
           },
         });
+        
+        const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
+        if (notifSettings?.lowStockAlertEnabled !== false) {
+          await sendWebPush(ownerId, { title, body: message, url: `/expiry` });
+        }
+        
         notificationsCreated++;
       }
     }
