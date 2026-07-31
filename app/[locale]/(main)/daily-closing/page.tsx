@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { Lock, History, IndianRupee, Loader2, ArrowRight } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import { useTranslations } from 'next-intl';
 
 export default function DailyClosingPage() {
+  const t = useTranslations('DailyClosing');
   const [closings, setClosings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -37,11 +39,11 @@ export default function DailyClosingPage() {
         date,
         closingCash: parseFloat(closingCash)
       });
-      toast.success('Galla Closed Successfully!');
+      toast.success(t('successClosed'));
       setShowModal(false);
       fetchClosings();
     } catch(e: any) {
-      toast.error(e.response?.data?.detail || 'Failed to close day');
+      toast.error(e.response?.data?.detail || t('failedToClose'));
     } finally {
       setSaving(false);
     }
@@ -55,37 +57,37 @@ export default function DailyClosingPage() {
             <Lock size={24} />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Daily Closing (Galla)</h1>
-            <p className="text-sm text-slate-500 font-medium mt-1">Reconcile and close your daily cash register</p>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
+            <p className="text-sm text-slate-500 font-medium mt-1">{t('subtitle')}</p>
           </div>
         </div>
         <button 
           onClick={() => setShowModal(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm active:scale-95"
         >
-          Close Today's Galla <ArrowRight size={16} />
+          {t('closeTodayBtn')} <ArrowRight size={16} />
         </button>
       </div>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center gap-2 text-sm font-bold text-slate-500">
-          <History size={16} /> Past Closings
+          <History size={16} /> {t('pastClosings')}
         </div>
         {loading ? (
           <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-indigo-500" /></div>
         ) : closings.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 font-bold">No daily closings recorded yet.</div>
+          <div className="p-12 text-center text-slate-500 font-bold">{t('noClosings')}</div>
         ) : (
           <table className="w-full text-left whitespace-nowrap">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-800 text-xs text-slate-500 uppercase tracking-wider font-bold">
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Opening</th>
-                <th className="px-6 py-4">Sales/In</th>
-                <th className="px-6 py-4">Expenses/Out</th>
-                <th className="px-6 py-4 text-indigo-600">Expected</th>
-                <th className="px-6 py-4">Actual (Galla)</th>
-                <th className="px-6 py-4 text-right">Difference</th>
+                <th className="px-6 py-4">{t('tableDate')}</th>
+                <th className="px-6 py-4">{t('tableOpening')}</th>
+                <th className="px-6 py-4">{t('tableSalesIn')}</th>
+                <th className="px-6 py-4">{t('tableExpensesOut')}</th>
+                <th className="px-6 py-4 text-indigo-600">{t('tableExpected')}</th>
+                <th className="px-6 py-4">{t('tableActual')}</th>
+                <th className="px-6 py-4 text-right">{t('tableDifference')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -119,16 +121,16 @@ export default function DailyClosingPage() {
               <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900 mx-auto rounded-full flex items-center justify-center text-indigo-600 mb-3">
                 <Lock size={24} />
               </div>
-              <h2 className="text-xl font-black">Close Galla</h2>
-              <p className="text-sm text-slate-500 mt-1">Enter actual physical cash.</p>
+              <h2 className="text-xl font-black">{t('modalTitle')}</h2>
+              <p className="text-sm text-slate-500 mt-1">{t('modalSubtitle')}</p>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Date</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('labelDate')}</label>
                 <input type="date" required value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Physical Cash in Drawer (₹)</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('labelCash')}</label>
                 <div className="relative">
                   <IndianRupee size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input type="number" required min="0" step="0.5" value={closingCash} onChange={e=>setClosingCash(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-12 pr-4 py-3 font-black text-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
@@ -136,9 +138,9 @@ export default function DailyClosingPage() {
               </div>
             </div>
             <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
-              <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800 rounded-xl">Cancel</button>
+              <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800 rounded-xl">{t('cancel')}</button>
               <button type="submit" disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
-                {saving ? <Loader2 className="animate-spin w-4 h-4"/> : <Lock size={16} />} Save Closing
+                {saving ? <Loader2 className="animate-spin w-4 h-4"/> : <Lock size={16} />} {t('saveClosing')}
               </button>
             </div>
           </form>

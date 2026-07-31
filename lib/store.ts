@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import api from './api';
 import { withOfflineCache } from './offlineCache';
+import { invalidateProductCaches } from './swrInvalidate';
 
 // ─── Auth / Profile Store ──────────────────────────────────────────────────
 
@@ -588,6 +589,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       if (realId) {
         set((state) => ({ items: state.items.map((i) => (i.id === tempId ? { ...i, id: realId } : i)) }));
       }
+      invalidateProductCaches();
     } catch (err) {
       set((state) => ({ items: state.items.filter((i) => i.id !== tempId) }));
       throw err;
@@ -610,6 +612,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       if (updates.sellingPrice !== undefined) backendUpdates.selling_price = updates.sellingPrice;
       if (updates.cost !== undefined) backendUpdates.wholesale_cost = updates.cost;
       await api.put(`/products/${id}`, backendUpdates);
+      invalidateProductCaches();
     } catch (err) {
       set({ items: prev });
       throw err;
@@ -621,6 +624,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
     set((state) => ({ items: state.items.filter((i) => i.id !== id) }));
     try {
       await api.delete(`/products/${id}`);
+      invalidateProductCaches();
     } catch (err) {
       set({ items: prev });
       throw err;
@@ -635,6 +639,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
     set((state) => ({ items: state.items.map((i) => (i.id === id ? { ...i, archived: next } : i)) }));
     try {
       await api.put(`/products/${id}`, { archived: next });
+      invalidateProductCaches();
     } catch (err) {
       set({ items: prev });
       throw err;
@@ -685,6 +690,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
         if (pricing.cost !== undefined) updates.wholesale_cost = pricing.cost;
         await api.put(`/products/${id}`, updates);
       }
+      invalidateProductCaches();
     } catch (err) {
       set({ items: prevItems, log: prevLog });
       throw err;

@@ -116,6 +116,58 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
     return json({ rows: rows.map(r => ({ ...r, revenue: Number(r.revenue), profit: Number(r.profit), qty: Number(r.qty) })) });
   }
 
+  // Brand-wise sales — groups by the free-text Product.brand column, which
+  // captures both mapped (via brand_id → brands.name) and unmapped products
+  // in one dimension. Agro / medical / cosmetics shops care about which
+  // product line moves fastest ("Ridomil vs Roundup vs Bio Gold"); Brand-wise
+  // is the natural roll-up for that.
+  if (reportType === 'by_brand') {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT COALESCE(NULLIF(TRIM(p.brand), ''), 'Unbranded') as brand,
+        SUM(si.price_per_unit * si.quantity)::float as revenue,
+        SUM(si.margin_per_unit * si.quantity)::float as profit,
+        SUM(si.quantity)::float as qty,
+        COUNT(DISTINCT s.id)::int as bill_count,
+        COUNT(DISTINCT p.id)::int as sku_count
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      JOIN products p ON si.product_id = p.id
+      WHERE s.shop_id = ${shop.id}::uuid
+        AND s.created_at >= ${startDate}
+        AND s.created_at <= ${endDate}
+      GROUP BY brand
+      ORDER BY revenue DESC
+    `;
+    return json({ rows: rows.map(r => ({ ...r, revenue: Number(r.revenue), profit: Number(r.profit), qty: Number(r.qty) })) });
+  }
+
+  // Company-wise sales — groups by the linked master Brand row where
+  // `manufacturer = true`. In agri / pharma retail the same shop often carries
+  // multiple brands from one manufacturer (Syngenta, Bayer, Coromandel), and
+  // supplier / distributor rebates are settled at the company level. Products
+  // that aren't linked to a manufacturer land in "Unassigned" so nothing is
+  // silently dropped from the total.
+  if (reportType === 'by_company') {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT COALESCE(b.name, 'Unassigned') as company,
+        SUM(si.price_per_unit * si.quantity)::float as revenue,
+        SUM(si.margin_per_unit * si.quantity)::float as profit,
+        SUM(si.quantity)::float as qty,
+        COUNT(DISTINCT s.id)::int as bill_count,
+        COUNT(DISTINCT p.id)::int as sku_count
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      JOIN products p ON si.product_id = p.id
+      LEFT JOIN brands b ON p.brand_id = b.id AND b.manufacturer = true
+      WHERE s.shop_id = ${shop.id}::uuid
+        AND s.created_at >= ${startDate}
+        AND s.created_at <= ${endDate}
+      GROUP BY company
+      ORDER BY revenue DESC
+    `;
+    return json({ rows: rows.map(r => ({ ...r, revenue: Number(r.revenue), profit: Number(r.profit), qty: Number(r.qty) })) });
+  }
+
   if (reportType === 'by_customer') {
     const rows = await prisma.$queryRaw<any[]>`
       SELECT c.id, c.name, c.mobile,

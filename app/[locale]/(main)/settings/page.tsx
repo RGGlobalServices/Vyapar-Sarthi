@@ -686,7 +686,7 @@ function SettingsPageInner() {
                 <Zap size={16} className="text-emerald-500 dark:text-emerald-400" />
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">{t('availablePlans') || 'Available Plans'}</h2>
               </div>
-              <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs font-bold">
+              <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs font-bold flex-wrap">
                 <button
                   onClick={() => setBillingCycle('monthly')}
                   className={cn('px-3 py-1.5 rounded-lg transition-colors', billingCycle === 'monthly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
@@ -700,6 +700,13 @@ function SettingsPageInner() {
                   Yearly
                   <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
                 </button>
+                <button
+                  onClick={() => setBillingCycle('5_years')}
+                  className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === '5_years' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                >
+                  5 Years
+                  <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -710,7 +717,7 @@ function SettingsPageInner() {
                 const baseAmount = getBaseAmount(plan.key, billingCycle);
                 const gstAmount = getGstAmount(baseAmount);
                 const totalAmount = getTotalAmount(plan.key, billingCycle);
-                const cycleUnit = billingCycle === 'yearly' ? '/year' : '/month';
+                const cycleUnit = billingCycle === 'yearly' ? '/year' : billingCycle === '5_years' ? '/5yr' : '/month';
                 const paymentHref = `/${locale}/payment?plan=${plan.key}&cycle=${billingCycle}`;
                 return (
                   <div key={plan.key} className={cn('relative rounded-2xl border p-5 flex flex-col gap-4', c.bg, isCurrent ? (isPaid ? 'border-emerald-500/50' : 'border-amber-500/50') : c.border)}>

@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json } from '@/lib/server/http';
+import { startOfDay } from '@/lib/server/dates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,8 +68,10 @@ export const GET = handle(async (req, ctx: any) => {
   if (!product) return json({ error: 'Product not found', barcode }, 404);
 
   // Same "+N newly added" figure the list endpoint attaches, so the two
-  // sources stay interchangeable.
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // sources stay interchangeable. Anchored to today's midnight in the shop's
+  // timezone (Asia/Kolkata) — same reasoning as the list endpoint: server-
+  // local midnight on a UTC host would drift the reset by 5:30h in India.
+  const since = startOfDay();
   const recent = await prisma.stockLog
     .aggregate({
       where: {

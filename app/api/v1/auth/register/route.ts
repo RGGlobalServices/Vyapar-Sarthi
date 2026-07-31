@@ -19,6 +19,12 @@ function normalizeBusinessType(input?: string): string {
   if (val.includes('electric') || val.includes('hardware')) return 'electric';
   if (val.includes('electronics')) return 'electronics';
   if (val.includes('beer') || val.includes('wine') || val.includes('liquor')) return 'liquor';
+  if (val.includes('rice mill') || val.includes('dal mill') || val.includes('bhagar') || val.includes('ricemill')) return 'ricemill';
+  if (val.includes('seed') && (val.includes('distribut') || val.includes('wholesale'))) return 'seeddistributor';
+  if (val.includes('fertiliz') && (val.includes('distribut') || val.includes('wholesale'))) return 'fertilizerdistributor';
+  if (val.includes('pesticid') && (val.includes('distribut') || val.includes('wholesale'))) return 'pesticidedistributor';
+  if ((val.includes('agro') || val.includes('agri') || val.includes('krushi') || val.includes('krishi')) && (val.includes('wholesale') || val.includes('distribut'))) return 'agrowholesale';
+  if (val.includes('agro') || val.includes('agri') || val.includes('fertiliz') || val.includes('seeds') || val.includes('pesticid') || val.includes('krushi') || val.includes('krishi')) return 'agrostore';
   if (val.includes('general') || val.includes('wholesale') || val.includes('store')) return 'general';
   return val;
 }

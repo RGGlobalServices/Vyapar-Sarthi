@@ -154,7 +154,94 @@ export async function runAutoMigrations() {
       CREATE INDEX IF NOT EXISTS ix_import_logs_shop_created ON import_logs(shop_id, created_at DESC);
     `);
 
-    
+    // ── Rice Mill / Bhagar Mill Phase 2 tables ──────────────────────────────
+    // A mill buys raw grain in lots (weight, moisture %, farmer), then runs
+    // ProductionBatches that consume a lot and produce finished grain +
+    // by-products (bran, husk, chuni…). Idempotent CREATE IF NOT EXISTS so a
+    // re-boot after Phase 3 doesn't break — the schema matches the Prisma
+    // models one-for-one; keep them in sync when either side changes.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS raw_material_lots (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        product_id UUID REFERENCES products(id) ON DELETE NO ACTION,
+        supplier_id UUID REFERENCES suppliers(id) ON DELETE NO ACTION,
+        lot_number VARCHAR,
+        farmer_name VARCHAR,
+        purchase_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        weight_kg DOUBLE PRECISION,
+        moisture_pct DOUBLE PRECISION,
+        rate_per_kg DOUBLE PRECISION,
+        total_amount DOUBLE PRECISION,
+        remaining_kg DOUBLE PRECISION,
+        notes VARCHAR,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS ix_raw_lots_shop ON raw_material_lots(shop_id);
+      CREATE INDEX IF NOT EXISTS ix_raw_lots_supplier ON raw_material_lots(supplier_id);
+      CREATE INDEX IF NOT EXISTS ix_raw_lots_product ON raw_material_lots(product_id);
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS production_batches (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        batch_number VARCHAR NOT NULL,
+        raw_lot_id UUID REFERENCES raw_material_lots(id) ON DELETE NO ACTION,
+        input_kg DOUBLE PRECISION,
+        output_kg DOUBLE PRECISION,
+        wastage_kg DOUBLE PRECISION,
+        broken_kg DOUBLE PRECISION,
+        bran_kg DOUBLE PRECISION,
+        husk_kg DOUBLE PRECISION,
+        recovery_pct DOUBLE PRECISION,
+        status VARCHAR NOT NULL DEFAULT 'open',
+        current_stage VARCHAR NOT NULL DEFAULT 'cleaning',
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        closed_at TIMESTAMPTZ,
+        notes VARCHAR,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(shop_id, batch_number)
+      );
+      CREATE INDEX IF NOT EXISTS ix_prod_batches_shop ON production_batches(shop_id);
+      CREATE INDEX IF NOT EXISTS ix_prod_batches_raw_lot ON production_batches(raw_lot_id);
+      CREATE INDEX IF NOT EXISTS ix_prod_batches_status ON production_batches(status);
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS batch_stages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        batch_id UUID NOT NULL REFERENCES production_batches(id) ON DELETE CASCADE,
+        stage_name VARCHAR NOT NULL,
+        sequence INTEGER NOT NULL DEFAULT 0,
+        input_kg DOUBLE PRECISION,
+        output_kg DOUBLE PRECISION,
+        wastage_kg DOUBLE PRECISION,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        operator_name VARCHAR,
+        notes VARCHAR,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS ix_batch_stages_batch ON batch_stages(batch_id);
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS by_products (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        batch_id UUID REFERENCES production_batches(id) ON DELETE SET NULL,
+        name VARCHAR NOT NULL,
+        quantity_kg DOUBLE PRECISION,
+        sold_kg DOUBLE PRECISION DEFAULT 0,
+        rate_per_kg DOUBLE PRECISION,
+        notes VARCHAR,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS ix_by_products_shop ON by_products(shop_id);
+      CREATE INDEX IF NOT EXISTS ix_by_products_batch ON by_products(batch_id);
+    `);
+
     console.log('[AutoMigrate] Database schema checked successfully.');
   } catch (err) {
     console.error('[AutoMigrate] Error checking database schema:', err);

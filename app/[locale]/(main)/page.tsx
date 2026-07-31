@@ -95,10 +95,10 @@ function DashboardInner() {
     try {
       const parsed = typeof details === 'string' ? JSON.parse(details) : details;
       const modes = [];
-      if (Number(parsed.cash) > 0) modes.push('CASH');
-      if (Number(parsed.upi) > 0) modes.push('UPI');
-      if (Number(parsed.card) > 0) modes.push('CARD');
-      if (Number(parsed.udhar) > 0) modes.push('UDHAR');
+      if (Number(parsed.cash) > 0) modes.push(t('cash'));
+      if (Number(parsed.upi) > 0) modes.push(t('upi'));
+      if (Number(parsed.card) > 0) modes.push(t('card'));
+      if (Number(parsed.udhar) > 0) modes.push(t('udhar'));
       return modes.length > 0 ? modes.join(' + ') : type;
     } catch {
       return type;
@@ -129,7 +129,7 @@ function DashboardInner() {
       await api.post(`/products/${productId}/adjust`, {
         quantity: qty,
         type: 'add',
-        note: 'Quick refill from dashboard'
+        note: t('quickRefillNote')
       });
       
       // Refresh data in the background — no spinner, so the stock-alerts

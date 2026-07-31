@@ -41,6 +41,17 @@ export const GET = handle(async (req, ctx: any) => {
     orderBy: { createdAt: 'desc' },
   });
 
+  // Compute a payment-due date per purchase from the supplier's own credit
+  // terms — dueDate = purchaseDate + creditDays. Doing this at read time
+  // (instead of persisting a column) avoids a schema change AND keeps the
+  // due date in sync when the shopkeeper edits the terms later. Payments
+  // don't have a due date. When creditDays is 0, no due date is set.
+  const creditDays = Number((supplier as any).creditDays) || 0;
+  const computeDueDate = (created: Date | null | undefined, type: string | null | undefined): Date | null => {
+    if (!created || type === 'payment' || creditDays <= 0) return null;
+    return new Date(new Date(created).getTime() + creditDays * 86400000);
+  };
+
   // Bucket into months keyed 'YYYY-MM' so the UI can render collapsible
   // month sections without doing date math itself.
   const monthMap = new Map<string, { month: string; purchased: number; paid: number; items: any[] }>();
@@ -59,6 +70,7 @@ export const GET = handle(async (req, ctx: any) => {
       note: t.note || '',
       billNumber: t.billNumber || '',
       date: t.createdAt,
+      dueDate: computeDueDate(t.createdAt, t.type),
     });
   }
 
@@ -80,6 +92,8 @@ export const GET = handle(async (req, ctx: any) => {
       gst: supplier.gst || '',
       address: supplier.address || '',
       remaining: Number(supplier.balance) || 0,
+      creditLimit: Number((supplier as any).creditLimit) || 0,
+      creditDays: Number((supplier as any).creditDays) || 0,
       documents: (supplier as any).documents || [],
     },
     totals: { totalPurchased, totalPaid, remaining: Number(supplier.balance) || 0 },
@@ -91,6 +105,7 @@ export const GET = handle(async (req, ctx: any) => {
       note: t.note || '',
       billNumber: t.billNumber || '',
       date: t.createdAt,
+      dueDate: computeDueDate(t.createdAt, t.type),
     })),
   });
 });

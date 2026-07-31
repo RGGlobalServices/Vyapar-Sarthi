@@ -6,11 +6,12 @@ import {
   Search, Loader2, Phone, X, Plus, Mail, MapPin, Truck,
   IndianRupee, TrendingUp, Wallet, AlertCircle, Calendar,
   ChevronDown, ChevronRight, CheckCircle2, ReceiptText,
-  UploadCloud, Eye, Trash2, FileImage,
+  UploadCloud, Eye, Trash2, FileImage, Pencil,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
+import { ExportButton } from '@/lib/hooks/useExport';
 
 type SupplierRow = {
   id: string;
@@ -133,12 +134,38 @@ export default function SuppliersPage() {
             {t('pageSubtitle')}
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-500/20"
-        >
-          <Plus size={18} /> {t('addSupplierBtn')}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <ExportButton
+            filename="suppliers"
+            title="Supplier List"
+            dateRange={range.from && range.to ? `${range.from} – ${range.to}` : undefined}
+            summary={[
+              { label: t('totalPurchase'), value: rupee(summary.totalPurchased) },
+              { label: t('totalPaid'), value: rupee(summary.totalPaid), tone: 'positive' },
+              { label: t('remainingToPay'), value: rupee(summary.totalRemaining), tone: 'negative' },
+              { label: t('suppliersLabel'), value: String(summary.supplierCount) },
+            ]}
+            columns={[
+              { key: 'name', label: 'Supplier' },
+              { key: 'mobile', label: 'Mobile' },
+              { key: 'email', label: 'Email' },
+              { key: 'gst', label: 'GSTIN' },
+              { key: 'address', label: 'Address' },
+              { key: 'totalPurchased', label: 'Purchased', type: 'currency' },
+              { key: 'totalPaid', label: 'Paid', type: 'currency' },
+              { key: 'remaining', label: 'Remaining', type: 'currency' },
+              { key: 'txnCount', label: 'Bills', type: 'number' },
+              { key: 'status', label: 'Status' },
+            ]}
+            data={suppliers}
+          />
+          <button
+            onClick={() => setShowAdd(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-500/20"
+          >
+            <Plus size={18} /> {t('addSupplierBtn')}
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -380,6 +407,7 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const t = useTranslations('Suppliers');
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', gst: '', address: '',
+    creditLimit: '', creditDays: '',
   });
   // Optional opening purchase recorded together with the supplier.
   const [withPurchase, setWithPurchase] = useState(false);
@@ -405,7 +433,12 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     try {
       // Create with a zero balance, then record the purchase as a real
       // transaction so it shows up in the month-wise history.
-      const res = await api.post('/crm/suppliers', { ...form, openingBalance: '0' });
+      const res = await api.post('/crm/suppliers', {
+        ...form,
+        creditLimit: parseFloat(form.creditLimit) || 0,
+        creditDays: parseInt(form.creditDays) || 0,
+        openingBalance: '0',
+      });
       const supplierId = res.data?.id;
       if (withPurchase && supplierId && amountNum > 0) {
         await api.post(`/suppliers/${supplierId}/transactions`, {
@@ -480,6 +513,31 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 className={inputCls}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Credit Limit (₹)" hint={t('optionalTag')}>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.creditLimit}
+                onChange={(e) => setForm({ ...form, creditLimit: e.target.value })}
+                className={inputCls}
+                placeholder="e.g. 50000"
+              />
+            </Field>
+            <Field label="Credit Days" hint={t('optionalTag')}>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.creditDays}
+                onChange={(e) => setForm({ ...form, creditDays: e.target.value })}
+                className={inputCls}
+                placeholder="e.g. 30"
               />
             </Field>
           </div>
@@ -571,6 +629,90 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   );
 }
 
+/* ─── Edit supplier: same fields as AddSupplierModal but PATCH not POST ───── */
+
+function EditSupplierModal({ supplierId, initial, onClose, onSaved }: {
+  supplierId: string;
+  initial: { name: string; mobile: string; email: string; gst: string; address: string; creditLimit: string; creditDays: string };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const t = useTranslations('Suppliers');
+  const [form, setForm] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.patch(`/suppliers/${supplierId}`, {
+        ...form,
+        creditLimit: parseFloat(form.creditLimit) || 0,
+        creditDays: parseInt(form.creditDays) || 0,
+      });
+      onSaved();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || t('failedToSaveSupplier'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+          <h2 className="text-lg font-black text-slate-900 dark:text-white">Edit Supplier</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-6 space-y-4 overflow-y-auto">
+          <Field label={t('supplierNameLabel')} required>
+            <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label={t('phoneNumberLabel')}>
+              <input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} className={inputCls} inputMode="numeric" />
+            </Field>
+            <Field label={t('emailLabel')} hint={t('optionalTag')}>
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputCls} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label={t('gstinLabel')} hint={t('optionalTag')}>
+              <input value={form.gst} onChange={(e) => setForm({ ...form, gst: e.target.value.toUpperCase() })} className={`${inputCls} font-mono text-sm`} maxLength={15} />
+            </Field>
+            <Field label={t('addressLabel')} hint={t('optionalTag')}>
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={inputCls} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Credit Limit (₹)" hint={t('optionalTag')}>
+              <input type="number" min="0" step="1" value={form.creditLimit} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} className={inputCls} placeholder="e.g. 50000" />
+            </Field>
+            <Field label="Credit Days" hint={t('optionalTag')}>
+              <input type="number" min="0" step="1" value={form.creditDays} onChange={(e) => setForm({ ...form, creditDays: e.target.value })} className={inputCls} placeholder="e.g. 30" />
+            </Field>
+          </div>
+          {error && <p className="text-sm text-red-500 flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>}
+          <button
+            type="submit"
+            disabled={saving || !form.name.trim()}
+            className="w-full h-12 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Pencil size={18} />}
+            Save Changes
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Supplier detail: month-wise history + record purchase/payment ───────── */
 
 function SupplierDetail({ supplierId, onClose, onChanged }: {
@@ -585,6 +727,44 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   const [mode, setMode] = useState<'none' | 'purchase' | 'payment'>('none');
   const [uploading, setUploading] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteSupplier() {
+    // Two-step delete: the server refuses (409) when the supplier has any
+    // transaction or purchase-invoice history, and returns a `code: HAS_HISTORY`
+    // signal. On that, we ask a second time whether to purge everything and
+    // retry with ?cascade=true — otherwise the raw Prisma FK error would leak
+    // into the alert (that's the "supplier_transactions_supplier_id_fkey"
+    // message the user actually saw).
+    if (!s) return;
+    if (!confirm(`Delete supplier "${s.name}"?\n\nThis cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/suppliers/${supplierId}`);
+      onChanged();
+      onClose();
+    } catch (err: any) {
+      const body = err?.response?.data;
+      if (body?.code === 'HAS_HISTORY') {
+        const ok = confirm(
+          `${body.error}\n\nClick OK to permanently delete "${s.name}" along with ${body.txnCount} transaction${body.txnCount === 1 ? '' : 's'}${body.invoiceCount ? ` and ${body.invoiceCount} purchase invoice${body.invoiceCount === 1 ? '' : 's'}` : ''}.\n\nClick Cancel to keep the supplier and its history.`
+        );
+        if (!ok) { setDeleting(false); return; }
+        try {
+          await api.delete(`/suppliers/${supplierId}?cascade=true`);
+          onChanged();
+          onClose();
+        } catch (err2: any) {
+          alert(err2?.response?.data?.error || err2?.message || 'Failed to delete supplier.');
+        }
+      } else {
+        alert(body?.error || err?.message || 'Failed to delete supplier.');
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -659,15 +839,76 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
               {s?.email && <span className="flex items-center gap-1"><Mail size={13} /> {s.email}</span>}
               {s?.gst && <span className="flex items-center gap-1 font-mono text-xs">GST: {s.gst}</span>}
               {s?.address && <span className="flex items-center gap-1"><MapPin size={13} /> {s.address}</span>}
+              {Number(s?.creditLimit) > 0 && (() => {
+                // Credit-limit chip: shows the ceiling, how much is used, and
+                // colours red when exceeded so a shopkeeper can see at a glance
+                // whether they're allowed to raise another purchase against
+                // this supplier before paying down the balance.
+                const limit = Number(s.creditLimit);
+                const used = Number(totals.remaining) || 0;
+                const pct = Math.min(100, Math.round((used / limit) * 100));
+                const over = used > limit;
+                return (
+                  <span
+                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${over
+                      ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300'
+                      : pct >= 80
+                        ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                        : 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'}`}
+                    title={over ? 'Credit limit exceeded' : `${pct}% of credit limit used`}
+                  >
+                    Credit Limit: {rupee(limit)} · {pct}% used{over ? ' · OVER' : ''}
+                  </span>
+                );
+              })()}
+              {Number(s?.creditDays) > 0 && (
+                <span className="flex items-center gap-1 text-xs text-slate-500">
+                  <Calendar size={13} /> {s.creditDays} day terms
+                </span>
+              )}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white shrink-0"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit supplier"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              onClick={handleDeleteSupplier}
+              disabled={deleting}
+              title="Delete supplier"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
+            >
+              {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
+
+        {editing && s && (
+          <EditSupplierModal
+            supplierId={supplierId}
+            initial={{
+              name: s.name || '',
+              mobile: s.mobile || '',
+              email: s.email || '',
+              gst: s.gst || '',
+              address: s.address || '',
+              creditLimit: s.creditLimit ? String(s.creditLimit) : '',
+              creditDays: s.creditDays ? String(s.creditDays) : '',
+            }}
+            onClose={() => setEditing(false)}
+            onSaved={() => { setEditing(false); load(); onChanged(); }}
+          />
+        )}
 
         {/* Totals + actions */}
         <div className="p-4 grid grid-cols-3 gap-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shrink-0">
@@ -839,6 +1080,34 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                   {it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
                                   {it.note ? ` · ${it.note}` : ''}
                                 </p>
+                                {it.dueDate && it.type !== 'payment' && (() => {
+                                  // Credit-terms due date derived from supplier.creditDays.
+                                  // Colour it by proximity: red overdue, amber in the next
+                                  // 7 days, plain slate otherwise. This is the shopkeeper's
+                                  // at-a-glance "when do I need to pay this" indicator.
+                                  const due = new Date(it.dueDate);
+                                  const now = Date.now();
+                                  const daysLeft = Math.ceil((due.getTime() - now) / 86400000);
+                                  const overdue = daysLeft < 0;
+                                  const soon = !overdue && daysLeft <= 7;
+                                  return (
+                                    <span className={`inline-flex items-center gap-1 mt-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      overdue
+                                        ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300'
+                                        : soon
+                                          ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                    }`}>
+                                      <Calendar size={10} />
+                                      Due {due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                      {overdue
+                                        ? ` · ${Math.abs(daysLeft)}d overdue`
+                                        : daysLeft === 0
+                                          ? ' · today'
+                                          : ` · in ${daysLeft}d`}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                             <span className={`text-sm font-black shrink-0 ml-3 ${

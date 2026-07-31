@@ -45,7 +45,7 @@ export default function StaffPage() {
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <Link href="/staff/attendance" className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            <CheckCircle2 size={18} /> Attendance
+            <CheckCircle2 size={18} /> {t('attendance')}
           </Link>
           <Link href="/staff/new" className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/20">
             <UserPlus size={18} /> {t('addStaff')}
@@ -87,8 +87,8 @@ export default function StaffPage() {
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Users size={48} className="mx-auto mb-4 text-slate-300 dark:text-slate-700" />
-            <p className="font-bold text-lg text-slate-900 dark:text-white">No staff found</p>
-            <p className="text-sm">Click "{t('addStaff')}" to create a new profile.</p>
+            <p className="font-bold text-lg text-slate-900 dark:text-white">{t('noStaffFound')}</p>
+            <p className="text-sm">{t('clickAddStaff')}</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -108,10 +108,10 @@ export default function StaffPage() {
                       <span className="text-slate-600 dark:text-slate-400">{staff.mobile}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
                       <span className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold">
-                        {staff.role || 'Other'}
+                        {staff.role || t('other')}
                       </span>
                       <span className="uppercase tracking-wider text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 font-bold">
-                        {staff.salaryType}
+                        {staff.salaryType === 'daily' ? t('daily') : t('monthly')}
                       </span>
                     </p>
                   </div>
@@ -119,7 +119,7 @@ export default function StaffPage() {
                 <div className="flex items-center gap-4 text-right">
                   <div className="hidden sm:block">
                     <p className="text-sm font-black text-slate-900 dark:text-white">₹{staff.salaryAmount.toLocaleString('en-IN')}</p>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{staff.salaryType === 'daily' ? 'Per Day' : 'Per Month'}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{staff.salaryType === 'daily' ? t('perDay') : t('perMonth')}</p>
                   </div>
                   <ChevronRight size={20} className="text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 transition-colors" />
                 </div>

@@ -26,6 +26,7 @@ import WholesaleProductsUI from './WholesaleProductsUI';
 import useSWR from 'swr';
 
 import { fetchProductsMapped } from '@/lib/fetchers';
+import { invalidateProductCaches } from '@/lib/swrInvalidate';
 
 const BarcodeQRModal = dynamic(() => import('@/components/BarcodeQRModal'), { ssr: false });
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
@@ -259,7 +260,7 @@ function LegacyProductsUI() {
         sku: syncForm.sku,
       });
       if (syncingItem?.key) removeFromUnsyncedCache([syncingItem.key]);
-      mutateProducts();
+      invalidateProductCaches();
       setSelectedUnsynced(prev => prev.filter(k => k !== syncingItem?.key));
       setSyncModalOpen(false);
       setSyncingItem(null);
@@ -309,7 +310,7 @@ function LegacyProductsUI() {
       }
       const synced = keys.filter(k => !failedKeys.includes(k));
       removeFromUnsyncedCache(synced);
-      mutateProducts();
+      invalidateProductCaches();
       setSelectedUnsynced(failedKeys);
       if (failedNames.length > 0) alert(`Could not sync: ${failedNames.join(', ')}`);
     } finally {
@@ -517,7 +518,7 @@ function LegacyProductsUI() {
       // Remember a newly typed category so it is suggested next time.
       saveCategory(form.category);
 
-      mutateProducts();
+      invalidateProductCaches();
       setForm(buildEmptyForm(profile.businessType));
       setAddToGodownId('');
       setPerSizePricing(false);
@@ -571,10 +572,22 @@ function LegacyProductsUI() {
   async function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!editProduct) return;
+    const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
+    const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
+    // Data-destroying guard: a variant product whose size grid is all-zero would
+    // silently overwrite an existing non-zero aggregate stock to 0 on save. This
+    // happens when the product was created / imported / stock-adjusted with an
+    // aggregate but no per-size distribution. Force the user to acknowledge —
+    // otherwise a shopkeeper opening Edit to change a price loses their stock.
+    const priorStock = Number((editProduct as any).stock ?? (editProduct as any).currentStock ?? 0);
+    if (editVariantActive && stockQty === 0 && priorStock > 0) {
+      const ok = window.confirm(
+        `Warning: this will set stock to 0.\n\nCurrent stock: ${priorStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${priorStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
+      );
+      if (!ok) return;
+    }
     setSaving(true);
     try {
-      const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
-      const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
       let editMetadata = editVariantActive
         ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePrices, Object.keys(editSizePrices).length > 0)
         : undefined;
@@ -613,13 +626,13 @@ function LegacyProductsUI() {
         cartonBarcode: editForm.cartonBarcode?.trim() || null,
       });
       saveCategory(editForm.category);
-      await mutateProducts();
+      invalidateProductCaches();
       setShowEditModal(false);
       setEditProduct(null);
     } catch { /* */ } finally { setSaving(false); }
   }
   async function doDelete(id: string | number) {
-    try { await api.delete(`/products/${id}`); mutateProducts(); setDeleteConfirmId(null); } catch { /* */ }
+    try { await api.delete(`/products/${id}`); invalidateProductCaches(); setDeleteConfirmId(null); } catch { /* */ }
   }
 
   const statusOptions = [

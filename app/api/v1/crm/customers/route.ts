@@ -9,12 +9,15 @@ export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
   const url = new URL(req.url);
   const type = url.searchParams.get('type') || 'customer';
+  // ?type=all skips the customerType filter so the CRM page can show every
+  // customer regardless of role (Farmer / Dealer / Distributor / Institution /
+  // Retail Customer) in one list. Existing callers passing an explicit type
+  // (e.g. 'supplier') keep today's filtered behaviour.
+  const where: any = { shopId: shop.id };
+  if (type !== 'all') where.customerType = type;
 
   const customers = await prisma.customer.findMany({
-    where: { 
-      shopId: shop.id,
-      customerType: type 
-    },
+    where,
     include: {
       customer_transactions: {
         orderBy: { created_at: 'desc' },

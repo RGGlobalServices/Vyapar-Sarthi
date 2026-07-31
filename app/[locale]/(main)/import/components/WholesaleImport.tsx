@@ -39,9 +39,9 @@ export default function WholesaleImport() {
           <Sparkles size={32} className="text-slate-900" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Enterprise Data Import</h1>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">{t('title')}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Smart AI-powered data ingestion for wholesalers, distributors, and multi-warehouse operations.
+            {t('subtitle')}
           </p>
         </div>
       </div>
@@ -50,8 +50,8 @@ export default function WholesaleImport() {
         
         <ImportCard
           icon={<Package className="text-blue-500" size={32} />}
-          title="Product Catalog"
-          desc="Bulk-add products from Excel/CSV, or upload PDFs/photos for AI extraction. New products get their stock set in one go."
+          title={t('productCatalogTitle')}
+          desc={t('productCatalogDesc')}
           onClick={() => setSelectedType('product')}
         />
 
@@ -59,45 +59,45 @@ export default function WholesaleImport() {
             Scans supplier bills (PDF/photo) and auto-updates Products + Stock. */}
         <ImportCard
           icon={<ShoppingCart className="text-emerald-500" size={32} />}
-          title="Purchase Invoice"
-          desc="Scan vendor bills (PDF/photo) with AI — products are created and their stock is increased automatically in Products & Stock."
+          title={t('purchaseInvoiceTitle')}
+          desc={t('purchaseInvoiceDesc')}
           onClick={() => setSelectedType('purchase')}
         />
 
         <ImportCard
           icon={<FileSpreadsheet className="text-purple-500" size={32} />}
-          title="Opening Stock"
-          desc="Bulk-add products with their starting stock quantity — creates the product if it doesn't exist yet."
+          title={t('openingStockTitle')}
+          desc={t('openingStockDesc')}
           onClick={() => setSelectedType('stock')}
         />
 
         {isUdyog && (
           <ImportCard
             icon={<Truck className="text-orange-500" size={32} />}
-            title="Suppliers"
-            desc="Bulk import vendor and supplier details from Excel."
+            title={t('suppliersTitle')}
+            desc={t('suppliersDesc')}
             onClick={() => setSelectedType('suppliers')}
           />
         )}
 
         <ImportCard 
           icon={<Users className="text-indigo-500" size={32} />}
-          title="Customers"
-          desc="Import your entire customer base quickly."
+          title={t('customersTitle')}
+          desc={t('customersDesc')}
           onClick={() => setSelectedType('customers')}
         />
 
         <ImportCard 
           icon={<Calculator className="text-pink-500" size={32} />}
-          title="Sales History"
-          desc="Import old sales invoices for reporting and analytics."
+          title={t('salesHistoryTitle')}
+          desc={t('salesHistoryDesc')}
           onClick={() => setSelectedType('sales')}
         />
 
         <ImportCard 
           icon={<BookOpen className="text-amber-500" size={32} />}
-          title="Ledger / Udhar"
-          desc="Import opening balances for customers and suppliers."
+          title={t('ledgerTitle')}
+          desc={t('ledgerDesc')}
           onClick={() => setSelectedType('ledger')}
         />
 
@@ -106,14 +106,14 @@ export default function WholesaleImport() {
       {/* Recent Imports */}
       <div>
         <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2 mb-3">
-          <UploadCloud size={20} className="text-slate-400" /> Recent Imports
+          <UploadCloud size={20} className="text-slate-400" /> {t('recentImports')}
         </h2>
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
           <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
             {loadingHistory ? (
               <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
             ) : history.length === 0 ? (
-              <p className="p-6 text-sm text-slate-500 text-center">No imports yet.</p>
+              <p className="p-6 text-sm text-slate-500 text-center">{t('noImports')}</p>
             ) : (
               history.map((log) => {
                 const d = log.details || {};
@@ -127,11 +127,11 @@ export default function WholesaleImport() {
                         <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
                       )}
                       <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white capitalize">{d.importType || 'Unknown'} Import</p>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white capitalize">{t('importLog', { type: d.importType || t('unknown') })}</p>
                         <p className="text-xs text-slate-500">
-                          {d.created || 0} created · {d.updated || 0} updated
-                          {d.skipped ? ` · ${d.skipped} skipped` : ''}
-                          {hasErrors ? ` · ${d.errorCount} failed` : ''}
+                          {d.created || 0} {t('created')} · {d.updated || 0} {t('updated')}
+                          {d.skipped ? ` · ${d.skipped} ${t('skipped')}` : ''}
+                          {hasErrors ? ` · ${d.errorCount} ${t('failed')}` : ''}
                         </p>
                       </div>
                     </div>

@@ -3,7 +3,7 @@
 // The landing page is a separate Next.js project and keeps its own copy at
 // vyapar-landing-page/src/lib/subscriptionPricing.ts — keep both in sync.
 
-export type BillingCycle = 'monthly' | 'yearly';
+export type BillingCycle = 'monthly' | 'yearly' | '5_years';
 
 export const MONTHLY_BASE_PRICES: Record<string, number> = {
   shop: 299,
@@ -21,6 +21,9 @@ export function getBaseAmount(plan: string, cycle: BillingCycle): number {
   const monthly = MONTHLY_BASE_PRICES[plan] ?? 0;
   if (cycle === 'yearly') {
     return round2(monthly * 12 * (1 - YEARLY_DISCOUNT_PERCENT / 100));
+  }
+  if (cycle === '5_years') {
+    return round2(monthly * 60 * (1 - YEARLY_DISCOUNT_PERCENT / 100));
   }
   return monthly;
 }
@@ -46,6 +49,6 @@ const PLAN_NAME: Record<string, string> = {
 export function getPlanLabel(plan: string, cycle: BillingCycle): string {
   const name = PLAN_NAME[plan] ?? plan;
   const total = getTotalAmount(plan, cycle);
-  const unit = cycle === 'yearly' ? '/yr' : '/mo';
+  const unit = cycle === 'yearly' ? '/yr' : cycle === '5_years' ? '/5yr' : '/mo';
   return `${name} Plan — ₹${total}${unit} (incl. GST)`;
 }

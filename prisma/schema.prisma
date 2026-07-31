@@ -120,6 +120,9 @@ model Shop {
   dailyClosings           DailyClosing[]
   activityLogs            ActivityLog[]
   importLogs              ImportLog[]
+  rawMaterialLots         RawMaterialLot[]
+  productionBatches       ProductionBatch[]
+  byProducts              ByProduct[]
 
   @@index([name], map: "ix_shops_name")
   @@index([ownerId], map: "ix_shops_owner_id")
@@ -255,6 +258,7 @@ model Product {
   masterBaseUnit        Unit?            @relation("ProductBaseUnit", fields: [baseUnitId], references: [id], onDelete: NoAction)
   masterSaleUnit        Unit?            @relation("ProductSaleUnit", fields: [defaultSaleUnitId], references: [id], onDelete: NoAction)
   masterPurchaseUnit    Unit?            @relation("ProductPurchaseUnit", fields: [defaultPurchaseUnitId], references: [id], onDelete: NoAction)
+  rawMaterialLots       RawMaterialLot[]
 
   @@index([category], map: "ix_products_category")
   @@index([name], map: "ix_products_name")
@@ -757,6 +761,7 @@ model Supplier {
   shop                 Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
   purchaseInvoices     PurchaseInvoice[]
   supplierTransactions SupplierTransaction[]
+  rawMaterialLots      RawMaterialLot[]
 
   @@index([shopId])
   @@map("suppliers")
@@ -1029,4 +1034,108 @@ model ImportLog {
 
   @@index([shopId, createdAt(sort: Desc)])
   @@map("import_logs")
+}
+
+// ─── Rice Mill / Bhagar Mill — Phase 2 schema ──────────────────────────────
+// A mill buys raw grain from farmers in lots (weight, moisture %, rate, lot#),
+// then runs one or more production batches that consume a lot and produce
+// finished rice + by-products (bran, husk, chuni…). These four models capture
+// that pipeline; the Phase 3 UI drives stage transitions and the Phase 4
+// costing engine reads from ProductionBatch + BatchStage to derive per-kg cost.
+
+model RawMaterialLot {
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
+  productId     String?   @map("product_id") @db.Uuid    // links to the raw-material Product row (Paddy, Wheat, …)
+  supplierId    String?   @map("supplier_id") @db.Uuid   // Supplier row for the farmer / vendor
+  lotNumber     String?   @map("lot_number") @db.VarChar
+  farmerName    String?   @map("farmer_name") @db.VarChar
+  purchaseDate  DateTime  @default(now()) @map("purchase_date") @db.Timestamptz(6)
+  weightKg      Float?    @map("weight_kg")
+  moisturePct   Float?    @map("moisture_pct")
+  ratePerKg     Float?    @map("rate_per_kg")
+  totalAmount   Float?    @map("total_amount")
+  remainingKg   Float?    @map("remaining_kg")           // decremented as batches consume this lot
+  notes         String?   @db.VarChar
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop     Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product  Product?          @relation(fields: [productId], references: [id], onDelete: NoAction)
+  supplier Supplier?         @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  batches  ProductionBatch[]
+
+  @@index([shopId])
+  @@index([supplierId])
+  @@index([productId])
+  @@map("raw_material_lots")
+}
+
+model ProductionBatch {
+  id             String    @id @default(uuid()) @db.Uuid
+  shopId         String    @map("shop_id") @db.Uuid
+  batchNumber    String    @map("batch_number") @db.VarChar
+  rawLotId       String?   @map("raw_lot_id") @db.Uuid   // source lot; null if consumed multiple
+  inputKg        Float?    @map("input_kg")
+  outputKg       Float?    @map("output_kg")             // final finished-good weight
+  wastageKg      Float?    @map("wastage_kg")
+  brokenKg       Float?    @map("broken_kg")             // broken rice
+  branKg         Float?    @map("bran_kg")
+  huskKg         Float?    @map("husk_kg")
+  recoveryPct    Float?    @map("recovery_pct")          // outputKg / inputKg × 100
+  status         String    @default("open") @db.VarChar  // open | in_progress | closed
+  currentStage   String    @default("cleaning") @map("current_stage") @db.VarChar
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
+  notes          String?   @db.VarChar
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop       Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  rawLot     RawMaterialLot? @relation(fields: [rawLotId], references: [id], onDelete: NoAction)
+  stages     BatchStage[]
+  byProducts ByProduct[]
+
+  @@unique([shopId, batchNumber])
+  @@index([shopId])
+  @@index([rawLotId])
+  @@index([status])
+  @@map("production_batches")
+}
+
+model BatchStage {
+  id           String    @id @default(uuid()) @db.Uuid
+  batchId      String    @map("batch_id") @db.Uuid
+  stageName    String    @map("stage_name") @db.VarChar  // cleaning | drying | shelling | polishing | packing
+  sequence     Int       @default(0)                     // 1..N — display order + progress calc
+  inputKg      Float?    @map("input_kg")
+  outputKg     Float?    @map("output_kg")
+  wastageKg    Float?    @map("wastage_kg")
+  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
+  operatorName String?   @map("operator_name") @db.VarChar
+  notes        String?   @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("batch_stages")
+}
+
+model ByProduct {
+  id           String    @id @default(uuid()) @db.Uuid
+  shopId       String    @map("shop_id") @db.Uuid
+  batchId      String?   @map("batch_id") @db.Uuid       // originating batch; null for manual additions
+  name         String    @db.VarChar                     // Bran | Husk | Chuni | Polish | Dust | Broken Rice
+  quantityKg   Float?    @map("quantity_kg")
+  soldKg       Float?    @default(0) @map("sold_kg")
+  ratePerKg    Float?    @map("rate_per_kg")
+  notes        String?   @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop  Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  batch ProductionBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([batchId])
+  @@map("by_products")
 }

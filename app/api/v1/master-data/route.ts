@@ -80,6 +80,47 @@ export const POST = handle(async (req) => {
   return json(result, 201);
 });
 
+// PATCH — rename a brand or toggle its manufacturer flag. Same shape as the
+// other master-data mutations (POST/DELETE) so the client can keep using the
+// single `/master-data` endpoint. Only brand/category/unit updates are
+// supported here; anything else returns 400.
+export const PATCH = handle(async (req) => {
+  const { shop } = await requireShop(req);
+  const body = await readBody(req);
+  const { type, id, name, manufacturer, shortName, baseUnitId, conversionFactor } = body;
+
+  if (!type || !id) return json({ error: 'Type and ID are required.' }, 400);
+
+  let result;
+  switch (type) {
+    case 'brand': {
+      const patch: any = {};
+      if (name !== undefined) patch.name = name;
+      if (manufacturer !== undefined) patch.manufacturer = !!manufacturer;
+      result = await prisma.brand.update({ where: { id, shopId: shop.id }, data: patch });
+      break;
+    }
+    case 'category': {
+      const patch: any = {};
+      if (name !== undefined) patch.name = name;
+      result = await prisma.category.update({ where: { id, shopId: shop.id }, data: patch });
+      break;
+    }
+    case 'unit': {
+      const patch: any = {};
+      if (name !== undefined) patch.name = name;
+      if (shortName !== undefined) patch.shortName = shortName;
+      if (baseUnitId !== undefined) patch.baseUnitId = baseUnitId || null;
+      if (conversionFactor !== undefined) patch.conversionFactor = Number(conversionFactor) || 1;
+      result = await prisma.unit.update({ where: { id, shopId: shop.id }, data: patch });
+      break;
+    }
+    default:
+      return json({ error: 'Invalid master data type.' }, 400);
+  }
+  return json(result);
+});
+
 export const DELETE = handle(async (req) => {
   const { shop } = await requireShop(req);
   const url = new URL(req.url);

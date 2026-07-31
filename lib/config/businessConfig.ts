@@ -1,11 +1,13 @@
-export type BusinessType = 
-  | 'kirana' 
-  | 'medical' 
-  | 'clothes' 
-  | 'shoes' 
-  | 'electronics' 
-  | 'hardware' 
-  | 'cosmetics' 
+export type BusinessType =
+  | 'kirana'
+  | 'medical'
+  | 'clothes'
+  | 'shoes'
+  | 'electronics'
+  | 'hardware'
+  | 'cosmetics'
+  | 'ricemill'
+  | 'agrostore'
   | 'general_wholesale';
 
 export interface BusinessConfig {
@@ -145,6 +147,40 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     },
     reports: ['sales_trend', 'expiry_risk'],
     importTemplate: 'cosmetics_template',
+  },
+  agrostore: {
+    id: 'agrostore',
+    label: 'Agro Store',
+    billingLayout: 'standard',
+    productFields: {
+      showExpiry: true,
+      showBatch: true,
+      showSizes: false,
+      showColors: false,
+      showSerial: false,
+      showWarranty: false,
+      showHsn: true,
+      showWeight: true,
+    },
+    reports: ['sales_trend', 'top_products', 'expiry_risk', 'brand_wise_sales', 'company_wise_sales', 'low_stock'],
+    importTemplate: 'agrostore_template',
+  },
+  ricemill: {
+    id: 'ricemill',
+    label: 'Rice Mill & Bhagar Mill',
+    billingLayout: 'wholesale',
+    productFields: {
+      showExpiry: true,
+      showBatch: true,
+      showSizes: false,
+      showColors: false,
+      showSerial: false,
+      showWarranty: false,
+      showHsn: true,
+      showWeight: true,
+    },
+    reports: ['sales_trend', 'top_products', 'yield_report', 'batch_report', 'recovery_report'],
+    importTemplate: 'ricemill_template',
   },
   general_wholesale: {
     id: 'general_wholesale',

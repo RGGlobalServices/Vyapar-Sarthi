@@ -14,6 +14,12 @@ export type BusinessType =
   | 'electric'
   | 'electronics'
   | 'liquor'
+  | 'ricemill'
+  | 'agrostore'
+  | 'agrowholesale'
+  | 'seeddistributor'
+  | 'fertilizerdistributor'
+  | 'pesticidedistributor'
   | 'general';
 
 export interface BusinessConfig {
@@ -189,10 +195,14 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     hasSoleMaterial: true,
     defaultCategories: ['Sports Shoes', 'Formal Shoes', 'Sandals', 'Slippers', 'Boots', 'Casual Shoes', 'Kids Shoes'],
     defaultUnits: ['Pair'],
-    productPlaceholder: 'e.g. Nike Air Max (UK9)',
-    productPlaceholderHi: 'जैसे नाइकी एयर मैक्स (UK9)',
-    productPlaceholderMr: 'उदा. नायकी एअर मॅक्स (UK9)',
-    sizeChart: ['UK4', 'UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12'],
+    productPlaceholder: 'e.g. Nike Air Max (UK/IND 9)',
+    productPlaceholderHi: 'जैसे नाइकी एयर मैक्स (UK/IND 9)',
+    productPlaceholderMr: 'उदा. नायकी एअर मॅक्स (UK/IND 9)',
+    // UK and Indian shoe sizes are numerically identical — labelling both keeps
+    // the size chart unambiguous for shopkeepers used to either convention.
+    // The slash has no spaces around it so the composite "Colour / Size" key
+    // splitter (indexOf(' / ')) still parses cleanly.
+    sizeChart: ['UK/IND 4', 'UK/IND 5', 'UK/IND 6', 'UK/IND 7', 'UK/IND 8', 'UK/IND 9', 'UK/IND 10', 'UK/IND 11', 'UK/IND 12'],
     hasColors: true,
     colorChart: ['Black', 'White', 'Brown', 'Tan', 'Blue', 'Red', 'Grey', 'Navy'],
   },
@@ -365,6 +375,257 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Product Name',
     productPlaceholderHi: 'जैसे उत्पाद का नाम',
     productPlaceholderMr: 'उदा. उत्पादनाचे नाव',
+  },
+  agrowholesale: {
+    type: 'agrowholesale',
+    label: 'Agro Wholesale',
+    labelHi: 'कृषि थोक',
+    labelMr: 'कृषी घाऊक',
+    emoji: '🚜',
+    color: 'emerald',
+    gradient: 'from-emerald-700 to-teal-700',
+    description: 'Bulk agri inputs to dealers, distributors, institutions — party ledger + credit terms',
+    features: [
+      'Party ledger + dealer/distributor credit terms',
+      'Bulk packing sizes + case conversions',
+      'Batch + expiry tracked per SKU',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Fertilizers', 'Organic Fertilizers', 'Bio Fertilizers', 'Micronutrients', 'Water Soluble Fertilizers',
+      'Seeds', 'Vegetable Seeds', 'Crop Seeds', 'Hybrid Seeds',
+      'Pesticides', 'Fungicides', 'Herbicides', 'Insecticides', 'Plant Growth Regulators',
+      'Spray Pumps', 'Drip Accessories', 'Farm Tools', 'Animal Feed', 'Veterinary Products',
+    ],
+    defaultUnits: ['Kg', 'Quintal', 'Bag', 'Ton', 'Litre', 'ML', 'Packet', 'Box', 'Case'],
+    productPlaceholder: 'e.g. Urea 50 Kg × 20 Bag Case',
+    productPlaceholderHi: 'जैसे यूरिया 50 किलो × 20 बैग केस',
+    productPlaceholderMr: 'उदा. यूरिया 50 किलो × 20 बॅग केस',
+  },
+  seeddistributor: {
+    type: 'seeddistributor',
+    label: 'Seed Distributor',
+    labelHi: 'बीज वितरक',
+    labelMr: 'बियाणे वितरक',
+    emoji: '🌾',
+    color: 'lime',
+    gradient: 'from-lime-600 to-emerald-600',
+    description: 'Seed distribution — germination lot, batch + season traceability',
+    features: [
+      'Batch + lot tracking (regulatory requirement for seed sales)',
+      'Season-wise stock planning (Kharif / Rabi / Zaid)',
+      'Hybrid variety catalogue',
+      'Dealer / farmer credit ledger',
+      'Multi-godown stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Vegetable Seeds', 'Crop Seeds', 'Hybrid Seeds', 'Cereal Seeds',
+      'Pulse Seeds', 'Oil Seeds', 'Fodder Seeds', 'Flower Seeds', 'Organic Seeds',
+    ],
+    defaultUnits: ['Gram', 'Kg', 'Packet', 'Bag', 'Sachet', 'Piece'],
+    productPlaceholder: 'e.g. BT Cotton Hybrid 475g',
+    productPlaceholderHi: 'जैसे बीटी कॉटन हाइब्रिड 475 ग्राम',
+    productPlaceholderMr: 'उदा. बीटी कापूस हायब्रिड 475 ग्राम',
+  },
+  fertilizerdistributor: {
+    type: 'fertilizerdistributor',
+    label: 'Fertilizer Distributor',
+    labelHi: 'खाद वितरक',
+    labelMr: 'खत वितरक',
+    emoji: '🧪',
+    color: 'amber',
+    gradient: 'from-amber-600 to-yellow-600',
+    description: 'Fertilizer distribution — bulk bags, NPK grade, subsidy tracking',
+    features: [
+      'NPK-grade & straight-fertilizer catalogue',
+      'Batch tracking + subsidy scheme flagging',
+      'Bulk bag / ton pricing to dealers',
+      'Dealer credit ledger + payment terms',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Urea', 'DAP', 'MOP', 'NPK Complex', 'SSP', 'Zinc Sulphate', 'Sulphur',
+      'Organic Fertilizers', 'Bio Fertilizers', 'Micronutrients', 'Water Soluble Fertilizers',
+    ],
+    defaultUnits: ['Kg', 'Bag', 'Quintal', 'Ton', 'Litre', 'Packet'],
+    productPlaceholder: 'e.g. IFFCO Urea 45 Kg Bag',
+    productPlaceholderHi: 'जैसे इफको यूरिया 45 किलो बैग',
+    productPlaceholderMr: 'उदा. इफ्को यूरिया 45 किलो बॅग',
+  },
+  pesticidedistributor: {
+    type: 'pesticidedistributor',
+    label: 'Pesticide Distributor',
+    labelHi: 'कीटनाशक वितरक',
+    labelMr: 'कीटकनाशक वितरक',
+    emoji: '⚗️',
+    color: 'red',
+    gradient: 'from-red-600 to-orange-600',
+    description: 'Agro-chemical distribution — batch + expiry mandatory, technical grade info',
+    features: [
+      'Batch + expiry mandatory (regulatory)',
+      'Technical grade + AI concentration',
+      'Toxicity class tagging (red / yellow / blue / green)',
+      'Dealer credit ledger + payment terms',
+      'Multi-godown stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Insecticides', 'Fungicides', 'Herbicides', 'Rodenticides',
+      'Plant Growth Regulators', 'Bio Pesticides', 'Adjuvants', 'Nematicides',
+    ],
+    defaultUnits: ['ML', 'Litre', 'Gram', 'Kg', 'Bottle', 'Packet', 'Sachet'],
+    productPlaceholder: 'e.g. Ridomil Gold MZ 250g',
+    productPlaceholderHi: 'जैसे रिडोमिल गोल्ड एमजेड 250 ग्राम',
+    productPlaceholderMr: 'उदा. रिडोमिल गोल्ड एमझेड 250 ग्राम',
+  },
+  agrostore: {
+    type: 'agrostore',
+    label: 'Agro Store',
+    labelHi: 'कृषि केंद्र',
+    labelMr: 'कृषी केंद्र',
+    emoji: '🌱',
+    color: 'emerald',
+    gradient: 'from-emerald-600 to-lime-600',
+    description: 'Fertilizers, seeds, pesticides & agricultural inputs — batch + expiry critical',
+    features: [
+      'Batch + expiry tracked per product (regulatory requirement)',
+      'Farmer / dealer / distributor / institution customer types',
+      'Brand + company-wise sales reports',
+      'Multi-size packing (Kg / Litre / Packet / Bag / Bottle / Box)',
+      'GST-ready with HSN codes',
+      'Godown-wise stock + batch-wise valuation',
+    ],
+    // Agri-input regulation mandates batch + expiry. Expiry is REQUIRED (not
+    // optional) so a shopkeeper can never accidentally sell an unlabelled
+    // fertilizer / pesticide — matches how the medical category treats it.
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      // Fertilizers
+      'Fertilizers', 'Organic Fertilizers', 'Bio Fertilizers', 'Micronutrients', 'Water Soluble Fertilizers',
+      // Seeds
+      'Seeds', 'Vegetable Seeds', 'Crop Seeds', 'Hybrid Seeds',
+      // Pesticides & agro-chemicals
+      'Pesticides', 'Fungicides', 'Herbicides', 'Insecticides', 'Plant Growth Regulators',
+      // Equipment
+      'Agricultural Equipment', 'Spray Pumps', 'Drip Accessories', 'Farm Tools',
+      // Animal
+      'Animal Feed', 'Veterinary Products',
+      // Catch-all
+      'Other Agricultural Products',
+    ],
+    defaultUnits: ['Kg', 'Gram', 'Litre', 'ML', 'Packet', 'Bag', 'Bottle', 'Box', 'Piece'],
+    productPlaceholder: 'e.g. Urea 50 Kg / Tata Rallis (Batch: URA2026-A)',
+    productPlaceholderHi: 'जैसे यूरिया 50 किलो / टाटा रैलिस',
+    productPlaceholderMr: 'उदा. यूरिया 50 किलो / टाटा रॅलिस',
+  },
+  ricemill: {
+    type: 'ricemill',
+    label: 'Rice Mill & Bhagar Mill',
+    labelHi: 'राइस मिल / दाल मिल',
+    labelMr: 'राईस मिल / डाळ मिल',
+    emoji: '🌾',
+    color: 'amber',
+    gradient: 'from-amber-600 to-yellow-600',
+    description: 'Rice mill, dal mill & grain processing — raw material lots, production batches, recovery %, by-products',
+    features: [
+      'Raw material lot tracking (moisture %, farmer, weight)',
+      'Production batch workflow (cleaning → drying → shelling → polishing → packing)',
+      'Yield / recovery % per batch',
+      'By-product accounting (bran, husk, chuni, polish, dust)',
+      'Multi-size packing (5/10/25/50 Kg bags)',
+      'Godown-wise stock + batch-wise valuation',
+    ],
+    hasExpiry: true,             // grains rarely expire but optional field lets mills mark best-before
+    hasExpiryRequired: false,
+    hasBatch: true,              // every mill product is batched — mandatory
+    hasDrugSchedule: false,
+    hasSizes: false,             // packing sizes are modelled as separate SKUs, not variants
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      // Raw materials
+      'Paddy', 'Wheat', 'Maize', 'Turad', 'Chana', 'Moong', 'Udad', 'Masoor', 'Other Grain',
+      // Finished — rice varieties
+      'Rice', 'Steam Rice', 'Premium Rice', 'Broken Rice',
+      // Finished — dal varieties
+      'Tur Dal', 'Chana Dal', 'Moong Dal', 'Masoor Dal', 'Udad Dal',
+      // By-products
+      'Bran', 'Husk', 'Chuni', 'Polish', 'Dust',
+    ],
+    defaultUnits: ['Kg', 'Quintal', 'Bag', 'Ton', '5 Kg', '10 Kg', '25 Kg', '50 Kg'],
+    productPlaceholder: 'e.g. Basmati Rice 25 Kg',
+    productPlaceholderHi: 'जैसे बासमती चावल 25 किलो',
+    productPlaceholderMr: 'उदा. बासमती तांदूळ 25 किलो',
   },
 };
 
@@ -612,7 +873,7 @@ const APPAREL_RULES: SpecRule[] = [
 const FOOTWEAR_RULES: SpecRule[] = [
   {
     match: ['shoe', 'sandal', 'slipper', 'chappal', 'boot', 'heel', 'sneaker', 'loafer', 'flip flop', 'flipflop', 'footwear', 'sneakers', 'moccasin'],
-    spec: { typeLabel: 'Colour', typeOptions: ['Black', 'White', 'Brown', 'Tan', 'Blue', 'Red', 'Grey', 'Navy'], sizeLabel: 'Size', sizeChart: ['UK4', 'UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12'] },
+    spec: { typeLabel: 'Colour', typeOptions: ['Black', 'White', 'Brown', 'Tan', 'Blue', 'Red', 'Grey', 'Navy'], sizeLabel: 'Size', sizeChart: ['UK/IND 4', 'UK/IND 5', 'UK/IND 6', 'UK/IND 7', 'UK/IND 8', 'UK/IND 9', 'UK/IND 10', 'UK/IND 11', 'UK/IND 12'] },
   },
 ];
 

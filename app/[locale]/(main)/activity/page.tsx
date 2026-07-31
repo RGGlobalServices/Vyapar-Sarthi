@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import { Activity, Clock, FileText, ShoppingBag, Users, Coins, ArrowRight, Loader2, DollarSign, UploadCloud } from 'lucide-react';
 import api from '@/lib/api';
+import { useTranslations } from 'next-intl';
 
 export default function ActivityTimelinePage() {
+  const t = useTranslations('Activity');
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,16 +37,16 @@ export default function ActivityTimelinePage() {
 
   const getFormat = (action: string, details: any) => {
     switch (action) {
-      case 'bill_created': return `Generated Bill ${details.invoice} for ₹${details.total}`;
-      case 'expense_added': return `Recorded Expense: ${details.category} (₹${details.amount})`;
-      case 'staff_added': return `Added new staff: ${details.name} (${details.role})`;
-      case 'salary_paid': return `Paid Salary to ${details.staffName} for ${details.monthYear} (₹${details.amount})`;
-      case 'advance_salary_given': return `Given Advance Salary to ${details.staffName} (₹${details.amount})`;
-      case 'payment_collected': return `Collected ₹${details.amount} from ${details.entityType} ${details.name}`;
-      case 'payment_given': return `Paid ₹${details.amount} to ${details.entityType} ${details.name}`;
-      case 'daily_closed': return `Closed Daily Register (${details.date}) with Actual ₹${details.actual}`;
-      case 'import_completed': return `Imported ${details.importType}: ${details.created || 0} created, ${details.updated || 0} updated${details.errorCount ? `, ${details.errorCount} failed` : ''}`;
-      default: return `Action: ${action}`;
+      case 'bill_created': return t('bill_created', { invoice: details.invoice, total: details.total });
+      case 'expense_added': return t('expense_added', { category: details.category, amount: details.amount });
+      case 'staff_added': return t('staff_added', { name: details.name, role: details.role });
+      case 'salary_paid': return t('salary_paid', { staffName: details.staffName, monthYear: details.monthYear, amount: details.amount });
+      case 'advance_salary_given': return t('advance_salary_given', { staffName: details.staffName, amount: details.amount });
+      case 'payment_collected': return t('payment_collected', { amount: details.amount, entityType: details.entityType, name: details.name });
+      case 'payment_given': return t('payment_given', { amount: details.amount, entityType: details.entityType, name: details.name });
+      case 'daily_closed': return t('daily_closed', { date: details.date, actual: details.actual });
+      case 'import_completed': return t('import_completed', { importType: details.importType, created: details.created || 0, updated: details.updated || 0, errorCount: details.errorCount || 0 });
+      default: return t('defaultAction', { action });
     }
   };
 
@@ -55,8 +57,8 @@ export default function ActivityTimelinePage() {
           <Clock size={24} />
         </div>
         <div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Activity Timeline</h1>
-          <p className="text-sm text-slate-500 font-medium mt-1">Chronological record of all business operations.</p>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
+          <p className="text-sm text-slate-500 font-medium mt-1">{t('subtitle')}</p>
         </div>
       </div>
 
@@ -66,7 +68,7 @@ export default function ActivityTimelinePage() {
         {loading ? (
           <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
         ) : logs.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 font-bold">No activity recorded yet.</div>
+          <div className="p-12 text-center text-slate-500 font-bold">{t('noActivity')}</div>
         ) : (
           <div className="space-y-6 relative">
             {logs.map((log) => (

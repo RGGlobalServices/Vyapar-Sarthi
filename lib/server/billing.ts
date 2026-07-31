@@ -79,7 +79,7 @@ export async function processDueSubscriptions(): Promise<ProcessResult> {
         result.details.push({ shopId: shop.id, action: `reminder_${remaining}d` });
 
         // Send outbound WhatsApp + email with a one-click renewal link.
-        const billingCycle: BillingCycle = shop.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+        const billingCycle = (shop.billingCycle as BillingCycle) || 'monthly';
         await sendRenewalOutbound(shop.ownerId, shop.id, shop.subscriptionPlan || 'shop', planName, remaining, billingCycle).catch(
           (err) => console.error('[BILLING] Outbound renewal send error:', err),
         );

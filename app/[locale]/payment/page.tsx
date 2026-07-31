@@ -20,14 +20,15 @@ function PaymentPageInner() {
   const formRef = useRef<HTMLFormElement>(null);
 
   const plan = searchParams.get('plan') || 'shop';
-  const cycle: BillingCycle = searchParams.get('cycle') === 'yearly' ? 'yearly' : 'monthly';
+  const cycleParam = searchParams.get('cycle');
+  const cycle: BillingCycle = cycleParam === 'yearly' ? 'yearly' : cycleParam === '5_years' ? '5_years' : 'monthly';
   const forcePay = searchParams.get('force_pay') === '1';
   const errorParam = searchParams.get('error');
   const planName = PLAN_NAMES[plan] || plan;
   const baseAmount = getBaseAmount(plan, cycle);
   const gstAmount = getGstAmount(baseAmount);
   const planPrice = getTotalAmount(plan, cycle);
-  const cycleUnit = cycle === 'yearly' ? 'year' : 'month';
+  const cycleUnit = cycle === 'yearly' ? 'year' : cycle === '5_years' ? '5 years' : 'month';
 
   const [status, setStatus] = useState<'loading' | 'submitting' | 'test' | 'error' | 'switching' | 'switched'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -336,7 +337,7 @@ function PaymentPageInner() {
               <p>Plan: <span className="text-emerald-400">{plan} ({cycle})</span></p>
               <p>Base: <span className="text-emerald-400">₹{baseAmount}</span> + GST: <span className="text-emerald-400">₹{gstAmount}</span></p>
               <p>Amount: <span className="text-emerald-400">₹{planPrice}</span></p>
-              <p>Validity: <span className="text-emerald-400">{cycle === 'yearly' ? '1 year' : '30 days'}</span></p>
+              <p>Validity: <span className="text-emerald-400">{cycle === 'yearly' ? '1 year' : cycle === '5_years' ? '5 years' : '30 days'}</span></p>
               <p>Renewal: <span className="text-emerald-400">manual — reminder before expiry</span></p>
             </div>
             {activated ? (

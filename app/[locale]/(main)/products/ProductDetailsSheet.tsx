@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import useSWR, { useSWRConfig } from 'swr';
 import ReceiveDrawer from '../stock/ReceiveDrawer';
+import { invalidateProductCaches } from '@/lib/swrInvalidate';
 
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
@@ -312,7 +313,7 @@ export default function ProductDetailsSheet({
           onSuccess={() => {
             setShowReceive(false);
             fetchDetails(); // refresh stock
-            mutate('/products'); // refresh background table
+            invalidateProductCaches(); // refresh every products consumer (list, stock, billing)
           }}
         />
       )}

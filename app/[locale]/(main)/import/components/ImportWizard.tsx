@@ -38,6 +38,19 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const [bulkEditField, setBulkEditField] = useState<string>('');
   const [bulkEditValue, setBulkEditValue] = useState<string>('');
 
+  // Purchase-invoice supplier panel. Only shown when importType === 'purchase'.
+  // Prefilled from the first extracted row and matched against existing
+  // suppliers by name — an existing match surfaces the current balance and
+  // credit limit so the shopkeeper can see the impact before importing.
+  const [purchaseSupplier, setPurchaseSupplier] = useState({
+    name: '', mobile: '', gst: '', address: '',
+    creditDays: '', creditLimit: '', paidAmount: '',
+  });
+  const [supplierMatch, setSupplierMatch] = useState<null | {
+    id: string; name: string; balance: number; creditLimit: number; creditDays: number;
+  }>(null);
+  const [supplierLookupDone, setSupplierLookupDone] = useState(false);
+
   // Preview pagination — every row is editable, not just the first 50.
   const [pageSize, setPageSize] = useState<number>(50);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -58,6 +71,55 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       }).catch(console.error);
     }
   }, [importType]);
+
+  // Prefill the purchase-invoice supplier panel from the first extracted row
+  // (name / mobile / GST / address), keeping any value the shopkeeper has
+  // already typed. Runs whenever the preview data changes, so re-uploading a
+  // fresh bill updates the panel without clobbering manual edits.
+  useEffect(() => {
+    if (importType !== 'purchase' || previewData.length === 0) return;
+    const first = previewData[0] || {};
+    const pick = (keys: string[]) => {
+      for (const k of Object.keys(first)) {
+        if (keys.includes(k.toLowerCase().replace(/[\s_-]/g, ''))) return String(first[k] ?? '').trim();
+      }
+      return '';
+    };
+    setPurchaseSupplier(prev => ({
+      name: prev.name || pick(['supplier', 'vendorname', 'vendor', 'suppliername']),
+      mobile: prev.mobile || pick(['suppliermobile', 'mobile', 'phone']),
+      gst: prev.gst || pick(['suppliergst', 'gst', 'gstin']),
+      address: prev.address || pick(['supplieraddress', 'address']),
+      creditDays: prev.creditDays,
+      creditLimit: prev.creditLimit,
+      paidAmount: prev.paidAmount,
+    }));
+    setSupplierLookupDone(false);
+  }, [importType, previewData]);
+
+  // Look up an existing supplier by name (debounced), so the panel can show
+  // "already in your suppliers, current balance ₹X, credit limit ₹Y" before
+  // the import runs — nothing gets updated until Import is clicked.
+  useEffect(() => {
+    if (importType !== 'purchase') return;
+    const name = purchaseSupplier.name.trim();
+    if (!name) { setSupplierMatch(null); setSupplierLookupDone(false); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.get('/crm/suppliers');
+        const list: any[] = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        const hit = list.find(s => String(s.name || '').trim().toLowerCase() === name.toLowerCase());
+        setSupplierMatch(hit
+          ? { id: hit.id, name: hit.name, balance: Number(hit.balance) || 0, creditLimit: Number(hit.creditLimit) || 0, creditDays: Number(hit.creditDays) || 0 }
+          : null);
+      } catch {
+        setSupplierMatch(null);
+      } finally {
+        setSupplierLookupDone(true);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [importType, purchaseSupplier.name]);
 
   // Recovery: if a previous streaming import for this type was interrupted, restore
   // the saved rows and surface a "Resume from row X" button — never restart at row 1.
@@ -407,6 +469,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               stats: offset === 0 ? extractionStats : null,
               totalRows: total,
               importLogId,
+              // Purchase-invoice supplier panel overrides — only sent for the
+              // first batch of a purchase import so the server doesn't re-apply
+              // enrichment / re-increment balance on every subsequent chunk.
+              supplier: (importType === 'purchase' && offset === 0) ? purchaseSupplier : undefined,
             });
           } catch (e) {
             if (attempt === 1) throw e;
@@ -646,6 +712,70 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 <ul className="list-disc pl-6 mt-2 text-sm">
                   {errors.map((e, i) => <li key={i}>{e}</li>)}
                 </ul>
+              </div>
+            )}
+
+            {/* Purchase-invoice supplier panel — only for the 'purchase' flow.
+                Confirm / edit the supplier before the import fires; the row grid
+                below already handles per-product edits. */}
+            {importType === 'purchase' && (
+              <div className="mb-5 p-5 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-500/5">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      Supplier Details
+                      {supplierLookupDone && supplierMatch && (
+                        <span className="text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">Existing supplier</span>
+                      )}
+                      {supplierLookupDone && !supplierMatch && purchaseSupplier.name.trim() && (
+                        <span className="text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">Will be created</span>
+                      )}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Confirm before importing — the invoice total will be added to this supplier's balance and their Payment History.</p>
+                  </div>
+                  {supplierMatch && (
+                    <div className="text-right text-[11px]">
+                      <div className="text-slate-500">Current balance</div>
+                      <div className={`font-black ${supplierMatch.balance > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        ₹{Math.round(supplierMatch.balance).toLocaleString('en-IN')}
+                      </div>
+                      {supplierMatch.creditLimit > 0 && (
+                        <div className="text-slate-400 mt-0.5">Limit ₹{Math.round(supplierMatch.creditLimit).toLocaleString('en-IN')}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Supplier Name *</span>
+                    <input value={purchaseSupplier.name} onChange={e => setPurchaseSupplier(s => ({ ...s, name: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. Sharma Traders" />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Mobile</span>
+                    <input value={purchaseSupplier.mobile} onChange={e => setPurchaseSupplier(s => ({ ...s, mobile: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" inputMode="numeric" />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">GSTIN</span>
+                    <input value={purchaseSupplier.gst} onChange={e => setPurchaseSupplier(s => ({ ...s, gst: e.target.value.toUpperCase() }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" maxLength={15} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Address</span>
+                    <input value={purchaseSupplier.address} onChange={e => setPurchaseSupplier(s => ({ ...s, address: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Credit Days (payment terms)</span>
+                    <input type="number" min="0" step="1" value={purchaseSupplier.creditDays} onChange={e => setPurchaseSupplier(s => ({ ...s, creditDays: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. 30" />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Credit Limit (₹)</span>
+                    <input type="number" min="0" step="1" value={purchaseSupplier.creditLimit} onChange={e => setPurchaseSupplier(s => ({ ...s, creditLimit: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. 50000" />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Amount Paid Now (₹)</span>
+                    <input type="number" min="0" step="1" value={purchaseSupplier.paidAmount} onChange={e => setPurchaseSupplier(s => ({ ...s, paidAmount: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
+                    <span className="block text-[10px] text-slate-400 mt-1">The rest becomes owed. Leave 0 if the whole bill is on credit.</span>
+                  </label>
+                </div>
               </div>
             )}
 

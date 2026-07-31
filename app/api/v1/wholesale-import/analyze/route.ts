@@ -491,6 +491,17 @@ ${dataText}`;
       const parsed = m ? Math.ceil(parseFloat(m[1]) * 1000) : 5000;
       return Math.min(parsed, 15000); // cap at 15s per attempt
     };
+    // Google returns 503 UNAVAILABLE when its model shard is overloaded — no
+    // retryDelay hint. It's transient and usually clears in a few seconds, so
+    // we back off (2s → 4s → 8s) and try again, and if it still fails we
+    // escalate to the next model in the chain (a less-loaded shard often
+    // handles the same request straight away). Missing this made the import
+    // hard-fail with the raw "This model is currently experiencing high
+    // demand" message a single retry would have cleared.
+    const isTransientUnavailable = (err: any): boolean => {
+      const msg = err?.message || String(err || '');
+      return /\b503\b|UNAVAILABLE|overloaded|high demand|Service Unavailable/i.test(msg);
+    };
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     // Gemini model chain — tries each model in order. If the primary model
@@ -531,8 +542,9 @@ ${dataText}`;
 
       const lastErrors: string[] = [];
       for (const model of geminiChain) {
-        // Up to 3 attempts per model, honoring server-provided retryDelay on 429.
-        let quotaDead = false;
+        // Up to 3 attempts per model, honoring server-provided retryDelay on
+        // 429 and using exponential backoff on transient 503 UNAVAILABLE.
+        let escalate = false;
         for (let i = 0; i < 3; i++) {
           try { return await attempt(model); }
           catch (e: any) {
@@ -542,13 +554,19 @@ ${dataText}`;
               await sleep(wait);
               continue;
             }
+            // Transient overload: 2s → 4s → 8s, then escalate to next model.
+            if (isTransientUnavailable(e) && i < 2) {
+              await sleep(2000 * Math.pow(2, i));
+              continue;
+            }
             lastErrors.push(`${model}: ${msg.slice(0, 240)}`);
-            // Hard quota (day-limit or literal "limit: 0") → escalate to next model.
-            if (wait !== null) quotaDead = true;
+            // Hard quota OR overload survives 3 attempts → escalate: another
+            // model in the chain is often on a different shard and answers.
+            if (wait !== null || isTransientUnavailable(e)) escalate = true;
             break;
           }
         }
-        if (!quotaDead) break; // non-quota errors: don't burn every model
+        if (!escalate) break; // non-recoverable error: don't burn every model
       }
       throw new Error(`Gemini ${kind} call failed: ${lastErrors.join(' | ')}`);
     };

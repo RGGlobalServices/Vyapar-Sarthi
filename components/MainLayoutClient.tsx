@@ -289,7 +289,11 @@ export default function MainLayoutClient({
       if (mainSegment === 'godowns') moduleName = 'warehouses';
 
       // Some routes are external or not in the sidebar explicitly but should be allowed (like settings, profile, etc.)
-      const alwaysAllowed = ['profile', 'settings', 'support', 'dukandar-alerts'];
+      // 'expiry' is business-config-gated (hasExpiry) rather than package-gated,
+      // so it isn't in any package's module list — allow it here and let the
+      // page itself render the "doesn't track expiry" hint if the shopkeeper
+      // navigates there on a category that doesn't need it.
+      const alwaysAllowed = ['profile', 'settings', 'support', 'dukandar-alerts', 'expiry', 'brands', 'mill'];
       
       // If staff, apply additional restrictions
       const staffRestricted = role === 'staff' && ['reports', 'import', 'warehouses', 'suppliers', 'purchases', 'transfers'].includes(moduleName);

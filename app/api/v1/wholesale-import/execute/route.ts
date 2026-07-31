@@ -431,9 +431,28 @@ export async function POST(req: NextRequest) {
         // every plan already supports.
         if (data.length === 0) break;
         const firstRow = data[0];
-        const supplierName = getVal(firstRow, ['supplier', 'vendorname', 'vendor', 'suppliername']) || 'Unknown Supplier';
+        // Preview-panel overrides win over row-extracted values: the wizard
+        // exposes a "Supplier Details" card where the shopkeeper can correct
+        // the name / mobile / GST or type the amount already paid before
+        // hitting Import. Fall back to the row when the panel is empty.
+        const supplierOverride = (body as any).supplier || {};
+        const supplierName = String(
+          supplierOverride.name ||
+          getVal(firstRow, ['supplier', 'vendorname', 'vendor', 'suppliername']) ||
+          'Unknown Supplier'
+        ).trim();
+        const supplierMobile = String(supplierOverride.mobile || getVal(firstRow, ['suppliermobile', 'mobile', 'phone']) || '').trim();
+        const supplierGst = String(supplierOverride.gst || getVal(firstRow, ['suppliergst', 'gst', 'gstin']) || '').trim().toUpperCase();
+        const supplierAddress = String(supplierOverride.address || getVal(firstRow, ['supplieraddress', 'address']) || '').trim();
+        const supplierCreditDays = supplierOverride.creditDays != null && supplierOverride.creditDays !== ''
+          ? Math.max(0, parseInt(String(supplierOverride.creditDays)) || 0) : null;
+        const supplierCreditLimit = supplierOverride.creditLimit != null && supplierOverride.creditLimit !== ''
+          ? Math.max(0, parseFloat(String(supplierOverride.creditLimit)) || 0) : null;
+        // Amount the shopkeeper already handed over at the counter — the rest
+        // becomes an unpaid balance the supplier is owed.
+        const paidAtImport = Math.max(0, parseFloat(String(supplierOverride.paidAmount ?? '')) || 0);
+
         const invoiceNumber = getVal(firstRow, ['invoicenumber', 'billnumber', 'invoice']) || `INV-${Date.now()}`;
-        
         const rawDate = getVal(firstRow, ['invoicedate', 'billdate', 'date']);
         const billDate = parseFlexibleDate(rawDate) || new Date();
 
@@ -442,8 +461,31 @@ export async function POST(req: NextRequest) {
         });
         if (!dbSupplier) {
           dbSupplier = await prisma.supplier.create({
-            data: { shopId, name: supplierName, balance: 0 }
+            data: {
+              shopId,
+              name: supplierName,
+              mobile: supplierMobile || null,
+              gst: supplierGst || null,
+              address: supplierAddress || null,
+              creditDays: supplierCreditDays ?? 0,
+              creditLimit: supplierCreditLimit ?? 0,
+              balance: 0,
+            } as any
           });
+        } else {
+          // Enrich existing supplier: blank imports never overwrite non-empty
+          // fields (same convention the rest of the import flow uses), and
+          // credit terms only change when the shopkeeper explicitly typed a
+          // value in the preview panel.
+          const patch: any = {};
+          if (supplierMobile && !dbSupplier.mobile) patch.mobile = supplierMobile;
+          if (supplierGst && !dbSupplier.gst) patch.gst = supplierGst;
+          if (supplierAddress && !(dbSupplier as any).address) patch.address = supplierAddress;
+          if (supplierCreditDays != null) patch.creditDays = supplierCreditDays;
+          if (supplierCreditLimit != null) patch.creditLimit = supplierCreditLimit;
+          if (Object.keys(patch).length) {
+            dbSupplier = await prisma.supplier.update({ where: { id: dbSupplier.id }, data: patch });
+          }
         }
 
         const purchaseInvoice = await prisma.purchaseInvoice.create({
@@ -578,6 +620,45 @@ export async function POST(req: NextRequest) {
           where: { id: purchaseInvoice.id },
           data: { totalCost: totalInvoiceCost }
         });
+
+        // Reflect the invoice on the supplier's ledger — otherwise the imported
+        // purchase never shows up in Suppliers → Payment History, the "Remaining
+        // to pay" tile stays at zero, and the credit-limit chip we just wired
+        // has nothing to react to.
+        // Gated on `payload.supplier` being present so a chunked multi-batch
+        // import (rare: >DB_BATCH_SIZE items on one bill) still only writes the
+        // supplier-ledger side-effects once, on the initial batch — subsequent
+        // batches would double-count balance / spam Payment History otherwise.
+        const runSupplierSideEffects = !!supplierOverride && Object.keys(supplierOverride).length > 0;
+        if (runSupplierSideEffects && totalInvoiceCost > 0) {
+          const owed = Math.max(0, totalInvoiceCost - paidAtImport);
+          await prisma.supplier.update({
+            where: { id: dbSupplier.id },
+            data: { balance: { increment: owed } },
+          });
+          await prisma.supplierTransaction.create({
+            data: {
+              supplierId: dbSupplier.id,
+              type: 'purchase',
+              amount: totalInvoiceCost,
+              billNumber: String(invoiceNumber),
+              note: 'Imported purchase invoice',
+              ...(billDate ? { createdAt: billDate } : {}),
+            },
+          });
+          if (paidAtImport > 0) {
+            await prisma.supplierTransaction.create({
+              data: {
+                supplierId: dbSupplier.id,
+                type: 'payment',
+                amount: paidAtImport,
+                billNumber: String(invoiceNumber),
+                note: 'Paid at import',
+                ...(billDate ? { createdAt: billDate } : {}),
+              },
+            });
+          }
+        }
         break;
       }
 

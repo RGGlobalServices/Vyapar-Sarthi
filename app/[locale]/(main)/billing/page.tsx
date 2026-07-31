@@ -70,17 +70,24 @@ function getLoosePresets(unit: string) {
 // never falsely flag items that simply came from an incomplete source.
 function resolveStock(p: any): { known: boolean; qty: number } {
   if (!p) return { known: false, qty: 0 };
-  // Variant products track stock per size/colour in size_variants.
+  // Variant products track stock per size/colour in size_variants; the aggregate
+  // currentStock is what Stock/Products screens show and what /adjust bumps.
+  // A stock-in from Stock only touches currentStock (it can't guess which size
+  // arrived), so a variant-only read here would keep saying "out of stock" for
+  // a shoe that clearly has 40 in stock elsewhere. Take the MAX of the two so
+  // whichever source is up-to-date wins; per-line variant checks in
+  // resolveStockForItem still enforce the granular size count.
   let sv: any = p.size_variants ?? p.sizeVariants;
   if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
-  if (sv && typeof sv === 'object' && Object.keys(sv).length > 0) {
-    const sum = Object.values(sv).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
-    return { known: true, qty: sum };
-  }
+  const variantSum = (sv && typeof sv === 'object' && Object.keys(sv).length > 0)
+    ? Object.values(sv).reduce((t: number, v: any) => t + (Number(v) || 0), 0)
+    : null;
   const raw = p.currentStock ?? p.current_stock ?? p.stock;
-  if (raw === undefined || raw === null || raw === '') return { known: false, qty: 0 };
-  const n = Number(raw);
-  return { known: true, qty: isFinite(n) ? n : 0 };
+  const aggregate = raw === undefined || raw === null || raw === ''
+    ? null
+    : (isFinite(Number(raw)) ? Number(raw) : null);
+  if (variantSum === null && aggregate === null) return { known: false, qty: 0 };
+  return { known: true, qty: Math.max(variantSum ?? 0, aggregate ?? 0) };
 }
 
 // Sellable stock remaining for one specific cart line — for a variant item this
@@ -94,6 +101,14 @@ function resolveStockForItem(item: any, products: any[]): { known: boolean; qty:
     if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
     if (sv && typeof sv === 'object' && Object.prototype.hasOwnProperty.call(sv, item.variant)) {
       const n = Number(sv[item.variant]);
+      // Same "unassigned pool" fallback as the variant-selector modal: when
+      // NO variant has any stock but the aggregate does, treat the aggregate
+      // as the effective cap for this line. Prevents the cashier being locked
+      // out of a sale on stock that clearly exists on the product row.
+      if ((!isFinite(n) || n <= 0)) {
+        const variantSum = Object.values(sv).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
+        if (variantSum === 0) return resolveStock(product);
+      }
       return { known: true, qty: isFinite(n) ? n : 0 };
     }
   }
@@ -915,18 +930,30 @@ function StandardBillingUI() {
                       <p className="text-[10px] text-slate-500">MRP: ₹{product.mrp}</p>
                       {(() => {
                         // Remaining stock + low-stock indicator, right under the MRP.
+                        // The "+N today" chip mirrors Stock/Products so a cashier can
+                        // confirm at a glance that a just-received item's fresh count
+                        // is already reflected here — otherwise "Added 2d ago" (which
+                        // is only the row's creation date) reads as "hasn't updated".
                         const { known, qty } = resolveStock(product);
                         if (!known) return null;
                         const minStock = Number(product.minStock ?? product.min_stock ?? 0);
                         const isOut = qty <= 0;
                         const isLow = !isOut && minStock > 0 && qty <= minStock;
+                        const recent = Number(product.recentlyAdded) || 0;
                         return (
-                          <p className={cn(
-                            'text-[10px] font-bold mt-0.5',
-                            isOut ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'
-                          )}>
-                            {isOut ? 'Out of stock' : `${qty} in stock${isLow ? ' · Low' : ''}`}
-                          </p>
+                          <div className="flex items-center gap-1 justify-end mt-0.5">
+                            {recent > 0 && (
+                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded-full">
+                                +{recent}
+                              </span>
+                            )}
+                            <p className={cn(
+                              'text-[10px] font-bold',
+                              isOut ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'
+                            )}>
+                              {isOut ? 'Out of stock' : `${qty} in stock${isLow ? ' · Low' : ''}`}
+                            </p>
+                          </div>
                         );
                       })()}
                     </div>
@@ -1609,6 +1636,30 @@ function StandardBillingUI() {
                 <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{variantSelectionProduct.name}</p>
                 <p className="text-xs text-slate-500 mt-1">Available Inventory:</p>
               </div>
+              {(() => {
+                // Data-integrity banner: a variant product whose per-size counts
+                // are all zero but whose aggregate currentStock is positive means
+                // the shopkeeper has stock but hasn't distributed it across sizes
+                // (e.g. imported product, or /adjust hit only the aggregate).
+                // Without this hint every tile would say "Out" and the cashier
+                // would be blocked from selling stock that actually exists.
+                let sizes: Record<string, number> = {};
+                try {
+                  sizes = typeof variantSelectionProduct.size_variants === 'string'
+                    ? JSON.parse(variantSelectionProduct.size_variants)
+                    : (variantSelectionProduct.size_variants || {});
+                } catch {}
+                const variantSum = Object.values(sizes).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
+                const aggregate = Number(variantSelectionProduct.currentStock ?? variantSelectionProduct.current_stock ?? 0) || 0;
+                const unassigned = variantSum === 0 && aggregate > 0 ? aggregate : 0;
+                if (unassigned <= 0) return null;
+                return (
+                  <div className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+                    <strong>{unassigned} in stock</strong> but not yet assigned to any specific size.
+                    Sell now, then open the product and distribute across sizes so future scans stay accurate.
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-3 gap-3">
                 {(() => {
                   let sizes: Record<string, number> = {};
@@ -1624,14 +1675,48 @@ function StandardBillingUI() {
                       : (variantSelectionProduct.metadata || {});
                     sizePrices = meta?.size_prices || {};
                   } catch {}
+                  // A shoes / clothes product with no size grid at all should
+                  // still show pickable tiles at the counter — otherwise the
+                  // shopkeeper opens the modal and sees nothing. Fall back to
+                  // the business-type's default sizeChart (e.g. Shoes → UK/IND
+                  // 4…12) so a size can always be picked. All fallback tiles
+                  // are unassigned-pool by definition (product has no counts).
+                  if (Object.keys(sizes).length === 0 && bizConfig.sizeChart && bizConfig.sizeChart.length > 0) {
+                    sizes = Object.fromEntries(bizConfig.sizeChart.map(s => [s, 0]));
+                  }
+                  // Same "all zero variants but aggregate has stock" state — when
+                  // that's true, every tile becomes sellable from the shared
+                  // aggregate pool so the cashier isn't blocked.
+                  const variantSum = Object.values(sizes).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
+                  const aggregate = Number(variantSelectionProduct.currentStock ?? variantSelectionProduct.current_stock ?? 0) || 0;
+                  const hasUnassignedPool = variantSum === 0 && aggregate > 0;
+                  // Use a category-appropriate word for the label instead of an
+                  // abstract "pool": shoes → "pair", clothes → "pcs", liquor →
+                  // "bottle", etc. Business-type wins over the product's own
+                  // baseUnit because legacy shoe products were often created
+                  // with baseUnit="pcs" and shopkeepers still expect "pair".
+                  const bizUnit: Record<string, string> = {
+                    shoes: 'pair',
+                    clothes: 'pcs',
+                    boutique: 'pcs',
+                    liquor: 'bottle',
+                    medical: 'strip',
+                    ricemill: 'bag',
+                  };
+                  const unitLabel = bizUnit[bizConfig.type]
+                    || String(variantSelectionProduct.baseUnit ?? variantSelectionProduct.base_unit ?? '').trim().toLowerCase()
+                    || 'available';
                   return Object.entries(sizes).map(([key, qty]) => {
                     const stock = Number(qty) || 0;
-                    const isOutOfStock = stock <= 0;
+                    const isOutOfStock = stock <= 0 && !hasUnassignedPool;
                     const { color, size } = splitVariantKey(key);
                     const sp = sizePrices[key];
                     const sizePrice = sp && (sp.sellingPrice > 0 || sp.mrp > 0)
                       ? (sp.sellingPrice || sp.mrp)
                       : (variantSelectionProduct.sellingPrice || Number(variantSelectionProduct.price) || 0);
+                    const label = stock > 0
+                      ? `${stock} ${unitLabel}`
+                      : (hasUnassignedPool ? `~${aggregate} ${unitLabel}` : 'Out');
                     return (
                       <button
                         key={key}
@@ -1650,7 +1735,7 @@ function StandardBillingUI() {
                         <span className="font-bold">{size}</span>
                         {sizePrice > 0 && <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">₹{sizePrice}</span>}
                         <span className={cn('text-[10px] font-semibold', isOutOfStock ? 'text-red-400' : 'text-slate-400 dark:text-slate-500')}>
-                          {isOutOfStock ? 'Out' : `${stock} left`}
+                          {label}
                         </span>
                       </button>
                     );

@@ -384,9 +384,20 @@ export default function UdharPage() {
         }));
       }
 
-      // Generate
+      // Generate. Pass full shop details for the PDF letterhead so GSTIN /
+      // PAN / address show up in the header instead of just a bare shop name.
       if (exportFilter.format === 'pdf') {
-        exportUdharPDF(filteredCustomers, profile.shopName || 'My Store', dateLabel);
+        exportUdharPDF(
+          filteredCustomers,
+          {
+            name: profile.shopName || 'My Store',
+            address: profile.address || null,
+            mobile: profile.mobile || null,
+            gst: profile.gst || null,
+            pan: profile.pan || null,
+          },
+          dateLabel,
+        );
       } else {
         exportUdharCSV(filteredCustomers, profile.shopName || 'My Store', dateLabel);
       }

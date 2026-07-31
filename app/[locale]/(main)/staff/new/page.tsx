@@ -99,7 +99,7 @@ export default function AddStaffPage() {
           </div>
           <div>
             <p className="font-bold text-slate-900 dark:text-white text-sm">{label}</p>
-            <p className="text-xs text-slate-500">{isUploaded ? 'Uploaded' : 'Pending'}</p>
+            <p className="text-xs text-slate-500">{isUploaded ? t('uploaded') : t('pending')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -109,17 +109,17 @@ export default function AddStaffPage() {
               onClick={() => setViewingDoc({ url: fileUrl, label })}
               className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 transition-colors"
             >
-              View <Eye size={14} />
+              {t('view')} <Eye size={14} />
             </button>
           )}
           <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${isUploaded ? 'bg-white border-2 border-green-500 text-green-600 dark:bg-slate-800 dark:text-green-400' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20'}`}>
             {isUploading ? (
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : isUploaded ? (
-              'Change'
+              t('change')
             ) : (
               <>
-                <UploadCloud size={16} /> Upload
+                <UploadCloud size={16} /> {t('upload')}
               </>
             )}
             <input
@@ -153,8 +153,8 @@ export default function AddStaffPage() {
           <ChevronLeft size={24} />
         </Link>
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Add New Employee</h1>
-          <p className="text-sm font-medium text-slate-500">Enter details and upload documents</p>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">{t('addNewEmployee')}</h1>
+          <p className="text-sm font-medium text-slate-500">{t('enterDetails')}</p>
         </div>
       </div>
 
@@ -162,30 +162,30 @@ export default function AddStaffPage() {
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
           <div className="bg-indigo-50 dark:bg-indigo-500/10 p-4 border-b border-indigo-100 dark:border-indigo-500/20 flex items-center gap-3">
             <User className="text-indigo-500" size={24} />
-            <h2 className="font-bold text-indigo-900 dark:text-indigo-100 text-lg">Personal Details</h2>
+            <h2 className="font-bold text-indigo-900 dark:text-indigo-100 text-lg">{t('personalDetails')}</h2>
           </div>
           <CardContent className="p-4 md:p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Full Name *</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('fullName')}</label>
                 <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder={t('namePlaceholder')} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Mobile Number *</label>
-                <input required type="tel" value={formData.mobile} onChange={e => setFormData({...formData, mobile: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="10 digit number" />
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('mobileNumber')}</label>
+                <input required type="tel" value={formData.mobile} onChange={e => setFormData({...formData, mobile: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder={t('mobilePlaceholder')} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Emergency Contact</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('emergencyContact')}</label>
                 <input type="tel" value={formData.emergencyContact} onChange={e => setFormData({...formData, emergencyContact: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder={t('optionalPlaceholder')} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Role</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('role')}</label>
                 <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow appearance-none font-medium">
                   {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Joining Date</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('joiningDate')}</label>
                 <input type="date" value={formData.joiningDate} onChange={e => setFormData({...formData, joiningDate: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" />
               </div>
             </div>
@@ -195,34 +195,34 @@ export default function AddStaffPage() {
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
           <div className="bg-emerald-50 dark:bg-emerald-500/10 p-4 border-b border-emerald-100 dark:border-emerald-500/20 flex items-center gap-3">
             <CreditCard className="text-emerald-500" size={24} />
-            <h2 className="font-bold text-emerald-900 dark:text-emerald-100 text-lg">Salary & Bank Details</h2>
+            <h2 className="font-bold text-emerald-900 dark:text-emerald-100 text-lg">{t('salaryBankDetails')}</h2>
           </div>
           <CardContent className="p-4 md:p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Salary Type</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('salaryType')}</label>
                 <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                  <button type="button" onClick={() => setFormData({...formData, salaryType: 'monthly'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${formData.salaryType === 'monthly' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700'}`}>Monthly</button>
-                  <button type="button" onClick={() => setFormData({...formData, salaryType: 'daily'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${formData.salaryType === 'daily' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700'}`}>Daily</button>
+                  <button type="button" onClick={() => setFormData({...formData, salaryType: 'monthly'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${formData.salaryType === 'monthly' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700'}`}>{t('monthly')}</button>
+                  <button type="button" onClick={() => setFormData({...formData, salaryType: 'daily'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${formData.salaryType === 'daily' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700'}`}>{t('daily')}</button>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Amount (₹) *</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('amount')}</label>
                 <input required type="number" min="0" value={formData.salaryAmount} onChange={e => setFormData({...formData, salaryAmount: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-shadow text-lg font-bold text-emerald-600 dark:text-emerald-400" placeholder="0" />
               </div>
             </div>
             
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Bank Account No.</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('bankAccountNo')}</label>
                 <input type="text" value={formData.bankAccount.accNo} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, accNo: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder={t('optionalPlaceholder')} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">IFSC Code</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('ifscCode')}</label>
                 <input type="text" value={formData.bankAccount.ifsc} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, ifsc: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder={t('optionalPlaceholder')} />
               </div>
               <div className="space-y-1.5 md:col-span-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">UPI ID</label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('upiId')}</label>
                 <input type="text" value={formData.bankAccount.upi} onChange={e => setFormData({...formData, bankAccount: {...formData.bankAccount, upi: e.target.value}})} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder={t('upiPlaceholder')} />
               </div>
             </div>
@@ -232,14 +232,14 @@ export default function AddStaffPage() {
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
           <div className="bg-amber-50 dark:bg-amber-500/10 p-4 border-b border-amber-100 dark:border-amber-500/20 flex items-center gap-3">
             <UploadCloud className="text-amber-500" size={24} />
-            <h2 className="font-bold text-amber-900 dark:text-amber-100 text-lg">Documents (Optional)</h2>
+            <h2 className="font-bold text-amber-900 dark:text-amber-100 text-lg">{t('documentsOptional')}</h2>
           </div>
           <CardContent className="p-4 space-y-3">
-            <DocumentUpload label="Passport Size Photo" docType="photoUrl" />
-            <DocumentUpload label="Aadhaar Card (Front)" docType="aadhaarFront" />
-            <DocumentUpload label="Aadhaar Card (Back)" docType="aadhaarBack" />
-            <DocumentUpload label="PAN Card" docType="panCard" />
-            <DocumentUpload label="Address Proof" docType="addressProof" />
+            <DocumentUpload label={t('passportPhoto')} docType="photoUrl" />
+            <DocumentUpload label={t('aadhaarFront')} docType="aadhaarFront" />
+            <DocumentUpload label={t('aadhaarBack')} docType="aadhaarBack" />
+            <DocumentUpload label={t('panCard')} docType="panCard" />
+            <DocumentUpload label={t('addressProof')} docType="addressProof" />
           </CardContent>
         </Card>
 
@@ -248,7 +248,8 @@ export default function AddStaffPage() {
           disabled={loading || !!uploadingDoc} 
           className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-2xl font-black text-lg transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2 disabled:opacity-70"
         >
-          {loading ? <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin" /> : 'Save Employee Details'}
+          {loading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={24} />}
+          {t('saveEmployeeProfile')}
         </button>
       </form>
 

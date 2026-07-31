@@ -135,12 +135,11 @@ export default function DailyStockRegister() {
         : r));
       setRowStatus(s => ({ ...s, [row.productId]: 'saved' }));
       // Receive/Close here change Product.currentStock server-side — refresh
-      // both the "All Stock" list (Zustand) and the Products page (SWR) so
-      // they show the new number immediately, without a manual page reload.
+      // both the "All Stock" list (Zustand) and every SWR consumer of the
+      // products list (Products page, Billing cart, etc.) so they show the
+      // new number immediately, without a manual page reload.
       useStockStore.getState().fetchStock();
-      import('swr').then(({ mutate }) => {
-        mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
-      });
+      import('@/lib/swrInvalidate').then(({ invalidateProductCaches }) => invalidateProductCaches());
     } catch {
       setRowStatus(s => ({ ...s, [row.productId]: 'error' }));
     }

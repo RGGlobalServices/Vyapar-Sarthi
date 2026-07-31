@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { startOfDay } from '@/lib/server/dates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,9 +68,13 @@ export const GET = handle(async (req) => {
     });
   }
 
-  // Stock added in the last 24h per product → drives the "+N newly added" badge
-  // in the Products/Stock lists. One grouped query, indexed on (shop, type, created).
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Stock added TODAY per product → drives the "+N newly added" badge in the
+  // Products/Stock lists. Anchored to today's midnight in the SHOP's timezone
+  // (Asia/Kolkata) so the badge resets at the shopkeeper's start-of-day, not
+  // the server's UTC midnight — otherwise a Hostinger host would carry the
+  // previous evening's arrivals over until 05:30 IST, looking like a rolling
+  // 24h window. One grouped query, indexed on (shop, type, created).
+  const since = startOfDay();
   const [products, total, recentAdds] = await Promise.all([
     prisma.product.findMany({
       where,

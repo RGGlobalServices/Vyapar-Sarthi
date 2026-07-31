@@ -7,10 +7,11 @@ import {
   FileText, Download, Loader2, BarChart3, PieChart, Receipt,
   Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Box, Scale
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
-import { ExportButton } from '@/lib/hooks/useExport';
+import { ExportButton, ReportPeriodProvider } from '@/lib/hooks/useExport';
 
 const ReportFilterBar = dynamic(() => import('@/components/reports/ReportFilterBar'), { ssr: false });
 const DrillDownChart = dynamic(() => import('@/components/reports/DrillDownChart'), { ssr: false });
@@ -18,14 +19,14 @@ const ReportTable = dynamic(() => import('@/components/reports/ReportTable'), { 
 
 type Tab = 'sales' | 'purchases' | 'stock' | 'financials' | 'expenses' | 'crm' | 'staff';
 
-const TABS: { id: Tab; label: string; icon: any; plans?: string[] }[] = [
-  { id: 'sales', label: 'Sales', icon: TrendingUp },
-  { id: 'financials', label: 'Financials', icon: Scale },
-  { id: 'stock', label: 'Stock', icon: Package },
-  { id: 'expenses', label: 'Expenses', icon: Wallet },
-  { id: 'crm', label: 'CRM', icon: Users },
-  { id: 'purchases', label: 'Purchases', icon: ShoppingCart, plans: ['wholesale'] },
-  { id: 'staff', label: 'Staff', icon: FileText },
+const TAB_META: { id: Tab; icon: any; plans?: string[] }[] = [
+  { id: 'sales', icon: TrendingUp },
+  { id: 'financials', icon: Scale },
+  { id: 'stock', icon: Package },
+  { id: 'expenses', icon: Wallet },
+  { id: 'crm', icon: Users },
+  { id: 'purchases', icon: ShoppingCart, plans: ['wholesale'] },
+  { id: 'staff', icon: FileText },
 ];
 
 function KPICard({ label, value, sub, icon: Icon, color = 'emerald', trend }: any) {
@@ -73,24 +74,29 @@ function SectionCard({ title, children, actions }: any) {
 // ── SALES TAB ──────────────────────────────────────────────────────────────
 function SalesTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [data, setData] = useState<any>(null);
   const [byProduct, setByProduct] = useState<any>(null);
   const [byCategory, setByCategory] = useState<any>(null);
   const [byPayment, setByPayment] = useState<any>(null);
   const [byCustomer, setByCustomer] = useState<any>(null);
+  const [byBrand, setByBrand] = useState<any>(null);
+  const [byCompany, setByCompany] = useState<any>(null);
   const [gstReport, setGstReport] = useState<any>(null);
   const [gstRegister, setGstRegister] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<'overview' | 'products' | 'categories' | 'customers' | 'payment' | 'gst'>('overview');
+  const [subTab, setSubTab] = useState<'overview' | 'products' | 'categories' | 'brands' | 'companies' | 'customers' | 'payment' | 'gst'>('overview');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}&group_by=${filters.groupBy}`;
-      const [trend, prod, cat, pay, cust, gstRes, gstRegRes] = await Promise.all([
+      const [trend, prod, cat, brand, company, pay, cust, gstRes, gstRegRes] = await Promise.all([
         api.get(`/reports/engine?module=sales&report_type=trend&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_product&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_category&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=by_brand&${qs}`),
+        api.get(`/reports/engine?module=sales&report_type=by_company&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_payment&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=by_customer&${qs}`),
         api.get(`/reports/engine?module=sales&report_type=gst&${qs}`),
@@ -99,6 +105,8 @@ function SalesTab({ filters }: { filters: any }) {
       setData(trend.data);
       setByProduct(prod.data);
       setByCategory(cat.data);
+      setByBrand(brand.data);
+      setByCompany(company.data);
       setByPayment(pay.data);
       setByCustomer(cust.data);
       setGstReport(gstRes.data);
@@ -115,23 +123,25 @@ function SalesTab({ filters }: { filters: any }) {
   const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   const subTabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'products', label: 'By Product' },
-    { id: 'categories', label: 'By Category' },
-    { id: 'customers', label: 'By Customer' },
-    { id: 'payment', label: 'By Payment' },
-    { id: 'gst', label: 'GST' },
+    { id: 'overview', label: t('subTabs.overview') },
+    { id: 'products', label: t('subTabs.byProduct') },
+    { id: 'categories', label: t('subTabs.byCategory') },
+    { id: 'brands', label: t('subTabs.byBrand') },
+    { id: 'companies', label: t('subTabs.byCompany') },
+    { id: 'customers', label: t('subTabs.byCustomer') },
+    { id: 'payment', label: t('subTabs.byPayment') },
+    { id: 'gst', label: t('subTabs.gst') },
   ];
 
   return (
     <div className="space-y-6">
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KPICard label="Total Revenue" value={fmt(summary.revenue || 0)} icon={IndianRupee} color="emerald" />
-        <KPICard label="Gross Profit" value={fmt(summary.profit || 0)} icon={TrendingUp} color="blue" />
-        <KPICard label="Profit Margin" value={`${(summary.margin || 0).toFixed(1)}%`} icon={Percent} color="amber" />
-        <KPICard label="Total Bills" value={(summary.count || 0).toLocaleString()} icon={Receipt} color="purple"
-          sub={`₹${summary.outstanding?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0} outstanding`} />
+        <KPICard label={t('kpi.totalRevenue')} value={fmt(summary.revenue || 0)} icon={IndianRupee} color="emerald" />
+        <KPICard label={t('kpi.grossProfit')} value={fmt(summary.profit || 0)} icon={TrendingUp} color="blue" />
+        <KPICard label={t('kpi.profitMargin')} value={`${(summary.margin || 0).toFixed(1)}%`} icon={Percent} color="amber" />
+        <KPICard label={t('kpi.totalBills')} value={(summary.count || 0).toLocaleString()} icon={Receipt} color="purple"
+          sub={t('kpi.outstandingAmount', { amount: (summary.outstanding || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }) })} />
       </div>
 
       {/* Sub-tabs */}
@@ -145,7 +155,7 @@ function SalesTab({ filters }: { filters: any }) {
       </div>
 
       {subTab === 'overview' && data?.trend && (
-        <SectionCard title="Revenue & Profit Trend"
+        <SectionCard title={t('section.revenueProfitTrend')}
           actions={<ExportButton columns={[{ key: 'date', label: 'Date' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }]} data={data.trend} filename="sales_trend" />}>
           <DrillDownChart type="area" data={data.trend} xKey="date"
             yKeys={[{ key: 'revenue', label: 'Revenue', color: '#10b981' }, { key: 'profit', label: 'Profit', color: '#3b82f6' }]} height={300} />
@@ -153,7 +163,7 @@ function SalesTab({ filters }: { filters: any }) {
       )}
 
       {subTab === 'products' && byProduct?.rows && (
-        <SectionCard title="Sales by Product"
+        <SectionCard title={t('section.salesByProduct')}
           actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }]} data={byProduct.rows} filename="sales_by_product" />}>
           <ReportTable
             columns={[
@@ -170,11 +180,11 @@ function SalesTab({ filters }: { filters: any }) {
 
       {subTab === 'categories' && byCategory?.rows && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SectionCard title="Revenue by Category">
+          <SectionCard title={t('section.revenueByCategory')}>
             <DrillDownChart type="pie" data={byCategory.rows.slice(0, 8)} xKey="category"
               yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
           </SectionCard>
-          <SectionCard title="Category Breakdown"
+          <SectionCard title={t('section.categoryBreakdown')}
             actions={<ExportButton columns={[{ key: 'category', label: 'Category' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }]} data={byCategory.rows} filename="sales_by_category" />}>
             <ReportTable columns={[
               { key: 'category', label: 'Category', sortable: true },
@@ -186,8 +196,48 @@ function SalesTab({ filters }: { filters: any }) {
         </div>
       )}
 
+      {subTab === 'brands' && byBrand?.rows && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionCard title={t('section.revenueByBrand')}>
+            <DrillDownChart type="pie" data={byBrand.rows.slice(0, 8)} xKey="brand"
+              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
+          </SectionCard>
+          <SectionCard title={t('section.brandWiseSales')}
+            actions={<ExportButton columns={[{ key: 'brand', label: 'Brand' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }, { key: 'sku_count', label: 'SKUs', type: 'number' }]} data={byBrand.rows} filename="sales_by_brand" />}>
+            <ReportTable columns={[
+              { key: 'brand', label: 'Brand', sortable: true },
+              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
+              { key: 'sku_count', label: 'SKUs', type: 'number', sortable: true, align: 'right' },
+              { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+            ]} rows={byBrand.rows} maxHeight="480px" />
+          </SectionCard>
+        </div>
+      )}
+
+      {subTab === 'companies' && byCompany?.rows && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionCard title={t('section.revenueByCompany')}>
+            <DrillDownChart type="pie" data={byCompany.rows.slice(0, 8)} xKey="company"
+              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
+          </SectionCard>
+          <SectionCard title={t('section.companySales')}
+            actions={<ExportButton columns={[{ key: 'company', label: 'Company' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }, { key: 'sku_count', label: 'SKUs', type: 'number' }]} data={byCompany.rows} filename="sales_by_company" />}>
+            <ReportTable columns={[
+              { key: 'company', label: 'Company', sortable: true },
+              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
+              { key: 'sku_count', label: 'SKUs', type: 'number', sortable: true, align: 'right' },
+              { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+            ]} rows={byCompany.rows} maxHeight="480px" />
+          </SectionCard>
+        </div>
+      )}
+
       {subTab === 'customers' && byCustomer?.rows && (
-        <SectionCard title="Top Customers by Revenue"
+        <SectionCard title={t('section.topCustomers')}
           actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, { key: 'total_spent', label: 'Total Spent', type: 'currency' }, { key: 'outstanding', label: 'Outstanding', type: 'currency' }]} data={byCustomer.rows} filename="sales_by_customer" />}>
           <ReportTable columns={[
             { key: 'name', label: 'Customer', sortable: true },
@@ -202,12 +252,12 @@ function SalesTab({ filters }: { filters: any }) {
 
       {subTab === 'payment' && byPayment?.rows && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SectionCard title="Collection by Mode">
+          <SectionCard title={t('section.collectionByMode')}>
             <DrillDownChart type="pie" data={byPayment.rows} xKey="method"
               yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={260} />
           </SectionCard>
           <SectionCard
-            title="Payment Mode Breakdown"
+            title={t('section.paymentBreakdown')}
             actions={<ExportButton
               columns={[
                 { key: 'method', label: 'Method' },
@@ -217,7 +267,7 @@ function SalesTab({ filters }: { filters: any }) {
               ]}
               data={byPayment.rows}
               filename="payment_mode_breakdown"
-              title="Payment Mode Breakdown"
+              title={t('section.paymentBreakdown')}
             />}
           >
             <ReportTable columns={[
@@ -233,12 +283,12 @@ function SalesTab({ filters }: { filters: any }) {
       {subTab === 'gst' && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <KPICard label="Taxable Value" value={fmt(gstReport?.totalTaxable || 0)} icon={IndianRupee} color="indigo" />
-            <KPICard label="Total GST Collected" value={fmt(gstReport?.totalGst || 0)} icon={TrendingUp} color="indigo" />
-            <KPICard label="GST Invoices" value={String(gstReport?.gstInvoiceCount || 0)} icon={IndianRupee} color="blue" />
+            <KPICard label={t('kpi.taxableValue')} value={fmt(gstReport?.totalTaxable || 0)} icon={IndianRupee} color="indigo" />
+            <KPICard label={t('kpi.totalGst')} value={fmt(gstReport?.totalGst || 0)} icon={TrendingUp} color="indigo" />
+            <KPICard label={t('kpi.gstInvoices')} value={String(gstReport?.gstInvoiceCount || 0)} icon={IndianRupee} color="blue" />
           </div>
           <SectionCard
-            title="GST Summary (rate-wise)"
+            title={t('section.gstSummary')}
             actions={gstReport?.rows?.length ? <ExportButton
               columns={[
                 { key: 'gst_rate', label: 'GST Rate %', type: 'number' },
@@ -262,17 +312,16 @@ function SalesTab({ filters }: { filters: any }) {
               ]} rows={gstReport.rows} />
             ) : gstReport?.gstInvoiceCount > 0 ? (
               <p className="text-sm text-slate-500 py-8 text-center">
-                {gstReport.gstInvoiceCount} GST invoice{gstReport.gstInvoiceCount > 1 ? 's' : ''} this period, but none of the products sold have a GST% set — so there's no rate to break down by.
-                See the GST Register below for the invoice-wise total, or add GST% to your products for a full rate-wise summary.
+                {t('empty.noGstBreakdown', { count: gstReport.gstInvoiceCount })}
               </p>
             ) : (
-              <p className="text-sm text-slate-500 py-8 text-center">No GST invoices in this period. Create a bill with GST Invoice selected to see the summary here.</p>
+              <p className="text-sm text-slate-500 py-8 text-center">{t('empty.noGstInvoices')}</p>
             )}
           </SectionCard>
-          <p className="text-[11px] text-slate-400">CGST/SGST shown for same-state sales. Inter-state (IGST) invoices contribute to Total GST but are split as IGST on the invoice itself.</p>
+          <p className="text-[11px] text-slate-400">{t('empty.gstNote')}</p>
 
           <SectionCard
-            title="GST Register (Invoice-wise)"
+            title={t('section.gstRegister')}
             actions={gstRegister?.rows?.length ? <ExportButton
               columns={[
                 { key: 'date', label: 'Date', type: 'date' },
@@ -304,7 +353,7 @@ function SalesTab({ filters }: { filters: any }) {
                 { key: 'total_gst', label: 'Total GST', type: 'currency', sortable: true, align: 'right' },
               ]} rows={gstRegister.rows} maxHeight="420px" />
             ) : (
-              <p className="text-sm text-slate-500 py-8 text-center">No GST invoices in this period.</p>
+              <p className="text-sm text-slate-500 py-8 text-center">{t('empty.noGstInvoicesRegister')}</p>
             )}
           </SectionCard>
         </div>
@@ -316,6 +365,7 @@ function SalesTab({ filters }: { filters: any }) {
 // ── FINANCIALS TAB ─────────────────────────────────────────────────────────
 function FinancialsTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [pnl, setPnl] = useState<any>(null);
   const [daybook, setDaybook] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -343,22 +393,22 @@ function FinancialsTab({ filters }: { filters: any }) {
 
   // Single source for both the P&L statement's rows and its CSV export.
   const pnlRows = pnl ? [
-    { label: 'Gross Revenue (Sales)', value: pnl.revenue, bold: false, indent: false, positive: true },
-    { label: 'Cost of Goods Sold', value: pnl.revenue - pnl.gross_profit, bold: false, indent: true, positive: false },
-    { label: 'Gross Profit', value: pnl.gross_profit, bold: true, indent: false, positive: pnl.gross_profit >= 0 },
-    { label: 'Operating Expenses', value: pnl.expenses, bold: false, indent: true, positive: false },
-    { label: 'Staff Salaries', value: pnl.salaries, bold: false, indent: true, positive: false },
-    { label: 'Total Overheads', value: pnl.total_overhead, bold: true, indent: false, positive: false },
-    { label: 'Net Profit / Loss', value: pnl.net_profit, bold: true, indent: false, positive: pnl.net_profit >= 0, highlight: true },
+    { label: t('pnl.grossRevenueSales'), value: pnl.revenue, bold: false, indent: false, positive: true },
+    { label: t('pnl.cogs'), value: pnl.revenue - pnl.gross_profit, bold: false, indent: true, positive: false },
+    { label: t('pnl.grossProfit'), value: pnl.gross_profit, bold: true, indent: false, positive: pnl.gross_profit >= 0 },
+    { label: t('pnl.operatingExpenses'), value: pnl.expenses, bold: false, indent: true, positive: false },
+    { label: t('pnl.staffSalaries'), value: pnl.salaries, bold: false, indent: true, positive: false },
+    { label: t('pnl.totalOverheads'), value: pnl.total_overhead, bold: true, indent: false, positive: false },
+    { label: t('pnl.netProfitLoss'), value: pnl.net_profit, bold: true, indent: false, positive: pnl.net_profit >= 0, highlight: true },
   ] : [];
 
   return (
     <div className="space-y-6">
       <div className="flex gap-2">
-        {[{ id: 'pnl', label: 'P&L Statement' }, { id: 'daybook', label: 'Day Book' }].map(t => (
-          <button key={t.id} onClick={() => setSubTab(t.id as any)}
-            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === t.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
-            {t.label}
+        {[{ id: 'pnl', label: t('subTabs.pnl') }, { id: 'daybook', label: t('subTabs.daybook') }].map(tab => (
+          <button key={tab.id} onClick={() => setSubTab(tab.id as any)}
+            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === tab.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {tab.label}
           </button>
         ))}
       </div>
@@ -366,20 +416,20 @@ function FinancialsTab({ filters }: { filters: any }) {
       {subTab === 'pnl' && pnl && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KPICard label="Gross Revenue" value={fmt(pnl.revenue)} icon={IndianRupee} color="emerald" />
-            <KPICard label="Gross Profit" value={fmt(pnl.gross_profit)} icon={TrendingUp} color="blue" sub={`${(pnl.gross_margin || 0).toFixed(1)}% margin`} />
-            <KPICard label="Total Overhead" value={fmt(pnl.total_overhead)} icon={Wallet} color="rose" sub={`₹${(pnl.expenses || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} expenses + ₹${(pnl.salaries || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} salary`} />
-            <KPICard label="Net Profit" value={fmt(pnl.net_profit)} icon={BarChart3}
+            <KPICard label={t('kpi.grossRevenue')} value={fmt(pnl.revenue)} icon={IndianRupee} color="emerald" />
+            <KPICard label={t('kpi.grossProfit')} value={fmt(pnl.gross_profit)} icon={TrendingUp} color="blue" sub={t('kpi.marginPct', { value: (pnl.gross_margin || 0).toFixed(1) })} />
+            <KPICard label={t('kpi.totalOverhead')} value={fmt(pnl.total_overhead)} icon={Wallet} color="rose" sub={`₹${(pnl.expenses || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} + ₹${(pnl.salaries || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} />
+            <KPICard label={t('kpi.netProfit')} value={fmt(pnl.net_profit)} icon={BarChart3}
               color={pnl.net_profit >= 0 ? 'emerald' : 'rose'}
-              sub={`${(pnl.net_margin || 0).toFixed(1)}% net margin`} />
+              sub={t('kpi.netMargin', { value: (pnl.net_margin || 0).toFixed(1) })} />
           </div>
           <SectionCard
-            title="Profit & Loss Statement"
+            title={t('section.pnl')}
             actions={<ExportButton
               columns={[{ key: 'label', label: 'Line Item' }, { key: 'value', label: 'Amount', type: 'currency' }]}
               data={pnlRows.map(r => ({ label: r.label, value: r.positive ? r.value : -Math.abs(r.value || 0) }))}
               filename="profit_and_loss"
-              title="Profit & Loss Statement"
+              title={t('section.pnl')}
             />}
           >
             <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
@@ -401,12 +451,12 @@ function FinancialsTab({ filters }: { filters: any }) {
       {subTab === 'daybook' && daybook && (
         <>
           <div className="grid grid-cols-3 gap-4">
-            <KPICard label="Total Inflows" value={`₹${(daybook.inflow_total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ArrowUpRight} color="emerald" />
-            <KPICard label="Total Outflows" value={`₹${(daybook.outflow_total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ArrowDownRight} color="rose" />
-            <KPICard label="Net Balance" value={`₹${(daybook.net_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Scale}
+            <KPICard label={t('kpi.totalInflows')} value={`₹${(daybook.inflow_total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ArrowUpRight} color="emerald" />
+            <KPICard label={t('kpi.totalOutflows')} value={`₹${(daybook.outflow_total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ArrowDownRight} color="rose" />
+            <KPICard label={t('kpi.netBalance')} value={`₹${(daybook.net_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Scale}
               color={daybook.net_balance >= 0 ? 'emerald' : 'rose'} />
           </div>
-          <SectionCard title="Cash Book Entries"
+          <SectionCard title={t('section.cashBook')}
             actions={<ExportButton columns={[{ key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'currency' }, { key: 'description', label: 'Description' }, { key: 'createdAt', label: 'Date', type: 'date' }]} data={daybook.entries || []} filename="daybook" />}>
             <ReportTable
               columns={[
@@ -426,6 +476,7 @@ function FinancialsTab({ filters }: { filters: any }) {
 // ── STOCK TAB ─────────────────────────────────────────────────────────────
 function StockTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [data, setData] = useState<any>(null);
   const [valuation, setValuation] = useState<any>(null);
   const [deadStock, setDeadStock] = useState<any>(null);
@@ -458,10 +509,10 @@ function StockTab({ filters }: { filters: any }) {
   return (
     <div className="space-y-6">
       <div className="flex gap-2 flex-wrap">
-        {[{ id: 'current', label: 'Current Stock' }, { id: 'valuation', label: 'Valuation' }, { id: 'dead', label: 'Dead Stock' }].map(t => (
-          <button key={t.id} onClick={() => setSubTab(t.id as any)}
-            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === t.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
-            {t.label}
+        {[{ id: 'current', label: t('subTabs.current') }, { id: 'valuation', label: t('subTabs.valuation') }, { id: 'dead', label: t('subTabs.dead') }].map(tab => (
+          <button key={tab.id} onClick={() => setSubTab(tab.id as any)}
+            className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === tab.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {tab.label}
           </button>
         ))}
       </div>
@@ -469,12 +520,12 @@ function StockTab({ filters }: { filters: any }) {
       {subTab === 'current' && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KPICard label="Total Products" value={(summary.totalProducts || 0).toLocaleString()} icon={Package} color="blue" />
-            <KPICard label="Stock Value" value={fmt(summary.totalValue || 0)} icon={IndianRupee} color="emerald" />
-            <KPICard label="Low Stock" value={(summary.lowCount || 0).toLocaleString()} icon={AlertTriangle} color="amber" />
-            <KPICard label="Out of Stock" value={(summary.outCount || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
+            <KPICard label={t('kpi.totalProducts')} value={(summary.totalProducts || 0).toLocaleString()} icon={Package} color="blue" />
+            <KPICard label={t('kpi.stockValue')} value={fmt(summary.totalValue || 0)} icon={IndianRupee} color="emerald" />
+            <KPICard label={t('kpi.lowStock')} value={(summary.lowCount || 0).toLocaleString()} icon={AlertTriangle} color="amber" />
+            <KPICard label={t('kpi.outOfStock')} value={(summary.outCount || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
           </div>
-          <SectionCard title="Stock Status"
+          <SectionCard title={t('section.stockStatus')}
             actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'current_stock', label: 'Stock', type: 'number' }, { key: 'min_stock', label: 'Min Stock', type: 'number' }, { key: 'stock_value', label: 'Value', type: 'currency' }]} data={data?.rows || []} filename="stock_report" />}>
             <ReportTable
               columns={[
@@ -492,12 +543,12 @@ function StockTab({ filters }: { filters: any }) {
 
       {subTab === 'valuation' && valuation?.rows && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SectionCard title="Stock Value by Category">
+          <SectionCard title={t('section.stockValueByCategory')}>
             <DrillDownChart type="bar" data={valuation.rows} xKey="category"
               yKeys={[{ key: 'stock_value', label: 'Value', color: '#10b981' }]} height={300} />
           </SectionCard>
           <SectionCard
-            title="Valuation Breakdown"
+            title={t('section.valuationBreakdown')}
             actions={<ExportButton
               columns={[
                 { key: 'category', label: 'Category' },
@@ -521,7 +572,7 @@ function StockTab({ filters }: { filters: any }) {
       )}
 
       {subTab === 'dead' && deadStock?.rows && (
-        <SectionCard title="Dead Stock (No Sales in Period)"
+        <SectionCard title={t('section.deadStock')}
           actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'current_stock', label: 'Stock', type: 'number' }, { key: 'tied_value', label: 'Tied Value', type: 'currency' }]} data={deadStock.rows} filename="dead_stock" />}>
           <ReportTable
             columns={[
@@ -531,7 +582,7 @@ function StockTab({ filters }: { filters: any }) {
               { key: 'tied_value', label: 'Tied Capital', type: 'currency', sortable: true, align: 'right' },
             ]}
             rows={deadStock.rows} maxHeight="480px"
-            emptyMessage="No dead stock found — all products sold in the selected period." />
+            emptyMessage={t('empty.noDeadStock')} />
         </SectionCard>
       )}
     </div>
@@ -541,6 +592,7 @@ function StockTab({ filters }: { filters: any }) {
 // ── EXPENSES TAB ──────────────────────────────────────────────────────────
 function ExpensesTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [data, setData] = useState<any>(null);
   const [byCategory, setByCategory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -566,24 +618,24 @@ function ExpensesTab({ filters }: { filters: any }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
-        <KPICard label="Total Expenses" value={`₹${(data?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Wallet} color="rose" />
-        <KPICard label="Total Transactions" value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
+        <KPICard label={t('kpi.totalExpenses')} value={`₹${(data?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Wallet} color="rose" />
+        <KPICard label={t('kpi.totalTransactions')} value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SectionCard
-          title="Daily Expense Trend"
+          title={t('section.dailyExpenseTrend')}
           actions={data?.trend?.length ? <ExportButton
             columns={[{ key: 'date', label: 'Date', type: 'date' }, { key: 'amount', label: 'Expenses', type: 'currency' }]}
             data={data.trend}
             filename="daily_expense_trend"
-            title="Daily Expense Trend"
+            title={t('section.dailyExpenseTrend')}
           /> : undefined}
         >
           <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
             yKeys={[{ key: 'amount', label: 'Expenses', color: '#ef4444' }]} height={240} />
         </SectionCard>
         <SectionCard
-          title="By Category"
+          title={t('section.expensesByCategory')}
           actions={byCategory?.rows?.length ? <ExportButton
             columns={[{ key: 'category', label: 'Category' }, { key: 'amount', label: 'Amount', type: 'currency' }]}
             data={byCategory.rows}
@@ -595,7 +647,7 @@ function ExpensesTab({ filters }: { filters: any }) {
             yKeys={[{ key: 'amount', label: 'Amount' }]} height={240} />
         </SectionCard>
       </div>
-      <SectionCard title="All Expenses"
+      <SectionCard title={t('section.allExpenses')}
         actions={<ExportButton columns={[{ key: 'category', label: 'Category' }, { key: 'amount', label: 'Amount', type: 'currency' }, { key: 'paymentMode', label: 'Mode' }, { key: 'description', label: 'Description' }, { key: 'createdAt', label: 'Date', type: 'date' }]} data={data?.expenses || []} filename="expenses" />}>
         <ReportTable
           columns={[
@@ -614,6 +666,7 @@ function ExpensesTab({ filters }: { filters: any }) {
 // ── CRM TAB ───────────────────────────────────────────────────────────────
 function CRMTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const { profile } = useBusinessStore();
   const isUdyog = profile?.subscriptionPlan === 'wholesale';
   const [outstanding, setOutstanding] = useState<any>(null);
@@ -643,13 +696,13 @@ function CRMTab({ filters }: { filters: any }) {
   return (
     <div className="space-y-6">
       <div className={cn('grid gap-4', isUdyog ? 'grid-cols-2' : 'grid-cols-1')}>
-        <KPICard label="Customer Outstanding" value={`₹${(outstanding?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Users} color="rose" sub={`${outstanding?.summary?.count || 0} customers with dues`} />
+        <KPICard label={t('kpi.customerOutstanding')} value={`₹${(outstanding?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Users} color="rose" sub={t('kpi.customersWithDues', { count: outstanding?.summary?.count || 0 })} />
         {isUdyog && (
-          <KPICard label="Supplier Payable" value={`₹${(suppliers?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ShoppingCart} color="amber" sub={`${suppliers?.summary?.count || 0} suppliers`} />
+          <KPICard label={t('kpi.supplierPayable')} value={`₹${(suppliers?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ShoppingCart} color="amber" sub={t('kpi.suppliersCount', { count: suppliers?.summary?.count || 0 })} />
         )}
       </div>
       <div className={cn('grid grid-cols-1 gap-6', isUdyog && 'lg:grid-cols-2')}>
-        <SectionCard title="Outstanding Customers"
+        <SectionCard title={t('section.outstandingCustomers')}
           actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, { key: 'totalDue', label: 'Outstanding', type: 'currency' }]} data={outstanding?.rows || []} filename="outstanding_customers" />}>
           <ReportTable
             columns={[
@@ -661,7 +714,7 @@ function CRMTab({ filters }: { filters: any }) {
             rows={outstanding?.rows || []} maxHeight="380px" />
         </SectionCard>
         {isUdyog && (
-          <SectionCard title="Outstanding Suppliers"
+          <SectionCard title={t('section.outstandingSuppliers')}
             actions={<ExportButton columns={[{ key: 'name', label: 'Supplier' }, { key: 'mobile', label: 'Mobile' }, { key: 'balance', label: 'Payable', type: 'currency' }]} data={suppliers?.rows || []} filename="outstanding_suppliers" />}>
             <ReportTable
               columns={[
@@ -680,6 +733,7 @@ function CRMTab({ filters }: { filters: any }) {
 // ── STAFF TAB ─────────────────────────────────────────────────────────────
 function StaffTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [payroll, setPayroll] = useState<any>(null);
   const [attendance, setAttendance] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -705,12 +759,12 @@ function StaffTab({ filters }: { filters: any }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-4">
-        <KPICard label="Total Salaries Paid" value={`₹${(payroll?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={IndianRupee} color="purple" />
-        <KPICard label="Present Days" value={(attendance?.summary?.present || 0).toLocaleString()} icon={Users} color="emerald" />
-        <KPICard label="Absent Days" value={(attendance?.summary?.absent || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
+        <KPICard label={t('kpi.totalSalaries')} value={`₹${(payroll?.summary?.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={IndianRupee} color="purple" />
+        <KPICard label={t('kpi.presentDays')} value={(attendance?.summary?.present || 0).toLocaleString()} icon={Users} color="emerald" />
+        <KPICard label={t('kpi.absentDays')} value={(attendance?.summary?.absent || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SectionCard title="Salary Payroll"
+        <SectionCard title={t('section.salaryPayroll')}
           actions={<ExportButton columns={[{ key: 'monthYear', label: 'Period' }, { key: 'netAmount', label: 'Amount', type: 'currency' }, { key: 'paymentMode', label: 'Mode' }, { key: 'paidAt', label: 'Date', type: 'date' }]} data={payroll?.rows || []} filename="payroll" />}>
           <ReportTable
             columns={[
@@ -724,7 +778,7 @@ function StaffTab({ filters }: { filters: any }) {
             maxHeight="380px" />
         </SectionCard>
         <SectionCard
-          title="Attendance Log"
+          title={t('section.attendanceLog')}
           actions={<ExportButton
             columns={[
               { key: 'staff', label: 'Staff' },
@@ -734,7 +788,7 @@ function StaffTab({ filters }: { filters: any }) {
             ]}
             data={(attendance?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—', notes: r.reason || '' }))}
             filename="attendance_log"
-            title="Attendance Log"
+            title={t('section.attendanceLog')}
           />}
         >
           <ReportTable
@@ -755,6 +809,7 @@ function StaffTab({ filters }: { filters: any }) {
 // ── PURCHASES TAB ─────────────────────────────────────────────────────────
 function PurchasesTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [data, setData] = useState<any>(null);
   const [bySupplier, setBySupplier] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -780,15 +835,15 @@ function PurchasesTab({ filters }: { filters: any }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-4">
-        <KPICard label="Total Cost" value={`₹${(data?.summary?.cost || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ShoppingCart} color="rose" />
-        <KPICard label="Total GST" value={`₹${(data?.summary?.gst || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Percent} color="amber" />
-        <KPICard label="Invoices" value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
+        <KPICard label={t('kpi.totalCost')} value={`₹${(data?.summary?.cost || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={ShoppingCart} color="rose" />
+        <KPICard label={t('kpi.totalGstPaid')} value={`₹${(data?.summary?.gst || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} icon={Percent} color="amber" />
+        <KPICard label={t('kpi.invoices')} value={(data?.summary?.count || 0).toLocaleString()} icon={Receipt} color="slate" />
       </div>
-      <SectionCard title="Purchase Trend">
+      <SectionCard title={t('section.purchaseTrend')}>
         <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
           yKeys={[{ key: 'cost', label: 'Cost', color: '#ef4444' }, { key: 'gst', label: 'GST', color: '#f59e0b' }]} height={260} />
       </SectionCard>
-      <SectionCard title="By Supplier"
+      <SectionCard title={t('section.bySupplier')}
         actions={<ExportButton columns={[{ key: 'supplier', label: 'Supplier' }, { key: 'cost', label: 'Cost', type: 'currency' }, { key: 'gst', label: 'GST', type: 'currency' }, { key: 'count', label: 'Invoices', type: 'number' }]} data={(bySupplier?.rows || []).map((r: any) => ({ supplier: r.supplier?.name || '—', cost: r.cost, gst: r.gst, count: r.count }))} filename="purchase_by_supplier" />}>
         <ReportTable
           columns={[
@@ -807,6 +862,7 @@ function PurchasesTab({ filters }: { filters: any }) {
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const { profile } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [activeTab, setActiveTab] = useState<Tab>('sales');
   const [filters, setFilters] = useState({
     startDate: (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; })(),
@@ -814,7 +870,7 @@ export default function ReportsPage() {
     groupBy: 'day' as 'day' | 'week' | 'month',
   });
 
-  const availableTabs = TABS.filter(t => !t.plans || t.plans.includes(profile?.subscriptionPlan || ''));
+  const availableTabs = TAB_META.filter(tab => !tab.plans || tab.plans.includes(profile?.subscriptionPlan || ''));
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -824,8 +880,8 @@ export default function ReportsPage() {
             <BarChart3 size={24} />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Reports & Analytics</h1>
-            <p className="text-sm text-slate-500 font-medium mt-0.5">Real-time business intelligence dashboard</p>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('pageTitle')}</h1>
+            <p className="text-sm text-slate-500 font-medium mt-0.5">{t('pageSubtitle')}</p>
           </div>
         </div>
       </div>
@@ -846,20 +902,23 @@ export default function ReportsPage() {
                   : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               )}>
               <Icon size={15} />
-              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="hidden sm:inline">{t(`tabs.${tab.id}` as any)}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'sales' && <SalesTab filters={filters} />}
-      {activeTab === 'financials' && <FinancialsTab filters={filters} />}
-      {activeTab === 'stock' && <StockTab filters={filters} />}
-      {activeTab === 'expenses' && <ExpensesTab filters={filters} />}
-      {activeTab === 'crm' && <CRMTab filters={filters} />}
-      {activeTab === 'staff' && <StaffTab filters={filters} />}
-      {activeTab === 'purchases' && <PurchasesTab filters={filters} />}
+      {/* Tab Content — wrapped so every ExportButton inherits the current
+          filter period on its PDF/print letterhead. */}
+      <ReportPeriodProvider startDate={filters.startDate} endDate={filters.endDate}>
+        {activeTab === 'sales' && <SalesTab filters={filters} />}
+        {activeTab === 'financials' && <FinancialsTab filters={filters} />}
+        {activeTab === 'stock' && <StockTab filters={filters} />}
+        {activeTab === 'expenses' && <ExpensesTab filters={filters} />}
+        {activeTab === 'crm' && <CRMTab filters={filters} />}
+        {activeTab === 'staff' && <StaffTab filters={filters} />}
+        {activeTab === 'purchases' && <PurchasesTab filters={filters} />}
+      </ReportPeriodProvider>
     </div>
   );
 }

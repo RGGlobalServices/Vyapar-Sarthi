@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt
+  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -208,6 +208,7 @@ export default function Sidebar({
     { key: 'suppliers', icon: Users,           href: '/suppliers' },
     { key: 'warehouses',icon: Warehouse,       href: '/godowns' },
     { key: 'stock',     icon: Box,             href: '/stock' },
+    { key: 'expiry',    icon: AlertTriangle,   href: '/expiry' },
     { key: 'expenses',  icon: Receipt,         href: '/expenses' },
     { key: 'staff',     icon: UsersThree,      href: '/staff' },
     { key: 'udhar',     icon: UdharIcon,       href: '/udhar' },
@@ -231,10 +232,16 @@ export default function Sidebar({
   const canSwitchShops = allShops.length > 1 || shopLimit.multiShop;
   const ShopHeaderTag = (canSwitchShops ? 'button' : 'div') as 'button' | 'div';
 
-  // Filter master list based on allowed modules for this shop's package
-  const baseMenuItems = masterMenuItems.filter(item => 
-    item.external || currentPackageConfig.modules.includes(item.key)
-  );
+  // Filter master list based on allowed modules for this shop's package.
+  // The Expiry screen is an add-on that only makes sense for categories that
+  // track expiry — hide it for shops selling electronics, apparel, etc. so
+  // their sidebar stays uncluttered. Included in every package's module list
+  // below so no package config change is needed.
+  const baseMenuItems = masterMenuItems.filter(item => {
+    if (item.external) return true;
+    if (item.key === 'expiry') return currentBusinessConfig.hasExpiry;
+    return currentPackageConfig.modules.includes(item.key);
+  });
 
   const visibleMenuItems = ended
     ? baseMenuItems.filter(item => item.external || isAllowedWhenEnded(item.href))
