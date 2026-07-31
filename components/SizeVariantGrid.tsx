@@ -20,6 +20,13 @@ interface SizeVariantGridProps {
   perSizePricing?: boolean;
   sizePrices?: Record<string, SizePriceEntry>;
   onSizePricesChange?: (prices: Record<string, SizePriceEntry>) => void;
+  /** When true, each cell shows the CURRENT stock (from `baseValue`) as a
+   *  read-only badge, and the input represents ADD-quantity — final saved
+   *  qty = baseValue + delta. Empty input means no change (stays at base).
+   *  Used in the Edit-Product modal so a shopkeeper receiving new stock
+   *  doesn't have to retype the whole total. */
+  additiveMode?: boolean;
+  baseValue?: Record<string, number>;
 }
 
 const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-900 dark:text-slate-100 text-center text-sm font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors';
@@ -29,13 +36,28 @@ export default function SizeVariantGrid({
   sizeChart, value, onChange, readOnly,
   unitLabel = 'units',
   perSizePricing, sizePrices = {}, onSizePricesChange,
+  additiveMode = false, baseValue,
 }: SizeVariantGridProps) {
   const t = useTranslations('Variants');
   const total = Object.values(value).reduce((s, v) => s + (v || 0), 0);
   const [expandedSize, setExpandedSize] = useState<string | null>(null);
 
+  const baseFor = (size: string) => baseValue?.[size] || 0;
+
   function handleChange(size: string, rawVal: string) {
-    const qty = Math.max(0, parseInt(rawVal) || 0);
+    const raw = rawVal.trim();
+    if (additiveMode) {
+      // Empty input → no change (stay at base). Non-empty → base + delta.
+      const base = baseFor(size);
+      if (raw === '') {
+        onChange({ ...value, [size]: base });
+        return;
+      }
+      const delta = Math.max(0, parseInt(raw) || 0);
+      onChange({ ...value, [size]: base + delta });
+      return;
+    }
+    const qty = Math.max(0, parseInt(raw) || 0);
     onChange({ ...value, [size]: qty });
   }
 
@@ -55,6 +77,12 @@ export default function SizeVariantGrid({
           const isExpanded = perSizePricing && expandedSize === size;
           const prices = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0 };
 
+          // Additive mode: the input represents the delta being added on top
+          // of the base (current DB) stock. The badge shows the base so the
+          // shopkeeper knows what's already there.
+          const base = baseFor(size);
+          const delta = additiveMode ? Math.max(0, qty - base) : 0;
+
           return (
             <div key={size} className="space-y-1">
               {/* Size Label */}
@@ -71,6 +99,18 @@ export default function SizeVariantGrid({
                 {size}
               </div>
 
+              {/* Current-stock badge */}
+              {!readOnly && baseValue !== undefined && (
+                <div className={cn(
+                  'text-center text-[10px] font-bold rounded-md px-1 py-0.5',
+                  base === 0
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                    : 'bg-sky-50 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                )} title={t('currentInStock')}>
+                  {base}
+                </div>
+              )}
+
               {/* Quantity Input */}
               {readOnly ? (
                 <div className={cn(
@@ -79,6 +119,15 @@ export default function SizeVariantGrid({
                 )}>
                   {qty}
                 </div>
+              ) : additiveMode ? (
+                <input
+                  type="number"
+                  min="0"
+                  value={delta === 0 ? '' : delta}
+                  placeholder={t('addPlaceholder')}
+                  onChange={e => handleChange(size, e.target.value)}
+                  className={cn(inp, delta > 0 && 'border-emerald-400 dark:border-emerald-500/60 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300')}
+                />
               ) : (
                 <input
                   type="number"
@@ -88,6 +137,13 @@ export default function SizeVariantGrid({
                   onChange={e => handleChange(size, e.target.value)}
                   className={inp}
                 />
+              )}
+
+              {/* New-total hint when the user is adding stock */}
+              {additiveMode && delta > 0 && (
+                <div className="text-center text-[9px] font-bold text-emerald-600 dark:text-emerald-400 tracking-wide uppercase">
+                  = {qty}
+                </div>
               )}
 
               {/* Per-size price: inline selling-price input + expander for MRP / cost */}

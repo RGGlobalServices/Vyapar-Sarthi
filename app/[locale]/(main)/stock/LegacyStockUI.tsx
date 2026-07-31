@@ -1,6 +1,7 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { translateData } from '@/lib/translateData';
 import SmartTranslator from '@/components/SmartTranslator';
@@ -33,6 +34,7 @@ export default function LegacyStockUI() {
   const t  = useTranslations('Stock');
   const tv = useTranslations('Variants');
   const locale = useLocale();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -883,6 +885,7 @@ export default function LegacyStockUI() {
                         onChange={sizes => setEditModal(m => m ? { ...m, sizes } : m)}
                         unitLabel={editModal.unit?.toLowerCase() || 'units'}
                         showSwatch={bizConfig.hasColors}
+                        baseValue={parseSizeVariants(editModal.item.size_variants)}
                       />
                     ) : (
                     <SizeVariantGrid
@@ -890,6 +893,7 @@ export default function LegacyStockUI() {
                       value={editModal.sizes}
                       onChange={sizes => setEditModal(m => m ? { ...m, sizes } : m)}
                       unitLabel={editModal.unit?.toLowerCase() || 'units'}
+                      baseValue={parseSizeVariants(editModal.item.size_variants)}
                     />
                     )}
                   </div>
@@ -992,19 +996,20 @@ export default function LegacyStockUI() {
             </div>
             <form onSubmit={handleStockIn} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1 p-6 space-y-4">
-              <div className="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700">
-                <button type="button" onClick={() => { setIsNew(false); setError(''); }}
-                  className={cn('flex-1 py-2 text-sm font-medium transition-colors', !isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
-                  {t('existingProduct')}
-                </button>
-                <button type="button" onClick={() => { setIsNew(true); setError(''); }}
-                  className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1', isNew ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
-                  <Plus size={14} />{t('newProduct')}
-                </button>
-              </div>
-              {!isNew ? (
-                renderProductPicker()
-              ) : (
+              {/* Slim mode: Stock In only receives new stock for existing products.
+                  A brand-new item — with all its colour × size / weight / category
+                  setup — belongs in the Products page's Add flow, so we punt there
+                  via ?add=1 instead of duplicating that whole form here. */}
+              <button
+                type="button"
+                onClick={() => { closeModal(); router.push(`/${locale}/products?add=1`); }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-emerald-400 dark:border-emerald-500/40 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+              >
+                <Plus size={14} />
+                {t('addNewProductCta')}
+              </button>
+              {renderProductPicker()}
+              {false && (
                 <div className="space-y-3">
                   {/* Basic Info */}
                   <div>
@@ -1192,6 +1197,7 @@ export default function LegacyStockUI() {
                         sizePrices={stockSizePrices}
                         onSizePricesChange={setStockSizePrices}
                         showSwatch={bizConfig.hasColors}
+                        baseValue={selectedExistingSizes}
                       />
                     ) : (
                     <SizeVariantGrid
@@ -1202,6 +1208,7 @@ export default function LegacyStockUI() {
                       perSizePricing={stockPerSizePricing}
                       sizePrices={stockSizePrices}
                       onSizePricesChange={setStockSizePrices}
+                      baseValue={selectedExistingSizes}
                     />
                     )}
                   </div>
