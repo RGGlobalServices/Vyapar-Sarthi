@@ -1189,7 +1189,7 @@ function LegacyProductsUI() {
                   {bizConfig.hasBatch && <th className="px-6 py-4">Batch</th>}
                   {bizConfig.hasModel && <th className="px-6 py-4">Model</th>}
                   {bizConfig.hasWarranty && <th className="px-6 py-4">Warranty</th>}
-                  {bizConfig.hasShades && <th className="px-6 py-4">Shade</th>}
+                  {bizConfig.hasShades && <th className="px-6 py-4">{['electric', 'electronics'].includes(bizConfig.type) ? 'Color' : 'Shade'}</th>}
                   {bizConfig.hasGender && <th className="px-6 py-4">Gender</th>}
                   {bizConfig.hasLiquorSpecs && <th className="px-6 py-4">Brand / ABV</th>}
                   <th className="px-6 py-4 text-right">{t('colMRP')}</th>

@@ -984,16 +984,16 @@ export default function WholesaleProductsUI() {
                         </div>
                       )}
 
-                      {/* Shade — Boutique / Cosmetics */}
+                      {/* Shade / Color */}
                       {bizConfig.hasShades && (
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                             <Palette size={11} className="text-pink-500" />
-                            Shade / Colour
+                            {['electric', 'electronics'].includes(bizConfig.type) ? 'Color' : 'Shade / Colour'}
                           </label>
                           <input 
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm"
-                            placeholder="e.g. Nude Pink, Matte Red"
+                            placeholder={['electric', 'electronics'].includes(bizConfig.type) ? "e.g. Black, Silver, White" : "e.g. Nude Pink, Matte Red"}
                             value={form.shade || ''} onChange={e => setForm({...form, shade: e.target.value})}
                           />
                         </div>

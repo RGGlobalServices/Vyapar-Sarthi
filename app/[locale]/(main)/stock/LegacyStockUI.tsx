@@ -1053,7 +1053,7 @@ export default function LegacyStockUI() {
                   {/* Shade — cosmetics */}
                   {bizConfig.hasShades && (
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Shade / Color Variant</label>
+                      <label className="block text-xs text-slate-400 mb-1">{['electric', 'electronics'].includes(bizConfig.type) ? 'Color' : 'Shade / Color Variant'}</label>
                       <input className={inp} placeholder="e.g. Rose Red, Nude 01..." value={newForm.shade} onChange={e => setNewForm(f => ({ ...f, shade: e.target.value }))} />
                     </div>
                   )}

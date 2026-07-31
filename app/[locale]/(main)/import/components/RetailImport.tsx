@@ -848,7 +848,7 @@ export default function RetailImport() {
                                 <th className="pb-2 font-medium">Cat.</th>
                                 {bizConfig.hasGender && <th className="pb-2 font-medium">Gender</th>}
                                 {bizConfig.hasSizes && <th className="pb-2 font-medium">Sizes</th>}
-                                {bizConfig.hasShades && <th className="pb-2 font-medium">Shade</th>}
+                                {bizConfig.hasShades && <th className="pb-2 font-medium">{['electric', 'electronics'].includes(bizConfig.type) ? 'Color' : 'Shade'}</th>}
                                 {bizConfig.hasBatch && <th className="pb-2 font-medium">Batch</th>}
                                 {bizConfig.hasDrugSchedule && <th className="pb-2 font-medium">Schedule</th>}
                                 {bizConfig.hasModel && <th className="pb-2 font-medium">Model</th>}
