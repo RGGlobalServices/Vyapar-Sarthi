@@ -14,9 +14,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token') || '';
 
-  let payload: { shopId: string; plan: string; amount: number; cycle?: 'monthly' | 'yearly' };
+  let payload: { shopId: string; plan: string; amount: number; cycle?: 'monthly' | 'yearly' | '5_years' };
   try {
-    payload = verifyRenewalToken(token);
+    const res = verifyRenewalToken(token);
+    if (!res) throw new Error('Invalid token');
+    payload = res;
   } catch {
     return new NextResponse(errorPage('This renewal link has expired or is invalid. Please open the app to renew your subscription.'), {
       status: 400,
@@ -25,7 +27,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { shopId, plan, amount } = payload;
-  const cycle = payload.cycle === 'yearly' ? 'yearly' : 'monthly';
+  const cycle = payload.cycle || 'monthly';
 
   // Verify the shop still needs renewal (not already active).
   const shop = await prisma.shop.findUnique({ where: { id: shopId } });

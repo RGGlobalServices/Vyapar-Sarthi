@@ -1,11 +1,12 @@
 import crypto from 'crypto';
 import { config } from './config';
+import { type BillingCycle } from '../subscriptionPricing';
 
 interface RenewalPayload {
   shopId: string;
   plan: string;
   amount: number;
-  cycle: 'monthly' | 'yearly';
+  cycle: BillingCycle;
   exp: number; // Unix timestamp (ms)
 }
 
@@ -17,7 +18,7 @@ export function generateRenewalToken(
   shopId: string,
   plan: string,
   amount: number,
-  cycle: 'monthly' | 'yearly' = 'monthly',
+  cycle: BillingCycle = 'monthly',
 ): string {
   const payload: RenewalPayload = {
     shopId,
@@ -31,17 +32,23 @@ export function generateRenewalToken(
   return `${encoded}.${sig}`;
 }
 
-export function verifyRenewalToken(token: string): RenewalPayload {
-  const dot = token.lastIndexOf('.');
-  if (dot === -1) throw new Error('Invalid token format');
+export function verifyRenewalToken(token: string): RenewalPayload | null {
+  try {
+    const dot = token.lastIndexOf('.');
+    if (dot === -1) return null;
 
-  const encoded = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
+    const encoded = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
 
-  if (sig !== hmac(encoded)) throw new Error('Invalid token signature');
+    if (sig !== hmac(encoded)) return null;
 
-  const payload: RenewalPayload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-  if (Date.now() > payload.exp) throw new Error('Renewal link has expired');
+    const payload: RenewalPayload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    
+    if (Date.now() > payload.exp) return null;
+    if (!['monthly', 'yearly', '5_years'].includes(payload.cycle)) return null;
 
-  return payload;
+    return payload;
+  } catch (e) {
+    return null;
+  }
 }

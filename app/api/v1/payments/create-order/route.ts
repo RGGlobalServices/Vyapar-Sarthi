@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // plan for one billing cycle (30 days for monthly, 1 year for yearly).
 export const POST = handle(async (req) => {
   const { plan, firstname, email, phone, cycle: cycleRaw } = await readBody(req);
-  const cycle: BillingCycle = cycleRaw === 'yearly' ? 'yearly' : 'monthly';
+  const cycle: BillingCycle = cycleRaw === 'yearly' ? 'yearly' : cycleRaw === '5_years' ? '5_years' : 'monthly';
 
   if (!plan || !(plan in MONTHLY_BASE_PRICES)) throw new ApiError(400, 'Invalid plan');
 

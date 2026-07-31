@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     }
     if (user) {
       const plan = payuData.udf1 || 'shop';
-      const cycle: BillingCycle = payuData.udf3 === 'yearly' ? 'yearly' : 'monthly';
+      const cycle: BillingCycle = payuData.udf3 === 'yearly' ? 'yearly' : payuData.udf3 === '5_years' ? '5_years' : 'monthly';
       // Recompute server-side from plan+cycle rather than trusting the posted
       // amount — same defensive pattern as the previous flat-price fallback.
       const planAmount = parseFloat(payuData.amount) || getTotalAmount(plan, cycle);
@@ -62,6 +62,8 @@ export async function POST(req: Request) {
       const expiry = new Date();
       if (cycle === 'yearly') {
         expiry.setFullYear(expiry.getFullYear() + 1);
+      } else if (cycle === '5_years') {
+        expiry.setFullYear(expiry.getFullYear() + 5);
       } else {
         expiry.setDate(expiry.getDate() + config.billingCycleDays);
       }
