@@ -22,10 +22,19 @@ export default function SWRProvider({ children }: { children: React.ReactNode })
         // Show the previous data while the next key loads, instead of dropping
         // to a skeleton on every navigation.
         keepPreviousData: true,
-        // A sidebar hover prefetch followed by the click landing on the page
-        // must not fire the same request twice.
-        dedupingInterval: 30_000,
-        revalidateIfStale: true,
+        // Backend hits routinely take 4–10 s on a warm connection, so a 30 s
+        // dedupe was still refetching every time a shopkeeper bounced between
+        // Stock / Billing / Products. 2 min covers the whole "walk around the
+        // counter" window; anything time-critical calls `mutate()` explicitly.
+        dedupingInterval: 120_000,
+        // Focus refetch fires every time the shop's phone unlocks or an alert
+        // steals focus — cheap on paper, catastrophic when each key costs 5 s.
+        // Stays true only where a component overrides it.
+        revalidateOnFocus: false,
+        revalidateIfStale: false,
+        // Reconnect refetch stays on: the offline-online transition is exactly
+        // when you WANT to pull the latest from the server.
+        revalidateOnReconnect: true,
       }}
     >
       {children}

@@ -272,6 +272,10 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholderHi: 'जैसे सर्विस वायर 2.5mm',
     productPlaceholderMr: 'उदा. सर्विस वायर 2.5mm',
     hasSpecs: true,
+    // Palette used by the 3-way variant grid — colour × type × spec. Hardware
+    // colours skew utilitarian (housings, cable jackets), so the palette is
+    // shorter than the apparel one but hits the everyday hardware finishes.
+    colorChart: ['Black', 'White', 'Grey', 'Silver', 'Red', 'Blue', 'Green', 'Yellow', 'Brown'],
   },
   electronics: {
     type: 'electronics',
@@ -308,6 +312,10 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholderHi: 'जैसे सैमसंग गैलेक्सी S23',
     productPlaceholderMr: 'उदा. सॅमसंग गॅलेक्सी S23',
     hasSpecs: true,
+    // Palette used by the 3-way variant grid — a smartphone can now be tracked
+    // as Black / 8GB / 128GB, White / 8GB / 128GB, etc. Kept to the finishes
+    // Indian consumer electronics actually ship in so the chip row stays scannable.
+    colorChart: ['Black', 'White', 'Blue', 'Green', 'Red', 'Gold', 'Silver', 'Grey', 'Purple', 'Pink'],
   },
   liquor: {
     type: 'liquor',

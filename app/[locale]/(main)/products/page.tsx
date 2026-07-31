@@ -16,7 +16,8 @@ import SmartTranslator from '@/components/SmartTranslator';
 import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
 import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata } from '@/components/SizeVariantGrid';
 import type { SizePriceEntry } from '@/components/SizeVariantGrid';
-import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey } from '@/components/ColorSizeVariantGrid';
+import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey, VARIANT_SEP } from '@/components/ColorSizeVariantGrid';
+import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
@@ -160,6 +161,11 @@ function LegacyProductsUI() {
   // (colours for apparel, types like LED/Tubelight for electricals).
   const [colors, setColors] = useState<string[]>([]);
   const [editColors, setEditColors] = useState<string[]>([]);
+  // Outer real-colour picker for the 3-way (Colour × Type × Spec) grid used by
+  // electronics/electric spec-categories. Kept separate from `colors` above,
+  // which drives the *inner* spec-type chips (RAM, Wattage, …) in the 2-way path.
+  const [outerColors, setOuterColors] = useState<string[]>([]);
+  const [editOuterColors, setEditOuterColors] = useState<string[]>([]);
   // Snapshot of size_variants at the moment startEdit ran — used as the base
   // for additive-mode inputs so each cell can show "Current: N" as a badge
   // and treat the typed number as stock being received on top.
@@ -178,17 +184,38 @@ function LegacyProductsUI() {
         const lbl = spec.typeLabel.toLowerCase();
         // Colour/shade dimensions get a swatch even on the spec path (apparel, footwear, lipstick…).
         const swatch = /colour|color|shade/.test(lbl);
-        return { options: spec.typeOptions, label: lbl, swatch, sectionLabel: tv('specInventory', { type: spec.typeLabel, spec: spec.sizeLabel }), sizeChart: spec.sizeChart };
+        return { options: spec.typeOptions, label: lbl, swatch, sectionLabel: tv('specInventory', { type: spec.typeLabel, spec: spec.sizeLabel }), sizeChart: spec.sizeChart, sizeLabel: spec.sizeLabel, typeLabel: spec.typeLabel };
       }
     }
     return null;
   }
   const addVariantDim = buildVariantDim(form.category);
   const editVariantDim = buildVariantDim(editForm.category);
+
+  // 3-way mode: an electronics/electric shop with a spec-category (Mobile,
+  // Laptop, Bulb…) AND a colour palette declared in businessConfig. Only
+  // then does "Colour × RAM × Storage" make sense — for shops like clothes
+  // the existing 2-way ColorSizeVariantGrid already covers it.
+  const isThreeWay = bizConfig.hasShades && bizConfig.hasSpecs && !!(bizConfig.colorChart || []).length;
+  const addThreeWayActive = isThreeWay && !!addVariantDim;
+  const editThreeWayActive = isThreeWay && !!editVariantDim;
+  // Extract the OUTER colour (the first ` / ` segment) from every 3-part
+  // composite key so the Edit modal can preselect the chip picker.
+  const outerColorsFromVariants = (v: Record<string, number>): string[] => {
+    const out: string[] = [];
+    for (const k of Object.keys(v)) {
+      const parts = k.split(VARIANT_SEP);
+      if (parts.length >= 3) {
+        const c = parts[0];
+        if (c && !out.includes(c)) out.push(c);
+      }
+    }
+    return out;
+  };
   // Stock comes from the grid when: apparel/kirana (always) or an electrical/electronics product
-  // whose category has a spec AND the user has picked at least one type.
-  const addVariantActive = bizConfig.hasColors ? true : bizConfig.hasSpecs ? (!!addVariantDim && colors.length > 0) : bizConfig.hasSizes;
-  const editVariantActive = bizConfig.hasColors ? true : bizConfig.hasSpecs ? (!!editVariantDim && editColors.length > 0) : bizConfig.hasSizes;
+  // whose category has a spec AND the user has picked at least one type / colour.
+  const addVariantActive = bizConfig.hasColors ? true : addThreeWayActive ? (outerColors.length > 0) : bizConfig.hasSpecs ? (!!addVariantDim && colors.length > 0) : bizConfig.hasSizes;
+  const editVariantActive = bizConfig.hasColors ? true : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && editColors.length > 0) : bizConfig.hasSizes;
 
   // ── Add-product godown/shop assignment ──────────────────────────────────
   const [addToGodownId, setAddToGodownId] = useState('');
@@ -581,6 +608,7 @@ function LegacyProductsUI() {
     // Colour × size: derive the selected colours from the existing composite variant keys.
     const parsedVariants = parseSizeVariants(product.size_variants);
     setEditColors(colorsFromVariants(parsedVariants));
+    setEditOuterColors(outerColorsFromVariants(parsedVariants));
     setEditBaseVariants(parsedVariants);
     setShowEditModal(true);
   }
@@ -687,7 +715,7 @@ function LegacyProductsUI() {
               {products.length.toLocaleString('en-IN')} / Unlimited products
             </p>
           </div>
-          <button onClick={() => { setColors([]); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
+          <button onClick={() => { setColors([]); setOuterColors([]); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}
           </button>
@@ -1559,7 +1587,25 @@ function LegacyProductsUI() {
                   {bizConfig.hasSpecs && editVariantDim && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
                   )}
-                  {editVariantDim ? (
+                  {editThreeWayActive ? (
+                    <ThreeWayVariantGrid
+                      colorPalette={bizConfig.colorChart || []}
+                      colors={editOuterColors}
+                      onColorsChange={setEditOuterColors}
+                      innerRowOptions={editVariantDim!.options}
+                      innerColOptions={editVariantDim!.sizeChart}
+                      value={editForm.size_variants}
+                      onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
+                      unitLabel={editForm.unit?.toLowerCase() || 'units'}
+                      perSizePricing={editPerSizePricing}
+                      sizePrices={editSizePrices}
+                      onSizePricesChange={setEditSizePrices}
+                      innerRowLabel={editVariantDim!.typeLabel || editVariantDim!.label}
+                      innerColLabel={editVariantDim!.sizeLabel || 'Size'}
+                      additiveMode
+                      baseValue={editBaseVariants}
+                    />
+                  ) : editVariantDim ? (
                     <div className="space-y-3">
                       <ColorPicker colorChart={editVariantDim!.options} value={editColors} onChange={handleEditColorsChange} showSwatch={editVariantDim!.swatch} />
                       <ColorSizeVariantGrid
@@ -1923,7 +1969,23 @@ function LegacyProductsUI() {
                   {bizConfig.hasSpecs && addVariantDim && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
                   )}
-                  {addVariantDim ? (
+                  {addThreeWayActive ? (
+                    <ThreeWayVariantGrid
+                      colorPalette={bizConfig.colorChart || []}
+                      colors={outerColors}
+                      onColorsChange={setOuterColors}
+                      innerRowOptions={addVariantDim!.options}
+                      innerColOptions={addVariantDim!.sizeChart}
+                      value={form.size_variants}
+                      onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
+                      unitLabel={form.unit?.toLowerCase() || 'units'}
+                      perSizePricing={perSizePricing}
+                      sizePrices={sizePrices}
+                      onSizePricesChange={setSizePrices}
+                      innerRowLabel={addVariantDim!.typeLabel || addVariantDim!.label}
+                      innerColLabel={addVariantDim!.sizeLabel || 'Size'}
+                    />
+                  ) : addVariantDim ? (
                     <div className="space-y-3">
                       <ColorPicker colorChart={addVariantDim!.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim!.swatch} />
                       <ColorSizeVariantGrid

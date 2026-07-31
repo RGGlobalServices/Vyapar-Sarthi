@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
 import api from '@/lib/api';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useStockStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, BUSINESS_CONFIGS } from '@/lib/businessConfig';
 import { getPackageConfig } from '@/lib/config/packageConfig';
@@ -64,6 +64,15 @@ function prefetchForSection(sectionKey: string, activeShopId: string | null) {
   switch (sectionKey) {
     case 'products':
       preload('/products', fetchProductsMapped);
+      break;
+    case 'billing':
+      // Billing's SWR key is a tuple ['/products', shopId] — replicate exactly.
+      if (activeShopId) preload(['/products', activeShopId] as any, () => api.get('/products').then(r => r.data));
+      break;
+    case 'stock':
+      // Stock uses zustand, not SWR, so hit its own bootstrap. fetchStock has
+      // its own "skip if we already have data" guard, so re-hovering is cheap.
+      useStockStore.getState().fetchStock();
       break;
     case 'party':
       if (activeShopId) {

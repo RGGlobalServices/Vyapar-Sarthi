@@ -28,45 +28,89 @@ export async function GET(req: Request) {
       if (!shop.ownerId) continue;
       const ownerId = shop.ownerId as string; // Assign to the shop owner
 
-      // 1. Low Stock Alerts
-      const lowStockProducts = await prisma.product.findMany({
+      // 1. Low Stock Alerts (Variant-Aware)
+      const activeProducts = await prisma.product.findMany({
         where: {
           shopId: shop.id,
-          currentStock: { lte: prisma.product.fields.minStock },
-          minStock: { gt: 0 }
-        }
+          OR: [{ archived: false }, { archived: null }],
+        },
+        select: { id: true, name: true, currentStock: true, minStock: true, size_variants: true, metadata: true }
       });
 
-      for (const p of lowStockProducts) {
+      const lowVariantsToAlert: { pId: string, title: string, message: string, link: string }[] = [];
+
+      for (const p of activeProducts) {
+        let sizeVariants: Record<string, number> = {};
+        let sizePrices: Record<string, any> = {};
+        
+        try {
+          if (typeof p.size_variants === 'string' && p.size_variants.length > 2) {
+             sizeVariants = JSON.parse(p.size_variants);
+          }
+          if (p.metadata) {
+             const m = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata as any);
+             if (m && typeof m === 'object' && m.size_prices) {
+               sizePrices = m.size_prices;
+             }
+          }
+        } catch (e) {}
+
+        const activeSizes = Object.entries(sizeVariants).filter(([_, qty]) => typeof qty === 'number');
+
+        if (activeSizes.length > 0) {
+          for (const [sz, qty] of activeSizes) {
+            const variantMin = sizePrices[sz]?.minStock !== undefined && sizePrices[sz]?.minStock !== '' 
+              ? Number(sizePrices[sz].minStock) 
+              : Number(p.minStock || 0);
+              
+            if (variantMin > 0 && qty <= variantMin) {
+               lowVariantsToAlert.push({
+                 pId: p.id,
+                 title: `Low Stock: ${p.name} (${sz})`,
+                 message: `Your stock for ${p.name} variant "${sz}" has dropped to ${qty}. Please restock.`,
+                 link: `/products/${p.id}`
+               });
+            }
+          }
+        } else {
+          if ((p.minStock || 0) > 0 && (p.currentStock || 0) <= p.minStock!) {
+            lowVariantsToAlert.push({
+              pId: p.id,
+              title: `Low Stock: ${p.name || 'Product'}`,
+              message: `Your stock for ${p.name || 'this product'} has dropped to ${p.currentStock || 0}. Please restock.`,
+              link: `/products/${p.id}`
+            });
+          }
+        }
+      }
+
+      for (const alert of lowVariantsToAlert) {
         // Prevent spam: check if notified recently
         const recentNotif = await prisma.userNotification.findFirst({
           where: {
             userId: ownerId,
             notificationType: 'LOW_STOCK',
-            title: { contains: p.name || '' },
+            title: alert.title,
             createdAt: { gte: new Date(now - 24 * 60 * 60 * 1000) } // last 24h
           }
         });
 
         if (!recentNotif) {
-          const title = `Low Stock: ${p.name || 'Product'}`;
-          const message = `Your stock for ${p.name || 'this product'} has dropped to ${p.currentStock}. Please restock.`;
-          
           await prisma.userNotification.create({
             data: {
               userId: ownerId,
-              title,
-              message,
+              title: alert.title,
+              message: alert.message,
               notificationType: 'LOW_STOCK',
               isRead: false,
-              link: `/products/${p.id}`
+              link: alert.link
             }
           });
           
           // Check user notification settings
           const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
           if (notifSettings?.lowStockAlertEnabled !== false) { // default true or strictly check true
-            await sendWebPush(ownerId, { title, body: message, url: `/products/${p.id}` });
+            await sendWebPush(ownerId, { title: alert.title, body: alert.message, url: alert.link });
           }
           
           notificationsCreated++;

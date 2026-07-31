@@ -8,6 +8,7 @@ export interface SizePriceEntry {
   mrp: number;
   sellingPrice: number;
   cost: number;
+  minStock?: number;
 }
 
 interface SizeVariantGridProps {
@@ -63,7 +64,7 @@ export default function SizeVariantGrid({
 
   function handlePriceChange(size: string, field: keyof SizePriceEntry, rawVal: string) {
     const num = Math.max(0, parseFloat(rawVal) || 0);
-    const current = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0 };
+    const current = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0, minStock: undefined };
     const updated = { ...sizePrices, [size]: { ...current, [field]: num } };
     onSizePricesChange?.(updated);
   }
@@ -75,7 +76,7 @@ export default function SizeVariantGrid({
           const qty = value[size] ?? 0;
           const isEmpty = qty === 0;
           const isExpanded = perSizePricing && expandedSize === size;
-          const prices = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0 };
+          const prices = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0, minStock: undefined };
 
           // Additive mode: the input represents the delta being added on top
           // of the base (current DB) stock. The badge shows the base so the
@@ -189,7 +190,7 @@ export default function SizeVariantGrid({
               {t('pricingFor', { size: expandedSize })}
             </span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
               <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('mrp')}</label>
               <input
@@ -221,6 +222,17 @@ export default function SizeVariantGrid({
                 value={sizePrices[expandedSize]?.cost || ''}
                 onChange={e => handlePriceChange(expandedSize, 'cost', e.target.value)}
                 className={cn(priceInp, 'text-amber-600 dark:text-amber-400')}
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1" title="Fallback to global min stock if empty">Min Stock</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="Global"
+                value={sizePrices[expandedSize]?.minStock || ''}
+                onChange={e => handlePriceChange(expandedSize, 'minStock', e.target.value)}
+                className={priceInp}
               />
             </div>
           </div>

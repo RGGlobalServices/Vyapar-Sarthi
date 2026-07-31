@@ -238,7 +238,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
     // Zustand stores (Udhar khata, Stock) aren't part of the SWR cache above,
     // so they'd otherwise keep showing the previous shop's data until a full
-    // page reload. Re-fetch them in the background too.
+    // page reload. Reset them synchronously first (so nothing from the old
+    // shop stays visible for the fetch window), then re-hydrate. Skipping the
+    // reset was the "electronics products showing on cloth shop" bug — the
+    // stock store's freshness gate saw items were "fresh" and refused to
+    // refetch, leaving the previous shop's list on screen.
+    useUdharStore.getState().resetCustomers();
+    useStockStore.getState().resetStock();
     useUdharStore.getState().fetchCustomers();
     useStockStore.getState().fetchStock();
   },

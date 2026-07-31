@@ -209,6 +209,9 @@ interface UdharStore {
   customers: UdharCustomer[];
   loading: boolean;
   fetchCustomers: () => Promise<void>;
+  /** Called by switchShop — wipes the previous shop's customer list so it
+   *  doesn't flash under the new shop while the refetch is in flight. */
+  resetCustomers: () => void;
   silentRefresh: () => Promise<void>;
   addCustomer: (name: string, mobile: string, email?: string) => Promise<string | number>;
   updateCustomer: (customerId: number | string, name: string, mobile: string, email?: string) => Promise<void>;
@@ -245,6 +248,8 @@ function revalidateUdharDependents() {
 export const useUdharStore = create<UdharStore>((set, get) => ({
   customers: [],
   loading: false,
+
+  resetCustomers: () => set({ customers: [], loading: false }),
 
   fetchCustomers: async () => {
     const hasData = get().customers.length > 0;
@@ -468,6 +473,9 @@ interface StockStore {
   log: StockLogEntry[];
   loading: boolean;
   fetchStock: () => Promise<void>;
+  /** Wipe every cached item + reset the freshness gate — called by switchShop
+   *  so the previous shop's products don't linger in the UI. */
+  resetStock: () => void;
   addItem: (item: Omit<StockItem, 'id' | 'archived'>) => Promise<void>;
   updateItem: (id: number | string, updates: Partial<Omit<StockItem, 'id'>>) => Promise<void>;
   removeItem: (id: number | string) => Promise<void>;
@@ -478,24 +486,38 @@ interface StockStore {
   clearLog: () => void;
 }
 
+// Module-scoped dedupe: a hover-prefetch on the Stock link followed by the
+// actual navigation would otherwise fire /products twice on the same tick.
+let stockFetchInFlight: Promise<void> | null = null;
+let stockFetchedAt = 0;
+const STOCK_FRESH_MS = 30_000;
+
 export const useStockStore = create<StockStore>((set, get) => ({
   items: [],
   log: [],
   loading: false,
 
+  resetStock: () => {
+    stockFetchInFlight = null;
+    stockFetchedAt = 0;
+    set({ items: [], log: [], loading: false });
+  },
+
   fetchStock: async () => {
+    // Reuse an in-flight fetch, and skip entirely if we have fresh data.
+    if (stockFetchInFlight) return stockFetchInFlight;
+    if (get().items.length > 0 && Date.now() - stockFetchedAt < STOCK_FRESH_MS) return;
     const hasData = get().items.length > 0;
     if (!hasData) {
       set({ loading: true });
     }
+    stockFetchInFlight = (async () => {
     try {
-      // Cached independently: with no connection, the (larger, more useful)
-      // product list should still load from last time even if the activity
-      // log — which nobody needs offline — has nothing cached yet.
-      const [productsData, logsData] = await Promise.all([
-        withOfflineCache('stock-products', () => api.get('/products').then(r => r.data)),
-        withOfflineCache('stock-logs', () => api.get('/products/logs/all').then(r => r.data)).catch(() => []),
-      ]);
+      // Products load first; the stock page can render as soon as they arrive.
+      // `/products/logs/all` scans every stock movement ever recorded — it's
+      // slow, only powers the recent-activity strip, and nothing hard-depends
+      // on it, so it fetches in the background and updates the store when done.
+      const productsData = await withOfflineCache('stock-products', () => api.get('/products').then(r => r.data));
 
       const items = productsData.map((p: any) => ({
         id: p.id,
@@ -520,20 +542,31 @@ export const useStockStore = create<StockStore>((set, get) => ({
         recentlyAdded: p.recentlyAdded || 0,
       }));
 
-      const log = (logsData || []).map((l: any) => ({
-        id: l.id,
-        itemName: l.product_name || l.products?.name || 'Product',
-        type: l.type,
-        qty: l.quantity,
-        note: l.note,
-        time: l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-        date: l.createdAt ? new Date(l.createdAt).toLocaleDateString() : ''
-      }));
+      set({ items, loading: false });
 
-      set({ items, log, loading: false });
+      // Background: load activity log without blocking first paint.
+      withOfflineCache('stock-logs', () => api.get('/products/logs/all').then(r => r.data))
+        .then((logsData: any[]) => {
+          const log = (logsData || []).map((l: any) => ({
+            id: l.id,
+            itemName: l.product_name || l.products?.name || 'Product',
+            type: l.type,
+            qty: l.quantity,
+            note: l.note,
+            time: l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+            date: l.createdAt ? new Date(l.createdAt).toLocaleDateString() : ''
+          }));
+          set({ log });
+        })
+        .catch(() => { /* activity log is best-effort; page still works without it */ });
+      stockFetchedAt = Date.now();
     } catch (err) {
       set({ loading: false });
+    } finally {
+      stockFetchInFlight = null;
     }
+    })();
+    return stockFetchInFlight;
   },
 
   // Optimistic: the product appears immediately, then syncs. The real server id
