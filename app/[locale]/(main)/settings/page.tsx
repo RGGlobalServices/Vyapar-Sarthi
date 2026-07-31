@@ -686,27 +686,39 @@ function SettingsPageInner() {
                 <Zap size={16} className="text-emerald-500 dark:text-emerald-400" />
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-200">{t('availablePlans') || 'Available Plans'}</h2>
               </div>
-              <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs font-bold flex-wrap">
-                <button
-                  onClick={() => setBillingCycle('monthly')}
-                  className={cn('px-3 py-1.5 rounded-lg transition-colors', billingCycle === 'monthly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
-                >
-                  Monthly
-                </button>
-                <button
-                  onClick={() => setBillingCycle('yearly')}
-                  className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === 'yearly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
-                >
-                  Yearly
-                  <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
-                </button>
-                <button
-                  onClick={() => setBillingCycle('5_years')}
-                  className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === '5_years' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
-                >
-                  5 Years
-                  <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
-                </button>
+              <div className="flex flex-col items-end gap-1.5">
+                <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs font-bold flex-wrap">
+                  <button
+                    onClick={() => setBillingCycle('monthly')}
+                    className={cn('px-3 py-1.5 rounded-lg transition-colors', billingCycle === 'monthly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    onClick={() => setBillingCycle('yearly')}
+                    className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === 'yearly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                  >
+                    Yearly
+                    <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
+                  </button>
+                  <button
+                    onClick={() => setBillingCycle('5_years')}
+                    className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === '5_years' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                  >
+                    5 Years
+                    <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
+                  </button>
+                </div>
+                {billingCycle === 'yearly' && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mr-2 animate-in fade-in slide-in-from-top-1">
+                    Pay for 11 months, get 1 month FREE
+                  </span>
+                )}
+                {billingCycle === '5_years' && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mr-2 animate-in fade-in slide-in-from-top-1">
+                    Pay for 4 years, get 1 year FREE
+                  </span>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
