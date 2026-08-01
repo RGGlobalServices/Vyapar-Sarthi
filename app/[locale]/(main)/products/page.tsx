@@ -14,7 +14,7 @@ import { useLocale } from 'next-intl';
 import { translateData } from '@/lib/translateData';
 import SmartTranslator from '@/components/SmartTranslator';
 import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
-import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata } from '@/components/SizeVariantGrid';
+import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata, generateVariantBarcodes } from '@/components/SizeVariantGrid';
 import type { SizePriceEntry } from '@/components/SizeVariantGrid';
 import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey, VARIANT_SEP } from '@/components/ColorSizeVariantGrid';
 import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
@@ -83,20 +83,12 @@ function buildEmptyForm(btype: string) {
 export default function ProductsPage() {
   const { profile } = useBusinessStore();
   const isWholesale = profile.subscriptionPlan === 'wholesale';
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return null;
-  }
-
+  // Render immediately based on the initial (trial-default) profile. If the
+  // profile later hydrates as wholesale we swap the UI — cheaper than a blank
+  // white flash on every sidebar click.
   if (isWholesale) {
     return <WholesaleProductsUI />;
   }
-
   return <LegacyProductsUI />;
 }
 
@@ -686,7 +678,8 @@ function LegacyProductsUI() {
   ];
 
   // ─── Render ────────────────────────────────────────────────────────────────
-  if (!mounted) return null;
+  // (Removed `if (!mounted) return null` — it flashed a blank frame on every
+  //  navigation. `mounted` still exists for downstream localStorage reads.)
 
   return (
     <div className="space-y-6">
@@ -1249,28 +1242,27 @@ function LegacyProductsUI() {
                   const gstMultiplier = 1 + gstRate / 100;
 
                   if (hasPerSizePricing) {
-                    let totalCostValue = 0;
-                    let totalSellingValue = 0;
-                    let hasValidCostAndPrice = false;
-                    
-                    const activeSizes = Object.entries(sizeVariants);
-                    if (activeSizes.length > 0) {
-                      activeSizes.forEach(([sz, qty]) => {
-                        const variantCost = sizePriceData[sz]?.cost || 0;
-                        const variantSell = sizePriceData[sz]?.sellingPrice || product.sellingPrice || 0;
-                        const baseVariantSell = variantSell / gstMultiplier;
-                        if (variantCost > 0 && variantSell > 0) {
-                          hasValidCostAndPrice = true;
-                          const weight = qty > 0 ? qty : 1;
-                          totalCostValue += weight * variantCost;
-                          totalSellingValue += weight * baseVariantSell;
-                        }
-                      });
+                    // Variants can carry wildly different margins (e.g. a phone
+                    // where 128GB sells at 10% markup but 512GB at 40%). A single
+                    // stock-weighted average hides that spread and can go negative
+                    // just because a low-margin size happens to have the most
+                    // stock — misleading. Instead scan every variant that has
+                    // BOTH cost and sell set and show the range.
+                    const margins: number[] = [];
+                    // Consider every priced variant (not just currently-in-stock)
+                    // so the shopkeeper sees the true configured margin spread.
+                    for (const [sz, sp] of Object.entries(sizePriceData)) {
+                      const c = Number(sp?.cost) || 0;
+                      const s = Number(sp?.sellingPrice) || 0;
+                      if (c > 0 && s > 0) {
+                        const baseS = s / gstMultiplier;
+                        margins.push(((baseS - c) / c) * 100);
+                      }
                     }
-                    if (hasValidCostAndPrice && totalCostValue > 0) {
-                      // Shopkeepers typically calculate profit as Markup on Cost, not Margin on Selling Price.
-                      // They also usually want it calculated on the raw entered values.
-                      profit = ((totalSellingValue - totalCostValue) / totalCostValue * 100).toFixed(1);
+                    if (margins.length > 0) {
+                      const min = Math.min(...margins);
+                      const max = Math.max(...margins);
+                      profit = min === max ? min.toFixed(1) : `${min.toFixed(1)}–${max.toFixed(1)}`;
                     }
                   } else if (product.cost > 0 && product.sellingPrice > 0) {
                     const baseSp = product.sellingPrice / gstMultiplier;
@@ -1296,22 +1288,52 @@ function LegacyProductsUI() {
                               <div className="text-sm font-bold flex items-center gap-1">
                                 {product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit || 'Unit'} locale={locale} /></span>
                               </div>
-                              {Object.keys(sizeVariants).length > 0 && (
-                                <div className="flex flex-wrap gap-0.5 mt-1">
-                                  {Object.entries(sizeVariants).filter(([,q]) => q > 0).slice(0, 5).map(([sz, q]) => {
-                                    const sp = sizePriceData[sz];
-                                    return (
-                                      <span key={sz} className={cn(
-                                        'text-[9px] px-1 rounded',
-                                        sp ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                      )}>
-                                        {sz}{sp ? ` ₹${sp.sellingPrice}` : `:${q}`}
-                                        {sp ? <span className="opacity-60"> ({q})</span> : null}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                              {Object.keys(sizeVariants).length > 0 && (() => {
+                                // If any keys are 3-part composites ("Colour / RAM / Storage"),
+                                // roll up per outer colour: "Blue: 91 · Black: 43" — much easier
+                                // to scan than the raw variant chips. Full breakdown stays a
+                                // hover away.
+                                const has3D = Object.keys(sizeVariants).some(k => k.split(' / ').length >= 3);
+                                if (has3D) {
+                                  const byColor: Record<string, { qty: number; parts: string[] }> = {};
+                                  for (const [k, q] of Object.entries(sizeVariants)) {
+                                    if (!q) continue;
+                                    const [color, ...rest] = k.split(' / ');
+                                    const bucket = byColor[color] ||= { qty: 0, parts: [] };
+                                    bucket.qty += q as number;
+                                    bucket.parts.push(`${rest.join(' / ')}: ${q}`);
+                                  }
+                                  return (
+                                    <div className="flex flex-wrap gap-0.5 mt-1">
+                                      {Object.entries(byColor).slice(0, 5).map(([color, { qty, parts }]) => (
+                                        <span
+                                          key={color}
+                                          title={parts.join('\n')}
+                                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300"
+                                        >
+                                          {color}: {qty}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div className="flex flex-wrap gap-0.5 mt-1">
+                                    {Object.entries(sizeVariants).filter(([,q]) => q > 0).slice(0, 5).map(([sz, q]) => {
+                                      const sp = sizePriceData[sz];
+                                      return (
+                                        <span key={sz} className={cn(
+                                          'text-[9px] px-1 rounded',
+                                          sp ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                        )}>
+                                          {sz}{sp ? ` ₹${sp.sellingPrice}` : `:${q}`}
+                                          {sp ? <span className="opacity-60"> ({q})</span> : null}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           ) : (
                             <>{product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit} locale={locale} /></span></>
@@ -1486,7 +1508,8 @@ function LegacyProductsUI() {
                     </select>
                   </div>
                 )}
-                {(bizConfig.hasFabric || bizConfig.hasShades) && (
+                {/* Fabric stays; Shade collapses into the 3-way grid for electronics/electric. */}
+                {(bizConfig.hasFabric || (bizConfig.hasShades && !isThreeWay)) && (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{bizConfig.hasFabric ? 'Fabric / Material' : 'Shade / Color'}</label>
                     <input className={modalInp} value={editForm.shade} onChange={e => setEditForm(f => ({ ...f, shade: e.target.value }))} />
@@ -1565,24 +1588,40 @@ function LegacyProductsUI() {
                       <div className="w-1 h-4 rounded bg-violet-500" />
                       <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">{editVariantDim?.sectionLabel || tv('sizeWeightInventory')}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !editPerSizePricing;
-                        setEditPerSizePricing(next);
-                        // Per-size pricing replaces the default price → reset it to 0.
-                        if (next) setEditForm(f => ({ ...f, mrp: '0', sellingPrice: '0', cost: '0' }));
-                      }}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
-                        editPerSizePricing
-                          ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300'
+                    <div className="flex items-center gap-1.5">
+                      {editPerSizePricing && (
+                        <button
+                          type="button"
+                          title={tv('generateVariantBarcodes')}
+                          onClick={() => {
+                            const base = (editForm.barcode || `PRD-${String(editProduct?.id || '').slice(0, 8)}`);
+                            setEditSizePrices(prev => generateVariantBarcodes(base, editForm.size_variants, prev));
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30 hover:bg-sky-200 dark:hover:bg-sky-500/30"
+                        >
+                          <Package size={10} />
+                          {tv('generateVariantBarcodes')}
+                        </button>
                       )}
-                    >
-                      <IndianRupee size={10} />
-                      {editPerSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !editPerSizePricing;
+                          setEditPerSizePricing(next);
+                          // Per-size pricing replaces the default price → reset it to 0.
+                          if (next) setEditForm(f => ({ ...f, mrp: '0', sellingPrice: '0', cost: '0' }));
+                        }}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
+                          editPerSizePricing
+                            ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300'
+                        )}
+                      >
+                        <IndianRupee size={10} />
+                        {editPerSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
+                      </button>
+                    </div>
                   </div>
                   {bizConfig.hasSpecs && editVariantDim && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
@@ -1653,7 +1692,10 @@ function LegacyProductsUI() {
                 </div>
               )}
 
-              {editVariantActive && (
+              {/* Global Min Stock Level. Skipped when per-size pricing is on
+                  because that panel already carries a per-variant Min Stock
+                  field — showing both makes the total field ambiguous. */}
+              {editVariantActive && !editPerSizePricing && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Min Stock Level (Total)</label>
                   <input required type="number" min="0" className={modalInp} value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} />
@@ -1858,8 +1900,8 @@ function LegacyProductsUI() {
                   </div>
                 )}
 
-                {/* Shade — cosmetics */}
-                {bizConfig.hasShades && (
+                {/* Shade — cosmetics only. Electronics/electric use the 3-way grid, so no free-text field here. */}
+                {bizConfig.hasShades && !isThreeWay && (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shade / Color Variant</label>
                     <input className={modalInp} placeholder="e.g. Rose Red, Nude 01, #F5C6D0..."
@@ -1947,6 +1989,21 @@ function LegacyProductsUI() {
                       <div className="w-1 h-4 rounded bg-violet-500" />
                       <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">{addVariantDim?.sectionLabel || tv('sizeWeightInventory')}</p>
                     </div>
+                    <div className="flex items-center gap-1.5">
+                    {perSizePricing && (
+                      <button
+                        type="button"
+                        title={tv('generateVariantBarcodes')}
+                        onClick={() => {
+                          const base = (form.barcode || 'PRD-NEW');
+                          setSizePrices(prev => generateVariantBarcodes(base, form.size_variants, prev));
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30 hover:bg-sky-200 dark:hover:bg-sky-500/30"
+                      >
+                        <Package size={10} />
+                        {tv('generateVariantBarcodes')}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -1965,6 +2022,7 @@ function LegacyProductsUI() {
                       <IndianRupee size={10} />
                       {perSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
                     </button>
+                    </div>
                   </div>
                   {bizConfig.hasSpecs && addVariantDim && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
@@ -2035,7 +2093,9 @@ function LegacyProductsUI() {
                 </div>
               )}
 
-              {addVariantActive && (
+              {/* Global Min Stock (Total) — hidden when per-size pricing is on
+                  because that panel already carries a per-variant Min Stock. */}
+              {addVariantActive && !perSizePricing && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMinStock')} (Total)</label>
                   <input required type="number" min="0" className={modalInp} placeholder="5"

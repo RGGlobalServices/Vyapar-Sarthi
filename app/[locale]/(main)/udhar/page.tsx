@@ -575,7 +575,8 @@ export default function UdharPage() {
   }
 
   // ─── Customer detail view ──────────────────────────────────────────────────
-  if (!mounted) return <div className="h-full flex items-center justify-center p-10"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
+  // (dropped the `!mounted` spinner — it made every navigation to Udhar flash
+  //  a blank spinner even when the store already had cached customers.)
 
   if (selected) {
     const customer = customers.find(c => c.id === selected.id) ?? selected;

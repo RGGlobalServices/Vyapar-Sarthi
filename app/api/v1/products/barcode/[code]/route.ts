@@ -65,6 +65,31 @@ export const GET = handle(async (req, ctx: any) => {
     if (byHsn.length === 1) product = byHsn[0];
   }
 
+  // Per-variant barcodes live in metadata.size_prices[<compositeKey>].barcode.
+  // Prisma can't filter into a nested JSON path portably, so on a miss we scan
+  // the parent products for a code match. Cheap: only fires when nothing else
+  // matched, and the shop's product count is bounded.
+  let matchedVariant: string | null = null;
+  if (!product) {
+    const candidates = await prisma.product.findMany({
+      where: { shopId: shop.id, ...notArchived, NOT: { metadata: { equals: null } } },
+      include,
+    });
+    const needle = barcode.toUpperCase();
+    outer: for (const p of candidates) {
+      const meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+      const sp = (meta && meta.size_prices) || {};
+      for (const [variantKey, entry] of Object.entries<any>(sp)) {
+        const code = (entry?.barcode || '').toString().trim().toUpperCase();
+        if (code && code === needle) {
+          product = p as any;
+          matchedVariant = variantKey;
+          break outer;
+        }
+      }
+    }
+  }
+
   if (!product) return json({ error: 'Product not found', barcode }, 404);
 
   // Same "+N newly added" figure the list endpoint attaches, so the two
@@ -85,5 +110,7 @@ export const GET = handle(async (req, ctx: any) => {
     })
     .catch(() => null);
 
-  return json({ ...product, recentlyAdded: Number(recent?._sum?.quantity) || 0 });
+  // matched_variant tells the billing UI which colour/size to pre-select
+  // (client requirement: "scan variant barcode → that variant lands on bill").
+  return json({ ...product, recentlyAdded: Number(recent?._sum?.quantity) || 0, matched_variant: matchedVariant });
 });

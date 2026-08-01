@@ -15,7 +15,7 @@ import {
   AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone, FileUp
 } from 'lucide-react';
 import api from '@/lib/api';
-import { useBarcodeScanner, playScanBeep, matchProductByCode } from '@/lib/useBarcodeScanner';
+import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
 // Camera scanner pulls in html5-qrcode and touches `window`, so it must stay
 // out of the server bundle and off the initial billing payload.
@@ -39,11 +39,20 @@ function formatAddedDate(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  // Compare calendar days in IST — a bill entered at 11:30 PM IST yesterday
+  // and viewed at 6:00 AM IST today is "Yesterday", not "Today", regardless
+  // of the browser's or server's timezone. Using ms-diff / 86400000 would
+  // silently drift by a full day for a shop in Asia/Kolkata when the browser
+  // clock is UTC or a device with a wrong TZ set.
+  const istYmd = (v: Date) => v.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const dayMs = 86400000;
+  const dIst = new Date(istYmd(d) + 'T00:00:00Z').getTime();
+  const nowIst = new Date(istYmd(new Date()) + 'T00:00:00Z').getTime();
+  const days = Math.round((nowIst - dIst) / dayMs);
   if (days <= 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 // Gram/ml equivalent label for a quantity in base unit
@@ -504,6 +513,16 @@ function StandardBillingUI() {
       return;
     }
 
+    // Per-variant barcode match (e.g. "BAR-1782-BLUE-M" dropped by a desktop
+    // scanner) — drops the exact colour/size into the cart, not the base row.
+    const variantHit = matchVariantByCode(products, raw);
+    if (variantHit) {
+      addToCart(variantHit.product, variantHit.variantKey);
+      playScanBeep(true);
+      setScanFeedback({ status: 'ok', text: `${variantHit.product.name} · ${variantHit.variantKey}` });
+      return;
+    }
+
     // `GET /products` returns at most 2000 rows. A NON-EMPTY list below that cap
     // is the WHOLE catalogue, so a local miss is genuinely "not found" — answer
     // instantly and never pay for a network round-trip (the DB is far away and
@@ -527,9 +546,12 @@ function StandardBillingUI() {
       if (seq !== scanSeqRef.current) return; // a newer scan superseded this one
       const found = res.data;
       if (found?.id) {
-        addToCart(found);
+        // Server tells us which variant matched (matched_variant) when the
+        // scan hit a per-variant code — pre-select it in the cart so the
+        // shopkeeper doesn't have to pick the colour/size again.
+        addToCart(found, found.matched_variant || undefined);
         playScanBeep(true);
-        setScanFeedback({ status: 'ok', text: found.name });
+        setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });
         return;
       }
       throw new Error('not found');
@@ -926,8 +948,32 @@ function StandardBillingUI() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-emerald-500">₹{product.sellingPrice ?? product.selling_price}</p>
-                      <p className="text-[10px] text-slate-500">MRP: ₹{product.mrp}</p>
+                      {(() => {
+                        // Per-size pricing: the base sellingPrice is 0 and
+                        // each variant carries its own. Show the min–max
+                        // range so the shopkeeper sees a real price at the
+                        // search stage instead of "₹0".
+                        const perSize = product.metadata?.size_prices || {};
+                        const sellingList = Object.values(perSize).map((p: any) => Number(p?.sellingPrice) || 0).filter((n) => n > 0);
+                        const mrpList = Object.values(perSize).map((p: any) => Number(p?.mrp) || 0).filter((n) => n > 0);
+                        const baseSell = Number(product.sellingPrice ?? product.selling_price) || 0;
+                        const baseMrp = Number(product.mrp) || 0;
+                        const sellMin = sellingList.length ? Math.min(...sellingList) : baseSell;
+                        const sellMax = sellingList.length ? Math.max(...sellingList) : baseSell;
+                        const mrpMin = mrpList.length ? Math.min(...mrpList) : baseMrp;
+                        const mrpMax = mrpList.length ? Math.max(...mrpList) : baseMrp;
+                        const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+                        return (
+                          <>
+                            <p className="font-bold text-emerald-500">
+                              {sellMin === sellMax ? fmt(sellMin) : `${fmt(sellMin)} – ${fmt(sellMax)}`}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              MRP: {mrpMin === mrpMax ? fmt(mrpMin) : `${fmt(mrpMin)} – ${fmt(mrpMax)}`}
+                            </p>
+                          </>
+                        );
+                      })()}
                       {(() => {
                         // Remaining stock + low-stock indicator, right under the MRP.
                         // The "+N today" chip mirrors Stock/Products so a cashier can
@@ -2204,14 +2250,13 @@ function PaymentButton({active, onClick, icon, label}: {active: boolean; onClick
 
 export default function BillingPage() {
   const { profile } = useBusinessStore();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  if (!mounted) return <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-emerald-500" /></div>;
-
+  // Render the standard UI immediately (matches the trial-plan default). If the
+  // profile later hydrates as wholesale we swap components — cheap flicker beats
+  // a full-screen spinner on every navigation. Previously this component gated
+  // ALL rendering behind a `mounted` flag, which made every sidebar click look
+  // like a full page refresh even though it was already client-side navigation.
   if (profile.subscriptionPlan === 'wholesale') {
     return <WholesaleBillingUI />;
   }
-
   return <StandardBillingUI />;
 }

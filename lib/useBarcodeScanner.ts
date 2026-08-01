@@ -82,6 +82,33 @@ export function matchProductByCode<T extends {
   return undefined;
 }
 
+/**
+ * Per-variant barcode match. When a scan hits a colour/size variant code
+ * stored under `metadata.size_prices[<variantKey>].barcode`, this returns
+ * both the parent product and the variant key so the billing UI can drop
+ * the exact variant into the cart (client requirement).
+ *
+ * Falls back to `undefined` on any miss; the caller then hits the server
+ * lookup (which does the same scan across the full catalogue, not just the
+ * loaded 2000-row window).
+ */
+export function matchVariantByCode<T extends { metadata?: any }>(
+  products: T[],
+  rawCode: string,
+): { product: T; variantKey: string } | undefined {
+  const code = String(rawCode || '').trim().toUpperCase();
+  if (!code) return undefined;
+  for (const p of products) {
+    const meta = typeof p.metadata === 'string' ? (() => { try { return JSON.parse(p.metadata as any); } catch { return {}; } })() : (p.metadata || {});
+    const sp = meta?.size_prices || {};
+    for (const [variantKey, entry] of Object.entries<any>(sp)) {
+      const c = (entry?.barcode || '').toString().trim().toUpperCase();
+      if (c && c === code) return { product: p, variantKey };
+    }
+  }
+  return undefined;
+}
+
 export function useBarcodeScanner({
   onScan,
   enabled = true,

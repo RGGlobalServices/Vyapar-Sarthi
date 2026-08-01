@@ -1619,7 +1619,11 @@
     "mrp": "MRP",
     "selling": "विक्री",
     "cost": "खर्च",
-    "totalStock": "एकूण स्टॉक"
+    "totalStock": "एकूण स्टॉक",
+    "variantBarcode": "व्हेरिएंट बारकोड",
+    "variantBarcodePlaceholder": "सेव्ह केल्यावर आपोआप तयार होईल",
+    "generateVariantBarcodes": "सर्व व्हेरिएंट्ससाठी बारकोड तयार करा",
+    "variantBarcodesTitle": "व्हेरिएंट बारकोड"
   },
   "Godowns": {
     "title": "गोदाम",

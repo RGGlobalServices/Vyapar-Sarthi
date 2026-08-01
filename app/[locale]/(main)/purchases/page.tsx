@@ -295,7 +295,7 @@ export default function PurchasesPage() {
           <Plus size={18} /> {t('newPurchase') || 'New Purchase'}</button>
       </div>
 
-      {!mounted || isLoading ? (
+      {isLoading ? (
         <div className="flex justify-center h-32 items-center"><Loader2 className="animate-spin text-emerald-500 w-8 h-8" /></div>
       ) : invoices.length === 0 ? (
         <div className="text-center py-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">

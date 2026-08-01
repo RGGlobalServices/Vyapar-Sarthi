@@ -11,13 +11,8 @@ export default function GodownsPage() {
   const { profile } = useBusinessStore();
   const locale = useLocale();
   const t = useTranslations('Godowns');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
-
-  if (!mounted) {
-    return <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-emerald-500" /></div>;
-  }
+  // (Removed `!mounted` spinner — page reads from stores that are safe to
+  //  render synchronously; the guard was making every navigation flash.)
 
   return <WarehousesUI />;
 }

@@ -538,7 +538,10 @@ export default function LegacyStockUI() {
     );
   }
 
-  if (!mounted) return null;
+  // `mounted` used to gate the entire page (`if (!mounted) return null`), which
+  // made every navigation to Stock render a blank frame first — visually
+  // indistinguishable from a full page reload. It's still tracked (some inner
+  // hydration-sensitive bits below read it) but no longer blocks the shell.
 
   return (
     <div className="space-y-6" onClick={() => setMenuId(null)}>

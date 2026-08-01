@@ -314,9 +314,8 @@ export default function WholesaleStockUI() {
     }
   }, [data?.items]);
 
-  if (!mounted) {
-    return null; // Prevent hydration mismatch
-  }
+  // Dropped the `if (!mounted) return null` blank-frame gate — SWR data below
+  // already handles the loading state without wiping the shell on every nav.
 
 
 

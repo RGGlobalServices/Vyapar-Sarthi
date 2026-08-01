@@ -9,6 +9,11 @@ export interface SizePriceEntry {
   sellingPrice: number;
   cost: number;
   minStock?: number;
+  /** Per-variant scannable barcode. When present, a desktop scanner reading
+   *  this code lands the exact colour/size on the bill (see billing scan
+   *  handler + /api/v1/products/barcode/:code). Empty = no dedicated code,
+   *  scanner falls back to the product-level barcode. */
+  barcode?: string;
 }
 
 interface SizeVariantGridProps {
@@ -66,6 +71,16 @@ export default function SizeVariantGrid({
     const num = Math.max(0, parseFloat(rawVal) || 0);
     const current = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0, minStock: undefined };
     const updated = { ...sizePrices, [size]: { ...current, [field]: num } };
+    onSizePricesChange?.(updated);
+  }
+
+  // Barcode is a free-text field, not numeric — needs its own setter so a
+  // shopkeeper can paste a real EAN, a scanner-generated code, or leave it
+  // blank to fall back to the product-level barcode. Empty string clears it
+  // (works as the client's requested "delete" action).
+  function handleBarcodeChange(size: string, raw: string) {
+    const current = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0 };
+    const updated = { ...sizePrices, [size]: { ...current, barcode: raw.trim() || undefined } };
     onSizePricesChange?.(updated);
   }
 
@@ -236,6 +251,20 @@ export default function SizeVariantGrid({
               />
             </div>
           </div>
+          {/* Per-variant barcode. When set, the billing scanner matches this
+              exact code and drops the right colour/size straight into the bill. */}
+          <div>
+            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1" title="Scannable code for this specific variant. Leave empty to fall back to the product's barcode.">
+              {t('variantBarcode')}
+            </label>
+            <input
+              type="text"
+              placeholder={t('variantBarcodePlaceholder')}
+              value={sizePrices[expandedSize]?.barcode || ''}
+              onChange={e => handleBarcodeChange(expandedSize, e.target.value)}
+              className={cn(priceInp, 'text-left px-3 font-mono')}
+            />
+          </div>
         </div>
       )}
 
@@ -251,6 +280,43 @@ export default function SizeVariantGrid({
       </div>
     </div>
   );
+}
+
+/** Auto-generate a per-variant barcode from a base product code + variant key.
+ *  Keeps it human-readable (e.g. "BAR-1782-BLUE-M") so a shopkeeper can eyeball
+ *  a wrong scan; keeps it stable so re-generating twice on the same variant
+ *  yields the same code (idempotent). Fills only missing entries — existing
+ *  edits made by the user are left untouched.
+ *
+ *  When adding new variants later, only their empty slots get a new code, so
+ *  the barcodes assigned to earlier variants never change (client requirement:
+ *  new colours/sizes should not shift already-printed labels). */
+export function generateVariantBarcodes(
+  baseCode: string,
+  variants: Record<string, number>,
+  existing: Record<string, SizePriceEntry>,
+): Record<string, SizePriceEntry> {
+  const base = (baseCode || 'PRD').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  const next: Record<string, SizePriceEntry> = { ...existing };
+  const used = new Set(
+    Object.values(existing).map(e => (e.barcode || '').trim().toUpperCase()).filter(Boolean),
+  );
+  for (const key of Object.keys(variants)) {
+    if (variants[key] <= 0) continue; // skip zero-qty rows to avoid label clutter
+    const entry = next[key] || { mrp: 0, sellingPrice: 0, cost: 0 };
+    if (entry.barcode && entry.barcode.trim()) continue; // preserve user edits
+    const suffix = key.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+    let code = `${base}-${suffix}`;
+    // In the rare case the same suffix collides (e.g. duplicated variant keys
+    // after a migration), tack on a 3-char nonce so we never emit the same
+    // code twice for two different variants.
+    if (used.has(code)) {
+      code = `${code}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+    }
+    used.add(code);
+    next[key] = { ...entry, barcode: code };
+  }
+  return next;
 }
 
 /** Parse size_variants JSON string from DB into Record */

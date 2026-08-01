@@ -23,7 +23,9 @@ export default function ImportPageWrapper() {
     }
   }, [profile, locale, mounted]);
 
-  if (!mounted || !profile || !profile.subscriptionPlan) {
+  // `mounted` intentionally dropped from the gate — it was the "full refresh
+  // on nav" trigger. Only wait when the profile itself isn't hydrated yet.
+  if (!profile || !profile.subscriptionPlan) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mb-4"></div>
