@@ -72,7 +72,7 @@ export const GET = handle(async (req, ctx: any) => {
   let matchedVariant: string | null = null;
   if (!product) {
     const candidates = await prisma.product.findMany({
-      where: { shopId: shop.id, ...notArchived, NOT: { metadata: { equals: null } } },
+      where: { shopId: shop.id, ...notArchived },
       include,
     });
     const needle = barcode.toUpperCase();
