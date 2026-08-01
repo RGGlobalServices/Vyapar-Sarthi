@@ -1,0 +1,332 @@
+[
+  {
+    "id": "34297c19-1c4e-496b-9751-fa4b40cc2285",
+    "name": "Test Redirection Kirana",
+    "shopCode": null
+  },
+  {
+    "id": "d352c3c5-f3b6-4552-b20f-c404fa901890",
+    "name": "GBRO Industries",
+    "shopCode": "D352C3C5"
+  },
+  {
+    "id": "b2df4269-6de4-4de0-829b-2e01df6ae22e",
+    "name": "Test Shop",
+    "shopCode": "B2DF4269"
+  },
+  {
+    "id": "34ef8173-ddf0-4aa2-995c-2986296d3cf6",
+    "name": "New Shop",
+    "shopCode": "34EF8173"
+  },
+  {
+    "id": "80b2c95a-849d-4bbd-9458-9f8c9060b282",
+    "name": "Test Redirection Kirana 3",
+    "shopCode": null
+  },
+  {
+    "id": "a091cc10-5a40-4e2b-b940-06a68080e181",
+    "name": "New Shop",
+    "shopCode": "A091CC10"
+  },
+  {
+    "id": "c08cede9-b1f3-4a9b-99d9-e54b715b0de6",
+    "name": "Phone Test Shop",
+    "shopCode": "C08CEDE9"
+  },
+  {
+    "id": "d19fa147-4649-4a9c-aa26-cc3009f72d05",
+    "name": "UUID Test Shop 2",
+    "shopCode": "D19FA147"
+  },
+  {
+    "id": "a5200775-e0d1-49dd-9b5a-daf33d486895",
+    "name": "E2E Shop",
+    "shopCode": "A5200775"
+  },
+  {
+    "id": "6fd99e74-5981-4a37-b0a7-402bfd7ce6c4",
+    "name": "Test Redirection Kirana 4",
+    "shopCode": "TESTR946"
+  },
+  {
+    "id": "74d0114b-4d96-4849-8eef-664776fead48",
+    "name": "Test Redirection Kirana 5",
+    "shopCode": null
+  },
+  {
+    "id": "b4b9c11f-c714-4ed5-8d4c-87129e49f73a",
+    "name": "naad 2",
+    "shopCode": "NAAD2350"
+  },
+  {
+    "id": "daa434c6-4368-4e6c-8448-f0ccff008cff",
+    "name": "Rahul Kirana Store",
+    "shopCode": "DAA434C6"
+  },
+  {
+    "id": "b1e6ba81-af97-4b87-986f-f290a4a6ea83",
+    "name": "Pari 2",
+    "shopCode": "PARI2246"
+  },
+  {
+    "id": "4d016c9b-0471-46cc-9781-e45d1eb43dc2",
+    "name": "gbroindustries's Shop",
+    "shopCode": "GBROI842"
+  },
+  {
+    "id": "fcf91f1d-9a6c-4698-ad27-5acb06d17605",
+    "name": "Gosavi Hardwares",
+    "shopCode": "GOSAV770"
+  },
+  {
+    "id": "9ded32cc-10e1-4808-8604-aa334059c2aa",
+    "name": "Harsh CLothes And Wolesale",
+    "shopCode": "HARSH132"
+  },
+  {
+    "id": "27ac555b-d4dd-43bb-8913-0d722c6bb51e",
+    "name": "Adarsh Kirana Wholesalers",
+    "shopCode": "ADARS786"
+  },
+  {
+    "id": "9e6ce380-7be6-400a-86b1-f1a94ed3c63f",
+    "name": "Clothes",
+    "shopCode": "CLOTH475"
+  },
+  {
+    "id": "d91300a9-343b-4e19-8377-8b5530e478ab",
+    "name": "S",
+    "shopCode": null
+  },
+  {
+    "id": "29315028-8417-4ebd-aa87-4c5d342651f5",
+    "name": "Ashish Electronics",
+    "shopCode": "ASHIS961"
+  },
+  {
+    "id": "ec78cab4-0c1e-414c-9245-7933c560629f",
+    "name": "Fast Track Shop",
+    "shopCode": "FOOTW725"
+  },
+  {
+    "id": "5937e50c-0274-4c23-919e-06221cabc193",
+    "name": "Rahul Shop",
+    "shopCode": "RAHUL172"
+  },
+  {
+    "id": "a9791b39-eb4a-4f0b-bceb-e28cb3d7f97e",
+    "name": "Fast Track Shop",
+    "shopCode": "ABCSH233"
+  },
+  {
+    "id": "a88309db-45a8-4f4f-8f2a-b08d470caa98",
+    "name": "SaiVishwa Boutique Store",
+    "shopCode": "SAIVI379"
+  },
+  {
+    "id": "88894848-03d6-407c-aa22-7b7421f8f25e",
+    "name": "Ashish Kirana",
+    "shopCode": "ASHIS700"
+  },
+  {
+    "id": "ce100f00-f7b4-410f-8e9d-ca4ab649eaa7",
+    "name": "Rahul footwear",
+    "shopCode": "RAHUL282"
+  },
+  {
+    "id": "754d333e-61bd-4690-86a9-8c0347e7aaa1",
+    "name": "Rahul textile",
+    "shopCode": "RAHUL936"
+  },
+  {
+    "id": "01ea5540-8b7f-407d-860e-523f87db2ce7",
+    "name": "Ramesh Kirana store",
+    "shopCode": "RAMES315"
+  },
+  {
+    "id": "c331f678-94fe-4977-ad02-91f6906ac912",
+    "name": "SaiVishwa Kirana Store",
+    "shopCode": null
+  },
+  {
+    "id": "ed6874ef-80d9-4c82-bfd8-91c9453e29e2",
+    "name": "Ashish electric and hardware",
+    "shopCode": "ASHIS358"
+  },
+  {
+    "id": "54721eb9-caae-473e-896e-af569223503e",
+    "name": "Shree ram kirana shop ",
+    "shopCode": "SHREE777"
+  },
+  {
+    "id": "1fc8ecd2-a023-46cd-98fd-8fcafea107de",
+    "name": "Naad Collection",
+    "shopCode": "NAADC896"
+  },
+  {
+    "id": "ffdbe879-e98a-43ea-b72a-e5bd0040f2e0",
+    "name": "Test Shop",
+    "shopCode": "TESTS904"
+  },
+  {
+    "id": "51c5ea8d-2ae3-46ee-8608-b4a0175cf41f",
+    "name": "vinodjoshi51707's Shop",
+    "shopCode": "VINOD125"
+  },
+  {
+    "id": "fbef0234-af90-4abb-b8a9-aa952a8fa233",
+    "name": "gosaviashish240's Shop",
+    "shopCode": null
+  },
+  {
+    "id": "79c124a8-c2a3-4171-9975-8b76c02c7e07",
+    "name": "Shivshambho medical and general store",
+    "shopCode": "SHIVS312"
+  },
+  {
+    "id": "467b3d96-0736-4678-982e-902ef8febb54",
+    "name": "prathmesh",
+    "shopCode": "PRATH207"
+  },
+  {
+    "id": "9a2f5b3f-27fa-4d85-bd15-3c7bc6f1f8da",
+    "name": "naad collection",
+    "shopCode": "NAADC880"
+  },
+  {
+    "id": "a360a22d-65f3-464c-a3b0-bfc56c75704a",
+    "name": "ashwini electric",
+    "shopCode": "ASHWI436"
+  },
+  {
+    "id": "282d4e82-e4ce-4eb9-b39b-2308fdedf28b",
+    "name": "RAHUL ELECTRONICS AND HARDWARE ",
+    "shopCode": "ASHIS339"
+  },
+  {
+    "id": "f0491787-c073-4580-851f-ee8d90e4a397",
+    "name": "RAHUL ELECTRONICS AND HARDWARE ",
+    "shopCode": "RAHUL819"
+  },
+  {
+    "id": "3c932096-14a7-40fd-bae3-cf9d24756fd3",
+    "name": "Radhesham Shoes Store",
+    "shopCode": "RADHE785"
+  },
+  {
+    "id": "ee069535-4e3f-43fc-b139-339302f4cfd3",
+    "name": "RAHUL ELECTRONICS AND HARDWARE ",
+    "shopCode": "RAHUL260"
+  },
+  {
+    "id": "16dff2eb-da43-4fc3-a7f3-c733b53a8f6d",
+    "name": "Shiv shrushti",
+    "shopCode": "SHIVS971"
+  },
+  {
+    "id": "bd175c7b-a0c1-44fc-bbd8-c337fce4fd64",
+    "name": "Electronic new shop",
+    "shopCode": "ELECT590"
+  },
+  {
+    "id": "7d4c8365-b72d-40b3-9648-32e7abfe0795",
+    "name": "Naad Collection",
+    "shopCode": "NAADC522"
+  },
+  {
+    "id": "41cf057f-8739-4305-b2cf-5e37469f7fa3",
+    "name": "sai",
+    "shopCode": "SAI571"
+  },
+  {
+    "id": "523ebc1f-f2ce-4343-98b3-38a5ba0d3582",
+    "name": "Rahul Electric",
+    "shopCode": "RAHUL308"
+  },
+  {
+    "id": "2a5ee6b0-77b8-454d-91e2-b78a74ebfe41",
+    "name": "Pari Collection ",
+    "shopCode": "PARIC944"
+  },
+  {
+    "id": "cceee80d-8ccc-4cb9-83d6-bd09a59d4d33",
+    "name": "New",
+    "shopCode": "NEW988"
+  },
+  {
+    "id": "c374925d-25d3-4421-8ad3-b4898ccd4d31",
+    "name": "Rahul Footware",
+    "shopCode": "RAHUL334"
+  },
+  {
+    "id": "18000a01-5067-41c6-8829-5c27095e8a5b",
+    "name": "wine",
+    "shopCode": "WINE957"
+  },
+  {
+    "id": "ec192b70-009e-4dec-b131-610f1c0dac30",
+    "name": "Naad 2",
+    "shopCode": "NAAD2343"
+  },
+  {
+    "id": "7e9a3803-fdb2-4b8e-8b98-225e4ca59956",
+    "name": "Ukade cloth",
+    "shopCode": "UKADE471"
+  },
+  {
+    "id": "b22c550f-58ea-4141-8b8d-cbe825ce818a",
+    "name": "ashishgosavi709's Shop",
+    "shopCode": "ASHIS266"
+  },
+  {
+    "id": "b5900cdf-6982-4475-b408-4f0f0d553667",
+    "name": "A TO Z Beer And Wine Shop",
+    "shopCode": "ATOZB635"
+  },
+  {
+    "id": "c7721217-68c1-480b-b8e2-1cdf4f40cb45",
+    "name": "Fast Track Shop",
+    "shopCode": "ABCLE725"
+  },
+  {
+    "id": "99834131-d133-4f6d-9c20-599fb761b3d7",
+    "name": "adarsh ",
+    "shopCode": "ADARS517"
+  },
+  {
+    "id": "768dd941-620d-45a8-a94b-90ddae19b9ce",
+    "name": "Fast Track Shop",
+    "shopCode": "FASTT158"
+  },
+  {
+    "id": "af25b41d-1848-47ae-a438-a4103be059b2",
+    "name": "Fast Track Shop",
+    "shopCode": "RGSUP460"
+  },
+  {
+    "id": "c56ea823-fb8c-4de1-9341-acc3d2ac9a5f",
+    "name": "Fast Track Shop",
+    "shopCode": "AGKIR650"
+  },
+  {
+    "id": "32b69f36-2d40-45dd-a862-c4b8e87476ff",
+    "name": "Fast Track Shop",
+    "shopCode": "MYCLO383"
+  },
+  {
+    "id": "9e1c6980-0ea7-49d5-a20e-ae500f60c7bf",
+    "name": "Fast Track Shop",
+    "shopCode": "RICEM686"
+  },
+  {
+    "id": "68ab4c09-edff-429d-b6c7-b50b0d3b63b1",
+    "name": "Fast Track Shop",
+    "shopCode": "AGRO643"
+  },
+  {
+    "id": "36f4d905-5a43-44c9-b523-ad300d4f658a",
+    "name": "Fast Track Shop",
+    "shopCode": "NEWWI457"
+  }
+]

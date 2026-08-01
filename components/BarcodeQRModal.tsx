@@ -310,7 +310,7 @@ export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps
               <Download size={18} /> {t('download')}
             </button>
             <button onClick={printCode}
-              className="flex flex-col items-center gap-1.5 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-xs font-bold shadow-lg shadow-emerald-500/20">
+              className="flex flex-col items-center gap-1.5 py-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-xl hover:bg-blue-500/20 transition-colors text-xs font-bold">
               <Printer size={18} /> {t('print')}
             </button>
             <button onClick={copyBarcode}
@@ -347,13 +347,14 @@ export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps
               </div>
             ))}
           </div>
-          {/* Highly visible Print button */}
+          {/* Solid emerald so this reads as the primary action of the tab — the
+              earlier dim-blue variant looked disabled on dark backgrounds. */}
           <button
             type="button"
             onClick={printLabelSheet}
             className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
           >
-            <Printer size={16} /> {t('print')} - A4
+            <Printer size={16} /> {t('print')} · A4
           </button>
         </div>
         )}

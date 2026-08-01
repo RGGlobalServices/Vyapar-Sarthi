@@ -144,11 +144,15 @@ export const PATCH = handle(async (req) => {
     updatedUser = await prisma.user.update({ where: { id: user.id }, data: updates });
   }
 
-  // Synchronize changes to owner's Shop records
+  // Sync ONLY the owner's mobile down to every shop — one person, one phone.
+  // Name and businessType belong to individual shops and MUST NOT be bulk-written
+  // here: doing so overwrites every shop the user owns whenever they touch their
+  // profile (that's how ten different shops all ended up displaying "RG
+  // Electronics" — the last profile save clobbered nine other shop names).
+  // Per-shop name/type changes go through PATCH /shop/profile, which scopes
+  // its update to a single shop id.
   const shopUpdates: Record<string, unknown> = {};
   if (updates.mobile !== undefined) shopUpdates.mobile = updates.mobile;
-  if (updates.storeName !== undefined) shopUpdates.name = updates.storeName;
-  if (updates.businessType !== undefined) shopUpdates.businessType = updates.businessType;
 
   if (Object.keys(shopUpdates).length > 0 && user.uuid) {
     await prisma.shop.updateMany({
