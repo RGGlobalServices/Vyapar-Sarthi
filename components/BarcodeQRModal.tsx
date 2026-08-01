@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { X, QrCode, Barcode, Download, Printer, Copy, Check } from 'lucide-react';
+import { X, QrCode, Barcode, Download, Printer, Copy, Check, LayoutGrid } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface BarcodeQRModalProps {
@@ -12,16 +12,49 @@ interface BarcodeQRModalProps {
     sellingPrice?: number;
     mrp?: number;
     category?: string;
+    /** Composite variant key → qty. Keys look like "Blue / 8GB / 128GB". */
+    size_variants?: string | Record<string, number>;
+    /** Metadata carries per-variant pricing + barcodes under `size_prices`. */
+    metadata?: any;
   };
   onClose: () => void;
 }
 
+/** Parse a variant sub-map safely from either a JSON string or an object. */
+function parseObj(v: any): Record<string, any> {
+  if (!v) return {};
+  if (typeof v === 'string') { try { return JSON.parse(v); } catch { return {}; } }
+  return v;
+}
+
 export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps) {
   const t = useTranslations('BarcodeQRModal');
+  const tv = useTranslations('Variants');
   const barcodeRef = useRef<SVGSVGElement>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [tab, setTab] = useState<'barcode' | 'qr'>('barcode');
+  const [tab, setTab] = useState<'barcode' | 'qr' | 'variants'>('barcode');
   const [copied, setCopied] = useState(false);
+
+  // Every variant with its per-variant barcode. Rows without a set barcode
+  // fall back to the product-level code so the label sheet still has SOMETHING
+  // scannable for that colour/size — better than dropping the row silently.
+  const variantRows = useMemo(() => {
+    const variants = parseObj(product.size_variants);
+    const meta = parseObj(product.metadata);
+    const sp = parseObj(meta.size_prices);
+    return Object.keys(variants)
+      .filter(k => Number(variants[k]) > 0)
+      .map(k => {
+        const entry = (sp[k] || {}) as any;
+        return {
+          key: k,
+          qty: Number(variants[k]) || 0,
+          barcode: (entry.barcode || product.barcode || '').toString(),
+          sellingPrice: Number(entry.sellingPrice) || Number(product.sellingPrice) || 0,
+          mrp: Number(entry.mrp) || Number(product.mrp) || 0,
+        };
+      });
+  }, [product]);
 
   // A stored barcode that starts with PRD-/BAR- is a placeholder the system
   // generated when the product was created without a real code — it is NOT a
@@ -134,6 +167,73 @@ export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps
     setTimeout(() => { win.print(); win.close(); }, 300);
   }
 
+  // Print an A4 label sheet — one card per variant, 3 per row, ready for a
+  // shop scissors-and-glue label roll or a thermal-label printer that likes
+  // per-page cuts. Each label carries the variant barcode rendered by
+  // JsBarcode as inline SVG (so the print dialog sees vectors, not screenshots).
+  async function printLabelSheet() {
+    if (!variantRows.length) return;
+    const { default: JsBarcode } = await import('jsbarcode');
+    // Render every barcode into a headless SVG string so the print window
+    // gets clean vector labels instead of blurry canvas snapshots.
+    const labels = variantRows.map(row => {
+      const svgTmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      try {
+        JsBarcode(svgTmp, row.barcode, {
+          format: 'CODE128', width: 1.6, height: 44, displayValue: true,
+          fontSize: 10, fontOptions: 'bold', margin: 4, background: '#ffffff', lineColor: '#0f172a',
+        });
+      } catch { /* skip unrenderable code */ }
+      const svgStr = new XMLSerializer().serializeToString(svgTmp);
+      const price = row.sellingPrice > 0 ? `₹${row.sellingPrice.toLocaleString('en-IN')}` : (row.mrp > 0 ? `MRP ₹${row.mrp.toLocaleString('en-IN')}` : '');
+      return `
+        <div class="lbl">
+          <div class="lbl-name">${product.name}</div>
+          <div class="lbl-variant">${row.key}</div>
+          <div class="lbl-barcode">${svgStr}</div>
+          <div class="lbl-foot">
+            <span>${price}</span>
+            <span class="lbl-qty">×${row.qty}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    const html = `<!doctype html><html><head><title>${product.name} — Labels</title>
+      <style>
+        @page { size: A4; margin: 8mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Helvetica, Arial, sans-serif; margin: 0; color: #0f172a; }
+        .sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 2mm; }
+        .lbl {
+          border: 0.4mm dashed #94a3b8;
+          border-radius: 2mm;
+          padding: 3mm 3mm 2.5mm;
+          break-inside: avoid;
+          text-align: center;
+          background: #fff;
+        }
+        .lbl-name    { font-size: 10px; font-weight: 800; line-height: 1.15; margin-bottom: 1mm;
+                        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .lbl-variant { font-size: 9px; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1mm; }
+        .lbl-barcode svg { max-width: 100%; height: auto; }
+        .lbl-foot    { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700; margin-top: 0.5mm; }
+        .lbl-qty     { color: #64748b; font-weight: 600; }
+        @media print {
+          html, body { background: #fff; }
+          .lbl { border-color: #cbd5e1; }
+        }
+      </style></head><body>
+      <div class="sheet">${labels}</div>
+    </body></html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=1100');
+    if (!win) return;
+    win.document.open(); win.document.write(html); win.document.close();
+    const trigger = () => { try { win.focus(); win.print(); } catch {} };
+    if (win.document.readyState === 'complete') setTimeout(trigger, 200);
+    else win.addEventListener('load', () => setTimeout(trigger, 200));
+  }
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
@@ -148,20 +248,25 @@ export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs — the Variants tab only shows up when the product actually has
+            per-variant barcodes to print. Keeps the modal single-column for
+            plain products (no rows to fill). */}
         <div className="flex border-b border-slate-800">
-          {(['barcode', 'qr'] as const).map(tabKey => (
+          {(['barcode', 'qr', ...(variantRows.length > 0 ? ['variants' as const] : [])] as const).map(tabKey => (
             <button key={tabKey} onClick={() => setTab(tabKey)}
               className={cn(
                 'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-bold transition-colors',
                 tab === tabKey ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-slate-500 hover:text-slate-300'
               )}>
-              {tabKey === 'barcode' ? <><Barcode size={16} /> {t('barcodeTab')}</> : <><QrCode size={16} /> {t('qrCodeTab')}</>}
+              {tabKey === 'barcode' ? <><Barcode size={16} /> {t('barcodeTab')}</>
+                : tabKey === 'qr' ? <><QrCode size={16} /> {t('qrCodeTab')}</>
+                : <><LayoutGrid size={16} /> {tv('variantBarcodesTitle')} · {variantRows.length}</>}
             </button>
           ))}
         </div>
 
         {/* Code display */}
+        {tab !== 'variants' ? (
         <div className="p-6 flex flex-col items-center gap-4">
           {tab === 'barcode' ? (
             <div className="bg-white rounded-xl p-3 flex items-center justify-center w-full">
@@ -205,7 +310,7 @@ export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps
               <Download size={18} /> {t('download')}
             </button>
             <button onClick={printCode}
-              className="flex flex-col items-center gap-1.5 py-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-xl hover:bg-blue-500/20 transition-colors text-xs font-bold">
+              className="flex flex-col items-center gap-1.5 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-xs font-bold shadow-lg shadow-emerald-500/20">
               <Printer size={18} /> {t('print')}
             </button>
             <button onClick={copyBarcode}
@@ -215,6 +320,43 @@ export default function BarcodeQRModal({ product, onClose }: BarcodeQRModalProps
             </button>
           </div>
         </div>
+        ) : (
+        <div className="p-4 flex flex-col gap-3">
+          <p className="text-[11px] text-slate-500 leading-snug">
+            {tv('variantBarcodesTitle')} — <span className="text-slate-400">{variantRows.length}</span>
+          </p>
+          <div className="max-h-[45vh] overflow-y-auto pr-1 -mr-1 flex flex-col gap-1.5">
+            {variantRows.map(row => (
+              <div key={row.key} className="flex items-center gap-2 bg-slate-800/70 rounded-lg px-3 py-2 border border-slate-700/60">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-black text-slate-100 truncate">{row.key}</p>
+                  <p className="text-[10px] font-mono text-slate-400 truncate">{row.barcode || '—'}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[10px] font-bold text-emerald-400">₹{row.sellingPrice.toLocaleString('en-IN')}</p>
+                  <p className="text-[9px] text-slate-500">×{row.qty}</p>
+                </div>
+                <button
+                  type="button"
+                  title={t('copy')}
+                  onClick={() => { navigator.clipboard.writeText(row.barcode || ''); }}
+                  className="text-slate-500 hover:text-emerald-400 p-1"
+                >
+                  <Copy size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {/* Highly visible Print button */}
+          <button
+            type="button"
+            onClick={printLabelSheet}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
+          >
+            <Printer size={16} /> {t('print')} - A4
+          </button>
+        </div>
+        )}
       </div>
     </div>
   );

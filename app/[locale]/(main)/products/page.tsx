@@ -1444,7 +1444,16 @@ function LegacyProductsUI() {
 
       {/* Barcode & QR Generator Modal */}
       {qrProduct && (
-        <BarcodeQRModal product={qrProduct} onClose={() => setQrProduct(null)} />
+        <BarcodeQRModal
+          product={{
+            ...qrProduct,
+            // Feed the modal the variant map + metadata so the Variants tab
+            // can list every colour/size + its per-variant barcode.
+            size_variants: qrProduct.size_variants,
+            metadata: qrProduct.metadata,
+          }}
+          onClose={() => setQrProduct(null)}
+        />
       )}
 
       {/* Camera Barcode Scanner */}
