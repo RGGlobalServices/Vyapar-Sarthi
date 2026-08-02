@@ -6,13 +6,14 @@ import { Package, FileSpreadsheet, ShoppingCart, Users, Truck, BookOpen, Calcula
 import ImportWizard from './ImportWizard';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' | 'sales' | 'ledger' | null;
 
 export default function WholesaleImport() {
   const t = useTranslations('Import');
   const { profile } = useBusinessStore();
-  const isUdyog = profile?.packageType === 'wholesale';
+  const isUdyog = isWholesaleTierPackage(profile?.packageType);
   const [selectedType, setSelectedType] = useState<ImportType>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);

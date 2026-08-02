@@ -4,6 +4,7 @@ import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { checkLargeTransactionAlert, checkLowStockAlerts } from '@/lib/server/notificationsEngine';
 import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -155,7 +156,7 @@ export const POST = handle(async (req) => {
       if (productIds.length > 0) {
         const [products, activeBatches] = await Promise.all([
           tx.product.findMany({ where: { id: { in: productIds } } }),
-          shop.packageType === 'wholesale' 
+          isWholesaleTierPackage(shop.packageType)
             ? tx.batch.findMany({ where: { productId: { in: productIds }, shopId, quantity: { gt: 0 } }, orderBy: { createdAt: 'asc' } })
             : Promise.resolve([])
         ]);
@@ -196,7 +197,7 @@ export const POST = handle(async (req) => {
             })
           );
 
-          if (shop.packageType === 'wholesale') {
+          if (isWholesaleTierPackage(shop.packageType)) {
             let remainingQty = totalQty;
             const pBatches = batchMap.get(product.id) || [];
             for (const batch of pBatches) {

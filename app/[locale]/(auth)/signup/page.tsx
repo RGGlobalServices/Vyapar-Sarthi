@@ -9,7 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { PAYMENT_URL } from '@/lib/config';
-import { ALL_BUSINESS_TYPES, BusinessType, getBusinessConfig } from '@/lib/businessConfig';
+import { BUSINESS_TYPES_BY_CATEGORY, BusinessType, getBusinessConfig } from '@/lib/businessConfig';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 interface Form {
@@ -40,6 +40,17 @@ const COLOR_MAP: Record<string, { card: string; ring: string; badge: string; btn
   violet:  { card: 'border-violet-500/40 bg-violet-500/5',   ring: 'ring-violet-500',  badge: 'bg-violet-500/20 text-violet-400',   btn: 'from-violet-600 to-purple-600 shadow-violet-500/20 hover:shadow-violet-500/40' },
   sky:     { card: 'border-sky-500/40 bg-sky-500/5',         ring: 'ring-sky-500',     badge: 'bg-sky-500/20 text-sky-400',         btn: 'from-sky-600 to-blue-600 shadow-sky-500/20 hover:shadow-sky-500/40' },
   slate:   { card: 'border-slate-500/40 bg-slate-500/5',     ring: 'ring-slate-500',   badge: 'bg-slate-500/20 text-slate-400',     btn: 'from-slate-600 to-gray-600 shadow-slate-500/20 hover:shadow-slate-500/40' },
+  yellow:  { card: 'border-yellow-500/40 bg-yellow-500/5',   ring: 'ring-yellow-500',  badge: 'bg-yellow-500/20 text-yellow-400',   btn: 'from-yellow-600 to-orange-600 shadow-yellow-500/20 hover:shadow-yellow-500/40' },
+  rose:    { card: 'border-rose-500/40 bg-rose-500/5',       ring: 'ring-rose-500',    badge: 'bg-rose-500/20 text-rose-400',       btn: 'from-rose-600 to-amber-600 shadow-rose-500/20 hover:shadow-rose-500/40' },
+  lime:    { card: 'border-lime-500/40 bg-lime-500/5',       ring: 'ring-lime-500',    badge: 'bg-lime-500/20 text-lime-400',       btn: 'from-lime-600 to-emerald-600 shadow-lime-500/20 hover:shadow-lime-500/40' },
+  red:     { card: 'border-red-500/40 bg-red-500/5',         ring: 'ring-red-500',     badge: 'bg-red-500/20 text-red-400',         btn: 'from-red-600 to-orange-600 shadow-red-500/20 hover:shadow-red-500/40' },
+  teal:    { card: 'border-teal-500/40 bg-teal-500/5',       ring: 'ring-teal-500',    badge: 'bg-teal-500/20 text-teal-400',       btn: 'from-teal-600 to-cyan-600 shadow-teal-500/20 hover:shadow-teal-500/40' },
+  green:   { card: 'border-green-500/40 bg-green-500/5',     ring: 'ring-green-500',   badge: 'bg-green-500/20 text-green-400',     btn: 'from-green-600 to-emerald-600 shadow-green-500/20 hover:shadow-green-500/40' },
+  orange:  { card: 'border-orange-500/40 bg-orange-500/5',   ring: 'ring-orange-500',  badge: 'bg-orange-500/20 text-orange-400',   btn: 'from-orange-600 to-amber-600 shadow-orange-500/20 hover:shadow-orange-500/40' },
+  stone:   { card: 'border-stone-500/40 bg-stone-500/5',     ring: 'ring-stone-500',   badge: 'bg-stone-500/20 text-stone-400',     btn: 'from-stone-600 to-amber-700 shadow-stone-500/20 hover:shadow-stone-500/40' },
+  indigo:  { card: 'border-indigo-500/40 bg-indigo-500/5',   ring: 'ring-indigo-500',  badge: 'bg-indigo-500/20 text-indigo-400',   btn: 'from-indigo-600 to-slate-600 shadow-indigo-500/20 hover:shadow-indigo-500/40' },
+  cyan:    { card: 'border-cyan-500/40 bg-cyan-500/5',       ring: 'ring-cyan-500',    badge: 'bg-cyan-500/20 text-cyan-400',       btn: 'from-cyan-600 to-blue-600 shadow-cyan-500/20 hover:shadow-cyan-500/40' },
+  fuchsia: { card: 'border-fuchsia-500/40 bg-fuchsia-500/5', ring: 'ring-fuchsia-500', badge: 'bg-fuchsia-500/20 text-fuchsia-400', btn: 'from-fuchsia-600 to-purple-600 shadow-fuchsia-500/20 hover:shadow-fuchsia-500/40' },
 };
 
 function StrengthBar({ password }: { password: string }) {
@@ -305,36 +316,49 @@ export default function SignupPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {ALL_BUSINESS_TYPES.map(config => {
-                  const colors = COLOR_MAP[config.color] ?? COLOR_MAP.slate;
-                  const isSelected = form.businessType === config.type;
-                  return (
-                    <button
-                      key={config.type}
-                      onClick={() => setForm(f => ({ ...f, businessType: config.type }))}
-                      className={cn(
-                        'relative text-left p-5 rounded-2xl border-2 transition-all duration-300 group h-full flex flex-col',
-                        isSelected
-                          ? `${colors.card} border-2 ring-2 ${colors.ring} shadow-2xl scale-[1.02]`
-                          : 'border-slate-800 bg-slate-900/50 hover:border-slate-600 hover:bg-slate-800/70 hover:scale-[1.01]'
-                      )}
-                    >
-                      {isSelected && <div className="absolute top-3 right-3 animate-in fade-in zoom-in"><CheckCircle size={20} className="text-emerald-400" /></div>}
-                      <div className="text-5xl mb-4 group-hover:scale-110 transition-transform duration-300">{config.emoji}</div>
-                      <h3 className="font-bold text-slate-100 text-lg mb-1 leading-tight">{config.label}</h3>
-                      <p className="text-slate-500 text-[11px] mb-4 line-clamp-2 leading-relaxed">{config.description}</p>
-                      
-                      <div className="mt-auto flex flex-wrap gap-1.5">
-                        {config.features.slice(0, 2).map((f, i) => (
-                          <div key={i} className={cn('text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-tighter', colors.badge)}>
-                            {f}
-                          </div>
-                        ))}
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="space-y-8">
+                {BUSINESS_TYPES_BY_CATEGORY.map(({ meta, types }) => (
+                  <div key={meta.id} className="space-y-3">
+                    <div className="flex items-center gap-2.5 border-b border-slate-800 pb-2">
+                      <span className="text-xl">{meta.emoji}</span>
+                      <h3 className="text-sm font-black text-slate-200 uppercase tracking-wide">{meta.label}</h3>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-900 border border-slate-800 rounded-full px-2.5 py-1 ml-auto">
+                        {meta.suggestedPackageLabel}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {types.map(config => {
+                        const colors = COLOR_MAP[config.color] ?? COLOR_MAP.slate;
+                        const isSelected = form.businessType === config.type;
+                        return (
+                          <button
+                            key={config.type}
+                            onClick={() => setForm(f => ({ ...f, businessType: config.type }))}
+                            className={cn(
+                              'relative text-left p-5 rounded-2xl border-2 transition-all duration-300 group h-full flex flex-col',
+                              isSelected
+                                ? `${colors.card} border-2 ring-2 ${colors.ring} shadow-2xl scale-[1.02]`
+                                : 'border-slate-800 bg-slate-900/50 hover:border-slate-600 hover:bg-slate-800/70 hover:scale-[1.01]'
+                            )}
+                          >
+                            {isSelected && <div className="absolute top-3 right-3 animate-in fade-in zoom-in"><CheckCircle size={20} className="text-emerald-400" /></div>}
+                            <div className="text-5xl mb-4 group-hover:scale-110 transition-transform duration-300">{config.emoji}</div>
+                            <h3 className="font-bold text-slate-100 text-lg mb-1 leading-tight">{config.label}</h3>
+                            <p className="text-slate-500 text-[11px] mb-4 line-clamp-2 leading-relaxed">{config.description}</p>
+
+                            <div className="mt-auto flex flex-wrap gap-1.5">
+                              {config.features.slice(0, 2).map((f, i) => (
+                                <div key={i} className={cn('text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-tighter', colors.badge)}>
+                                  {f}
+                                </div>
+                              ))}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               <div className="max-w-sm mx-auto space-y-4 pt-4">

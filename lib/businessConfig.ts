@@ -7,6 +7,7 @@ import { PackageType } from './config/packageConfig';
 
 export type BusinessType =
   | 'kirana'
+  | 'generalstore'
   | 'medical'
   | 'boutique'
   | 'shoes'
@@ -15,15 +16,118 @@ export type BusinessType =
   | 'electronics'
   | 'liquor'
   | 'ricemill'
+  | 'flourmill'
+  | 'oilmill'
+  | 'foodprocessing'
+  | 'smallmanufacturing'
   | 'agrostore'
   | 'agrowholesale'
   | 'seeddistributor'
   | 'fertilizerdistributor'
   | 'pesticidedistributor'
-  | 'general';
+  | 'organicproducts'
+  | 'farmequipment'
+  | 'general'
+  | 'fmcgdistributor'
+  | 'electricaldistributor'
+  | 'medicaldistributor'
+  | 'textilewholesale';
+
+// Four top-level groups shown as sections wherever a shopkeeper picks a
+// business type (signup, profile, add-shop). Retail + Agro are everyday
+// shop-counter businesses that fit the Dukan / Vyapar packages; Manufacturing
+// + Wholesale & Distribution need purchase/warehouse/party-ledger modules
+// that only the Udyog package unlocks.
+export type BusinessCategory = 'retail' | 'agro' | 'manufacturing' | 'wholesale';
+
+export interface BusinessCategoryMeta {
+  id: BusinessCategory;
+  label: string;
+  labelHi: string;
+  labelMr: string;
+  emoji: string;
+  suggestedPackageLabel: string; // shown as a hint under the section header
+}
+
+export const BUSINESS_CATEGORIES: Record<BusinessCategory, BusinessCategoryMeta> = {
+  retail: {
+    id: 'retail',
+    label: 'Retail Businesses',
+    labelHi: 'खुदरा व्यवसाय',
+    labelMr: 'किरकोळ व्यवसाय',
+    emoji: '🏪',
+    suggestedPackageLabel: 'Dukan / Vyapar Package',
+  },
+  agro: {
+    id: 'agro',
+    label: 'Agro Business',
+    labelHi: 'कृषि व्यवसाय',
+    labelMr: 'कृषी व्यवसाय',
+    emoji: '🌾',
+    // Mixed tier: retail-facing agro types (Agro Retail Store, Organic
+    // Products, Farm Equipment) are Dukan/Vyapar; distributor/wholesale
+    // agro types (Agro Wholesale, Seed/Fertilizer/Pesticide Distributor)
+    // are Udyog — see each type's own defaultPackage, not this label.
+    suggestedPackageLabel: 'Dukan/Vyapar (retail) or Udyog (distributor)',
+  },
+  manufacturing: {
+    id: 'manufacturing',
+    label: 'Manufacturing',
+    labelHi: 'विनिर्माण',
+    labelMr: 'उत्पादन',
+    emoji: '🏭',
+    suggestedPackageLabel: 'Bada Udyog Package (₹4999+GST)',
+  },
+  wholesale: {
+    id: 'wholesale',
+    label: 'Wholesale & Distribution',
+    labelHi: 'थोक और वितरण',
+    labelMr: 'घाऊक आणि वितरण',
+    emoji: '🚚',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+};
+
+const KNOWN_PACKAGES: PackageType[] = ['dukan', 'vyapar', 'wholesale', 'badaudyog'];
+
+// Whether a business type (identified by its own defaultPackage) is visible
+// to an account on the given package. Filtering happens per TYPE, not per
+// whole category — categories are a display grouping only. Agro in
+// particular mixes tiers: Agro Retail Store/Organic Products/Farm Equipment
+// default to 'dukan' (shown to Dukan AND Vyapar accounts, which share the
+// same shop-counter catalogue), while Agro Wholesale/Seed/Fertilizer/
+// Pesticide Distributor default to 'wholesale' (Udyog only).
+function packageAllowsType(accountPackage: PackageType, typeDefaultPackage: PackageType | undefined): boolean {
+  const pkg = typeDefaultPackage || 'dukan';
+  if (accountPackage === 'vyapar') return pkg === 'dukan' || pkg === 'vyapar';
+  return pkg === accountPackage;
+}
+
+/**
+ * BUSINESS_TYPES_BY_CATEGORY filtered down to the individual types a
+ * package unlocks (per-type, via each config's defaultPackage — not a
+ * blanket per-category cut, since Agro itself spans two tiers). The
+ * business type the shop currently has is always kept even if it falls
+ * outside the package (e.g. a legacy shop from before this gating existed)
+ * so the picker never silently drops the selected value. Groups that end
+ * up empty are omitted entirely.
+ */
+export function getBusinessTypesForPackage(packageType: PackageType | string | null | undefined, currentType?: string): { meta: BusinessCategoryMeta; types: BusinessConfig[] }[] {
+  const accountPackage = KNOWN_PACKAGES.includes(packageType as PackageType) ? (packageType as PackageType) : null;
+  if (!accountPackage) return BUSINESS_TYPES_BY_CATEGORY;
+  return BUSINESS_TYPES_BY_CATEGORY
+    .map(g => ({
+      meta: g.meta,
+      types: g.types.filter(c => c.type === currentType || packageAllowsType(accountPackage, c.defaultPackage)),
+    }))
+    .filter(g => g.types.length > 0);
+}
+
+export const BUSINESS_CATEGORY_ORDER: BusinessCategory[] = ['retail', 'agro', 'manufacturing', 'wholesale'];
 
 export interface BusinessConfig {
   type: BusinessType;
+  category: BusinessCategory;
   label: string;
   labelHi: string;
   labelMr: string;
@@ -65,6 +169,7 @@ export interface BusinessConfig {
 export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   kirana: {
     type: 'kirana',
+    category: 'retail',
     label: 'Kirana / Grocery',
     labelHi: 'किराना / खाद्य',
     labelMr: 'किराणा / किराणा',
@@ -111,6 +216,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   },
   medical: {
     type: 'medical',
+    category: 'retail',
     label: 'Medical / Pharmacy',
     labelHi: 'मेडिकल / दवाखाना',
     labelMr: 'मेडिकल / औषधालय',
@@ -138,9 +244,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Paracetamol 500mg',
     productPlaceholderHi: 'जैसे पैरासिटामोल 500mg',
     productPlaceholderMr: 'उदा. पॅरासिटामॉल 500mg',
+    defaultPackage: 'dukan',
   },
   boutique: {
     type: 'boutique',
+    category: 'retail',
     label: 'Boutique / Cosmetics',
     labelHi: 'बुटीक / कॉस्मेटिक्स',
     labelMr: 'बुटीक / सौंदर्य प्रसाधने',
@@ -169,9 +277,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Matte Lipstick / Rose Perfume',
     productPlaceholderHi: 'जैसे मैट लिपस्टिक / परफ्यूम',
     productPlaceholderMr: 'उदा. मॅट लिपस्टिक / परफ्यूम',
+    defaultPackage: 'dukan',
   },
   shoes: {
     type: 'shoes',
+    category: 'retail',
     label: 'Shoes / Footwear',
     labelHi: 'जूते / फुटवियर',
     labelMr: 'बूट / फुटवेअर',
@@ -205,9 +315,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     sizeChart: ['UK/IND 4', 'UK/IND 5', 'UK/IND 6', 'UK/IND 7', 'UK/IND 8', 'UK/IND 9', 'UK/IND 10', 'UK/IND 11', 'UK/IND 12'],
     hasColors: true,
     colorChart: ['Black', 'White', 'Brown', 'Tan', 'Blue', 'Red', 'Grey', 'Navy'],
+    defaultPackage: 'dukan',
   },
   clothes: {
     type: 'clothes',
+    category: 'retail',
     label: 'Clothes / Textiles',
     labelHi: 'कपड़े / वस्त्र',
     labelMr: 'कपडे / वस्त्र',
@@ -237,9 +349,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     sizeChart: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
     hasColors: true,
     colorChart: ['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Grey', 'Maroon', 'Navy'],
+    defaultPackage: 'dukan',
   },
   electric: {
     type: 'electric',
+    category: 'retail',
     label: 'Electric / Hardware',
     labelHi: 'इलेक्ट्रिक / हार्डवेयर',
     labelMr: 'इलेक्ट्रिक / हार्डवेअर',
@@ -276,9 +390,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     // colours skew utilitarian (housings, cable jackets), so the palette is
     // shorter than the apparel one but hits the everyday hardware finishes.
     colorChart: ['Black', 'White', 'Grey', 'Silver', 'Red', 'Blue', 'Green', 'Yellow', 'Brown'],
+    defaultPackage: 'dukan',
   },
   electronics: {
     type: 'electronics',
+    category: 'retail',
     label: 'Electronics',
     labelHi: 'इलेक्ट्रॉनिक्स',
     labelMr: 'इलेक्ट्रॉनिक्स',
@@ -316,9 +432,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     // as Black / 8GB / 128GB, White / 8GB / 128GB, etc. Kept to the finishes
     // Indian consumer electronics actually ship in so the chip row stays scannable.
     colorChart: ['Black', 'White', 'Blue', 'Green', 'Red', 'Gold', 'Silver', 'Grey', 'Purple', 'Pink'],
+    defaultPackage: 'dukan',
   },
   liquor: {
     type: 'liquor',
+    category: 'retail',
     label: 'Beer Bar & Wine Shop',
     labelHi: 'बीयर बार और वाइन शॉप',
     labelMr: 'बिअर बार आणि वाईन शॉप',
@@ -354,6 +472,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   },
   general: {
     type: 'general',
+    category: 'wholesale',
     label: 'General Wholesale',
     labelHi: 'सामान्य थोक',
     labelMr: 'सर्वसाधारण घाऊक',
@@ -383,9 +502,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Product Name',
     productPlaceholderHi: 'जैसे उत्पाद का नाम',
     productPlaceholderMr: 'उदा. उत्पादनाचे नाव',
+    defaultPackage: 'wholesale',
   },
   agrowholesale: {
     type: 'agrowholesale',
+    category: 'agro',
     label: 'Agro Wholesale',
     labelHi: 'कृषि थोक',
     labelMr: 'कृषी घाऊक',
@@ -423,9 +544,15 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Urea 50 Kg × 20 Bag Case',
     productPlaceholderHi: 'जैसे यूरिया 50 किलो × 20 बैग केस',
     productPlaceholderMr: 'उदा. यूरिया 50 किलो × 20 बॅग केस',
+    // Wholesale/distributor businesses belong in the Udyog package even
+    // though they're grouped under the Agro section — a shop-counter Dukan/
+    // Vyapar account only sees the retail Agro types (Agro Retail Store,
+    // Organic Products, Farm Equipment).
+    defaultPackage: 'wholesale',
   },
   seeddistributor: {
     type: 'seeddistributor',
+    category: 'agro',
     label: 'Seed Distributor',
     labelHi: 'बीज वितरक',
     labelMr: 'बियाणे वितरक',
@@ -461,9 +588,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. BT Cotton Hybrid 475g',
     productPlaceholderHi: 'जैसे बीटी कॉटन हाइब्रिड 475 ग्राम',
     productPlaceholderMr: 'उदा. बीटी कापूस हायब्रिड 475 ग्राम',
+    defaultPackage: 'wholesale',
   },
   fertilizerdistributor: {
     type: 'fertilizerdistributor',
+    category: 'agro',
     label: 'Fertilizer Distributor',
     labelHi: 'खाद वितरक',
     labelMr: 'खत वितरक',
@@ -499,9 +628,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. IFFCO Urea 45 Kg Bag',
     productPlaceholderHi: 'जैसे इफको यूरिया 45 किलो बैग',
     productPlaceholderMr: 'उदा. इफ्को यूरिया 45 किलो बॅग',
+    defaultPackage: 'wholesale',
   },
   pesticidedistributor: {
     type: 'pesticidedistributor',
+    category: 'agro',
     label: 'Pesticide Distributor',
     labelHi: 'कीटनाशक वितरक',
     labelMr: 'कीटकनाशक वितरक',
@@ -537,12 +668,14 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Ridomil Gold MZ 250g',
     productPlaceholderHi: 'जैसे रिडोमिल गोल्ड एमजेड 250 ग्राम',
     productPlaceholderMr: 'उदा. रिडोमिल गोल्ड एमझेड 250 ग्राम',
+    defaultPackage: 'wholesale',
   },
   agrostore: {
     type: 'agrostore',
-    label: 'Agro Store',
-    labelHi: 'कृषि केंद्र',
-    labelMr: 'कृषी केंद्र',
+    category: 'agro',
+    label: 'Agro Retail Store',
+    labelHi: 'कृषि रिटेल दुकान',
+    labelMr: 'कृषी रिटेल दुकान',
     emoji: '🌱',
     color: 'emerald',
     gradient: 'from-emerald-600 to-lime-600',
@@ -589,9 +722,11 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Urea 50 Kg / Tata Rallis (Batch: URA2026-A)',
     productPlaceholderHi: 'जैसे यूरिया 50 किलो / टाटा रैलिस',
     productPlaceholderMr: 'उदा. यूरिया 50 किलो / टाटा रॅलिस',
+    defaultPackage: 'dukan',
   },
   ricemill: {
     type: 'ricemill',
+    category: 'manufacturing',
     label: 'Rice Mill & Bhagar Mill',
     labelHi: 'राइस मिल / दाल मिल',
     labelMr: 'राईस मिल / डाळ मिल',
@@ -634,6 +769,427 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Basmati Rice 25 Kg',
     productPlaceholderHi: 'जैसे बासमती चावल 25 किलो',
     productPlaceholderMr: 'उदा. बासमती तांदूळ 25 किलो',
+    defaultPackage: 'badaudyog',
+  },
+  generalstore: {
+    type: 'generalstore',
+    category: 'retail',
+    label: 'General Store',
+    labelHi: 'जनरल स्टोर',
+    labelMr: 'जनरल स्टोअर',
+    emoji: '🏬',
+    color: 'teal',
+    gradient: 'from-teal-600 to-cyan-600',
+    description: 'Everyday essentials — stationery, toiletries, snacks, household items',
+    features: ['Mixed-category inventory', 'Udhar (credit) management', 'Low stock alerts', 'Fast counter billing'],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    // Adaptive: same opt-in spec matrix as `general`, resolved from whatever category is typed.
+    hasSpecs: true,
+    defaultCategories: ['Stationery', 'Toiletries', 'Snacks & Namkeen', 'Cold Drinks', 'Household Items', 'Toys', 'Gift Items', 'Plastic Ware', 'Bags', 'Umbrellas', 'Batteries', 'General'],
+    defaultUnits: ['Piece', 'Packet', 'Box', 'Dozen', 'Set', 'Kg', 'Ltr'],
+    productPlaceholder: 'e.g. Notebook 200 Pages',
+    productPlaceholderHi: 'जैसे नोटबुक 200 पेज',
+    productPlaceholderMr: 'उदा. वही 200 पाने',
+    defaultPackage: 'dukan',
+  },
+  organicproducts: {
+    type: 'organicproducts',
+    category: 'agro',
+    label: 'Organic Products',
+    labelHi: 'जैविक उत्पाद',
+    labelMr: 'सेंद्रिय उत्पादने',
+    emoji: '🌿',
+    color: 'green',
+    gradient: 'from-green-600 to-emerald-600',
+    description: 'Certified organic fertilizers, seeds, produce & farm inputs',
+    features: [
+      'Certification / batch traceability',
+      'Expiry tracked per product',
+      'Farmer / dealer customer types',
+      'Brand-wise sales reports',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Organic Fertilizers', 'Bio Fertilizers', 'Vermicompost', 'Organic Pesticides',
+      'Organic Seeds', 'Organic Produce', 'Bio Stimulants', 'Neem-based Products',
+    ],
+    defaultUnits: ['Kg', 'Gram', 'Litre', 'ML', 'Packet', 'Bag', 'Bottle', 'Piece'],
+    productPlaceholder: 'e.g. Vermicompost 10 Kg Bag',
+    productPlaceholderHi: 'जैसे वर्मीकम्पोस्ट 10 किलो बैग',
+    productPlaceholderMr: 'उदा. गांडूळ खत 10 किलो बॅग',
+    defaultPackage: 'dukan',
+  },
+  farmequipment: {
+    type: 'farmequipment',
+    category: 'agro',
+    label: 'Farm Equipment',
+    labelHi: 'कृषि उपकरण',
+    labelMr: 'शेती अवजारे',
+    emoji: '🚜',
+    color: 'orange',
+    gradient: 'from-orange-600 to-amber-600',
+    description: 'Farm tools, implements, spray pumps & small agri-machinery',
+    features: [
+      'Model + warranty tracking',
+      'Spare parts inventory',
+      'Dealer / farmer credit ledger',
+      'Service & repair history',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: true,
+    hasModel: true,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Spray Pumps', 'Power Tillers', 'Water Pumps', 'Drip Accessories', 'Hand Tools',
+      'Sprinklers', 'Harvesting Tools', 'Tractor Parts', 'Fencing', 'Poly House Accessories',
+    ],
+    defaultUnits: ['Piece', 'Set', 'Box', 'Unit'],
+    productPlaceholder: 'e.g. Knapsack Sprayer 16L',
+    productPlaceholderHi: 'जैसे नैपसैक स्प्रेयर 16 लीटर',
+    productPlaceholderMr: 'उदा. नॅपसॅक स्प्रेयर 16 लिटर',
+    defaultPackage: 'dukan',
+  },
+  flourmill: {
+    type: 'flourmill',
+    category: 'manufacturing',
+    label: 'Flour Mill',
+    labelHi: 'आटा चक्की',
+    labelMr: 'पीठ गिरणी',
+    emoji: '🌾',
+    color: 'stone',
+    gradient: 'from-stone-600 to-amber-700',
+    description: 'Wheat, jowar & multi-grain flour milling — batch grinding, packing sizes',
+    features: [
+      'Raw material lot tracking',
+      'Production batch workflow (cleaning → grinding → packing)',
+      'By-product accounting (bran, chokar)',
+      'Multi-size packing (1/5/10/25/50 Kg)',
+      'Godown-wise stock + batch-wise valuation',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Wheat', 'Jowar', 'Bajra', 'Maize', 'Ragi', 'Other Grain',
+      'Wheat Flour', 'Multi-grain Flour', 'Jowar Flour', 'Bajra Flour', 'Besan',
+      'Bran', 'Chokar',
+    ],
+    defaultUnits: ['Kg', 'Quintal', 'Bag', '1 Kg', '5 Kg', '10 Kg', '25 Kg', '50 Kg'],
+    productPlaceholder: 'e.g. Wheat Flour 10 Kg',
+    productPlaceholderHi: 'जैसे गेहूं आटा 10 किलो',
+    productPlaceholderMr: 'उदा. गहू पीठ 10 किलो',
+    defaultPackage: 'badaudyog',
+  },
+  oilmill: {
+    type: 'oilmill',
+    category: 'manufacturing',
+    label: 'Oil Mill',
+    labelHi: 'तेल घानी',
+    labelMr: 'तेल घाणी',
+    emoji: '🛢️',
+    color: 'yellow',
+    gradient: 'from-yellow-600 to-amber-600',
+    description: 'Groundnut, mustard & sesame oil pressing — batch extraction, by-products',
+    features: [
+      'Raw material lot tracking (seed weight, oil recovery %)',
+      'Production batch workflow (cleaning → pressing → filtering → packing)',
+      'By-product accounting (oil cake, husk)',
+      'Multi-size packing (500ml–15L)',
+      'Godown-wise stock + batch-wise valuation',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Groundnut', 'Mustard Seed', 'Sesame', 'Sunflower Seed', 'Coconut',
+      'Groundnut Oil', 'Mustard Oil', 'Sesame Oil', 'Sunflower Oil', 'Coconut Oil',
+      'Oil Cake', 'Husk',
+    ],
+    defaultUnits: ['Litre', 'ML', 'Kg', '500ml', '1L', '5L', '15L', 'Tin'],
+    productPlaceholder: 'e.g. Groundnut Oil 5L Tin',
+    productPlaceholderHi: 'जैसे मूंगफली तेल 5 लीटर टिन',
+    productPlaceholderMr: 'उदा. भुईमूग तेल 5 लिटर टिन',
+    defaultPackage: 'badaudyog',
+  },
+  foodprocessing: {
+    type: 'foodprocessing',
+    category: 'manufacturing',
+    label: 'Food Processing',
+    labelHi: 'खाद्य प्रसंस्करण',
+    labelMr: 'अन्न प्रक्रिया',
+    emoji: '🏭',
+    color: 'lime',
+    gradient: 'from-lime-600 to-green-600',
+    description: 'Papad, pickle, masala, snacks & packaged food manufacturing',
+    features: [
+      'Raw material + batch tracking',
+      'Production batch workflow (prep → process → pack)',
+      'Expiry / best-before per batch',
+      'Multi-size packing',
+      'Godown-wise stock + batch-wise valuation',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: [
+      'Papad', 'Pickle', 'Masala & Spices', 'Namkeen & Snacks', 'Bakery Products',
+      'Ready to Eat', 'Sauces & Ketchup', 'Jams & Preserves', 'Dairy Products', 'Packaged Sweets',
+    ],
+    defaultUnits: ['Kg', 'Gram', 'Packet', 'Box', 'Piece', 'Bottle', 'Jar'],
+    productPlaceholder: 'e.g. Masala Papad 250g Packet',
+    productPlaceholderHi: 'जैसे मसाला पापड़ 250 ग्राम पैकेट',
+    productPlaceholderMr: 'उदा. मसाला पापड 250 ग्राम पाकीट',
+    defaultPackage: 'badaudyog',
+  },
+  smallmanufacturing: {
+    type: 'smallmanufacturing',
+    category: 'manufacturing',
+    label: 'Small Manufacturing',
+    labelHi: 'लघु विनिर्माण',
+    labelMr: 'लघु उत्पादन',
+    emoji: '⚙️',
+    color: 'indigo',
+    gradient: 'from-indigo-600 to-slate-600',
+    description: 'Small-scale production units — raw material to finished-goods stock',
+    features: [
+      'Raw material + finished goods tracking',
+      'Production batch workflow',
+      'BOM-style component consumption',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Raw Material', 'Work in Progress', 'Finished Goods', 'Packaging Material', 'Spare Parts', 'General'],
+    defaultUnits: ['Piece', 'Kg', 'Box', 'Unit', 'Set'],
+    productPlaceholder: 'e.g. Product Name / Batch No.',
+    productPlaceholderHi: 'जैसे उत्पाद का नाम / बैच नंबर',
+    productPlaceholderMr: 'उदा. उत्पादनाचे नाव / बॅच क्रमांक',
+    defaultPackage: 'badaudyog',
+  },
+  fmcgdistributor: {
+    type: 'fmcgdistributor',
+    category: 'wholesale',
+    label: 'FMCG Distributor',
+    labelHi: 'एफएमसीजी वितरक',
+    labelMr: 'एफएमसीजी वितरक',
+    emoji: '📦',
+    color: 'cyan',
+    gradient: 'from-cyan-600 to-blue-600',
+    description: 'Bulk FMCG supply to retailers — party ledger, scheme & margin tracking',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Scheme / margin tracking',
+      'Case ⇄ piece conversion',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Food & Beverages', 'Personal Care', 'Home Care', 'Confectionery', 'Dairy', 'General'],
+    defaultUnits: ['Piece', 'Box', 'Case', 'Carton', 'Dozen', 'Kg', 'Ltr'],
+    productPlaceholder: 'e.g. Parle-G 100g × 96 Case',
+    productPlaceholderHi: 'जैसे पार्ले-जी 100 ग्राम × 96 केस',
+    productPlaceholderMr: 'उदा. पार्ले-जी 100 ग्राम × 96 केस',
+    defaultPackage: 'wholesale',
+  },
+  electricaldistributor: {
+    type: 'electricaldistributor',
+    category: 'wholesale',
+    label: 'Electrical Distributor',
+    labelHi: 'इलेक्ट्रिकल वितरक',
+    labelMr: 'इलेक्ट्रिकल वितरक',
+    emoji: '🔌',
+    color: 'amber',
+    gradient: 'from-amber-600 to-yellow-700',
+    description: 'Bulk electrical goods supply to dealers — wires, switchgear, lighting',
+    features: [
+      'Party ledger + dealer credit terms',
+      'Bulk coil / box / case conversions',
+      'Warranty tracking on appliances',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: true,
+    hasModel: true,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: true,
+    hasVoltWatt: true,
+    hasSoleMaterial: false,
+    defaultCategories: ['Wires & Cables', 'Switchgear', 'MCB & Distribution', 'Lighting', 'Fans & Motors', 'Conduits & Accessories'],
+    defaultUnits: ['Piece', 'Box', 'Coil', 'Case', 'Meter'],
+    productPlaceholder: 'e.g. Copper Wire 1.5mm × 90m Coil',
+    productPlaceholderHi: 'जैसे कॉपर वायर 1.5mm × 90m कॉइल',
+    productPlaceholderMr: 'उदा. कॉपर वायर 1.5mm × 90m कॉइल',
+    defaultPackage: 'wholesale',
+  },
+  medicaldistributor: {
+    type: 'medicaldistributor',
+    category: 'wholesale',
+    label: 'Medical Distributor',
+    labelHi: 'मेडिकल वितरक',
+    labelMr: 'मेडिकल वितरक',
+    emoji: '💊',
+    color: 'blue',
+    gradient: 'from-blue-600 to-indigo-600',
+    description: 'Bulk pharmaceutical supply to pharmacies — batch, expiry & drug schedule mandatory',
+    features: [
+      'Batch + expiry mandatory (regulatory)',
+      'Drug schedule (OTC/Rx/H1/H2)',
+      'Party ledger + pharmacy credit terms',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: true,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Surgical', 'Ayurvedic', 'General'],
+    defaultUnits: ['Strip', 'Box', 'Case', 'Carton', 'Unit'],
+    productPlaceholder: 'e.g. Paracetamol 500mg × 10×10 Box',
+    productPlaceholderHi: 'जैसे पैरासिटामोल 500mg × 10×10 बॉक्स',
+    productPlaceholderMr: 'उदा. पॅरासिटामॉल 500mg × 10×10 बॉक्स',
+    defaultPackage: 'wholesale',
+  },
+  textilewholesale: {
+    type: 'textilewholesale',
+    category: 'wholesale',
+    label: 'Textile Wholesale',
+    labelHi: 'कपड़ा थोक',
+    labelMr: 'कापड घाऊक',
+    emoji: '🧵',
+    color: 'fuchsia',
+    gradient: 'from-fuchsia-600 to-purple-600',
+    description: 'Bulk fabric & garment supply to retailers — piece goods, lot-wise stock',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Piece / bale / lot-wise stock',
+      'Colour & size-wise inventory',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: true,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: true,
+    hasFabric: true,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Cotton Fabric', 'Silk Fabric', 'Synthetic Fabric', 'Readymade Garments', 'Sarees', 'Dress Material'],
+    defaultUnits: ['Meter', 'Piece', 'Bale', 'Lot', 'Set'],
+    productPlaceholder: 'e.g. Cotton Fabric 40m Bale',
+    productPlaceholderHi: 'जैसे कॉटन फैब्रिक 40m बेल',
+    productPlaceholderMr: 'उदा. कॉटन फॅब्रिक 40m बेल',
+    sizeChart: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+    hasColors: true,
+    colorChart: ['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Grey', 'Maroon', 'Navy'],
+    defaultPackage: 'wholesale',
   },
 };
 
@@ -642,6 +1198,13 @@ export function getBusinessConfig(type: BusinessType | string): BusinessConfig {
 }
 
 export const ALL_BUSINESS_TYPES = Object.values(BUSINESS_CONFIGS);
+
+/** ALL_BUSINESS_TYPES grouped and ordered by category, for pickers that show section headers. */
+export const BUSINESS_TYPES_BY_CATEGORY: { meta: BusinessCategoryMeta; types: BusinessConfig[] }[] =
+  BUSINESS_CATEGORY_ORDER.map(cat => ({
+    meta: BUSINESS_CATEGORIES[cat],
+    types: ALL_BUSINESS_TYPES.filter(c => c.category === cat),
+  }));
 
 /**
  * A two-dimensional spec matrix tailored to a product's CATEGORY.

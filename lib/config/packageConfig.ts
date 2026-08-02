@@ -1,9 +1,16 @@
-export type PackageType = 'dukan' | 'vyapar' | 'wholesale';
+export type PackageType = 'dukan' | 'vyapar' | 'wholesale' | 'badaudyog';
 
 export interface PackageConfig {
   id: PackageType;
   label: string;
   modules: string[];
+}
+
+// Package tiers gated to the "wholesale-style" module set (purchases, warehouses,
+// party ledger, transfers) — Udyog (general wholesale/distribution) and Bada Udyog
+// (manufacturing) both need it, just for different business categories.
+export function isWholesaleTierPackage(type: PackageType | string | null | undefined): boolean {
+  return type === 'wholesale' || type === 'badaudyog';
 }
 
 export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
@@ -55,6 +62,32 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
   wholesale: {
     id: 'wholesale',
     label: 'Udyog Package',
+    modules: [
+      'dashboard',
+      'orders',
+      'billing',
+      'products',
+      'party',
+      'suppliers',
+      'warehouses',
+      'purchases',
+      'stock',
+      'transfers',
+      'expenses',
+      'staff',
+      'reports',
+      'import',
+      'settings',
+      'profile',
+      'calendar',
+      'returns',
+      'referral',
+      'dukandar'
+    ]
+  },
+  badaudyog: {
+    id: 'badaudyog',
+    label: 'Bada Udyog Package',
     modules: [
       'dashboard',
       'orders',

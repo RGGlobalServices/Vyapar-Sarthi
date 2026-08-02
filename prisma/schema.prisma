@@ -96,7 +96,14 @@ model Shop {
   invoiceFormat           String?              @default("thermal80") @map("invoice_format") @db.VarChar
   invoiceFooter           String?              @map("invoice_footer")
   showQrCode              Boolean?             @default(false) @map("show_qr_code")
-  
+  // When true, the product-catalog profit preview (Add/Edit modal, product
+  // list, product detail) strips GST out of the selling price before
+  // comparing to cost — i.e. profit = (sellingPrice / (1 + gst/100)) - cost.
+  // Default false: profit = sellingPrice - cost, matching plain shopkeeper
+  // markup intuition. Independent of the tax-liability-aware profit used at
+  // billing time (lib/financialEngine.ts), which always nets out GST.
+  gstInclusiveProfit      Boolean?             @default(false) @map("gst_inclusive_profit")
+
   customers               Customer[]
   products                Product[]
   sales                   Sale[]

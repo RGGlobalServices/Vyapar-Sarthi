@@ -21,6 +21,7 @@ import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
+import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 
 import { QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -127,9 +128,16 @@ function LegacyProductsUI() {
     if (searchParams.get('add') === '1') setShowAddModal(true);
   }, [searchParams]);
   const [form, setForm] = useState(buildEmptyForm(profile.businessType));
+  // Whether the number the shopkeeper is typing into Selling Price already
+  // includes GST or not — purely a data-entry convenience. Whichever mode is
+  // active, the value saved to the server is always normalized to the
+  // GST-inclusive price (see handleAddSubmit/handleEditSubmit), matching the
+  // invariant the rest of the app assumes (billing, profit calc, reports).
+  const [spMode, setSpMode] = useState<'inclusive' | 'exclusive'>('inclusive');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState(buildEmptyForm(profile.businessType));
+  const [editSpMode, setEditSpMode] = useState<'inclusive' | 'exclusive'>('inclusive');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
@@ -509,12 +517,16 @@ function LegacyProductsUI() {
         bottleType: form.bottle_type || undefined };
     }
     // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
+    // Selling Price is always saved GST-inclusive regardless of which mode the
+    // shopkeeper typed it in (see the Including/Excluding GST toggle below).
+    const enteredSp = Number(form.sellingPrice) || 0;
+    const normalizedSellingPrice = spMode === 'exclusive' ? toInclusivePrice(enteredSp, Number(form.gstPercent) || 0) : enteredSp;
     try {
       const res = await api.post('/products', {
         name: form.name, category: form.category,
         current_stock: stockQty, min_stock: Number(form.minStock),
         mrp: Number(form.mrp) || 0,
-        selling_price: Number(form.sellingPrice) || 0,
+        selling_price: normalizedSellingPrice,
         wholesale_cost: Number(form.cost) || 0, base_unit: form.unit || 'Unit',
         is_loose: form.is_loose,
         expiry_date: form.expiry_date || null,
@@ -552,6 +564,7 @@ function LegacyProductsUI() {
 
       invalidateProductCaches();
       setForm(buildEmptyForm(profile.businessType));
+      setSpMode('inclusive');
       setAddToGodownId('');
       setPerSizePricing(false);
       setSizePrices({});
@@ -562,6 +575,9 @@ function LegacyProductsUI() {
 
   function startEdit(product: Product) {
     setEditProduct(product);
+    // product.sellingPrice is always stored GST-inclusive, so the editor
+    // always starts in that mode regardless of what was chosen last time.
+    setEditSpMode('inclusive');
     setEditForm({
       name: product.name || '',
       category: product.category || '',
@@ -633,13 +649,17 @@ function LegacyProductsUI() {
           bottleType: editForm.bottle_type || undefined };
       }
       // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
+      // Selling Price is always saved GST-inclusive regardless of which mode the
+      // shopkeeper typed it in (see the Including/Excluding GST toggle below).
+      const enteredEditSp = Number(editForm.sellingPrice) || 0;
+      const normalizedEditSellingPrice = editSpMode === 'exclusive' ? toInclusivePrice(enteredEditSp, Number(editForm.gstPercent) || 0) : enteredEditSp;
       await api.put(`/products/${editProduct.id}`, {
         name: editForm.name,
         category: editForm.category,
         current_stock: stockQty,
         min_stock: Number(editForm.minStock),
         mrp: Number(editForm.mrp) || 0,
-        selling_price: Number(editForm.sellingPrice) || 0,
+        selling_price: normalizedEditSellingPrice,
         wholesale_cost: Number(editForm.cost) || 0,
         base_unit: editForm.unit,
         is_loose: editForm.is_loose,
@@ -1238,8 +1258,9 @@ function LegacyProductsUI() {
                     : (product.cost > 0 ? product.stock * product.cost : product.stock * product.sellingPrice);
 
                   let profit: string | null = null;
+                  let profitStatus: 'profit' | 'loss' | 'zero' = 'zero';
                   const gstRate = product.gstPercent || 0;
-                  const gstMultiplier = 1 + gstRate / 100;
+                  const gstInclusive = !!profile.gstInclusiveProfit;
 
                   if (hasPerSizePricing) {
                     // Variants can carry wildly different margins (e.g. a phone
@@ -1255,20 +1276,22 @@ function LegacyProductsUI() {
                       const c = Number(sp?.cost) || 0;
                       const s = Number(sp?.sellingPrice) || 0;
                       if (c > 0 && s > 0) {
-                        const baseS = s / gstMultiplier;
-                        margins.push(((baseS - c) / c) * 100);
+                        margins.push(calculateProductProfit(s, c, gstRate, gstInclusive).percent);
                       }
                     }
                     if (margins.length > 0) {
                       const min = Math.min(...margins);
                       const max = Math.max(...margins);
                       profit = min === max ? min.toFixed(1) : `${min.toFixed(1)}–${max.toFixed(1)}`;
+                      // Every variant profitable → green. Every variant a loss → red.
+                      // Spans both (or sits exactly at zero) → orange, since a single
+                      // color can't honestly represent a mixed range.
+                      profitStatus = min > 0 ? 'profit' : max < 0 ? 'loss' : 'zero';
                     }
                   } else if (product.cost > 0 && product.sellingPrice > 0) {
-                    const baseSp = product.sellingPrice / gstMultiplier;
-                    // If baseSp < product.cost, they are selling at a loss if cost is exclusive. 
-                    // To match shopkeeper expectations, we calculate markup on cost.
-                    profit = ((baseSp - product.cost) / product.cost * 100).toFixed(1);
+                    const result = calculateProductProfit(product.sellingPrice, product.cost, gstRate, gstInclusive);
+                    profit = result.percent.toFixed(1);
+                    profitStatus = result.status;
                   }
 
                   return (
@@ -1385,7 +1408,7 @@ function LegacyProductsUI() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         {profit !== null
-                          ? <span className={cn('font-bold', Number(profit) >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400')}>{profit}%</span>
+                          ? <span className={cn('font-bold', profitColorClass(profitStatus))}>{profit}%</span>
                           : <button onClick={() => startEdit(product)} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 underline transition-colors">set cost</button>
                         }
                       </td>
@@ -1739,24 +1762,60 @@ function LegacyProductsUI() {
                     <input type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} />
                   </div>
                 </div>
-                {editForm.sellingPrice && editForm.cost && Number(editForm.sellingPrice) > 0 && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-emerald-500/70">Profit Margin</span>
-                    <span className="text-lg font-black text-emerald-400">
-                      {(() => {
-                        // Markup on Cost — matches how the products list itself
-                        // calculates Profit %, so the modal's live preview never
-                        // disagrees with what you see after saving.
-                        const gstRate = editForm.gstPercent || 0;
-                        const sp = Number(editForm.sellingPrice) || 0;
-                        const cp = Number(editForm.cost) || 0;
-                        const baseSp = sp / (1 + gstRate / 100);
-                        if (cp <= 0) return '0.0';
-                        return (((baseSp - cp) / cp) * 100).toFixed(1);
-                      })()}%
-                    </span>
+
+                {/* Including GST / Excluding GST — clarifies how the Selling
+                    Price above should be read. Whichever mode is picked, the
+                    saved price is always normalized to GST-inclusive. */}
+                <div className="flex items-center gap-2 -mt-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Selling Price is</span>
+                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+                    {(['inclusive', 'exclusive'] as const).map(mode => (
+                      <button key={mode} type="button"
+                        onClick={() => {
+                          if (mode === editSpMode) return;
+                          const gst = Number(editForm.gstPercent) || 0;
+                          const current = Number(editForm.sellingPrice) || 0;
+                          if (current > 0) {
+                            const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
+                            setEditForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                          }
+                          setEditSpMode(mode);
+                        }}
+                        className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all',
+                          editSpMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400')}
+                      >
+                        {mode === 'inclusive' ? 'Including GST' : 'Excluding GST'}
+                      </button>
+                    ))}
                   </div>
+                </div>
+                {editForm.sellingPrice && Number(editForm.sellingPrice) > 0 && (
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2">
+                    {editSpMode === 'inclusive'
+                      ? `This price includes GST. Excl. GST: ₹${toExclusivePrice(Number(editForm.sellingPrice), Number(editForm.gstPercent) || 0).toFixed(2)}`
+                      : `This price excludes GST. Incl. GST: ₹${toInclusivePrice(Number(editForm.sellingPrice), Number(editForm.gstPercent) || 0).toFixed(2)}`}
+                  </p>
                 )}
+
+                {editForm.sellingPrice && editForm.cost && Number(editForm.sellingPrice) > 0 && (() => {
+                  // Matches how the products list itself calculates Profit %, so
+                  // the modal's live preview never disagrees with what you see
+                  // after saving. See lib/profitCalc.ts for the GST-inclusive toggle.
+                  // Always feed the normalized (GST-inclusive) price in, regardless
+                  // of which mode the shopkeeper is currently typing the price in.
+                  const spForProfit = editSpMode === 'exclusive' ? toInclusivePrice(Number(editForm.sellingPrice) || 0, editForm.gstPercent || 0) : Number(editForm.sellingPrice) || 0;
+                  const result = calculateProductProfit(spForProfit, Number(editForm.cost) || 0, editForm.gstPercent || 0, !!profile.gstInclusiveProfit);
+                  const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
+                  const textCls = profitColorClass(result.status);
+                  return (
+                    <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
+                      <span className={cn('text-xs font-semibold opacity-70', textCls)}>Profit</span>
+                      <span className={cn('text-lg font-black text-right', textCls)}>
+                        ₹{result.amount.toFixed(2)} <span className="text-sm">({result.percent.toFixed(1)}%)</span>
+                      </span>
+                    </div>
+                  );
+                })()}
                 
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div>
@@ -2147,24 +2206,60 @@ function LegacyProductsUI() {
                       value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} />
                   </div>
                 </div>
-                {form.sellingPrice && form.cost && Number(form.sellingPrice) > 0 && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-emerald-500/70">{t('profit')}</span>
-                    <span className="text-lg font-black text-emerald-400">
-                      {(() => {
-                        // Markup on Cost — matches how the products list itself
-                        // calculates Profit %, so the modal's live preview never
-                        // disagrees with what you see after saving.
-                        const gstRate = form.gstPercent || 0;
-                        const sp = Number(form.sellingPrice) || 0;
-                        const cp = Number(form.cost) || 0;
-                        const baseSp = sp / (1 + gstRate / 100);
-                        if (cp <= 0) return '0.0';
-                        return (((baseSp - cp) / cp) * 100).toFixed(1);
-                      })()}%
-                    </span>
+
+                {/* Including GST / Excluding GST — clarifies how the Selling
+                    Price above should be read. Whichever mode is picked, the
+                    saved price is always normalized to GST-inclusive. */}
+                <div className="flex items-center gap-2 -mt-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Selling Price is</span>
+                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+                    {(['inclusive', 'exclusive'] as const).map(mode => (
+                      <button key={mode} type="button"
+                        onClick={() => {
+                          if (mode === spMode) return;
+                          const gst = Number(form.gstPercent) || 0;
+                          const current = Number(form.sellingPrice) || 0;
+                          if (current > 0) {
+                            const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
+                            setForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                          }
+                          setSpMode(mode);
+                        }}
+                        className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all',
+                          spMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400')}
+                      >
+                        {mode === 'inclusive' ? 'Including GST' : 'Excluding GST'}
+                      </button>
+                    ))}
                   </div>
+                </div>
+                {form.sellingPrice && Number(form.sellingPrice) > 0 && (
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2">
+                    {spMode === 'inclusive'
+                      ? `This price includes GST. Excl. GST: ₹${toExclusivePrice(Number(form.sellingPrice), Number(form.gstPercent) || 0).toFixed(2)}`
+                      : `This price excludes GST. Incl. GST: ₹${toInclusivePrice(Number(form.sellingPrice), Number(form.gstPercent) || 0).toFixed(2)}`}
+                  </p>
                 )}
+
+                {form.sellingPrice && form.cost && Number(form.sellingPrice) > 0 && (() => {
+                  // Matches how the products list itself calculates Profit %, so
+                  // the modal's live preview never disagrees with what you see
+                  // after saving. See lib/profitCalc.ts for the GST-inclusive toggle.
+                  // Always feed the normalized (GST-inclusive) price in, regardless
+                  // of which mode the shopkeeper is currently typing the price in.
+                  const spForProfit = spMode === 'exclusive' ? toInclusivePrice(Number(form.sellingPrice) || 0, form.gstPercent || 0) : Number(form.sellingPrice) || 0;
+                  const result = calculateProductProfit(spForProfit, Number(form.cost) || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                  const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
+                  const textCls = profitColorClass(result.status);
+                  return (
+                    <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
+                      <span className={cn('text-xs font-semibold opacity-70', textCls)}>{t('profit')}</span>
+                      <span className={cn('text-lg font-black text-right', textCls)}>
+                        ₹{result.amount.toFixed(2)} <span className="text-sm">({result.percent.toFixed(1)}%)</span>
+                      </span>
+                    </div>
+                  );
+                })()}
                 
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div>

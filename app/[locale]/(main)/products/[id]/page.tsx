@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
+import { useBusinessStore } from '@/lib/businessStore';
+import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 
 const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   ssr: false,
@@ -21,6 +23,7 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
   const unwrappedParams = use(params);
   const productId = unwrappedParams.id;
   const t = useTranslations('Dashboard'); // Reuse some translations if needed
+  const { profile } = useBusinessStore();
 
   const [loading, setLoading] = useState(true);
   const [insightData, setInsightData] = useState<any>(null);
@@ -193,16 +196,21 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-400 font-medium">Profit Margin</span>
-                <span className="text-sm font-bold text-emerald-400">
+                <span className={cn('text-sm font-bold', (() => {
+                  // Matches the products list's Profit % column — see lib/profitCalc.ts.
+                  const cost = product.cost || product.wholesaleCost || 0;
+                  const price = product.price || product.sellingPrice || 0;
+                  const gst = product.gstPercent || 0;
+                  return profitColorClass(calculateProductProfit(price, cost, gst, !!profile.gstInclusiveProfit).status);
+                })())}>
                   {(() => {
-                    // Markup on Cost — matches the products list's Profit % column.
                     const cost = product.cost || product.wholesaleCost || 0;
                     const price = product.price || product.sellingPrice || 0;
                     const gst = product.gstPercent || 0;
-                    const basePrice = price / (1 + gst / 100);
-                    if (cost <= 0) return '0.0';
-                    return (((basePrice - cost) / cost) * 100).toFixed(1);
-                  })()}%
+                    if (cost <= 0) return '0.0%';
+                    const result = calculateProductProfit(price, cost, gst, !!profile.gstInclusiveProfit);
+                    return `₹${result.amount.toFixed(2)} (${result.percent.toFixed(1)}%)`;
+                  })()}
                 </span>
               </div>
             </div>

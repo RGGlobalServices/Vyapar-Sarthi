@@ -14,7 +14,7 @@ import { SUPPORT_URL } from '@/lib/config';
 import api from '@/lib/api';
 import { useAuthStore, useStockStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
-import { getBusinessConfig, BUSINESS_CONFIGS } from '@/lib/businessConfig';
+import { getBusinessConfig, getBusinessTypesForPackage } from '@/lib/businessConfig';
 import { getPackageConfig } from '@/lib/config/packageConfig';
 import { preload } from 'swr';
 import { fetchJson, fetchProductsMapped } from '@/lib/fetchers';
@@ -103,14 +103,17 @@ export default function Sidebar({
   const [showShopMenu, setShowShopMenu] = useState(false);
   const [showNewShop, setShowNewShop] = useState(false);
   const [creatingShop, setCreatingShop] = useState(false);
-  const emptyShopForm = { 
-    name: '', 
-    businessType: 'kirana', 
-    address: '', 
+  // Default business type must come from whatever category the account's
+  // current package actually allows — 'kirana' would leave the <select>
+  // pointing at an option that doesn't exist for Udyog / Bada Udyog accounts.
+  const getEmptyShopForm = (): { name: string; businessType: string; address: string; mobile: string; gst: string } => ({
+    name: '',
+    businessType: getBusinessTypesForPackage(profile?.packageType)[0]?.types[0]?.type || 'kirana',
+    address: '',
     mobile: '',
     gst: ''
-  };
-  const [shopForm, setShopForm] = useState(emptyShopForm);
+  });
+  const [shopForm, setShopForm] = useState(getEmptyShopForm);
   const [isSwitchingShop, setIsSwitchingShop] = useState(false);
   const [switchingToName, setSwitchingToName] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -176,7 +179,7 @@ export default function Sidebar({
       });
       await switchShop(shop.id);
       setShowNewShop(false);
-      setShopForm(emptyShopForm);
+      setShopForm(getEmptyShopForm());
       setShowShopMenu(false);
     } catch (err: any) {
       alert(err.response?.data?.detail || err.response?.data?.error || err.message || t('failedToCreateShop'));
@@ -372,7 +375,7 @@ export default function Sidebar({
             {/* Add new shop — opens the full details modal. Hidden once the
                 admin-set or plan shop limit is reached. */}
             {shopLimit.canAdd ? (
-              <button onClick={() => { setShopForm(emptyShopForm); setShowNewShop(true); setShowShopMenu(false); }}
+              <button onClick={() => { setShopForm(getEmptyShopForm()); setShowNewShop(true); setShowShopMenu(false); }}
                 className="w-full flex items-center gap-2 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-800 text-xs font-semibold">
                 <Plus size={13} /> {t('addNewShop')}
               </button>
@@ -605,8 +608,12 @@ export default function Sidebar({
                 value={shopForm.businessType}
                 onChange={e => setShopForm(f => ({ ...f, businessType: e.target.value }))}
               >
-                {Object.values(BUSINESS_CONFIGS).map(b => (
-                  <option key={b.type} value={b.type}>{b.label}</option>
+                {getBusinessTypesForPackage(profile?.packageType).map(({ meta, types }) => (
+                  <optgroup key={meta.id} label={`${meta.emoji} ${meta.label}`}>
+                    {types.map(b => (
+                      <option key={b.type} value={b.type}>{b.label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -649,7 +656,7 @@ export default function Sidebar({
 
 
             <div className="flex gap-3 pt-1">
-              <button onClick={() => { setShowNewShop(false); setShopForm(emptyShopForm); }} disabled={creatingShop}
+              <button onClick={() => { setShowNewShop(false); setShopForm(getEmptyShopForm()); }} disabled={creatingShop}
                 className="flex-1 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all disabled:opacity-50">
                 {t('cancel')}
               </button>

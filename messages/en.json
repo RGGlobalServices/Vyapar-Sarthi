@@ -2184,7 +2184,7 @@
     "units": "units",
     "valueLabel": "Value:",
     "emptyBucket": "Nothing in this bucket — good news.",
-    "productCount": "· {count} product{s}",
+    "productCount": "· {count} {count, plural, one {product} other {products}}",
     "expired": "Already Expired",
     "expiredHint": "Remove from shelves — cannot be sold",
     "within30": "Expiring ≤ 30 Days",

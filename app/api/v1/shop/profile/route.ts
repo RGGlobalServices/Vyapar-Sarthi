@@ -53,7 +53,7 @@ export const PATCH = handle(async (req) => {
     body.name = body.shopName;
   }
 
-  const allowedFields = ['name', 'address', 'mobile', 'businessType', 'packageType', 'logoUrl', 'setupComplete', 'gst', 'pan'];
+  const allowedFields = ['name', 'address', 'mobile', 'businessType', 'packageType', 'logoUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit'];
   const data: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (body[field] !== undefined) data[field] = body[field];

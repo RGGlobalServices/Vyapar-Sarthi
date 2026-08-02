@@ -6,6 +6,7 @@ import { Search, Loader2, Package, Users, ShoppingCart, User } from 'lucide-reac
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export default function GlobalSearch({ locale }: { locale: string }) {
   const t = useTranslations('GlobalSearch');
@@ -22,7 +23,7 @@ export default function GlobalSearch({ locale }: { locale: string }) {
   // so it can already read 'wholesale' on first paint while the server-rendered
   // HTML (no localStorage) always used the default. Gating on `mounted` keeps the
   // first client render identical to the server's, avoiding a hydration mismatch.
-  const isWholesale = mounted && profile?.packageType === 'wholesale';
+  const isWholesale = mounted && isWholesaleTierPackage(profile?.packageType);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

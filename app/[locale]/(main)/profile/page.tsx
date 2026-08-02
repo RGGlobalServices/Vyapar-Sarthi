@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
-import { ALL_BUSINESS_TYPES } from '@/lib/businessConfig';
+import { getBusinessTypesForPackage } from '@/lib/businessConfig';
 
 
 export default function ProfilePage() {
@@ -353,10 +353,14 @@ export default function ProfilePage() {
                         setShop((s: any) => ({ ...s, business_type: val, businessType: val }));
                       }}>
                       <option value="" disabled>{t('selectType')}</option>
-                      {ALL_BUSINESS_TYPES.map(config => (
-                        <option key={config.type} value={config.type}>
-                          {config.label}
-                        </option>
+                      {getBusinessTypesForPackage(shop?.package_type, shop?.business_type || shop?.businessType).map(({ meta, types }) => (
+                        <optgroup key={meta.id} label={`${meta.emoji} ${meta.label}`}>
+                          {types.map(config => (
+                            <option key={config.type} value={config.type}>
+                              {config.label}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                   </div>
@@ -367,9 +371,11 @@ export default function ProfilePage() {
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <select disabled
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors opacity-80 cursor-not-allowed"
-                      value={shop?.package_type || 'vyapar'} onChange={e => setShop({ ...shop, package_type: e.target.value })}>
+                      value={shop?.package_type || 'dukan'} onChange={e => setShop({ ...shop, package_type: e.target.value })}>
+                      <option value="dukan">Dukan Package</option>
                       <option value="vyapar">Vyapar Package</option>
                       <option value="wholesale">Udyog Package</option>
+                      <option value="badaudyog">Bada Udyog Package</option>
                     </select>
                   </div>
                 </div>

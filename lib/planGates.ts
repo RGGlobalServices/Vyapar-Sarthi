@@ -1,29 +1,39 @@
 import { PAYMENT_URL } from './config';
 
-export type PlanKey = 'shop' | 'vyapar' | 'wholesale';
+export type PlanKey = 'shop' | 'vyapar' | 'wholesale' | 'badaudyog';
 
 export const PLAN_PRICES: Record<string, number> = {
   shop:      299,
   vyapar:    499,
   wholesale: 999,
+  badaudyog: 4999,
+};
+
+// Bada Udyog is billed with GST added on top (unlike the other three tiers,
+// which are flat) — the payment page (external, not this repo) is the
+// source of truth for the final checkout amount; this is a display hint only.
+export const PLAN_GST_EXTRA: Record<string, boolean> = {
+  badaudyog: true,
 };
 
 export const PLAN_DISPLAY: Record<string, string> = {
   shop:      'Dukaan',
   vyapar:    'Vyapar',
   wholesale: 'Udyog',
+  badaudyog: 'Bada Udyog',
   starter:   'Dukaan', // alias for backwards-compat
 };
 
-// subscriptionPlan ('shop' | 'vyapar' | 'wholesale', billing-facing) and
-// packageType ('dukan' | 'vyapar' | 'wholesale', drives sidebar/module
-// access — see lib/config/packageConfig.ts) are two separate Shop columns.
+// subscriptionPlan ('shop' | 'vyapar' | 'wholesale' | 'badaudyog', billing-facing)
+// and packageType ('dukan' | 'vyapar' | 'wholesale' | 'badaudyog', drives sidebar/
+// module access — see lib/config/packageConfig.ts) are two separate Shop columns.
 // Every place that changes subscriptionPlan (trial switch, PayU webhook,
 // activate-plan, admin panel) must update packageType alongside it, or the
 // two drift apart — a paying Udyog customer's sidebar can end up stuck
 // showing "Vyapar Package" and missing their paid Purchases/Suppliers/
 // Warehouses modules even though billing correctly shows them as Udyog.
-export function packageTypeForPlan(plan: string): 'dukan' | 'vyapar' | 'wholesale' {
+export function packageTypeForPlan(plan: string): 'dukan' | 'vyapar' | 'wholesale' | 'badaudyog' {
+  if (plan === 'badaudyog') return 'badaudyog';
   if (plan === 'wholesale') return 'wholesale';
   if (plan === 'vyapar') return 'vyapar';
   return 'dukan'; // 'shop' / 'starter' / anything else
@@ -33,6 +43,7 @@ export const PLAN_COLORS: Record<string, string> = {
   shop:      'bg-sky-500 text-white',
   vyapar:    'bg-indigo-500 text-white',
   wholesale: 'bg-purple-500 text-white',
+  badaudyog: 'bg-amber-600 text-white',
   starter:   'bg-sky-500 text-white',
 };
 
@@ -77,6 +88,20 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
     maxShops: Infinity,
     autoSend: true,
     multiShop: true,
+    godowns: true,
+    dukandar: true,
+    referEarn: true,
+    manpower: true,
+  },
+  // Bada Udyog is a single-shop manufacturing tier — one manufacturing business
+  // per account, same operational feature set as Udyog (godowns, purchases,
+  // party ledger) otherwise.
+  badaudyog: {
+    maxProducts: Infinity,
+    maxUdharCustomers: Infinity,
+    maxShops: 1,
+    autoSend: true,
+    multiShop: false,
     godowns: true,
     dukandar: true,
     referEarn: true,

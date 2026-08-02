@@ -14,12 +14,19 @@ import { ExportButton } from '@/lib/hooks/useExport';
 
 type TypeTranslator = (key: string) => string;
 
+// True for any business type in the Agro category (Agro Retail Store, Agro
+// Wholesale, Seed/Fertilizer/Pesticide Distributor, Organic Products, Farm
+// Equipment) — not just the original 'agrostore' type.
+function isAgroBusiness(bizType: string | undefined): boolean {
+  return getBusinessConfig(bizType || '').category === 'agro';
+}
+
 // Business-type-aware customer roles. Agro shops sell to Farmers as their
 // core retail customer, plus Dealers / Distributors / Institutions for bulk
 // off-take — each with a different pricing and credit posture, so shopkeepers
 // want to see outstanding split by type. Other categories get a generic list.
 function getCustomerTypeOptions(bizType: string | undefined, tt: TypeTranslator): { value: string; label: string }[] {
-  if (bizType === 'agrostore') {
+  if (isAgroBusiness(bizType)) {
     return [
       { value: 'farmer', label: tt('farmer') },
       { value: 'dealer', label: tt('dealer') },
@@ -150,7 +157,7 @@ export default function CustomersPage() {
 
   const [form, setForm] = useState({
     name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0',
-    customerType: profile.businessType === 'agrostore' ? 'farmer' : 'customer',
+    customerType: isAgroBusiness(profile.businessType) ? 'farmer' : 'customer',
   });
 
   function updateCustomerDocuments(customerId: string, documents: CustomerDocument[]) {
@@ -223,7 +230,7 @@ export default function CustomersPage() {
       setShowNewCustomer(false);
       setForm({
         name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0',
-        customerType: profile.businessType === 'agrostore' ? 'farmer' : 'customer',
+        customerType: isAgroBusiness(profile.businessType) ? 'farmer' : 'customer',
       });
     } catch (e) {
       console.error(e);

@@ -17,7 +17,7 @@ import { useLocale } from 'next-intl';
 function SettingsPageInner() {
   const t = useTranslations('Settings');
   const locale = useLocale();
-  const { profile, fetchProfile } = useBusinessStore();
+  const { profile, fetchProfile, updateProfile } = useBusinessStore();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -26,6 +26,20 @@ function SettingsPageInner() {
   const [status, setStatus] = useState<any>(null);
   const [activatingPlan, setActivatingPlan] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
+  const [savingGstProfit, setSavingGstProfit] = useState(false);
+
+  const handleToggleGstInclusiveProfit = async (checked: boolean) => {
+    setSavingGstProfit(true);
+    try {
+      await updateProfile({ gstInclusiveProfit: checked });
+      setStatus({ type: 'success', message: 'Profit calculation preference saved.' });
+      setTimeout(() => setStatus(null), 3000);
+    } catch {
+      setStatus({ type: 'error', message: 'Failed to save profit calculation preference.' });
+    } finally {
+      setSavingGstProfit(false);
+    }
+  };
 
   // Refresh profile on mount to get latest plan
   useEffect(() => {
@@ -368,6 +382,42 @@ function SettingsPageInner() {
                   <div className="p-4 text-center text-sm text-slate-500">No active sessions found.</div>
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Pricing & Profit */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
+          <CardHeader>
+            <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-500 dark:text-amber-400 mb-4">
+              <Zap size={24} />
+            </div>
+            <CardTitle className="text-slate-900 dark:text-white">Pricing & Profit</CardTitle>
+            <CardDescription className="text-slate-500">Choose how the product catalog calculates profit margin</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="space-y-1 pr-4">
+                <p className="font-bold text-slate-800 dark:text-slate-200">GST Inclusive Profit Calculation</p>
+                <p className="text-xs text-slate-500">
+                  {profile.gstInclusiveProfit
+                    ? 'On — GST is removed from the selling price before comparing to cost (e.g. ₹266 selling, 5% GST → ₹253.33 base, minus cost).'
+                    : 'Off (default) — Profit = Selling Price − Cost Price, GST left untouched. Matches simple shopkeeper markup.'}
+                </p>
+              </div>
+              <button
+                onClick={() => handleToggleGstInclusiveProfit(!profile.gstInclusiveProfit)}
+                disabled={savingGstProfit}
+                className={cn(
+                  "w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50",
+                  profile.gstInclusiveProfit ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-800"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm",
+                  profile.gstInclusiveProfit ? "left-7" : "left-1"
+                )} />
+              </button>
             </div>
           </CardContent>
         </Card>
