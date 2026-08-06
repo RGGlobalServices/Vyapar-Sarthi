@@ -625,15 +625,21 @@ function LegacyProductsUI() {
     if (!editProduct) return;
     const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
     const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
-    // Data-destroying guard: a variant product whose size grid is all-zero would
-    // silently overwrite an existing non-zero aggregate stock to 0 on save. This
-    // happens when the product was created / imported / stock-adjusted with an
-    // aggregate but no per-size distribution. Force the user to acknowledge —
-    // otherwise a shopkeeper opening Edit to change a price loses their stock.
+    // Data-destroying guard: additive mode can only ever ADD to a size's base
+    // (deltas are clamped >= 0 — see SizeVariantGrid.handleChange), so under
+    // normal use stockQty can never legitimately fall below priorStock. The one
+    // way it does is stock that was never reflected in any size box to begin
+    // with — a product created / imported / stock-adjusted with an aggregate
+    // but no per-size distribution — in which case saving silently drops
+    // whatever the size grid doesn't account for. Catches both the all-zero
+    // case (stockQty === 0) and a partial distribution that still leaves some
+    // of the aggregate unaccounted for (0 < stockQty < priorStock).
     const priorStock = Number((editProduct as any).stock ?? (editProduct as any).currentStock ?? 0);
-    if (editVariantActive && stockQty === 0 && priorStock > 0) {
+    if (editVariantActive && stockQty < priorStock && priorStock > 0) {
       const ok = window.confirm(
-        `Warning: this will set stock to 0.\n\nCurrent stock: ${priorStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${priorStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
+        stockQty === 0
+          ? `Warning: this will set stock to 0.\n\nCurrent stock: ${priorStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${priorStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
+          : `Warning: this will reduce total stock from ${priorStock} to ${stockQty}.\n\n${priorStock - stockQty} unit(s) aren't reflected in any size box and will be dropped.\n\nClick Cancel to go back and account for them, or OK to save as ${stockQty}.`
       );
       if (!ok) return;
     }
@@ -1658,6 +1664,31 @@ function LegacyProductsUI() {
                   {bizConfig.hasSpecs && editVariantDim && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
                   )}
+                  {(() => {
+                    // A product created / imported / stock-adjusted with only an
+                    // aggregate count (no per-size split) opens here with every
+                    // size box showing its true value: 0. That's correct per-size,
+                    // but with nothing nearby saying where the real stock went, it
+                    // reads as "this product has no stock" — surface the aggregate
+                    // so it isn't mistaken for zero. Mirrors the same banner already
+                    // shown for this exact state on the Billing quick-sell picker.
+                    const assignedTotal = Object.values(editBaseVariants).reduce((s, v) => s + (Number(v) || 0), 0);
+                    const aggregateStock = Number((editProduct as any)?.stock ?? (editProduct as any)?.currentStock ?? 0);
+                    const unassigned = assignedTotal === 0 && aggregateStock > 0 ? aggregateStock : 0;
+                    if (unassigned <= 0) return null;
+                    const unitWord = editForm.unit?.toLowerCase() || 'units';
+                    // The 2-way grid distributes BOTH colour and size, so naming only
+                    // the outer dimension ("colour") undersells what's left to fill in.
+                    const dimensionWord = bizConfig.hasColors
+                      ? 'colour and size'
+                      : (editVariantDim?.sizeLabel || editVariantDim?.label || 'size').toLowerCase();
+                    return (
+                      <div className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+                        <strong>{unassigned} {unitWord} in stock</strong> but not yet assigned to any specific {dimensionWord}.
+                        Fill in the boxes below to distribute it — it stays tracked only as a shop-wide total until you do, and saving without distributing it will drop whatever isn't reflected in a box.
+                      </div>
+                    );
+                  })()}
                   {editThreeWayActive ? (
                     <ThreeWayVariantGrid
                       colorPalette={bizConfig.colorChart || []}

@@ -4,6 +4,18 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronUp, IndianRupee } from 'lucide-react';
 
+/**
+ * Legacy shoe products stored bare "UK8"-style size keys before the shoe
+ * size charts switched to "UK/IND 8" — UK and Indian shoe sizes are the same
+ * number, so labelling both avoids a customer misreading it as a UK-only or
+ * US size. Display-only: never touches the stored key, since stock lookups,
+ * cart entries, and per-variant barcodes all key off the exact string.
+ */
+export function formatSizeLabel(size: string): string {
+  const m = size.trim().match(/^UK\s*(\d+(?:\.\d+)?)$/i);
+  return m ? `UK/IND ${m[1]}` : size;
+}
+
 export interface SizePriceEntry {
   mrp: number;
   sellingPrice: number;
@@ -112,7 +124,7 @@ export default function SizeVariantGrid({
                   ? 'bg-orange-50 dark:bg-orange-500/20 text-orange-500 dark:text-orange-400'
                   : 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
               )}>
-                {size}
+                {formatSizeLabel(size)}
               </div>
 
               {/* Current-stock badge */}
@@ -202,7 +214,7 @@ export default function SizeVariantGrid({
           <div className="flex items-center gap-2">
             <IndianRupee size={12} className="text-amber-500" />
             <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">
-              {t('pricingFor', { size: expandedSize })}
+              {t('pricingFor', { size: formatSizeLabel(expandedSize) })}
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

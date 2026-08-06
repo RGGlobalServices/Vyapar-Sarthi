@@ -30,15 +30,41 @@ export type BusinessType =
   | 'general'
   | 'fmcgdistributor'
   | 'electricaldistributor'
+  | 'electricalwholesale'
   | 'medicaldistributor'
-  | 'textilewholesale';
+  | 'textilewholesale'
+  | 'grocerywholesale'
+  | 'kiranawholesale'
+  | 'garmentwholesale'
+  | 'fabricdistributor'
+  | 'footwearwholesale'
+  | 'pharmaceuticaldistributor'
+  | 'electronicsdistributor'
+  | 'electronicswholesale'
+  | 'wineliquordistributor'
+  | 'wineliquorwholesale'
+  | 'cosmeticsdistributor'
+  | 'beautywholesale';
 
-// Four top-level groups shown as sections wherever a shopkeeper picks a
-// business type (signup, profile, add-shop). Retail + Agro are everyday
-// shop-counter businesses that fit the Dukan / Vyapar packages; Manufacturing
-// + Wholesale & Distribution need purchase/warehouse/party-ledger modules
-// that only the Udyog package unlocks.
-export type BusinessCategory = 'retail' | 'agro' | 'manufacturing' | 'wholesale';
+// Top-level groups shown as sections wherever a shopkeeper picks a business
+// type (signup, profile, add-shop). Retail + Agro are everyday shop-counter
+// businesses that fit the Dukan / Vyapar packages; Manufacturing needs Bada
+// Udyog; the Udyog package itself is split into fine-grained wholesale/
+// distribution trade sections (FMCG & Grocery, Textile & Garments, Footwear,
+// Medical & Pharma, Electrical, Electronics, Wine & Liquor, Cosmetics &
+// Beauty) rather than one catch-all "Wholesale" bucket.
+export type BusinessCategory =
+  | 'retail'
+  | 'agro'
+  | 'manufacturing'
+  | 'fmcg_grocery'
+  | 'textile_garments'
+  | 'footwear_wholesale'
+  | 'medical_pharma'
+  | 'electrical_wholesale'
+  | 'electronics_wholesale'
+  | 'liquor_wholesale'
+  | 'cosmetics_wholesale';
 
 export interface BusinessCategoryMeta {
   id: BusinessCategory;
@@ -78,12 +104,68 @@ export const BUSINESS_CATEGORIES: Record<BusinessCategory, BusinessCategoryMeta>
     emoji: '🏭',
     suggestedPackageLabel: 'Bada Udyog Package (₹4999+GST)',
   },
-  wholesale: {
-    id: 'wholesale',
-    label: 'Wholesale & Distribution',
-    labelHi: 'थोक और वितरण',
-    labelMr: 'घाऊक आणि वितरण',
-    emoji: '🚚',
+  fmcg_grocery: {
+    id: 'fmcg_grocery',
+    label: 'FMCG & Grocery',
+    labelHi: 'एफएमसीजी और किराना',
+    labelMr: 'एफएमसीजी आणि किराणा',
+    emoji: '📦',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  textile_garments: {
+    id: 'textile_garments',
+    label: 'Textile & Garments',
+    labelHi: 'कपड़ा और परिधान',
+    labelMr: 'कापड आणि वस्त्र',
+    emoji: '👕',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  footwear_wholesale: {
+    id: 'footwear_wholesale',
+    label: 'Footwear',
+    labelHi: 'फुटवियर',
+    labelMr: 'फुटवेअर',
+    emoji: '👟',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  medical_pharma: {
+    id: 'medical_pharma',
+    label: 'Medical & Pharma',
+    labelHi: 'मेडिकल और फार्मा',
+    labelMr: 'मेडिकल आणि फार्मा',
+    emoji: '💊',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  electrical_wholesale: {
+    id: 'electrical_wholesale',
+    label: 'Electrical',
+    labelHi: 'इलेक्ट्रिकल',
+    labelMr: 'इलेक्ट्रिकल',
+    emoji: '⚡',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  electronics_wholesale: {
+    id: 'electronics_wholesale',
+    label: 'Electronics',
+    labelHi: 'इलेक्ट्रॉनिक्स',
+    labelMr: 'इलेक्ट्रॉनिक्स',
+    emoji: '📱',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  liquor_wholesale: {
+    id: 'liquor_wholesale',
+    label: 'Wine & Liquor',
+    labelHi: 'वाइन और शराब',
+    labelMr: 'वाईन आणि दारू',
+    emoji: '🍷',
+    suggestedPackageLabel: 'Udyog Package',
+  },
+  cosmetics_wholesale: {
+    id: 'cosmetics_wholesale',
+    label: 'Cosmetics & Beauty',
+    labelHi: 'सौंदर्य प्रसाधन',
+    labelMr: 'सौंदर्य प्रसाधने',
+    emoji: '💄',
     suggestedPackageLabel: 'Udyog Package',
   },
 };
@@ -106,24 +188,46 @@ function packageAllowsType(accountPackage: PackageType, typeDefaultPackage: Pack
 /**
  * BUSINESS_TYPES_BY_CATEGORY filtered down to the individual types a
  * package unlocks (per-type, via each config's defaultPackage — not a
- * blanket per-category cut, since Agro itself spans two tiers). The
- * business type the shop currently has is always kept even if it falls
- * outside the package (e.g. a legacy shop from before this gating existed)
- * so the picker never silently drops the selected value. Groups that end
- * up empty are omitted entirely.
+ * blanket per-category cut, since Agro itself spans two tiers). Strictly
+ * package-scoped — a Udyog account gets Wholesale/Distributor types only,
+ * never a stray Retail category section. Groups that end up empty are
+ * omitted entirely. Callers that need to handle a shop whose *current* type
+ * doesn't belong to its current package (a legacy mismatch) should check
+ * isBusinessTypeAllowedForPackage() themselves and surface that case
+ * explicitly, rather than this function silently keeping it in the list.
  */
-export function getBusinessTypesForPackage(packageType: PackageType | string | null | undefined, currentType?: string): { meta: BusinessCategoryMeta; types: BusinessConfig[] }[] {
+export function getBusinessTypesForPackage(packageType: PackageType | string | null | undefined): { meta: BusinessCategoryMeta; types: BusinessConfig[] }[] {
   const accountPackage = KNOWN_PACKAGES.includes(packageType as PackageType) ? (packageType as PackageType) : null;
   if (!accountPackage) return BUSINESS_TYPES_BY_CATEGORY;
   return BUSINESS_TYPES_BY_CATEGORY
     .map(g => ({
       meta: g.meta,
-      types: g.types.filter(c => c.type === currentType || packageAllowsType(accountPackage, c.defaultPackage)),
+      types: g.types.filter(c => packageAllowsType(accountPackage, c.defaultPackage)),
     }))
     .filter(g => g.types.length > 0);
 }
 
-export const BUSINESS_CATEGORY_ORDER: BusinessCategory[] = ['retail', 'agro', 'manufacturing', 'wholesale'];
+/**
+ * Whether a specific business type belongs to what the given package
+ * unlocks. A hidden type (e.g. the legacy catch-all 'general') is never
+ * "allowed" even if its defaultPackage matches — it stays fully functional
+ * via getBusinessConfig() for shops that already have it, but is never
+ * offered going forward, so pickers should always treat it as a mismatch
+ * needing a replacement, not a valid selection.
+ */
+export function isBusinessTypeAllowedForPackage(type: string, packageType: PackageType | string | null | undefined): boolean {
+  const config = getBusinessConfig(type);
+  if (config.hidden) return false;
+  const accountPackage = KNOWN_PACKAGES.includes(packageType as PackageType) ? (packageType as PackageType) : null;
+  if (!accountPackage) return true;
+  return packageAllowsType(accountPackage, config.defaultPackage);
+}
+
+export const BUSINESS_CATEGORY_ORDER: BusinessCategory[] = [
+  'retail', 'agro', 'manufacturing',
+  'fmcg_grocery', 'textile_garments', 'footwear_wholesale', 'medical_pharma',
+  'electrical_wholesale', 'electronics_wholesale', 'liquor_wholesale', 'cosmetics_wholesale',
+];
 
 export interface BusinessConfig {
   type: BusinessType;
@@ -136,6 +240,10 @@ export interface BusinessConfig {
   gradient: string;      // Tailwind gradient classes
   description: string;
   features: string[];    // Feature bullets shown on setup screen
+  // Excluded from every picker (signup/profile/add-shop) while remaining
+  // fully valid via getBusinessConfig() — for types being phased out
+  // (e.g. 'general') without breaking shops that still have them set.
+  hidden?: boolean;
   // Field flags
   hasExpiry: boolean;
   hasExpiryRequired: boolean;
@@ -472,7 +580,12 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   },
   general: {
     type: 'general',
-    category: 'wholesale',
+    category: 'fmcg_grocery',
+    // Legacy catch-all — kept fully working for shops that already have it
+    // set, but no longer offered in any picker (see `hidden` on the
+    // interface). Replaced going forward by the specific trade sections
+    // below (FMCG & Grocery, Textile & Garments, etc.).
+    hidden: true,
     label: 'General Wholesale',
     labelHi: 'सामान्य थोक',
     labelMr: 'सर्वसाधारण घाऊक',
@@ -1042,7 +1155,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   },
   fmcgdistributor: {
     type: 'fmcgdistributor',
-    category: 'wholesale',
+    category: 'fmcg_grocery',
     label: 'FMCG Distributor',
     labelHi: 'एफएमसीजी वितरक',
     labelMr: 'एफएमसीजी वितरक',
@@ -1079,7 +1192,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   },
   electricaldistributor: {
     type: 'electricaldistributor',
-    category: 'wholesale',
+    category: 'electrical_wholesale',
     label: 'Electrical Distributor',
     labelHi: 'इलेक्ट्रिकल वितरक',
     labelMr: 'इलेक्ट्रिकल वितरक',
@@ -1114,9 +1227,49 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholderMr: 'उदा. कॉपर वायर 1.5mm × 90m कॉइल',
     defaultPackage: 'wholesale',
   },
+  electricalwholesale: {
+    type: 'electricalwholesale',
+    category: 'electrical_wholesale',
+    label: 'Electrical Wholesale',
+    labelHi: 'इलेक्ट्रिकल थोक',
+    labelMr: 'इलेक्ट्रिकल घाऊक',
+    // Distinct from electricaldistributor's 🔌 (and the Electrical
+    // category's own ⚡) so the two sibling types stay visually
+    // distinguishable in the same dropdown group.
+    emoji: '💡',
+    color: 'yellow',
+    gradient: 'from-yellow-500 to-amber-600',
+    description: 'General bulk electrical goods trading to dealers — multi-brand, no exclusive tie-up needed',
+    features: [
+      'Party ledger + dealer credit terms',
+      'Bulk coil / box / case conversions',
+      'Multi-brand stock, no exclusive distributorship needed',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: true,
+    hasModel: true,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: true,
+    hasVoltWatt: true,
+    hasSoleMaterial: false,
+    defaultCategories: ['Wires & Cables', 'Switchgear', 'MCB & Distribution', 'Lighting', 'Fans & Motors', 'Conduits & Accessories'],
+    defaultUnits: ['Piece', 'Box', 'Coil', 'Case', 'Meter'],
+    productPlaceholder: 'e.g. LED Bulb 9W × 100 Box',
+    productPlaceholderHi: 'जैसे LED बल्ब 9W × 100 बॉक्स',
+    productPlaceholderMr: 'उदा. LED बल्ब 9W × 100 बॉक्स',
+    defaultPackage: 'wholesale',
+  },
   medicaldistributor: {
     type: 'medicaldistributor',
-    category: 'wholesale',
+    category: 'medical_pharma',
     label: 'Medical Distributor',
     labelHi: 'मेडिकल वितरक',
     labelMr: 'मेडिकल वितरक',
@@ -1153,7 +1306,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   },
   textilewholesale: {
     type: 'textilewholesale',
-    category: 'wholesale',
+    category: 'textile_garments',
     label: 'Textile Wholesale',
     labelHi: 'कपड़ा थोक',
     labelMr: 'कापड घाऊक',
@@ -1191,13 +1344,478 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     colorChart: ['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Grey', 'Maroon', 'Navy'],
     defaultPackage: 'wholesale',
   },
+  grocerywholesale: {
+    type: 'grocerywholesale',
+    category: 'fmcg_grocery',
+    label: 'Grocery Wholesale',
+    labelHi: 'किराना थोक',
+    labelMr: 'किराणा घाऊक',
+    emoji: '🛒',
+    color: 'lime',
+    gradient: 'from-lime-600 to-green-600',
+    description: 'Bulk packaged grocery supply to retailers — party ledger, case-lot pricing',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Case ⇄ piece conversion',
+      'Scheme / margin tracking',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Edible Oils', 'Sugar & Jaggery', 'Tea', 'Coffee', 'Biscuits & Snacks', 'Soft Drinks', 'Detergents', 'General'],
+    defaultUnits: ['Piece', 'Box', 'Case', 'Carton', 'Dozen', 'Kg', 'Ltr'],
+    productPlaceholder: 'e.g. Sunflower Oil 1L × 12 Case',
+    productPlaceholderHi: 'जैसे सूरजमुखी तेल 1L × 12 केस',
+    productPlaceholderMr: 'उदा. सूर्यफूल तेल 1L × 12 केस',
+    defaultPackage: 'wholesale',
+  },
+  kiranawholesale: {
+    type: 'kiranawholesale',
+    category: 'fmcg_grocery',
+    label: 'Kirana Wholesale',
+    labelHi: 'किराना होलसेल',
+    labelMr: 'किराणा घाऊक व्यापार',
+    // Was '🌾' (sheaf of grain) — identical to the Agro Business CATEGORY's
+    // own emoji, so a Kirana Wholesale shop's icon looked like a farming
+    // business instead of a grocery/FMCG one. 🧺 stays distinct from every
+    // other fmcg_grocery sibling too (grocerywholesale='🛒', fmcgdistributor='📦').
+    emoji: '🧺',
+    color: 'emerald',
+    gradient: 'from-emerald-600 to-lime-600',
+    description: 'Bulk staples — grains, pulses, spices — supply to kirana stores',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Bulk bag / quintal pricing',
+      'Godown-wise stock + batch-wise valuation',
+      'Purchase invoice import with auto supplier ledger update',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Rice & Rice Products', 'Atta & Flours', 'Dals & Pulses', 'Spices & Masalas', 'Dry Fruits & Nuts', 'Salt', 'General'],
+    defaultUnits: ['Kg', 'Quintal', 'Bag', 'Ton', 'Packet', 'Box'],
+    productPlaceholder: 'e.g. Toor Dal 50 Kg Bag',
+    productPlaceholderHi: 'जैसे तुअर दाल 50 किलो बैग',
+    productPlaceholderMr: 'उदा. तूर डाळ 50 किलो बॅग',
+    defaultPackage: 'wholesale',
+  },
+  garmentwholesale: {
+    type: 'garmentwholesale',
+    category: 'textile_garments',
+    label: 'Garment Wholesale',
+    labelHi: 'रेडीमेड वस्त्र थोक',
+    labelMr: 'रेडिमेड कपडे घाऊक',
+    emoji: '👕',
+    color: 'violet',
+    gradient: 'from-violet-600 to-purple-600',
+    description: 'Bulk readymade garment supply to retailers — lot-wise, size × colour stock',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Lot / piece-wise stock',
+      'Colour & size-wise inventory',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: true,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: true,
+    hasFabric: true,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['T-Shirts', 'Shirts', 'Jeans & Trousers', 'Kids Wear', 'Ethnic Wear', 'Nightwear', 'General'],
+    defaultUnits: ['Piece', 'Set', 'Lot', 'Dozen'],
+    productPlaceholder: 'e.g. Cotton T-Shirt Lot (M/L/XL Mix)',
+    productPlaceholderHi: 'जैसे कॉटन टी-शर्ट लॉट (M/L/XL मिक्स)',
+    productPlaceholderMr: 'उदा. कॉटन टी-शर्ट लॉट (M/L/XL मिक्स)',
+    sizeChart: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+    hasColors: true,
+    colorChart: ['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Grey', 'Maroon', 'Navy'],
+    defaultPackage: 'wholesale',
+  },
+  fabricdistributor: {
+    type: 'fabricdistributor',
+    category: 'textile_garments',
+    label: 'Fabric Distributor',
+    labelHi: 'कपड़ा वितरक',
+    labelMr: 'कापड वितरक',
+    emoji: '🧵',
+    color: 'fuchsia',
+    gradient: 'from-fuchsia-600 to-pink-600',
+    description: 'Raw fabric / piece-goods supply to tailors, garment units & retailers',
+    features: [
+      'Party ledger + dealer credit terms',
+      'Piece / bale / roll-wise stock',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: true,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Cotton Fabric', 'Silk Fabric', 'Synthetic Fabric', 'Denim', 'Linen', 'Wool', 'General'],
+    defaultUnits: ['Meter', 'Roll', 'Bale', 'Piece'],
+    productPlaceholder: 'e.g. Cotton Poplin 50m Roll',
+    productPlaceholderHi: 'जैसे कॉटन पॉपलिन 50m रोल',
+    productPlaceholderMr: 'उदा. कॉटन पॉपलिन 50m रोल',
+    defaultPackage: 'wholesale',
+  },
+  footwearwholesale: {
+    type: 'footwearwholesale',
+    category: 'footwear_wholesale',
+    label: 'Footwear Wholesale',
+    labelHi: 'फुटवियर थोक',
+    labelMr: 'फुटवेअर घाऊक',
+    emoji: '👟',
+    color: 'amber',
+    gradient: 'from-amber-600 to-orange-600',
+    description: 'Bulk footwear supply to retailers — size × colour lot-wise stock',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Size & colour-wise lot stock',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: true,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: true,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: true,
+    defaultCategories: ['Sports Shoes', 'Formal Shoes', 'Sandals', 'Slippers', 'Boots', 'Kids Shoes', 'General'],
+    defaultUnits: ['Pair', 'Dozen', 'Lot', 'Box'],
+    productPlaceholder: 'e.g. Sports Shoes Lot (UK 6-10 Mix)',
+    productPlaceholderHi: 'जैसे स्पोर्ट्स शूज़ लॉट (UK 6-10 मिक्स)',
+    productPlaceholderMr: 'उदा. स्पोर्ट्स शूज लॉट (UK 6-10 मिक्स)',
+    sizeChart: ['UK/IND 4', 'UK/IND 5', 'UK/IND 6', 'UK/IND 7', 'UK/IND 8', 'UK/IND 9', 'UK/IND 10', 'UK/IND 11', 'UK/IND 12'],
+    hasColors: true,
+    colorChart: ['Black', 'White', 'Brown', 'Tan', 'Blue', 'Red', 'Grey', 'Navy'],
+    defaultPackage: 'wholesale',
+  },
+  pharmaceuticaldistributor: {
+    type: 'pharmaceuticaldistributor',
+    category: 'medical_pharma',
+    label: 'Pharmaceutical Distributor',
+    labelHi: 'फार्मास्युटिकल वितरक',
+    labelMr: 'फार्मास्युटिकल वितरक',
+    emoji: '💉',
+    color: 'indigo',
+    gradient: 'from-indigo-600 to-blue-600',
+    description: 'Manufacturer-to-stockist pharma distribution — batch, expiry & drug schedule mandatory',
+    features: [
+      'Batch + expiry mandatory (regulatory)',
+      'Drug schedule (OTC/Rx/H1/H2)',
+      'Stockist / pharmacy credit ledger',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: true,
+    hasBatch: true,
+    hasDrugSchedule: true,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Tablet', 'Capsule', 'Injection', 'Syrup', 'Vaccine', 'Surgical', 'General'],
+    defaultUnits: ['Strip', 'Box', 'Case', 'Carton', 'Vial', 'Unit'],
+    productPlaceholder: 'e.g. Amoxicillin 500mg × 10×10 Box',
+    productPlaceholderHi: 'जैसे एमोक्सिसिलिन 500mg × 10×10 बॉक्स',
+    productPlaceholderMr: 'उदा. अमोक्सिसिलिन 500mg × 10×10 बॉक्स',
+    defaultPackage: 'wholesale',
+  },
+  electronicsdistributor: {
+    type: 'electronicsdistributor',
+    category: 'electronics_wholesale',
+    label: 'Electronics Distributor',
+    labelHi: 'इलेक्ट्रॉनिक्स वितरक',
+    labelMr: 'इलेक्ट्रॉनिक्स वितरक',
+    emoji: '📱',
+    color: 'sky',
+    gradient: 'from-sky-600 to-blue-600',
+    description: 'Bulk electronics & appliance supply to retailers — model + warranty tracking',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Model number + warranty tracking',
+      'Case ⇄ piece conversion',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: true,
+    hasModel: true,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    hasSpecs: true,
+    defaultCategories: ['Mobile', 'Accessories', 'Home Appliances', 'Kitchen Appliances', 'Audio', 'General'],
+    defaultUnits: ['Piece', 'Box', 'Case', 'Carton', 'Unit'],
+    productPlaceholder: 'e.g. Bluetooth Earphones × 50 Case',
+    productPlaceholderHi: 'जैसे ब्लूटूथ ईयरफोन × 50 केस',
+    productPlaceholderMr: 'उदा. ब्लूटूथ इयरफोन × 50 केस',
+    defaultPackage: 'wholesale',
+  },
+  electronicswholesale: {
+    type: 'electronicswholesale',
+    category: 'electronics_wholesale',
+    label: 'Electronics Wholesale',
+    labelHi: 'इलेक्ट्रॉनिक्स थोक',
+    labelMr: 'इलेक्ट्रॉनिक्स घाऊक',
+    // electronicsdistributor and the Electronics category itself both
+    // already use 📱 — pick something clearly different so all three don't
+    // collapse into one indistinguishable icon in the same dropdown group.
+    emoji: '📺',
+    color: 'cyan',
+    gradient: 'from-cyan-600 to-blue-700',
+    description: 'General bulk electronics & appliance trading to retailers — multi-brand, no exclusive tie-up needed',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Model number + warranty tracking',
+      'Multi-brand stock, no exclusive distributorship needed',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: false,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: true,
+    hasModel: true,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    hasSpecs: true,
+    defaultCategories: ['Mobile', 'Accessories', 'Home Appliances', 'Kitchen Appliances', 'Audio', 'General'],
+    defaultUnits: ['Piece', 'Box', 'Case', 'Carton', 'Unit'],
+    productPlaceholder: 'e.g. LED TV 32 inch × 10 Box',
+    productPlaceholderHi: 'जैसे LED टीवी 32 इंच × 10 बॉक्स',
+    productPlaceholderMr: 'उदा. LED टीव्ही 32 इंच × 10 बॉक्स',
+    defaultPackage: 'wholesale',
+  },
+  wineliquordistributor: {
+    type: 'wineliquordistributor',
+    category: 'liquor_wholesale',
+    label: 'Wine & Liquor Distributor',
+    labelHi: 'वाइन और शराब वितरक',
+    labelMr: 'वाईन आणि दारू वितरक',
+    emoji: '🍷',
+    color: 'rose',
+    gradient: 'from-rose-600 to-amber-600',
+    description: 'Bulk beer, wine & spirits supply to bars/shops — case ⇄ bottle conversion',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Case ⇄ bottle conversion',
+      'Brand & alcohol % tracking',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    hasSpecs: true,
+    hasLiquorSpecs: true,
+    defaultCategories: ['Beer', 'Wine', 'Whisky', 'Rum', 'Vodka', 'Gin', 'Brandy', 'General'],
+    defaultUnits: ['Bottle', 'Case', 'Carton', 'Pack', 'Unit'],
+    productPlaceholder: 'e.g. Kingfisher Premium × 12 Case',
+    productPlaceholderHi: 'जैसे किंगफिशर प्रीमियम × 12 केस',
+    productPlaceholderMr: 'उदा. किंगफिशर प्रीमियम × 12 केस',
+    sizeChart: ['90ml', '180ml', '275ml', '330ml', '375ml', '500ml', '650ml', '750ml', '1000ml'],
+    defaultPackage: 'wholesale',
+  },
+  wineliquorwholesale: {
+    type: 'wineliquorwholesale',
+    category: 'liquor_wholesale',
+    label: 'Wine & Liquor Wholesale',
+    labelHi: 'वाइन और शराब थोक',
+    labelMr: 'वाईन आणि दारू घाऊक',
+    // wineliquordistributor and the Wine & Liquor category itself both
+    // already use 🍷 — pick something clearly different.
+    emoji: '🍺',
+    color: 'orange',
+    gradient: 'from-orange-600 to-rose-600',
+    description: 'General bulk beer, wine & spirits trading to bars/shops — multi-brand, no exclusive tie-up needed',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Case ⇄ bottle conversion',
+      'Multi-brand stock, no exclusive distributorship needed',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: false,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    hasSpecs: true,
+    hasLiquorSpecs: true,
+    defaultCategories: ['Beer', 'Wine', 'Whisky', 'Rum', 'Vodka', 'Gin', 'Brandy', 'General'],
+    defaultUnits: ['Bottle', 'Case', 'Carton', 'Pack', 'Unit'],
+    productPlaceholder: 'e.g. Assorted Beer Brands × 24 Case',
+    productPlaceholderHi: 'जैसे मिश्रित बीयर ब्रांड × 24 केस',
+    productPlaceholderMr: 'उदा. संमिश्र बिअर ब्रँड्स × 24 केस',
+    sizeChart: ['90ml', '180ml', '275ml', '330ml', '375ml', '500ml', '650ml', '750ml', '1000ml'],
+    defaultPackage: 'wholesale',
+  },
+  cosmeticsdistributor: {
+    type: 'cosmeticsdistributor',
+    category: 'cosmetics_wholesale',
+    label: 'Cosmetics Distributor',
+    labelHi: 'सौंदर्य प्रसाधन वितरक',
+    labelMr: 'सौंदर्य प्रसाधने वितरक',
+    emoji: '💄',
+    color: 'pink',
+    gradient: 'from-pink-600 to-rose-600',
+    description: 'Bulk cosmetics & makeup supply to retailers — shade & batch tracking',
+    features: [
+      'Party ledger + retailer credit terms',
+      'Shade / finish variant tracking',
+      'Expiry tracked per batch',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: true,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    hasSpecs: true,
+    defaultCategories: ['Lipstick', 'Foundation', 'Nail Polish', 'Kajal & Eyeliner', 'Perfume', 'General'],
+    defaultUnits: ['Piece', 'Box', 'Case', 'Dozen', 'Set'],
+    productPlaceholder: 'e.g. Matte Lipstick × 24 Box',
+    productPlaceholderHi: 'जैसे मैट लिपस्टिक × 24 बॉक्स',
+    productPlaceholderMr: 'उदा. मॅट लिपस्टिक × 24 बॉक्स',
+    defaultPackage: 'wholesale',
+  },
+  beautywholesale: {
+    type: 'beautywholesale',
+    category: 'cosmetics_wholesale',
+    label: 'Beauty Products Wholesale',
+    labelHi: 'ब्यूटी प्रोडक्ट्स थोक',
+    labelMr: 'ब्यूटी प्रोडक्ट्स घाऊक',
+    emoji: '💅',
+    color: 'fuchsia',
+    gradient: 'from-fuchsia-600 to-pink-600',
+    description: 'Bulk skincare, haircare & personal-care supply to salons & retailers',
+    features: [
+      'Party ledger + retailer/salon credit terms',
+      'Expiry tracked per batch',
+      'Case ⇄ piece conversion',
+      'Purchase invoice import with auto supplier ledger update',
+      'Godown-wise stock + transfers',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    defaultCategories: ['Skincare', 'Haircare', 'Face Wash', 'Sunscreen', 'Salon Supplies', 'General'],
+    defaultUnits: ['Piece', 'Bottle', 'Box', 'Case', 'Set'],
+    productPlaceholder: 'e.g. Face Wash 100ml × 48 Case',
+    productPlaceholderHi: 'जैसे फेस वॉश 100ml × 48 केस',
+    productPlaceholderMr: 'उदा. फेस वॉश 100ml × 48 केस',
+    defaultPackage: 'wholesale',
+  },
 };
 
 export function getBusinessConfig(type: BusinessType | string): BusinessConfig {
   return BUSINESS_CONFIGS[type as BusinessType] ?? BUSINESS_CONFIGS.general;
 }
 
-export const ALL_BUSINESS_TYPES = Object.values(BUSINESS_CONFIGS);
+export const ALL_BUSINESS_TYPES = Object.values(BUSINESS_CONFIGS).filter(c => !c.hidden);
 
 /** ALL_BUSINESS_TYPES grouped and ordered by category, for pickers that show section headers. */
 export const BUSINESS_TYPES_BY_CATEGORY: { meta: BusinessCategoryMeta; types: BusinessConfig[] }[] =

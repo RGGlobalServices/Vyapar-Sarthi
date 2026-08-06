@@ -35,6 +35,10 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       } catch (e) {}
     }
 
+    // Uuid FK columns reject '' (the "-- Select --" empty option's value) —
+    // only null/a real uuid is valid, so coerce the empty-string case.
+    const uuidOrNull = (v: any) => (v === '' ? null : v);
+
     let finalVariants = b.variants;
     if (finalVariants !== undefined && Array.isArray(finalVariants)) {
       try {
@@ -73,6 +77,7 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       mrp: b.mrp,
       sellingPrice: b.selling_price ?? b.sellingPrice,
       wholesaleCost: b.wholesale_cost ?? b.wholesaleCost,
+      costPrice: b.cost_price ?? b.costPrice,
       baseUnit: b.base_unit ?? b.baseUnit,
       barcode: b.barcode,
       sku: b.sku !== undefined ? b.sku : undefined,
@@ -92,11 +97,11 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       hsnCode: b.hsnCode ?? b.hsn_code,
       productType: b.productType ?? b.product_type,
       gstPercent: b.gstPercent ?? b.gst_percent,
-      categoryId: b.categoryId ?? b.category_id,
-      brandId: b.brandId ?? b.brand_id,
-      baseUnitId: b.baseUnitId ?? b.base_unit_id,
-      defaultSaleUnitId: b.defaultSaleUnitId ?? b.default_sale_unit_id,
-      defaultPurchaseUnitId: b.defaultPurchaseUnitId ?? b.default_purchase_unit_id,
+      categoryId: uuidOrNull(b.categoryId ?? b.category_id),
+      brandId: uuidOrNull(b.brandId ?? b.brand_id),
+      baseUnitId: uuidOrNull(b.baseUnitId ?? b.base_unit_id),
+      defaultSaleUnitId: uuidOrNull(b.defaultSaleUnitId ?? b.default_sale_unit_id),
+      defaultPurchaseUnitId: uuidOrNull(b.defaultPurchaseUnitId ?? b.default_purchase_unit_id),
       maxStock: b.maxStock ?? b.max_stock,
       conversionFactor: b.conversionFactor ?? b.conversion_factor,
       wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,

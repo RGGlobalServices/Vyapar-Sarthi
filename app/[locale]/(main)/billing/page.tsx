@@ -27,9 +27,11 @@ import {uploadInvoiceToSupabase} from '@/lib/supabaseStorage';
 import Calculator from '@/components/Calculator';
 import {performSmartSearch} from '@/lib/smartSearch';
 import {computeGst} from '@/lib/gst';
+import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
 import {splitVariantKey, isColorSizeVariants} from '@/components/ColorSizeVariantGrid';
+import {formatSizeLabel} from '@/components/SizeVariantGrid';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
 
 // Short "when was this product added" label for the search dropdown. Recent
@@ -285,7 +287,10 @@ function StandardBillingUI() {
     fetchCustomers();
   }, [fetchCustomers]);
 
-  const handlePrint = () => window.print();
+  const handlePrint = async () => {
+    if (componentRef.current) await waitForQrCode(componentRef.current, !!profile.upiId);
+    window.print();
+  };
 
   const generatePDFBlob = async () => {
     if (!componentRef.current) throw new Error('No ref');
@@ -294,6 +299,8 @@ function StandardBillingUI() {
       import('html2canvas-pro'),
       import('jspdf'),
     ]);
+
+    await waitForQrCode(componentRef.current, !!profile.upiId);
 
     // Create a clone to render off-screen for perfect capture
     const clone = componentRef.current.cloneNode(true) as HTMLElement;
@@ -308,17 +315,21 @@ function StandardBillingUI() {
     document.body.appendChild(clone);
 
     try {
-      // Small delay to ensure styles are applied to the clone
-      await new Promise(r => setTimeout(r, 100));
-      
-      const canvas = await html2canvas(clone, { 
-        scale: isA4 ? 2 : 3, // Lower scale for A4 to prevent memory issues
+      await waitForImages(clone);
+
+      // scale 2.2 is still noticeably sharper than the original blurry
+      // capture, without the page ballooning past ~100KB. JPEG (not PNG)
+      // does the rest of the size work — this is a document of white space,
+      // thin borders and text, which JPEG compresses far better than
+      // lossless PNG; only the QR/barcode's fine detail resists it much.
+      const canvas = await html2canvas(clone, {
+        scale: 2.2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false
       });
-      
-      const imgData = canvas.toDataURL('image/png');
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.82);
       const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
@@ -332,8 +343,8 @@ function StandardBillingUI() {
         format: [pdfWidth, pdfHeight]
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
       return { pdf, blob: pdf.output('blob') };
     } finally {
       document.body.removeChild(clone);
@@ -1778,7 +1789,7 @@ function StandardBillingUI() {
                         )}
                       >
                         {color && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{color}</span>}
-                        <span className="font-bold">{size}</span>
+                        <span className="font-bold">{formatSizeLabel(size)}</span>
                         {sizePrice > 0 && <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">₹{sizePrice}</span>}
                         <span className={cn('text-[10px] font-semibold', isOutOfStock ? 'text-red-400' : 'text-slate-400 dark:text-slate-500')}>
                           {label}
@@ -2036,7 +2047,7 @@ function StandardBillingUI() {
       {showBillModal && lastBill && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3">
           {/* flex-col + max-h so it never overflows the viewport */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[95vh] shadow-2xl overflow-hidden">
+          <div className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full ${(lastBill.invoiceFormat === 'a4' || lastBill.invoiceFormat === 'wholesale') ? 'max-w-3xl' : 'max-w-sm'} flex flex-col max-h-[95vh] shadow-2xl overflow-hidden`}>
 
             {/* ── Sticky header ── */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
@@ -2052,6 +2063,9 @@ function StandardBillingUI() {
             </div>
 
             {/* ── Scrollable bill preview ── */}
+            {/* No upiId/qrSvg passed on purpose: the scan-to-pay QR is
+                wholesale-A4-only (see WholesaleBillingUI). Retail / Dukan /
+                Vyapar bills deliberately omit it. */}
             <div id="print-area" className="flex-1 overflow-y-auto bg-white dark:bg-slate-900">
               <BillSlip
                 ref={componentRef}
@@ -2062,6 +2076,10 @@ function StandardBillingUI() {
                 logoUrl={profile.logoUrl}
                 gst={profile.gst || undefined}
                 pan={profile.pan || undefined}
+                bankName={profile.bankName || undefined}
+                bankAccountName={profile.bankAccountName || undefined}
+                bankAccountNumber={profile.bankAccountNumber || undefined}
+                bankIfsc={profile.bankIfsc || undefined}
               />
             </div>
 

@@ -1,6 +1,23 @@
 import { CartItem } from '@/lib/store';
 import { BusinessType } from '@/lib/businessConfig';
 
+// Wholesale billing appends Transport/Loading/Packing/Other charges into the
+// same items array (so they persist with the sale for reprints), but they
+// aren't goods — showing them as a product row with a "0% GST" column reads
+// as a data error on a tax invoice. Both the live bill and reprints identify
+// them by name (SaleItem has no dedicated "is this a charge" column), so the
+// label strings here must stay in sync with CHARGE_LABELS in WholesaleBillingUI.
+export const CHARGE_ITEM_NAMES = new Set([
+  'Transport Charges',
+  'Loading Charges',
+  'Packing Charges',
+  'Other Charges',
+]);
+
+export function isChargeLineItem(name: string | undefined | null): boolean {
+  return !!name && CHARGE_ITEM_NAMES.has(name);
+}
+
 export interface InvoiceColumn {
   id: string;
   labelKey: string;

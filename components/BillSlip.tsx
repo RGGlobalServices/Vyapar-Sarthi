@@ -54,7 +54,7 @@ export function generateWhatsAppText(bill: {
   amountPaid?: number;
   remainingAmount?: number;
   isEmi?: boolean;
-  splitPayments?: { cash?: number; upi?: number; card?: number; udhar?: number };
+  splitPayments?: { cash?: number; upi?: number; card?: number; bank?: number; udhar?: number };
   pdfUrl?: string;
   gst?: string;
   pan?: string;
@@ -97,14 +97,21 @@ export function generateWhatsAppText(bill: {
       if ((splitPayments.cash || 0) > 0) parts.push(`  ${t('cash')} ₹${splitPayments.cash}`);
       if ((splitPayments.upi || 0) > 0) parts.push(`  ${t('upi')} ₹${splitPayments.upi}`);
       if ((splitPayments.card || 0) > 0) parts.push(`  ${t('card')} ₹${splitPayments.card}`);
+      // 'bank' only appears on Wholesale/Udyog Mixed-payment bills (Bank
+      // Transfer / Cheque) — always 0/undefined on retail bills.
+      if ((splitPayments.bank || 0) > 0) parts.push(`  ${t('bank') || 'Bank'} ₹${splitPayments.bank}`);
       if (udharAmt > 0) parts.push(`  ${t('udhar')} ₹${udharAmt}`);
     } else {
       const method = bill.paymentMethod === 'Cash' ? t('cash')
         : bill.paymentMethod === 'UPI' ? t('upi')
         : bill.paymentMethod === 'Card' ? t('card')
         : bill.paymentMethod === 'Udhar' ? t('udhar')
+        // Wholesale/Udyog-only methods — never sent by retail billing.
+        : bill.paymentMethod === 'Bank' ? (t('bank') || 'Bank Transfer')
+        : bill.paymentMethod === 'Cheque' ? (t('cheque') || 'Cheque')
+        : bill.paymentMethod === 'Credit' ? (t('udhar') || 'Credit')
         : bill.paymentMethod;
-      parts.push(`  ${method} ₹${bill.paymentMethod === 'Udhar' ? '0' : paid}`);
+      parts.push(`  ${method} ₹${(bill.paymentMethod === 'Udhar' || bill.paymentMethod === 'Credit') ? '0' : paid}`);
     }
     parts.push(`${t('collected')} ₹${paid}`);
     parts.push(`${t('remainingDue')} ₹${remainingAmount ?? 0}`);

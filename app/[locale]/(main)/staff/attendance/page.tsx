@@ -46,7 +46,7 @@ export default function AttendancePage() {
   function markAllPresent() {
     const newAtt = { ...attendance };
     staffList.forEach(s => {
-      newAtt[s.id] = { status: 'present', reason: '' };
+      newAtt[s.id] = { status: 'Present', reason: '' };
     });
     setAttendance(newAtt);
   }
@@ -54,7 +54,7 @@ export default function AttendancePage() {
   function updateAtt(staffId: string, status: string, reason = '') {
     setAttendance(prev => ({
       ...prev,
-      [staffId]: { status, reason: status === 'present' ? '' : (prev[staffId]?.reason || reason) }
+      [staffId]: { status, reason: status === 'Present' ? '' : (prev[staffId]?.reason || reason) }
     }));
   }
 
@@ -143,34 +143,34 @@ export default function AttendancePage() {
 
                   <div className="flex flex-col gap-2 md:w-[60%]">
                     <div className="flex flex-wrap gap-2">
-                      <button 
-                        onClick={() => updateAtt(staff.id, 'present')}
-                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border", 
-                          current.status === 'present' ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-500/50"
+                      <button
+                        onClick={() => updateAtt(staff.id, 'Present')}
+                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                          current.status === 'Present' ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-500/50"
                         )}
                       >
                         <CheckCircle2 size={14} /> {t('presentBtn')}
                       </button>
-                      <button 
-                        onClick={() => updateAtt(staff.id, 'half_day')}
-                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border", 
-                          current.status === 'half_day' ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-500/50"
+                      <button
+                        onClick={() => updateAtt(staff.id, 'Half Day')}
+                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                          current.status === 'Half Day' ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-500/50"
                         )}
                       >
                         <Clock size={14} /> {t('halfDayBtn')}
                       </button>
-                      <button 
-                        onClick={() => updateAtt(staff.id, 'leave')}
-                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border", 
-                          current.status === 'leave' ? "bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-sky-500/50"
+                      <button
+                        onClick={() => updateAtt(staff.id, 'Leave')}
+                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                          current.status === 'Leave' ? "bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-sky-500/50"
                         )}
                       >
                         <FileX size={14} /> {t('leaveBtn')}
                       </button>
-                      <button 
-                        onClick={() => updateAtt(staff.id, 'absent')}
-                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border", 
-                          current.status === 'absent' ? "bg-red-500 text-white border-red-500 shadow-md shadow-red-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-red-500/50"
+                      <button
+                        onClick={() => updateAtt(staff.id, 'Absent')}
+                        className={cn("flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                          current.status === 'Absent' ? "bg-red-500 text-white border-red-500 shadow-md shadow-red-500/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-red-500/50"
                         )}
                       >
                         <XCircle size={14} /> {t('absentBtn')}
@@ -178,7 +178,7 @@ export default function AttendancePage() {
                     </div>
 
                     {/* Reason input for non-present */}
-                    {['half_day', 'absent', 'leave'].includes(current.status) && (
+                    {['Half Day', 'Absent', 'Leave'].includes(current.status) && (
                       <input 
                         type="text" 
                         placeholder={t('reasonOptionalPlaceholder')}

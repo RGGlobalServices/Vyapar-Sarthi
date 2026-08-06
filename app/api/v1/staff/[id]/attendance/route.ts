@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
+import { normalizeAttendanceStatus, getMonthRangeUTC } from '@/lib/attendance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,21 +17,22 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   let whereClause: any = { staffId: id, staff: { shopId: shop.id } };
   
   if (q.monthYear) {
-    const [year, month] = q.monthYear.split('-');
-    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-    const endDate = new Date(parseInt(year), parseInt(month), 0);
+    // UTC boundaries — matches how dates are written below
+    // (setUTCHours(0,0,0,0)); local-time boundaries here would shift by the
+    // server's UTC offset and can silently drop the month's first/last day.
+    const { start, end } = getMonthRangeUTC(q.monthYear);
     whereClause.date = {
-      gte: startDate,
-      lte: endDate
+      gte: start,
+      lte: end
     };
   }
-  
+
   const records = await prisma.attendance.findMany({
     where: whereClause,
     orderBy: { date: 'desc' }
   });
-  
-  return json(records);
+
+  return json(records.map(r => ({ ...r, status: normalizeAttendanceStatus(r.status) })));
 });
 
 export const POST = handle<Ctx>(async (req, { params }) => {
@@ -39,7 +41,8 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   const b = await readBody(req);
   
   if (!b.date) throw new ApiError(400, 'Date is required');
-  if (!b.status) throw new ApiError(400, 'Status is required (Present, Absent, Half Day, Leave)');
+  const status = normalizeAttendanceStatus(b.status);
+  if (!status) throw new ApiError(400, 'Status is required (Present, Absent, Half Day, Leave)');
 
   const date = new Date(b.date);
   date.setUTCHours(0, 0, 0, 0);
@@ -58,13 +61,13 @@ export const POST = handle<Ctx>(async (req, { params }) => {
       },
     },
     update: {
-      status: b.status,
+      status,
       reason: b.reason || null,
     },
     create: {
       staffId: id,
       date: date,
-      status: b.status,
+      status,
       reason: b.reason || null,
     },
   });

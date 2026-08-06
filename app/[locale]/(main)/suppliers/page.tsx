@@ -6,7 +6,7 @@ import {
   Search, Loader2, Phone, X, Plus, Mail, MapPin, Truck,
   IndianRupee, TrendingUp, Wallet, AlertCircle, Calendar,
   ChevronDown, ChevronRight, CheckCircle2, ReceiptText,
-  UploadCloud, Eye, Trash2, FileImage, Pencil,
+  UploadCloud, Eye, Trash2, FileImage, Pencil, User, AlertTriangle,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -406,7 +406,7 @@ function StatusPill({ status }: { status: 'paid' | 'unpaid' | 'partial' }) {
 function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useTranslations('Suppliers');
   const [form, setForm] = useState({
-    name: '', mobile: '', email: '', gst: '', address: '',
+    name: '', contact: '', mobile: '', email: '', gst: '', address: '',
     creditLimit: '', creditDays: '',
   });
   // Optional opening purchase recorded together with the supplier.
@@ -478,6 +478,15 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
             />
           </Field>
 
+          <Field label={t('contactPersonLabel')} hint={t('optionalTag')}>
+            <input
+              value={form.contact}
+              onChange={(e) => setForm({ ...form, contact: e.target.value })}
+              className={inputCls}
+              placeholder={t('contactPersonPlaceholder')}
+            />
+          </Field>
+
           <div className="grid grid-cols-2 gap-4">
             <Field label={t('phoneNumberLabel')}>
               <input
@@ -518,7 +527,7 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Credit Limit (₹)" hint={t('optionalTag')}>
+            <Field label={t('supplierCreditLimitInputLabel')} hint={t('optionalTag')}>
               <input
                 type="number"
                 min="0"
@@ -529,7 +538,7 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
                 placeholder="e.g. 50000"
               />
             </Field>
-            <Field label="Credit Days" hint={t('optionalTag')}>
+            <Field label={t('creditDaysInputLabel')} hint={t('optionalTag')}>
               <input
                 type="number"
                 min="0"
@@ -633,7 +642,7 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 
 function EditSupplierModal({ supplierId, initial, onClose, onSaved }: {
   supplierId: string;
-  initial: { name: string; mobile: string; email: string; gst: string; address: string; creditLimit: string; creditDays: string };
+  initial: { name: string; contact: string; mobile: string; email: string; gst: string; address: string; creditLimit: string; creditDays: string };
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -674,6 +683,9 @@ function EditSupplierModal({ supplierId, initial, onClose, onSaved }: {
           <Field label={t('supplierNameLabel')} required>
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} />
           </Field>
+          <Field label={t('contactPersonLabel')} hint={t('optionalTag')}>
+            <input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} className={inputCls} placeholder={t('contactPersonPlaceholder')} />
+          </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label={t('phoneNumberLabel')}>
               <input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} className={inputCls} inputMode="numeric" />
@@ -691,10 +703,10 @@ function EditSupplierModal({ supplierId, initial, onClose, onSaved }: {
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Credit Limit (₹)" hint={t('optionalTag')}>
+            <Field label={t('supplierCreditLimitInputLabel')} hint={t('optionalTag')}>
               <input type="number" min="0" step="1" value={form.creditLimit} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} className={inputCls} placeholder="e.g. 50000" />
             </Field>
-            <Field label="Credit Days" hint={t('optionalTag')}>
+            <Field label={t('creditDaysInputLabel')} hint={t('optionalTag')}>
               <input type="number" min="0" step="1" value={form.creditDays} onChange={(e) => setForm({ ...form, creditDays: e.target.value })} className={inputCls} placeholder="e.g. 30" />
             </Field>
           </div>
@@ -725,7 +737,10 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   const [range, setRange] = useState({ from: '', to: '' });
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
   const [mode, setMode] = useState<'none' | 'purchase' | 'payment'>('none');
-  const [uploading, setUploading] = useState(false);
+  // 'general' = the top-level Bill Photos uploader; a transaction id = that
+  // specific purchase row's inline uploader. Keyed so uploading one doesn't
+  // show every row as busy.
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -787,21 +802,32 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   useEffect(() => { load(); }, [load]);
 
   const s = data?.supplier;
-  const totals = data?.totals || { totalPurchased: 0, totalPaid: 0, remaining: 0 };
-  const documents: { id: string; url: string; uploadedAt: string }[] = s?.documents || [];
+  const totals = data?.totals || { totalPurchased: 0, totalPaid: 0, remaining: 0, dueInvoicesCount: 0, overdueAmount: 0 };
+  // transactionId, when present, ties a bill photo to one specific purchase
+  // row instead of leaving it as a general, unlinked supplier document.
+  const documents: { id: string; url: string; uploadedAt: string; transactionId?: string }[] = s?.documents || [];
+  // The generic Bill Photos strip is for documents not already tied to one
+  // purchase row — those are shown inline on their row instead, so a bill
+  // doesn't appear twice.
+  const generalDocuments = documents.filter((d) => !d.transactionId);
 
-  async function handleUploadBill(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleUploadBill(e: React.ChangeEvent<HTMLInputElement>, transactionId?: string) {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
     e.target.value = '';
-    setUploading(true);
+    setUploadingFor(transactionId || 'general');
     const body = new FormData();
     body.append('file', file);
     body.append('folder', 'supplier-docs');
     try {
       const res = await api.post('/upload', body);
       if (res.data.url) {
-        const next = [...documents, { id: crypto.randomUUID(), url: res.data.url, uploadedAt: new Date().toISOString() }];
+        const next = [...documents, {
+          id: crypto.randomUUID(),
+          url: res.data.url,
+          uploadedAt: new Date().toISOString(),
+          ...(transactionId ? { transactionId } : {}),
+        }];
         await api.patch(`/suppliers/${supplierId}`, { documents: next });
         setData((prev: any) => ({ ...prev, supplier: { ...prev.supplier, documents: next } }));
       }
@@ -809,7 +835,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
       console.error(err);
       alert(t('uploadFailed'));
     } finally {
-      setUploading(false);
+      setUploadingFor(null);
     }
   }
 
@@ -826,41 +852,20 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col h-[92vh] sm:h-auto sm:max-h-[92vh] animate-in slide-in-from-bottom-4 sm:zoom-in-95">
+    <div className="fixed inset-0 z-[60] animate-in fade-in duration-200">
+      <div className="bg-slate-50 dark:bg-slate-900 w-full h-full flex flex-col animate-in slide-in-from-bottom-4">
         {/* Header */}
-        <div className="p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between shrink-0">
+        <div className="p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between shrink-0">
           <div className="min-w-0">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white truncate">
               {s?.name || t('supplierFallback')}
             </h2>
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-slate-500">
+              {s?.contact && <span className="flex items-center gap-1"><User size={13} /> {s.contact}</span>}
               {s?.mobile && <span className="flex items-center gap-1"><Phone size={13} /> {s.mobile}</span>}
               {s?.email && <span className="flex items-center gap-1"><Mail size={13} /> {s.email}</span>}
               {s?.gst && <span className="flex items-center gap-1 font-mono text-xs">GST: {s.gst}</span>}
               {s?.address && <span className="flex items-center gap-1"><MapPin size={13} /> {s.address}</span>}
-              {Number(s?.creditLimit) > 0 && (() => {
-                // Credit-limit chip: shows the ceiling, how much is used, and
-                // colours red when exceeded so a shopkeeper can see at a glance
-                // whether they're allowed to raise another purchase against
-                // this supplier before paying down the balance.
-                const limit = Number(s.creditLimit);
-                const used = Number(totals.remaining) || 0;
-                const pct = Math.min(100, Math.round((used / limit) * 100));
-                const over = used > limit;
-                return (
-                  <span
-                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${over
-                      ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300'
-                      : pct >= 80
-                        ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                        : 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'}`}
-                    title={over ? 'Credit limit exceeded' : `${pct}% of credit limit used`}
-                  >
-                    Credit Limit: {rupee(limit)} · {pct}% used{over ? ' · OVER' : ''}
-                  </span>
-                );
-              })()}
               {Number(s?.creditDays) > 0 && (
                 <span className="flex items-center gap-1 text-xs text-slate-500">
                   <Calendar size={13} /> {s.creditDays} day terms
@@ -898,6 +903,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             supplierId={supplierId}
             initial={{
               name: s.name || '',
+              contact: s.contact || '',
               mobile: s.mobile || '',
               email: s.email || '',
               gst: s.gst || '',
@@ -909,6 +915,42 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             onSaved={() => { setEditing(false); load(); onChanged(); }}
           />
         )}
+
+        {/* Everything below the header scrolls as one body — pinning only the
+            header and letting the credit-health/totals/bill-photos chrome
+            scroll away with the rest is what gives Payment History its full
+            natural height instead of being squeezed into whatever space was
+            left over on a shorter screen. */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+
+        {/* Supplier credit health — the credit facility THIS supplier extends
+            to us, distinct from the Credit Limit we extend to our own
+            customers/party on the Customers/Party pages. Only shown once a
+            limit has actually been set. */}
+        {Number(s?.creditLimit) > 0 && (() => {
+          const limit = Number(s.creditLimit);
+          const outstanding = Number(totals.remaining) || 0;
+          const available = Math.max(0, limit - outstanding);
+          const over = outstanding > limit;
+          const dueInvoicesCount = totals.dueInvoicesCount || 0;
+          const overdueAmount = totals.overdueAmount || 0;
+          return (
+            <div className="p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shrink-0">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <MiniStat label={t('supplierCreditLimitLabel')} value={rupee(limit)} tone="slate" />
+                <MiniStat label={t('currentOutstandingLabel')} value={rupee(outstanding)} tone={over ? 'red' : 'slate'} />
+                <MiniStat label={t('availableCreditLabel')} value={rupee(available)} tone={over ? 'red' : available === 0 ? 'amber' : 'emerald'} />
+                <MiniStat label={t('dueInvoicesLabel')} value={String(dueInvoicesCount)} tone={dueInvoicesCount > 0 ? 'amber' : 'slate'} />
+                <MiniStat label={t('overdueAmountLabel')} value={rupee(overdueAmount)} tone={overdueAmount > 0 ? 'red' : 'slate'} />
+              </div>
+              {over && (
+                <p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                  <AlertTriangle size={13} /> {t('creditLimitExceededBy', { amount: rupee(outstanding - limit) })}
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Totals + actions */}
         <div className="p-4 grid grid-cols-3 gap-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shrink-0">
@@ -961,6 +1003,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             supplierId={supplierId}
             mode={mode}
             remaining={totals.remaining}
+            creditLimit={Number(s?.creditLimit) || 0}
             onDone={() => { setMode('none'); load(); onChanged(); }}
             onCancel={() => setMode('none')}
           />
@@ -972,8 +1015,8 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
               {t('billPhotosTitle')}
             </h3>
-            <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${uploading ? 'bg-slate-100 text-slate-400 dark:bg-slate-800' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20'}`}>
-              {uploading ? (
+            <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${uploadingFor === 'general' ? 'bg-slate-100 text-slate-400 dark:bg-slate-800' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20'}`}>
+              {uploadingFor === 'general' ? (
                 <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
                 <UploadCloud size={14} />
@@ -983,16 +1026,16 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                 type="file"
                 accept="image/*,application/pdf"
                 className="hidden"
-                onChange={handleUploadBill}
-                disabled={uploading}
+                onChange={(e) => handleUploadBill(e)}
+                disabled={uploadingFor !== null}
               />
             </label>
           </div>
-          {documents.length === 0 ? (
+          {generalDocuments.length === 0 ? (
             <p className="text-xs text-slate-500">{t('noBillPhotos')}</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {documents.map((doc) => (
+              {generalDocuments.map((doc) => (
                 <div
                   key={doc.id}
                   className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300"
@@ -1022,7 +1065,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
         </div>
 
         {/* Month-wise history */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
             {t('paymentHistoryTitle')}
           </h3>
@@ -1110,13 +1153,45 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                 })()}
                               </div>
                             </div>
-                            <span className={`text-sm font-black shrink-0 ml-3 ${
-                              it.type === 'payment'
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-slate-900 dark:text-white'
-                            }`}>
-                              {it.type === 'payment' ? '−' : '+'}{rupee(it.amount)}
-                            </span>
+                            <div className="flex items-center gap-2 shrink-0 ml-3">
+                              {it.type !== 'payment' && (() => {
+                                const linked = documents.find((d) => d.transactionId === it.id);
+                                return linked ? (
+                                  <button
+                                    onClick={() => setViewingDoc({ url: linked.url, label: t('billPhotoLabel') })}
+                                    title={t('viewBillTitle')}
+                                    className="p-1.5 rounded-lg text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+                                  >
+                                    <FileImage size={15} />
+                                  </button>
+                                ) : (
+                                  <label
+                                    title={t('attachBillTitle')}
+                                    className={`p-1.5 rounded-lg cursor-pointer ${uploadingFor === it.id ? 'text-slate-300 dark:text-slate-600' : 'text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10'}`}
+                                  >
+                                    {uploadingFor === it.id ? (
+                                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                      <UploadCloud size={15} />
+                                    )}
+                                    <input
+                                      type="file"
+                                      accept="image/*,application/pdf"
+                                      className="hidden"
+                                      onChange={(e) => handleUploadBill(e, it.id)}
+                                      disabled={uploadingFor !== null}
+                                    />
+                                  </label>
+                                );
+                              })()}
+                              <span className={`text-sm font-black ${
+                                it.type === 'payment'
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}>
+                                {it.type === 'payment' ? '−' : '+'}{rupee(it.amount)}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1127,6 +1202,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             </div>
           )}
         </div>
+        </div>
       </div>
 
       {viewingDoc && (
@@ -1136,8 +1212,8 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   );
 }
 
-function TransactionForm({ supplierId, mode, remaining, onDone, onCancel }: {
-  supplierId: string; mode: 'purchase' | 'payment'; remaining: number;
+function TransactionForm({ supplierId, mode, remaining, creditLimit, onDone, onCancel }: {
+  supplierId: string; mode: 'purchase' | 'payment'; remaining: number; creditLimit: number;
   onDone: () => void; onCancel: () => void;
 }) {
   const t = useTranslations('Suppliers');
@@ -1151,6 +1227,10 @@ function TransactionForm({ supplierId, mode, remaining, onDone, onCancel }: {
 
   const amountNum = parseFloat(amount) || 0;
   const paidNum = parseFloat(paid) || 0;
+  // Soft warning only — the shop may legitimately choose to go over with a
+  // trusted supplier, so this never blocks submission.
+  const projectedOutstanding = mode === 'purchase' ? remaining + Math.max(0, amountNum - paidNum) : remaining;
+  const overLimitBy = creditLimit > 0 ? projectedOutstanding - creditLimit : 0;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1225,6 +1305,12 @@ function TransactionForm({ supplierId, mode, remaining, onDone, onCancel }: {
         </p>
       )}
 
+      {mode === 'purchase' && amountNum > 0 && overLimitBy > 0 && (
+        <p className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2">
+          <AlertTriangle size={14} /> {t('creditLimitExceededBy', { amount: rupee(overLimitBy) })}
+        </p>
+      )}
+
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400 font-medium flex items-center gap-2">
           <AlertCircle size={15} /> {error}
@@ -1254,11 +1340,12 @@ function TransactionForm({ supplierId, mode, remaining, onDone, onCancel }: {
   );
 }
 
-function MiniStat({ label, value, tone }: { label: string; value: string; tone: 'slate' | 'emerald' | 'red' }) {
+function MiniStat({ label, value, tone }: { label: string; value: string; tone: 'slate' | 'emerald' | 'red' | 'amber' }) {
   const color = {
     slate: 'text-slate-900 dark:text-white',
     emerald: 'text-emerald-600 dark:text-emerald-400',
     red: 'text-red-600 dark:text-red-400',
+    amber: 'text-amber-600 dark:text-amber-400',
   };
   return (
     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700">

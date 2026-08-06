@@ -5,12 +5,14 @@ import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
-import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, Eye, Download, Share2, Wallet, X, Loader2 } from 'lucide-react';
+import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee, Calculator, ChevronLeft, Briefcase, Calendar, Check, Eye, Download, Share2, Wallet, X, Loader2, Pencil } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
 import { exportSalarySlipPDF } from '@/lib/pdf/salarySlip';
 import { shareFileOrText } from '@/lib/shareUtils';
+import { summarizeAttendance, daysInMonthUTC } from '@/lib/attendance';
+import { ExportButton } from '@/lib/hooks/useExport';
 
 export default function StaffProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -49,49 +51,71 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   const [advanceHistory, setAdvanceHistory] = useState<any[]>([]);
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
   const [advanceAmount, setAdvanceAmount] = useState('');
-  
+  const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editingAdvanceId, setEditingAdvanceId] = useState<string | null>(null);
+  const [savingAdvance, setSavingAdvance] = useState(false);
+
   // Slip Modal state
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [slipDuration, setSlipDuration] = useState(1);
   const [generatingSlip, setGeneratingSlip] = useState(false);
 
-  // Attendance state
+  // Attendance state — the Attendance tab's browsable history and the
+  // Salary tab's pay-driving month are tracked separately (each keyed to
+  // its own month picker) so switching tabs or months in one never clobbers
+  // the other's data.
   const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7));
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [calcAttendanceRecords, setCalcAttendanceRecords] = useState<any[]>([]);
   const [markingAtt, setMarkingAtt] = useState(false);
+  // Defaults to today but editable, so a previous day's mark can be
+  // corrected right from this profile instead of only via the separate
+  // bulk Attendance page.
+  const [markDate, setMarkDate] = useState(new Date().toISOString().split('T')[0]);
+  // Monthly staff default to a flat salary regardless of attendance (many
+  // shops intentionally pay a fixed amount) — this opts a specific month's
+  // payout into being prorated by present/half-day count instead.
+  const [payByAttendance, setPayByAttendance] = useState(false);
 
   const pendingAdvances = advanceHistory.filter(a => !a.deducted);
   const pendingAdvanceTotal = pendingAdvances.reduce((sum, a) => sum + Number(a.amount), 0);
 
   useEffect(() => {
-    if (!isNew) {
-      loadStaff();
-      if (activeTab === 'salary') {
-        loadSalaryHistory();
-        loadAdvanceHistory();
-      }
-      if (activeTab === 'attendance') loadAttendance();
-    }
+    if (!isNew) loadStaff();
+  }, [isNew, resolvedParams.id]);
+
+  useEffect(() => {
+    if (isNew || activeTab !== 'salary') return;
+    loadSalaryHistory();
+    loadAdvanceHistory();
   }, [isNew, resolvedParams.id, activeTab]);
 
   useEffect(() => {
-    if (activeTab === 'attendance' || (activeTab === 'salary' && form.salaryType === 'daily')) {
-      loadAttendance(calcMonth);
-    }
-  }, [attendanceMonth, calcMonth]);
+    if (isNew || activeTab !== 'attendance') return;
+    loadAttendance(attendanceMonth, setAttendanceRecords);
+  }, [isNew, resolvedParams.id, activeTab, attendanceMonth]);
 
-  // Recalculate salary base when attendance or calcMonth changes for daily wage
+  useEffect(() => {
+    if (isNew || activeTab !== 'salary') return;
+    loadAttendance(calcMonth, setCalcAttendanceRecords);
+  }, [isNew, resolvedParams.id, activeTab, calcMonth]);
+
+  const attendanceSummary = summarizeAttendance(attendanceRecords);
+  const calcAttendanceSummary = summarizeAttendance(calcAttendanceRecords);
+
+  // Recalculate salary base from attendance: always for daily wage; for
+  // monthly staff only when the shopkeeper opts into it for this payout.
   useEffect(() => {
     if (form.salaryType === 'daily') {
-      let days = 0;
-      attendanceRecords.forEach(r => {
-        if (r.status === 'Present') days += 1;
-        if (r.status === 'Half Day') days += 0.5;
-      });
-      const base = days * Number(form.salaryAmount || 0);
+      const base = calcAttendanceSummary.payableDays * Number(form.salaryAmount || 0);
       setCalcData(prev => ({ ...prev, baseAmount: base }));
+    } else if (form.salaryType === 'monthly' && payByAttendance) {
+      const perDay = Number(form.salaryAmount || 0) / daysInMonthUTC(calcMonth);
+      setCalcData(prev => ({ ...prev, baseAmount: Math.round(perDay * calcAttendanceSummary.payableDays) }));
+    } else if (form.salaryType === 'monthly' && !payByAttendance) {
+      setCalcData(prev => ({ ...prev, baseAmount: Number(form.salaryAmount || 0) }));
     }
-  }, [attendanceRecords, form.salaryType, form.salaryAmount]);
+  }, [calcAttendanceRecords, form.salaryType, form.salaryAmount, payByAttendance, calcMonth]);
 
   async function loadStaff() {
     try {
@@ -139,10 +163,10 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     }
   }
 
-  async function loadAttendance(month = attendanceMonth) {
+  async function loadAttendance(month = attendanceMonth, setter: (records: any[]) => void = setAttendanceRecords) {
     try {
       const res = await api.get(`/staff/${resolvedParams.id}/attendance?monthYear=${month}`);
-      setAttendanceRecords(res.data);
+      setter(res.data);
     } catch (e) {
       console.error(e);
     }
@@ -211,17 +235,62 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     }
   }
 
-  async function giveAdvance() {
-    if (!advanceAmount || isNaN(Number(advanceAmount))) return;
+  function openAddAdvance() {
+    setEditingAdvanceId(null);
+    setAdvanceAmount('');
+    setAdvanceDate(new Date().toISOString().split('T')[0]);
+    setShowAdvanceModal(true);
+  }
+
+  function openEditAdvance(adv: any) {
+    setEditingAdvanceId(adv.id);
+    setAdvanceAmount(String(adv.amount));
+    setAdvanceDate(new Date(adv.date).toISOString().split('T')[0]);
+    setShowAdvanceModal(true);
+  }
+
+  async function saveAdvance() {
+    if (!advanceAmount || isNaN(Number(advanceAmount)) || Number(advanceAmount) <= 0) return;
+    setSavingAdvance(true);
     try {
-      await api.post(`/staff/${resolvedParams.id}/advance`, {
-        amount: Number(advanceAmount)
-      });
+      if (editingAdvanceId) {
+        await api.patch(`/staff/${resolvedParams.id}/advance/${editingAdvanceId}`, {
+          amount: Number(advanceAmount),
+          date: advanceDate,
+        });
+      } else {
+        await api.post(`/staff/${resolvedParams.id}/advance`, {
+          amount: Number(advanceAmount),
+          date: advanceDate,
+        });
+      }
       setShowAdvanceModal(false);
+      setEditingAdvanceId(null);
       setAdvanceAmount('');
       loadAdvanceHistory();
     } catch (e) {
       alert(t('failedToGiveAdvance'));
+    } finally {
+      setSavingAdvance(false);
+    }
+  }
+
+  async function deleteAdvance(adv: any) {
+    if (!confirm(`Delete this ₹${adv.amount} advance from ${new Date(adv.date).toLocaleDateString('en-GB')}?`)) return;
+    try {
+      await api.delete(`/staff/${resolvedParams.id}/advance/${adv.id}`);
+      loadAdvanceHistory();
+    } catch (e) {
+      alert('Failed to delete advance.');
+    }
+  }
+
+  async function toggleAdvanceSettled(adv: any) {
+    try {
+      await api.patch(`/staff/${resolvedParams.id}/advance/${adv.id}`, { deducted: !adv.deducted });
+      loadAdvanceHistory();
+    } catch (e) {
+      alert('Failed to update advance.');
     }
   }
 
@@ -229,10 +298,15 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     setMarkingAtt(true);
     try {
       await api.post(`/staff/${resolvedParams.id}/attendance`, {
-        date: new Date().toISOString().split('T')[0],
+        date: markDate,
         status
       });
-      loadAttendance();
+      // Jump the history view to whatever month was just marked, so a
+      // correction to a previous month is immediately visible instead of
+      // silently saving off-screen.
+      const markedMonth = markDate.slice(0, 7);
+      if (markedMonth !== attendanceMonth) setAttendanceMonth(markedMonth);
+      else loadAttendance(attendanceMonth, setAttendanceRecords);
     } catch (e) {
       alert(t('failedToMarkAttendance'));
     } finally {
@@ -414,9 +488,30 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       {activeTab === 'attendance' && (
         <div className="space-y-6">
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
-            <div className="bg-emerald-50 dark:bg-emerald-500/10 p-4 border-b border-emerald-100 dark:border-emerald-500/20 text-center">
-              <h2 className="font-bold text-emerald-900 dark:text-emerald-100">Quick Mark Today</h2>
-              <p className="text-xs text-emerald-600/70">{new Date().toLocaleDateString('en-GB')}</p>
+            <div className="bg-emerald-50 dark:bg-emerald-500/10 p-4 border-b border-emerald-100 dark:border-emerald-500/20">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-bold text-emerald-900 dark:text-emerald-100">Mark Attendance</h2>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={markDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={e => setMarkDate(e.target.value)}
+                    className="text-sm font-bold bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-2 py-1 outline-none text-emerald-900 dark:text-emerald-100"
+                  />
+                  {markDate !== new Date().toISOString().split('T')[0] && (
+                    <button
+                      onClick={() => setMarkDate(new Date().toISOString().split('T')[0])}
+                      className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline"
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-emerald-600/70 mt-1">
+                {markDate === new Date().toISOString().split('T')[0] ? 'Today' : 'Correcting a previous day — pick any past date above'}
+              </p>
             </div>
             <CardContent className="p-4 flex gap-2">
               {['Present', 'Half Day', 'Absent', 'Leave'].map(status => (
@@ -441,14 +536,47 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
               <h3 className="font-bold text-slate-900 dark:text-white">Attendance History</h3>
               <input type="month" value={attendanceMonth} onChange={e => setAttendanceMonth(e.target.value)} className="text-sm font-bold bg-slate-100 dark:bg-slate-800 border-none rounded-lg px-2 py-1 outline-none text-slate-700" />
             </div>
-            
+
+            {/* Month-end day counts — the numbers payroll is actually based
+                on, so a shopkeeper can total up a month at a glance instead
+                of counting badges by eye. */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+              <AttendanceStat label="Full Days" value={attendanceSummary.present} tone="emerald" />
+              <AttendanceStat label="Half Days" value={attendanceSummary.halfDay} tone="amber" />
+              <AttendanceStat label="Absent" value={attendanceSummary.absent} tone="red" />
+              <AttendanceStat label="Leave" value={attendanceSummary.leave} tone="sky" />
+            </div>
+
+            {attendanceRecords.length > 0 && (
+              <div className="mb-4">
+                <ExportButton
+                  filename={`${form.name || 'staff'}_attendance_${attendanceMonth}`}
+                  title={`Attendance — ${form.name}`}
+                  summary={[
+                    { label: 'Full Days', value: String(attendanceSummary.present) },
+                    { label: 'Half Days', value: String(attendanceSummary.halfDay) },
+                    { label: 'Absent', value: String(attendanceSummary.absent) },
+                    { label: 'Leave', value: String(attendanceSummary.leave) },
+                  ]}
+                  columns={[
+                    { key: 'date', label: 'Date', type: 'date' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'reason', label: 'Reason' },
+                  ]}
+                  data={attendanceRecords}
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               {attendanceRecords.map(record => (
                 <div key={record.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                   <span className="text-sm font-bold text-slate-600">{new Date(record.date).toLocaleDateString('en-GB')}</span>
-                  <span className={cn("text-xs font-bold px-2 py-1 rounded", 
+                  <span className={cn("text-xs font-bold px-2 py-1 rounded",
                     record.status === 'Present' ? 'bg-emerald-100 text-emerald-700' :
-                    record.status === 'Absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    record.status === 'Half Day' ? 'bg-amber-100 text-amber-700' :
+                    record.status === 'Leave' ? 'bg-sky-100 text-sky-700' :
+                    record.status === 'Absent' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'
                   )}>{record.status}</span>
                 </div>
               ))}
@@ -469,12 +597,43 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 </h3>
                 <input type="month" value={calcMonth} onChange={e => setCalcMonth(e.target.value)} className="text-sm font-bold bg-white/10 border-none rounded-lg px-2 py-1 outline-none text-white" />
               </div>
-              
+
+              {/* Month-end day counts for this payout's month — the same
+                  breakdown as the Attendance tab, shown here since it's what
+                  the base amount below is actually computed from. */}
+              <div className="grid grid-cols-4 gap-2">
+                <div className="p-2 bg-white/5 rounded-lg text-center">
+                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Full</p>
+                  <p className="text-base font-black text-emerald-400">{calcAttendanceSummary.present}</p>
+                </div>
+                <div className="p-2 bg-white/5 rounded-lg text-center">
+                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Half</p>
+                  <p className="text-base font-black text-amber-400">{calcAttendanceSummary.halfDay}</p>
+                </div>
+                <div className="p-2 bg-white/5 rounded-lg text-center">
+                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Absent</p>
+                  <p className="text-base font-black text-red-400">{calcAttendanceSummary.absent}</p>
+                </div>
+                <div className="p-2 bg-white/5 rounded-lg text-center">
+                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Leave</p>
+                  <p className="text-base font-black text-sky-400">{calcAttendanceSummary.leave}</p>
+                </div>
+              </div>
+
+              {form.salaryType === 'monthly' && (
+                <label className="flex items-center justify-between gap-3 p-3 bg-white/5 rounded-lg cursor-pointer">
+                  <span className="text-xs font-bold text-indigo-200">Pay as per attendance this month (per-day rate × days present) instead of flat salary</span>
+                  <input type="checkbox" checked={payByAttendance} onChange={e => setPayByAttendance(e.target.checked)} className="w-4 h-4 shrink-0 accent-emerald-500" />
+                </label>
+              )}
+
               <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                <span className="text-sm font-bold text-indigo-200">{t('baseSalary', { fallback: 'Base Salary' })} {form.salaryType === 'daily' && '(Daily calc)'}</span>
+                <span className="text-sm font-bold text-indigo-200">
+                  {t('baseSalary', { fallback: 'Base Salary' })} {form.salaryType === 'daily' && '(Daily calc)'} {form.salaryType === 'monthly' && payByAttendance && '(Attendance calc)'}
+                </span>
                 <span className="font-black">₹{calcData.baseAmount}</span>
               </div>
-              
+
               <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-red-500/30">
                 <span className="text-sm font-bold text-red-300">{t('deductions', { fallback: 'Deductions' })}</span>
                 <input type="number" value={calcData.deductions} onChange={e => setCalcData({...calcData, deductions: Number(e.target.value)})} className="w-24 px-2 py-1 bg-black/20 rounded text-right font-bold text-red-300 outline-none" />
@@ -509,23 +668,35 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Wallet size={16} className="text-amber-500" /> {t('advanceSalary', { fallback: 'Advance Salary' })}
                 </h3>
-                <button onClick={() => setShowAdvanceModal(true)} className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200">
+                <button onClick={openAddAdvance} className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200">
                   + {t('addAdvance', { fallback: 'Give Advance' })}
                 </button>
               </div>
               <div className="space-y-2">
                 {advanceHistory.map(adv => (
-                  <div key={adv.id} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <div key={adv.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg group">
                     <div>
                       <p className="font-bold text-slate-900 dark:text-white text-sm">₹{adv.amount}</p>
                       <p className="text-[10px] font-bold text-slate-500">{new Date(adv.date).toLocaleDateString('en-GB')}</p>
                     </div>
-                    <div className="text-right">
-                      {adv.deducted ? (
-                        <span className="text-xs font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded">Settled</span>
-                      ) : (
-                        <span className="text-xs font-bold text-amber-500 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded">Pending</span>
-                      )}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => toggleAdvanceSettled(adv)}
+                        title={adv.deducted ? 'Mark as Pending' : 'Mark as Settled'}
+                        className={cn("text-xs font-bold px-2 py-1 rounded transition-colors",
+                          adv.deducted
+                            ? "text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
+                            : "text-amber-500 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20"
+                        )}
+                      >
+                        {adv.deducted ? 'Settled' : 'Pending'}
+                      </button>
+                      <button onClick={() => openEditAdvance(adv)} title="Edit advance" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded transition-colors">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => deleteAdvance(adv)} title="Delete advance" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors">
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -564,18 +735,27 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t('addAdvance', { fallback: 'Give Advance' })}</h2>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                {editingAdvanceId ? 'Edit Advance' : t('addAdvance', { fallback: 'Give Advance' })}
+              </h2>
             </div>
             <div className="p-4 space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Amount (₹)</label>
                 <input type="number" value={advanceAmount} onChange={e => setAdvanceAmount(e.target.value)} className="w-full px-3 py-2 border dark:border-slate-700 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" placeholder={t('advanceAmountPlaceholder')} />
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Date</label>
+                <input type="date" value={advanceDate} onChange={e => setAdvanceDate(e.target.value)} className="w-full px-3 py-2 border dark:border-slate-700 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" />
+              </div>
               <p className="text-xs text-slate-500 font-semibold">This amount will be automatically deducted from the next salary payment.</p>
             </div>
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-800/50">
-              <button onClick={() => setShowAdvanceModal(false)} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
-              <button onClick={giveAdvance} disabled={!advanceAmount} className="px-4 py-2 font-bold bg-amber-500 text-white hover:bg-amber-600 rounded-lg disabled:opacity-50 transition-colors">Give Advance</button>
+              <button onClick={() => { setShowAdvanceModal(false); setEditingAdvanceId(null); }} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
+              <button onClick={saveAdvance} disabled={!advanceAmount || savingAdvance} className="px-4 py-2 font-bold bg-amber-500 text-white hover:bg-amber-600 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2">
+                {savingAdvance && <Loader2 size={14} className="animate-spin" />}
+                {editingAdvanceId ? 'Save Changes' : 'Give Advance'}
+              </button>
             </div>
           </div>
         </div>
@@ -615,6 +795,22 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       {viewingDoc && (
         <DocumentViewerModal url={viewingDoc.url} label={viewingDoc.label} onClose={() => setViewingDoc(null)} />
       )}
+    </div>
+  );
+}
+
+function AttendanceStat({ label, value, tone }: { label: string; value: number; tone: 'emerald' | 'amber' | 'red' | 'sky' | 'slate' }) {
+  const color = {
+    emerald: 'text-emerald-600 dark:text-emerald-400',
+    amber: 'text-amber-600 dark:text-amber-400',
+    red: 'text-red-600 dark:text-red-400',
+    sky: 'text-sky-600 dark:text-sky-400',
+    slate: 'text-slate-900 dark:text-white',
+  };
+  return (
+    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 text-center">
+      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">{label}</p>
+      <p className={cn("text-lg font-black tracking-tight", color[tone])}>{value}</p>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, SetStateAction } from 'react';
 import { useCartStore, CartItem } from '@/lib/store';
 import { calculateInvoice, InputLineItem, BillType, DiscountInput } from '@/lib/financialEngine';
 
@@ -7,7 +7,11 @@ const EMPTY_ARRAY: CartItem[] = [];
 export type PaymentMethod = 'cash' | 'upi' | 'card' | 'udhar';
 export type CollectedMethod = Exclude<PaymentMethod, 'udhar'>;
 
-const ZERO_SPLIT = { cash: 0, upi: 0, card: 0 };
+// 'bank' is used only by Wholesale/Udyog billing's split mode (Bank Transfer
+// / Cheque). Retail's 'method' mode never sets it (its PaymentMethod type
+// only ever produces cash/upi/card/udhar), so it stays 0 there — purely
+// additive, no behavior change for Dukan/Vyapar billing.
+const ZERO_SPLIT = { cash: 0, upi: 0, card: 0, bank: 0 };
 
 /**
  * 'split' lets the caller allocate an amount to each method independently.
@@ -32,7 +36,20 @@ export function useBillingEngine(
   const [discount, setDiscount] = useState<number | DiscountInput>(initialDiscount);
   const [billType, setBillType] = useState<BillType>('non_gst');
   const [isEmi, setIsEmi] = useState(false);
-  const [manualSplit, setManualSplit] = useState(ZERO_SPLIT);
+  const [manualSplit, setManualSplitRaw] = useState(ZERO_SPLIT);
+  // Tracks whether the cashier has actually typed into a Cash/UPI/Card field
+  // this bill, vs. the split still being the auto-filled "fully paid" default.
+  // Without this, adding/increasing quantity after the auto-fill already ran
+  // once (e.g. qty 2 → 200) left the stale smaller "Collected" amount in
+  // place — total grew to ₹22,800 but Collected stayed at the old ₹228,
+  // silently dumping the rest onto Udhar with no indication anything was
+  // wrong. Only a genuine manual edit should stop the auto-fill from
+  // tracking the total; the bare auto-filled state must keep tracking it.
+  const [userEditedSplit, setUserEditedSplit] = useState(false);
+  const setManualSplit = useCallback((updater: SetStateAction<typeof ZERO_SPLIT>) => {
+    setUserEditedSplit(true);
+    setManualSplitRaw(updater);
+  }, []);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   // Amount collected up front on an udhar bill; the rest goes on the ledger.
   const [udharAdvance, setUdharAdvance] = useState(0);
@@ -73,19 +90,22 @@ export function useBillingEngine(
     return { ...ZERO_SPLIT, [paymentMethod]: total };
   }, [mode, manualSplit, isEmi, paymentMethod, total, udharAdvanceMethod, effectiveUdharAdvance]);
 
-  const collectedAmount = splitPayments.cash + splitPayments.upi + splitPayments.card;
+  const collectedAmount = splitPayments.cash + splitPayments.upi + splitPayments.card + (splitPayments.bank || 0);
   const remainingAmount = isEmi ? 0 : Math.max(0, total - collectedAmount);
 
-  // Auto-fill cash when total changes if nothing is paid yet
+  // Auto-fill cash to the running total as long as the cashier hasn't typed
+  // into a split field themselves. Runs on every total change (not just the
+  // first time), so adding/increasing an item after the auto-fill already
+  // ran keeps "Collected" tracking the bill instead of leaving a stale
+  // smaller amount behind that silently falls through to Udhar. The moment
+  // setSplitPayments is called from the UI, userEditedSplit flips true and
+  // this stops touching their entry — including a genuine partial payment.
   useEffect(() => {
-    if (mode === 'method') return;
-    if (!isEmi && collectedAmount === 0 && total > 0) {
-      setManualSplit(prev => ({ ...prev, cash: total }));
-    } else if (collectedAmount > total) {
-      // Prevent overpayment if total decreases below collected
-      setManualSplit({ cash: total, upi: 0, card: 0 });
+    if (mode === 'method' || userEditedSplit) return;
+    if (!isEmi && total > 0) {
+      setManualSplitRaw({ cash: total, upi: 0, card: 0, bank: 0 });
     }
-  }, [total, isEmi, mode]);
+  }, [total, isEmi, mode, userEditedSplit]);
 
   // Cart Operations (Scoped to shopId)
   const addItem = useCallback((item: CartItem) => {
@@ -112,7 +132,8 @@ export function useBillingEngine(
     if (!shopId) return;
     clearCartInStore(shopId);
     setDiscount(0);
-    setManualSplit(ZERO_SPLIT);
+    setManualSplitRaw(ZERO_SPLIT);
+    setUserEditedSplit(false); // back to auto-fill mode for the next bill
     setPaymentMethod('cash');
     setUdharAdvance(0);
     setUdharAdvanceMethod('cash');

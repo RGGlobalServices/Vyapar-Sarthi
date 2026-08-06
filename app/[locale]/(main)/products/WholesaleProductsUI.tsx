@@ -33,6 +33,7 @@ type WholesaleProduct = {
   mrp: number;
   sellingPrice: number;
   wholesaleCost: number;
+  costPrice: number;
   baseUnit: string;
   currentStock?: number;
   minStock?: number;
@@ -74,6 +75,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     mrp: 0,
     sellingPrice: 0,
     wholesaleCost: 0,
+    costPrice: 0,
     baseUnit: config.defaultUnits[0] || 'PCS',
     expiryDate: '',
     batch_number: '',
@@ -93,6 +95,18 @@ export default function WholesaleProductsUI() {
   const t = useTranslations('Products');
   const { profile, activeShopId } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
+
+  // Some Udyog (wholesale-package) accounts still carry a retail-flavoured
+  // businessType (e.g. 'shoes' instead of 'footwearwholesale') from before
+  // package-scoped business types existed — bizConfig.defaultUnits for those
+  // is a narrow retail list (e.g. just ['Pair']) with no bulk/carton units at
+  // all. Union in a generic wholesale bulk-unit set whenever the resolved
+  // config isn't itself wholesale-flavoured, so Udyog sellers always see
+  // sensible carton/box/case-style choices regardless of that mismatch.
+  const bulkUnitSuggestions = bizConfig.defaultPackage === 'wholesale'
+    ? bizConfig.defaultUnits
+    : [...bizConfig.defaultUnits, ...['Piece', 'Box', 'Carton', 'Case', 'Dozen', 'Pack', 'Bag']
+        .filter(u => !bizConfig.defaultUnits.some(du => du.toLowerCase() === u.toLowerCase()))];
 
   const emptyProduct = buildEmptyProduct(profile.businessType);
   
@@ -157,6 +171,7 @@ export default function WholesaleProductsUI() {
       mrp: p.mrp || 0,
       sellingPrice: p.sellingPrice || 0,
       wholesaleCost: p.wholesaleCost || 0,
+      costPrice: p.costPrice || 0,
       productType: p.productType || 'single',
       expiryDate: p.expiryDate || '',
       batch_number: p.batch_number || '',
@@ -177,7 +192,18 @@ export default function WholesaleProductsUI() {
       maxStock: p.maxStock || undefined,
       wholesaleMoq: p.wholesaleMoq || undefined,
     });
-    setVariants(p.variants || []);
+    // Older variant rows stored the bulk/wholesale price under the key
+    // `costPrice` (the field was mislabeled "Wholesale" in the UI but never
+    // renamed in storage). New rows use `wholesalePrice` and reserve
+    // `costPrice` for what it actually says — the vendor's price. Remap on
+    // load so both shapes land in the right input: if `wholesalePrice` is
+    // already present this is new-shape data and `costPrice` means vendor
+    // cost as-is; otherwise it's old-shape data being migrated in memory.
+    setVariants((p.variants || []).map((v: any) => ({
+      ...v,
+      wholesalePrice: v.wholesalePrice ?? v.costPrice ?? 0,
+      costPrice: v.wholesalePrice !== undefined ? (v.costPrice || 0) : 0,
+    })));
     setShowAddModal(true);
   };
 
@@ -279,16 +305,42 @@ export default function WholesaleProductsUI() {
     setSaving(true);
     try {
       // Merge color/fabric/sole into metadata JSON
+      const isVariantProduct = form.productType === 'variant';
+
+      // Variant Builder rows carry their own cost/wholesale/retail/MRP per
+      // size, but the Products list and other screens read the top-level
+      // fields — without this, a variant product always shows ₹0 there even
+      // though prices were set. Use the first row as the representative price.
+      const firstVariant = isVariantProduct ? variants[0] : undefined;
+
+      // Wholesale billing's getPrice() reads per-variant pricing from
+      // metadata.size_prices (keyed by size), not from variants[] — keep
+      // both in sync so a variant priced here is priced correctly on the
+      // Wholesale bill screen too.
+      const sizePrices = isVariantProduct
+        ? variants.reduce((acc: Record<string, any>, v: any) => {
+            if (v.size) acc[v.size] = { cost: v.wholesalePrice || 0, sellingPrice: v.sellingPrice || 0, mrp: v.mrp || 0 };
+            return acc;
+          }, {})
+        : undefined;
+
       const mergedMeta = {
         ...(form.metadata || {}),
         ...(bizConfig.hasColors && form.color ? { color: form.color } : {}),
         ...(bizConfig.hasFabric && form.fabric ? { fabric: form.fabric } : {}),
         ...(bizConfig.hasSoleMaterial && form.sole_material ? { sole_material: form.sole_material } : {}),
+        ...(sizePrices ? { size_prices: sizePrices } : {}),
       };
       const payload = {
         ...form,
         barcode: form.barcode?.trim() || null,
-        variants: form.productType === 'variant' ? variants : [],
+        variants: isVariantProduct ? variants : [],
+        ...(firstVariant ? {
+          costPrice: firstVariant.costPrice || 0,
+          wholesaleCost: firstVariant.wholesalePrice || 0,
+          sellingPrice: firstVariant.sellingPrice || 0,
+          mrp: firstVariant.mrp || 0,
+        } : {}),
         expiryDate: form.expiryDate || null,
         batch_number: form.batch_number || null,
         drug_schedule: bizConfig.hasDrugSchedule ? (form.drug_schedule || null) : null,
@@ -511,14 +563,18 @@ export default function WholesaleProductsUI() {
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 rounded flex items-center gap-0.5"><ShieldCheck size={8}/>{p.warranty_months}m</span>
                       )}
                     </div>
-                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center gap-2">
                       <div>
-                        <div className="text-xs text-slate-400">{t('colCost') || 'Cost'}</div>
-                        <div className="font-medium text-slate-900 dark:text-white">₹{p.wholesaleCost || 0}</div>
+                        <div className="text-[10px] text-slate-400">{t('costPrice') || 'Cost'}</div>
+                        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">₹{p.costPrice || 0}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400">{t('wholesaleCost') || 'Wholesale'}</div>
+                        <div className="text-sm font-medium text-slate-900 dark:text-white">₹{p.wholesaleCost || 0}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs text-slate-400">{t('colSelling') || 'Selling Price'}</div>
-                        <div className="font-medium text-emerald-600 dark:text-emerald-400">₹{p.sellingPrice || 0}</div>
+                        <div className="text-[10px] text-slate-400">{t('colRetailSale') || 'Retail'}</div>
+                        <div className="text-sm font-medium text-emerald-600 dark:text-emerald-400">₹{p.sellingPrice || 0}</div>
                       </div>
                     </div>
                   </CardContent>
@@ -611,11 +667,14 @@ export default function WholesaleProductsUI() {
                         <div className="flex items-center gap-1"><Footprints size={13}/> Sole</div>
                       </th>
                     )}
+                    <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('costPrice')}>
+                      <div className="flex items-center justify-end gap-1">{t('costPrice') || 'Cost Price'} {sortConfig?.key === 'costPrice' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
+                    </th>
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('wholesaleCost')}>
-                      <div className="flex items-center justify-end gap-1">{t('colCost') || 'Cost'} {sortConfig?.key === 'wholesaleCost' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
+                      <div className="flex items-center justify-end gap-1">{t('wholesaleCost') || 'Wholesale Selling'} {sortConfig?.key === 'wholesaleCost' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('sellingPrice')}>
-                      <div className="flex items-center justify-end gap-1">{t('colSelling') || 'Selling'} {sortConfig?.key === 'sellingPrice' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
+                      <div className="flex items-center justify-end gap-1">{t('colRetailSale') || 'Retail Sale'} {sortConfig?.key === 'sellingPrice' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('currentStock')}>
                       <div className="flex items-center justify-end gap-1">{t('colStock') || 'Stock'} {sortConfig?.key === 'currentStock' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
@@ -716,6 +775,7 @@ export default function WholesaleProductsUI() {
                         {bizConfig.hasSoleMaterial && (
                           <td className="p-4 text-xs text-amber-600 dark:text-amber-400 font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.metadata?.sole_material || '—'}</td>
                         )}
+                        <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.costPrice || 0}</td>
                         <td className="p-4 text-right text-slate-900 dark:text-white cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.wholesaleCost || 0}</td>
                         <td className="p-4 text-right font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.sellingPrice || 0}</td>
                         <td className="p-4 text-right cursor-pointer" onClick={() => setSelectedProduct(p)}>
@@ -848,15 +908,22 @@ export default function WholesaleProductsUI() {
                         }}>
                         <option value="">-- Select Unit --</option>
                         <option value="__NEW__" className="font-bold text-emerald-600">+ Add Custom Unit...</option>
-                        <optgroup label="Your Units">
-                          {masterData?.units?.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>)}
-                        </optgroup>
-                        {(!masterData?.units || masterData.units.length === 0) && (
-                          <optgroup label="Default Units">
-                            {bizConfig.defaultUnits.map((u: string) => <option key={u} value={u}>{u}</option>)}
+                        {masterData?.units?.length > 0 && (
+                          <optgroup label="Your Units">
+                            {masterData.units.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>)}
                           </optgroup>
                         )}
+                        {/* Business-category bulk/packaging units (Carton, Case, Box, Dozen,
+                            Bale, Pair, ...) — kept visible alongside the shop's own custom
+                            units rather than only as a fallback, since wholesalers/distributors
+                            sell in whatever bulk unit is standard for their trade. */}
+                        <optgroup label={`Suggested for ${bizConfig.label}`}>
+                          {bulkUnitSuggestions
+                            .filter((u: string) => !masterData?.units?.some((mu: any) => mu.name.toLowerCase() === u.toLowerCase()))
+                            .map((u: string) => <option key={u} value={u}>{u}</option>)}
+                        </optgroup>
                       </select>
+                      <p className="text-[10px] text-slate-400 mt-1">e.g. {bulkUnitSuggestions.join(', ')}</p>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('hsnCode') || 'HSN Code'}</label>
@@ -1153,16 +1220,27 @@ export default function WholesaleProductsUI() {
                           <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
                             <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                              value={form.wholesaleCost || ''} onChange={e => setForm({...form, wholesaleCost: parseFloat(e.target.value) || 0})} />
+                              value={form.costPrice || ''} onChange={e => setForm({...form, costPrice: parseFloat(e.target.value) || 0})} />
                           </div>
+                          <p className="text-[10px] text-slate-400 mt-1">What you pay your vendor/supplier — used for profit &amp; margin.</p>
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('sellingPrice') || 'Selling Price'}</label>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('wholesaleCost') || 'Wholesale Selling Price'}</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
+                            <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                              value={form.wholesaleCost || ''} onChange={e => setForm({...form, wholesaleCost: parseFloat(e.target.value) || 0})} />
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">Charged when billing in Wholesale mode — selling in bulk to other shopkeepers/dealers.</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('sellingPrice') || 'Retail Sale Price'}</label>
                           <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
                             <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
                               value={form.sellingPrice || ''} onChange={e => setForm({...form, sellingPrice: parseFloat(e.target.value) || 0})} />
                           </div>
+                          <p className="text-[10px] text-slate-400 mt-1">Charged when billing in Retail mode — single units to your own end customers.</p>
                         </div>
                         <div className="sm:col-span-2">
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('mrp') || 'MRP'}</label>
@@ -1203,7 +1281,12 @@ export default function WholesaleProductsUI() {
                                 value={v.costPrice || 0} onChange={e => { const nv = [...variants]; nv[i].costPrice = parseFloat(e.target.value); setVariants(nv); }} />
                             </div>
                             <div className="w-24">
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Selling</label>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
+                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                value={v.wholesalePrice || 0} onChange={e => { const nv = [...variants]; nv[i].wholesalePrice = parseFloat(e.target.value); setVariants(nv); }} />
+                            </div>
+                            <div className="w-24">
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
                               <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                 value={v.sellingPrice || 0} onChange={e => { const nv = [...variants]; nv[i].sellingPrice = parseFloat(e.target.value); setVariants(nv); }} />
                             </div>
@@ -1218,8 +1301,8 @@ export default function WholesaleProductsUI() {
                             </button>
                           </div>
                         ))}
-                        
-                        <button type="button" onClick={() => setVariants([...variants, { size: '', costPrice: 0, sellingPrice: 0, mrp: 0 }])}
+
+                        <button type="button" onClick={() => setVariants([...variants, { size: '', costPrice: 0, wholesalePrice: 0, sellingPrice: 0, mrp: 0 }])}
                           className="w-full py-3 border-2 border-dashed border-emerald-200 dark:border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2">
                           <Plus size={18} /> Add Variant
                         </button>

@@ -161,7 +161,7 @@ export default function ProductDetailsSheet({
                 />
                 <StatCard
                   icon={<TrendingDown size={14} className="text-slate-500 dark:text-slate-400" />}
-                  label={t("costPrice")}
+                  label={t("wholesaleRate") || "Wholesale Rate"}
                   value={`₹${(data.product.wholesaleCost || 0).toLocaleString('en-IN')}`}
                   valueClass="text-slate-900 dark:text-white"
                 />

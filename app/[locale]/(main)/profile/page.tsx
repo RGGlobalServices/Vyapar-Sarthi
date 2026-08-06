@@ -7,7 +7,7 @@ import {
   User, Building, Mail, Phone, MapPin, Camera,
   Save, Loader2, CheckCircle, Store, Briefcase,
   ArrowLeft, Lock, Eye, EyeOff, TrendingUp, ShieldCheck,
-  KeyRound, AlertCircle,
+  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
-import { getBusinessTypesForPackage } from '@/lib/businessConfig';
+import { getBusinessTypesForPackage, isBusinessTypeAllowedForPackage, getBusinessConfig } from '@/lib/businessConfig';
 
 
 export default function ProfilePage() {
@@ -135,6 +135,12 @@ export default function ProfilePage() {
         package_type: profile.packageType,
         gst: profile.gst || '',
         pan: profile.pan || '',
+        invoice_format: profile.invoiceFormat || 'thermal80',
+        upi_id: profile.upiId || '',
+        bank_name: profile.bankName || '',
+        bank_account_name: profile.bankAccountName || '',
+        bank_account_number: profile.bankAccountNumber || '',
+        bank_ifsc: profile.bankIfsc || '',
       });
     }
   }, [profile]);
@@ -156,6 +162,12 @@ export default function ProfilePage() {
         mobile: shop.mobile, logoUrl: shop.logo_url, businessType: shop.business_type,
         packageType: shop.package_type,
         gst: shop.gst, pan: shop.pan,
+        invoiceFormat: shop.invoice_format,
+        upiId: shop.upi_id?.trim() || null,
+        bankName: shop.bank_name?.trim() || null,
+        bankAccountName: shop.bank_account_name?.trim() || null,
+        bankAccountNumber: shop.bank_account_number?.trim() || null,
+        bankIfsc: shop.bank_ifsc?.trim().toUpperCase() || null,
       });
       fetchProfile(); // Force re-fetch to ensure all components receive updated states
       showStatus('success', t('updateSuccess'));
@@ -345,24 +357,41 @@ export default function ProfilePage() {
                   <label className="text-xs font-bold text-slate-500 uppercase">Business Category</label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                    <select
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
-                      value={shop?.business_type || shop?.businessType || 'kirana'}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setShop((s: any) => ({ ...s, business_type: val, businessType: val }));
-                      }}>
-                      <option value="" disabled>{t('selectType')}</option>
-                      {getBusinessTypesForPackage(shop?.package_type, shop?.business_type || shop?.businessType).map(({ meta, types }) => (
-                        <optgroup key={meta.id} label={`${meta.emoji} ${meta.label}`}>
-                          {types.map(config => (
-                            <option key={config.type} value={config.type}>
-                              {config.label}
+                    {(() => {
+                      const currentBizType = shop?.business_type || shop?.businessType || 'kirana';
+                      // Strictly package-scoped: a Udyog account only ever sees
+                      // Wholesale/Distributor (+ Agro distributor) types, never a
+                      // stray Retail section. A shop whose *current* type predates
+                      // this gating (package/type mismatch) gets that one type
+                      // surfaced as its own flagged option instead — never folded
+                      // into a category it doesn't belong to.
+                      const isOrphan = !isBusinessTypeAllowedForPackage(currentBizType, shop?.package_type);
+                      return (
+                        <select
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
+                          value={currentBizType}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setShop((s: any) => ({ ...s, business_type: val, businessType: val }));
+                          }}>
+                          <option value="" disabled>{t('selectType')}</option>
+                          {isOrphan && (
+                            <option value={currentBizType}>
+                              ⚠️ Current: {getBusinessConfig(currentBizType).label} (switch to a package-matching type below)
                             </option>
+                          )}
+                          {getBusinessTypesForPackage(shop?.package_type).map(({ meta, types }) => (
+                            <optgroup key={meta.id} label={`${meta.emoji} ${meta.label}`}>
+                              {types.map(config => (
+                                <option key={config.type} value={config.type}>
+                                  {config.label}
+                                </option>
+                              ))}
+                            </optgroup>
                           ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                        </select>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -530,6 +559,76 @@ export default function ProfilePage() {
           </Card>
         </div>
       </div>
+
+      {/* Payment & Bank Details — every package tier (Dukan, Vyapar, Udyog,
+          Bada Udyog). UPI ID renders a scan-to-pay QR on every printed/PDF
+          bill (GST and Non-GST); bank details additionally show on GST
+          invoices for customers paying by bank transfer. */}
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+            <QrCode size={20} className="text-indigo-500" /> Payment & Bank Details
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase">UPI ID</label>
+              <div className="relative">
+                <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input type="text" placeholder="yourname@okhdfcbank"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                  value={shop?.upi_id || ''} onChange={e => setShop({ ...shop, upi_id: e.target.value })} />
+              </div>
+              <p className="text-[11px] text-slate-500">Shown as a scan-to-pay QR code on wholesale A4 tax invoices.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase">Invoice Print Format</label>
+              <div className="relative">
+                <Printer className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <select
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
+                  value={shop?.invoice_format || 'thermal80'}
+                  onChange={e => setShop({ ...shop, invoice_format: e.target.value })}>
+                  <option value="thermal58">Thermal Receipt (58mm)</option>
+                  <option value="thermal80">Thermal Receipt (80mm)</option>
+                  <option value="a4">A4 / Professional Tax Invoice</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+            <p className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1.5"><Landmark size={14} /> Bank Details (shown on GST invoices)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">Account Holder Name</label>
+                <input type="text" placeholder={t('optional')}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                  value={shop?.bank_account_name || ''} onChange={e => setShop({ ...shop, bank_account_name: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">Bank Name</label>
+                <input type="text" placeholder={t('optional')}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                  value={shop?.bank_name || ''} onChange={e => setShop({ ...shop, bank_name: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">Account Number</label>
+                <input type="text" placeholder={t('optional')}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                  value={shop?.bank_account_number || ''} onChange={e => setShop({ ...shop, bank_account_number: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">IFSC Code</label>
+                <input type="text" placeholder={t('optional')}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                  value={shop?.bank_ifsc || ''} onChange={e => setShop({ ...shop, bank_ifsc: e.target.value.toUpperCase() })} />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Change Password */}
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">

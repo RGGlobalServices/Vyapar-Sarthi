@@ -11,20 +11,57 @@ export async function GET(req: Request) {
     const auth = await requireShop(req);
     await ensureWholesaleTables();
 
+    const url = new URL(req.url);
+    const q = url.searchParams.get('q') || '';
+    const supplierId = url.searchParams.get('supplierId') || '';
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const pageStr = url.searchParams.get('page');
+    const limitStr = url.searchParams.get('limit');
+    const paginated = !!(pageStr || limitStr || q || supplierId || from || to);
 
+    const page = pageStr ? parseInt(pageStr, 10) : 1;
+    const limit = limitStr ? parseInt(limitStr, 10) : 50;
+    const skip = (page - 1) * limit;
 
-    const invoices = await prisma.purchaseInvoice.findMany({
-      where: { shopId: auth.shop.id },
-      include: {
-        supplier: true,
-        purchaseItems: {
-          include: { product: true }
-        }
-      },
-      orderBy: { date: 'desc' },
-      take: 50,
-    });
+    const where: any = { shopId: auth.shop.id };
+    if (supplierId) where.supplierId = supplierId;
+    if (from || to) {
+      where.date = {};
+      if (from) where.date.gte = new Date(from);
+      if (to) where.date.lte = new Date(`${to}T23:59:59.999`);
+    }
+    if (q) {
+      where.OR = [
+        { invoiceNumber: { contains: q, mode: 'insensitive' } },
+        { supplier: { name: { contains: q, mode: 'insensitive' } } },
+        { purchaseItems: { some: { product: { name: { contains: q, mode: 'insensitive' } } } } },
+      ];
+    }
 
+    const [invoices, total] = await Promise.all([
+      prisma.purchaseInvoice.findMany({
+        where,
+        include: {
+          supplier: true,
+          purchaseItems: {
+            include: { product: true }
+          }
+        },
+        // date alone ties for same-day invoices (e.g. several imported from
+        // the same printed date); createdAt breaks the tie so same-day rows
+        // still land most-recently-added-first instead of in a DB-arbitrary order.
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        skip: paginated ? skip : undefined,
+        take: paginated ? limit : 50,
+      }),
+      paginated ? prisma.purchaseInvoice.count({ where }) : Promise.resolve(0),
+    ]);
+
+    if (paginated) {
+      return NextResponse.json({ data: invoices, total, page, limit });
+    }
+    // Backwards compatibility for callers (e.g. sidebar prefetch) expecting a plain array.
     return NextResponse.json(invoices);
   } catch (error: any) {
     console.error('[API] Error fetching purchases:', error);
@@ -131,10 +168,12 @@ export async function POST(req: Request) {
           update: { quantity: { increment: item.baseQuantity } },
           create: { godownId: warehouseId, productId: item.productId, quantity: item.baseQuantity }
         }),
-        prisma.product.update({
-          where: { id: item.productId },
-          data: { currentStock: { increment: item.baseQuantity } }
-        })
+        // currentStock has no DB default and is often NULL for products that
+        // never had an opening stock set — a plain Prisma `increment` runs as
+        // SQL `current_stock + N`, and NULL + N is NULL, so the stock silently
+        // never moves. COALESCE it to 0 first (same fix already used in
+        // stock/adjust/route.ts).
+        prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid`
       ]),
 
       // 5. Update Supplier Ledger

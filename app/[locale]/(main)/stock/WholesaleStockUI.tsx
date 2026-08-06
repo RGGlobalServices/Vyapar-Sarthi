@@ -33,7 +33,9 @@ function ProfitabilityTab({ product }: { product: any }) {
     const sellingPrice = product.sellingPrice || 0;
     const gstRate = product.gstPercent || 0;
     const baseSellingPrice = sellingPrice / (1 + gstRate / 100);
-    const costPrice = product.wholesaleCost || 0;
+    // Prefer the true vendor cost; fall back to wholesaleCost for products
+    // saved before costPrice existed, so historical margins don't drop to 0.
+    const costPrice = product.costPrice || product.wholesaleCost || 0;
     
     const totalRevenue = totalUnitsSold * baseSellingPrice;
     const totalCogs = totalUnitsSold * costPrice;
@@ -222,7 +224,7 @@ export default function WholesaleStockUI() {
         setSelectedProduct((prev: any) => ({
           ...prev,
           computedStock: (prev.computedStock || 0) + qtyChange,
-          computedValue: ((prev.computedStock || 0) + qtyChange) * (prev.wholesaleCost || prev.sellingPrice || 0)
+          computedValue: ((prev.computedStock || 0) + qtyChange) * (prev.costPrice || prev.wholesaleCost || prev.sellingPrice || 0)
         }));
       }
 
@@ -281,7 +283,10 @@ export default function WholesaleStockUI() {
       const qty = Math.max(0, rawQty); // Cap at 0 for display
       const isOutOfStock = rawQty <= 0;
 
-      const price = p.wholesaleCost || p.sellingPrice || 0;
+      // Stock value = qty × what was paid for it. Prefer the true vendor
+      // cost; fall back through wholesaleCost/sellingPrice for products
+      // saved before costPrice existed, so historical valuation doesn't drop to 0.
+      const price = p.costPrice || p.wholesaleCost || p.sellingPrice || 0;
       const val = qty * price;
       totalValue += val;
       totalUnits += qty;
@@ -352,7 +357,7 @@ export default function WholesaleStockUI() {
         `"${(item.barcode || item.sku || '').replace(/"/g, '""')}"`,
         item.computedStock,
         `"${(item.baseUnit || '').replace(/"/g, '""')}"`,
-        item.wholesaleCost || 0,
+        item.costPrice || item.wholesaleCost || 0,
         item.computedValue || 0,
         `"${status}"`
       ].join(',');
@@ -373,8 +378,10 @@ export default function WholesaleStockUI() {
   return (
     <div className="flex gap-4 lg:gap-6 mx-auto pb-16 lg:pb-0 h-[calc(100dvh-130px)] lg:h-[calc(100vh-160px)] overflow-hidden relative">
       
-      {/* Main Content Area */}
-      <div className={cn("flex-1 overflow-y-auto lg:pr-2 custom-scrollbar transition-all duration-300 pb-10", selectedProduct ? 'hidden lg:block' : 'w-full')}>
+      {/* Main Content Area — the product detail view is a centered modal now
+          (see below), not a docked side panel, so this stays full width
+          regardless of selection. */}
+      <div className="flex-1 overflow-y-auto lg:pr-2 custom-scrollbar transition-all duration-300 pb-10 w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-emerald-500 flex items-center gap-3">
@@ -550,7 +557,7 @@ export default function WholesaleStockUI() {
                       <td className="px-4 py-3 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         {item.computedStock} <span className="text-xs text-slate-500 font-normal ml-1">{item.baseUnit}</span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono whitespace-nowrap">₹{(item.wholesaleCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right font-mono whitespace-nowrap">₹{(item.costPrice || item.wholesaleCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                         ₹{(item.computedValue || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                       </td>
@@ -578,9 +585,14 @@ export default function WholesaleStockUI() {
         </>)}
       </div>
 
-      {/* Slide-out Detailed Panel */}
+      {/* Product Detail Modal — a centered overlay in front of the page,
+          matching the Checkout/Bill modals elsewhere, instead of a docked
+          side panel narrow enough that Pricing Info needed its own
+          horizontal scrollbar to be read. */}
       {selectedProduct && (
-        <div className="w-full lg:w-1/3 bg-white dark:bg-slate-900 lg:border border-slate-200 dark:border-slate-800 lg:rounded-xl shadow-xl flex flex-col transition-all animate-in slide-in-from-right-4 duration-300 h-full max-h-full z-20">
+      <div className="fixed inset-0 z-30 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedProduct(null)} />
+        <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
           <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900">
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{selectedProduct.name}</h2>
@@ -662,21 +674,29 @@ export default function WholesaleStockUI() {
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Pricing Info</h4>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-slate-500 mb-1">Purchase Price</p>
+                      <p className="text-slate-500 mb-1">Cost Price</p>
+                      <p className="font-bold font-mono text-slate-500">₹{selectedProduct.costPrice || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-1">Wholesale Price</p>
                       <p className="font-bold font-mono">₹{selectedProduct.wholesaleCost || 0}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-1">Selling Price</p>
+                      <p className="text-slate-500 mb-1">Retail Price</p>
                       <p className="font-bold font-mono text-emerald-600">₹{selectedProduct.sellingPrice || 0}</p>
                     </div>
                     <div>
                       <p className="text-slate-500 mb-1">MRP</p>
                       <p className="font-bold font-mono line-through text-slate-400">₹{selectedProduct.mrp || 0}</p>
                     </div>
-                    <div>
-                      <p className="text-slate-500 mb-1">Margin</p>
+                    <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <p className="text-slate-500 mb-1">Margin (Retail vs Cost)</p>
                       <p className="font-bold font-mono text-blue-500">
-                        {selectedProduct.sellingPrice > 0 ? (((selectedProduct.sellingPrice - (selectedProduct.wholesaleCost||0)) / selectedProduct.sellingPrice) * 100).toFixed(1) : 0}%
+                        {(() => {
+                          const cost = selectedProduct.costPrice || selectedProduct.wholesaleCost || 0;
+                          const sell = selectedProduct.sellingPrice || 0;
+                          return sell > 0 ? (((sell - cost) / sell) * 100).toFixed(1) : '0';
+                        })()}%
                       </p>
                     </div>
                   </div>
@@ -689,7 +709,7 @@ export default function WholesaleStockUI() {
                       data.warehouses.map((w: any) => {
                         const item = (w.inventory || []).find((i: any) => i.productId === selectedProduct.id);
                         if (!item || item.quantity <= 0) return null;
-                        const val = item.quantity * (selectedProduct.wholesaleCost || selectedProduct.sellingPrice || 0);
+                        const val = item.quantity * (selectedProduct.costPrice || selectedProduct.wholesaleCost || selectedProduct.sellingPrice || 0);
                         return (
                           <div key={w.id} className="flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-800 pb-2 last:pb-0 last:border-0">
                             <div>
@@ -795,6 +815,7 @@ export default function WholesaleStockUI() {
                <Printer size={16} /> {t('printBarcode')}
              </button>
           </div>
+        </div>
         </div>
       )}
 

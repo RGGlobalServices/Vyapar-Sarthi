@@ -83,10 +83,49 @@ export const GET = handle(async (req, ctx: any) => {
     .filter((t) => t.type === 'payment')
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
+  // Due Invoices / Overdue Amount: the ledger only tracks an aggregate
+  // balance, not which payment paid off which purchase, so we derive both by
+  // replaying the full history oldest-first and applying each payment FIFO
+  // against the oldest still-open purchases — the same assumption real AP
+  // ledgers use absent explicit invoice-level payment allocation. The sum of
+  // the resulting open purchases' remaining amounts always equals
+  // supplier.balance, so these numbers stay consistent with "Outstanding".
+  const chronological = [...transactions].sort(
+    (a, b) => (a.createdAt ? new Date(a.createdAt).getTime() : 0) - (b.createdAt ? new Date(b.createdAt).getTime() : 0)
+  );
+  const openPurchases: { remaining: number; dueDate: Date | null }[] = [];
+  for (const t of chronological) {
+    const amount = Number(t.amount) || 0;
+    if (t.type === 'payment') {
+      let toApply = amount;
+      for (const p of openPurchases) {
+        if (toApply <= 0) break;
+        const take = Math.min(p.remaining, toApply);
+        p.remaining -= take;
+        toApply -= take;
+      }
+      while (openPurchases.length && openPurchases[0].remaining <= 1e-6) openPurchases.shift();
+    } else if (amount > 1e-6) {
+      // Skip zero/negligible-amount purchase rows entirely — pushing one
+      // with nothing owed would sit in the queue forever counted as "open"
+      // unless a later payment happens to trigger the front-of-queue sweep
+      // above.
+      openPurchases.push({ remaining: amount, dueDate: computeDueDate(t.createdAt, t.type) });
+    }
+  }
+  const openNow = new Date();
+  const stillOpen = openPurchases.filter((p) => p.remaining > 1e-6);
+  const dueInvoicesCount = stillOpen.length;
+  const overdueAmount = stillOpen.reduce(
+    (sum, p) => sum + (p.dueDate && p.dueDate < openNow ? p.remaining : 0),
+    0
+  );
+
   return json({
     supplier: {
       id: supplier.id,
       name: supplier.name,
+      contact: supplier.contact || '',
       mobile: supplier.mobile || '',
       email: supplier.email || '',
       gst: supplier.gst || '',
@@ -96,7 +135,13 @@ export const GET = handle(async (req, ctx: any) => {
       creditDays: Number((supplier as any).creditDays) || 0,
       documents: (supplier as any).documents || [],
     },
-    totals: { totalPurchased, totalPaid, remaining: Number(supplier.balance) || 0 },
+    totals: {
+      totalPurchased,
+      totalPaid,
+      remaining: Number(supplier.balance) || 0,
+      dueInvoicesCount,
+      overdueAmount,
+    },
     months,
     transactions: transactions.map((t) => ({
       id: t.id,

@@ -41,6 +41,13 @@ interface BusinessProfile {
   // see lib/profitCalc.ts) — when true, GST is stripped out of the selling
   // price before comparing to cost.
   gstInclusiveProfit: boolean;
+  // Payment details shown on printed/PDF bills (GST + Non-GST, every package
+  // tier) as a scan-to-pay UPI QR + bank transfer box.
+  upiId: string | null;
+  bankName: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankIfsc: string | null;
 }
 
 export interface ShopLimit {
@@ -90,6 +97,11 @@ const DEFAULT_PROFILE: BusinessProfile = {
   invoiceFooter: null,
   showQrCode: false,
   gstInclusiveProfit: false,
+  upiId: null,
+  bankName: null,
+  bankAccountName: null,
+  bankAccountNumber: null,
+  bankIfsc: null,
 };
 
 function loadCachedType(): BusinessType {
@@ -152,6 +164,11 @@ function mapShopToProfile(data: any): BusinessProfile {
     invoiceFooter: data.invoiceFooter ?? data.invoice_footer ?? null,
     showQrCode: data.showQrCode ?? data.show_qr_code ?? false,
     gstInclusiveProfit: data.gstInclusiveProfit ?? data.gst_inclusive_profit ?? false,
+    upiId: data.upiId ?? data.upi_id ?? null,
+    bankName: data.bankName ?? data.bank_name ?? null,
+    bankAccountName: data.bankAccountName ?? data.bank_account_name ?? null,
+    bankAccountNumber: data.bankAccountNumber ?? data.bank_account_number ?? null,
+    bankIfsc: data.bankIfsc ?? data.bank_ifsc ?? null,
   };
 }
 
@@ -321,6 +338,14 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.pan !== undefined) apiUpdates.pan = updates.pan;
       if (updates.subscriptionPlan !== undefined) apiUpdates.subscriptionPlan = updates.subscriptionPlan;
       if (updates.gstInclusiveProfit !== undefined) apiUpdates.gstInclusiveProfit = updates.gstInclusiveProfit;
+      if (updates.invoiceFormat !== undefined) apiUpdates.invoiceFormat = updates.invoiceFormat;
+      if (updates.invoiceFooter !== undefined) apiUpdates.invoiceFooter = updates.invoiceFooter;
+      if (updates.showQrCode !== undefined) apiUpdates.showQrCode = updates.showQrCode;
+      if (updates.upiId !== undefined) apiUpdates.upiId = updates.upiId;
+      if (updates.bankName !== undefined) apiUpdates.bankName = updates.bankName;
+      if (updates.bankAccountName !== undefined) apiUpdates.bankAccountName = updates.bankAccountName;
+      if (updates.bankAccountNumber !== undefined) apiUpdates.bankAccountNumber = updates.bankAccountNumber;
+      if (updates.bankIfsc !== undefined) apiUpdates.bankIfsc = updates.bankIfsc;
 
       await api.patch('/shop/profile', apiUpdates);
 

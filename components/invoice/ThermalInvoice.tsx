@@ -3,10 +3,29 @@
 import React from 'react';
 import { CartItem } from '@/lib/store';
 import { useTranslations } from 'next-intl';
-import { getInvoiceColumns } from '@/lib/invoice-helpers';
+import { getInvoiceColumns, isChargeLineItem } from '@/lib/invoice-helpers';
 import { BusinessType } from '@/lib/businessConfig';
 import { Barcode } from './Barcode';
 import type { GstBreakdown } from '@/lib/gst';
+import { useUpiQrCode } from './useUpiQrCode';
+
+// Column widths for the thermal items table (table-layout: fixed). The Item
+// name column deliberately has no entry — it absorbs whatever's left after
+// these, which is what keeps it readable instead of being squeezed by
+// however many extra columns a given business type/GST bill tacks on.
+const THERMAL_COL_WIDTH: Record<string, string> = {
+  qty: '7%',
+  rate: '15%',
+  amt: '15%',
+  color: '11%',
+  size: '8%',
+  batch: '14%',
+  expiry: '12%',
+  serial: '13%',
+  warranty: '13%',
+  hsn: '10%',
+  gstPercent: '9%',
+};
 
 export interface BaseInvoiceProps {
   items: CartItem[];
@@ -44,6 +63,22 @@ export interface BaseInvoiceProps {
   billType?: 'gst' | 'non_gst' | string;
   gstBreakdown?: GstBreakdown;
   billImageUrl?: string;
+  // Scan-to-pay UPI QR + bank transfer box — set once in Profile, shown on
+  // every bill (GST and Non-GST, every package tier) once a shop has a UPI ID.
+  upiId?: string;
+  // Pre-generated inline-SVG QR (awaited at checkout, before the bill is
+  // shown). Preferred over qrDataUrl because it's real DOM html2canvas
+  // rasterises synchronously — a raster <img> QR intermittently captured
+  // blank in the PDF. See generateUpiQrSvg().
+  qrSvg?: string | null;
+  // Pre-generated raster QR (data URL). Kept as a fallback for callers that
+  // haven't moved to qrSvg yet. Undefined (not null) means "not provided" and
+  // falls back to generating it here reactively.
+  qrDataUrl?: string | null;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
 }
 
 export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
@@ -80,19 +115,52 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   showQrCode = false,
   billType,
   gstBreakdown,
+  upiId,
+  qrSvg,
+  qrDataUrl: qrDataUrlProp,
 }, ref) => {
   const t = useTranslations('BillSlip');
-  const subtotal = items.reduce((acc, item) => acc + item.total, 0);
-  const paid = amountPaid ?? total;
   const isGstBill = billType === 'gst';
-  
+
+  // Transport/Loading/Packing/Other charges ride in the same items array (so
+  // they persist with the sale for reprints) but aren't goods — pulling them
+  // out of the product rows and listing them as their own total line is what
+  // makes Subtotal + Charges + Tax actually add up to the Total, instead of a
+  // "0% GST" charge row sitting among taxable products.
+  const goodsItems = items.filter((item) => !isChargeLineItem(item.name));
+  const chargeItems = items.filter((item) => isChargeLineItem(item.name));
+  const subtotal = goodsItems.reduce((acc, item) => acc + item.total, 0);
+  const chargesTotal = chargeItems.reduce((acc, item) => acc + item.total, 0);
+  const paid = amountPaid ?? total;
+
   const columns = getInvoiceColumns(businessType);
   const is58mm = invoiceFormat === 'thermal58';
+  // A caller-provided QR (computed eagerly at checkout) always wins — passing
+  // upiId: undefined to the hook here just skips its own generation rather
+  // than doing redundant work whose result would be thrown away. The inline
+  // SVG (qrSvg) is preferred; qrDataUrl / the hook are raster fallbacks.
+  const hasPreGenQr = qrSvg !== undefined || qrDataUrlProp !== undefined;
+  const liveQrDataUrl = useUpiQrCode({
+    upiId: hasPreGenQr ? undefined : upiId,
+    payeeName: storeName,
+    amount: remainingAmount > 0 ? remainingAmount : total,
+    note: `Invoice ${billNumber}`,
+    size: 140,
+  });
+  const qrDataUrl = qrDataUrlProp !== undefined ? qrDataUrlProp : liveQrDataUrl;
   
   const widthClass = is58mm ? 'max-w-[220px]' : 'max-w-[320px]';
   const textClass = is58mm ? 'text-[9px]' : 'text-[11px]';
   const smallTextClass = is58mm ? 'text-[7px]' : 'text-[9px]';
   const headerTextClass = is58mm ? 'text-[13px]' : 'text-[17px]';
+  // The items-table column HEADERS run a notch smaller than the row text so
+  // long single-word labels (WARRANTY, SERIAL, COLOR) fit their narrow fixed
+  // columns on ONE line — the alternative, letting them wrap, breaks the word
+  // itself (WARR/ANTY) which reads as broken. Cells and headers use nowrap so
+  // currency values never split mid-number (₹5,2/00) either; only the Item
+  // name column is allowed to wrap, onto clean extra lines.
+  const tableHeadClass = is58mm ? 'text-[6px]' : 'text-[8px]';
+  const cellPad = is58mm ? 'px-0.5' : 'px-1';
   
   // A thin horizontal rule used between sections — a shared visual weight instead
   // of the previous mix of dashed/dotted/solid borders scattered across the file.
@@ -102,7 +170,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   return (
     <div
       ref={ref}
-      style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: 'monospace' }}
+      style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: 'Calibri, sans-serif' }}
       className={`p-3 w-full mx-auto ${widthClass} ${textClass} leading-snug`}
     >
       <div style={boxBorder}>
@@ -154,27 +222,37 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
         {/* Items table — a real bordered table instead of dashed row separators.
             HSN + GST% columns are appended for a GST bill regardless of
             business type/category — matching A4Invoice, and giving every
-            shop a properly-formatted tax invoice, not just liquor. */}
-        <table className="w-full border-collapse" style={{ ...rule }}>
+            shop a properly-formatted tax invoice, not just liquor.
+
+            table-layout: fixed is load-bearing here, not decorative: without
+            it a row with many short columns (e.g. clothes' Color+Size on top
+            of HSN+GST%) can demand more total width than the 58mm/80mm
+            container has, and a plain auto-layout table just overflows its
+            box instead of shrinking — the Item name column collides with
+            its neighbours. Fixed layout forces every column to the width we
+            hand it and wrap instead. HSN drops out at 58mm specifically —
+            least useful column on a slip this narrow, and freeing its share
+            keeps the others (esp. Item name) legible. */}
+        <table className="w-full border-collapse" style={{ ...rule, tableLayout: 'fixed' }}>
           <thead>
-            <tr className={`${smallTextClass} uppercase`} style={{ backgroundColor: '#eee', borderBottom: '1.5px solid #000' }}>
+            <tr className={`${tableHeadClass} uppercase`} style={{ backgroundColor: '#eee', borderBottom: '1.5px solid #000' }}>
               {columns.map(col => (
-                <th key={col.id} className={`py-1.5 px-1 text-${col.align} font-bold ${col.width || ''}`}>{t(col.labelKey) || col.labelKey}</th>
+                <th key={col.id} className={`py-1.5 ${cellPad} text-${col.align} font-bold`} style={{ width: col.id === 'item' ? undefined : (THERMAL_COL_WIDTH[col.id] || '14%'), whiteSpace: 'nowrap' }}>{t(col.labelKey) || col.labelKey}</th>
               ))}
-              {isGstBill && <th className="py-1.5 px-1 text-left font-bold">{t('hsn') || 'HSN'}</th>}
-              {isGstBill && <th className="py-1.5 px-1 text-right font-bold">GST%</th>}
+              {isGstBill && !is58mm && <th className={`py-1.5 ${cellPad} text-left font-bold`} style={{ width: THERMAL_COL_WIDTH.hsn, whiteSpace: 'nowrap' }}>{t('hsn') || 'HSN'}</th>}
+              {isGstBill && <th className={`py-1.5 ${cellPad} text-right font-bold`} style={{ width: THERMAL_COL_WIDTH.gstPercent, whiteSpace: 'nowrap' }}>GST%</th>}
             </tr>
           </thead>
           <tbody>
-            {items.map((item, idx) => (
-              <tr key={idx} className="align-top" style={idx < items.length - 1 ? { borderBottom: '1px solid #ddd' } : undefined}>
+            {goodsItems.map((item, idx) => (
+              <tr key={idx} className="align-top" style={idx < goodsItems.length - 1 ? { borderBottom: '1px solid #ddd' } : undefined}>
                 {columns.map(col => (
-                  <td key={col.id} className={`py-1 px-1 text-${col.align} ${textClass} ${col.id === 'item' ? 'pr-2' : ''}`}>
+                  <td key={col.id} className={`py-1 ${cellPad} text-${col.align} ${textClass} ${col.id === 'item' ? 'pr-2' : ''}`} style={col.id === 'item' ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap' }}>
                     {col.render(item)}
                   </td>
                 ))}
-                {isGstBill && <td className={`py-1 px-1 text-left ${textClass}`}>{(item as any).hsnCode || '-'}</td>}
-                {isGstBill && <td className={`py-1 px-1 text-right ${textClass}`}>{Number((item as any).gstPercent) || 0}%</td>}
+                {isGstBill && !is58mm && <td className={`py-1 ${cellPad} text-left ${textClass}`} style={{ whiteSpace: 'nowrap' }}>{(item as any).hsnCode || '-'}</td>}
+                {isGstBill && <td className={`py-1 ${cellPad} text-right ${textClass}`} style={{ whiteSpace: 'nowrap' }}>{Number((item as any).gstPercent) || 0}%</td>}
               </tr>
             ))}
           </tbody>
@@ -193,6 +271,12 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                 <span>- ₹{discount.toLocaleString('en-IN')}</span>
               </div>
             )}
+            {chargeItems.map((item, idx) => (
+              <div key={idx} className={`flex justify-between ${smallTextClass}`}>
+                <span>{item.name}</span>
+                <span>₹{item.total.toLocaleString('en-IN')}</span>
+              </div>
+            ))}
           </div>
           <div className="flex justify-between font-black text-[15px] mt-1 py-1.5 px-2 -mx-2" style={{ ...rule, borderBottom: '1px solid #000', backgroundColor: '#f5f5f5' }}>
             <span>{t('total')}</span>
@@ -340,14 +424,20 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
             );
           })()}
 
-          {/* QR Code Placeholder */}
-          {showQrCode && (
+          {/* UPI "Scan & Pay" QR — driven purely by whether the shop has set a
+              UPI ID in Profile, not by showQrCode (that flag has no UI to set
+              it, so gating on it too would leave this permanently hidden). */}
+          {upiId && (
             <div className="pt-3 pb-2 flex flex-col items-center" style={rule}>
-               {/* Replace with actual QR Code later if react-qr-code is installed */}
-               <div className="w-16 h-16 border border-black flex items-center justify-center text-[8px] bg-slate-50">
-                 QR
-               </div>
-               <p className="text-[8px] mt-1">Scan to Verify</p>
+              {qrSvg ? (
+                <div className="w-20 h-20 [&>svg]:w-full [&>svg]:h-full [&>svg]:block" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+              ) : qrDataUrl ? (
+                <img src={qrDataUrl} alt="UPI QR" className="w-20 h-20" />
+              ) : (
+                <div className="w-16 h-16 border border-black flex items-center justify-center text-[8px] bg-slate-50">…</div>
+              )}
+              <p className={`${smallTextClass} font-black mt-1 uppercase tracking-wide`}>Scan to Pay</p>
+              <p className="text-[8px]">{upiId}</p>
             </div>
           )}
         </div>

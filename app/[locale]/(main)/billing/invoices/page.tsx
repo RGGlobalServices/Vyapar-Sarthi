@@ -8,6 +8,7 @@ import { useAuthStore, useCartStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { cn } from '@/lib/utils';
+import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import {
   IndianRupee, Search, Filter, ArrowLeft, RefreshCw, Eye, Calendar,
   User, Printer, Download, MessageCircle, Copy, RotateCcw, Trash2,
@@ -267,6 +268,16 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
     businessType: profile?.businessType || 'kirana',
     showQrCode: profile?.showQrCode || false,
     invoiceFooter: profile?.invoiceFooter || undefined,
+    // Scan-to-pay QR is wholesale-A4-only — reprints follow the same rule so a
+    // retail / thermal reprint never surfaces it. See WholesaleBillingUI.
+    upiId: ((profile?.subscriptionPlan === 'wholesale' || profile?.packageType === 'wholesale')
+      && (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale'))
+      ? (profile?.upiId || undefined)
+      : undefined,
+    bankName: profile?.bankName || undefined,
+    bankAccountName: profile?.bankAccountName || undefined,
+    bankAccountNumber: profile?.bankAccountNumber || undefined,
+    bankIfsc: profile?.bankIfsc || undefined,
     billType: invoice.bill_type || 'non_gst',
     gstBreakdown: invoice.gst_details
       ? (typeof invoice.gst_details === 'string' ? JSON.parse(invoice.gst_details) : invoice.gst_details)
@@ -282,22 +293,29 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
         import('html2canvas-pro'),
         import('jspdf'),
       ]);
+      await waitForQrCode(componentRef.current, !!billData.upiId);
       const clone = componentRef.current.cloneNode(true) as HTMLElement;
       clone.style.position = 'fixed';
       clone.style.top = '0';
       clone.style.left = '-9999px';
-      clone.style.width = '320px';
+      const isA4 = billData.invoiceFormat === 'a4' || billData.invoiceFormat === 'wholesale';
+      clone.style.width = isA4 ? '800px' : '320px';
       clone.style.height = 'auto';
       clone.style.backgroundColor = '#ffffff';
       clone.style.visibility = 'visible';
       document.body.appendChild(clone);
-      await new Promise(r => setTimeout(r, 200));
-      const canvas = await html2canvas(clone, { scale: 3, useCORS: true, backgroundColor: '#ffffff', logging: false });
-      const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = 80;
+      await waitForImages(clone);
+      // scale 2.2 is still noticeably sharper than the original blurry
+      // capture, without the page ballooning past ~100KB. JPEG (not PNG)
+      // does the rest of the size work — this is a document of white space,
+      // thin borders and text, which JPEG compresses far better than
+      // lossless PNG; only the QR/barcode's fine detail resists it much.
+      const canvas = await html2canvas(clone, { scale: 2.2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+      const imgData = canvas.toDataURL('image/jpeg', 0.82);
+      const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [pdfWidth, pdfHeight] });
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`${billData.billNumber}.pdf`);
       document.body.removeChild(clone);
     } catch (e) {
@@ -326,7 +344,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
+      <div className={`bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl w-full ${(billData.invoiceFormat === 'a4' || billData.invoiceFormat === 'wholesale') ? 'max-w-3xl' : 'max-w-sm'} shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <h2 className="font-black text-slate-900 dark:text-white">Invoice Preview</h2>
@@ -349,7 +367,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
 
         {/* Actions */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 gap-2 shrink-0">
-          <button onClick={() => window.print()} className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+          <button onClick={async () => { if (componentRef.current) await waitForQrCode(componentRef.current, !!billData.upiId); window.print(); }} className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             <Printer size={16} />Print
           </button>
           <button

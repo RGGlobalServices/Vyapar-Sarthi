@@ -524,6 +524,9 @@ export async function POST(req: NextRequest) {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
             const quantity = parseFloat(getVal(row, ['quantity', 'qty', 'stock']) || 0);
             const unitCost = parseFloat(getVal(row, ['unitcost', 'wholesalecost', 'cost', 'price', 'rate']) || 0);
+            // Prefer the MRP actually printed on the invoice when the AI
+            // extracted one; only fall back to a guessed markup when it didn't.
+            const extractedMrp = parseFloat(getVal(row, ['mrp']) || 0);
 
             if (!name) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`); continue; }
             if (quantity <= 0) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Quantity must be greater than 0 (fill it in and re-import)`); continue; }
@@ -545,7 +548,7 @@ export async function POST(req: NextRequest) {
                   baseUnit: getVal(row, ['unit']) || 'pcs',
                   wholesaleCost: unitCost,
                   sellingPrice: unitCost * 1.2,
-                  mrp: unitCost * 1.25,
+                  mrp: extractedMrp > 0 ? extractedMrp : unitCost * 1.25,
                   category: getVal(row, ['category']) || 'General',
                   currentStock: quantity,
                   metadata: getVal(row, ['size']) || getVal(row, ['color']) ? { size: getVal(row, ['size']), color: getVal(row, ['color']) } : {},

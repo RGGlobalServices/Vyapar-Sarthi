@@ -9,6 +9,8 @@ import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Prin
 import { cn } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
 import { useAuthStore } from '@/lib/store';
+import { useBusinessStore } from '@/lib/businessStore';
+import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const t = useTranslations('Invoices');
@@ -18,6 +20,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [downloading, setDownloading] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
   const { user } = useAuthStore();
+  const { profile, fetchProfile } = useBusinessStore();
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -43,29 +50,37 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         import('jspdf'),
       ]);
 
+      await waitForQrCode(componentRef.current, !!billData.upiId);
+
       clone = componentRef.current.cloneNode(true) as HTMLElement;
       clone.classList.remove('hidden');
       clone.style.display = 'block';
       clone.style.position = 'fixed';
       clone.style.top = '0';
       clone.style.left = '-9999px';
-      clone.style.width = '320px';
+      const isA4 = billData.invoiceFormat === 'a4' || billData.invoiceFormat === 'wholesale';
+      clone.style.width = isA4 ? '800px' : '320px';
       clone.style.height = 'auto';
       clone.style.backgroundColor = '#ffffff';
       clone.style.visibility = 'visible';
       document.body.appendChild(clone);
 
-      await new Promise(r => setTimeout(r, 200));
+      await waitForImages(clone);
 
+      // scale 2.2 is still noticeably sharper than the original blurry
+      // capture, without the page ballooning past ~100KB. JPEG (not PNG)
+      // does the rest of the size work — this is a document of white space,
+      // thin borders and text, which JPEG compresses far better than
+      // lossless PNG; only the QR/barcode's fine detail resists it much.
       const canvas = await html2canvas(clone, {
-        scale: 3,
+        scale: 2.2,
         useCORS: true,
         backgroundColor: '#ffffff',
-        windowWidth: 320
+        windowWidth: isA4 ? 800 : 320
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = 80;
+      const imgData = canvas.toDataURL('image/jpeg', 0.82);
+      const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
       const pdf = new jsPDF({
@@ -74,7 +89,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         format: [pdfWidth, pdfHeight]
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`bill-${invoice.id.substring(0, 8)}.pdf`);
     } catch (err) {
       console.error('PDF Download Error', err);
@@ -85,7 +100,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (componentRef.current) await waitForQrCode(componentRef.current, !!billData.upiId);
     window.print();
   };
 
@@ -139,7 +155,26 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     remainingAmount: Math.max(0, totalAmount - (invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : totalAmount))),
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
     date: new Date(invoice.created_at).toLocaleDateString(),
-    storeName: user?.storeName || 'Store',
+    storeName: profile?.shopName || user?.storeName || 'Store',
+    storeAddress: profile?.address || undefined,
+    storeMobile: profile?.mobile || undefined,
+    logoUrl: profile?.logoUrl || undefined,
+    gst: profile?.gst || undefined,
+    pan: profile?.pan || undefined,
+    invoiceFormat: profile?.invoiceFormat || 'thermal80',
+    businessType: profile?.businessType || 'kirana',
+    showQrCode: profile?.showQrCode || false,
+    invoiceFooter: profile?.invoiceFooter || undefined,
+    // Scan-to-pay QR is wholesale-A4-only — reprints follow the same rule so a
+    // retail / thermal reprint never surfaces it. See WholesaleBillingUI.
+    upiId: ((profile?.subscriptionPlan === 'wholesale' || profile?.packageType === 'wholesale')
+      && (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale'))
+      ? (profile?.upiId || undefined)
+      : undefined,
+    bankName: profile?.bankName || undefined,
+    bankAccountName: profile?.bankAccountName || undefined,
+    bankAccountNumber: profile?.bankAccountNumber || undefined,
+    bankIfsc: profile?.bankIfsc || undefined,
     customerName: invoice.customer_name || undefined,
     splitPayments: invoice.payment_type === 'Split' ? (typeof invoice.payment_details === 'string' ? JSON.parse(invoice.payment_details) : invoice.payment_details) : undefined,
     // GST invoice data (from stored bill_type / gst_details)

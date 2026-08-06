@@ -200,11 +200,12 @@ export async function POST(req: NextRequest) {
       // We need field names that match the execute route's aliases exactly —
       // 'unitCost' (NOT sellingPrice, since this is what YOU paid the supplier).
       specificInstructions = [
-        'This is a PURCHASE INVOICE (Indian GST tax invoice / supplier bill / kacha bill).',
+        'This is a PURCHASE INVOICE (Indian GST tax invoice / supplier bill / kacha bill). You will see invoices from many different suppliers, each with its own layout, column names, language, and print quality — some typed, some handwritten, some photographed at an angle, some with no visible grid lines, headers sometimes in Hindi/Marathi or abbreviated. Do not assume this invoice matches any other invoice you have seen — read only what THIS page actually shows.',
         'Extract the supplier header AND every line item.',
-        'For EACH item, output these exact field names: productName, hsnCode, quantity, unit, unitCost (price per unit YOU paid the supplier, NOT selling price), gstPercent, amount (line total after discount+GST), barcode (leave empty if not present).',
+        'For EACH item, output these exact field names: productName, hsnCode, quantity, unit, unitCost (price per unit YOU paid the supplier, NOT selling price), mrp (the printed MRP for this item, if the invoice shows one — else leave empty), gstPercent, amount (line total after discount+GST), barcode (leave empty if not present).',
         'For each item also copy the header onto the row: supplier (business name at top), invoiceNumber, invoiceDate (as YYYY-MM-DD if possible).',
-        'unitCost is the per-unit purchase rate before GST — usually labelled "Price/Unit" or "Rate". Do NOT put the total in unitCost.',
+        'unitCost — follow this procedure, in order, using only numbers actually printed on the page: (1) If a column exists that is clearly a per-unit rate separate from the line total — commonly labelled "Price/Unit", "Rate", "Basic Rate", "Dar", or an equivalent in whatever language the invoice uses — copy that figure exactly as printed. (2) Otherwise, if the row shows a line total/Amount, divide it by quantity — that is the actual amount charged per unit. (3) If neither a rate column nor a line total is present, leave unitCost empty rather than guessing. Never subtract, divide out, or otherwise back-calculate GST yourself, and never treat a printed MRP as if it were the purchase rate — a value is only valid if it is directly printed or a plain Amount÷quantity of what is printed.',
+        'productName — transcribe the FULL item description exactly as printed, character for character, including every leading number, size, brand prefix, or code (e.g. a printed description like "500 REDLABEL TEA, 1KG PACK" must keep its leading "500" — never drop leading characters just because they look like a stray code). This rule applies regardless of what the item or brand actually is on any given invoice.',
         'Skip pure summary rows (Subtotal / Round Off / Grand Total / Tax Summary / signature) — only extract actual product rows.',
         'If HSN/SAC has slash (e.g. HSN/SAC), take just the code number.',
         'HSN codes are 4, 6 or 8 digits and are a SEPARATE column from quantity — never merge them. If you see "6203" in the HSN column and "18" in the Qty column, output hsnCode "6203" and quantity 18, never "620318".',
@@ -815,39 +816,64 @@ ${dataText}`;
 
     for (const it of dedupedItems as any[]) {
       if (!it || typeof it !== 'object') continue;
+
+      // Looked up once per row and shared by both repairs below — quantity
+      // repair needs it as a write target, the cost fill needs it as a divisor.
+      const qtyKey = Object.keys(it).find(
+        (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'quantity',
+      ) || 'quantity';
+
       const rate = num(pick(it, ['unitcost', 'rate', 'price', 'priceperunit', 'unitprice']));
       const taxable = num(pick(it, ['taxableamount', 'taxable']));
       const discountRaw = num(pick(it, ['discount', 'disc']));
       const discount = Number.isFinite(discountRaw) ? discountRaw : 0;
-      if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(taxable)) continue;
 
-      const derived = (taxable + discount) / rate;
-      // Quantities on a real invoice are whole (or near-whole) units.
-      if (!Number.isFinite(derived) || derived <= 0) continue;
-      const rounded = Math.round(derived);
-      if (Math.abs(derived - rounded) > 0.02) continue;
+      if (Number.isFinite(rate) && rate > 0 && Number.isFinite(taxable)) {
+        const derived = (taxable + discount) / rate;
+        // Quantities on a real invoice are whole (or near-whole) units.
+        if (Number.isFinite(derived) && derived > 0) {
+          const rounded = Math.round(derived);
+          if (Math.abs(derived - rounded) <= 0.02) {
+            const current = num(it[qtyKey]);
+            if (current !== rounded) {
+              it[qtyKey] = rounded;
+              repairedRows++;
 
-      const qtyKey = Object.keys(it).find(
-        (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'quantity',
-      ) || 'quantity';
-      const current = num(it[qtyKey]);
-
-      if (current !== rounded) {
-        it[qtyKey] = rounded;
-        repairedRows++;
-
-        // "6203" + "18" → "620318". With the true quantity known we can strip
-        // the swallowed digits and restore a valid 4/6/8-digit HSN code.
-        const hsnKey = Object.keys(it).find((k) =>
-          ['hsncode', 'hsn', 'hsnsac', 'sac'].includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')),
-        );
-        if (hsnKey) {
-          const hsn = String(it[hsnKey] ?? '').trim();
-          const suffix = String(rounded);
-          if (hsn.length > 4 && hsn.endsWith(suffix)) {
-            const trimmed = hsn.slice(0, -suffix.length);
-            if ([4, 6, 8].includes(trimmed.length)) it[hsnKey] = trimmed;
+              // "6203" + "18" → "620318". With the true quantity known we can strip
+              // the swallowed digits and restore a valid 4/6/8-digit HSN code.
+              const hsnKey = Object.keys(it).find((k) =>
+                ['hsncode', 'hsn', 'hsnsac', 'sac'].includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')),
+              );
+              if (hsnKey) {
+                const hsn = String(it[hsnKey] ?? '').trim();
+                const suffix = String(rounded);
+                if (hsn.length > 4 && hsn.endsWith(suffix)) {
+                  const trimmed = hsn.slice(0, -suffix.length);
+                  if ([4, 6, 8].includes(trimmed.length)) it[hsnKey] = trimmed;
+                }
+              }
+            }
           }
+        }
+      }
+
+      // unitCost is what the review table shows as the row's purchase price —
+      // it should never sit blank/zero when the invoice printed enough to
+      // compute it. This only FILLS a missing value; it never overrides one
+      // the model already reported, since a present unitCost may legitimately
+      // be a genuine pre-GST rate that differs from amount÷quantity by design
+      // (see the extraction prompt above) — a fill that can only ever help,
+      // never make a correct value worse, is the only kind safe to run
+      // unconditionally across every invoice format.
+      const costKey = Object.keys(it).find(
+        (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'unitcost',
+      ) || 'unitCost';
+      const currentCost = num(it[costKey]);
+      if (!Number.isFinite(currentCost) || currentCost <= 0) {
+        const amount = num(pick(it, ['amount', 'total', 'lineamount', 'netamount', 'value']));
+        const qtyNow = num(it[qtyKey]);
+        if (Number.isFinite(amount) && amount > 0 && Number.isFinite(qtyNow) && qtyNow > 0) {
+          it[costKey] = Math.round((amount / qtyNow) * 100) / 100;
         }
       }
     }

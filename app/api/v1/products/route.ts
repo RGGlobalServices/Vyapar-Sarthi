@@ -115,6 +115,9 @@ export const GET = handle(async (req) => {
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const b = await readBody(req);
+  // Uuid FK columns reject '' (the "-- Select --" empty option's value) —
+  // only null/a real uuid is valid, so coerce the empty-string case.
+  const uuidOrNull = (v: any) => (v === '' ? null : v);
   try {
     const product = await prisma.product.create({
       data: {
@@ -126,6 +129,7 @@ export const POST = handle(async (req) => {
         mrp: b.mrp,
         sellingPrice: b.selling_price ?? b.sellingPrice,
         wholesaleCost: b.wholesale_cost ?? b.wholesaleCost,
+        costPrice: b.cost_price ?? b.costPrice,
         baseUnit: b.base_unit ?? b.baseUnit,
         barcode: b.barcode,
         sku: b.sku ?? null,
@@ -145,11 +149,11 @@ export const POST = handle(async (req) => {
         hsnCode: b.hsnCode ?? b.hsn_code,
         productType: b.productType ?? b.product_type,
         gstPercent: b.gstPercent ?? b.gst_percent,
-        categoryId: b.categoryId ?? b.category_id,
-        brandId: b.brandId ?? b.brand_id,
-        baseUnitId: b.baseUnitId ?? b.base_unit_id,
-        defaultSaleUnitId: b.defaultSaleUnitId ?? b.default_sale_unit_id,
-        defaultPurchaseUnitId: b.defaultPurchaseUnitId ?? b.default_purchase_unit_id,
+        categoryId: uuidOrNull(b.categoryId ?? b.category_id),
+        brandId: uuidOrNull(b.brandId ?? b.brand_id),
+        baseUnitId: uuidOrNull(b.baseUnitId ?? b.base_unit_id),
+        defaultSaleUnitId: uuidOrNull(b.defaultSaleUnitId ?? b.default_sale_unit_id),
+        defaultPurchaseUnitId: uuidOrNull(b.defaultPurchaseUnitId ?? b.default_purchase_unit_id),
         maxStock: b.maxStock ?? b.max_stock,
         wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,
         conversionFactor: b.conversionFactor ?? b.conversion_factor,

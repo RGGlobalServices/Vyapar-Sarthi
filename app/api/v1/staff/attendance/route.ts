@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
+import { normalizeAttendanceStatus } from '@/lib/attendance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,7 +21,9 @@ export const GET = handle(async (req) => {
     },
     include: { staff: true },
   });
-  return json(attendance);
+  // Normalize on the way out so every caller sees the canonical casing
+  // regardless of which UI/era wrote the underlying row.
+  return json(attendance.map(a => ({ ...a, status: normalizeAttendanceStatus(a.status) })));
 });
 
 export const POST = handle(async (req) => {
@@ -42,7 +45,9 @@ export const POST = handle(async (req) => {
   const results = [];
   for (const record of b.records) {
     if (!validStaffIds.has(record.staffId)) continue;
-    
+    const status = normalizeAttendanceStatus(record.status);
+    if (!status) continue;
+
     const att = await prisma.attendance.upsert({
       where: {
         staffId_date: {
@@ -51,13 +56,13 @@ export const POST = handle(async (req) => {
         },
       },
       update: {
-        status: record.status,
+        status,
         reason: record.reason || null,
       },
       create: {
         staffId: record.staffId,
         date: date,
-        status: record.status,
+        status,
         reason: record.reason || null,
       },
     });

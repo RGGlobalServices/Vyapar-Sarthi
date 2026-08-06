@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
 import { getDateRange, formatDate, startOfDay, endOfDay } from '@/lib/server/dates';
+import { normalizeAttendanceStatus, summarizeAttendance } from '@/lib/attendance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -550,9 +551,12 @@ async function handleStaff(shop: any, startDate: Date, endDate: Date, q: Record<
       include: { staff: { select: { name: true, role: true } } },
       orderBy: { date: 'desc' }
     });
-    const presentCount = rows.filter(r => r.status === 'Present').length;
-    const absentCount = rows.filter(r => r.status === 'Absent').length;
-    return json({ rows, summary: { present: presentCount, absent: absentCount, halfDay: rows.filter(r => r.status === 'Half').length } });
+    // Normalize before both summarizing and returning — old rows written by
+    // either attendance UI's previous casing must still count and display
+    // correctly (see lib/attendance.ts).
+    const normalizedRows = rows.map(r => ({ ...r, status: normalizeAttendanceStatus(r.status) }));
+    const { present, halfDay, absent, leave } = summarizeAttendance(normalizedRows);
+    return json({ rows: normalizedRows, summary: { present, absent, halfDay, leave } });
   }
 
   return json({ error: 'Unknown report_type' }, 400);

@@ -103,6 +103,14 @@ model Shop {
   // markup intuition. Independent of the tax-liability-aware profit used at
   // billing time (lib/financialEngine.ts), which always nets out GST.
   gstInclusiveProfit      Boolean?             @default(false) @map("gst_inclusive_profit")
+  // Shown on printed/PDF bills (GST and Non-GST, every package tier) as a
+  // scan-to-pay UPI QR + bank transfer details — set once in Profile, then
+  // reused on every invoice without re-entering it per bill.
+  upiId                   String?              @map("upi_id") @db.VarChar
+  bankName                String?              @map("bank_name") @db.VarChar
+  bankAccountName         String?              @map("bank_account_name") @db.VarChar
+  bankAccountNumber       String?              @map("bank_account_number") @db.VarChar
+  bankIfsc                String?              @map("bank_ifsc") @db.VarChar
 
   customers               Customer[]
   products                Product[]
@@ -207,7 +215,14 @@ model Product {
   baseUnit         String?          @map("base_unit") @db.VarChar
   mrp              Float?
   sellingPrice     Float?           @map("selling_price")
+  // Udyog only: wholesaleCost is the price CHARGED when billing in Wholesale
+  // mode (to other shopkeepers/dealers) — despite the name, it is a selling
+  // price, not a cost basis. costPrice below is the actual amount paid to
+  // the vendor, used for margin/profitability, and is separate on purpose —
+  // conflating the two previously made profit calculations read the
+  // wholesale selling price as if it were COGS.
   wholesaleCost    Float?           @map("wholesale_cost")
+  costPrice        Float?           @map("cost_price")
   conversionFactor Float?           @map("conversion_factor")
   minStock         Float?           @map("min_stock")
   currentStock     Float?           @map("current_stock")
