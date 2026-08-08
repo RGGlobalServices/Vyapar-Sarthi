@@ -174,11 +174,26 @@ model Order {
   status      String   @default("pending") @db.VarChar
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  // 'incoming' = a party/customer ordered from us; 'outgoing' = we ordered
+  // from a supplier. customerId is used for incoming, supplierId for
+  // outgoing — an explicit field instead of inferring from which FK is set,
+  // since neither is required and inference would be ambiguous when empty.
+  direction    String    @default("incoming") @db.VarChar
+  supplierId   String?   @map("supplier_id") @db.Uuid
+  // Scheduled/expected completion date — separate from completedAt (the
+  // real timestamp, set once status actually becomes "completed") so a
+  // missed schedule stays visible instead of being overwritten.
+  expectedDate DateTime? @map("expected_date") @db.Timestamptz(6)
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
+  notes        String?   @db.VarChar
+
   shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: NoAction)
 
   @@index([shopId])
   @@index([customerId])
+  @@index([supplierId])
   @@map("orders")
 }
 
@@ -784,6 +799,7 @@ model Supplier {
   purchaseInvoices     PurchaseInvoice[]
   supplierTransactions SupplierTransaction[]
   rawMaterialLots      RawMaterialLot[]
+  orders               Order[]
 
   @@index([shopId])
   @@map("suppliers")

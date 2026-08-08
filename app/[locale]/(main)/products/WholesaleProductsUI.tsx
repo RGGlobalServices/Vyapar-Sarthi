@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Plus, Search, Pencil, Trash2, X,
   Loader2, Package, Tag, ShieldCheck,
   LayoutGrid, List, ArrowUp, ArrowDown, Warehouse,
-  Calendar, FlaskConical, Ruler, Palette, MonitorSmartphone, User, Shirt, Footprints
+  Calendar, FlaskConical, Ruler, Palette, MonitorSmartphone, User, Shirt, Footprints,
+  IndianRupee
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -14,8 +15,10 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import SmartTranslator from '@/components/SmartTranslator';
 import ProductDetailsSheet from './ProductDetailsSheet';
-import { ColorPicker } from '@/components/ColorSizeVariantGrid';
+import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVariantGrid';
 import { ExportButton } from '@/lib/hooks/useExport';
+import { useCategories } from '@/lib/useCategories';
+import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 import useSWR from 'swr';
 
 const fetcher = (url: string | string[]) => {
@@ -98,6 +101,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
 
 export default function WholesaleProductsUI() {
   const t = useTranslations('Products');
+  const tv = useTranslations('Variants');
   const { profile, activeShopId } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
 
@@ -127,6 +131,26 @@ export default function WholesaleProductsUI() {
   const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<WholesaleProduct[]>(swrKey, fetcher);
   
   const { data: masterData, mutate: mutateMasterData } = useSWR(activeShopId ? ['/master-data', activeShopId] : null, fetcher);
+
+  // Category/Brand suggestions for the Add/Edit form — same free-text +
+  // autocomplete pattern Vyapar/Dukan use, instead of forcing a master-data
+  // record to exist before a product can be saved. `useCategories` already
+  // persists new categories to /master-data (shared with the master-data
+  // Category table); brands get the same treatment inline via
+  // `saveBrandIfNew` in handleSave, since there's no useBrands hook yet.
+  const usedCategories = useMemo(() => Array.from(new Set((products || []).map((p: any) => p.category).filter(Boolean))), [products]);
+  const { suggestions: categorySuggestions, saveCategory } = useCategories(profile.businessType, usedCategories);
+  const brandSuggestions = useMemo(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const name of [...(masterData?.brands || []).map((b: any) => b.name), ...(products || []).map((p: any) => p.brand)]) {
+      const clean = String(name ?? '').trim();
+      if (!clean || seen.has(clean.toLowerCase())) continue;
+      seen.add(clean.toLowerCase());
+      out.push(clean);
+    }
+    return out;
+  }, [masterData, products]);
 
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -164,6 +188,110 @@ export default function WholesaleProductsUI() {
   // true = one shared price (form.costPrice/wholesaleCost/sellingPrice/mrp)
   // applies to every row; false = each row keeps its own 4 prices, as before.
   const [sameVariantPricing, setSameVariantPricing] = useState(true);
+  // Which "Colour / Size" cell has its per-variant price panel open, in the
+  // auto-grid below. Cleared whenever the modal (re)opens for a fresh edit.
+  const [expandedVariantCell, setExpandedVariantCell] = useState<string | null>(null);
+  // Extra sizes the shopkeeper added on top of the business's default size
+  // chart (e.g. a UK 13 a shoe line runs but the standard chart doesn't list).
+  // Reset whenever the modal (re)opens for a fresh add/edit.
+  const [customSizes, setCustomSizes] = useState<string[]>([]);
+  const [newSizeInput, setNewSizeInput] = useState('');
+
+  // hasColors business types (footwear/textile/garment wholesale) get the
+  // auto-populating Colour × Size grid instead of the manual one-row-at-a-time
+  // builder below — matches Vyapar/Dukan's ColorSizeVariantGrid UX. Every
+  // other wholesale category (grocery, electricals, pharma…) keeps the manual
+  // builder, since they have no fixed size chart to grid against. `useVariantGrid`
+  // is gated on the business's OWN chart, not the effective one below, so it
+  // doesn't flip on/off as custom sizes are added/removed.
+  const baseSizeChart = bizConfig.sizeChart || [];
+  const useVariantGrid = form.productType === 'variant' && !!bizConfig.hasColors && baseSizeChart.length > 0;
+  // Effective size columns: the business's default chart, plus any sizes the
+  // shopkeeper added this session, plus any size already sitting on a variant
+  // row (so editing a product never hides an odd/legacy size that isn't on
+  // either list).
+  const gridSizeChart = Array.from(new Set([
+    ...baseSizeChart,
+    ...customSizes,
+    ...variants.map(v => v.size).filter(Boolean),
+  ]));
+
+  function addCustomSize() {
+    const s = newSizeInput.trim();
+    if (s && !gridSizeChart.includes(s)) setCustomSizes(prev => [...prev, s]);
+    setNewSizeInput('');
+  }
+  // Rows to show in the grid: the user's selected colours, unioned with any
+  // colour already present on a variant row — so editing a product never
+  // hides real data just because `form.colors` (from metadata) drifted from
+  // what's actually in `variants[]`.
+  const gridColors = Array.from(new Set([...(form.colors || []), ...variants.map(v => v.color).filter(Boolean)]));
+
+  function findVariantRow(color: string, size: string) {
+    return variants.find(v => v.color === color && v.size === size);
+  }
+
+  function defaultVariantPrices() {
+    return {
+      costPrice: form.costPrice || 0,
+      wholesalePrice: form.wholesaleCost || 0,
+      sellingPrice: form.sellingPrice || 0,
+      mrp: form.mrp || 0,
+    };
+  }
+
+  // Toggles a single Colour/Size cell on (creates a variant row, seeded from
+  // the shared price fields as a starting point) or off (removes it). Removing
+  // a cell that already carries received stock asks for confirmation first —
+  // stock lives only on this row and Purchases has no way to bring it back.
+  function toggleVariantCell(color: string, size: string) {
+    const existing = findVariantRow(color, size);
+    if (existing) {
+      if ((existing.stock || 0) > 0) {
+        const ok = window.confirm(`"${color} / ${size}" currently has ${existing.stock} in stock. Removing it will delete that stock record. Continue?`);
+        if (!ok) return;
+      }
+      setVariants(variants.filter(v => v !== existing));
+      setExpandedVariantCell(prev => prev === makeVariantKey(color, size) ? null : prev);
+    } else {
+      setVariants([...variants, { color, size, stock: 0, ...defaultVariantPrices() }]);
+    }
+  }
+
+  function updateVariantCellField(color: string, size: string, field: 'costPrice' | 'wholesalePrice' | 'sellingPrice' | 'mrp', value: number) {
+    setVariants(variants.map(v => (v.color === color && v.size === size) ? { ...v, [field]: value } : v));
+  }
+
+  // Adding a colour auto-creates every size in the business's chart for it
+  // (a shopkeeper almost always stocks the full run in a colour they carry);
+  // removing a colour drops its rows entirely, confirming first if any of
+  // them hold real stock. Only wired up when useVariantGrid is active —
+  // the plain `setForm({...form, colors})` handler elsewhere covers the
+  // single-colour and manual-builder paths, which shouldn't auto-populate.
+  function handleGridColorsChange(next: string[]) {
+    const prev = form.colors || [];
+    const removed = prev.filter(c => !next.includes(c));
+    const added = next.filter(c => !prev.includes(c));
+    let nv = variants;
+    if (removed.length > 0) {
+      const removedStock = variants.filter(v => removed.includes(v.color)).reduce((s, v) => s + (v.stock || 0), 0);
+      if (removedStock > 0) {
+        const ok = window.confirm(`Removing ${removed.join(', ')} will delete variant rows holding ${removedStock} unit(s) of stock in total. Continue?`);
+        if (!ok) return;
+      }
+      nv = nv.filter(v => !removed.includes(v.color));
+    }
+    if (added.length > 0) {
+      const seeded = defaultVariantPrices();
+      const newRows = added.flatMap(color => gridSizeChart
+        .filter(size => !nv.some(v => v.color === color && v.size === size))
+        .map(size => ({ color, size, stock: 0, ...seeded })));
+      nv = [...nv, ...newRows];
+    }
+    setVariants(nv);
+    setExpandedVariantCell(null);
+    setForm(f => ({ ...f, colors: next }));
+  }
 
   const handleEdit = async (p: any) => {
     const meta = p.metadata || {};
@@ -227,6 +355,9 @@ export default function WholesaleProductsUI() {
         v.mrp === loadedVariants[0].mrp
       )
     );
+    setExpandedVariantCell(null);
+    setCustomSizes([]);
+    setNewSizeInput('');
     setShowAddModal(true);
   };
 
@@ -424,6 +555,17 @@ export default function WholesaleProductsUI() {
         mutateProducts((prev: any[] = []) => prev.map(p => p.id === optimisticProduct.id ? updatedProd : p), false);
       }
       mutateProducts();
+
+      // Remember a typed category/brand so it's offered next time — same
+      // free-text + autocomplete pattern as Vyapar/Dukan. Best-effort: the
+      // product itself is already saved either way. Category has its own
+      // hook (also used to persist to /master-data); brand doesn't have one
+      // yet, so it's inlined here against the already-loaded masterData.
+      saveCategory(form.category);
+      const brandName = String(form.brand ?? '').trim();
+      if (brandName && !(masterData?.brands || []).some((b: any) => (b.name || '').trim().toLowerCase() === brandName.toLowerCase())) {
+        api.post('/master-data', { type: 'brand', name: brandName }).then(() => mutateMasterData()).catch(() => {});
+      }
     } catch (err: any) {
       console.error('Failed to save product', err);
       const msg = err?.response?.data?.detail || err.message || t('failedToSaveProductDuplicate');
@@ -529,7 +671,7 @@ export default function WholesaleProductsUI() {
             data={filteredProducts}
           />
           <button
-            onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setShowAddModal(true); }}
+            onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setShowAddModal(true); }}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
           >
             <Plus size={18} />
@@ -915,12 +1057,12 @@ export default function WholesaleProductsUI() {
             <div className="p-6 overflow-y-auto flex-1 bg-slate-50/50 dark:bg-slate-900/50">
               <form id="add-product-form" onSubmit={handleSave} className="space-y-8">
                 
-                {/* 1. Basic Info */}
-                <section>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">1</div>
-                    {t('basicInfo') || 'Basic Information'}
-                  </h3>
+                {/* Basic Info */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-1 h-4 rounded bg-emerald-500" />
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('basicInfo') || 'Basic Info'}</p>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
                     <div className="col-span-1 sm:col-span-2">
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('productName') || 'Product Name'} <span className="text-red-500">*</span></label>
@@ -930,39 +1072,23 @@ export default function WholesaleProductsUI() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('brand') || 'Brand'}</label>
-                      <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        value={form.brandId || ''} onChange={e => {
-                          if (e.target.value === '__NEW__') {
-                            setInlineMasterType('brand');
-                            setInlineMasterForm({ name: '', shortName: '' });
-                            setShowInlineMasterModal(true);
-                            return;
-                          }
-                          const brand = masterData?.brands?.find((b:any) => b.id === e.target.value);
-                          setForm({...form, brandId: e.target.value, brand: brand ? brand.name : ''});
-                        }}>
-                        <option value="">-- Select Brand --</option>
-                        <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Brand...</option>
-                        {masterData?.brands?.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
+                      <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                        placeholder="e.g. Tata — or type a new one"
+                        value={form.brand || ''} onChange={e => setForm({...form, brand: e.target.value, brandId: ''})}
+                        list="wholesale-brand-suggestions" />
+                      <datalist id="wholesale-brand-suggestions">
+                        {brandSuggestions.map(b => <option key={b} value={b} />)}
+                      </datalist>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('category') || 'Category'}</label>
-                      <select className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                        value={form.categoryId || ''} onChange={e => {
-                          if (e.target.value === '__NEW__') {
-                            setInlineMasterType('category');
-                            setInlineMasterForm({ name: '', shortName: '' });
-                            setShowInlineMasterModal(true);
-                            return;
-                          }
-                          const cat = masterData?.categories?.find((c:any) => c.id === e.target.value);
-                          setForm({...form, categoryId: e.target.value, category: cat ? cat.name : ''});
-                        }}>
-                        <option value="">-- Select Category --</option>
-                        <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category...</option>
-                        {masterData?.categories?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
+                      <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                        placeholder={`${bizConfig.defaultCategories[0]} — or type a new one`}
+                        value={form.category || ''} onChange={e => setForm({...form, category: e.target.value, categoryId: ''})}
+                        list="wholesale-category-suggestions" />
+                      <datalist id="wholesale-category-suggestions">
+                        {categorySuggestions.map(c => <option key={c} value={c} />)}
+                      </datalist>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Base Unit</label>
@@ -1019,13 +1145,13 @@ export default function WholesaleProductsUI() {
                   </div>
                 </section>
 
-                {/* 2. Business-Type Specific Fields */}
-                {(bizConfig.hasExpiry || bizConfig.hasBatch || bizConfig.hasDrugSchedule || bizConfig.hasModel || bizConfig.hasWarranty || bizConfig.hasGender || bizConfig.hasShades || bizConfig.hasColors || bizConfig.hasFabric || bizConfig.hasSoleMaterial) && (
-                  <section>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs">2</div>
-                      {bizConfig.label} Details
-                    </h3>
+                {/* Business-Type Specific Fields */}
+                {(bizConfig.hasExpiry || bizConfig.hasBatch || bizConfig.hasDrugSchedule || bizConfig.hasModel || bizConfig.hasWarranty || bizConfig.hasGender || bizConfig.hasShades || bizConfig.hasFabric || bizConfig.hasSoleMaterial) && (
+                  <section className="space-y-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-1 h-4 rounded bg-blue-500" />
+                      <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">{bizConfig.label} Details</p>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
                       
                       {/* Expiry Date — Medical, Kirana, Boutique */}
@@ -1200,14 +1326,12 @@ export default function WholesaleProductsUI() {
                   </section>
                 )}
 
-                {/* 3. Product Type */}
-                <section>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
-                      {bizConfig.hasExpiry || bizConfig.hasBatch || bizConfig.hasDrugSchedule || bizConfig.hasModel || bizConfig.hasWarranty || bizConfig.hasGender || bizConfig.hasShades ? '3' : '2'}
-                    </div>
-                    {t('productType') || 'Product Type'}
-                  </h3>
+                {/* Product Type */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-1 h-4 rounded bg-emerald-500" />
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('productType') || 'Product Type'}</p>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {[
                       { id: 'single', title: t('singleProduct') || 'Single Product', desc: t('singleProductDesc') || 'Standard item with one fixed size/price' },
@@ -1243,27 +1367,42 @@ export default function WholesaleProductsUI() {
                     ))}
                   </div>
 
-                  {/* Colour — shown once a Product Type is picked, since that
-                      choice decides how it behaves: a Single/Loose product is
-                      one specific item, so only one colour makes sense; a
-                      Variant product can genuinely come in several, so this
-                      switches to the same multi-select ColorPicker Vyapar uses. */}
-                  {bizConfig.hasColors && (
-                    <div className="mt-5">
-                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                        <Palette size={11} className="text-emerald-500" />
-                        Colour
-                        {form.productType !== 'variant' && (
-                          <span className="normal-case font-medium text-slate-400 tracking-normal">— this item is one colour</span>
-                        )}
-                      </label>
-                      {form.productType === 'variant' ? (
-                        <ColorPicker
-                          colorChart={bizConfig.colorChart || []}
-                          value={form.colors || []}
-                          onChange={(colors) => setForm({ ...form, colors })}
-                        />
-                      ) : (
+                </section>
+
+                {/* Colour × Size Inventory — dedicated section, same idiom as
+                    Vyapar/Dukan's violet-tinted variant panel. Single/Loose
+                    products get a one-colour picker; Variant products get the
+                    multi-select ColorPicker plus (for footwear/textile/garment
+                    wholesale, which have a fixed size chart) the auto-grid
+                    below. Other variant-based wholesale categories fall back
+                    to the manual row builder further down in Pricing & Variants. */}
+                {bizConfig.hasColors && (
+                  <section className="space-y-3 bg-violet-500/5 border border-violet-500/20 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1 h-4 rounded bg-violet-500" />
+                        <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">{tv('colourSizeInventory')}</p>
+                      </div>
+                      {useVariantGrid && (
+                        <button
+                          type="button"
+                          onClick={() => setSameVariantPricing(!sameVariantPricing)}
+                          className={cn(
+                            'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
+                            !sameVariantPricing
+                              ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300'
+                          )}
+                        >
+                          <IndianRupee size={10} />
+                          {!sameVariantPricing ? 'Per-Variant Pricing On' : 'Per-Variant Pricing'}
+                        </button>
+                      )}
+                    </div>
+
+                    {form.productType !== 'variant' ? (
+                      <div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">This item is one colour.</p>
                         <div className="flex flex-wrap gap-2">
                           {(bizConfig.colorChart || []).map(col => {
                             const active = (form.colors || [])[0] === col;
@@ -1279,30 +1418,157 @@ export default function WholesaleProductsUI() {
                                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-emerald-400'
                                 )}
                               >
-                                <span
-                                  className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
-                                  style={{ backgroundColor: col.toLowerCase() }}
-                                />
+                                <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0" style={{ background: cssColor(col) }} />
                                 {col}
                               </button>
                             );
                           })}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </section>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <ColorPicker
+                          colorChart={bizConfig.colorChart || []}
+                          value={form.colors || []}
+                          onChange={useVariantGrid ? handleGridColorsChange : (colors) => setForm({ ...form, colors })}
+                        />
 
-                {/* 4. Pricing & Variants */}
-                <section>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
-                      {(bizConfig.hasExpiry || bizConfig.hasBatch || bizConfig.hasDrugSchedule || bizConfig.hasModel || bizConfig.hasWarranty || bizConfig.hasGender || bizConfig.hasShades) ? '4' : '3'}
-                    </div>
-                    {form.productType === 'variant' ? (t('variantBuilder') || 'Variant Builder') : (t('pricingInformation') || 'Pricing Information')}
-                  </h3>
-                  
+                        {useVariantGrid && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newSizeInput}
+                              onChange={e => setNewSizeInput(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomSize(); } }}
+                              placeholder={`e.g. ${baseSizeChart[baseSizeChart.length - 1] || 'Size'} + 1 — add a size not in the list`}
+                              className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={addCustomSize}
+                              className="px-3 py-1.5 rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-300 text-xs font-bold flex items-center gap-1 shrink-0 hover:bg-violet-500/25 transition-colors"
+                            >
+                              <Plus size={12} /> Add Size
+                            </button>
+                          </div>
+                        )}
+
+                        {useVariantGrid ? (
+                          <div className="space-y-3">
+                            {gridColors.length === 0 && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center py-3">
+                                Pick at least one colour above — every size gets added automatically.
+                              </p>
+                            )}
+                            {gridColors.map(color => {
+                              const cellSizes = gridSizeChart.map(size => ({ size, row: findVariantRow(color, size) }));
+                              const activeCount = cellSizes.filter(c => c.row).length;
+                              const expandedSize = cellSizes.find(({ size }) => expandedVariantCell === makeVariantKey(color, size))?.size;
+                              const expandedRow = expandedSize ? findVariantRow(color, expandedSize) : undefined;
+                              return (
+                                <div key={color} className="rounded-xl border border-slate-200 dark:border-slate-700/60 p-3 bg-white/60 dark:bg-slate-900/40 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                                      <span className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(color) }} />
+                                      {color}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">{activeCount} / {cellSizes.length} sizes</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {cellSizes.map(({ size, row }) => {
+                                      const active = !!row;
+                                      const cellKey = makeVariantKey(color, size);
+                                      const isExpanded = expandedVariantCell === cellKey;
+                                      return (
+                                        <button
+                                          key={size}
+                                          type="button"
+                                          onClick={() => {
+                                            if (!active) {
+                                              toggleVariantCell(color, size);
+                                              if (!sameVariantPricing) setExpandedVariantCell(cellKey);
+                                              return;
+                                            }
+                                            if (sameVariantPricing) { toggleVariantCell(color, size); return; }
+                                            setExpandedVariantCell(prev => prev === cellKey ? null : cellKey);
+                                          }}
+                                          className={cn(
+                                            'px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition-all',
+                                            active
+                                              ? (isExpanded ? 'bg-amber-500 border-amber-500 text-white' : 'bg-emerald-500 border-emerald-500 text-white')
+                                              : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-emerald-400'
+                                          )}
+                                        >
+                                          {size}
+                                          {active && (row!.stock || 0) > 0 && <span className="ml-1 opacity-80">·{row!.stock}</span>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {!sameVariantPricing && expandedSize && expandedRow && (
+                                    <div className="bg-amber-50/50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 space-y-2 animate-in slide-in-from-top-2 duration-200">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">{color} / {expandedSize} Pricing</span>
+                                        <button type="button" onClick={() => toggleVariantCell(color, expandedSize)} className="text-[10px] font-bold text-red-500 hover:text-red-600">
+                                          Remove
+                                        </button>
+                                      </div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Cost</label>
+                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                            value={expandedRow.costPrice || ''} onChange={e => updateVariantCellField(color, expandedSize, 'costPrice', parseFloat(e.target.value) || 0)} />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Wholesale</label>
+                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                            value={expandedRow.wholesalePrice || ''} onChange={e => updateVariantCellField(color, expandedSize, 'wholesalePrice', parseFloat(e.target.value) || 0)} />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Retail</label>
+                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                            value={expandedRow.sellingPrice || ''} onChange={e => updateVariantCellField(color, expandedSize, 'sellingPrice', parseFloat(e.target.value) || 0)} />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">MRP</label>
+                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                            value={expandedRow.mrp || ''} onChange={e => updateVariantCellField(color, expandedSize, 'mrp', parseFloat(e.target.value) || 0)} />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {gridColors.length > 0 && (
+                              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-lg px-4 py-2 border border-slate-200 dark:border-slate-700/50">
+                                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total Variants</span>
+                                <span className={cn('text-lg font-black', variants.length === 0 ? 'text-slate-300 dark:text-slate-600' : 'text-emerald-600 dark:text-emerald-400')}>
+                                  {variants.length}
+                                </span>
+                              </div>
+                            )}
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400">Tap a size to add or remove it. Stock is received later from the Purchases tab.</p>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">Add each colour/size row with its own price below in Pricing &amp; Variants.</p>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Pricing & Variants */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-1 h-4 rounded bg-amber-500" />
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                      {form.productType === 'variant' ? (t('variantBuilder') || 'Variant Builder') : (t('pricingInformation') || 'Pricing Information')}
+                    </p>
+                  </div>
+
                   {form.productType !== 'variant' ? (
+                    <>
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
                         <div className="sm:col-span-2">
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('barcodeSku') || 'Barcode / SKU'}</label>
@@ -1345,6 +1611,20 @@ export default function WholesaleProductsUI() {
                           </div>
                         </div>
                      </div>
+                     {(form.sellingPrice || 0) > 0 && (() => {
+                        const result = calculateProductProfit(form.sellingPrice || 0, form.costPrice || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                        const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
+                        const textCls = profitColorClass(result.status);
+                        return (
+                          <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
+                            <span className={cn('text-xs font-semibold opacity-70', textCls)}>{t('profit') || 'Profit (Retail vs Cost)'}</span>
+                            <span className={cn('text-lg font-black text-right', textCls)}>
+                              ₹{result.amount.toFixed(2)} <span className="text-sm">({result.percent.toFixed(1)}%)</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </>
                   ) : (
                     <div className="p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm space-y-4">
                       {/* Same price for all variants vs. price per variant.
@@ -1392,6 +1672,25 @@ export default function WholesaleProductsUI() {
                         </div>
                       )}
 
+                      {sameVariantPricing && (form.sellingPrice || 0) > 0 && (() => {
+                        const result = calculateProductProfit(form.sellingPrice || 0, form.costPrice || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                        const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
+                        const textCls = profitColorClass(result.status);
+                        return (
+                          <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
+                            <span className={cn('text-xs font-semibold opacity-70', textCls)}>{t('profit') || 'Profit (Retail vs Cost)'}</span>
+                            <span className={cn('text-lg font-black text-right', textCls)}>
+                              ₹{result.amount.toFixed(2)} <span className="text-sm">({result.percent.toFixed(1)}%)</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+
+                      {useVariantGrid ? (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center py-2">
+                          Variants are managed in the {tv('colourSizeInventory')} section above — {variants.length} configured.
+                        </p>
+                      ) : (
                       <div className="space-y-4">
                         {variants.map((v, i) => (
                           <div key={i} className="flex flex-wrap sm:flex-nowrap gap-3 items-end p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 relative group">
@@ -1473,6 +1772,7 @@ export default function WholesaleProductsUI() {
                           <Plus size={18} /> Add Variant
                         </button>
                       </div>
+                      )}
                     </div>
                   )}
                 </section>
@@ -1485,14 +1785,14 @@ export default function WholesaleProductsUI() {
               </form>
             </div>
             
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 flex-shrink-0">
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex gap-4 flex-shrink-0">
               <button type="button" onClick={() => setShowAddModal(false)}
-                className="px-5 py-2.5 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm">
+                className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 transition-all active:scale-95">
                 {t('cancel') || 'Cancel'}
               </button>
               <button form="add-product-form" type="submit" disabled={saving}
-                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-all shadow-sm flex items-center gap-2 text-sm">
-                {saving ? <><Loader2 size={16} className="animate-spin" /> {t('saving') || 'Saving...'}</> : (t('saveMasterData') || 'Save Master Data')}
+                className={`flex-1 bg-gradient-to-r ${bizConfig.gradient || 'from-emerald-600 to-emerald-500'} text-white py-3 rounded-xl font-black shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2`}>
+                {saving ? <><Loader2 size={16} className="animate-spin" /> {t('saving') || 'Saving...'}</> : (form.id ? (t('updateProduct') || 'Update Product') : (t('addProduct') || 'Add Product'))}
               </button>
             </div>
           </div>
