@@ -9,11 +9,23 @@ import { cn } from '@/lib/utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { ExportButton } from '@/lib/hooks/useExport';
+import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
 
 const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
-const emptyItem = () => ({ productId: '', quantity: 1, cost: 0, batchNumber: '', unitId: '', conversionFactor: 1 });
+const emptyItem = () => ({
+  productId: '', quantity: 1, cost: 0, batchNumber: '', unitId: '', conversionFactor: 1,
+  // One qty per colour/size, keyed the same way as everywhere else — only
+  // used when the selected product has variant rows; `quantity` above is
+  // still what's used for a plain (non-variant) product.
+  variantQty: {} as Record<string, string>,
+});
+
+// Same key a variant row is stored/matched under everywhere else (Products'
+// Variant Builder, Billing's picker, the server-side stock helper) — a
+// product with no colour dimension just uses its bare size.
+const variantRowKey = (v: any) => (v.color ? makeVariantKey(v.color, v.size || '') : (v.size || ''));
 
 export default function PurchasesPage() {
   const t = useTranslations('Purchases');
@@ -132,21 +144,60 @@ export default function PurchasesPage() {
       setInvoiceNumber(full.invoiceNumber || '');
       setDate(new Date(full.date).toISOString().split('T')[0]);
       setWarehouseId(full.warehouseId || '');
-      setItems(
-        (full.purchaseItems || []).map((it: any) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          cost: it.cost,
-          batchNumber: '',
-          unitId: '',
-          conversionFactor: 1,
-        }))
-      );
+      // Purchase items come back as a flat list — each colour/size a saved
+      // invoice covered is its own row with the same productId. Group them
+      // back into one form row per product so re-editing shows the same
+      // "quantity per colour/size" grid the Add form uses, instead of one
+      // row per variant with a stray single-variant picker.
+      const byProduct = new Map<string, any[]>();
+      (full.purchaseItems || []).forEach((it: any) => {
+        const list = byProduct.get(it.productId) || [];
+        list.push(it);
+        byProduct.set(it.productId, list);
+      });
+      const grouped: any[] = [];
+      byProduct.forEach((list, productId) => {
+        const withVariant = list.filter(it => it.variantKey);
+        const withoutVariant = list.filter(it => !it.variantKey);
+        if (withVariant.length > 0) {
+          const variantQty: Record<string, string> = {};
+          withVariant.forEach(it => { variantQty[it.variantKey] = String(it.quantity); });
+          grouped.push({ productId, quantity: 1, cost: withVariant[0].cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty });
+        }
+        withoutVariant.forEach(it => {
+          grouped.push({ productId, quantity: it.quantity, cost: it.cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty: {} });
+        });
+      });
+      setItems(grouped.length > 0 ? grouped : [emptyItem()]);
       setShowAdd(true);
     } catch (err: any) {
       alert('Failed to load purchase for editing: ' + (err?.response?.data?.error || err.message));
     }
   };
+
+  // Expands each form row into one API item per unit actually being
+  // received — a variant-product row becomes one item per colour/size that
+  // has a qty entered (sharing that row's cost/batch/unit), a plain row
+  // passes through unchanged. Reused for both the save payload and the
+  // live credit-limit total below so they can never disagree.
+  const expandItemsForApi = (rows: any[]) => rows.flatMap((item: any) => {
+    const product = products.find((p: any) => p.id === item.productId);
+    const productVariants: any[] = Array.isArray(product?.variants) ? product.variants : [];
+    if (productVariants.length > 0) {
+      return Object.entries(item.variantQty || {})
+        .filter(([, qty]) => Number(qty) > 0)
+        .map(([variantKey, qty]) => ({
+          productId: item.productId,
+          variant: variantKey,
+          quantity: Number(qty),
+          cost: item.cost,
+          batchNumber: item.batchNumber,
+          unitId: item.unitId,
+          conversionFactor: item.conversionFactor,
+        }));
+    }
+    return item.productId && item.quantity > 0 ? [item] : [];
+  });
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +208,7 @@ export default function PurchasesPage() {
       warehouseId,
       invoiceNumber,
       date,
-      items: items.filter(i => i.productId && i.quantity > 0)
+      items: expandItemsForApi(items)
     };
 
     try {
@@ -212,7 +263,7 @@ export default function PurchasesPage() {
   // already includes THIS invoice's original total, so back it out of the
   // baseline before adding the in-progress items' new total.
   const selectedSupplier = suppliers.find((s: any) => s.id === supplierId);
-  const purchaseTotal = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.cost) || 0), 0);
+  const purchaseTotal = expandItemsForApi(items).reduce((sum, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.cost) || 0), 0);
   const baselineOutstanding = (selectedSupplier?.balance || 0) - (editingInvoice?.totalCost || 0);
   const projectedOutstanding = baselineOutstanding + purchaseTotal;
   const overCreditLimitBy = selectedSupplier?.creditLimit > 0 ? projectedOutstanding - selectedSupplier.creditLimit : 0;
@@ -308,27 +359,51 @@ export default function PurchasesPage() {
               )}
 
               <div className="space-y-4">
-                {items.map((item, index) => (
-                  <div key={index} className="flex flex-wrap md:flex-nowrap gap-3 items-end p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/30">
+                {items.map((item, index) => {
+                  const selectedProduct = products.find((p: any) => p.id === item.productId);
+                  const productVariants: any[] = Array.isArray(selectedProduct?.variants) ? selectedProduct.variants : [];
+                  const hasVariants = productVariants.length > 0;
+                  const singleColour: string = !hasVariants && selectedProduct
+                    ? (Array.isArray(selectedProduct.metadata?.colors) ? selectedProduct.metadata.colors[0] : (selectedProduct.metadata?.color || ''))
+                    : '';
+                  return (
+                  <div key={index} className="flex flex-col gap-3 p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/30">
+                    <div className="flex flex-wrap md:flex-nowrap gap-3 items-end">
                     <div className="flex-1 min-w-[200px]">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('productLabel') || 'Product'}</label>
                       <select required value={item.productId} onChange={e => {
                         const newItems = [...items];
                         newItems[index].productId = e.target.value;
+                        newItems[index].variantQty = {}; // stale picks from the previous product
                         setItems(newItems);
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
                         <option value="">{t('selectProduct') || 'Select Product...'}</option>
                         {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
-                    <div className="w-24">
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('qty') || 'Qty'}</label>
-                      <input type="number" required min="1" value={item.quantity} onChange={e => {
-                        const newItems = [...items];
-                        newItems[index].quantity = parseInt(e.target.value) || 1;
-                        setItems(newItems);
-                      }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
-                    </div>
+                    {singleColour && (
+                      <div className="w-32">
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('colour') || 'Colour'}</label>
+                        {/* Highlighted like a selected chip (not just a swatch
+                            dot) — a plain dot is invisible for White against
+                            this background, so the border/ring/fill is what
+                            actually reads as "this colour is confirmed". */}
+                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 ring-1 ring-emerald-500 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                          <span className="w-3 h-3 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: singleColour.toLowerCase() }} />
+                          {singleColour}
+                        </div>
+                      </div>
+                    )}
+                    {!hasVariants && (
+                      <div className="w-24">
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('qty') || 'Qty'}</label>
+                        <input type="number" required min="1" value={item.quantity} onChange={e => {
+                          const newItems = [...items];
+                          newItems[index].quantity = parseInt(e.target.value) || 1;
+                          setItems(newItems);
+                        }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                      </div>
+                    )}
                     <div className="w-28">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Unit</label>
                       <select value={item.unitId || ''} onChange={e => {
@@ -364,8 +439,42 @@ export default function PurchasesPage() {
                       className="w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
                       <X size={16} />
                     </button>
+                    </div>
+                    {hasVariants && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">
+                          {t('quantityPerVariant') || 'Quantity per Colour/Size'}
+                        </label>
+                        {/* One qty box per colour/size on this product — fill in
+                            as many as this shipment covers in one go, instead of
+                            adding a whole separate row per variant. */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                          {productVariants.map((v: any, vi: number) => {
+                            const key = variantRowKey(v);
+                            const label = [v.color, v.size].filter(Boolean).join(' / ') || key || `#${vi + 1}`;
+                            return (
+                              <div key={key || vi} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                                {v.color && <span className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: v.color.toLowerCase() }} />}
+                                <span className="flex-1 text-xs text-slate-700 dark:text-slate-200 truncate" title={label}>{label}</span>
+                                <input
+                                  type="number" min="0" step="any" placeholder="0"
+                                  value={item.variantQty?.[key] || ''}
+                                  onChange={e => {
+                                    const newItems = [...items];
+                                    newItems[index].variantQty = { ...newItems[index].variantQty, [key]: e.target.value };
+                                    setItems(newItems);
+                                  }}
+                                  className="w-14 shrink-0 px-1.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs text-right focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
 
                 <button type="button" onClick={() => setItems([...items, emptyItem()])}
                   className="w-full py-3 border-2 border-dashed border-emerald-200 dark:border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2">

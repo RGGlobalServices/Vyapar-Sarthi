@@ -25,7 +25,15 @@ import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import { generateUpiQrSvg } from '@/lib/upi';
 import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
-import { splitVariantKey } from '@/components/ColorSizeVariantGrid';
+import { splitVariantKey, makeVariantKey } from '@/components/ColorSizeVariantGrid';
+import { toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
+
+// Same key a variant row is stored/matched under everywhere else (Products'
+// Variant Builder, the Purchases item picker, the server-side stock helper)
+// — a row with no colour dimension just uses its bare size.
+function variantRowKey(v: any): string {
+  return v.color ? makeVariantKey(v.color, v.size || '') : (v.size || '');
+}
 
 // Resolve a product's sellable stock from whatever shape it arrives in.
 // Returns { known } = whether stock could be determined at all, and { qty } =
@@ -58,6 +66,12 @@ function resolveStockForItem(item: any, products: any[]): { known: boolean; qty:
     if (sv && typeof sv === 'object' && Object.prototype.hasOwnProperty.call(sv, item.variant)) {
       const n = Number(sv[item.variant]);
       return { known: true, qty: isFinite(n) ? n : 0 };
+    }
+    // Udyog variant products (productType === 'variant') carry their own
+    // per-row stock in Product.variants[] instead of size_variants.
+    if (Array.isArray(product.variants) && product.variants.length > 0) {
+      const row = product.variants.find((v: any) => variantRowKey(v) === item.variant);
+      if (row) return { known: true, qty: Math.max(0, Number(row.stock) || 0) };
     }
   }
   return resolveStock(product);
@@ -97,32 +111,81 @@ const CartQuantityInput = ({ item, updateQuantity, removeItem, maxQty }: any) =>
   );
 };
 
-const CartPriceInput = ({ item, updatePrice }: any) => {
-  const [localVal, setLocalVal] = useState(item.price.toString());
+const GST_SLABS = [0, 5, 12, 18, 28];
+
+// Price + per-line GST editor for a cart row. item.price is always stored
+// GST-inclusive (matching computeGst()/financialEngine's assumption
+// everywhere else in the app) — the Incl/Excl toggle only changes what
+// number this input shows and expects to be typed, converting to/from the
+// stored inclusive value under the hood. Because the displayed value is
+// re-derived from item.price on every render (never mutated on toggle),
+// switching modes back and forth can't drift the real stored price.
+const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any) => {
+  const [mode, setMode] = useState<'inclusive' | 'exclusive'>('inclusive');
+  const gstPercent = Number(item.gstPercent) || 0;
+
+  const toDisplay = (inclusivePrice: number) =>
+    mode === 'exclusive' ? toExclusivePrice(inclusivePrice, gstPercent) : inclusivePrice;
+
+  const [localVal, setLocalVal] = useState(() => (Math.round(toDisplay(item.price) * 100) / 100).toString());
   useEffect(() => {
-    setLocalVal(item.price.toString());
-  }, [item.price]);
+    setLocalVal((Math.round(toDisplay(item.price) * 100) / 100).toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.price, mode, gstPercent]);
+
+  const writePrice = (typed: number) => {
+    const inclusive = mode === 'exclusive' ? toInclusivePrice(typed, gstPercent) : typed;
+    updatePrice(item.id, Math.round(inclusive * 100) / 100, item.variant);
+  };
 
   return (
-    <input
-      type="number"
-      className="w-20 text-right py-1 px-2 bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 rounded font-mono text-sm outline-none transition-colors"
-      value={localVal}
-      onChange={(e) => {
-        setLocalVal(e.target.value);
-        const num = Number(e.target.value);
-        if (!isNaN(num)) {
-          updatePrice(item.id, num, item.variant);
-        }
-      }}
-      onBlur={(e) => {
-        const num = Number(e.target.value);
-        if (e.target.value === '') updatePrice(item.id, 0, item.variant);
-        setLocalVal(num.toString());
-      }}
-      step="any"
-      min="0"
-    />
+    <div className="flex flex-col items-end gap-1">
+      <input
+        type="number"
+        className="w-20 text-right py-1 px-2 bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 rounded font-mono text-sm outline-none transition-colors"
+        value={localVal}
+        onChange={(e) => {
+          setLocalVal(e.target.value);
+          const num = Number(e.target.value);
+          if (!isNaN(num)) writePrice(num);
+        }}
+        onBlur={(e) => {
+          if (e.target.value === '') { writePrice(0); return; }
+          const num = Number(e.target.value);
+          setLocalVal((Math.round(num * 100) / 100).toString());
+        }}
+        step="any"
+        min="0"
+      />
+      {isGstBill && (
+        <div className="flex items-center gap-1">
+          <select
+            value={gstPercent}
+            onChange={(e) => updateGstPercent(item.id, Number(e.target.value), item.variant)}
+            title="GST % for this item"
+            className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
+          >
+            {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
+          </select>
+          <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden shrink-0">
+            {(['inclusive', 'exclusive'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                title={m === 'inclusive' ? 'Price includes GST' : 'Price excludes GST'}
+                className={cn(
+                  'px-1 py-0.5 text-[9px] font-bold transition-colors',
+                  mode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+                )}
+              >
+                {m === 'inclusive' ? 'Incl' : 'Excl'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -133,7 +196,7 @@ export default function WholesaleBillingUI() {
   const { profile } = useBusinessStore();
 
   const { 
-    items, addItem, removeItem, updateQuantity, updatePrice, clearCart,
+    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount, remainingAmount 
   } = useBillingEngine(profile?.id);
@@ -286,6 +349,9 @@ export default function WholesaleBillingUI() {
   // Recommendations / Out of Stock
   const [outOfStockItem, setOutOfStockItem] = useState<any>(null);
   const [recommendedProducts, setRecommendedProducts] = useState<any[]>([]);
+  // Udyog variant products (colour/size) have no single price/stock — this
+  // holds the product while the cashier picks which row they're selling.
+  const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const componentRef = useRef<HTMLDivElement>(null);
@@ -309,8 +375,12 @@ export default function WholesaleBillingUI() {
       return;
     }
     const key = paymentMethod === 'cheque' ? 'bank' : paymentMethod;
-    setSplitPayments({ cash: 0, upi: 0, card: 0, bank: 0, [key]: total });
-  }, [paymentMethod, total, setSplitPayments]);
+    // grandTotal (not total) — otherwise adding a Transport/Loading/Packing/
+    // Other charge after this first ran leaves Received Amount stuck at the
+    // pre-charges cart total, making the bill look partially unpaid even
+    // when the cashier is collecting the full (now higher) amount.
+    setSplitPayments({ cash: 0, upi: 0, card: 0, bank: 0, [key]: grandTotal });
+  }, [paymentMethod, grandTotal, setSplitPayments]);
 
   const fetchProducts = async () => {
     try {
@@ -324,8 +394,20 @@ export default function WholesaleBillingUI() {
   const getPrice = useCallback((product: any, variant?: string, wholesale: boolean = isWholesale) => {
     let cost = product.wholesaleCost || 0;
     let selling = product.sellingPrice || product.price || 0;
-    
+
     if (variant) {
+      // Udyog variants[] rows are keyed by the full "Colour / Size" composite
+      // and carry their own cost/wholesale/retail/MRP — check this first since
+      // it's exact; metadata.size_prices below is keyed by bare size only, so
+      // it can't distinguish two colours sharing a size.
+      const row = Array.isArray(product.variants)
+        ? product.variants.find((v: any) => variantRowKey(v) === variant)
+        : null;
+      if (row) {
+        cost = row.wholesalePrice || cost;
+        selling = row.sellingPrice || row.mrp || selling;
+        return wholesale ? cost : selling;
+      }
       try {
         const meta = typeof product.metadata === 'string' ? JSON.parse(product.metadata) : (product.metadata || {});
         const sp = meta?.size_prices?.[variant];
@@ -379,6 +461,14 @@ export default function WholesaleBillingUI() {
       }
 
       setRecommendedProducts(recs.slice(0, 4));
+      return;
+    }
+
+    // Udyog variant product (colour/size) with no variant chosen yet — ask
+    // which row before adding anything to the cart. Re-entering addToCart
+    // with a variant (from the picker below) skips this and falls through.
+    if (product.productType === 'variant' && Array.isArray(product.variants) && product.variants.length > 0 && !variant) {
+      setVariantSelectionProduct(product);
       return;
     }
 
@@ -711,6 +801,12 @@ export default function WholesaleBillingUI() {
           quantity: item.quantity,
           price_per_unit: item.price,
           purchase_price: item.cost || 0,
+          // Without these the backend falls back to the product catalog's
+          // current GST%, silently ignoring any per-line override made in the
+          // cart above — the printed invoice would then disagree with the
+          // shop's own recorded Sale.gstAmount.
+          gst_percent: item.gstPercent,
+          hsn_code: item.hsnCode,
         })),
         ...chargeItems,
       ];
@@ -969,7 +1065,7 @@ export default function WholesaleBillingUI() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <CartPriceInput item={item} updatePrice={updatePrice} />
+                    <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
                   </td>
                   <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono">
                     ₹{item.total.toLocaleString()}
@@ -1696,6 +1792,52 @@ export default function WholesaleBillingUI() {
                <button onClick={() => setOutOfStockItem(null)} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors">
                  Close
                </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {variantSelectionProduct && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setVariantSelectionProduct(null)} />
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+              <span className="font-bold text-slate-900 dark:text-white">{variantSelectionProduct.name}</span>
+              <button onClick={() => setVariantSelectionProduct(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <X size={22} />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {(variantSelectionProduct.variants || []).map((v: any, i: number) => {
+                const key = variantRowKey(v);
+                const stock = Math.max(0, Number(v.stock) || 0);
+                const out = stock <= 0;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={out}
+                    onClick={() => {
+                      setVariantSelectionProduct(null);
+                      addToCart(variantSelectionProduct, key);
+                    }}
+                    className={cn(
+                      "p-3 rounded-xl border text-left transition-colors",
+                      out
+                        ? "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800"
+                        : "border-slate-200 dark:border-slate-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-sm text-slate-900 dark:text-white">
+                      {v.color && <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: v.color.toLowerCase() }} />}
+                      {[v.color, v.size].filter(Boolean).join(' / ') || `#${i + 1}`}
+                    </div>
+                    <div className={cn("text-xs mt-1", out ? "text-rose-500 font-bold" : "text-slate-500")}>
+                      {out ? 'Out of stock' : `${stock} in stock`}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

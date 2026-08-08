@@ -173,6 +173,11 @@ export const POST = handle(async (req) => {
           const productItems = itemGroups[product.id];
           let totalQty = 0;
           let newSizeVariants = product.size_variants;
+          // Udyog variant products (colour/size) carry their own per-row
+          // stock here instead of size_variants — decrement the matching
+          // row alongside it, same loop, same eventual single update call.
+          const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
+          let variantsChanged = false;
 
           for (const item of productItems) {
             totalQty += item.quantity;
@@ -185,14 +190,22 @@ export const POST = handle(async (req) => {
                 }
               } catch {}
             }
+            if (item.variant && newVariants) {
+              const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
+              if (row) {
+                row.stock = Math.max(0, (Number(row.stock) || 0) - item.quantity);
+                variantsChanged = true;
+              }
+            }
           }
 
           promises.push(
             tx.product.update({
               where: { id: product.id },
-              data: { 
+              data: {
                 ...(product.currentStock !== null ? { currentStock: { decrement: totalQty } } : {}),
-                size_variants: newSizeVariants
+                size_variants: newSizeVariants,
+                ...(variantsChanged ? { variants: newVariants as any } : {}),
               },
             })
           );

@@ -14,6 +14,8 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import SmartTranslator from '@/components/SmartTranslator';
 import ProductDetailsSheet from './ProductDetailsSheet';
+import { ColorPicker } from '@/components/ColorSizeVariantGrid';
+import { ExportButton } from '@/lib/hooks/useExport';
 import useSWR from 'swr';
 
 const fetcher = (url: string | string[]) => {
@@ -47,8 +49,11 @@ type WholesaleProduct = {
   gender?: string;
   shade?: string;
   size_variants?: string;
-  // Stored in metadata JSON
+  // Stored in metadata JSON. `colors` is the current multi-select shape;
+  // `color` is the older single-value shape still present on existing rows —
+  // handleEdit() migrates it into `colors` on load, see there for details.
   color?: string;
+  colors?: string[];
   fabric?: string;
   sole_material?: string;
   metadata?: any;
@@ -84,7 +89,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     warranty_months: undefined,
     gender: 'Unisex',
     shade: '',
-    color: '',
+    colors: [],
     fabric: '',
     sole_material: '',
     metadata: {},
@@ -156,6 +161,9 @@ export default function WholesaleProductsUI() {
 
   // Variant Builder State
   const [variants, setVariants] = useState<any[]>([]);
+  // true = one shared price (form.costPrice/wholesaleCost/sellingPrice/mrp)
+  // applies to every row; false = each row keeps its own 4 prices, as before.
+  const [sameVariantPricing, setSameVariantPricing] = useState(true);
 
   const handleEdit = async (p: any) => {
     const meta = p.metadata || {};
@@ -180,7 +188,10 @@ export default function WholesaleProductsUI() {
       warranty_months: p.warranty_months || undefined,
       gender: p.gender || 'Unisex',
       shade: p.shade || '',
-      color: meta.color || '',
+      // New rows store an array; older rows saved before multi-select stored
+      // a single string — fold that into a one-item array so it still shows
+      // as selected instead of silently disappearing.
+      colors: Array.isArray(meta.colors) ? meta.colors : (meta.color ? [meta.color] : []),
       fabric: meta.fabric || '',
       sole_material: meta.sole_material || '',
       metadata: meta,
@@ -199,11 +210,23 @@ export default function WholesaleProductsUI() {
     // load so both shapes land in the right input: if `wholesalePrice` is
     // already present this is new-shape data and `costPrice` means vendor
     // cost as-is; otherwise it's old-shape data being migrated in memory.
-    setVariants((p.variants || []).map((v: any) => ({
+    const loadedVariants = (p.variants || []).map((v: any) => ({
       ...v,
       wholesalePrice: v.wholesalePrice ?? v.costPrice ?? 0,
       costPrice: v.wholesalePrice !== undefined ? (v.costPrice || 0) : 0,
-    })));
+    }));
+    setVariants(loadedVariants);
+    // Re-open in "same price" mode only if every row genuinely still agrees —
+    // otherwise default to per-variant so nothing existing looks collapsed.
+    setSameVariantPricing(
+      loadedVariants.length === 0 ||
+      loadedVariants.every((v: any) =>
+        v.costPrice === loadedVariants[0].costPrice &&
+        v.wholesalePrice === loadedVariants[0].wholesalePrice &&
+        v.sellingPrice === loadedVariants[0].sellingPrice &&
+        v.mrp === loadedVariants[0].mrp
+      )
+    );
     setShowAddModal(true);
   };
 
@@ -307,26 +330,44 @@ export default function WholesaleProductsUI() {
       // Merge color/fabric/sole into metadata JSON
       const isVariantProduct = form.productType === 'variant';
 
+      // "Same for all variants" mode edits the shared top-level price fields
+      // directly, so copy them onto every row here — every consumer downstream
+      // (size_prices, the representative firstVariant fallback below, the
+      // saved payload) still reads a real per-row price either way.
+      const effectiveVariants = isVariantProduct && sameVariantPricing
+        ? variants.map(v => ({
+            ...v,
+            costPrice: form.costPrice || 0,
+            wholesalePrice: form.wholesaleCost || 0,
+            sellingPrice: form.sellingPrice || 0,
+            mrp: form.mrp || 0,
+          }))
+        : variants;
+
       // Variant Builder rows carry their own cost/wholesale/retail/MRP per
       // size, but the Products list and other screens read the top-level
       // fields — without this, a variant product always shows ₹0 there even
       // though prices were set. Use the first row as the representative price.
-      const firstVariant = isVariantProduct ? variants[0] : undefined;
+      const firstVariant = isVariantProduct ? effectiveVariants[0] : undefined;
 
       // Wholesale billing's getPrice() reads per-variant pricing from
       // metadata.size_prices (keyed by size), not from variants[] — keep
       // both in sync so a variant priced here is priced correctly on the
       // Wholesale bill screen too.
       const sizePrices = isVariantProduct
-        ? variants.reduce((acc: Record<string, any>, v: any) => {
+        ? effectiveVariants.reduce((acc: Record<string, any>, v: any) => {
             if (v.size) acc[v.size] = { cost: v.wholesalePrice || 0, sellingPrice: v.sellingPrice || 0, mrp: v.mrp || 0 };
             return acc;
           }, {})
         : undefined;
 
+      // Drop the old single-value `color` key so a re-save through the new
+      // multi-select picker doesn't leave a stale duplicate sitting next to
+      // the new `colors` array in the stored JSON.
+      const { color: _legacyColor, ...restMeta } = (form.metadata || {}) as Record<string, any>;
       const mergedMeta = {
-        ...(form.metadata || {}),
-        ...(bizConfig.hasColors && form.color ? { color: form.color } : {}),
+        ...restMeta,
+        ...(bizConfig.hasColors && form.colors && form.colors.length > 0 ? { colors: form.colors } : {}),
         ...(bizConfig.hasFabric && form.fabric ? { fabric: form.fabric } : {}),
         ...(bizConfig.hasSoleMaterial && form.sole_material ? { sole_material: form.sole_material } : {}),
         ...(sizePrices ? { size_prices: sizePrices } : {}),
@@ -334,7 +375,7 @@ export default function WholesaleProductsUI() {
       const payload = {
         ...form,
         barcode: form.barcode?.trim() || null,
-        variants: isVariantProduct ? variants : [],
+        variants: isVariantProduct ? effectiveVariants : [],
         ...(firstVariant ? {
           costPrice: firstVariant.costPrice || 0,
           wholesaleCost: firstVariant.wholesalePrice || 0,
@@ -351,6 +392,7 @@ export default function WholesaleProductsUI() {
         metadata: mergedMeta,
         // remove virtual fields from payload
         color: undefined,
+        colors: undefined,
         fabric: undefined,
         sole_material: undefined,
       };
@@ -465,8 +507,29 @@ export default function WholesaleProductsUI() {
           </p>
         </div>
         <div className="flex gap-2">
+          <ExportButton
+            filename="products"
+            title="Product List"
+            summary={[
+              { label: 'Products', value: String(filteredProducts.length) },
+            ]}
+            columns={[
+              { key: 'name', label: 'Product' },
+              { key: 'category', label: 'Category' },
+              { key: 'brand', label: 'Brand' },
+              { key: 'hsnCode', label: 'HSN Code' },
+              { key: 'gstPercent', label: 'GST %', type: 'number' },
+              { key: 'mrp', label: 'MRP', type: 'currency' },
+              { key: 'sellingPrice', label: 'Selling Price', type: 'currency' },
+              { key: 'wholesaleCost', label: 'Wholesale Rate', type: 'currency' },
+              { key: 'costPrice', label: 'Cost Price', type: 'currency' },
+              { key: 'currentStock', label: 'Stock', type: 'number' },
+              { key: 'baseUnit', label: 'Unit' },
+            ]}
+            data={filteredProducts}
+          />
           <button
-            onClick={() => { setForm(emptyProduct); setVariants([]); setShowAddModal(true); }}
+            onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setShowAddModal(true); }}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
           >
             <Plus size={18} />
@@ -759,16 +822,28 @@ export default function WholesaleProductsUI() {
                         {bizConfig.hasShades && (
                           <td className="p-4 text-xs text-pink-500 dark:text-pink-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.shade || '—'}</td>
                         )}
-                        {bizConfig.hasColors && (
-                          <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
-                            {(p.metadata?.color) ? (
-                              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: p.metadata.color.toLowerCase() }} />
-                                {p.metadata.color}
-                              </span>
-                            ) : <span className="text-slate-400">—</span>}
-                          </td>
-                        )}
+                        {bizConfig.hasColors && (() => {
+                          // Array.isArray(p.metadata?.colors) is the current shape; a bare
+                          // p.metadata?.color string is what older rows saved before
+                          // multi-select shipped — show that as a single-item list too.
+                          const productColors: string[] = Array.isArray(p.metadata?.colors)
+                            ? p.metadata.colors
+                            : (p.metadata?.color ? [p.metadata.color] : []);
+                          return (
+                            <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                              {productColors.length > 0 ? (
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  {productColors.map((c) => (
+                                    <span key={c} className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                      <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: c.toLowerCase() }} />
+                                      {c}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : <span className="text-slate-400">—</span>}
+                            </td>
+                          );
+                        })()}
                         {bizConfig.hasFabric && (
                           <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.metadata?.fabric || '—'}</td>
                         )}
@@ -1066,43 +1141,6 @@ export default function WholesaleProductsUI() {
                         </div>
                       )}
 
-                      {/* Color Picker — Clothes, Shoes, Boutique */}
-                      {bizConfig.hasColors && (
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                            <Palette size={11} className="text-emerald-500" />
-                            Colour
-                          </label>
-                          <div className="flex flex-wrap gap-2 mb-2">
-                            {(bizConfig.colorChart || []).map(col => (
-                              <button
-                                key={col}
-                                type="button"
-                                onClick={() => setForm({...form, color: form.color === col ? '' : col})}
-                                className={cn(
-                                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all',
-                                  form.color === col
-                                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
-                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-emerald-400'
-                                )}
-                              >
-                                <span
-                                  className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
-                                  style={{ backgroundColor: col.toLowerCase() }}
-                                />
-                                {col}
-                              </button>
-                            ))}
-                          </div>
-                          <input
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm"
-                            placeholder="Or type a custom colour..."
-                            value={form.color || ''}
-                            onChange={e => setForm({...form, color: e.target.value})}
-                          />
-                        </div>
-                      )}
-
                       {/* Fabric — Clothes */}
                       {bizConfig.hasFabric && (
                         <div>
@@ -1178,7 +1216,14 @@ export default function WholesaleProductsUI() {
                     ].map(type => (
                       <div 
                         key={type.id}
-                        onClick={() => setForm({...form, productType: type.id as any})}
+                        onClick={() => setForm({
+                          ...form,
+                          productType: type.id as any,
+                          // Switching away from Variants means colour goes back to a
+                          // single choice — drop any extras rather than silently
+                          // keeping them hidden behind the single-select view.
+                          colors: type.id !== 'variant' ? (form.colors || []).slice(0, 1) : form.colors,
+                        })}
                         className={cn(
                           "p-4 rounded-xl border-2 cursor-pointer transition-all",
                           form.productType === type.id 
@@ -1197,6 +1242,55 @@ export default function WholesaleProductsUI() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Colour — shown once a Product Type is picked, since that
+                      choice decides how it behaves: a Single/Loose product is
+                      one specific item, so only one colour makes sense; a
+                      Variant product can genuinely come in several, so this
+                      switches to the same multi-select ColorPicker Vyapar uses. */}
+                  {bizConfig.hasColors && (
+                    <div className="mt-5">
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                        <Palette size={11} className="text-emerald-500" />
+                        Colour
+                        {form.productType !== 'variant' && (
+                          <span className="normal-case font-medium text-slate-400 tracking-normal">— this item is one colour</span>
+                        )}
+                      </label>
+                      {form.productType === 'variant' ? (
+                        <ColorPicker
+                          colorChart={bizConfig.colorChart || []}
+                          value={form.colors || []}
+                          onChange={(colors) => setForm({ ...form, colors })}
+                        />
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {(bizConfig.colorChart || []).map(col => {
+                            const active = (form.colors || [])[0] === col;
+                            return (
+                              <button
+                                key={col}
+                                type="button"
+                                onClick={() => setForm({ ...form, colors: active ? [] : [col] })}
+                                className={cn(
+                                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all',
+                                  active
+                                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-emerald-400'
+                                )}
+                              >
+                                <span
+                                  className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
+                                  style={{ backgroundColor: col.toLowerCase() }}
+                                />
+                                {col}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </section>
 
                 {/* 4. Pricing & Variants */}
@@ -1252,10 +1346,70 @@ export default function WholesaleProductsUI() {
                         </div>
                      </div>
                   ) : (
-                    <div className="p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
+                    <div className="p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm space-y-4">
+                      {/* Same price for all variants vs. price per variant.
+                          "Same" reuses the exact Cost/Wholesale/Retail/MRP
+                          fields from the Single-Product pricing form — one
+                          set of numbers, copied onto every row at save time —
+                          so the rest of the app keeps reading a real price
+                          off every variant either way. */}
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Pricing</span>
+                        <div className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-xs font-bold">
+                          <button type="button" onClick={() => setSameVariantPricing(true)}
+                            className={cn('px-3 py-1.5 rounded-md transition-colors', sameVariantPricing ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500')}>
+                            Same for all variants
+                          </button>
+                          <button type="button" onClick={() => setSameVariantPricing(false)}
+                            className={cn('px-3 py-1.5 rounded-md transition-colors', !sameVariantPricing ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500')}>
+                            Price per variant
+                          </button>
+                        </div>
+                      </div>
+
+                      {sameVariantPricing && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
+                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={form.costPrice || ''} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
+                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={form.wholesaleCost || ''} onChange={e => setForm({ ...form, wholesaleCost: parseFloat(e.target.value) || 0 })} />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
+                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={form.sellingPrice || ''} onChange={e => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })} />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
+                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={form.mrp || ''} onChange={e => setForm({ ...form, mrp: parseFloat(e.target.value) || 0 })} />
+                          </div>
+                        </div>
+                      )}
+
                       <div className="space-y-4">
                         {variants.map((v, i) => (
                           <div key={i} className="flex flex-wrap sm:flex-nowrap gap-3 items-end p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 relative group">
+                            {bizConfig.hasColors && (
+                              <div className="min-w-[110px]">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Colour</label>
+                                <div className="flex flex-wrap gap-1">
+                                  {(form.colors && form.colors.length > 0 ? form.colors : (bizConfig.colorChart || [])).map(c => (
+                                    <button key={c} type="button" onClick={() => { const nv = [...variants]; nv[i].color = c; setVariants(nv); }}
+                                      className={cn("flex items-center gap-1 text-[9px] px-1.5 py-1 rounded border transition-colors",
+                                        v.color === c ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-emerald-400")}>
+                                      <span className="w-2 h-2 rounded-full border border-white/50 shrink-0" style={{ backgroundColor: c.toLowerCase() }} />
+                                      {c}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="flex-1 min-w-[100px]">
                               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">
                                 {bizConfig.hasSizes ? 'Size/Name' : bizConfig.hasShades ? 'Shade' : 'Variant'}
@@ -1275,25 +1429,35 @@ export default function WholesaleProductsUI() {
                                 </div>
                               )}
                             </div>
-                            <div className="w-24">
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
-                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                                value={v.costPrice || 0} onChange={e => { const nv = [...variants]; nv[i].costPrice = parseFloat(e.target.value); setVariants(nv); }} />
-                            </div>
-                            <div className="w-24">
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
-                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                                value={v.wholesalePrice || 0} onChange={e => { const nv = [...variants]; nv[i].wholesalePrice = parseFloat(e.target.value); setVariants(nv); }} />
-                            </div>
-                            <div className="w-24">
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
-                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                                value={v.sellingPrice || 0} onChange={e => { const nv = [...variants]; nv[i].sellingPrice = parseFloat(e.target.value); setVariants(nv); }} />
-                            </div>
-                            <div className="w-24">
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
-                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                                value={v.mrp || 0} onChange={e => { const nv = [...variants]; nv[i].mrp = parseFloat(e.target.value); setVariants(nv); }} />
+                            {!sameVariantPricing && (
+                              <>
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
+                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                    value={v.costPrice || ''} onChange={e => { const nv = [...variants]; nv[i].costPrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                </div>
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
+                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                    value={v.wholesalePrice || ''} onChange={e => { const nv = [...variants]; nv[i].wholesalePrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                </div>
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
+                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                    value={v.sellingPrice || ''} onChange={e => { const nv = [...variants]; nv[i].sellingPrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                </div>
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
+                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                    value={v.mrp || ''} onChange={e => { const nv = [...variants]; nv[i].mrp = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                </div>
+                              </>
+                            )}
+                            <div className="w-20 shrink-0">
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Stock</label>
+                              <div title="Received via Purchases — not editable here" className="px-3 py-2 rounded-lg text-sm text-center bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-mono">
+                                {v.stock || 0}
+                              </div>
                             </div>
                             <button type="button" onClick={() => setVariants(variants.filter((_, idx) => idx !== i))}
                               className="w-10 h-10 flex items-center justify-center text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
@@ -1302,7 +1466,9 @@ export default function WholesaleProductsUI() {
                           </div>
                         ))}
 
-                        <button type="button" onClick={() => setVariants([...variants, { size: '', costPrice: 0, wholesalePrice: 0, sellingPrice: 0, mrp: 0 }])}
+                        <button type="button" onClick={() => setVariants([...variants, {
+                          color: (form.colors && form.colors[0]) || '', size: '', costPrice: 0, wholesalePrice: 0, sellingPrice: 0, mrp: 0, stock: 0,
+                        }])}
                           className="w-full py-3 border-2 border-dashed border-emerald-200 dark:border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2">
                           <Plus size={18} /> Add Variant
                         </button>
@@ -1352,7 +1518,7 @@ export default function WholesaleProductsUI() {
                   Name <span className="text-red-500">*</span>
                 </label>
                 <input required autoFocus className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                  placeholder={`e.g. ${inlineMasterType === 'brand' ? 'Tata' : inlineMasterType === 'category' ? 'Spices' : 'Kilogram'}`}
+                  placeholder={`e.g. ${inlineMasterType === 'brand' ? 'Tata' : inlineMasterType === 'category' ? (bizConfig.defaultCategories[0] || 'Category') : (bizConfig.defaultUnits[0] || 'Unit')}`}
                   value={inlineMasterForm.name} onChange={e => setInlineMasterForm({...inlineMasterForm, name: e.target.value})} />
               </div>
               {inlineMasterType === 'unit' && (

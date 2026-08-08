@@ -265,7 +265,7 @@ export default function PartyPage() {
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <ReceiptText size={16} /> {t('partyLedgerTimeline')}
               </h3>
-              <LedgerView entityId={selectedParty.id} entityType="party" />
+              <LedgerView entityId={selectedParty.id} entityType="party" entityName={selectedParty.shopName || selectedParty.name} />
             </div>
           </div>
         </div>

@@ -172,9 +172,12 @@ export default function WholesaleStockUI() {
 
   const { activeShopId } = useBusinessStore();
   const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher);
-  const { data: batches = [], isLoading: bLoad, isValidating: bValid, mutate: mutateBatches } = useSWR(null, safeFetcher); // Mock for now
+  const { data: batches = [], isLoading: bLoad, isValidating: bValid, mutate: mutateBatches } = useSWR(activeShopId ? ['/stock/batches', activeShopId] : null, safeFetcher);
   const { data: godowns = [], isLoading: gLoad, isValidating: gValid, mutate: mutateGodowns } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, godownsFetcher);
   const { data: movements = [], isLoading: mLoad, isValidating: mValid, mutate: mutateMovements } = useSWR(activeShopId ? ['/stock/movements', activeShopId] : null, safeFetcher);
+  // Reason-tagged adjustment history (Damaged/Expired/Theft/etc) — only
+  // recorded in ActivityLog today, see app/api/v1/stock/adjustments/route.ts.
+  const { data: adjustments = [], mutate: mutateAdjustments } = useSWR(activeShopId ? ['/stock/adjustments', activeShopId] : null, safeFetcher);
   
   // Prefetch suppliers so Receive Drawer opens instantly with data
   useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
@@ -233,12 +236,16 @@ export default function WholesaleStockUI() {
         mutateProducts();
         mutateGodowns();
         mutateMovements();
+        mutateAdjustments();
+        mutateBatches();
         globalMutate(key => typeof key === 'string' && key.startsWith('/reports/dashboard'));
       }, 500);
     } else {
       mutateProducts();
       mutateGodowns();
       mutateMovements();
+      mutateAdjustments();
+      mutateBatches();
       globalMutate(key => typeof key === 'string' && key.startsWith('/reports/dashboard'));
     }
   };
@@ -298,7 +305,17 @@ export default function WholesaleStockUI() {
       const productMovements = (movements || []).filter((m:any) => m.product_id === p.id);
       if (qty > 0 && productMovements.length === 0) deadStockCount++;
 
-      return { ...p, computedStock: qty, computedValue: val, batches: productBatches, movements: productMovements };
+      // Net units written off as Damaged/Expired (only those two reasons —
+      // Theft/Lost/Physical Count/Opening Balance aren't "damaged stock").
+      // Adjustments store a signed difference; a write-off is negative, so
+      // negate the net sum to show it as a positive "amount lost" figure.
+      const productAdjustments = (adjustments || []).filter((a: any) => a.productId === p.id);
+      const damagedNet = productAdjustments
+        .filter((a: any) => a.reason === 'Damaged' || a.reason === 'Expired')
+        .reduce((sum: number, a: any) => sum - a.difference, 0);
+      const damagedQty = Math.max(0, damagedNet);
+
+      return { ...p, computedStock: qty, computedValue: val, batches: productBatches, movements: productMovements, damagedQty };
     });
 
     return { 
@@ -307,7 +324,7 @@ export default function WholesaleStockUI() {
       categories: Array.from(categories),
       warehouses: godowns || []
     };
-  }, [products, batches, godowns, movements, warehouseFilter]);
+  }, [products, batches, godowns, movements, adjustments, warehouseFilter]);
 
   // Sync selectedProduct with updated data when mutations happen
   useEffect(() => {
@@ -665,7 +682,7 @@ export default function WholesaleStockUI() {
                     </div>
                     <div className="bg-rose-50 dark:bg-rose-500/10 p-3 rounded-lg border border-rose-200 dark:border-rose-500/30 text-center shadow-sm">
                       <p className="text-[10px] text-rose-600 dark:text-rose-400 uppercase tracking-wider font-bold mb-1">Damaged/Exp</p>
-                      <p className="text-xl font-bold text-rose-700 dark:text-rose-300">0</p>
+                      <p className="text-xl font-bold text-rose-700 dark:text-rose-300">{selectedProduct.damagedQty || 0}</p>
                     </div>
                   </div>
                 </div>

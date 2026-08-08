@@ -538,7 +538,7 @@ export default function CustomersPage() {
 
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-slate-900">
               {activeTab === 'ledger' ? (
-                <LedgerView entityId={selectedCustomer.id} entityType="customer" />
+                <LedgerView entityId={selectedCustomer.id} entityType="customer" entityName={selectedCustomer.name} />
               ) : (
                 <CustomerSalesView entityId={selectedCustomer.id} />
               )}

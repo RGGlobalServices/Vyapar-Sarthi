@@ -31,6 +31,7 @@ export function useBillingEngine(
   const removeItemFromStore = useCartStore((state) => state.removeItem);
   const updateQuantityInStore = useCartStore((state) => state.updateQuantity);
   const updatePriceInStore = useCartStore((state) => state.updatePrice);
+  const updateGstPercentInStore = useCartStore((state) => state.updateGstPercent);
   const clearCartInStore = useCartStore((state) => state.clearCart);
 
   const [discount, setDiscount] = useState<number | DiscountInput>(initialDiscount);
@@ -127,7 +128,12 @@ export function useBillingEngine(
     if (!shopId) return;
     updatePriceInStore(shopId, id, price, variant);
   }, [shopId, updatePriceInStore]);
-  
+
+  const updateGstPercent = useCallback((id: string | number, gstPercent: number, variant?: string) => {
+    if (!shopId) return;
+    updateGstPercentInStore(shopId, id, gstPercent, variant);
+  }, [shopId, updateGstPercentInStore]);
+
   const clearCart = useCallback(() => {
     if (!shopId) return;
     clearCartInStore(shopId);
@@ -172,6 +178,7 @@ export function useBillingEngine(
     removeItem,
     updateQuantity,
     updatePrice,
+    updateGstPercent,
     clearCart,
   };
 }

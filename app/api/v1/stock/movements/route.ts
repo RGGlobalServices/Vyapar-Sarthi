@@ -11,7 +11,7 @@ export const GET = handle(async (req) => {
   await ensureWholesaleTables();
 
   const movements = (await prisma.$queryRaw`
-    SELECT m.id, m.type, m.quantity, m.created_at, 
+    SELECT m.id, m.type, m.quantity, m.created_at, m.product_id,
            p.name as product_name, p.base_unit,
            g.name as warehouse_name
     FROM stock_movements m

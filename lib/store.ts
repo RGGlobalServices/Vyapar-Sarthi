@@ -118,6 +118,10 @@ export interface CartItem {
   size?: string;
   model?: string;
   warranty?: string;
+  // Carried for GST invoices — set from the product catalog when a line is
+  // added, editable per line at billing time (see updateGstPercent below).
+  gstPercent?: number;
+  hsnCode?: string;
   [key: string]: any;
 }
 
@@ -127,6 +131,7 @@ interface CartStore {
   removeItem: (shopId: string, id: string | number, variant?: string) => void;
   updateQuantity: (shopId: string, id: string | number, quantity: number, variant?: string) => void;
   updatePrice: (shopId: string, id: string | number, price: number, variant?: string) => void;
+  updateGstPercent: (shopId: string, id: string | number, gstPercent: number, variant?: string) => void;
   clearCart: (shopId: string) => void;
 }
 
@@ -178,6 +183,15 @@ export const useCartStore = create<CartStore>((set) => ({
           }
           return i;
         })
+      }
+    };
+  }),
+  updateGstPercent: (shopId, id, gstPercent, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return {
+      carts: {
+        ...state.carts,
+        [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, gstPercent } : i)
       }
     };
   }),

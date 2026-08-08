@@ -7,6 +7,7 @@ import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 
 import { useBusinessStore } from '@/lib/businessStore';
+import { getBusinessConfig } from '@/lib/businessConfig';
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
   return api.get(target).then(res => res.data);
@@ -27,7 +28,8 @@ export default function ReceiveDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  const { activeShopId } = useBusinessStore();
+  const { activeShopId, profile } = useBusinessStore();
+  const bizConfig = getBusinessConfig(profile.businessType);
   const { data: suppliersData = [], mutate: mutateSuppliers, isLoading: sLoad } = useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
   
@@ -51,12 +53,23 @@ export default function ReceiveDrawer({
     }
   };
   
+  const productVariants: any[] = Array.isArray(product.variants) ? product.variants : [];
+  // Single Product (no variant rows) but still tagged with one colour —
+  // nothing to split quantity across, but the shopkeeper should still see
+  // which colour this stock is going toward instead of no colour info at all.
+  const singleColour: string = Array.isArray(product.metadata?.colors)
+    ? product.metadata.colors[0]
+    : (product.metadata?.color || '');
   const [form, setForm] = useState({
     warehouseId: '',
     supplierId: '',
     invoiceNumber: '',
     date: new Date().toISOString().split('T')[0],
     quantity: '',
+    // One qty per colour/size (keyed by the same composite/bare key used
+    // everywhere else) — lets a single submission cover as many variants as
+    // were actually delivered instead of one drawer-open per variant.
+    variantQty: {} as Record<string, string>,
     cost: product.wholesaleCost || '',
     batchNumber: '',
     expiryDate: ''
@@ -64,31 +77,55 @@ export default function ReceiveDrawer({
 
   const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.warehouseId || !form.supplierId || !form.quantity || !form.cost) {
+    const hasVariants = productVariants.length > 0;
+    const variantEntries = Object.entries(form.variantQty).filter(([, q]) => Number(q) > 0);
+
+    if (!form.warehouseId || !form.supplierId || !form.cost) {
+      setError(t('fillRequiredFields'));
+      return;
+    }
+    if (hasVariants && variantEntries.length === 0) {
+      setError(t('enterAtLeastOneVariantQty') || 'Enter a quantity for at least one colour/size.');
+      return;
+    }
+    if (!hasVariants && !form.quantity) {
       setError(t('fillRequiredFields'));
       return;
     }
 
     setLoading(true);
     try {
+      const items = hasVariants
+        ? variantEntries.map(([variantKey, qty]) => ({
+            productId: product.id,
+            variant: variantKey,
+            quantity: Number(qty),
+            cost: Number(form.cost),
+            batchNumber: form.batchNumber || undefined,
+            expiryDate: form.expiryDate || undefined,
+          }))
+        : [{
+            productId: product.id,
+            variant: undefined,
+            quantity: Number(form.quantity),
+            cost: Number(form.cost),
+            batchNumber: form.batchNumber || undefined,
+            expiryDate: form.expiryDate || undefined,
+          }];
+      const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+
       await api.post('/purchases', {
         supplierId: form.supplierId,
         invoiceNumber: form.invoiceNumber,
         date: form.date,
         warehouseId: form.warehouseId,
-        items: [{
-          productId: product.id,
-          quantity: Number(form.quantity),
-          cost: Number(form.cost),
-          batchNumber: form.batchNumber || undefined,
-          expiryDate: form.expiryDate || undefined
-        }]
+        items,
       });
 
       onSuccess({
         type: 'receive',
         productId: product.id,
-        quantity: Number(form.quantity),
+        quantity: totalQty,
         warehouseId: form.warehouseId
       });
       onClose();
@@ -124,6 +161,63 @@ export default function ReceiveDrawer({
         )}
 
         <form id="receive-form" onSubmit={handleReceive} className="space-y-4">
+          {productVariants.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                {t('quantityPerVariant') || 'Quantity per Colour/Size'} *
+              </label>
+              <p className="text-[11px] text-slate-400 mb-2">{t('quantityPerVariantHint') || "Enter how many you're receiving of each — leave the rest blank."}</p>
+              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                {productVariants.map((v: any, vi: number) => {
+                  const key = v.color ? `${v.color} / ${v.size || ''}` : (v.size || '');
+                  const label = [v.color, v.size].filter(Boolean).join(' / ') || key || `#${vi + 1}`;
+                  return (
+                    <div key={key || vi} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                      {v.color && <span className="w-3 h-3 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: v.color.toLowerCase() }} />}
+                      <span className="flex-1 text-sm text-slate-700 dark:text-slate-200 truncate">{label}</span>
+                      {typeof v.stock === 'number' && <span className="text-[10px] text-slate-400 shrink-0">{v.stock} {t('inStock') || 'in stock'}</span>}
+                      <input
+                        type="number" min="0" step="any" placeholder="0"
+                        value={form.variantQty[key] || ''}
+                        onChange={e => setForm({ ...form, variantQty: { ...form.variantQty, [key]: e.target.value } })}
+                        className="w-16 shrink-0 px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-right focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {productVariants.length === 0 && singleColour && (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                {t('colour') || 'Colour'} <span className="normal-case font-medium text-slate-400 tracking-normal">— chosen when this product was created</span>
+              </label>
+              {/* Read-only echo of the same colour-chip picker used on the product
+                  form, so the one that was actually chosen (highlighted, same as
+                  there) is unmistakable — a plain swatch dot is invisible for
+                  colours like White against this light background. */}
+              <div className="flex flex-wrap gap-2">
+                {(bizConfig.colorChart && bizConfig.colorChart.includes(singleColour) ? bizConfig.colorChart : [singleColour, ...(bizConfig.colorChart || [])]).map(col => {
+                  const active = col === singleColour;
+                  return (
+                    <div
+                      key={col}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold',
+                        active
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 opacity-50'
+                      )}
+                    >
+                      <span className="w-3 h-3 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: col.toLowerCase() }} />
+                      {col}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('warehouse')} *</label>
             <select 
@@ -172,26 +266,28 @@ export default function ReceiveDrawer({
             )}
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('quantityRequired')}</label>
-              <div className="relative">
-                <input 
-                  required
-                  type="number"
-                  min="0.01"
-                  step="any"
-                  value={form.quantity}
-                  onChange={e => setForm({...form, quantity: e.target.value})}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500"
-                  placeholder={t('quantityPlaceholder')}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{product.baseUnit}</span>
+          <div className={cn("grid gap-4", productVariants.length > 0 ? "grid-cols-1" : "grid-cols-2")}>
+            {productVariants.length === 0 && (
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('quantityRequired')}</label>
+                <div className="relative">
+                  <input
+                    required
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    value={form.quantity}
+                    onChange={e => setForm({...form, quantity: e.target.value})}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500"
+                    placeholder={t('quantityPlaceholder')}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{product.baseUnit}</span>
+                </div>
               </div>
-            </div>
+            )}
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('unitCostRequired')}</label>
-              <input 
+              <input
                 required
                 type="number"
                 step="any"

@@ -5,6 +5,7 @@ import { ensureWholesaleTables } from '@/lib/server/wholesale';
 import { ensureGodownTables } from '@/lib/server/godowns';
 import { randomUUID } from 'crypto';
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
+import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 
 export async function GET(req: Request) {
   try {
@@ -126,6 +127,7 @@ export async function POST(req: Request) {
           purchaseInvoiceId: invoiceId,
           productId: item.productId,
           variantId: item.variantId || null,
+          variantKey: item.variant || null,
           quantity: item.baseQuantity,
           cost: item.baseCost,
           gst: item.gst || 0,
@@ -217,7 +219,19 @@ export async function POST(req: Request) {
     const results = await prisma.$transaction(transactionOps);
     const invoice = results[0];
 
-    // 8. Notifications Trigger (Outside transaction so it doesn't fail the primary purchase if it errors, but wait, the instructions say "Background helpers that can run safely inside transactions" -> wait, prisma.$transaction(transactionOps) is an array transaction, we can't await functions inside array. 
+    // 8. Per-variant stock breakdown (Udyog colour/size rows in
+    // Product.variants[]) — best-effort, after the critical transaction
+    // above has already committed the flat currentStock/godown totals.
+    try {
+      await applyVariantStockDeltas(
+        prisma,
+        processedItems
+          .filter((item: any) => item.variant)
+          .map((item: any) => ({ productId: item.productId, variantKey: item.variant, delta: item.baseQuantity }))
+      );
+    } catch (e) { console.error('Variant stock update failed:', e); }
+
+    // 9. Notifications Trigger (Outside transaction so it doesn't fail the primary purchase if it errors, but wait, the instructions say "Background helpers that can run safely inside transactions" -> wait, prisma.$transaction(transactionOps) is an array transaction, we can't await functions inside array. 
     // We can just run it after since notification is not strictly mission-critical for database consistency, or we rewrite it as an interactive transaction). Let's run it after.
     try {
       await prisma.$transaction(async (tx) => {

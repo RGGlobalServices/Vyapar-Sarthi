@@ -3,6 +3,7 @@ import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
 import { reversePurchaseInvoiceEffects, cleanupPurchaseLedgerAndBatches, PurchaseReversalBlockedError } from '@/lib/server/purchases';
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
+import { applyVariantStockDeltas, type VariantStockDelta } from '@/lib/server/variantStock';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -90,6 +91,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
             purchaseInvoiceId: id,
             productId: item.productId,
             variantId: item.variantId || null,
+            variantKey: item.variant || null,
             quantity: item.baseQuantity,
             cost: item.baseCost,
             gst: item.gst || 0,
@@ -168,6 +170,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
       await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, oldInvoice);
     } catch (e) { console.error('Purchase ledger/batch cleanup failed:', e); }
 
+    // Per-variant stock breakdown: undo what the old line items added, then
+    // (re)apply the new ones — same best-effort, after-commit treatment as
+    // POST. oldInvoice.purchaseItems already carries variantKey, so this
+    // needs no extra fetch beyond what reversePurchaseInvoiceEffects returned.
+    try {
+      const reverseDeltas: VariantStockDelta[] = oldInvoice.purchaseItems
+        .filter((item) => item.variantKey)
+        .map((item) => ({ productId: item.productId, variantKey: item.variantKey, delta: -item.quantity }));
+      const reapplyDeltas: VariantStockDelta[] = processedItems
+        .filter((item: any) => item.variant)
+        .map((item: any) => ({ productId: item.productId, variantKey: item.variant, delta: item.baseQuantity }));
+      await applyVariantStockDeltas(prisma, [...reverseDeltas, ...reapplyDeltas]);
+    } catch (e) { console.error('Variant stock update failed:', e); }
+
     try {
       await prisma.$transaction(async (tx) => {
         await checkLargeTransactionAlert(tx, auth!.shop.id, totalCost, 'purchase', invoiceNumber || id);
@@ -206,6 +222,13 @@ export async function DELETE(req: Request, { params }: Ctx) {
     try {
       await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, invoice);
     } catch (e) { console.error('Purchase ledger/batch cleanup failed:', e); }
+
+    try {
+      const reverseDeltas: VariantStockDelta[] = invoice.purchaseItems
+        .filter((item) => item.variantKey)
+        .map((item) => ({ productId: item.productId, variantKey: item.variantKey, delta: -item.quantity }));
+      await applyVariantStockDeltas(prisma, reverseDeltas);
+    } catch (e) { console.error('Variant stock update failed:', e); }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

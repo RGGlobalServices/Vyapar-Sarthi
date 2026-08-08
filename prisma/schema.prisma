@@ -813,6 +813,11 @@ model PurchaseItem {
   purchaseInvoiceId String  @map("purchase_invoice_id") @db.Uuid
   productId         String  @map("product_id") @db.Uuid
   variantId         String? @map("variant_id") @db.Uuid
+  // Composite "Colour / Size" (or bare size) key into Product.variants[] JSON —
+  // NOT the same thing as variantId above, which points at the unused relational
+  // ProductVariant table. Lets an edit/delete look back at exactly which
+  // variants[] row this line's quantity was added to, so it can be reversed.
+  variantKey        String? @map("variant_key") @db.VarChar
   quantity          Float
   cost              Float
   gst               Float?
