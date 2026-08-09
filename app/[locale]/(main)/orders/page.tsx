@@ -5,10 +5,11 @@ import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { Loader2, Plus, ClipboardList, Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Filter, X, AlertTriangle, CalendarClock, Search } from 'lucide-react';
+import { Loader2, Plus, ClipboardList, Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Filter, X, AlertTriangle, CalendarClock, Search, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { ExportButton } from '@/lib/hooks/useExport';
+import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
 
 const fetcher = (url: string) => api.get(url).then(res => res.data);
 const listFetcher = (url: string) => api.get(url).then(res => Array.isArray(res.data) ? res.data : (res.data?.data || []));
@@ -24,6 +25,104 @@ const emptyForm = (direction: Direction) => ({
   expectedDate: '',
   notes: '',
 });
+
+// One form row per product. `variantQty` mirrors Purchases' item rows — one
+// qty box per colour/size when the product has variants; `quantity`/`price`
+// are used directly for a plain (non-variant) product.
+const emptyItem = () => ({
+  productId: '', quantity: 1, price: 0,
+  variantQty: {} as Record<string, string>,
+});
+
+// Same composite-key convention used everywhere else a variant row is stored
+// or matched (Products' grid, Purchases, Billing's picker).
+const variantRowKey = (v: any) => (v.color ? makeVariantKey(v.color, v.size || '') : (v.size || ''));
+
+// Product/variant/qty/price picker used by both the Add and Edit order
+// forms — a variant product gets one qty box per colour/size (same "fill
+// in what this order covers" pattern as Purchases' item rows); a plain
+// product gets a single Qty field.
+function OrderItemsEditor({ items, setItems, products, t }: { items: any[]; setItems: (items: any[]) => void; products: any[]; t: any }) {
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => {
+        const selectedProduct = products.find((p: any) => p.id === item.productId);
+        const productVariants: any[] = Array.isArray(selectedProduct?.variants) ? selectedProduct.variants : [];
+        const hasVariants = productVariants.length > 0;
+        return (
+          <div key={index} className="flex flex-col gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/30">
+            <div className="flex flex-wrap md:flex-nowrap gap-3 items-end">
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{t('productLabel') || 'Product'}</label>
+                <select value={item.productId} onChange={e => {
+                  const next = [...items];
+                  next[index] = { ...next[index], productId: e.target.value, variantQty: {} };
+                  setItems(next);
+                }} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white">
+                  <option value="">{t('selectProduct') || 'Select Product...'}</option>
+                  {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              {!hasVariants && (
+                <div className="w-24">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{t('qty') || 'Qty'}</label>
+                  <input type="number" min="1" placeholder="1" value={item.quantity === 0 || item.quantity === '' ? '' : item.quantity} onChange={e => {
+                    const next = [...items];
+                    next[index] = { ...next[index], quantity: e.target.value === '' ? '' : Number(e.target.value) };
+                    setItems(next);
+                  }} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white" />
+                </div>
+              )}
+              <div className="w-28">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{t('priceLabel') || 'Price / Unit'}</label>
+                <input type="number" min="0" step="0.01" placeholder="0" value={item.price === 0 || item.price === '' ? '' : item.price} onChange={e => {
+                  const next = [...items];
+                  next[index] = { ...next[index], price: e.target.value === '' ? '' : Number(e.target.value) };
+                  setItems(next);
+                }} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white" />
+              </div>
+              <button type="button" onClick={() => setItems(items.filter((_, i) => i !== index))}
+                className="w-9 h-9 flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0">
+                <X size={16} />
+              </button>
+            </div>
+            {hasVariants && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">{t('quantityPerVariant') || 'Quantity per Colour/Size'}</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                  {productVariants.map((v: any, vi: number) => {
+                    const key = variantRowKey(v);
+                    const label = [v.color, v.size].filter(Boolean).join(' / ') || key || `#${vi + 1}`;
+                    return (
+                      <div key={key || vi} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                        {v.color && <span className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: v.color.toLowerCase() }} />}
+                        <span className="flex-1 text-xs text-slate-700 dark:text-slate-200 truncate" title={label}>{label}</span>
+                        <input
+                          type="number" min="0" step="any" placeholder="0"
+                          value={item.variantQty?.[key] || ''}
+                          onChange={e => {
+                            const next = [...items];
+                            next[index] = { ...next[index], variantQty: { ...next[index].variantQty, [key]: e.target.value } };
+                            setItems(next);
+                          }}
+                          className="w-14 shrink-0 px-1.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs text-right focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" onClick={() => setItems([...items, emptyItem()])}
+        className="w-full py-2.5 border-2 border-dashed border-emerald-200 dark:border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm font-bold hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2">
+        <Plus size={16} /> {t('addAnotherProduct') || 'Add Another Product'}
+      </button>
+    </div>
+  );
+}
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400',
@@ -66,6 +165,7 @@ export default function OrdersPage() {
 
   const { data: parties = [] } = useSWR(activeShopId ? ['/crm/customers?type=party', activeShopId] : null, () => listFetcher('/crm/customers?type=party'));
   const { data: suppliers = [] } = useSWR(activeShopId ? ['/suppliers', activeShopId] : null, () => listFetcher('/suppliers'));
+  const { data: products = [] } = useSWR(activeShopId ? ['/products', activeShopId] : null, () => listFetcher('/products'));
 
   const visibleOrders = scheduledOnly
     ? orders.filter((o: any) => o.expectedDate && o.status !== 'completed' && o.status !== 'cancelled')
@@ -76,22 +176,75 @@ export default function OrdersPage() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(emptyForm('incoming'));
+  const [items, setItems] = useState<any[]>([emptyItem()]);
   const [saving, setSaving] = useState(false);
 
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>(null);
+  const [editItems, setEditItems] = useState<any[]>([emptyItem()]);
   const [editSaving, setEditSaving] = useState(false);
 
   const [deletingOrder, setDeletingOrder] = useState<any>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
 
+  // Expands each form row into one API item per unit actually being ordered —
+  // a variant-product row becomes one item per colour/size with a qty
+  // entered (sharing that row's price), a plain row passes through
+  // unchanged. Same shape Purchases uses, reused here for the live total
+  // preview and the save payload so they can never disagree.
+  const expandItemsForApi = (rows: any[]) => rows.flatMap((item: any) => {
+    const product = products.find((p: any) => p.id === item.productId);
+    const productVariants: any[] = Array.isArray(product?.variants) ? product.variants : [];
+    if (productVariants.length > 0) {
+      return Object.entries(item.variantQty || {})
+        .filter(([, qty]) => Number(qty) > 0)
+        .map(([variantKey, qty]) => ({
+          productId: item.productId,
+          variant: variantKey,
+          quantity: Number(qty),
+          price: Number(item.price) || 0,
+        }));
+    }
+    return item.productId && Number(item.quantity) > 0
+      ? [{ productId: item.productId, quantity: Number(item.quantity), price: Number(item.price) || 0 }]
+      : [];
+  });
+
+  // Flat OrderItem[] (one row per colour/size) back into one form row per
+  // product, so re-editing shows the same "qty per colour/size" grid the Add
+  // form uses instead of a stray row per variant.
+  const groupItemsForForm = (orderItems: any[]) => {
+    const byProduct = new Map<string, any[]>();
+    (orderItems || []).forEach((it: any) => {
+      const list = byProduct.get(it.productId) || [];
+      list.push(it);
+      byProduct.set(it.productId, list);
+    });
+    const grouped: any[] = [];
+    byProduct.forEach((list, productId) => {
+      const withVariant = list.filter(it => it.variantKey);
+      const withoutVariant = list.filter(it => !it.variantKey);
+      if (withVariant.length > 0) {
+        const variantQty: Record<string, string> = {};
+        withVariant.forEach(it => { variantQty[it.variantKey] = String(it.quantity); });
+        grouped.push({ productId, quantity: 1, price: withVariant[0].price, variantQty });
+      }
+      withoutVariant.forEach(it => {
+        grouped.push({ productId, quantity: it.quantity, price: it.price, variantQty: {} });
+      });
+    });
+    return grouped.length > 0 ? grouped : [emptyItem()];
+  };
+
   const openAdd = () => {
     setForm(emptyForm(direction));
+    setItems([emptyItem()]);
     setShowAdd(true);
   };
 
   const openEdit = (order: any) => {
     setEditingOrder(order);
+    setEditItems(groupItemsForForm(order.items));
     setEditForm({
       orderNumber: order.orderNumber,
       status: order.status,
@@ -108,14 +261,18 @@ export default function OrdersPage() {
     e.preventDefault();
     setSaving(true);
     try {
+      const apiItems = expandItemsForApi(items);
       await api.post('/orders', {
         orderNumber: form.orderNumber,
         direction: form.direction,
         customerId: form.direction === 'incoming' ? (form.customerId || undefined) : undefined,
         supplierId: form.direction === 'outgoing' ? (form.supplierId || undefined) : undefined,
-        totalAmount: parseFloat(form.totalAmount) || 0,
+        totalAmount: apiItems.length > 0
+          ? apiItems.reduce((s, i) => s + i.quantity * i.price, 0)
+          : (parseFloat(form.totalAmount) || 0),
         expectedDate: form.expectedDate || undefined,
         notes: form.notes || undefined,
+        items: apiItems,
       });
       toast.success(t('createSuccess') || 'Order created');
       setShowAdd(false);
@@ -131,15 +288,19 @@ export default function OrdersPage() {
     e.preventDefault();
     setEditSaving(true);
     try {
+      const apiItems = expandItemsForApi(editItems);
       await api.put(`/orders/${editingOrder.id}`, {
         orderNumber: editForm.orderNumber,
         status: editForm.status,
         direction: editForm.direction,
         customerId: editForm.direction === 'incoming' ? (editForm.customerId || undefined) : undefined,
         supplierId: editForm.direction === 'outgoing' ? (editForm.supplierId || undefined) : undefined,
-        totalAmount: parseFloat(editForm.totalAmount) || 0,
+        totalAmount: apiItems.length > 0
+          ? apiItems.reduce((s, i) => s + i.quantity * i.price, 0)
+          : (parseFloat(editForm.totalAmount) || 0),
         expectedDate: editForm.expectedDate || undefined,
         notes: editForm.notes || undefined,
+        items: apiItems,
       });
       toast.success(t('orderUpdatedSuccessfully') || 'Order updated successfully');
       setEditingOrder(null);
@@ -170,6 +331,17 @@ export default function OrdersPage() {
     return o.customer?.shopName || o.customer?.name || t('noPartyLinked') || 'No party linked';
   };
 
+  // "Product A, Product B +2 more" style summary so the list shows what an
+  // order actually contains at a glance, not just its number and a total.
+  const itemsSummary = (o: any) => {
+    const items: any[] = Array.isArray(o.items) ? o.items : [];
+    if (items.length === 0) return null;
+    const names = Array.from(new Set(items.map(i => i.product?.name).filter(Boolean)));
+    const shown = names.slice(0, 2).join(', ');
+    const extra = names.length - 2;
+    return `${shown}${extra > 0 ? ` +${extra} more` : ''}`;
+  };
+
   const exportRows = useMemo(() => visibleOrders.map((o: any) => ({
     date: o.createdAt,
     orderNumber: o.orderNumber,
@@ -178,6 +350,7 @@ export default function OrdersPage() {
     status: o.status,
     expectedDate: o.expectedDate,
     amount: o.totalAmount,
+    items: itemsSummary(o) || '',
     notes: o.notes || '',
   })), [visibleOrders]);
 
@@ -205,6 +378,7 @@ export default function OrdersPage() {
               { key: 'status', label: 'Status' },
               { key: 'expectedDate', label: 'Expected Date', type: 'date' },
               { key: 'amount', label: 'Amount', type: 'currency' },
+              { key: 'items', label: 'Items' },
               { key: 'notes', label: 'Notes' },
             ]}
             data={exportRows}
@@ -329,9 +503,26 @@ export default function OrdersPage() {
                 </select>
               )}
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <Package size={13} className="text-emerald-500" /> {t('itemsLabel') || 'Items'}
+            </label>
+            <OrderItemsEditor items={items} setItems={setItems} products={products} t={t} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{t('totalAmount')}</label>
-              <input required type="number" min="0" step="0.01" value={form.totalAmount} onChange={e => setForm({ ...form, totalAmount: e.target.value })} placeholder="0.00" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+              {expandItemsForApi(items).length > 0 ? (
+                <div className="w-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-3 py-2 text-sm font-black text-emerald-700 dark:text-emerald-400">
+                  ₹{expandItemsForApi(items).reduce((s, i) => s + i.quantity * i.price, 0).toFixed(2)}
+                  <span className="ml-1.5 text-[10px] font-normal text-emerald-600/70 dark:text-emerald-400/60 uppercase tracking-wide">{t('computedFromItems') || 'from items'}</span>
+                </div>
+              ) : (
+                <input required type="number" min="0" step="0.01" value={form.totalAmount} onChange={e => setForm({ ...form, totalAmount: e.target.value })} placeholder="0.00" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{t('expectedDate') || 'Expected / Scheduled Date'}</label>
@@ -380,7 +571,13 @@ export default function OrdersPage() {
                     </td>
                     <td className="px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-100">
                       {order.orderNumber}
-                      {order.notes && <p className="text-xs font-normal text-slate-400 truncate max-w-[180px]">{order.notes}</p>}
+                      {itemsSummary(order) ? (
+                        <p className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate max-w-[220px] flex items-center gap-1">
+                          <Package size={11} className="shrink-0 text-slate-400" /> {itemsSummary(order)}
+                        </p>
+                      ) : order.notes ? (
+                        <p className="text-xs font-normal text-slate-400 truncate max-w-[180px]">{order.notes}</p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">{counterpartyLabel(order)}</td>
                     <td className="px-4 py-3 text-sm">
@@ -477,12 +674,26 @@ export default function OrdersPage() {
                 </select>
               </div>
               <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <Package size={13} className="text-emerald-500" /> {t('itemsLabel') || 'Items'}
+                </label>
+                <OrderItemsEditor items={editItems} setItems={setEditItems} products={products} t={t} />
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('expectedDate') || 'Expected / Scheduled Date'}</label>
                 <input type="date" value={editForm.expectedDate} onChange={e => setEditForm({ ...editForm, expectedDate: e.target.value })} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('totalAmount') || 'Total Amount'} <span className="text-red-500">*</span></label>
-                <input required type="number" min="0" step="0.01" value={editForm.totalAmount} onChange={e => setEditForm({ ...editForm, totalAmount: e.target.value })} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors text-slate-900 dark:text-white" />
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('totalAmount') || 'Total Amount'} {expandItemsForApi(editItems).length === 0 && <span className="text-red-500">*</span>}</label>
+                {expandItemsForApi(editItems).length > 0 ? (
+                  <div className="w-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 text-sm font-black text-emerald-700 dark:text-emerald-400">
+                    ₹{expandItemsForApi(editItems).reduce((s, i) => s + i.quantity * i.price, 0).toFixed(2)}
+                    <span className="ml-1.5 text-[10px] font-normal text-emerald-600/70 dark:text-emerald-400/60 uppercase tracking-wide">{t('computedFromItems') || 'from items'}</span>
+                  </div>
+                ) : (
+                  <input required type="number" min="0" step="0.01" value={editForm.totalAmount} onChange={e => setEditForm({ ...editForm, totalAmount: e.target.value })} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors text-slate-900 dark:text-white" />
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('notesOptional') || 'Notes (Optional)'}</label>

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { planLabel } from '@/lib/planGates';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
 import UpcomingEventsCard from '@/components/UpcomingEventsCard';
@@ -36,6 +37,13 @@ function DashboardInner() {
   const router = useRouter();
   const { fetchProfile, activeShopId, profile } = useBusinessStore();
   const { role } = useAuthStore();
+  // Udyog/Bada Udyog packages track the same due/collection activity under
+  // "Party" (customer_transactions is shared across customer & party rows —
+  // see /crm/ledger) rather than a separate "Udhar" page, and '/udhar' isn't
+  // in their package's module whitelist — linking there trips the route
+  // guard and bounces the shopkeeper back with an error toast.
+  const isWholesaleTier = isWholesaleTierPackage(profile.packageType);
+  const udharHref = isWholesaleTier ? '/party' : '/udhar';
 
   const [paymentBanner, setPaymentBanner] = useState<{ plan: string } | null>(null);
 
@@ -495,7 +503,7 @@ function DashboardInner() {
               value={`₹ ${Math.round(stats.udhar_collection).toLocaleString('en-IN')}`}
               subtitle={t('receivedInUdharSection')}
               icon={<HandCoins className="text-blue-500" />}
-              href="/udhar"
+              href={udharHref}
               accent="blue"
             />
             <StatCard
@@ -531,8 +539,8 @@ function DashboardInner() {
           title={timeframe === t('today') ? t('todaysUdharAllCaps') : t('periodUdharAllCaps')}
           value={`₹ ${Math.round(stats.period_udhar).toLocaleString('en-IN')}`}
           subtitle={t('plusTotalUdhar', { amount: Math.round(stats.total_udhar).toLocaleString('en-IN') })}
-          icon={<Wallet className="text-orange-500" />} 
-          href="/udhar"
+          icon={<Wallet className="text-orange-500" />}
+          href={udharHref}
         />
         <StatCard 
           title={getDynamicTitle('Returns')} 

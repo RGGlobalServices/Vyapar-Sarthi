@@ -119,7 +119,7 @@
     "subscriptionEndedTitle": "सदस्यत्व संपले",
     "subscriptionEndedBody": "तुमचे सदस्यत्व संपले आहे. हा विभाग वापरणे सुरू ठेवण्यासाठी कृपया नूतनीकरण करा.",
     "renewSubscription": "सदस्यत्व नूतनीकरण करा",
-    "moduleNotAvailable": "मॉड्यूल '{module}' तुमच्या {plan} मध्ये उपलब्ध नाही",
+    "moduleNotAvailable": "मॉड्यूल {module} तुमच्या {plan} मध्ये उपलब्ध नाही",
     "allRightsReserved": "सर्व हक्क राखीव."
   },
   "Returns": {

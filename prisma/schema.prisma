@@ -187,14 +187,33 @@ model Order {
   completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
   notes        String?   @db.VarChar
 
-  shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  customer Customer? @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  shop     Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customer Customer?   @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  supplier Supplier?   @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  items    OrderItem[]
 
   @@index([shopId])
   @@index([customerId])
   @@index([supplierId])
   @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  // Composite "Colour / Size" (or bare size) key into Product.variants[] JSON —
+  // same convention as PurchaseItem.variantKey. Null for a non-variant line.
+  variantKey String? @map("variant_key") @db.VarChar
+  quantity  Float
+  price     Float
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
 }
 
 model PaymentTransaction {
@@ -278,6 +297,7 @@ model Product {
   productVariants  ProductVariant[]
   batches          Batch[]
   purchaseItems    PurchaseItem[]
+  orderItems       OrderItem[]
   dailyStockEntries DailyStockEntry[]
   dailyRegisterLogs DailyRegisterLog[]
 

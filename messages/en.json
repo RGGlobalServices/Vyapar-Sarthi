@@ -119,7 +119,7 @@
     "subscriptionEndedTitle": "Subscription Ended",
     "subscriptionEndedBody": "Your subscription has ended. Please renew to continue accessing this section.",
     "renewSubscription": "Renew Subscription",
-    "moduleNotAvailable": "Module '{module}' is not available in your {plan}",
+    "moduleNotAvailable": "Module {module} is not available in your {plan}",
     "allRightsReserved": "All rights reserved."
   },
   "Returns": {

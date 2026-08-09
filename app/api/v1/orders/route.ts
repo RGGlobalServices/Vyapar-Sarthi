@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { requireShop } from '@/lib/server/auth';
+import { computeItemsAndTotal, type OrderItemInput } from '@/lib/server/orderItems';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,12 +28,13 @@ export const GET = handle(async (req) => {
       { orderNumber: { contains: q, mode: 'insensitive' } },
       { customer: { name: { contains: q, mode: 'insensitive' } } },
       { supplier: { name: { contains: q, mode: 'insensitive' } } },
+      { items: { some: { product: { name: { contains: q, mode: 'insensitive' } } } } },
     ];
   }
 
   const orders = await prisma.order.findMany({
     where,
-    include: { customer: true, supplier: true },
+    include: { customer: true, supplier: true, items: { include: { product: true } } },
     orderBy: { createdAt: 'desc' }
   });
   return json(orders);
@@ -45,14 +47,17 @@ export const POST = handle(async (req) => {
     direction?: string,
     customerId?: string,
     supplierId?: string,
-    totalAmount: number,
+    totalAmount?: number,
     status?: string,
     expectedDate?: string,
     notes?: string,
+    items?: OrderItemInput[],
   }>(req);
 
-  if (!data.orderNumber || typeof data.totalAmount !== 'number') {
-    throw new ApiError(400, 'Order number and total amount are required');
+  const { items, totalAmount } = computeItemsAndTotal(data.items, Number(data.totalAmount) || 0);
+
+  if (!data.orderNumber || (items.length === 0 && typeof data.totalAmount !== 'number')) {
+    throw new ApiError(400, 'Order number and total amount (or at least one item) are required');
   }
 
   const direction = data.direction === 'outgoing' ? 'outgoing' : 'incoming';
@@ -64,12 +69,13 @@ export const POST = handle(async (req) => {
       direction,
       customerId: direction === 'incoming' ? (data.customerId || null) : null,
       supplierId: direction === 'outgoing' ? (data.supplierId || null) : null,
-      totalAmount: data.totalAmount,
+      totalAmount,
       status: data.status || 'pending',
       expectedDate: data.expectedDate ? new Date(data.expectedDate) : null,
       notes: data.notes || null,
+      items: items.length > 0 ? { create: items } : undefined,
     },
-    include: { customer: true, supplier: true }
+    include: { customer: true, supplier: true, items: { include: { product: true } } }
   });
 
   return json(order, 201);

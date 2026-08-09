@@ -119,7 +119,7 @@
     "subscriptionEndedTitle": "सदस्यता समाप्त हो गई",
     "subscriptionEndedBody": "आपकी सदस्यता समाप्त हो चुकी है। इस भाग तक पहुंच जारी रखने के लिए कृपया नवीनीकृत करें।",
     "renewSubscription": "सदस्यता नवीनीकृत करें",
-    "moduleNotAvailable": "मॉड्यूल '{module}' आपके {plan} में उपलब्ध नहीं है",
+    "moduleNotAvailable": "मॉड्यूल {module} आपके {plan} में उपलब्ध नहीं है",
     "allRightsReserved": "सर्वाधिकार सुरक्षित।"
   },
   "Returns": {
