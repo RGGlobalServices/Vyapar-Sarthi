@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLocale } from 'next-intl';
 import { useParams } from 'next/navigation';
 import api from '@/lib/api';
-import { Shield, ArrowLeft, RefreshCw, Ban, CheckCircle, Trash2, Package, Users, Phone, Calendar, Store, Globe, Gift, Ticket, IndianRupee, Mail, Clock, AlertTriangle } from 'lucide-react';
+import { Shield, ArrowLeft, RefreshCw, Ban, CheckCircle, Trash2, Package, Users, Phone, Calendar, Store, Globe, Gift, Ticket, IndianRupee, Mail, Clock, AlertTriangle, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -469,9 +469,15 @@ export default function AdminUserDetailPage() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                <h2 className="text-lg font-black text-slate-100">Update Subscription</h2>
-                <button onClick={() => setShowPlanForm(false)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors">
-                  <AlertTriangle size={18} />
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setShowPlanForm(false)}
+                    className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors" title="Back">
+                    <ArrowLeft size={18} />
+                  </button>
+                  <h2 className="text-lg font-black text-slate-100">Update Subscription</h2>
+                </div>
+                <button onClick={() => setShowPlanForm(false)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors" title="Close">
+                  <X size={18} />
                 </button>
               </div>
               <form onSubmit={handleUpdatePlan} className="p-6 space-y-4">
@@ -533,10 +539,16 @@ export default function AdminUserDetailPage() {
                     )}
                   </div>
                 )}
-                <button type="submit" disabled={actionLoading === 'plan'}
-                  className="w-full bg-indigo-500 text-slate-900 py-3 rounded-xl font-bold text-sm hover:bg-indigo-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-                  {actionLoading === 'plan' ? <><RefreshCw size={16} className="animate-spin" /> Updating…</> : 'Update Subscription'}
-                </button>
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setShowPlanForm(false)}
+                    className="flex-1 bg-slate-800 text-slate-300 py-3 rounded-xl font-bold text-sm hover:bg-slate-700 hover:text-white transition-all">
+                    Back
+                  </button>
+                  <button type="submit" disabled={actionLoading === 'plan'}
+                    className="flex-1 bg-indigo-500 text-slate-900 py-3 rounded-xl font-bold text-sm hover:bg-indigo-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                    {actionLoading === 'plan' ? <><RefreshCw size={16} className="animate-spin" /> Updating…</> : 'Update Subscription'}
+                  </button>
+                </div>
               </form>
             </div>
           </div>

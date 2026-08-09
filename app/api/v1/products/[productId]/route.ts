@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { recordDeletion } from '@/lib/server/trash';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -133,10 +134,22 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { productId } = await params;
-  const { shop } = await requireShop(req);
+  const { shop, user } = await requireShop(req);
   const product = await prisma.product.findFirst({ where: { id: productId, shopId: shop.id } });
   if (!product) throw new ApiError(404, 'Product not found');
-  
+
+  // Snapshot before the delete attempt below — recoverable from the admin
+  // trash bin even though the P2003 fallback path already archives instead
+  // of destroying, since archived products still clutter search/lists forever.
+  await recordDeletion({
+    shopId: shop.id,
+    entityType: 'product',
+    entityId: product.id,
+    label: product.name,
+    data: product,
+    deletedBy: user.email,
+  });
+
   try {
     // Attempt hard delete. It will automatically cascade to godownProducts/stockLogs if schema allows,
     // but if it's referenced by Sales, it will throw a P2003 Foreign Key Constraint error.

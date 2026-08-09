@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { recordDeletion } from '@/lib/server/trash';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,12 +52,29 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  const { shop } = await requireShop(req);
-  
+  const { shop, user } = await requireShop(req);
+
   const existing = await prisma.staff.findFirst({ where: { id, shopId: shop.id } });
   if (!existing) throw new ApiError(404, 'Staff member not found');
 
+  // Attendance/salary payments/advances all cascade-delete with the staff
+  // row (onDelete: Cascade) — snapshot them too, not just the profile,
+  // or a restore would bring back a staff member with no history.
+  const [attendance, salaryPayments, advanceSalaries] = await Promise.all([
+    prisma.attendance.findMany({ where: { staffId: id } }),
+    prisma.salaryPayment.findMany({ where: { staffId: id } }),
+    prisma.advanceSalary.findMany({ where: { staffId: id } }),
+  ]);
+  await recordDeletion({
+    shopId: shop.id,
+    entityType: 'staff',
+    entityId: id,
+    label: existing.name,
+    data: { staff: existing, attendance, salaryPayments, advanceSalaries },
+    deletedBy: user.email,
+  });
+
   await prisma.staff.delete({ where: { id } });
-  
+
   return json({ success: true });
 });

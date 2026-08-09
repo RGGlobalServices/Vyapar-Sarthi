@@ -16,6 +16,7 @@ import AdjustDrawer from './AdjustDrawer';
 import ReceiveDrawer from './ReceiveDrawer';
 import DailyStockRegister from './DailyStockRegister';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
+import { cssColor } from '@/components/ColorSizeVariantGrid';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 function ProfitabilityTab({ product }: { product: any }) {
@@ -530,6 +531,7 @@ export default function WholesaleStockUI() {
                 <tr>
                   <th className="px-4 py-3">{t('colProduct')}</th>
                   <th className="px-4 py-3">{t('barcode')}</th>
+                  <th className="px-4 py-3">{t('colVariants') || 'Colour / Size'}</th>
                   <th className="px-4 py-3 text-right">{t('colCurrentStock')}</th>
                   <th className="px-4 py-3 text-right">{t('purchasePrice')}</th>
                   <th className="px-4 py-3 text-right">{t('stockValue')}</th>
@@ -543,6 +545,7 @@ export default function WholesaleStockUI() {
                     <tr key={i} className="animate-pulse">
                       <td className="px-4 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                      <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
@@ -552,14 +555,18 @@ export default function WholesaleStockUI() {
                   ))
                 ) : filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                    <td colSpan={8} className="px-5 py-12 text-center text-slate-500">
                       {t('noItems')}
                     </td>
                   </tr>
                 ) : (
-                  filteredItems.map((item: any) => (
-                    <tr 
-                      key={item.id} 
+                  filteredItems.map((item: any) => {
+                    const itemVariants: any[] = Array.isArray(item.variants) ? item.variants : [];
+                    const variantColors = Array.from(new Set(itemVariants.map((v: any) => v.color).filter(Boolean))) as string[];
+                    const variantSizes = Array.from(new Set(itemVariants.map((v: any) => v.size).filter(Boolean))) as string[];
+                    return (
+                    <tr
+                      key={item.id}
                       onClick={() => setSelectedProduct(item)}
                       className={cn(
                         "hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer",
@@ -571,6 +578,28 @@ export default function WholesaleStockUI() {
                         <div className="text-xs text-slate-500 font-normal">{item.category || '-'}</div>
                       </td>
                       <td className="px-4 py-3 text-slate-500 font-mono text-xs">{item.barcode || item.sku || '-'}</td>
+                      <td className="px-4 py-3">
+                        {itemVariants.length > 0 ? (
+                          <div className="max-w-[170px]">
+                            <div className="flex flex-wrap items-center gap-1">
+                              {variantColors.slice(0, 3).map((c: string) => (
+                                <span key={c} className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                  <span className="w-2 h-2 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(c) }} />
+                                  {c}
+                                </span>
+                              ))}
+                              {variantColors.length > 3 && (
+                                <span className="text-[10px] text-slate-400 font-semibold">+{variantColors.length - 3}</span>
+                              )}
+                            </div>
+                            {variantSizes.length > 0 && (
+                              <div className="text-[10px] text-slate-400 mt-1">{variantSizes.length} {variantSizes.length === 1 ? (t('size') || 'size') : (t('sizes') || 'sizes')}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         {item.computedStock} <span className="text-xs text-slate-500 font-normal ml-1">{item.baseUnit}</span>
                       </td>
@@ -593,7 +622,8 @@ export default function WholesaleStockUI() {
                         </button>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
+import { recordDeletion } from '@/lib/server/trash';
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -73,6 +74,25 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         },
         { status: 409 }
       );
+    }
+
+    // Snapshot everything this delete is about to destroy — the supplier row,
+    // plus (when cascading) the transaction/invoice history that would
+    // otherwise be gone for good — so an admin can restore it later.
+    const [supplierRow, supplierTransactions, purchaseInvoices] = await Promise.all([
+      prisma.supplier.findUnique({ where: { id, shopId: auth.shop.id } }),
+      cascade && linked > 0 ? prisma.supplierTransaction.findMany({ where: { supplierId: id } }) : Promise.resolve([]),
+      cascade && linked > 0 ? prisma.purchaseInvoice.findMany({ where: { supplierId: id }, include: { purchaseItems: true } }) : Promise.resolve([]),
+    ]);
+    if (supplierRow) {
+      await recordDeletion({
+        shopId: auth.shop.id,
+        entityType: 'supplier',
+        entityId: id,
+        label: supplierRow.name,
+        data: { supplier: supplierRow, supplierTransactions, purchaseInvoices },
+        deletedBy: auth.user.email,
+      });
     }
 
     if (cascade && linked > 0) {

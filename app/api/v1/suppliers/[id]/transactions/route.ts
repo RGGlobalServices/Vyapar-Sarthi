@@ -38,7 +38,10 @@ export const GET = handle(async (req, ctx: any) => {
         ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
         : {}),
     },
-    orderBy: { createdAt: 'desc' },
+    // sequence (insertion order) breaks ties among rows backdated to the same
+    // calendar day, which otherwise share the identical midnight timestamp —
+    // see the schema comment on SupplierTransaction.sequence.
+    orderBy: [{ createdAt: 'desc' }, { sequence: 'desc' }],
   });
 
   // Compute a payment-due date per purchase from the supplier's own credit
@@ -90,10 +93,15 @@ export const GET = handle(async (req, ctx: any) => {
   // ledgers use absent explicit invoice-level payment allocation. The sum of
   // the resulting open purchases' remaining amounts always equals
   // supplier.balance, so these numbers stay consistent with "Outstanding".
-  const chronological = [...transactions].sort(
-    (a, b) => (a.createdAt ? new Date(a.createdAt).getTime() : 0) - (b.createdAt ? new Date(b.createdAt).getTime() : 0)
-  );
-  const openPurchases: { remaining: number; dueDate: Date | null }[] = [];
+  const chronological = [...transactions].sort((a, b) => {
+    const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return at - bt || a.sequence - b.sequence;
+  });
+  const openPurchases: {
+    id: string; billNumber: string; date: Date | null; originalAmount: number;
+    remaining: number; dueDate: Date | null;
+  }[] = [];
   for (const t of chronological) {
     const amount = Number(t.amount) || 0;
     if (t.type === 'payment') {
@@ -110,7 +118,14 @@ export const GET = handle(async (req, ctx: any) => {
       // with nothing owed would sit in the queue forever counted as "open"
       // unless a later payment happens to trigger the front-of-queue sweep
       // above.
-      openPurchases.push({ remaining: amount, dueDate: computeDueDate(t.createdAt, t.type) });
+      openPurchases.push({
+        id: t.id,
+        billNumber: t.billNumber || '',
+        date: t.createdAt,
+        originalAmount: amount,
+        remaining: amount,
+        dueDate: computeDueDate(t.createdAt, t.type),
+      });
     }
   }
   const openNow = new Date();
@@ -120,6 +135,19 @@ export const GET = handle(async (req, ctx: any) => {
     (sum, p) => sum + (p.dueDate && p.dueDate < openNow ? p.remaining : 0),
     0
   );
+  // Per-bill breakdown for the "pay against this bill" picker — oldest first,
+  // matching the FIFO order payments actually settle in, so the bill at the
+  // top of the list is also the one a payment would apply to first.
+  const dueBills = [...stillOpen]
+    .sort((a, b) => (a.date ? new Date(a.date).getTime() : 0) - (b.date ? new Date(b.date).getTime() : 0))
+    .map((p) => ({
+      id: p.id,
+      billNumber: p.billNumber,
+      date: p.date,
+      originalAmount: p.originalAmount,
+      remaining: p.remaining,
+      dueDate: p.dueDate,
+    }));
 
   return json({
     supplier: {
@@ -143,6 +171,7 @@ export const GET = handle(async (req, ctx: any) => {
       overdueAmount,
     },
     months,
+    dueBills,
     transactions: transactions.map((t) => ({
       id: t.id,
       type: t.type,

@@ -38,6 +38,15 @@ type Summary = {
 type StatusFilter = 'all' | 'paid' | 'unpaid' | 'partial';
 type RangePreset = 'all' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'custom';
 
+type DueBill = {
+  id: string;
+  billNumber: string;
+  date: string | null;
+  originalAmount: number;
+  remaining: number;
+  dueDate: string | null;
+};
+
 const rupee = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
 /** Local YYYY-MM-DD (avoids the UTC shift toISOString would introduce). */
@@ -1004,6 +1013,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             mode={mode}
             remaining={totals.remaining}
             creditLimit={Number(s?.creditLimit) || 0}
+            dueBills={data?.dueBills || []}
             onDone={() => { setMode('none'); load(); onChanged(); }}
             onCancel={() => setMode('none')}
           />
@@ -1066,9 +1076,34 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
 
         {/* Month-wise history */}
         <div className="p-4 sm:p-6">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
-            {t('paymentHistoryTitle')}
-          </h3>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+              {t('paymentHistoryTitle')}
+            </h3>
+            <ExportButton
+              filename={`supplier-${(s?.name || 'history').toString().trim().replace(/\s+/g, '-').toLowerCase()}`}
+              title={`${s?.name || t('supplierFallback')} — ${t('paymentHistoryTitle')}`}
+              summary={[
+                { label: t('purchasedHeader'), value: rupee(totals.totalPurchased) },
+                { label: t('paidHeader'), value: rupee(totals.totalPaid), tone: 'positive' },
+                { label: t('remainingHeader'), value: rupee(totals.remaining), tone: 'negative' },
+              ]}
+              columns={[
+                { key: 'date', label: 'Date', type: 'date' },
+                { key: 'type', label: 'Type' },
+                { key: 'billNumber', label: 'Bill Number' },
+                { key: 'amount', label: 'Amount', type: 'currency' },
+                { key: 'note', label: 'Note' },
+              ]}
+              data={(data?.transactions || []).map((tr: any) => ({
+                date: tr.date,
+                type: tr.type === 'payment' ? t('paymentType') : t('purchaseType'),
+                billNumber: tr.billNumber || '',
+                amount: tr.amount,
+                note: tr.note || '',
+              }))}
+            />
+          </div>
 
           {loading ? (
             <div className="flex justify-center py-12">
@@ -1111,17 +1146,27 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                 {it.type === 'payment' ? <Wallet size={14} /> : <ReceiptText size={14} />}
                               </div>
                               <div className="min-w-0">
+                                {/* Description leads so the list reads like a real activity
+                                    feed and is actually scannable/searchable — before Bill
+                                    No. + Description were required, every row here just said
+                                    the bare word "Purchase"/"Payment" and looked identical. */}
                                 <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                  {it.type === 'payment' ? t('paymentType') : t('purchaseType')}
+                                  {it.note || (it.type === 'payment' ? t('paymentType') : t('purchaseType'))}
+                                </p>
+                                <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap mt-0.5">
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${
+                                    it.type === 'payment'
+                                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                                  }`}>
+                                    {it.type === 'payment' ? t('paymentType') : t('purchaseType')}
+                                  </span>
                                   {it.billNumber && (
-                                    <span className="ml-2 text-[10px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
-                                      {it.billNumber}
+                                    <span className="font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded text-[10px]">
+                                      #{it.billNumber}
                                     </span>
                                   )}
-                                </p>
-                                <p className="text-xs text-slate-500 truncate">
-                                  {it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                                  {it.note ? ` · ${it.note}` : ''}
+                                  <span>{it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
                                 </p>
                                 {it.dueDate && it.type !== 'payment' && (() => {
                                   // Credit-terms due date derived from supplier.creditDays.
@@ -1212,9 +1257,9 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   );
 }
 
-function TransactionForm({ supplierId, mode, remaining, creditLimit, onDone, onCancel }: {
+function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, onDone, onCancel }: {
   supplierId: string; mode: 'purchase' | 'payment'; remaining: number; creditLimit: number;
-  onDone: () => void; onCancel: () => void;
+  dueBills: DueBill[]; onDone: () => void; onCancel: () => void;
 }) {
   const t = useTranslations('Suppliers');
   const [amount, setAmount] = useState('');
@@ -1225,6 +1270,29 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, onDone, onC
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Payment mode: pick a specific open bill so the amount + "currently due"
+  // reflect THAT bill instead of the supplier's whole balance. Purely a UX
+  // convenience — the payment still settles FIFO against the account like
+  // before; selecting a bill just pre-fills amount/billNumber for it.
+  const [billSearch, setBillSearch] = useState('');
+  const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
+  const selectedBill = dueBills.find((b) => b.id === selectedBillId) || null;
+  const filteredBills = dueBills.filter((b) => {
+    const needle = billSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return (b.billNumber || '').toLowerCase().includes(needle) || String(b.remaining).includes(needle);
+  });
+
+  function selectBill(b: DueBill) {
+    setSelectedBillId(b.id);
+    setAmount(String(b.remaining));
+    setBillNumber(b.billNumber || '');
+  }
+  function clearBillSelection() {
+    setSelectedBillId(null);
+    setBillSearch('');
+  }
+
   const amountNum = parseFloat(amount) || 0;
   const paidNum = parseFloat(paid) || 0;
   // Soft warning only — the shop may legitimately choose to go over with a
@@ -1234,6 +1302,8 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, onDone, onC
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!billNumber.trim()) { setError(t('billNumberRequiredError')); return; }
+    if (!note.trim()) { setError(t('descriptionRequiredError')); return; }
     if (amountNum <= 0) { setError(t('enterAmountGreaterThanZero')); return; }
     if (mode === 'purchase' && paidNum > amountNum) {
       setError(t('paidExceedsAmount'));
@@ -1263,6 +1333,74 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, onDone, onC
       onSubmit={submit}
       className="px-4 py-4 bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 space-y-3 shrink-0 animate-in slide-in-from-top-2"
     >
+      {mode === 'payment' && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-400">{t('payAgainstBillLabel')}</label>
+            {selectedBill && (
+              <button type="button" onClick={clearBillSelection} className="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors">
+                {t('clearSelectionBtn')}
+              </button>
+            )}
+          </div>
+
+          {selectedBill ? (
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  {selectedBill.billNumber ? `#${selectedBill.billNumber}` : t('purchaseType')}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {selectedBill.date ? new Date(selectedBill.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('currentlyDueLabel')}</p>
+                <p className="text-sm font-black text-red-600 dark:text-red-400">{rupee(selectedBill.remaining)}</p>
+              </div>
+            </div>
+          ) : dueBills.length === 0 ? (
+            <p className="text-xs text-slate-500">{t('noDueBills')}</p>
+          ) : (
+            <>
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={billSearch}
+                  onChange={(e) => setBillSearch(e.target.value)}
+                  placeholder={t('searchBillPlaceholder')}
+                  className="w-full h-9 pl-8 pr-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              {filteredBills.length > 0 ? (
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                  {filteredBills.map((b) => (
+                    <button
+                      type="button"
+                      key={b.id}
+                      onClick={() => selectBill(b)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {b.billNumber ? `#${b.billNumber}` : t('purchaseType')}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {b.date ? new Date(b.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''}
+                        </p>
+                      </div>
+                      <span className="text-xs font-black text-red-600 dark:text-red-400 shrink-0">{rupee(b.remaining)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 px-1">{t('noDueBills')}</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Field label={mode === 'purchase' ? t('purchaseAmountLabel') : t('paymentAmountLabel')}>
           <input
@@ -1282,20 +1420,26 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, onDone, onC
         ) : (
           <Field label={t('currentlyDueLabel')}>
             <div className="h-10 flex items-center px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold text-red-600">
-              {rupee(remaining)}
+              {rupee(selectedBill ? selectedBill.remaining : remaining)}
             </div>
           </Field>
         )}
         <Field label={t('dateLabel')}>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
         </Field>
-        <Field label={t('billNoLabel')} hint={t('optionalTag')}>
-          <input value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className={inputCls} />
+        <Field label={t('billNoLabel')} required>
+          <input required value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className={inputCls} placeholder={t('billNoPlaceholder')} />
         </Field>
       </div>
 
-      <Field label={t('noteLabel')} hint={t('optionalTag')}>
-        <input value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} placeholder={t('notePlaceholder')} />
+      <Field label={t('descriptionLabel')} required>
+        <input
+          required
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          className={inputCls}
+          placeholder={mode === 'purchase' ? t('descriptionPurchasePlaceholder') : t('descriptionPaymentPlaceholder')}
+        />
       </Field>
 
       {mode === 'purchase' && amountNum > 0 && (

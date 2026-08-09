@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { useLocale } from 'next-intl';
 import api from '@/lib/api';
-import { Shield, Users, Store, ChartBar, RefreshCw, UserPlus, Gift, IndianRupee, Activity, TrendingUp, LogOut, X } from 'lucide-react';
+import { Shield, Users, Store, ChartBar, RefreshCw, UserPlus, Gift, IndianRupee, Activity, TrendingUp, LogOut, X, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 function getAdminAuth() {
@@ -83,6 +83,10 @@ export default function AdminDashboard() {
             <a href={`/${locale}/admin/users`}
               className="flex items-center gap-2 bg-slate-900 border border-slate-700 text-slate-300 hover:text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
               <Users size={16} /> Manage Users
+            </a>
+            <a href={`/${locale}/admin/trash`}
+              className="flex items-center gap-2 bg-slate-900 border border-slate-700 text-slate-300 hover:text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
+              <Trash2 size={16} /> Recovery Bin
             </a>
             <button onClick={handleLogout}
               className="flex items-center gap-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
