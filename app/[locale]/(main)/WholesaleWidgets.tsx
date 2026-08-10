@@ -1,4 +1,4 @@
-import { Package, Clock, Activity, ArrowRightLeft, TrendingDown } from 'lucide-react';
+import { Package, Clock, Activity, ArrowRightLeft, TrendingDown, Wallet, CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Link } from '@/i18n/routing';
@@ -7,10 +7,43 @@ import { useTranslations } from 'next-intl';
 export default function WholesaleWidgets({ data }: { data: any }) {
   const t = useTranslations('Dashboard');
   if (!data) return null;
-  const { inventoryValue, expiringBatches, recentFeeds } = data;
+  const { inventoryValue, expiringBatches, recentFeeds, partyCreditCollectionTotal, partyCreditCollectionToday } = data;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 my-6">
+    <div className="my-6">
+      {/* Party (Udyog B2B wholesale) credit collection — distinct from the
+          retail Udhar cards above, which now report the retail-Customer
+          pool only. Both link to /party, the one place both are managed. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <Link href="/party" className="block">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg shrink-0">
+                <Wallet size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalPartyCreditCollection')}</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">₹{Math.round(partyCreditCollectionTotal || 0).toLocaleString('en-IN')}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/party" className="block">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg shrink-0">
+                <CalendarDays size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('todaysPartyCreditCollection')}</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">₹{Math.round(partyCreditCollectionToday || 0).toLocaleString('en-IN')}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20 dark:border-emerald-400/10 rounded-2xl">
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -91,6 +124,7 @@ export default function WholesaleWidgets({ data }: { data: any }) {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

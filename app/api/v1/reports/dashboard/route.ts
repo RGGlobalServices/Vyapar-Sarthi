@@ -64,6 +64,9 @@ export const GET = handle(async (req) => {
     udharPaymentsData,
     marginData,
     udharGivenData,
+    partyCreditAgg,
+    partyCollectionTotalData,
+    partyCollectionTodayData,
     lowStock,
     recentBills,
     topProd,
@@ -107,6 +110,9 @@ export const GET = handle(async (req) => {
     // customer_transactions — /crm/payments records it in the note as
     // "Payment via UPI - ...", so the mode is recovered from there and falls
     // back to Cash (the overwhelmingly common case) when absent.
+    // customer_type != 'party' (NULL included) — Party is a separate credit
+    // pool (Udyog's B2B wholesale AR) reported on its own below, not mixed
+    // into the retail Udhar figures.
     prisma.$queryRaw<{ amount: number; note: string | null; type: string }[]>`
       SELECT t.amount::float AS amount, t.note, t.type
       FROM customer_transactions t
@@ -115,10 +121,11 @@ export const GET = handle(async (req) => {
         AND t.type IN ('payment', 'advance')
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
+        AND (c.customer_type IS NULL OR c.customer_type != 'party')
     `,
 
     prisma.customer.aggregate({
-      where: { shopId: shop.id },
+      where: { shopId: shop.id, OR: [{ customerType: null }, { customerType: { not: 'party' } }] },
       _sum: { totalDue: true }
     }),
 
@@ -173,6 +180,7 @@ export const GET = handle(async (req) => {
         AND t.type = 'payment'
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
+        AND (c.customer_type IS NULL OR c.customer_type != 'party')
     `,
 
     prisma.$queryRaw<{ total_profit: number, total_amount: number }[]>`
@@ -189,6 +197,38 @@ export const GET = handle(async (req) => {
         AND t.type = 'udhar'
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
+        AND (c.customer_type IS NULL OR c.customer_type != 'party')
+    `,
+
+    // Party credit (Udyog B2B wholesale AR) — current outstanding balance,
+    // reported separately from retail Udhar above. Same Customer table,
+    // customerType='party' is what the /party page already keys off.
+    prisma.customer.aggregate({
+      where: { shopId: shop.id, customerType: 'party' },
+      _sum: { totalDue: true }
+    }),
+
+    // All-time party-credit collections — deliberately NOT scoped to the
+    // dashboard's startDate/endDate filter, same "total vs today" split the
+    // expenses KPIs above already use.
+    prisma.$queryRaw<{ total: number }[]>`
+      SELECT SUM(t.amount)::float as total
+      FROM customer_transactions t
+      JOIN customers c ON t.customer_id = c.id
+      WHERE c.shop_id = ${shop.id}::uuid
+        AND t.type = 'payment'
+        AND c.customer_type = 'party'
+    `,
+
+    prisma.$queryRaw<{ total: number }[]>`
+      SELECT SUM(t.amount)::float as total
+      FROM customer_transactions t
+      JOIN customers c ON t.customer_id = c.id
+      WHERE c.shop_id = ${shop.id}::uuid
+        AND t.type = 'payment'
+        AND c.customer_type = 'party'
+        AND t.created_at >= ${todayStart}
+        AND t.created_at <= ${todayEnd}
     `,
 
     // Low stock
@@ -446,7 +486,10 @@ export const GET = handle(async (req) => {
     payload.wholesale = {
       inventoryValue: inventoryValueResult[0]?.total_value || 0,
       expiringBatches,
-      recentFeeds
+      recentFeeds,
+      partyCreditTotal: partyCreditAgg._sum?.totalDue || 0,
+      partyCreditCollectionTotal: Number((partyCollectionTotalData as any[])[0]?.total || 0),
+      partyCreditCollectionToday: Number((partyCollectionTodayData as any[])[0]?.total || 0),
     };
   }
 

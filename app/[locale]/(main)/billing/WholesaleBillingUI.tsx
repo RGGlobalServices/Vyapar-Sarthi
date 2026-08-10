@@ -302,6 +302,58 @@ export default function WholesaleBillingUI() {
     setShowPartyDropdown(false);
   };
 
+  // ─── Retail-mode Udhar customer lookup (Udyog only) ─────────────────────
+  // customerName stays free text — a genuinely new walk-in shouldn't need a
+  // pre-existing record — but this surfaces matching EXISTING udhar
+  // customers (same Customer table, customerType='customer') while typing,
+  // showing what they already owe so the cashier isn't flying blind. Mirrors
+  // the Party picker above; separate list since it's a different customerType.
+  type UdharCustomerRow = {
+    id: string; name: string; mobile?: string; email?: string;
+    totalDue?: number; creditDays?: number;
+    customer_transactions?: { created_at: string }[];
+  };
+  const [udharCustomers, setUdharCustomers] = useState<UdharCustomerRow[]>([]);
+  const [showUdharDropdown, setShowUdharDropdown] = useState(false);
+
+  const fetchUdharCustomers = useCallback(async () => {
+    if (!profile?.id) return;
+    try {
+      const res = await api.get(`/crm/customers?type=customer&_shop=${profile.id}`);
+      setUdharCustomers(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to load udhar customers', err);
+    }
+  }, [profile?.id]);
+
+  const selectUdharCustomer = (c: UdharCustomerRow) => {
+    setCustomerName(c.name);
+    if (c.mobile) setCustomerMobile(c.mobile);
+    if (c.email) setCustomerEmail(c.email);
+    if (c.creditDays && c.creditDays > 0) setCreditDays(c.creditDays);
+    setShowUdharDropdown(false);
+  };
+
+  // Exact-name match against the typed customerName — same "existing vs new"
+  // signal StandardBillingUI (Dukan/Vyapar) already shows.
+  const matchedUdharCustomer = udharCustomers.find(
+    (c) => c.name.trim().toLowerCase() === customerName.trim().toLowerCase()
+  );
+  const filteredUdharCustomers = customerName.trim()
+    ? udharCustomers.filter((c) => c.name.toLowerCase().includes(customerName.trim().toLowerCase()))
+    : udharCustomers;
+
+  // Same "days until due" math as the Supplier due-bill picker: last activity
+  // + creditDays. No last activity yet (opening balance only) falls back to
+  // undated — still shows the amount, just no red/amber urgency colour.
+  function udharDueInfo(c: UdharCustomerRow) {
+    const lastDate = c.customer_transactions?.[0]?.created_at || null;
+    if (!lastDate || !c.creditDays) return { lastDate, daysLeft: null, overdue: false, soon: false };
+    const due = new Date(lastDate).getTime() + c.creditDays * 86400000;
+    const daysLeft = Math.ceil((due - Date.now()) / 86400000);
+    return { lastDate, daysLeft, overdue: daysLeft < 0, soon: daysLeft >= 0 && daysLeft <= 7 };
+  }
+
   // ─── Payment Method (Udyog only) ────────────────────────────────────────
   // Cash/UPI/Bank/Cheque are "single method" — one Received Amount that maps
   // straight onto useBillingEngine's split state (see the sync effect below).
@@ -359,9 +411,10 @@ export default function WholesaleBillingUI() {
   useEffect(() => {
     fetchProducts();
     fetchParties();
+    fetchUdharCustomers();
     // Auto-focus search on load
     setTimeout(() => searchInputRef.current?.focus(), 100);
-  }, [profile?.id, fetchParties]);
+  }, [profile?.id, fetchParties, fetchUdharCustomers]);
 
   // Drives useBillingEngine's split state from the chosen single payment
   // method, keeping it live-synced to the running total (so it behaves like
@@ -913,6 +966,7 @@ export default function WholesaleBillingUI() {
       setCreditDays(30);
       setCharges({ transport: '', loading: '', packing: '', other: '' });
       fetchParties(); // refresh Outstanding shown in the picker for next bill
+      fetchUdharCustomers();
       setShowCheckout(false);
       setShowBillModal(true);
 
@@ -1342,7 +1396,7 @@ export default function WholesaleBillingUI() {
                   run counter sales to walk-in residential customers who
                   don't need a formal Party/CRM record. */}
               {!isWholesale ? (
-                <div>
+                <div className="relative">
                   <label className="text-xs font-bold text-slate-500 mb-1 block">
                     {t('customerNameLabel') || 'Customer Name'}
                     {grandRemaining > 0 && <span className="text-orange-500 ml-1 normal-case font-normal">*{t('requiredForUdhar') || 'Required for Udhar'}</span>}
@@ -1351,9 +1405,54 @@ export default function WholesaleBillingUI() {
                     type="text"
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
                     value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
+                    onChange={e => { setCustomerName(e.target.value); setShowUdharDropdown(true); }}
+                    onFocus={() => setShowUdharDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowUdharDropdown(false), 200)}
                     placeholder={t('customerNamePlaceholder') || 'e.g. Walk-in Customer'}
                   />
+                  {showUdharDropdown && filteredUdharCustomers.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                      {filteredUdharCustomers.map(c => {
+                        const { lastDate, daysLeft, overdue, soon } = udharDueInfo(c);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0"
+                            onMouseDown={() => selectUdharCustomer(c)}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">{c.name}</span>
+                              {!!(c.totalDue || 0) && <span className="text-[10px] text-orange-500 font-semibold shrink-0">₹{(c.totalDue || 0).toLocaleString()} {t('due') || 'due'}</span>}
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                              <span>{c.mobile || t('noMobile') || 'No mobile'}</span>
+                              {lastDate && (
+                                <span>· {new Date(lastDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                              )}
+                              {daysLeft !== null && (c.totalDue || 0) > 0 && (
+                                <span className={cn(
+                                  'font-bold px-1.5 py-0.5 rounded-full',
+                                  overdue ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300'
+                                    : soon ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                )}>
+                                  {overdue ? `${Math.abs(daysLeft)}d ${t('overdue') || 'overdue'}` : `${daysLeft}d ${t('left') || 'left'}`}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {customerName.trim() && grandRemaining > 0 && (
+                    <p className={cn('text-[11px] mt-1.5 flex items-center gap-1', matchedUdharCustomer ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-500')}>
+                      {matchedUdharCustomer
+                        ? (t('foundInUdharKhata', { amount: grandRemaining.toLocaleString() }) || `Existing customer — ₹${grandRemaining.toLocaleString()} will be added to their account.`)
+                        : (t('newUdharCustomer', { amount: grandRemaining.toLocaleString() }) || `New customer will be created with ₹${grandRemaining.toLocaleString()} due.`)}
+                    </p>
+                  )}
                 </div>
               ) : (
               <div className="relative">

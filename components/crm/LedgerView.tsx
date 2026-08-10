@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar } from 'lucide-react';
 import api from '@/lib/api';
@@ -12,8 +12,29 @@ type Transaction = {
   amount: number;
   note: string;
   billNumber: string;
-  createdAt: string;
-  created_at?: string;
+  date: string;
+  /** e.g. "5" or "5, 18" for a mixed-rate bill. null = not a GST bill (or not
+   *  a bill at all, e.g. a payment/opening balance). */
+  gstPercent: string | null;
+  gstAmount: number | null;
+};
+
+// Raw shapes as they actually come back from /crm/ledger — customer_transactions
+// columns are snake_case with no @map (bill_number, created_at), while
+// SupplierTransaction is @map'd to camelCase (billNumber, createdAt). Both are
+// normalized into one Transaction shape below so the rest of this component
+// never has to care which entityType it's rendering.
+type RawTransaction = {
+  id: string;
+  type: string | null;
+  amount: number | null;
+  note: string | null;
+  billNumber?: string | null;
+  bill_number?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+  gstPercent?: string | null;
+  gstAmount?: number | null;
 };
 
 export default function LedgerView({
@@ -28,28 +49,35 @@ export default function LedgerView({
   const t = useTranslations('LedgerView');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState({ from: '', to: '' });
 
-  useEffect(() => {
-    const fetchLedger = async () => {
-      try {
-        const res = await api.get(`/crm/ledger?entityType=${entityType}&entityId=${entityId}`);
-        setTransactions(res.data);
-      } catch (e) {
-        console.error('Failed to load ledger', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (entityId) fetchLedger();
-  }, [entityId, entityType]);
+  const fetchLedger = useCallback(async () => {
+    if (!entityId) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ entityType, entityId });
+      if (range.from) params.set('from', range.from);
+      if (range.to) params.set('to', range.to);
+      const res = await api.get(`/crm/ledger?${params.toString()}`);
+      const normalized: Transaction[] = (res.data || []).map((tx: RawTransaction) => ({
+        id: tx.id,
+        type: tx.type || '',
+        amount: tx.amount || 0,
+        note: tx.note || '',
+        billNumber: tx.billNumber || tx.bill_number || '',
+        date: tx.createdAt || tx.created_at || '',
+        gstPercent: tx.gstPercent ?? null,
+        gstAmount: tx.gstAmount ?? null,
+      }));
+      setTransactions(normalized);
+    } catch (e) {
+      console.error('Failed to load ledger', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [entityId, entityType, range.from, range.to]);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center p-8">
-        <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
-      </div>
-    );
-  }
+  useEffect(() => { fetchLedger(); }, [fetchLedger]);
 
   // Credit = money the party/customer owes (a bill on account); Payment =
   // money they actually handed over. Reused for both the on-screen +/- glyph
@@ -60,12 +88,18 @@ export default function LedgerView({
 
   const typeLabel = (tx: Transaction) => tx.type === 'udhar' ? t('creditBill') : tx.type === 'payment' ? t('paymentReceived') : tx.type;
 
-  const exportData = transactions.map(tx => ({
-    date: tx.createdAt || tx.created_at,
+  // Oldest-first for the exported document only — a printed/downloaded
+  // ledger reads as a running history (and lets whoever's reading it clear
+  // the OLDEST outstanding bills first), unlike the on-screen list above
+  // which stays newest-first for at-a-glance recent activity.
+  const exportData = [...transactions].reverse().map(tx => ({
+    date: tx.date,
     type: typeLabel(tx),
     direction: isCredit(tx) ? 'Credit' : 'Payment',
     billNumber: tx.billNumber || '',
     amount: tx.amount,
+    gstPercent: tx.gstPercent != null ? `${tx.gstPercent}%` : '',
+    gstAmount: tx.gstPercent != null ? tx.gstAmount : '',
     note: tx.note || '',
   }));
 
@@ -75,18 +109,56 @@ export default function LedgerView({
     { key: 'direction', label: 'Direction' },
     { key: 'billNumber', label: 'Bill Number' },
     { key: 'amount', label: 'Amount', type: 'currency' as const },
+    { key: 'gstPercent', label: 'GST %' },
+    { key: 'gstAmount', label: 'GST Amount', type: 'currency' as const },
     { key: 'note', label: 'Note' },
   ];
 
+  const dateRangeLabel = range.from && range.to
+    ? `${new Date(range.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    : undefined;
+
   return (
     <div className="space-y-4">
+      {/* From above, To below — filters what's fetched AND what prints on the
+          PDF/Excel/CSV letterhead via dateRangeLabel below. */}
+      <div className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-3 max-w-xs">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('fromDate') || 'From'}</label>
+          <input
+            type="date"
+            value={range.from}
+            onChange={e => setRange(r => ({ ...r, from: e.target.value }))}
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('toDate') || 'Upto'}</label>
+          <input
+            type="date"
+            value={range.to}
+            onChange={e => setRange(r => ({ ...r, to: e.target.value }))}
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+        </div>
+        {(range.from || range.to) && (
+          <button
+            onClick={() => setRange({ from: '', to: '' })}
+            className="text-[11px] font-bold text-slate-400 hover:text-red-500 text-left"
+          >
+            {t('clearDateFilter') || 'Clear date filter'}
+          </button>
+        )}
+      </div>
+
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs font-medium text-slate-500">
-          {transactions.length} {transactions.length === 1 ? t('transaction') || 'transaction' : t('transactions') || 'transactions'}
+          {loading ? (t('loading') || 'Loading…') : `${transactions.length} ${transactions.length === 1 ? t('transaction') || 'transaction' : t('transactions') || 'transactions'}`}
         </p>
         <ExportButton
           filename={`ledger-${(entityName || entityType).toString().trim().replace(/\s+/g, '-').toLowerCase()}`}
           title={`${entityName || 'Account'} — Ledger`}
+          dateRange={dateRangeLabel}
           summary={[
             { label: 'Total Credit', value: `₹${totalCredit.toLocaleString('en-IN')}` },
             { label: 'Total Payments', value: `₹${totalPayments.toLocaleString('en-IN')}` },
@@ -96,14 +168,17 @@ export default function LedgerView({
         />
       </div>
 
-      {transactions.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center p-8">
+          <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+        </div>
+      ) : transactions.length === 0 ? (
         <div className="text-center py-12 text-slate-500">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
           <p>{t('noTransactionsFound')}</p>
         </div>
       ) : (
         transactions.map((tx) => {
-          const dateStr = tx.createdAt || tx.created_at;
           const credit = isCredit(tx);
 
           return (
@@ -120,8 +195,13 @@ export default function LedgerView({
                 <h4 className="font-bold text-slate-900 dark:text-white truncate">
                   {typeLabel(tx)}
                 </h4>
-                <p className="text-xs text-slate-500 truncate flex items-center gap-1">
-                  {tx.billNumber && <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1 rounded">{tx.billNumber}</span>}
+                <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap mt-0.5">
+                  {tx.billNumber && <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{tx.billNumber}</span>}
+                  {tx.gstPercent != null && (
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded">
+                      {tx.gstPercent}% GST · ₹{(tx.gstAmount || 0).toLocaleString('en-IN')}
+                    </span>
+                  )}
                   {tx.note && <span>{tx.note}</span>}
                 </p>
               </div>
@@ -131,7 +211,7 @@ export default function LedgerView({
                   {credit ? '+' : '-'}₹{tx.amount.toLocaleString()}
                 </div>
                 <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1">
-                  <Calendar size={10} /> {dateStr ? new Date(dateStr).toLocaleDateString() : ''}
+                  <Calendar size={10} /> {tx.date ? new Date(tx.date).toLocaleDateString() : ''}
                 </div>
               </div>
             </div>

@@ -1095,7 +1095,10 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                 { key: 'amount', label: 'Amount', type: 'currency' },
                 { key: 'note', label: 'Note' },
               ]}
-              data={(data?.transactions || []).map((tr: any) => ({
+              // Oldest-first for the exported document only — see LedgerView.tsx
+              // for the same convention. Month-wise on-screen history below
+              // stays newest-first; data.transactions itself is untouched.
+              data={[...(data?.transactions || [])].reverse().map((tr: any) => ({
                 date: tr.date,
                 type: tr.type === 'payment' ? t('paymentType') : t('purchaseType'),
                 billNumber: tr.billNumber || '',
