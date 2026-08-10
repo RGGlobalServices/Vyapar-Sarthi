@@ -18,7 +18,7 @@ import ProductDetailsSheet from './ProductDetailsSheet';
 import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVariantGrid';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { useCategories } from '@/lib/useCategories';
-import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
+import { calculateProductProfit, profitColorClass, sellingPriceForMargin } from '@/lib/profitCalc';
 import useSWR from 'swr';
 
 const fetcher = (url: string | string[]) => {
@@ -881,6 +881,9 @@ export default function WholesaleProductsUI() {
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('sellingPrice')}>
                       <div className="flex items-center justify-end gap-1">{t('colRetailSale') || 'Retail Sale'} {sortConfig?.key === 'sellingPrice' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
+                    <th className="p-4 font-semibold text-right">
+                      <div className="flex items-center justify-end gap-1">{t('colProfit') || 'Profit %'}</div>
+                    </th>
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('currentStock')}>
                       <div className="flex items-center justify-end gap-1">{t('colStock') || 'Stock'} {sortConfig?.key === 'currentStock' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
@@ -900,6 +903,18 @@ export default function WholesaleProductsUI() {
                     const warehouseCount = p._count?.godownProducts || 0;
                     const isSelected = selectedIds.includes(p.id);
                     const expiryStatus = getExpiryStatus(p.expiryDate);
+
+                    // Same costPrice/sellingPrice fields the Cost Price/Retail Sale
+                    // columns already show (representative price for variant
+                    // products too, see handleSave's firstVariant comment above) —
+                    // keeps this column from disagreeing with its neighbours.
+                    let profit: string | null = null;
+                    let profitStatus: 'profit' | 'loss' | 'zero' = 'zero';
+                    if ((p.costPrice || 0) > 0 && (p.sellingPrice || 0) > 0) {
+                      const result = calculateProductProfit(p.sellingPrice, p.costPrice, p.gstPercent || 0, !!profile.gstInclusiveProfit);
+                      profit = result.percent.toFixed(1);
+                      profitStatus = result.status;
+                    }
 
                     return (
                       <tr key={p.id} className={cn("hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group", isSelected ? "bg-emerald-50/50 dark:bg-emerald-900/10" : "")}>
@@ -995,6 +1010,15 @@ export default function WholesaleProductsUI() {
                         <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.costPrice || 0}</td>
                         <td className="p-4 text-right text-slate-900 dark:text-white cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.wholesaleCost || 0}</td>
                         <td className="p-4 text-right font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.sellingPrice || 0}</td>
+                        <td className="p-4 text-right">
+                          {profit !== null ? (
+                            <span className={cn('font-bold', profitColorClass(profitStatus))}>{profit}%</span>
+                          ) : (
+                            <button onClick={() => handleEdit(p)} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 underline transition-colors">
+                              set cost
+                            </button>
+                          )}
+                        </td>
                         <td className="p-4 text-right cursor-pointer" onClick={() => setSelectedProduct(p)}>
                           <span className={cn("font-medium", isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-slate-900 dark:text-white")}>
                             {stock} {p.baseUnit}
@@ -1611,16 +1635,29 @@ export default function WholesaleProductsUI() {
                           </div>
                         </div>
                      </div>
-                     {(form.sellingPrice || 0) > 0 && (() => {
+                     {(form.costPrice || 0) > 0 && (() => {
                         const result = calculateProductProfit(form.sellingPrice || 0, form.costPrice || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
                         const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                         const textCls = profitColorClass(result.status);
                         return (
                           <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
-                            <span className={cn('text-xs font-semibold opacity-70', textCls)}>{t('profit') || 'Profit (Retail vs Cost)'}</span>
-                            <span className={cn('text-lg font-black text-right', textCls)}>
-                              ₹{result.amount.toFixed(2)} <span className="text-sm">({result.percent.toFixed(1)}%)</span>
-                            </span>
+                            <div>
+                              <span className={cn('text-xs font-semibold opacity-70 block', textCls)}>{t('profitSetsBothPrices') || 'Profit % (sets Wholesale + Retail)'}</span>
+                              <span className={cn('text-sm font-bold', textCls)}>₹{result.amount.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number" step="0.1"
+                                className={cn('w-20 px-2 py-1.5 rounded-lg text-right text-lg font-black border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-emerald-500', textCls)}
+                                value={result.percent ? Number(result.percent.toFixed(1)) : ''}
+                                onChange={e => {
+                                  const pct = parseFloat(e.target.value) || 0;
+                                  const newSp = Math.round(sellingPriceForMargin(form.costPrice || 0, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
+                                  setForm(f => ({ ...f, sellingPrice: newSp, wholesaleCost: newSp }));
+                                }}
+                              />
+                              <span className={cn('text-lg font-black', textCls)}>%</span>
+                            </div>
                           </div>
                         );
                       })()}
@@ -1672,16 +1709,29 @@ export default function WholesaleProductsUI() {
                         </div>
                       )}
 
-                      {sameVariantPricing && (form.sellingPrice || 0) > 0 && (() => {
+                      {sameVariantPricing && (form.costPrice || 0) > 0 && (() => {
                         const result = calculateProductProfit(form.sellingPrice || 0, form.costPrice || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
                         const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                         const textCls = profitColorClass(result.status);
                         return (
                           <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
-                            <span className={cn('text-xs font-semibold opacity-70', textCls)}>{t('profit') || 'Profit (Retail vs Cost)'}</span>
-                            <span className={cn('text-lg font-black text-right', textCls)}>
-                              ₹{result.amount.toFixed(2)} <span className="text-sm">({result.percent.toFixed(1)}%)</span>
-                            </span>
+                            <div>
+                              <span className={cn('text-xs font-semibold opacity-70 block', textCls)}>{t('profitSetsBothPrices') || 'Profit % (sets Wholesale + Retail)'}</span>
+                              <span className={cn('text-sm font-bold', textCls)}>₹{result.amount.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number" step="0.1"
+                                className={cn('w-20 px-2 py-1.5 rounded-lg text-right text-lg font-black border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-emerald-500', textCls)}
+                                value={result.percent ? Number(result.percent.toFixed(1)) : ''}
+                                onChange={e => {
+                                  const pct = parseFloat(e.target.value) || 0;
+                                  const newSp = Math.round(sellingPriceForMargin(form.costPrice || 0, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
+                                  setForm(f => ({ ...f, sellingPrice: newSp, wholesaleCost: newSp }));
+                                }}
+                              />
+                              <span className={cn('text-lg font-black', textCls)}>%</span>
+                            </div>
                           </div>
                         );
                       })()}

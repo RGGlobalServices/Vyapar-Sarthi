@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
+import { ExportButton } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import useSWR from 'swr';
@@ -24,6 +25,7 @@ type Party = {
   creditDays: number;
   creditLimit: number;
   address: string;
+  createdAt: string;
 };
 
 /** Money in from Suppliers (what we owe them) — headline-only card here,
@@ -100,6 +102,7 @@ function PartiesPanel() {
   const t = useTranslations('Party');
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [search, setSearch] = useState('');
+  const [range, setRange] = useState({ from: '', to: '' });
 
   const { data: partiesData = [], mutate: mutateParties, isLoading } = useSWR(
     activeShopId ? `/crm/customers?type=party&_shop=${activeShopId}` : null,
@@ -195,10 +198,89 @@ function PartiesPanel() {
     (p.mobile && p.mobile.includes(search))
   );
 
+  // Report export: same search-filtered set shown on screen, further narrowed
+  // by an optional date-added range — doesn't affect the always-visible card
+  // list above, only what goes into the generated document.
+  const inRange = (createdAt: string) => {
+    if (!range.from && !range.to) return true;
+    const d = new Date(createdAt).getTime();
+    if (range.from && d < new Date(range.from).getTime()) return false;
+    if (range.to) {
+      const to = new Date(range.to);
+      to.setHours(23, 59, 59, 999);
+      if (d > to.getTime()) return false;
+    }
+    return true;
+  };
+  const exportRows = filtered.filter(p => inRange(p.createdAt));
+  const exportColumns = [
+    { key: 'shopName', label: 'Business Name' },
+    { key: 'name', label: 'Owner Name' },
+    { key: 'mobile', label: 'Phone' },
+    { key: 'address', label: 'Address' },
+    { key: 'gst', label: 'GSTIN' },
+    { key: 'creditLimit', label: 'Credit Limit', type: 'currency' as const },
+    { key: 'creditDays', label: 'Credit Days', type: 'number' as const },
+    { key: 'totalDue', label: 'Remaining Amount', type: 'currency' as const },
+    { key: 'status', label: 'Status' },
+    { key: 'dateAdded', label: 'Date Added', type: 'date' as const },
+  ];
+  const exportData = exportRows.map(p => ({
+    shopName: p.shopName || '',
+    name: p.name || '',
+    mobile: p.mobile || '',
+    address: p.address || '',
+    gst: p.gst || '',
+    creditLimit: p.creditLimit || 0,
+    creditDays: p.creditDays || 0,
+    totalDue: p.totalDue || 0,
+    status: (p.totalDue || 0) > 0 ? 'Due' : 'Settled',
+    dateAdded: p.createdAt,
+  }));
+  const dateRangeLabel = range.from && range.to
+    ? `${new Date(range.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    : undefined;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div />
+      <div className="flex flex-col md:flex-row md:items-center justify-end gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('fromDate') || 'From'}</span>
+          <input
+            type="date"
+            value={range.from}
+            onChange={e => setRange(r => ({ ...r, from: e.target.value }))}
+            className="text-xs bg-transparent outline-none text-slate-700 dark:text-slate-200 w-[110px]"
+          />
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('toDate') || 'Upto'}</span>
+          <input
+            type="date"
+            value={range.to}
+            onChange={e => setRange(r => ({ ...r, to: e.target.value }))}
+            className="text-xs bg-transparent outline-none text-slate-700 dark:text-slate-200 w-[110px]"
+          />
+          {(range.from || range.to) && (
+            <button
+              type="button"
+              onClick={() => setRange({ from: '', to: '' })}
+              className="text-slate-400 hover:text-red-500 transition-colors"
+              title={t('clearDateFilter') || 'Clear date filter'}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <ExportButton
+          filename="wholesale-parties"
+          title={t('title') || 'Wholesale Parties'}
+          dateRange={dateRangeLabel}
+          summary={[
+            { label: 'Total Parties', value: String(exportData.length) },
+            { label: 'Total Remaining', value: `₹${exportData.reduce((s, r) => s + (r.totalDue || 0), 0).toLocaleString('en-IN')}`, tone: 'negative' },
+          ]}
+          columns={exportColumns}
+          data={exportData}
+        />
         <button
           onClick={() => setShowNewParty(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
@@ -502,12 +584,14 @@ type UdharCustomer = {
   creditDays: number;
   creditLimit: number;
   address: string;
+  createdAt: string;
 };
 
 function CustomersPanel() {
   const t = useTranslations('Party');
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [search, setSearch] = useState('');
+  const [range, setRange] = useState({ from: '', to: '' });
 
   const { data: customersData = [], mutate: mutateCustomers, isLoading } = useSWR(
     activeShopId ? `/crm/customers?type=customer&_shop=${activeShopId}` : null,
@@ -601,10 +685,85 @@ function CustomersPanel() {
     (c.mobile && c.mobile.includes(search))
   );
 
+  // Report export: same search-filtered set shown on screen, further narrowed
+  // by an optional date-added range — doesn't affect the always-visible card
+  // list above, only what goes into the generated document.
+  const inRange = (createdAt: string) => {
+    if (!range.from && !range.to) return true;
+    const d = new Date(createdAt).getTime();
+    if (range.from && d < new Date(range.from).getTime()) return false;
+    if (range.to) {
+      const to = new Date(range.to);
+      to.setHours(23, 59, 59, 999);
+      if (d > to.getTime()) return false;
+    }
+    return true;
+  };
+  const exportRows = filtered.filter(c => inRange(c.createdAt));
+  const exportColumns = [
+    { key: 'name', label: 'Customer Name' },
+    { key: 'mobile', label: 'Phone' },
+    { key: 'address', label: 'Address' },
+    { key: 'creditLimit', label: 'Credit Limit', type: 'currency' as const },
+    { key: 'creditDays', label: 'Credit Days', type: 'number' as const },
+    { key: 'totalDue', label: 'Remaining Amount', type: 'currency' as const },
+    { key: 'status', label: 'Status' },
+    { key: 'dateAdded', label: 'Date Added', type: 'date' as const },
+  ];
+  const exportData = exportRows.map(c => ({
+    name: c.name || '',
+    mobile: c.mobile || '',
+    address: c.address || '',
+    creditLimit: c.creditLimit || 0,
+    creditDays: c.creditDays || 0,
+    totalDue: c.totalDue || 0,
+    status: (c.totalDue || 0) > 0 ? 'Due' : 'Settled',
+    dateAdded: c.createdAt,
+  }));
+  const dateRangeLabel = range.from && range.to
+    ? `${new Date(range.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    : undefined;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div />
+      <div className="flex flex-col md:flex-row md:items-center justify-end gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('fromDate') || 'From'}</span>
+          <input
+            type="date"
+            value={range.from}
+            onChange={e => setRange(r => ({ ...r, from: e.target.value }))}
+            className="text-xs bg-transparent outline-none text-slate-700 dark:text-slate-200 w-[110px]"
+          />
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('toDate') || 'Upto'}</span>
+          <input
+            type="date"
+            value={range.to}
+            onChange={e => setRange(r => ({ ...r, to: e.target.value }))}
+            className="text-xs bg-transparent outline-none text-slate-700 dark:text-slate-200 w-[110px]"
+          />
+          {(range.from || range.to) && (
+            <button
+              type="button"
+              onClick={() => setRange({ from: '', to: '' })}
+              className="text-slate-400 hover:text-red-500 transition-colors"
+              title={t('clearDateFilter') || 'Clear date filter'}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <ExportButton
+          filename="udhar-customers"
+          title={t('customersUdharTab') || 'Customers / Udhar'}
+          dateRange={dateRangeLabel}
+          summary={[
+            { label: 'Total Customers', value: String(exportData.length) },
+            { label: 'Total Remaining', value: `₹${exportData.reduce((s, r) => s + (r.totalDue || 0), 0).toLocaleString('en-IN')}`, tone: 'negative' },
+          ]}
+          columns={exportColumns}
+          data={exportData}
+        />
         <button
           onClick={() => setShowNewCustomer(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"

@@ -292,10 +292,13 @@ export function useExport() {
     title,
     dateRange,
     summary,
+    orientation = 'portrait',
   }: ExportConfig & {
     title?: string;
     dateRange?: string;
     summary?: { label: string; value: string; tone?: 'default' | 'positive' | 'negative' }[];
+    /** 'landscape' for wide tables (many columns) — see professionalTemplate.ts. */
+    orientation?: 'portrait' | 'landscape';
   }) => {
     const [{ default: jsPDF }, { default: autoTable }, tpl] = await Promise.all([
       import('jspdf'),
@@ -303,7 +306,7 @@ export function useExport() {
       import('@/lib/pdf/professionalTemplate'),
     ]);
 
-    const doc = new jsPDF() as any;
+    const doc = new jsPDF({ orientation }) as any;
     const shop = {
       name: profile.shopName || 'Vyapar Sarthi',
       address: profile.address || null,
@@ -381,9 +384,11 @@ interface ExportButtonProps {
   dateRange?: string;
   /** Optional KPI strip rendered above the table in the PDF (mirrors Udhar layout). */
   summary?: { label: string; value: string; tone?: 'default' | 'positive' | 'negative' }[];
+  /** 'landscape' for wide tables (many columns) so headers get room to breathe instead of wrapping letter-by-letter. Defaults to portrait. */
+  orientation?: 'portrait' | 'landscape';
 }
 
-export function ExportButton({ columns, data, filename, title, dateRange, summary }: ExportButtonProps) {
+export function ExportButton({ columns, data, filename, title, dateRange, summary, orientation }: ExportButtonProps) {
   const { exportToCSV, exportToXLSX, exportToPDF, printTable } = useExport();
   const t = useTranslations('Export');
   const contextRange = useContext(ReportPeriodContext);
@@ -392,7 +397,7 @@ export function ExportButton({ columns, data, filename, title, dateRange, summar
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <button
-        onClick={() => exportToPDF({ columns, data, filename, title, dateRange: effectiveRange, summary })}
+        onClick={() => exportToPDF({ columns, data, filename, title, dateRange: effectiveRange, summary, orientation })}
         className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm"
         title={t('pdfTooltip')}
       >

@@ -13,6 +13,7 @@ import api from '@/lib/api';
 import useSWR, { useSWRConfig } from 'swr';
 import ReceiveDrawer from '../stock/ReceiveDrawer';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
+import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
@@ -37,7 +38,7 @@ export default function ProductDetailsSheet({
   
   const { mutate } = useSWRConfig();
   
-  const { activeShopId } = useBusinessStore();
+  const { activeShopId, profile } = useBusinessStore();
   const [showReceive, setShowReceive] = useState(false);
   const { data: godowns = [] } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, fetcher);
 
@@ -160,6 +161,12 @@ export default function ProductDetailsSheet({
                   valueClass="text-emerald-600 dark:text-emerald-400"
                 />
                 <StatCard
+                  icon={<IndianRupee size={14} className="text-slate-500 dark:text-slate-400" />}
+                  label={t("costPrice")}
+                  value={`₹${(data.product.costPrice || 0).toLocaleString('en-IN')}`}
+                  valueClass="text-slate-900 dark:text-white"
+                />
+                <StatCard
                   icon={<TrendingDown size={14} className="text-slate-500 dark:text-slate-400" />}
                   label={t("wholesaleRate") || "Wholesale Rate"}
                   value={`₹${(data.product.wholesaleCost || 0).toLocaleString('en-IN')}`}
@@ -171,6 +178,21 @@ export default function ProductDetailsSheet({
                   value={`₹${(data.product.sellingPrice || 0).toLocaleString('en-IN')}`}
                   valueClass="text-emerald-600 dark:text-emerald-400"
                 />
+                {(() => {
+                  const cost = data.product.costPrice || 0;
+                  const sp = data.product.sellingPrice || 0;
+                  const result = cost > 0 && sp > 0
+                    ? calculateProductProfit(sp, cost, data.product.gstPercent || 0, !!profile.gstInclusiveProfit)
+                    : null;
+                  return (
+                    <StatCard
+                      icon={<TrendingUp size={14} className={result ? profitColorClass(result.status) : 'text-slate-400'} />}
+                      label={t("profitMargin") || "Profit %"}
+                      value={result ? `${result.percent.toFixed(1)}%` : '—'}
+                      valueClass={result ? profitColorClass(result.status) : 'text-slate-400 dark:text-slate-500'}
+                    />
+                  );
+                })()}
               </div>
 
               {/* ── Active Batches ── */}

@@ -7,11 +7,15 @@ import type jsPDF from 'jspdf';
  * shopkeeper can hand to their accountant at tax time without embarrassment.
  *
  * Design contract:
- *   • A4 portrait (default jsPDF geometry — 210×297 mm)
+ *   • A4, portrait by default — landscape supported by constructing the doc
+ *     with `new jsPDF({ orientation: 'landscape' })`; every helper below reads
+ *     the page's actual width/height off `doc.internal.pageSize` rather than
+ *     assuming 210×297, so a wide table (many columns) can go landscape
+ *     without the header/footer/summary box drifting off the page.
  *   • 15 mm side margins
  *   • Header block occupies ~35 mm at the top of every page
  *   • Footer occupies ~15 mm at the bottom of every page
- *   • Body starts at Y=45 mm and ends at Y=277 mm
+ *   • Body starts at Y=45 mm
  *
  * Every helper returns the Y coordinate immediately BELOW the block it drew
  * so callers can chain positions without manual math.
@@ -30,8 +34,6 @@ export const PDF_LAYOUT = {
   marginX: 15,
   headerBottomY: 45,
   footerHeight: 15,
-  pageWidth: 210,
-  pageHeight: 297,
   accent: [16, 122, 89] as [number, number, number],   // muted emerald — professional, not neon
   accentSoft: [232, 246, 240] as [number, number, number],
   ink: [30, 41, 59] as [number, number, number],       // slate-800 for body text
@@ -54,7 +56,7 @@ export function renderProfessionalHeader(
   labels: HeaderLabels = {},
 ): number {
   const L = PDF_LAYOUT.marginX;
-  const R = PDF_LAYOUT.pageWidth - PDF_LAYOUT.marginX;
+  const R = (doc as any).internal.pageSize.getWidth() - PDF_LAYOUT.marginX;
 
   // Shop name (large, left)
   doc.setFont('helvetica', 'bold');
@@ -97,11 +99,11 @@ export function renderProfessionalHeader(
 export function renderProfessionalFooter(doc: jsPDF, disclaimer?: string): void {
   const pageCount = (doc as any).internal.getNumberOfPages();
   const L = PDF_LAYOUT.marginX;
-  const R = PDF_LAYOUT.pageWidth - PDF_LAYOUT.marginX;
-  const y = PDF_LAYOUT.pageHeight - 10;
 
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    const R = (doc as any).internal.pageSize.getWidth() - PDF_LAYOUT.marginX;
+    const y = (doc as any).internal.pageSize.getHeight() - 10;
     doc.setDrawColor(...PDF_LAYOUT.divider);
     doc.line(L, y - 4, R, y - 4);
 
@@ -131,7 +133,7 @@ export interface SummaryItem { label: string; value: string; tone?: 'default' | 
 
 export function renderSummaryBox(doc: jsPDF, y: number, items: SummaryItem[]): number {
   const L = PDF_LAYOUT.marginX;
-  const W = PDF_LAYOUT.pageWidth - PDF_LAYOUT.marginX * 2;
+  const W = (doc as any).internal.pageSize.getWidth() - PDF_LAYOUT.marginX * 2;
   const cellW = W / items.length;
   const H = 18;
 
@@ -172,7 +174,7 @@ export function renderSummaryBox(doc: jsPDF, y: number, items: SummaryItem[]): n
 // ─── SIGNATURE BLOCK ───────────────────────────────────────────────────────
 export function renderSignatureBlock(doc: jsPDF, y: number, customLabels?: [string, string, string]): number {
   const L = PDF_LAYOUT.marginX;
-  const W = PDF_LAYOUT.pageWidth - PDF_LAYOUT.marginX * 2;
+  const W = (doc as any).internal.pageSize.getWidth() - PDF_LAYOUT.marginX * 2;
   const H = 22;
   const cellW = W / 3;
   const labels = customLabels || ['Prepared By', 'Verified By', 'Authorized Signatory'];
@@ -224,7 +226,7 @@ export const PROFESSIONAL_TABLE_STYLES = {
 /** Ensure there's at least `neededMm` free space below `y` on the current
  *  page; if not, add a fresh page and return the new starting Y. */
 export function ensureRoom(doc: jsPDF, y: number, neededMm: number): number {
-  const bodyEnd = PDF_LAYOUT.pageHeight - PDF_LAYOUT.footerHeight - 5;
+  const bodyEnd = (doc as any).internal.pageSize.getHeight() - PDF_LAYOUT.footerHeight - 5;
   if (y + neededMm <= bodyEnd) return y;
   doc.addPage();
   return PDF_LAYOUT.headerBottomY;

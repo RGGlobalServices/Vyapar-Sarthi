@@ -6,6 +6,20 @@ import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar } from 'lucide
 import api from '@/lib/api';
 import { ExportButton } from '@/lib/hooks/useExport';
 
+// Per-product line from the Sale that produced a credit bill. costPrice is
+// the product's CURRENT cost (see route.ts comment — historical per-sale
+// cost isn't persisted), so it can drift from what it was on the actual bill
+// date; profitPerUnit is the real, historically-accurate ₹ figure computed
+// at billing time regardless.
+type BillItem = {
+  name: string;
+  quantity: number;
+  sellingPrice: number;
+  costPrice: number;
+  profitPerUnit: number;
+  profitPercent: number | null;
+};
+
 type Transaction = {
   id: string;
   type: string;
@@ -17,6 +31,7 @@ type Transaction = {
    *  a bill at all, e.g. a payment/opening balance). */
   gstPercent: string | null;
   gstAmount: number | null;
+  items: BillItem[];
 };
 
 // Raw shapes as they actually come back from /crm/ledger — customer_transactions
@@ -35,6 +50,7 @@ type RawTransaction = {
   created_at?: string | null;
   gstPercent?: string | null;
   gstAmount?: number | null;
+  items?: BillItem[];
 };
 
 export default function LedgerView({
@@ -68,6 +84,7 @@ export default function LedgerView({
         date: tx.createdAt || tx.created_at || '',
         gstPercent: tx.gstPercent ?? null,
         gstAmount: tx.gstAmount ?? null,
+        items: Array.isArray(tx.items) ? tx.items : [],
       }));
       setTransactions(normalized);
     } catch (e) {
@@ -92,25 +109,56 @@ export default function LedgerView({
   // ledger reads as a running history (and lets whoever's reading it clear
   // the OLDEST outstanding bills first), unlike the on-screen list above
   // which stays newest-first for at-a-glance recent activity.
-  const exportData = [...transactions].reverse().map(tx => ({
-    date: tx.date,
-    type: typeLabel(tx),
-    direction: isCredit(tx) ? 'Credit' : 'Payment',
-    billNumber: tx.billNumber || '',
-    amount: tx.amount,
-    gstPercent: tx.gstPercent != null ? `${tx.gstPercent}%` : '',
-    gstAmount: tx.gstPercent != null ? tx.gstAmount : '',
-    note: tx.note || '',
-  }));
+  //
+  // A credit bill can carry multiple products, so it expands into one export
+  // row per product (repeating the bill-level columns on each row — the
+  // standard way to lay out one-to-many invoice lines in a flat CSV/Excel/PDF
+  // table). Payments and bills with no resolvable items (e.g. a manually
+  // entered opening balance) stay a single row with the product columns blank.
+  const exportData = [...transactions].reverse().flatMap(tx => {
+    const base = {
+      date: tx.date,
+      type: typeLabel(tx),
+      direction: isCredit(tx) ? 'Credit' : 'Payment',
+      billNumber: tx.billNumber || '',
+      amount: tx.amount,
+      gstPercent: tx.gstPercent != null ? `${tx.gstPercent}%` : '',
+      gstAmount: tx.gstPercent != null ? tx.gstAmount : '',
+      note: tx.note || '',
+    };
+    if (tx.items.length === 0) {
+      return [{ ...base, product: '', qty: 0, costPrice: '', sellingPrice: 0, itemProfit: 0, itemProfitPercent: '' }];
+    }
+    return tx.items.map(it => ({
+      ...base,
+      product: it.name,
+      qty: it.quantity,
+      costPrice: it.costPrice || '',
+      sellingPrice: it.sellingPrice,
+      itemProfit: Math.round(it.profitPerUnit * it.quantity * 100) / 100,
+      itemProfitPercent: it.profitPercent != null ? `${it.profitPercent}%` : '',
+    }));
+  });
 
+  // Short, single-word-where-possible labels — with 14 columns now (up from
+  // 8 before the per-product breakdown), autoTable's auto-width squeezes
+  // every column hard enough that a multi-word header like "Selling Price"
+  // wraps letter-by-letter instead of word-by-word. Landscape orientation
+  // (below) is the main fix; short labels are the belt-and-suspenders half.
   const exportColumns = [
     { key: 'date', label: 'Date', type: 'date' as const },
     { key: 'type', label: 'Type' },
     { key: 'direction', label: 'Direction' },
-    { key: 'billNumber', label: 'Bill Number' },
-    { key: 'amount', label: 'Amount', type: 'currency' as const },
+    { key: 'billNumber', label: 'Bill No' },
+    { key: 'product', label: 'Product' },
+    { key: 'qty', label: 'Qty' },
+    { key: 'costPrice', label: 'Cost', type: 'currency' as const },
+    { key: 'sellingPrice', label: 'Price', type: 'currency' as const },
+    { key: 'itemProfit', label: 'Profit', type: 'currency' as const },
+    { key: 'itemProfitPercent', label: 'Profit %' },
+    { key: 'amount', label: 'Bill Amt', type: 'currency' as const },
     { key: 'gstPercent', label: 'GST %' },
-    { key: 'gstAmount', label: 'GST Amount', type: 'currency' as const },
+    { key: 'gstAmount', label: 'GST Amt', type: 'currency' as const },
     { key: 'note', label: 'Note' },
   ];
 
@@ -159,6 +207,7 @@ export default function LedgerView({
           filename={`ledger-${(entityName || entityType).toString().trim().replace(/\s+/g, '-').toLowerCase()}`}
           title={`${entityName || 'Account'} — Ledger`}
           dateRange={dateRangeLabel}
+          orientation="landscape"
           summary={[
             { label: 'Total Credit', value: `₹${totalCredit.toLocaleString('en-IN')}` },
             { label: 'Total Payments', value: `₹${totalPayments.toLocaleString('en-IN')}` },

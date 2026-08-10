@@ -36,6 +36,23 @@ export function calculateProductProfit(
   return { amount, percent, status };
 }
 
+// Inverse of calculateProductProfit: given a desired profit % over cost,
+// compute the selling price that produces it. Powers an editable "Profit %"
+// field (type a margin, get a price) alongside the normal cost→price→%
+// direction — same GST-inclusive convention, so switching which field you
+// edit never disagrees with the other.
+export function sellingPriceForMargin(
+  costPrice: number,
+  percent: number,
+  gstPercent: number = 0,
+  gstInclusive: boolean = false
+): number {
+  const cp = Number(costPrice) || 0;
+  const pct = Number(percent) || 0;
+  const baseSp = cp * (1 + pct / 100);
+  return gstInclusive ? baseSp * (1 + (Number(gstPercent) || 0) / 100) : baseSp;
+}
+
 // Tailwind color classes for the 3-way profit / loss / zero indicator.
 export function profitColorClass(status: ProfitStatus): string {
   if (status === 'profit') return 'text-emerald-500 dark:text-emerald-400';

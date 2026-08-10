@@ -41,10 +41,32 @@ export const GET = handle(async (req) => {
     const sales = billNumbers.length > 0
       ? await prisma.sale.findMany({
           where: { shopId: shop.id, invoice_number: { in: billNumbers } },
-          select: { invoice_number: true, gstAmount: true, gstDetails: true, billType: true },
+          select: {
+            invoice_number: true, gstAmount: true, gstDetails: true, billType: true,
+            items: { select: { itemName: true, quantity: true, pricePerUnit: true, marginPerUnit: true, productId: true } },
+          },
         })
       : [];
     const saleByInvoice = new Map(sales.map((s) => [s.invoice_number, s]));
+
+    // Cost price for the profit-per-product export: SaleItem only persists
+    // marginPerUnit (₹ profit already computed at billing time, correctly
+    // GST/discount-adjusted — see lib/financialEngine.ts) and pricePerUnit
+    // (the pre-discount quoted price) — it never stores the cost price that
+    // was actually used, so it can't be recovered exactly for a historical
+    // bill. Falling back to the product's CURRENT costPrice is the same
+    // convention lib/profitCalc.ts already uses everywhere else in the app
+    // (Products table/modal/detail sheet) — it may drift from the true cost
+    // on the day this specific bill was made if that product's cost has
+    // since changed, but marginPerUnit itself (the ₹ amount) is always the
+    // real, historically-accurate figure regardless.
+    const productIds = Array.from(new Set(
+      sales.flatMap((s) => s.items.map((i) => i.productId)).filter((id): id is string => !!id)
+    ));
+    const products = productIds.length > 0
+      ? await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, costPrice: true } })
+      : [];
+    const costById = new Map(products.map((p) => [p.id, p.costPrice]));
 
     const enriched = ledger.map((t) => {
       const sale = t.bill_number ? saleByInvoice.get(t.bill_number) : undefined;
@@ -59,10 +81,25 @@ export const GET = handle(async (req) => {
       const gstPercent = isGstBill && groups.length > 0
         ? groups.map((g) => g.rate).join(', ')
         : null;
+
+      const items = (sale?.items || []).map((i) => {
+        const costPrice = i.productId ? Number(costById.get(i.productId)) || 0 : 0;
+        const marginPerUnit = Number(i.marginPerUnit) || 0;
+        return {
+          name: i.itemName || '',
+          quantity: Number(i.quantity) || 0,
+          sellingPrice: Number(i.pricePerUnit) || 0,
+          costPrice,
+          profitPerUnit: marginPerUnit,
+          profitPercent: costPrice > 0 ? Math.round((marginPerUnit / costPrice) * 100 * 10) / 10 : null,
+        };
+      });
+
       return {
         ...t,
         gstPercent,
         gstAmount: isGstBill ? Number(sale?.gstAmount) || 0 : null,
+        items,
       };
     });
 
