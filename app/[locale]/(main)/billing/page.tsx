@@ -198,7 +198,7 @@ function StandardBillingUI() {
   useEffect(() => setMounted(true), []);
   
   const {
-    items, addItem, removeItem, updateQuantity, updatePrice, clearCart,
+    items, addItem, removeItem, updateQuantity, updatePrice, updateBatchNumber, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, collectedAmount,
     remainingAmount, isEmi, setIsEmi,
@@ -490,6 +490,7 @@ function StandardBillingUI() {
       variant,
       color: color || undefined,
       size: size || undefined,
+      gender: product.gender || undefined,
       quantity: defaultQty,
       price: price || 0,
       cost: cost || 0,
@@ -953,6 +954,8 @@ function StandardBillingUI() {
                         {product.is_loose && <span className="ml-1 text-amber-400">· sell by weight</span>}
                         {product.model_number && <span className="ml-1 text-sky-400">· {product.model_number}</span>}
                         {product.warranty_months && <span className="ml-1 text-emerald-400">· {product.warranty_months}m warranty</span>}
+                        {product.gender && <span className="ml-1 text-violet-400">· {product.gender}</span>}
+                        {product.batch_number && <span className="ml-1 text-slate-400">· Batch: {product.batch_number}</span>}
                         {formatAddedDate(product.createdAt) && (
                           <span className="ml-1 text-slate-400">· Added {formatAddedDate(product.createdAt)}</span>
                         )}
@@ -1209,6 +1212,7 @@ function StandardBillingUI() {
                   </th>
                   <th className="px-2 py-3">{t('itemCol') || 'ITEM'}</th>
                   {bizConfig.hasSizes && <th className="px-4 py-3 whitespace-nowrap">{t('sizeColor') || 'SIZE / COLOR'}</th>}
+                  {bizConfig.hasGender && <th className="px-4 py-3 whitespace-nowrap">{t('gender') || 'GENDER'}</th>}
                   {bizConfig.hasBatch && <th className="px-4 py-3 whitespace-nowrap">{t('batch') || 'BATCH'}</th>}
                   {bizConfig.hasExpiry && <th className="px-4 py-3 whitespace-nowrap">{t('expiry') || 'EXPIRY'}</th>}
                   {bizConfig.hasWarranty && <th className="px-4 py-3 whitespace-nowrap">{t('warranty') || 'WARRANTY'}</th>}
@@ -1257,9 +1261,20 @@ function StandardBillingUI() {
                         ) : (item.size || item.variant || '-')}
                       </td>
                     )}
+                    {bizConfig.hasGender && (
+                      <td className="px-4 py-4 text-xs font-semibold text-violet-600 dark:text-violet-400">
+                        {item.gender || '-'}
+                      </td>
+                    )}
                     {bizConfig.hasBatch && (
                       <td className="px-4 py-4">
-                        <input type="text" placeholder={t('batchPlaceholder')} className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
+                        <input
+                          type="text"
+                          value={item.batchNumber || ''}
+                          onChange={e => updateBatchNumber(item.id, e.target.value, item.variant)}
+                          placeholder={t('batchPlaceholder')}
+                          className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5"
+                        />
                       </td>
                     )}
                     {bizConfig.hasExpiry && (

@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useAuthStore } from '@/lib/store';
 import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
 import { useBusinessStore } from '@/lib/businessStore';
+import { getBusinessConfig } from '@/lib/businessConfig';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -195,11 +196,12 @@ export default function WholesaleBillingUI() {
   const { user } = useAuthStore();
   const { profile } = useBusinessStore();
 
-  const { 
-    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, clearCart,
+  const {
+    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, updateBatchNumber, clearCart,
     subtotal, discount, setDiscount, total,
-    splitPayments, setSplitPayments, collectedAmount, remainingAmount 
+    splitPayments, setSplitPayments, collectedAmount, remainingAmount
   } = useBillingEngine(profile?.id);
+  const bizConfig = getBusinessConfig(profile?.businessType);
 
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -546,6 +548,7 @@ export default function WholesaleBillingUI() {
         variant,
         color: color || undefined,
         size: size || undefined,
+        gender: product.gender || undefined,
         quantity: defaultQty,
         price,
         cost: cost || 0,
@@ -1036,6 +1039,8 @@ export default function WholesaleBillingUI() {
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
                         Stock: {Math.max(0, p.currentStock || 0)} {p.baseUnit} • Retail: ₹{p.sellingPrice} • Wholesale: ₹{p.wholesaleCost}
+                        {bizConfig.hasGender && p.gender && ` • ${p.gender}`}
+                        {bizConfig.hasBatch && p.batch_number && ` • Batch: ${p.batch_number}`}
                       </div>
                     </div>
                     <Plus size={16} className="text-emerald-500" />
@@ -1065,6 +1070,8 @@ export default function WholesaleBillingUI() {
               <tr>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">#</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
+                {bizConfig.hasGender && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('gender') || 'Gender'}</th>}
+                {bizConfig.hasBatch && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-center">{t('qty') || 'Qty'}</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-right">{t('price') || 'Price'}</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-right">{t('totalUpper') || 'Total'}</th>
@@ -1074,7 +1081,7 @@ export default function WholesaleBillingUI() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={6 + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
                     <Scan size={48} className="mx-auto mb-4 opacity-20" />
                     <p className="text-lg font-medium">{t('cartEmpty')}</p>
                     <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
@@ -1094,6 +1101,22 @@ export default function WholesaleBillingUI() {
                       <p className="text-[10px] text-amber-500 font-semibold">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
                     )}
                   </td>
+                  {bizConfig.hasGender && (
+                    <td className="px-4 py-3 text-xs font-semibold text-violet-600 dark:text-violet-400">
+                      {item.gender || '-'}
+                    </td>
+                  )}
+                  {bizConfig.hasBatch && (
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        value={item.batchNumber || ''}
+                        onChange={e => updateBatchNumber(item.id, e.target.value, item.variant)}
+                        placeholder={t('batchPlaceholder') || 'Batch #'}
+                        className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5"
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => {
