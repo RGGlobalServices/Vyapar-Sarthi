@@ -35,7 +35,7 @@ function DashboardInner() {
   const locale = useLocale();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { fetchProfile, activeShopId, profile } = useBusinessStore();
+  const { fetchProfile, activeShopId, profile, allShopAccess } = useBusinessStore();
   const { role } = useAuthStore();
   // Udyog/Bada Udyog packages track the same due/collection activity under
   // "Party" (customer_transactions is shared across customer & party rows —
@@ -582,7 +582,9 @@ function DashboardInner() {
                   <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1">
                     {item.name}
                   </Link>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{item.category}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                    {item.category}{allShopAccess && item.shopName ? ` · ${item.shopName}` : ''}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">₹{item.value.toLocaleString('en-IN')}</p>
@@ -613,7 +615,9 @@ function DashboardInner() {
               <div key={item.id} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                 <div>
                   <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 hover:text-red-600 dark:hover:text-red-400 transition-colors">{item.name}</Link>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{item.category}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                    {item.category}{allShopAccess && item.shopName ? ` · ${item.shopName}` : ''}
+                  </p>
                 </div>
                 <span className="text-xs font-black text-red-600 dark:text-red-400 bg-red-500/10 dark:bg-red-400/10 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-400/20">
                   {t('leftSuffix', { count: item.current_stock })}
@@ -655,6 +659,11 @@ function DashboardInner() {
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                       {getFormattedPaymentType(bill.payment_type, bill.payment_details)}
                     </span>
+                    {allShopAccess && bill.shopName && (
+                      <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">
+                        {bill.shopName}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -690,7 +699,9 @@ function DashboardInner() {
                   <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center gap-1">
                     {item.name}
                   </Link>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{item.category}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                    {item.category}{allShopAccess && item.shopName ? ` · ${item.shopName}` : ''}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">{item.qty} {t('units')}</p>
@@ -721,7 +732,9 @@ function DashboardInner() {
                   <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors flex items-center gap-1">
                     {item.name}
                   </Link>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{item.category}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                    {item.category}{allShopAccess && item.shopName ? ` · ${item.shopName}` : ''}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">
@@ -816,6 +829,7 @@ function DashboardInner() {
                       <th className="px-6 py-4 font-bold">{t('rankHeader')}</th>
                       <th className="px-6 py-4 font-bold">{t('productHeader')}</th>
                       <th className="px-6 py-4 font-bold">{t('categoryHeader')}</th>
+                      {allShopAccess && <th className="px-6 py-4 font-bold">Shop</th>}
                       <th className="px-6 py-4 font-bold text-right">{t('revenueHeader')}</th>
                       <th className="px-6 py-4 font-bold text-right">{t('unitsSoldHeader')}</th>
                     </tr>
@@ -840,6 +854,9 @@ function DashboardInner() {
                           </Link>
                         </td>
                         <td className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{item.category}</td>
+                        {allShopAccess && (
+                          <td className="px-6 py-4 text-xs font-bold text-indigo-600 dark:text-indigo-400">{item.shopName || '-'}</td>
+                        )}
                         <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-slate-100 text-right">₹{item.value.toLocaleString('en-IN')}</td>
                         <td className="px-6 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-500/80 text-right">{item.qty}</td>
                       </tr>
@@ -901,7 +918,9 @@ function DashboardInner() {
                           <Link href={`/products/${item.id}`} className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
                             {item.name}
                           </Link>
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{item.category}</p>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                            {item.category}{allShopAccess && item.shopName ? ` · ${item.shopName}` : ''}
+                          </p>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={cn(

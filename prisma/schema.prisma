@@ -31,6 +31,7 @@ model User {
   adminPin            String?       @map("admin_pin") @db.VarChar
   maxShops            Int?          @map("max_shops")
   canAddShop          Boolean?      @default(true) @map("can_add_shop")
+  allShopAccess       Boolean?      @default(false) @map("all_shop_access")
   toolUsages          ToolUsage[]
   sessions            UserSession[]
 
@@ -146,14 +147,18 @@ model Shop {
 }
 
 // Recovery bin — a snapshot taken right before a real (destructive) delete
-// happens on a supported entity, so an admin can browse/restore/download it
-// later. Deliberately separate from the entities' own tables rather than a
-// deletedAt-on-every-table soft-delete: existing list/search queries across
-// the app never need to change, since a deleted row genuinely leaves its
-// original table until restored. Customers are a special case — their own
-// delete route already soft-deletes via an `archived_` customerType prefix
-// (never destroys the row), so restoring one un-prefixes it instead of
-// re-inserting from `data`.
+// happens on a supported entity, so a shopkeeper (or admin, for the internal
+// ops tool) can browse/restore/download it later, within a 30-day window
+// enforced by the purge cron (see app/api/v1/cron/purge-trash). Deliberately
+// separate from the entities' own tables rather than a deletedAt-on-every-table
+// soft-delete: existing list/search queries across the app never need to
+// change, since a deleted row genuinely leaves its original table until
+// restored. Customers are a special case — their own delete route already
+// soft-deletes via an `archived_` customerType prefix (never destroys the
+// row), so restoring one un-prefixes it instead of re-inserting from `data`.
+// entityType is a free-text discriminator (see TrashEntityType in
+// lib/server/trash.ts): 'product' | 'customer' | 'customer_transaction' |
+// 'supplier' | 'staff' | 'sale'.
 model DeletedRecord {
   id         String    @id @default(uuid()) @db.Uuid
   shopId     String    @map("shop_id") @db.Uuid
@@ -165,12 +170,18 @@ model DeletedRecord {
   deletedBy  String?   @map("deleted_by") @db.VarChar
   deletedAt  DateTime  @default(now()) @map("deleted_at") @db.Timestamptz(6)
   restoredAt DateTime? @map("restored_at") @db.Timestamptz(6)
+  // Set the first time the purge cron warns the shop owner this record is
+  // about to be permanently deleted — purge only ever acts on rows where
+  // this is already set, so a row can never be purged without a prior warning.
+  purgeWarnedAt DateTime? @map("purge_warned_at") @db.Timestamptz(6)
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([shopId])
   @@index([entityType])
   @@index([deletedAt])
+  @@index([purgeWarnedAt])
+  @@index([restoredAt, deletedAt])
   @@map("deleted_records")
 }
 

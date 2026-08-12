@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStockStore, StockItem } from '@/lib/store';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import DailyStockRegister from './DailyStockRegister';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
@@ -46,7 +48,7 @@ export default function LegacyStockUI() {
     fetchStock, addItem, updateItem, removeItem, toggleArchive, adjustStock, clearLog,
   } = useStockStore();
 
-  const { profile, allShops, activeShopId, switchShop } = useBusinessStore();
+  const { profile, allShops, activeShopId, switchShop, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
   const isWholesale = profile.subscriptionPlan === 'wholesale';
 
@@ -101,6 +103,9 @@ export default function LegacyStockUI() {
   const [pricing, setPricing] = useState({ mrp: '', selling: '', cost: '' });
   const [error, setError]     = useState('');
   const [deleteTarget, setDeleteTarget] = useState<StockItem | null>(null);
+  const [selectedStockIds, setSelectedStockIds] = useState<Set<string | number>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmClearLog, setConfirmClearLog] = useState(false);
   const [stockPerSizePricing, setStockPerSizePricing] = useState(false);
   const [stockSizePrices, setStockSizePrices] = useState<Record<string, SizePriceEntry>>({});
@@ -141,6 +146,29 @@ export default function LegacyStockUI() {
       (selectedCategory === 'All' || i.category === selectedCategory) &&
       (n.includes(s) || c.includes(s));
   }), [items, search, selectedCategory]);
+
+  // When All Shop Access is on, group the active-items table into one
+  // section per shop (heading + its own table) instead of one flat table
+  // with a Shop column — a single unlabeled group when off, so this
+  // degenerates to today's exact output for every existing single-shop user.
+  const activeItemGroups = useMemo(() => {
+    if (!allShopAccess) return [{ shopName: null as string | null, items: activeItems }];
+    const map = new Map<string, typeof activeItems>();
+    for (const i of activeItems) {
+      const key = i.shopName || 'Unknown Shop';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(i);
+    }
+    const groups = Array.from(map.entries()).map(([shopName, items]) => ({ shopName, items }));
+    // The shop currently switched to always leads the list. StockItem has no
+    // shopId, so this matches on name (already the grouping key itself).
+    groups.sort((a, b) => {
+      const aActive = a.shopName === profile.shopName;
+      const bActive = b.shopName === profile.shopName;
+      return aActive === bActive ? 0 : aActive ? -1 : 1;
+    });
+    return groups;
+  }, [activeItems, allShopAccess, profile.shopName]);
 
   const stats = useMemo(() => ({
     total:      items.filter(i => !i.archived).length,
@@ -187,6 +215,28 @@ export default function LegacyStockUI() {
   }
   function permanentDelete(item: StockItem) { setDeleteTarget(item); setMenuId(null); }
   function confirmDelete() { if (!deleteTarget) return; removeItem(deleteTarget.id); setDeleteTarget(null); }
+
+  function toggleStockSelect(id: string | number) {
+    setSelectedStockIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDeleteStock() {
+    setBulkDeleting(true);
+    try {
+      await api.delete(`/products/bulk?ids=${Array.from(selectedStockIds).join(',')}`);
+      setSelectedStockIds(new Set());
+      await fetchStock();
+    } catch {
+      alert('Failed to delete some items.');
+    } finally {
+      setBulkDeleting(false);
+      setConfirmBulkDelete(false);
+    }
+  }
 
   function openModal(type: 'in' | 'out') {
     setModal(type); setIsNew(false); setSelId(''); setQty('');
@@ -388,15 +438,31 @@ export default function LegacyStockUI() {
     return 'ok';
   }
 
-  function renderRows(rows: StockItem[]) {
+  // rowsBizConfig lets a per-shop group render its OWN business type's
+  // stock display (e.g. a footwear shop's size breakdown) instead of the
+  // globally-active shop's — defaults to the active shop's for callers
+  // (like the archived table) that aren't grouped by shop. selectable turns
+  // on the bulk-delete checkbox column — only the Active table uses it;
+  // archived items aren't part of the same bulk-delete flow.
+  function renderRows(rows: StockItem[], rowsBizConfig = bizConfig, selectable = false) {
     return rows.map(item => {
       const status = getStatus(item);
       return (
         <tr key={item.id} className={cn('group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200', item.archived && 'opacity-60')}>
+          {selectable && (
+            <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={selectedStockIds.has(item.id)}
+                onChange={() => toggleStockSelect(item.id)}
+                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+              />
+            </td>
+          )}
           <td className="px-6 py-4 font-medium"><SmartTranslator text={item.name} locale={locale} /></td>
           <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
           <td className="px-6 py-4">
-            {bizConfig.hasSizes ? (
+            {rowsBizConfig.hasSizes ? (
               <div>
                 <button onClick={() => openEditModal(item)} className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer">
                   {Math.max(0, item.current)}
@@ -741,34 +807,73 @@ export default function LegacyStockUI() {
         </button>
       </div>
 
-      {/* Active Table */}
-      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
-                <tr>
-                  <th className="px-6 py-4">{t('colProduct')}</th>
-                  <th className="px-6 py-4">{t('colCategory')}</th>
-                  <th className="px-6 py-4">{t('colCurrentStock')}</th>
-                  <th className="px-6 py-4">{t('colMinLevel')}</th>
-                  <th className="px-6 py-4">{t('colUnit')}</th>
-                  <th className="px-6 py-4">{t('colStatus')}</th>
-                  <th className="px-6 py-4 text-center">{t('colActions')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
-                {renderRows(activeItems)}
-                {loading ? (
-                  <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
-                ) : activeItems.length === 0 && (
-                  <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">{t('noItems')}</td></tr>
-                )}
-              </tbody>
-            </table>
+      <SelectionActionBar
+        count={selectedStockIds.size}
+        itemLabel="item"
+        onDelete={() => setConfirmBulkDelete(true)}
+        onClear={() => setSelectedStockIds(new Set())}
+        disabled={bulkDeleting}
+      />
+
+      {/* Active Table — one per shop when All Shop Access is grouping the list */}
+      {activeItemGroups.map((group) => {
+      // Each shop can be a different business type — use ITS OWN config for
+      // the stock display, not the globally-active shop's.
+      const groupBizConfig = getBusinessConfig(group.items[0]?.shopBusinessType || bizConfig.type);
+      return (
+      <div key={group.shopName || 'all'} className="space-y-3">
+        {group.shopName && (
+          <div className="flex items-center gap-2 px-1">
+            <Store size={16} className="text-indigo-500 dark:text-indigo-400" />
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">{group.shopName}</h3>
+            <span className="text-xs text-slate-500">({group.items.length})</span>
           </div>
-        </CardContent>
-      </Card>
+        )}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
+                  <tr>
+                    <th className="px-6 py-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={group.items.length > 0 && group.items.every(i => selectedStockIds.has(i.id))}
+                        onChange={() => {
+                          setSelectedStockIds(prev => {
+                            const allSelected = group.items.every(i => prev.has(i.id));
+                            const next = new Set(prev);
+                            group.items.forEach(i => allSelected ? next.delete(i.id) : next.add(i.id));
+                            return next;
+                          });
+                        }}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                      />
+                    </th>
+                    <th className="px-6 py-4">{t('colProduct')}</th>
+                    <th className="px-6 py-4">{t('colCategory')}</th>
+                    <th className="px-6 py-4">{t('colCurrentStock')}</th>
+                    <th className="px-6 py-4">{t('colMinLevel')}</th>
+                    <th className="px-6 py-4">{t('colUnit')}</th>
+                    <th className="px-6 py-4">{t('colStatus')}</th>
+                    <th className="px-6 py-4 text-center">{t('colActions')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
+                  {renderRows(group.items, groupBizConfig, true)}
+                  {loading ? (
+                    <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
+                  ) : group.items.length === 0 && (
+                    <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-500">{t('noItems')}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      );
+      })}
 
       {/* Archived Table */}
       {showArchived && (
@@ -1378,27 +1483,19 @@ export default function LegacyStockUI() {
         </div>
       )}
 
-      {/* Permanent Delete Confirm */}
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                <Trash2 size={18} className="text-red-400" />
-              </div>
-              <div>
-                <p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteTitle')}</p>
-                <p className="text-sm text-slate-400 mt-0.5">{t('deleteWarning')}</p>
-              </div>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-3 text-sm text-slate-900 dark:text-slate-200 font-medium">{deleteTarget.name}</div>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteTarget(null)} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700 transition-colors">{t('cancel')}</button>
-              <button onClick={confirmDelete} className="flex-1 bg-red-500 text-slate-900 dark:text-white py-2.5 rounded-xl font-bold hover:bg-red-400 transition-colors">{t('deletePermanently')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmPasswordModal
+        open={!!deleteTarget}
+        itemLabel="product"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      <ConfirmPasswordModal
+        open={confirmBulkDelete}
+        itemLabel="item"
+        itemCount={selectedStockIds.size}
+        onConfirm={handleBulkDeleteStock}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
       </> /* end viewMode === 'all' */
       )}
     </div>

@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { NextResponse } from 'next/server';
+import { recordDeletion } from '@/lib/server/trash';
 
 export const runtime = 'nodejs';
 
@@ -42,15 +43,29 @@ export const PUT = handle(async (req) => {
 });
 
 export const DELETE = handle(async (req) => {
-  const { shop } = await requireShop(req);
+  const { shop, user } = await requireShop(req);
   const url = new URL(req.url);
   const idsParam = url.searchParams.get('ids');
-  
+
   if (!idsParam) {
     throw new ApiError(400, 'No product IDs provided');
   }
-  
+
   const ids = idsParam.split(',');
+
+  // Snapshot every product in the batch before the delete/archive attempt
+  // below, whichever path it ends up taking — mirrors the single-product
+  // DELETE route, which previously had this and bulk didn't, leaving
+  // bulk-deleted products unrecoverable.
+  const products = await prisma.product.findMany({ where: { id: { in: ids }, shopId: shop.id } });
+  await Promise.all(products.map(product => recordDeletion({
+    shopId: shop.id,
+    entityType: 'product',
+    entityId: product.id,
+    label: product.name,
+    data: product,
+    deletedBy: user.email,
+  })));
 
   try {
     const result = await prisma.product.deleteMany({

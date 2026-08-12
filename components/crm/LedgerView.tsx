@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar } from 'lucide-react';
+import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, X } from 'lucide-react';
 import api from '@/lib/api';
 import { ExportButton } from '@/lib/hooks/useExport';
+import TransactionDetailModal from './TransactionDetailModal';
 
 // Per-product line from the Sale that produced a credit bill. costPrice is
 // the product's CURRENT cost (see route.ts comment — historical per-sale
@@ -66,6 +67,8 @@ export default function LedgerView({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState({ from: '', to: '' });
+  const [billSearch, setBillSearch] = useState('');
+  const [viewingTransaction, setViewingTransaction] = useState<Transaction | null>(null);
 
   const fetchLedger = useCallback(async () => {
     if (!entityId) return;
@@ -103,7 +106,11 @@ export default function LedgerView({
   const totalCredit = transactions.filter(isCredit).reduce((sum, tx) => sum + (tx.amount || 0), 0);
   const totalPayments = transactions.filter(tx => !isCredit(tx)).reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
-  const typeLabel = (tx: Transaction) => tx.type === 'udhar' ? t('creditBill') : tx.type === 'payment' ? t('paymentReceived') : tx.type;
+  // 'sale' = a bill paid in FULL at billing time — synthesized server-side
+  // (see api/v1/crm/ledger/route.ts) since those never get a real 'udhar'
+  // row and would otherwise be invisible in this history, even though a
+  // real sale happened.
+  const typeLabel = (tx: Transaction) => tx.type === 'udhar' ? t('creditBill') : tx.type === 'payment' ? t('paymentReceived') : tx.type === 'sale' ? (t('salePaidInFull') || 'Sale (Paid in Full)') : tx.type;
 
   // Oldest-first for the exported document only — a printed/downloaded
   // ledger reads as a running history (and lets whoever's reading it clear
@@ -166,6 +173,16 @@ export default function LedgerView({
     ? `${new Date(range.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
     : undefined;
 
+  // Bill-number search — filters the already-loaded list client-side, same
+  // convention as the Supplier module's equivalent (see suppliers/page.tsx).
+  const billSearchNeedle = billSearch.trim().toLowerCase();
+  const visibleTransactions = billSearchNeedle
+    ? transactions.filter(tx =>
+        (tx.billNumber || '').toLowerCase().includes(billSearchNeedle) ||
+        (tx.note || '').toLowerCase().includes(billSearchNeedle)
+      )
+    : transactions;
+
   return (
     <div className="space-y-4">
       {/* From above, To below — filters what's fetched AND what prints on the
@@ -199,9 +216,30 @@ export default function LedgerView({
         )}
       </div>
 
+      <div className="relative max-w-xs">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          value={billSearch}
+          onChange={e => setBillSearch(e.target.value)}
+          placeholder={t('searchByBillNumberPlaceholder') || 'Search by bill number or description...'}
+          className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-1 focus:ring-emerald-500"
+        />
+        {billSearch && (
+          <button
+            onClick={() => setBillSearch('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs font-medium text-slate-500">
-          {loading ? (t('loading') || 'Loading…') : `${transactions.length} ${transactions.length === 1 ? t('transaction') || 'transaction' : t('transactions') || 'transactions'}`}
+          {loading
+            ? (t('loading') || 'Loading…')
+            : `${visibleTransactions.length} ${visibleTransactions.length === 1 ? t('transaction') || 'transaction' : t('transactions') || 'transactions'}`}
         </p>
         <ExportButton
           filename={`ledger-${(entityName || entityType).toString().trim().replace(/\s+/g, '-').toLowerCase()}`}
@@ -226,12 +264,21 @@ export default function LedgerView({
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
           <p>{t('noTransactionsFound')}</p>
         </div>
+      ) : visibleTransactions.length === 0 ? (
+        <div className="text-center py-12 text-slate-500">
+          <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+          <p>{t('noBillsMatchSearch') || 'No bills match your search.'}</p>
+        </div>
       ) : (
-        transactions.map((tx) => {
+        visibleTransactions.map((tx) => {
           const credit = isCredit(tx);
 
           return (
-            <div key={tx.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm flex items-center p-4 gap-4">
+            <div
+              key={tx.id}
+              onClick={() => setViewingTransaction(tx)}
+              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm flex items-center p-4 gap-4 cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors"
+            >
               <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                 credit
                   ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'
@@ -266,6 +313,14 @@ export default function LedgerView({
             </div>
           );
         })
+      )}
+
+      {viewingTransaction && (
+        <TransactionDetailModal
+          entityName={entityName || entityType}
+          transaction={viewingTransaction}
+          onClose={() => setViewingTransaction(null)}
+        />
       )}
     </div>
   );

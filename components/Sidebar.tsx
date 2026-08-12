@@ -232,6 +232,7 @@ export default function Sidebar({
     { key: 'dukandar',  icon: Store,           href: '/dukandar' },
     { key: 'settings',  icon: Settings,        href: '/settings' },
     { key: 'returns',   icon: RotateCcw,       href: '/returns' },
+    { key: 'trash',     icon: Trash2,          href: '/trash' },
     { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
   ];
   
@@ -252,6 +253,9 @@ export default function Sidebar({
   const baseMenuItems = masterMenuItems.filter(item => {
     if (item.external) return true;
     if (item.key === 'expiry') return currentBusinessConfig.hasExpiry;
+    // Recycle Bin is available to every package, not gated by module list —
+    // the delete/recovery flow it supports now exists across every module.
+    if (item.key === 'trash') return true;
     return currentPackageConfig.modules.includes(item.key);
   });
 

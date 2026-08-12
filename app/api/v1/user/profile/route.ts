@@ -54,6 +54,7 @@ export const PATCH = handle(async (req) => {
     removeProfitPassword?: boolean;
     adminPin?: string;
     removeAdminPin?: boolean;
+    allShopAccess?: boolean;
   }>(req);
 
   const updates: Record<string, unknown> = {};
@@ -68,6 +69,11 @@ export const PATCH = handle(async (req) => {
 
   const bType = body.businessType || body.business_type;
   if (bType !== undefined) updates.businessType = bType.trim() || null;
+
+  // Owner-level preference, not a shop field — must NOT go through the
+  // shopUpdates bulk-write below (see the comment there on why name/type
+  // fields are excluded from it).
+  if (body.allShopAccess !== undefined) updates.allShopAccess = !!body.allShopAccess;
 
   // Email update
   if (body.email !== undefined) {
@@ -171,6 +177,7 @@ export const PATCH = handle(async (req) => {
       mobile: updatedUser.mobile,
       storeName: updatedUser.storeName,
       businessType: updatedUser.businessType,
+      allShopAccess: updatedUser.allShopAccess === true,
     }
   });
 });

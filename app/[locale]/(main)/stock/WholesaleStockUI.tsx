@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Box, Package, Archive, AlertTriangle, Search, Loader2, ArrowRightLeft,
   TrendingDown, Clock, CheckCircle, X, Filter, Download, Printer,
-  Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp, CalendarDays
+  Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp, CalendarDays, Store, Trash2
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,8 @@ import AdjustDrawer from './AdjustDrawer';
 import ReceiveDrawer from './ReceiveDrawer';
 import DailyStockRegister from './DailyStockRegister';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { cssColor } from '@/components/ColorSizeVariantGrid';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -171,7 +173,16 @@ export default function WholesaleStockUI() {
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [showDailyRegister, setShowDailyRegister] = useState(false);
 
-  const { activeShopId } = useBusinessStore();
+  // Delete selection state — single delete goes through `deleteTarget` +
+  // ConfirmPasswordModal; bulk delete through `selectedStockIds` + the
+  // SelectionActionBar. Mirrors LegacyStockUI.tsx's pattern; this table's
+  // rows are Product records, so both call the /products endpoints directly.
+  const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+
+  const { activeShopId, allShopAccess } = useBusinessStore();
   const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher);
   const { data: batches = [], isLoading: bLoad, isValidating: bValid, mutate: mutateBatches } = useSWR(activeShopId ? ['/stock/batches', activeShopId] : null, safeFetcher);
   const { data: godowns = [], isLoading: gLoad, isValidating: gValid, mutate: mutateGodowns } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, godownsFetcher);
@@ -356,6 +367,69 @@ export default function WholesaleStockUI() {
     return matchesSearch && matchesCategory && matchesWarehouse && matchesStatus;
   });
 
+  // When All Shop Access is on, group the table into one section per shop
+  // (heading + its own table) instead of one flat table with a Shop column —
+  // a single unlabeled group when off, so this degenerates to today's exact
+  // output for every existing single-shop user.
+  let filteredItemGroups: { shopName: string | null; items: any[] }[];
+  if (allShopAccess) {
+    const shopMap = new Map<string, any[]>();
+    for (const i of filteredItems) {
+      const key = i.shopName || 'Unknown Shop';
+      if (!shopMap.has(key)) shopMap.set(key, []);
+      shopMap.get(key)!.push(i);
+    }
+    filteredItemGroups = [];
+    shopMap.forEach((items, shopName) => filteredItemGroups.push({ shopName, items }));
+    // The shop currently switched to always leads the list, rather than
+    // wherever Map insertion order happens to put it.
+    filteredItemGroups.sort((a, b) => {
+      const aActive = a.items[0]?.shopId === activeShopId;
+      const bActive = b.items[0]?.shopId === activeShopId;
+      return aActive === bActive ? 0 : aActive ? -1 : 1;
+    });
+  } else {
+    filteredItemGroups = [{ shopName: null, items: filteredItems }];
+  }
+
+  function toggleStockSelect(id: string) {
+    setSelectedStockIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function permanentDelete(item: any) { setDeleteTarget(item); }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    try {
+      await api.delete(`/products/${id}`);
+      if (selectedProduct?.id === id) setSelectedProduct(null);
+    } catch {
+      alert('Failed to delete item.');
+    } finally {
+      setDeleteTarget(null);
+      mutateProducts();
+    }
+  }
+
+  async function handleBulkDeleteStock() {
+    setBulkDeleting(true);
+    try {
+      await api.delete(`/products/bulk?ids=${Array.from(selectedStockIds).join(',')}`);
+      setSelectedStockIds(new Set());
+    } catch {
+      alert('Failed to delete some items.');
+    } finally {
+      setBulkDeleting(false);
+      setConfirmBulkDelete(false);
+      mutateProducts();
+    }
+  }
+
   const exportExcel = () => {
     if (!filteredItems || filteredItems.length === 0) {
       alert(t('noItemsToExport'));
@@ -489,6 +563,14 @@ export default function WholesaleStockUI() {
           )}
         </div>
 
+        <SelectionActionBar
+          count={selectedStockIds.size}
+          itemLabel="product"
+          onDelete={() => setConfirmBulkDelete(true)}
+          onClear={() => setSelectedStockIds(new Set())}
+          disabled={bulkDeleting}
+        />
+
         {/* Filters and Table */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col">
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
@@ -524,11 +606,35 @@ export default function WholesaleStockUI() {
             </div>
           </div>
           
+          {filteredItemGroups.map((group) => (
+          <div key={group.shopName || 'all'}>
+          {group.shopName && (
+            <div className="flex items-center gap-2 px-4 pt-4 pb-1">
+              <Store size={16} className="text-indigo-500 dark:text-indigo-400" />
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">{group.shopName}</h3>
+              <span className="text-xs text-slate-500">({group.items.length})</span>
+            </div>
+          )}
           <div className="overflow-x-auto w-full custom-scrollbar relative">
 
             <table className="w-full min-w-[800px] text-left text-sm text-slate-600 dark:text-slate-300 relative">
               <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 text-xs uppercase font-medium sticky top-0 backdrop-blur-md z-10 shadow-sm border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
                 <tr>
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={group.items.length > 0 && group.items.every((i: any) => selectedStockIds.has(i.id))}
+                      onChange={() => {
+                        setSelectedStockIds(prev => {
+                          const allSelected = group.items.every((i: any) => prev.has(i.id));
+                          const next = new Set(prev);
+                          group.items.forEach((i: any) => allSelected ? next.delete(i.id) : next.add(i.id));
+                          return next;
+                        });
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-4 py-3">{t('colProduct')}</th>
                   <th className="px-4 py-3">{t('barcode')}</th>
                   <th className="px-4 py-3">{t('colVariants') || 'Colour / Size'}</th>
@@ -543,6 +649,7 @@ export default function WholesaleStockUI() {
                 {loading && (!data || data.items.length === 0) ? (
                   Array(5).fill(0).map((_, i) => (
                     <tr key={i} className="animate-pulse">
+                      <td className="px-4 py-4"><div className="h-4 w-4 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded" /></td>
@@ -553,14 +660,14 @@ export default function WholesaleStockUI() {
                       <td className="px-4 py-4"><div className="h-4 w-8 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
                     </tr>
                   ))
-                ) : filteredItems.length === 0 ? (
+                ) : group.items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-12 text-center text-slate-500">
+                    <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
                       {t('noItems')}
                     </td>
                   </tr>
                 ) : (
-                  filteredItems.map((item: any) => {
+                  group.items.map((item: any) => {
                     const itemVariants: any[] = Array.isArray(item.variants) ? item.variants : [];
                     const variantColors = Array.from(new Set(itemVariants.map((v: any) => v.color).filter(Boolean))) as string[];
                     const variantSizes = Array.from(new Set(itemVariants.map((v: any) => v.size).filter(Boolean))) as string[];
@@ -573,6 +680,14 @@ export default function WholesaleStockUI() {
                         selectedProduct?.id === item.id && "bg-emerald-50 dark:bg-emerald-500/10 border-l-2 border-emerald-500"
                       )}
                     >
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedStockIds.has(item.id)}
+                          onChange={() => toggleStockSelect(item.id)}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
                         {item.name}
                         <div className="text-xs text-slate-500 font-normal">{item.category || '-'}</div>
@@ -617,9 +732,18 @@ export default function WholesaleStockUI() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 rounded-lg transition-colors">
-                          <Eye size={16} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 rounded-lg transition-colors">
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); permanentDelete(item); }}
+                            title={t('deletePermanently')}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/20 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     );
@@ -628,6 +752,8 @@ export default function WholesaleStockUI() {
               </tbody>
             </table>
           </div>
+          </div>
+          ))}
         </Card>
         </>)}
       </div>
@@ -895,11 +1021,25 @@ export default function WholesaleStockUI() {
 
       {/* Barcode/QR Modal */}
       {showBarcodeModal && selectedProduct && (
-        <BarcodeQRModal 
-          product={selectedProduct} 
-          onClose={() => setShowBarcodeModal(false)} 
+        <BarcodeQRModal
+          product={selectedProduct}
+          onClose={() => setShowBarcodeModal(false)}
         />
       )}
+
+      <ConfirmPasswordModal
+        open={!!deleteTarget}
+        itemLabel="product"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      <ConfirmPasswordModal
+        open={confirmBulkDelete}
+        itemLabel="product"
+        itemCount={selectedStockIds.size}
+        onConfirm={handleBulkDeleteStock}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
     </div>
   );
 }

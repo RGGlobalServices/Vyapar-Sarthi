@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireShop } from '@/lib/server/auth';
+import { requireShop, requireShopScope } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
 import { getDateRange, formatDate, startOfDay, endOfDay } from '@/lib/server/dates';
 import { normalizeAttendanceStatus, summarizeAttendance } from '@/lib/attendance';
@@ -8,40 +8,56 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = handle(async (req) => {
-  const { shop } = await requireShop(req);
   const q = query(req);
   const { startDate, endDate } = getDateRange(q);
   const module = q.module || 'sales'; // sales | purchases | stock | crm | financials | expenses | staff
 
+  // Only these three modules currently pool across shops when All Shop Access
+  // is on (the ones the feature was actually asked for — sales, stock, CRM
+  // outstanding); the rest stay single-shop via the plain requireShop() they
+  // already used, unchanged. requireShopScope()'s shopIds degenerates to
+  // [shop.id] when the preference is off, so this is a no-op query-wise for
+  // every existing user regardless of which module they hit.
+  if (module === 'sales' || module === 'stock' || module === 'crm') {
+    const scope = await requireShopScope(req);
+    switch (module) {
+      case 'sales':
+        return handleSales(scope.shop, startDate, endDate, q, scope);
+      case 'stock':
+        return handleStock(scope.shop, startDate, endDate, q, scope);
+      case 'crm':
+        return handleCRM(scope.shop, startDate, endDate, q, scope);
+    }
+  }
+
+  const { shop } = await requireShop(req);
   switch (module) {
-    case 'sales':
-      return handleSales(shop, startDate, endDate, q);
     case 'purchases':
       return handlePurchases(shop, startDate, endDate, q);
-    case 'stock':
-      return handleStock(shop, startDate, endDate, q);
     case 'financials':
       return handleFinancials(shop, startDate, endDate, q);
     case 'expenses':
       return handleExpenses(shop, startDate, endDate, q);
     case 'staff':
       return handleStaff(shop, startDate, endDate, q);
-    case 'crm':
-      return handleCRM(shop, startDate, endDate, q);
     default:
       return json({ error: 'Unknown module' }, 400);
   }
 });
 
+type Scope = { shopIds: string[]; allShopAccess: boolean; ownedShops: any[] };
+
 // ─── SALES ──────────────────────────────────────────────────────────────────
-async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<string, string>) {
+async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<string, string>, scope: Scope) {
   const reportType = q.report_type || 'trend'; // trend | by_product | by_category | by_customer | by_payment | gst
+  const { shopIds, allShopAccess, ownedShops } = scope;
+  const shopNameById = new Map(ownedShops.map((s: any) => [s.id, s.name]));
 
   if (reportType === 'trend') {
     const groupBy = q.group_by || 'day'; // day | week | month
 
     const sales = await prisma.sale.findMany({
-      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+      where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
       select: { totalAmount: true, totalProfit: true, paymentType: true, amountPaid: true, createdAt: true, invoice_number: true },
       orderBy: { createdAt: 'asc' }
     });
@@ -80,7 +96,7 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
 
   if (reportType === 'by_product') {
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, p.brand,
+      SELECT p.id, p.shop_id, p.name, p.category, p.brand,
         SUM(si.price_per_unit * si.quantity)::float as revenue,
         SUM(si.margin_per_unit * si.quantity)::float as profit,
         SUM(si.quantity)::float as qty,
@@ -88,14 +104,22 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       JOIN products p ON si.product_id = p.id
-      WHERE s.shop_id = ${shop.id}::uuid
+      WHERE s.shop_id = ANY(${shopIds}::uuid[])
         AND s.created_at >= ${startDate}
         AND s.created_at <= ${endDate}
-      GROUP BY p.id, p.name, p.category, p.brand
+      GROUP BY p.id, p.shop_id, p.name, p.category, p.brand
       ORDER BY revenue DESC
       LIMIT 100
     `;
-    return json({ rows: rows.map(r => ({ ...r, revenue: Number(r.revenue), profit: Number(r.profit), qty: Number(r.qty) })) });
+    return json({
+      rows: rows.map(r => ({
+        ...r,
+        revenue: Number(r.revenue),
+        profit: Number(r.profit),
+        qty: Number(r.qty),
+        ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
+      })),
+    });
   }
 
   if (reportType === 'by_category') {
@@ -336,25 +360,32 @@ async function handlePurchases(shop: any, startDate: Date, endDate: Date, q: Rec
 }
 
 // ─── STOCK ───────────────────────────────────────────────────────────────────
-async function handleStock(shop: any, startDate: Date, endDate: Date, q: Record<string, string>) {
+async function handleStock(shop: any, startDate: Date, endDate: Date, q: Record<string, string>, scope: Scope) {
   const reportType = q.report_type || 'current';
 
   if (reportType === 'current') {
+    const { shopIds, allShopAccess, ownedShops } = scope;
+    const shopNameById = new Map(ownedShops.map((s: any) => [s.id, s.name]));
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT id, name, category, brand, current_stock, min_stock, selling_price,
+      SELECT id, shop_id, name, category, brand, current_stock, min_stock, selling_price,
         (current_stock * selling_price)::float as stock_value,
         CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 'low'
              WHEN current_stock = 0 THEN 'out'
              ELSE 'ok' END as status
       FROM products
-      WHERE shop_id = ${shop.id}::uuid
+      WHERE shop_id = ANY(${shopIds}::uuid[])
       ORDER BY current_stock ASC
     `;
     const totalValue = rows.reduce((a, r) => a + Number(r.stock_value || 0), 0);
     const lowCount = rows.filter(r => r.status === 'low').length;
     const outCount = rows.filter(r => r.status === 'out').length;
     return json({
-      rows: rows.map(r => ({ ...r, current_stock: Number(r.current_stock), stock_value: Number(r.stock_value || 0) })),
+      rows: rows.map(r => ({
+        ...r,
+        current_stock: Number(r.current_stock),
+        stock_value: Number(r.stock_value || 0),
+        ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
+      })),
       summary: { totalProducts: rows.length, totalValue, lowCount, outCount }
     });
   }
@@ -563,27 +594,31 @@ async function handleStaff(shop: any, startDate: Date, endDate: Date, q: Record<
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────
-async function handleCRM(shop: any, startDate: Date, endDate: Date, q: Record<string, string>) {
+async function handleCRM(shop: any, startDate: Date, endDate: Date, q: Record<string, string>, scope: Scope) {
   const reportType = q.report_type || 'outstanding';
   const entityType = q.entity_type || 'customer'; // customer | supplier
 
   if (reportType === 'outstanding') {
+    const { shopIds, allShopAccess, ownedShops } = scope;
+    const shopNameById = new Map(ownedShops.map((s: any) => [s.id, s.name]));
     if (entityType === 'customer') {
       const rows = await prisma.customer.findMany({
-        where: { shopId: shop.id, totalDue: { gt: 0 } },
-        select: { id: true, name: true, mobile: true, totalDue: true, creditLimit: true },
+        where: { shopId: { in: shopIds }, totalDue: { gt: 0 } },
+        select: { id: true, name: true, mobile: true, totalDue: true, creditLimit: true, shopId: true },
         orderBy: { totalDue: 'desc' }
       });
       const total = rows.reduce((a, r) => a + (r.totalDue || 0), 0);
-      return json({ rows, summary: { total, count: rows.length } });
+      const labeled = allShopAccess ? rows.map(r => ({ ...r, shopName: r.shopId ? shopNameById.get(r.shopId) : undefined })) : rows;
+      return json({ rows: labeled, summary: { total, count: rows.length } });
     } else {
       const rows = await prisma.supplier.findMany({
-        where: { shopId: shop.id, balance: { gt: 0 } },
-        select: { id: true, name: true, mobile: true, balance: true },
+        where: { shopId: { in: shopIds }, balance: { gt: 0 } },
+        select: { id: true, name: true, mobile: true, balance: true, shopId: true },
         orderBy: { balance: 'desc' }
       });
       const total = rows.reduce((a, r) => a + (r.balance || 0), 0);
-      return json({ rows, summary: { total, count: rows.length } });
+      const labeled = allShopAccess ? rows.map(r => ({ ...r, shopName: r.shopId ? shopNameById.get(r.shopId) : undefined })) : rows;
+      return json({ rows: labeled, summary: { total, count: rows.length } });
     }
   }
 

@@ -66,9 +66,14 @@ interface BusinessStore {
   allShops: ShopSummary[];
   activeShopId: string | null;
   shopLimit: ShopLimit;
+  // Owner-level preference: pool read-only data (Products, Stock, Dashboard,
+  // select Reports, Udhar) across every shop this owner has, instead of only
+  // the active one. Off by default for every existing user.
+  allShopAccess: boolean;
   fetchProfile: (force?: boolean) => Promise<void>;
   fetchAllShops: () => Promise<void>;
   switchShop: (shopId: string, preventReload?: boolean) => Promise<void>;
+  setAllShopAccess: (enabled: boolean) => Promise<void>;
   createShop: (data: { name: string; businessType?: string; packageType?: string; subscriptionPlan?: string; address?: string; mobile?: string; gst?: string }) => Promise<ShopSummary>;
   deleteShop: (shopId: string) => Promise<void>;
   updateProfile: (updates: Partial<BusinessProfile>) => Promise<void>;
@@ -183,6 +188,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   allShops: [],
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
   shopLimit: DEFAULT_SHOP_LIMIT,
+  allShopAccess: false,
 
   fetchProfile: async (force = false) => {
     // Skip if we fetched recently (e.g. tab focus fires repeatedly)
@@ -228,7 +234,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         localStorage.setItem('ks_active_shop_id', autoId);
       }
       
-      set({ allShops: shops, activeShopId: autoId, shopLimit });
+      set({ allShops: shops, activeShopId: autoId, shopLimit, allShopAccess: res.data?.allShopAccess === true });
     } catch {}
   },
 
@@ -266,6 +272,27 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     // reset was the "electronics products showing on cloth shop" bug — the
     // stock store's freshness gate saw items were "fresh" and refused to
     // refetch, leaving the previous shop's list on screen.
+    useUdharStore.getState().resetCustomers();
+    useStockStore.getState().resetStock();
+    useUdharStore.getState().fetchCustomers();
+    useStockStore.getState().fetchStock();
+  },
+
+  setAllShopAccess: async (enabled: boolean) => {
+    const previous = get().allShopAccess;
+    set({ allShopAccess: enabled });
+    try {
+      await api.patch('/user/profile', { allShopAccess: enabled });
+    } catch (err) {
+      set({ allShopAccess: previous });
+      throw err;
+    }
+
+    // Same cache-bust switchShop() performs (see the comment there) — scoping
+    // for pooled routes is resolved server-side from the DB, not part of any
+    // SWR cache key, so flipping this must not leave stale
+    // narrower/wider-scope data on screen under the same cache key.
+    mutate(() => true, undefined, { revalidate: true });
     useUdharStore.getState().resetCustomers();
     useStockStore.getState().resetStock();
     useUdharStore.getState().fetchCustomers();

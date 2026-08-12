@@ -7,7 +7,7 @@ import {
   Loader2, Package, Tag, ShieldCheck,
   LayoutGrid, List, ArrowUp, ArrowDown, Warehouse,
   Calendar, FlaskConical, Ruler, Palette, MonitorSmartphone, User, Shirt, Footprints,
-  IndianRupee
+  IndianRupee, Store
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -15,6 +15,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import SmartTranslator from '@/components/SmartTranslator';
 import ProductDetailsSheet from './ProductDetailsSheet';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVariantGrid';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { useCategories } from '@/lib/useCategories';
@@ -102,7 +103,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
 export default function WholesaleProductsUI() {
   const t = useTranslations('Products');
   const tv = useTranslations('Variants');
-  const { profile, activeShopId } = useBusinessStore();
+  const { profile, activeShopId, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
 
   // Some Udyog (wholesale-package) accounts still carry a retail-flavoured
@@ -155,6 +156,7 @@ export default function WholesaleProductsUI() {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('productViewMode');
@@ -436,7 +438,6 @@ export default function WholesaleProductsUI() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(t('confirmBulkDelete') || `Are you sure you want to delete ${selectedIds.length} products?`)) return;
     setSaving(true);
     
     // Optimistic Update
@@ -605,6 +606,27 @@ export default function WholesaleProductsUI() {
     setSortConfig({ key, direction });
   };
 
+  // When All Shop Access is on, render one section per shop (heading + its
+  // own grid/table) instead of one flat list with an inline Shop column —
+  // a single unlabeled group when off, so this degenerates to today's exact
+  // output for every existing single-shop user.
+  const productGroups = allShopAccess
+    ? Array.from(
+        filteredProducts.reduce((map: Map<string, any[]>, p: any) => {
+          const key = p.shopName || 'Unknown Shop';
+          (map.get(key) || map.set(key, []).get(key)!).push(p);
+          return map;
+        }, new Map<string, any[]>())
+      ).map(([shopName, items]) => ({ shopName, items }))
+        // The shop currently switched to always leads the list, rather than
+        // wherever Map insertion order happens to put it.
+        .sort((a, b) => {
+          const aActive = a.items[0]?.shopId === activeShopId;
+          const bActive = b.items[0]?.shopId === activeShopId;
+          return aActive === bActive ? 0 : aActive ? -1 : 1;
+        })
+    : [{ shopName: null as string | null, items: filteredProducts }];
+
   const getExpiryStatus = (dateStr?: string) => {
     if (!dateStr) return null;
     const diff = new Date(dateStr).getTime() - Date.now();
@@ -730,9 +752,40 @@ export default function WholesaleProductsUI() {
           </button>
         </div>
       ) : (
-        viewMode === 'grid' ? (
+        <>
+        {selectedIds.length > 0 && viewMode === 'table' && (
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-2xl p-3 mb-4 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+            <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+              {selectedIds.length} {selectedIds.length === 1 ? 'product' : 'products'} selected
+            </span>
+            <div className="flex gap-2">
+              <button onClick={() => setShowBulkEditModal(true)} className="text-xs bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-800 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                {t('bulkEdit') || 'Bulk Edit'}
+              </button>
+              <button onClick={() => setConfirmBulkDelete(true)} disabled={saving} className="text-xs bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800/50 hover:bg-rose-50 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                <Trash2 size={14} /> {t('delete') || 'Delete'}
+              </button>
+            </div>
+          </div>
+        )}
+        {productGroups.map((group) => {
+        // Each shop can be a different business type — use ITS OWN column set,
+        // not the globally-active shop's, so e.g. a Footwear shop's group
+        // doesn't show Electronics columns just because the active shop is
+        // Electronics.
+        const groupBizConfig = getBusinessConfig(group.items[0]?.shopBusinessType || bizConfig.type);
+        return (
+        <div key={group.shopName || 'all'} className="space-y-3 mb-6 last:mb-0">
+          {group.shopName && (
+            <div className="flex items-center gap-2 px-1">
+              <Store size={16} className="text-indigo-500 dark:text-indigo-400" />
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">{group.shopName}</h3>
+              <span className="text-xs text-slate-500">({group.items.length})</span>
+            </div>
+          )}
+        {viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredProducts.map((p: any) => {
+            {group.items.map((p: any) => {
               const expiryStatus = getExpiryStatus(p.expiryDate);
               return (
                 <Card key={p.id} onClick={() => setSelectedProduct(p)} className="cursor-pointer border-slate-200 dark:border-slate-800 shadow-sm hover:border-emerald-500/50 hover:shadow-md transition-all group bg-white dark:bg-slate-900">
@@ -755,16 +808,16 @@ export default function WholesaleProductsUI() {
                     </div>
                     {/* Business-type specific badges in grid card */}
                     <div className="flex flex-wrap gap-1 mb-3">
-                      {p.gender && bizConfig.hasGender && (
+                      {p.gender && groupBizConfig.hasGender && (
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 rounded">{p.gender}</span>
                       )}
-                      {p.shade && bizConfig.hasShades && (
+                      {p.shade && groupBizConfig.hasShades && (
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-300 rounded">{p.shade}</span>
                       )}
-                      {p.model_number && bizConfig.hasModel && (
+                      {p.model_number && groupBizConfig.hasModel && (
                         <span className="text-[9px] font-mono px-1.5 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 rounded">{p.model_number}</span>
                       )}
-                      {p.warranty_months && bizConfig.hasWarranty && (
+                      {p.warranty_months && groupBizConfig.hasWarranty && (
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 rounded flex items-center gap-0.5"><ShieldCheck size={8}/>{p.warranty_months}m</span>
                       )}
                     </div>
@@ -789,21 +842,6 @@ export default function WholesaleProductsUI() {
           </div>
         ) : (
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            {selectedIds.length > 0 && (
-              <div className="bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-100 dark:border-emerald-800/30 p-3 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
-                <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
-                  {selectedIds.length} {selectedIds.length === 1 ? 'product' : 'products'} selected
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={() => setShowBulkEditModal(true)} className="text-xs bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-800 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-lg font-medium transition-colors">
-                    {t('bulkEdit') || 'Bulk Edit'}
-                  </button>
-                  <button onClick={handleBulkDelete} disabled={saving} className="text-xs bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800/50 hover:bg-rose-50 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50">
-                    <Trash2 size={14} /> {t('delete') || 'Delete'}
-                  </button>
-                </div>
-              </div>
-            )}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
@@ -829,45 +867,45 @@ export default function WholesaleProductsUI() {
                       <div className="flex items-center gap-1">{t('colCategory') || 'Category'} {sortConfig?.key === 'category' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
                     {/* Business-type specific columns */}
-                    {bizConfig.hasExpiry && (
+                    {groupBizConfig.hasExpiry && (
                       <th className="p-4 font-semibold text-orange-500 dark:text-orange-400">
                         <div className="flex items-center gap-1"><Calendar size={13}/> Expiry</div>
                       </th>
                     )}
-                    {bizConfig.hasBatch && (
+                    {groupBizConfig.hasBatch && (
                       <th className="p-4 font-semibold">Batch</th>
                     )}
-                    {bizConfig.hasModel && (
+                    {groupBizConfig.hasModel && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><MonitorSmartphone size={13}/> Model</div>
                       </th>
                     )}
-                    {bizConfig.hasWarranty && (
+                    {groupBizConfig.hasWarranty && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><ShieldCheck size={13}/> Warranty</div>
                       </th>
                     )}
-                    {bizConfig.hasGender && (
+                    {groupBizConfig.hasGender && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><User size={13}/> Gender</div>
                       </th>
                     )}
-                    {bizConfig.hasShades && (
+                    {groupBizConfig.hasShades && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><Palette size={13}/> Shade</div>
                       </th>
                     )}
-                    {bizConfig.hasColors && (
+                    {groupBizConfig.hasColors && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><Palette size={13}/> Colour</div>
                       </th>
                     )}
-                    {bizConfig.hasFabric && (
+                    {groupBizConfig.hasFabric && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><Shirt size={13}/> Fabric</div>
                       </th>
                     )}
-                    {bizConfig.hasSoleMaterial && (
+                    {groupBizConfig.hasSoleMaterial && (
                       <th className="p-4 font-semibold">
                         <div className="flex items-center gap-1"><Footprints size={13}/> Sole</div>
                       </th>
@@ -892,7 +930,7 @@ export default function WholesaleProductsUI() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {filteredProducts.map((p: any) => {
+                  {group.items.map((p: any) => {
                     const rawStock = (p.godownProducts && p.godownProducts.length > 0)
                       ? p.godownProducts.reduce((sum: number, gp: any) => sum + gp.quantity, 0)
                       : (p.currentStock || 0);
@@ -943,7 +981,7 @@ export default function WholesaleProductsUI() {
                         <td className="p-4 text-slate-900 dark:text-white font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.brand || '-'}</td>
                         <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.category || '-'}</td>
                         {/* Business-type specific data cells */}
-                        {bizConfig.hasExpiry && (
+                        {groupBizConfig.hasExpiry && (
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
                             {p.expiryDate ? (
                               <span className={cn(
@@ -958,13 +996,13 @@ export default function WholesaleProductsUI() {
                             ) : <span className="text-slate-400">—</span>}
                           </td>
                         )}
-                        {bizConfig.hasBatch && (
+                        {groupBizConfig.hasBatch && (
                           <td className="p-4 font-mono text-xs text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.batch_number || '—'}</td>
                         )}
-                        {bizConfig.hasModel && (
+                        {groupBizConfig.hasModel && (
                           <td className="p-4 font-mono text-xs text-slate-600 dark:text-slate-300 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.model_number || '—'}</td>
                         )}
-                        {bizConfig.hasWarranty && (
+                        {groupBizConfig.hasWarranty && (
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
                             {p.warranty_months ? (
                               <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400 text-xs font-semibold">
@@ -973,13 +1011,13 @@ export default function WholesaleProductsUI() {
                             ) : <span className="text-slate-400">—</span>}
                           </td>
                         )}
-                        {bizConfig.hasGender && (
+                        {groupBizConfig.hasGender && (
                           <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-semibold cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.gender || '—'}</td>
                         )}
-                        {bizConfig.hasShades && (
+                        {groupBizConfig.hasShades && (
                           <td className="p-4 text-xs text-pink-500 dark:text-pink-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.shade || '—'}</td>
                         )}
-                        {bizConfig.hasColors && (() => {
+                        {groupBizConfig.hasColors && (() => {
                           // Array.isArray(p.metadata?.colors) is the current shape; a bare
                           // p.metadata?.color string is what older rows saved before
                           // multi-select shipped — show that as a single-item list too.
@@ -1001,10 +1039,10 @@ export default function WholesaleProductsUI() {
                             </td>
                           );
                         })()}
-                        {bizConfig.hasFabric && (
+                        {groupBizConfig.hasFabric && (
                           <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.metadata?.fabric || '—'}</td>
                         )}
-                        {bizConfig.hasSoleMaterial && (
+                        {groupBizConfig.hasSoleMaterial && (
                           <td className="p-4 text-xs text-amber-600 dark:text-amber-400 font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.metadata?.sole_material || '—'}</td>
                         )}
                         <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.costPrice || 0}</td>
@@ -1047,7 +1085,11 @@ export default function WholesaleProductsUI() {
               </table>
             </div>
           </div>
-        )
+        )}
+        </div>
+        );
+        })}
+        </>
       )}
 
       {selectedProduct && (
@@ -1061,6 +1103,13 @@ export default function WholesaleProductsUI() {
           onDelete={handleSingleDelete}
         />
       )}
+      <ConfirmPasswordModal
+        open={confirmBulkDelete}
+        itemLabel="product"
+        itemCount={selectedIds.length}
+        onConfirm={async () => { setConfirmBulkDelete(false); await handleBulkDelete(); }}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
 
       {/* Add / Edit Product Modal */}
       {showAddModal && (

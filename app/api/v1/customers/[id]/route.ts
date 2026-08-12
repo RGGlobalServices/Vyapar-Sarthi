@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { softDeleteCustomer } from '@/lib/server/customers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,15 +46,15 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   return json({ id: updated.id, documents: updated.documents });
 });
 
-// DELETE /customers/:id
+// DELETE /customers/:id — soft-deletes (archives), recoverable from the
+// recycle bin for 30 days. Used to hard-delete with zero recovery, unlike
+// the identical Party/Customer-tab delete path — unified onto the same
+// softDeleteCustomer helper so both surfaces behave the same way.
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  const { shop } = await requireShop(req);
-  const customer = await prisma.customer.findFirst({ where: { id, shopId: shop.id } });
-  if (!customer) throw new ApiError(404, 'Customer not found');
+  const { shop, user } = await requireShop(req);
 
-  await prisma.customer_transactions.deleteMany({ where: { customer_id: id } });
-  await prisma.customer.delete({ where: { id } });
+  await softDeleteCustomer(shop.id, id, user.email);
 
   return json({ detail: 'Customer deleted' });
 });

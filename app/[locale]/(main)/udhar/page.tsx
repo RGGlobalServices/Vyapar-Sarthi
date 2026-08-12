@@ -43,6 +43,8 @@ const inp = 'w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:b
 
 // ─── WhatsApp & Email reminder helper ─────────────────────────────────────────
 import { shareFileOrText, generateEmailLink } from '@/lib/shareUtils';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 
 async function shareCustomerLedger(customer: UdharCustomer, shopName: string, channel: 'whatsapp' | 'email', t: (key: string, values?: Record<string, any>) => string) {
   const { default: jsPDF } = await import('jspdf');
@@ -109,7 +111,7 @@ export default function UdharPage() {
   const t = useTranslations('Udhar');
   const tSlip = useTranslations('UdharSlip');
   const locale = useLocale();
-  const { profile } = useBusinessStore();
+  const { profile, allShopAccess } = useBusinessStore();
   const { customers, loading, fetchCustomers, addCustomer, updateCustomer, deleteCustomer, addTransaction, deleteTransaction } = useUdharStore();
   const isWholesale = profile.subscriptionPlan === 'wholesale';
 
@@ -124,6 +126,13 @@ export default function UdharPage() {
   const slipRef                 = useRef<HTMLDivElement>(null);
   const [deleteId, setDeleteId] = useState<number | string | null>(null);
   const [txDeleteId, setTxDeleteId] = useState<number | string | null>(null);
+  const [confirmBulkCustomerDelete, setConfirmBulkCustomerDelete] = useState(false);
+  const [bulkCustomerDeleting, setBulkCustomerDeleting] = useState(false);
+  // Transaction delete confirmation — holds either the single armed tx id or
+  // the full multi-select set, so one ConfirmPasswordModal instance covers both.
+  const [confirmTxDeleteIds, setConfirmTxDeleteIds] = useState<(string | number)[] | null>(null);
+  const [txBulkDeleting, setTxBulkDeleting] = useState(false);
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string | number>>(new Set());
   const [insightData, setInsightData] = useState<any>(null);
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [addCustomerSuccess, setAddCustomerSuccess] = useState(false);
@@ -475,6 +484,50 @@ export default function UdharPage() {
     setSelected(null);
   }
 
+  async function handleBulkDeleteCustomers() {
+    setBulkCustomerDeleting(true);
+    try {
+      await api.delete(`/customers/bulk?ids=${Array.from(selectedIds).join(',')}`);
+      await fetchCustomers();
+      setSelectedIds(new Set());
+      setSelectMode(false);
+    } catch (err) {
+      alert('Failed to delete some customers.');
+    } finally {
+      setBulkCustomerDeleting(false);
+      setConfirmBulkCustomerDelete(false);
+    }
+  }
+
+  function toggleTxSelect(id: string | number) {
+    setSelectedTxIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function handleConfirmTxDelete() {
+    const ids = confirmTxDeleteIds;
+    if (!ids || ids.length === 0 || !selected) return;
+    if (ids.length === 1) {
+      await deleteTransaction(selected.id, ids[0]);
+      setTxDeleteId(null);
+    } else {
+      setTxBulkDeleting(true);
+      try {
+        await api.delete(`/customers/${selected.id}/transactions/bulk?ids=${ids.join(',')}`);
+        await fetchCustomers();
+        setSelectedTxIds(new Set());
+      } catch (err) {
+        alert('Failed to delete some transactions.');
+      } finally {
+        setTxBulkDeleting(false);
+      }
+    }
+    setConfirmTxDeleteIds(null);
+  }
+
   async function handleAddUdhar(e: React.FormEvent) {
     e.preventDefault();
     const amt = Number(txForm.amount);
@@ -657,17 +710,35 @@ export default function UdharPage() {
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
               <p className="text-sm font-bold text-slate-300">{t('transactionHistory')}</p>
             </div>
+            {selectedTxIds.size > 0 && (
+              <div className="px-5 pt-4">
+                <SelectionActionBar
+                  count={selectedTxIds.size}
+                  itemLabel="transaction"
+                  onDelete={() => setConfirmTxDeleteIds(Array.from(selectedTxIds))}
+                  onClear={() => setSelectedTxIds(new Set())}
+                  disabled={txBulkDeleting}
+                />
+              </div>
+            )}
             {sorted.length === 0 ? (
               <p className="px-5 py-10 text-center text-slate-500 text-sm">{t('noTransactions')}</p>
             ) : (
               <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {sorted.map(tx => (
-                  <div 
-                    key={tx.id} 
+                  <div
+                    key={tx.id}
                     className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-100 dark:bg-slate-800/50 transition-colors cursor-pointer"
                     onClick={() => setRecentTx({ tx, customer: selected!, newDue: totalDue(selected!) })}
                   >
                     <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedTxIds.has(tx.id)}
+                        onChange={() => toggleTxSelect(tx.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                      />
                       <div className={cn('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
                         tx.type === 'udhar' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400')}>
                         {tx.type === 'udhar' ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
@@ -689,7 +760,7 @@ export default function UdharPage() {
                       </p>
                       {txDeleteId === tx.id ? (
                         <div className="flex items-center gap-1">
-                          <button onClick={(e) => { e.stopPropagation(); deleteTransaction(selected!.id, tx.id); setTxDeleteId(null); }} className="text-red-400 p-1"><Check size={13} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); setConfirmTxDeleteIds([tx.id]); }} className="text-red-400 p-1"><Check size={13} /></button>
                           <button onClick={(e) => { e.stopPropagation(); setTxDeleteId(null); }} className="text-slate-400 p-1"><X size={13} /></button>
                         </div>
                       ) : (
@@ -806,9 +877,19 @@ export default function UdharPage() {
             </form>
           </UModal>
         )}
-        {deleteId === customer.id && (
-          <ConfirmDel name={customer.name} t={t} onConfirm={handleDeleteCustomer} onCancel={() => setDeleteId(null)} />
-        )}
+        <ConfirmPasswordModal
+          open={deleteId === customer.id}
+          itemLabel="customer"
+          onConfirm={handleDeleteCustomer}
+          onCancel={() => setDeleteId(null)}
+        />
+        <ConfirmPasswordModal
+          open={!!confirmTxDeleteIds}
+          itemLabel="transaction"
+          itemCount={confirmTxDeleteIds?.length || 1}
+          onConfirm={handleConfirmTxDelete}
+          onCancel={() => { setConfirmTxDeleteIds(null); setTxDeleteId(null); }}
+        />
 
         {/* Recent Transaction Receipt Modal */}
         {recentTx && (
@@ -882,10 +963,16 @@ export default function UdharPage() {
                 {selectMode ? 'Cancel' : 'Select'}
               </button>
               {selectMode && selectedIds.size > 0 && (
-                <button onClick={() => setModal('bulkRemind')}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500 text-slate-900 font-bold text-sm active:scale-95">
-                  <Send size={15} /> Remind ({selectedIds.size})
-                </button>
+                <>
+                  <button onClick={() => setModal('bulkRemind')}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500 text-slate-900 font-bold text-sm active:scale-95">
+                    <Send size={15} /> Remind ({selectedIds.size})
+                  </button>
+                  <button onClick={() => setConfirmBulkCustomerDelete(true)}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-sm active:scale-95">
+                    <Trash2 size={15} /> Delete ({selectedIds.size})
+                  </button>
+                </>
               )}
               {canAddUdharCustomer(profile.subscriptionPlan, customers.length) ? (
                 <button onClick={openNew}
@@ -975,7 +1062,10 @@ export default function UdharPage() {
               const due = totalDue(customer);
               const lastTx = [...(customer.transactions || [])].pop();
               const isSelected = selectedIds.has(customer.id);
-              const canSelect = due > 0;
+              // Any customer is selectable — due>0 used to gate this when
+              // Select mode only powered Remind, but Delete is now also
+              // available from the same selection and applies regardless of due.
+              const canSelect = true;
               return (
                 <Card key={customer.id}
                   onClick={() => selectMode && canSelect ? toggleSelect(customer.id) : (!selectMode && setSelected(customer))}
@@ -1001,6 +1091,9 @@ export default function UdharPage() {
                           <div className="flex items-center gap-1 text-slate-500 text-xs mt-0.5">
                             <Phone size={11} />{customer.mobile || t('noMobile')}
                           </div>
+                          {allShopAccess && customer.shopName && (
+                            <div className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold mt-0.5 truncate">{customer.shopName}</div>
+                          )}
                         </div>
                       </div>
                       {!selectMode && (
@@ -1320,6 +1413,15 @@ export default function UdharPage() {
         </UModal>
       )}
 
+    {/* Bulk Delete Confirmation */}
+      <ConfirmPasswordModal
+        open={confirmBulkCustomerDelete}
+        itemLabel="customer"
+        itemCount={selectedIds.size}
+        onConfirm={handleBulkDeleteCustomers}
+        onCancel={() => setConfirmBulkCustomerDelete(false)}
+      />
+
     {/* Bulk Remind Modal */}
       {modal === 'bulkRemind' && (
         <UModal title={`Send Reminder to ${selectedIds.size} customers`} icon={<Send size={17} className="text-emerald-400" />} onClose={() => setModal(null)}>
@@ -1452,20 +1554,3 @@ function UActions({ onCancel, submitLabel, submitCls, submitting, cancelLabel }:
   );
 }
 
-function ConfirmDel({ name, t, onConfirm, onCancel }: { name: string; t: any; onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center"><Trash2 size={18} className="text-red-400" /></div>
-          <div><p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteCustomer')}</p><p className="text-sm text-slate-400">{t('deleteWarning')}</p></div>
-        </div>
-        <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-3 text-sm text-slate-900 dark:text-slate-200 font-medium">{name}</div>
-        <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-700">{t('cancel')}</button>
-          <button onClick={onConfirm} className="flex-1 bg-red-500 text-slate-900 dark:text-white py-2.5 rounded-xl font-bold hover:bg-red-400">{t('delete')}</button>
-        </div>
-      </div>
-    </div>
-  );
-}

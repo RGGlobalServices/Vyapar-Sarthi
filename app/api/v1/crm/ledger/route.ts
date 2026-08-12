@@ -24,30 +24,58 @@ export const GET = handle(async (req) => {
     from || to ? { [field]: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {};
 
   if (entityType === 'customer' || entityType === 'party') {
-    const ledger = await prisma.customer_transactions.findMany({
-      where: { customer_id: entityId, customers: { shopId: shop.id }, ...dateFilter('created_at') },
-      orderBy: { created_at: 'desc' },
-    });
-
-    // GST enrichment: a bill-type ledger row's bill_number is generated as
-    // the exact same string as the originating Sale.invoice_number — both
-    // are set from one `invoice_number` value in the same request (see
-    // app/api/v1/billing/route.ts) — so it's a reliable, if not FK-enforced,
-    // join key back to the sale for its GST rate/amount. Batched into one
-    // query instead of N+1 per ledger row.
-    const billNumbers = Array.from(
-      new Set(ledger.map((t) => t.bill_number).filter((b): b is string => !!b))
-    );
-    const sales = billNumbers.length > 0
-      ? await prisma.sale.findMany({
-          where: { shopId: shop.id, invoice_number: { in: billNumbers } },
-          select: {
-            invoice_number: true, gstAmount: true, gstDetails: true, billType: true,
-            items: { select: { itemName: true, quantity: true, pricePerUnit: true, marginPerUnit: true, productId: true } },
+    // Fetch every Sale ever billed to this customer (not just the ones a
+    // bill_number in `ledger` already points at) — needed below to backfill
+    // history for bills paid in FULL at billing time, which never get a
+    // customer_transactions row at all (see the outstandingAmount>0 gate in
+    // app/api/v1/billing/route.ts) and would otherwise be invisible here
+    // even though a real sale happened. Doubles as the existing GST/items
+    // enrichment join, batched into one query instead of N+1 per row.
+    const [ledger, sales] = await Promise.all([
+      prisma.customer_transactions.findMany({
+        where: { customer_id: entityId, customers: { shopId: shop.id }, ...dateFilter('created_at') },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.sale.findMany({
+        where: { shopId: shop.id, customerId: entityId, ...dateFilter('createdAt') },
+        select: {
+          id: true, invoice_number: true, totalAmount: true, amountPaid: true, createdAt: true,
+          gstAmount: true, gstDetails: true, billType: true,
+          items: {
+            select: {
+              itemName: true, quantity: true, pricePerUnit: true, marginPerUnit: true, productId: true, variant: true,
+              product: { select: { name: true } },
+            },
           },
-        })
-      : [];
+        },
+      }),
+    ]);
     const saleByInvoice = new Map(sales.map((s) => [s.invoice_number, s]));
+
+    // A bill only gets a real 'udhar' customer_transactions row when it left
+    // something outstanding. For any sale that doesn't have one, the WHOLE
+    // amount was collected at billing time — synthesize a 'sale' row for it
+    // so it shows up in history instead of vanishing. Skipped for bills that
+    // DO have a real udhar row (any remaining balance) so a partially-paid
+    // bill isn't shown twice — the existing udhar entry already covers it.
+    const udharBillNumbers = new Set(
+      ledger.filter((t) => t.type === 'udhar' && t.bill_number).map((t) => t.bill_number)
+    );
+    const paidInFullEntries = sales
+      .filter((s) => !udharBillNumbers.has(s.invoice_number) && ((Number(s.totalAmount) || 0) - (Number(s.amountPaid) || 0)) <= 0)
+      .map((s) => ({
+        id: `sale-${s.id}`,
+        customer_id: entityId,
+        type: 'sale',
+        amount: s.totalAmount,
+        note: `Bill: ${s.invoice_number}`,
+        bill_number: s.invoice_number,
+        created_at: s.createdAt,
+      }));
+
+    const combined = [...ledger, ...paidInFullEntries].sort(
+      (a, b) => new Date(b.created_at as any).getTime() - new Date(a.created_at as any).getTime()
+    );
 
     // Cost price for the profit-per-product export: SaleItem only persists
     // marginPerUnit (₹ profit already computed at billing time, correctly
@@ -68,7 +96,7 @@ export const GET = handle(async (req) => {
       : [];
     const costById = new Map(products.map((p) => [p.id, p.costPrice]));
 
-    const enriched = ledger.map((t) => {
+    const enriched = combined.map((t) => {
       const sale = t.bill_number ? saleByInvoice.get(t.bill_number) : undefined;
       const isGstBill = sale?.billType === 'gst';
       // GstBreakdown (lib/gst.ts) has no single top-level rate — a bill can mix
@@ -86,7 +114,7 @@ export const GET = handle(async (req) => {
         const costPrice = i.productId ? Number(costById.get(i.productId)) || 0 : 0;
         const marginPerUnit = Number(i.marginPerUnit) || 0;
         return {
-          name: i.itemName || '',
+          name: i.product?.name || i.itemName || i.variant || 'Unknown Product',
           quantity: Number(i.quantity) || 0,
           sellingPrice: Number(i.pricePerUnit) || 0,
           costPrice,

@@ -148,6 +148,78 @@ export async function requireShop(
   return { user: user as typeof user & { uuid: string }, shop };
 }
 
+/**
+ * Like requireShop(), but also resolves the owner's "All Shop Access"
+ * preference into a shopIds list to pool read-only queries across every shop
+ * they own: [shop.id] when the preference is off (identical scope to
+ * requireShop() — the default for every existing user, since the column
+ * defaults false), every eligible owned shop's id when on. Callers should
+ * always filter with `shopId: { in: shopIds }` — that degenerates to exactly
+ * today's `shopId: shop.id` query when off.
+ *
+ * Deliberately duplicates requireShop()'s resolution block rather than
+ * refactoring it to share code: requireShop() is called by ~100 existing
+ * routes and must not risk any behavioral drift, so this stays fully
+ * separate — nothing about today's single-shop auth path is touched.
+ */
+export async function requireShopScope(
+  req: Request,
+  options: { enforceSubscription?: boolean } = {}
+) {
+  const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
+  const requestedShopId = req.headers.get('x-shop-id');
+
+  const [user, session, shops] = await Promise.all([
+    prisma.user.findUnique({ where: { uuid: userId } }),
+    sessionId
+      ? prisma.userSession.findUnique({ where: { id: sessionId } })
+      : Promise.resolve(null),
+    prisma.shop.findMany({ where: { ownerId: userId } }),
+  ]);
+
+  if (!user) throw new ApiError(401, 'User not found');
+  if (sessionId && !session) {
+    throw new ApiError(401, 'Session expired or revoked from another device. Please log in again.');
+  }
+
+  const shop =
+    (requestedShopId && shops.find(s => s.id === requestedShopId)) || shops[0];
+  if (!shop) throw new ApiError(404, 'Shop not found');
+
+  const enforce = options.enforceSubscription ?? true;
+
+  if (enforce && isSubscriptionEnded(shop)) {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    const isExempt = path.includes('/shop/profile') ||
+                     path.includes('/shop/switch-plan') ||
+                     path.includes('/payments/create-order') ||
+                     path.includes('/payments/activate-plan') ||
+                     path.includes('/user/tool-usage');
+    if (!isExempt) {
+      throw new ApiError(403, 'Subscription expired');
+    }
+  }
+
+  // Strict equality — null/undefined (every pre-existing user) reads as off.
+  const allShopAccess = user.allShopAccess === true;
+
+  // A lapsed shop shows no data if it were the active shop today, so it
+  // shouldn't silently reappear via pooling either.
+  const eligibleShops = enforce ? shops.filter(s => !isSubscriptionEnded(s)) : shops;
+  const shopIds = allShopAccess ? eligibleShops.map(s => s.id) : [shop.id];
+
+  return {
+    user: user as typeof user & { uuid: string },
+    shop,
+    // Every shop this owner has (unfiltered) — for building shopId -> name
+    // maps, independent of which ids ended up eligible for pooling.
+    ownedShops: shops,
+    shopIds,
+    allShopAccess,
+  };
+}
+
 export function getAdminIdFromToken(req: Request): string {
   const authHeader = req.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

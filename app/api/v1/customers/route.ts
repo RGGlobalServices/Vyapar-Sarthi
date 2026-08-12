@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireShop } from '@/lib/server/auth';
+import { requireShop, requireShopScope } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -7,18 +7,32 @@ export const dynamic = 'force-dynamic';
 
 // GET /customers — all customers for this shop with their transactions
 export const GET = handle(async (req) => {
-  const { shop } = await requireShop(req);
+  const { shopIds, allShopAccess, ownedShops } = await requireShopScope(req);
   const customers = await prisma.customer.findMany({
-    where: { shopId: shop.id },
-    include: { 
-      customer_transactions: { 
+    // Excludes soft-deleted customers (customerType prefixed `archived_` by
+    // softDeleteCustomer) — without this a "deleted" Udhar customer keeps
+    // appearing in this exact list even though the delete succeeded.
+    // customerType is nullable, so the exclusion is a separate OR branch
+    // rather than a bare NOT — a NULL customerType must never be filtered
+    // out just because NOT+startsWith's NULL handling is ambiguous.
+    where: {
+      shopId: { in: shopIds },
+      OR: [
+        { customerType: null },
+        { NOT: { customerType: { startsWith: 'archived_' } } },
+      ],
+    },
+    include: {
+      customer_transactions: {
         orderBy: { created_at: 'desc' },
-        take: 5 
-      } 
+        take: 5
+      }
     },
     orderBy: { name: 'asc' },
     take: 1000 // Prevent massive payload, needs full pagination later
   });
+
+  const shopNameById = new Map(ownedShops.map(s => [s.id, s.name]));
 
   const mapped = customers.map((c) => ({
     id: c.id,
@@ -27,6 +41,7 @@ export const GET = handle(async (req) => {
     email: c.email || '',
     totalDue: c.totalDue || 0,
     createdAt: c.createdAt ? c.createdAt.toISOString() : new Date().toISOString(),
+    ...(allShopAccess ? { shopName: c.shopId ? shopNameById.get(c.shopId) : undefined } : {}),
     transactions: (c.customer_transactions || []).reverse().map((t) => ({
       id: t.id,
       type: t.type || 'udhar',

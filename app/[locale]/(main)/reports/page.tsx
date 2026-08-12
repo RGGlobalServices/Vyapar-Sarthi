@@ -73,7 +73,7 @@ function SectionCard({ title, children, actions }: any) {
 
 // ── SALES TAB ──────────────────────────────────────────────────────────────
 function SalesTab({ filters }: { filters: any }) {
-  const { activeShopId } = useBusinessStore();
+  const { activeShopId, allShopAccess } = useBusinessStore();
   const t = useTranslations('Reports');
   const [data, setData] = useState<any>(null);
   const [byProduct, setByProduct] = useState<any>(null);
@@ -164,11 +164,12 @@ function SalesTab({ filters }: { filters: any }) {
 
       {subTab === 'products' && byProduct?.rows && (
         <SectionCard title={t('section.salesByProduct')}
-          actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }]} data={byProduct.rows} filename="sales_by_product" />}>
+          actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'revenue', label: 'Revenue', type: 'currency' as const }, { key: 'profit', label: 'Profit', type: 'currency' as const }, { key: 'qty', label: 'Qty', type: 'number' as const }]} data={byProduct.rows} filename="sales_by_product" />}>
           <ReportTable
             columns={[
               { key: 'name', label: 'Product', sortable: true },
               { key: 'category', label: 'Category', type: 'badge', sortable: true },
+              ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
               { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
               { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
               { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
@@ -475,7 +476,7 @@ function FinancialsTab({ filters }: { filters: any }) {
 
 // ── STOCK TAB ─────────────────────────────────────────────────────────────
 function StockTab({ filters }: { filters: any }) {
-  const { activeShopId } = useBusinessStore();
+  const { activeShopId, allShopAccess } = useBusinessStore();
   const t = useTranslations('Reports');
   const [data, setData] = useState<any>(null);
   const [valuation, setValuation] = useState<any>(null);
@@ -526,11 +527,12 @@ function StockTab({ filters }: { filters: any }) {
             <KPICard label={t('kpi.outOfStock')} value={(summary.outCount || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
           </div>
           <SectionCard title={t('section.stockStatus')}
-            actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'current_stock', label: 'Stock', type: 'number' }, { key: 'min_stock', label: 'Min Stock', type: 'number' }, { key: 'stock_value', label: 'Value', type: 'currency' }]} data={data?.rows || []} filename="stock_report" />}>
+            actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'current_stock', label: 'Stock', type: 'number' as const }, { key: 'min_stock', label: 'Min Stock', type: 'number' as const }, { key: 'stock_value', label: 'Value', type: 'currency' as const }]} data={data?.rows || []} filename="stock_report" />}>
             <ReportTable
               columns={[
                 { key: 'name', label: 'Product', sortable: true },
                 { key: 'category', label: 'Category', type: 'badge', sortable: true },
+                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
                 { key: 'current_stock', label: 'Current Stock', type: 'number', sortable: true, align: 'right' },
                 { key: 'min_stock', label: 'Min Stock', type: 'number', sortable: true, align: 'right' },
                 { key: 'stock_value', label: 'Stock Value', type: 'currency', sortable: true, align: 'right' },
@@ -665,7 +667,7 @@ function ExpensesTab({ filters }: { filters: any }) {
 
 // ── CRM TAB ───────────────────────────────────────────────────────────────
 function CRMTab({ filters }: { filters: any }) {
-  const { activeShopId } = useBusinessStore();
+  const { activeShopId, allShopAccess } = useBusinessStore();
   const t = useTranslations('Reports');
   const { profile } = useBusinessStore();
   const isUdyog = profile?.subscriptionPlan === 'wholesale';
@@ -703,11 +705,12 @@ function CRMTab({ filters }: { filters: any }) {
       </div>
       <div className={cn('grid grid-cols-1 gap-6', isUdyog && 'lg:grid-cols-2')}>
         <SectionCard title={t('section.outstandingCustomers')}
-          actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, { key: 'totalDue', label: 'Outstanding', type: 'currency' }]} data={outstanding?.rows || []} filename="outstanding_customers" />}>
+          actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'totalDue', label: 'Outstanding', type: 'currency' as const }]} data={outstanding?.rows || []} filename="outstanding_customers" />}>
           <ReportTable
             columns={[
               { key: 'name', label: 'Customer', sortable: true },
               { key: 'mobile', label: 'Mobile' },
+              ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
               { key: 'totalDue', label: 'Outstanding', type: 'currency', sortable: true, align: 'right' },
               { key: 'creditLimit', label: 'Credit Limit', type: 'currency', align: 'right' },
             ]}
@@ -715,11 +718,12 @@ function CRMTab({ filters }: { filters: any }) {
         </SectionCard>
         {isUdyog && (
           <SectionCard title={t('section.outstandingSuppliers')}
-            actions={<ExportButton columns={[{ key: 'name', label: 'Supplier' }, { key: 'mobile', label: 'Mobile' }, { key: 'balance', label: 'Payable', type: 'currency' }]} data={suppliers?.rows || []} filename="outstanding_suppliers" />}>
+            actions={<ExportButton columns={[{ key: 'name', label: 'Supplier' }, { key: 'mobile', label: 'Mobile' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'balance', label: 'Payable', type: 'currency' as const }]} data={suppliers?.rows || []} filename="outstanding_suppliers" />}>
             <ReportTable
               columns={[
                 { key: 'name', label: 'Supplier', sortable: true },
                 { key: 'mobile', label: 'Mobile' },
+                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
                 { key: 'balance', label: 'Payable', type: 'currency', sortable: true, align: 'right' },
               ]}
               rows={suppliers?.rows || []} maxHeight="380px" />

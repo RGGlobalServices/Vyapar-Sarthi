@@ -17,6 +17,7 @@ export const fetchProductsMapped = (url: string) =>
   withOfflineCache(`products-mapped:${url}`, () => api.get(url).then(res =>
     res.data.map((p: any) => ({
       id: p.id,
+      shopId: p.shopId,
       name: p.name,
       category: p.category,
       stock: p.currentStock,
@@ -46,5 +47,9 @@ export const fetchProductsMapped = (url: string) =>
       conversionFactor: p.conversionFactor,
       recentlyAdded: p.recentlyAdded,
       createdAt: p.createdAt,
+      // Only present when the owner's All Shop Access preference is on —
+      // see requireShopScope() / app/api/v1/products/route.ts.
+      shopName: p.shopName,
+      shopBusinessType: p.shopBusinessType,
     }))
   ));

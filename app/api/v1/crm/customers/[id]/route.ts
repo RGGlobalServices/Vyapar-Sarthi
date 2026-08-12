@@ -1,7 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
-import { recordDeletion } from '@/lib/server/trash';
+import { softDeleteCustomer } from '@/lib/server/customers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,24 +40,11 @@ export const DELETE = handle(async (req, { params }: any) => {
   // Soft delete by archiving, since they might have ledgers/transactions
   // which would block a hard delete due to foreign key constraints. The row
   // itself is never destroyed, but it's still logged to the trash bin so
-  // admin has one unified place to find and restore anything deleted —
+  // there's one unified place to find and restore anything deleted —
   // "restore" for a customer means un-prefixing customerType (see
-  // /api/v1/admin/trash/[id]/restore), not re-inserting from `data`.
-  const customer = await prisma.customer.findUnique({ where: { id, shopId: shop.id } });
-  if (customer) {
-    await recordDeletion({
-      shopId: shop.id,
-      entityType: 'customer',
-      entityId: id,
-      label: customer.shopName || customer.name,
-      data: customer,
-      deletedBy: user.email,
-    });
-    await prisma.customer.update({
-      where: { id, shopId: shop.id },
-      data: { customerType: `archived_${customer.customerType || 'customer'}` }
-    });
-  }
+  // /api/v1/admin/trash/[id]/restore), not re-inserting from `data`. Shared
+  // with the Udhar delete route (customers/[id]) — see lib/server/customers.ts.
+  await softDeleteCustomer(shop.id, id, user.email);
 
   return json({ success: true });
 });

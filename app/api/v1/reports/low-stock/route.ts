@@ -1,23 +1,24 @@
 import prisma from '@/lib/server/prisma';
-import { requireShop } from '@/lib/server/auth';
+import { requireShopScope } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = handle(async (req) => {
-  const { shop } = await requireShop(req);
+  const { shopIds, allShopAccess, ownedShops } = await requireShopScope(req);
+  const shopNameById = new Map(ownedShops.map(s => [s.id, s.name]));
   const limit = parseInt(query(req).limit) || 5;
 
   const activeProducts = await prisma.product.findMany({
     where: {
-      shopId: shop.id,
+      shopId: { in: shopIds },
       OR: [{ archived: false }, { archived: null }],
     },
-    select: { id: true, name: true, category: true, currentStock: true, minStock: true, size_variants: true, metadata: true }
+    select: { id: true, name: true, category: true, currentStock: true, minStock: true, size_variants: true, metadata: true, shopId: true }
   });
 
-  const lowItems: { id: string, name: string, category: string, current_stock: number, min_stock: number, ratio: number }[] = [];
+  const lowItems: { id: string, name: string, category: string, current_stock: number, min_stock: number, ratio: number, shopId?: string | null }[] = [];
 
   for (const p of activeProducts) {
     let sizeVariants: Record<string, number> = {};
@@ -50,7 +51,8 @@ export const GET = handle(async (req) => {
              category: p.category || '',
              current_stock: qty,
              min_stock: variantMin,
-             ratio: qty / variantMin
+             ratio: qty / variantMin,
+             shopId: p.shopId,
            });
         }
       }
@@ -62,7 +64,8 @@ export const GET = handle(async (req) => {
           category: p.category || '',
           current_stock: p.currentStock || 0,
           min_stock: p.minStock!,
-          ratio: (p.currentStock || 0) / p.minStock!
+          ratio: (p.currentStock || 0) / p.minStock!,
+          shopId: p.shopId,
         });
       }
     }
@@ -77,6 +80,7 @@ export const GET = handle(async (req) => {
       category: item.category,
       current_stock: item.current_stock,
       min_stock: item.min_stock,
+      ...(allShopAccess ? { shopName: item.shopId ? shopNameById.get(item.shopId) : undefined } : {}),
     }))
   );
 });

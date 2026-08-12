@@ -79,11 +79,21 @@ export async function POST(req: Request) {
 
 
     const data = await req.json();
-    const { supplierId, invoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;
+    const { supplierId, invoiceNumber: rawInvoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;
 
     if (!supplierId || !warehouseId || !items || items.length === 0) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
     }
+
+    // Auto-generate a professional invoice number when the shopkeeper leaves
+    // it blank — same convention Sale.invoice_number already uses (see
+    // app/api/v1/billing/route.ts) so purchase and sale documents read
+    // consistently. Previously an empty invoiceNumber meant the linked
+    // SupplierTransaction's note fell back to the raw internal invoiceId (a
+    // UUID), which is what showed up as "Purchase Invoice: 4c0030bc-..." in
+    // Payment History — not something a shopkeeper would recognize as a bill number.
+    const invoiceNumber = (rawInvoiceNumber && String(rawInvoiceNumber).trim())
+      || `PUR-${randomUUID().substring(0, 8).toUpperCase()}`;
 
     const finalAmountPaid = typeof amountPaid === 'number' ? amountPaid : 0;
     const finalPaymentMode = paymentMode || 'Cash';
@@ -188,7 +198,8 @@ export async function POST(req: Request) {
           supplierId,
           type: 'purchase',
           amount: totalCost,
-          note: `Purchase Invoice: ${invoiceNumber || invoiceId}`,
+          billNumber: invoiceNumber,
+          note: `Purchase Invoice: ${invoiceNumber}`,
         }
       }),
 

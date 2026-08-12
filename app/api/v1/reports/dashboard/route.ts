@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireShop } from '@/lib/server/auth';
+import { requireShopScope } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
 import { getDateRange, startOfDay, endOfDay, formatDate } from '@/lib/server/dates';
 
@@ -17,12 +17,16 @@ const CACHE_TTL = 15000; // 15 seconds — dashboard numbers don't need second-l
 const CACHE_MAX_ENTRIES = 500;
 
 export const GET = handle(async (req) => {
-  const { shop } = await requireShop(req);
+  const { shop, shopIds, allShopAccess, ownedShops } = await requireShopScope(req);
+  const shopNameById = new Map(ownedShops.map(s => [s.id, s.name]));
   const q = query(req);
   const { startDate, endDate } = getDateRange(q);
   const forceRefresh = q.refresh === 'true' || q.refresh === '1';
 
-  const cacheKey = `${shop.id}_${startDate.getTime()}_${endDate.getTime()}`;
+  // Pooled and single-shop requests must never share a cache entry — the same
+  // date range means two very different result sets depending on scope.
+  const scopeKey = allShopAccess ? `all:${[...shopIds].sort().join(',')}` : shop.id;
+  const cacheKey = `${scopeKey}_${startDate.getTime()}_${endDate.getTime()}`;
 
   if (!forceRefresh) {
     const cached = dashboardCache.get(cacheKey);
@@ -74,26 +78,26 @@ export const GET = handle(async (req) => {
     slowProd,
   ] = await Promise.all([
     prisma.sale.aggregate({
-      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+      where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
       // amountPaid is what actually came into the drawer; totalAmount includes
       // the udhar portion that has not been paid yet.
       _sum: { totalAmount: true, totalProfit: true, amountPaid: true },
     }),
 
     prisma.expense.aggregate({
-      where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
       _count: { id: true },
     }),
 
     prisma.expense.aggregate({
-      where: { shopId: shop.id, date: { gte: todayStart, lte: todayEnd } },
+      where: { shopId: { in: shopIds }, date: { gte: todayStart, lte: todayEnd } },
       _sum: { amount: true },
       _count: { id: true },
     }),
 
     prisma.expense.aggregate({
-      where: { shopId: shop.id, date: { gte: monthStart, lte: todayEnd } },
+      where: { shopId: { in: shopIds }, date: { gte: monthStart, lte: todayEnd } },
       _sum: { amount: true },
       _count: { id: true },
     }),
@@ -102,7 +106,7 @@ export const GET = handle(async (req) => {
     // bill carries the breakdown in paymentDetails; anything else put its whole
     // paid amount through one mode.
     prisma.sale.findMany({
-      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+      where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
       select: { paymentType: true, paymentDetails: true, amountPaid: true },
     }),
 
@@ -117,7 +121,7 @@ export const GET = handle(async (req) => {
       SELECT t.amount::float AS amount, t.note, t.type
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ${shop.id}::uuid
+      WHERE c.shop_id = ANY(${shopIds}::uuid[])
         AND t.type IN ('payment', 'advance')
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
@@ -125,7 +129,7 @@ export const GET = handle(async (req) => {
     `,
 
     prisma.customer.aggregate({
-      where: { shopId: shop.id, OR: [{ customerType: null }, { customerType: { not: 'party' } }] },
+      where: { shopId: { in: shopIds }, OR: [{ customerType: null }, { customerType: { not: 'party' } }] },
       _sum: { totalDue: true }
     }),
 
@@ -134,20 +138,20 @@ export const GET = handle(async (req) => {
     prisma.$queryRaw<{ count: number }[]>`
       SELECT COUNT(*)::int as count
       FROM products
-      WHERE shop_id = ${shop.id}::uuid
+      WHERE shop_id = ANY(${shopIds}::uuid[])
         AND current_stock <= min_stock
         AND min_stock > 0
     `,
 
     prisma.materialReturn.aggregate({
-      where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
       _count: { id: true },
     }),
 
     prisma.materialReturn.groupBy({
       by: ['reason'],
-      where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
       _count: { id: true },
     }),
@@ -158,7 +162,7 @@ export const GET = handle(async (req) => {
       )::float as profit_lost
       FROM material_returns r
       LEFT JOIN products p ON r.product_id = p.id
-      WHERE r.shop_id = ${shop.id}::uuid AND r.date >= ${startDate} AND r.date <= ${endDate}
+      WHERE r.shop_id = ANY(${shopIds}::uuid[]) AND r.date >= ${startDate} AND r.date <= ${endDate}
     `,
 
     prisma.$queryRaw<{ realized_sales_profit: number }[]>`
@@ -169,14 +173,14 @@ export const GET = handle(async (req) => {
         END
       )::float as realized_sales_profit
       FROM sales
-      WHERE shop_id = ${shop.id}::uuid AND created_at >= ${startDate} AND created_at <= ${endDate}
+      WHERE shop_id = ANY(${shopIds}::uuid[]) AND created_at >= ${startDate} AND created_at <= ${endDate}
     `,
 
     prisma.$queryRaw<{ total_udhar_paid: number }[]>`
       SELECT SUM(t.amount)::float as total_udhar_paid
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ${shop.id}::uuid
+      WHERE c.shop_id = ANY(${shopIds}::uuid[])
         AND t.type = 'payment'
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
@@ -186,14 +190,14 @@ export const GET = handle(async (req) => {
     prisma.$queryRaw<{ total_profit: number, total_amount: number }[]>`
       SELECT SUM(total_profit)::float as total_profit, SUM(total_amount)::float as total_amount
       FROM sales
-      WHERE shop_id = ${shop.id}::uuid
+      WHERE shop_id = ANY(${shopIds}::uuid[])
     `,
 
     prisma.$queryRaw<{ total_udhar_given: number }[]>`
       SELECT SUM(t.amount)::float as total_udhar_given
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ${shop.id}::uuid
+      WHERE c.shop_id = ANY(${shopIds}::uuid[])
         AND t.type = 'udhar'
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
@@ -204,7 +208,7 @@ export const GET = handle(async (req) => {
     // reported separately from retail Udhar above. Same Customer table,
     // customerType='party' is what the /party page already keys off.
     prisma.customer.aggregate({
-      where: { shopId: shop.id, customerType: 'party' },
+      where: { shopId: { in: shopIds }, customerType: 'party' },
       _sum: { totalDue: true }
     }),
 
@@ -215,7 +219,7 @@ export const GET = handle(async (req) => {
       SELECT SUM(t.amount)::float as total
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ${shop.id}::uuid
+      WHERE c.shop_id = ANY(${shopIds}::uuid[])
         AND t.type = 'payment'
         AND c.customer_type = 'party'
     `,
@@ -224,7 +228,7 @@ export const GET = handle(async (req) => {
       SELECT SUM(t.amount)::float as total
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ${shop.id}::uuid
+      WHERE c.shop_id = ANY(${shopIds}::uuid[])
         AND t.type = 'payment'
         AND c.customer_type = 'party'
         AND t.created_at >= ${todayStart}
@@ -233,9 +237,9 @@ export const GET = handle(async (req) => {
 
     // Low stock
     prisma.$queryRaw<any[]>`
-      SELECT id, name, category, current_stock, min_stock
+      SELECT id, name, category, current_stock, min_stock, shop_id
       FROM products
-      WHERE shop_id = ${shop.id}::uuid
+      WHERE shop_id = ANY(${shopIds}::uuid[])
         AND current_stock <= min_stock
         AND min_stock > 0
       ORDER BY (current_stock / min_stock) ASC
@@ -244,7 +248,7 @@ export const GET = handle(async (req) => {
 
     // Recent bills
     prisma.sale.findMany({
-      where: { shopId: shop.id },
+      where: { shopId: { in: shopIds } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: { customer: { select: { name: true, mobile: true } } },
@@ -252,12 +256,12 @@ export const GET = handle(async (req) => {
 
     // Top Products by Value (Optimized)
     prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, s_agg.value, s_agg.qty
+      SELECT p.id, p.name, p.category, p.shop_id, s_agg.value, s_agg.qty
       FROM (
         SELECT si.product_id, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
-        WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+        WHERE s.shop_id = ANY(${shopIds}::uuid[]) AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
         GROUP BY si.product_id
       ) s_agg
       JOIN products p ON s_agg.product_id = p.id
@@ -267,12 +271,12 @@ export const GET = handle(async (req) => {
 
     // Fast moving by Qty (Optimized)
     prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, s_agg.qty, s_agg.value
+      SELECT p.id, p.name, p.category, p.shop_id, s_agg.qty, s_agg.value
       FROM (
         SELECT si.product_id, SUM(si.quantity) as qty, SUM(si.price_per_unit * si.quantity) as value
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
-        WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+        WHERE s.shop_id = ANY(${shopIds}::uuid[]) AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
         GROUP BY si.product_id
       ) s_agg
       JOIN products p ON s_agg.product_id = p.id
@@ -282,16 +286,16 @@ export const GET = handle(async (req) => {
 
     // Slow moving (Products with high stock and low/zero sales)
     prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, COALESCE(s_agg.qty, 0)::float as qty, p.current_stock
+      SELECT p.id, p.name, p.category, p.shop_id, COALESCE(s_agg.qty, 0)::float as qty, p.current_stock
       FROM products p
       LEFT JOIN (
         SELECT si.product_id, SUM(si.quantity) as qty
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
-        WHERE s.shop_id = ${shop.id}::uuid AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
+        WHERE s.shop_id = ANY(${shopIds}::uuid[]) AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
         GROUP BY si.product_id
       ) s_agg ON p.id = s_agg.product_id
-      WHERE p.shop_id = ${shop.id}::uuid AND p.current_stock > 0
+      WHERE p.shop_id = ANY(${shopIds}::uuid[]) AND p.current_stock > 0
       ORDER BY COALESCE(s_agg.qty, 0) ASC, p.current_stock DESC
       LIMIT 5
     `,
@@ -421,6 +425,7 @@ export const GET = handle(async (req) => {
       category: p.category,
       current_stock: p.current_stock,
       min_stock: p.min_stock,
+      ...(allShopAccess ? { shopName: shopNameById.get(p.shop_id) } : {}),
     })),
     recentBills: recentBills.map((s) => ({
       id: s.id,
@@ -431,6 +436,7 @@ export const GET = handle(async (req) => {
       customer_name: s.customer?.name,
       customer_mobile: s.customer?.mobile,
       created_at: s.createdAt,
+      ...(allShopAccess ? { shopName: shopNameById.get(s.shopId as string) } : {}),
     })),
     topProducts: topProd.map(r => ({
       id: r.id,
@@ -438,6 +444,7 @@ export const GET = handle(async (req) => {
       category: r.category,
       value: Number(r.value || 0),
       qty: Number(r.qty || 0),
+      ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
     })),
     fastMoving: fastProd.map(r => ({
       id: r.id,
@@ -445,6 +452,7 @@ export const GET = handle(async (req) => {
       category: r.category,
       value: Number(r.value || 0),
       qty: Number(r.qty || 0),
+      ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
     })),
     slowMoving: slowProd.map(r => ({
       id: r.id,
@@ -452,6 +460,7 @@ export const GET = handle(async (req) => {
       category: r.category,
       current_stock: Number(r.current_stock || 0),
       qty: Number(r.qty || 0),
+      ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
     }))
   };
 
@@ -461,11 +470,11 @@ export const GET = handle(async (req) => {
       prisma.$queryRaw<{ total_value: number }[]>`
         SELECT COALESCE(SUM(current_stock * wholesale_cost), 0)::float as total_value
         FROM products
-        WHERE shop_id = ${shop.id}::uuid AND current_stock > 0
+        WHERE shop_id = ANY(${shopIds}::uuid[]) AND current_stock > 0
       `,
       prisma.batch.findMany({
         where: {
-          shopId: shop.id,
+          shopId: { in: shopIds },
           quantity: { gt: 0 },
           expiryDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } // Next 30 days
         },
@@ -474,10 +483,10 @@ export const GET = handle(async (req) => {
         take: 5
       }),
       prisma.$queryRaw`
-        SELECT m.id, m.type, m.quantity, m.created_at, p.name as product_name
+        SELECT m.id, m.type, m.quantity, m.created_at, m.shop_id, p.name as product_name
         FROM stock_movements m
         JOIN products p ON p.id = m.product_id
-        WHERE m.shop_id = ${shop.id}::uuid
+        WHERE m.shop_id = ANY(${shopIds}::uuid[])
         ORDER BY m.created_at DESC
         LIMIT 5
       ` as Promise<any[]>,
@@ -485,8 +494,12 @@ export const GET = handle(async (req) => {
 
     payload.wholesale = {
       inventoryValue: inventoryValueResult[0]?.total_value || 0,
-      expiringBatches,
-      recentFeeds,
+      expiringBatches: allShopAccess
+        ? expiringBatches.map(b => ({ ...b, shopName: shopNameById.get(b.shopId as string) }))
+        : expiringBatches,
+      recentFeeds: allShopAccess
+        ? recentFeeds.map(f => ({ ...f, shopName: shopNameById.get(f.shop_id) }))
+        : recentFeeds,
       partyCreditTotal: partyCreditAgg._sum?.totalDue || 0,
       partyCreditCollectionTotal: Number((partyCollectionTotalData as any[])[0]?.total || 0),
       partyCreditCollectionToday: Number((partyCollectionTodayData as any[])[0]?.total || 0),

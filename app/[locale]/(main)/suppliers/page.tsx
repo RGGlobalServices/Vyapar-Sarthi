@@ -6,12 +6,17 @@ import {
   Search, Loader2, Phone, X, Plus, Mail, MapPin, Truck,
   IndianRupee, TrendingUp, Wallet, AlertCircle, Calendar,
   ChevronDown, ChevronRight, CheckCircle2, ReceiptText,
-  UploadCloud, Eye, Trash2, FileImage, Pencil, User, AlertTriangle,
+  UploadCloud, Eye, Trash2, FileImage, Pencil, User, AlertTriangle, FileText, ChevronLeft,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
 import { ExportButton } from '@/lib/hooks/useExport';
+import { generatePendingBillsPDF } from '@/lib/pdf/pendingBillsReport';
+import { generatePurchaseBillPDF } from '@/lib/pdf/purchaseBillDetail';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
+import { useRowSelection } from '@/lib/hooks/useRowSelection';
 
 type SupplierRow = {
   id: string;
@@ -101,6 +106,15 @@ export default function SuppliersPage() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
+
+  // Bulk select + password-gated bulk delete for the list view. Single-delete
+  // (inside SupplierDetail below) is a separate flow with its own modal
+  // instance — the two live in different components so there's no shared
+  // pending-id state to unify them the way billing/invoices does.
+  const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(suppliers.map((s) => s.id));
+  const [pendingBulkDeleteIds, setPendingBulkDeleteIds] = useState<string[] | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,6 +145,58 @@ export default function SuppliersPage() {
   const applyPreset = (p: RangePreset) => {
     setPreset(p);
     if (p !== 'custom') setRange(presetRange(p));
+  };
+
+  // Bulk delete — password verification (ConfirmPasswordModal) happens first,
+  // then this fires. The bulk route never 409s the whole batch the way the
+  // single-delete route does; suppliers with linked history come back in
+  // `blocked` alongside whatever else deleted cleanly in the same call, so we
+  // ask once, batch-wide, whether to retry those specific ids with cascade=true.
+  const handleBulkDeleteClick = () => {
+    if (selectedIds.length > 0) setPendingBulkDeleteIds(selectedIds);
+  };
+
+  const confirmBulkDelete = async () => {
+    const ids = pendingBulkDeleteIds;
+    if (!ids || ids.length === 0) { setPendingBulkDeleteIds(null); return; }
+    setBulkDeleting(true);
+    try {
+      const res = await api.delete(`/suppliers/bulk?ids=${ids.join(',')}`);
+      const deleted: string[] = res.data?.deleted || [];
+      const blocked: { id: string; name: string; txnCount: number; invoiceCount: number }[] = res.data?.blocked || [];
+      const failed: { id: string; error: string }[] = res.data?.failed || [];
+
+      if (blocked.length > 0) {
+        const list = blocked
+          .map((b) => `- ${b.name}: ${b.txnCount} transaction${b.txnCount === 1 ? '' : 's'}${b.invoiceCount ? `, ${b.invoiceCount} purchase invoice${b.invoiceCount === 1 ? '' : 's'}` : ''}`)
+          .join('\n');
+        const ok = confirm(
+          `${deleted.length > 0 ? `${deleted.length} supplier(s) deleted.\n\n` : ''}${blocked.length} supplier${blocked.length === 1 ? ' has' : 's have'} purchase history and ${blocked.length === 1 ? 'was' : 'were'} skipped:\n\n${list}\n\nClick OK to permanently delete ${blocked.length === 1 ? 'it' : 'them'} along with all linked transactions and purchase invoices.\nClick Cancel to keep ${blocked.length === 1 ? 'it' : 'them'}.`
+        );
+        if (ok) {
+          try {
+            const retryRes = await api.delete(`/suppliers/bulk?ids=${blocked.map((b) => b.id).join(',')}&cascade=true`);
+            const retryFailed: { id: string; error: string }[] = retryRes.data?.failed || [];
+            if (retryFailed.length > 0) {
+              alert(`${retryFailed.length} supplier(s) could not be deleted.`);
+            }
+          } catch (err2: any) {
+            alert(err2?.response?.data?.detail || err2?.response?.data?.error || err2?.message || 'Failed to delete the remaining suppliers.');
+          }
+        }
+      }
+      if (failed.length > 0) {
+        alert(`${failed.length} supplier(s) failed to delete.`);
+      }
+
+      clearSelection();
+      load();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to delete suppliers.');
+    } finally {
+      setBulkDeleting(false);
+      setPendingBulkDeleteIds(null);
+    }
   };
 
   return (
@@ -190,12 +256,14 @@ export default function SuppliersPage() {
           value={rupee(summary.totalPaid)}
           icon={<CheckCircle2 size={18} className="text-emerald-500" />}
           tone="emerald"
+          onClick={() => setRollupMode('paid')}
         />
         <StatCard
           label={t('remainingToPay')}
           value={rupee(summary.totalRemaining)}
           icon={<AlertCircle size={18} className="text-red-500" />}
           tone="red"
+          onClick={() => setRollupMode('pending')}
         />
         <StatCard
           label={t('suppliersLabel')}
@@ -301,9 +369,26 @@ export default function SuppliersPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
+            <div className="px-5 pt-4">
+              <SelectionActionBar
+                count={selectedIds.length}
+                itemLabel="supplier"
+                onDelete={handleBulkDeleteClick}
+                onClear={clearSelection}
+                disabled={bulkDeleting}
+              />
+            </div>
             <table className="w-full text-left min-w-[720px]">
               <thead className="bg-slate-50 dark:bg-slate-800/40 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
                 <tr>
+                  <th className="px-5 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleAll}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-5 py-3">{t('supplierHeader')}</th>
                   <th className="px-5 py-3 text-right">{t('purchasedHeader')}</th>
                   <th className="px-5 py-3 text-right">{t('paidHeader')}</th>
@@ -318,6 +403,14 @@ export default function SuppliersPage() {
                     onClick={() => setDetailId(s.id)}
                     className="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors"
                   >
+                    <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(s.id)}
+                        onChange={() => toggleOne(s.id)}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 shrink-0">
@@ -367,15 +460,279 @@ export default function SuppliersPage() {
           onChanged={load}
         />
       )}
+
+      {rollupMode && (
+        <SupplierRollupView
+          mode={rollupMode}
+          onBack={() => setRollupMode(null)}
+          onOpenSupplier={(id) => { setRollupMode(null); setDetailId(id); }}
+        />
+      )}
+
+      <ConfirmPasswordModal
+        open={!!pendingBulkDeleteIds}
+        itemLabel="supplier"
+        itemCount={pendingBulkDeleteIds?.length || 1}
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setPendingBulkDeleteIds(null)}
+      />
+    </div>
+  );
+}
+
+/* ─── Rollup: every pending bill / every payment, across all suppliers ───── */
+
+function SupplierRollupView({ mode, onBack, onOpenSupplier }: {
+  mode: 'pending' | 'paid';
+  onBack: () => void;
+  onOpenSupplier: (supplierId: string) => void;
+}) {
+  const t = useTranslations('Suppliers');
+  const isPending = mode === 'pending';
+
+  const [rows, setRows] = useState<any[]>([]);
+  const [summary, setSummary] = useState<{ totalPending?: number; billCount?: number; totalPaid?: number; paymentCount?: number }>({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [preset, setPreset] = useState<RangePreset>('all');
+  const [range, setRange] = useState({ from: '', to: '' });
+  const [viewing, setViewing] = useState<{ supplierId: string; supplierName: string; transaction: any } | null>(null);
+
+  const applyPreset = (p: RangePreset) => {
+    setPreset(p);
+    if (p !== 'custom') setRange(presetRange(p));
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (range.from) params.set('from', range.from);
+      if (range.to) params.set('to', range.to);
+      if (search.trim()) params.set('search', search.trim());
+      const res = await api.get(`/suppliers/${isPending ? 'pending-bills' : 'payments'}?${params.toString()}`);
+      setRows(isPending ? (res.data?.bills || []) : (res.data?.payments || []));
+      setSummary(res.data?.summary || {});
+    } catch (e) {
+      console.error('Failed to load supplier rollup', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [isPending, range.from, range.to, search]);
+
+  useEffect(() => {
+    const timer = setTimeout(load, 300);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-slate-50 dark:bg-slate-950 overflow-y-auto">
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-5 pb-24">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+          >
+            <ChevronLeft size={18} /> {t('backBtn') || 'Back'}
+          </button>
+        </div>
+
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            {isPending ? (t('allPendingBillsTitle') || 'All Pending Bills') : (t('allPaymentsTitle') || 'All Payments Made')}
+          </h1>
+          <p className="text-slate-500 text-sm font-medium">
+            {isPending
+              ? (t('allPendingBillsSubtitle') || 'Every outstanding bill across every supplier.')
+              : (t('allPaymentsSubtitle') || 'Every payment made to every supplier.')}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 max-w-md">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+              {isPending ? (t('remainingToPay')) : (t('totalPaid'))}
+            </p>
+            <p className={`text-xl font-black ${isPending ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {rupee(isPending ? (summary.totalPending || 0) : (summary.totalPaid || 0))}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+              {isPending ? (t('billsCountLabel') || 'Bills') : (t('paymentsCountLabel') || 'Payments')}
+            </p>
+            <p className="text-xl font-black text-slate-900 dark:text-white">
+              {isPending ? (summary.billCount || 0) : (summary.paymentCount || 0)}
+            </p>
+          </div>
+        </div>
+
+        {/* Filters — search (matches supplier name/mobile/bill number) + date range */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('searchRollupPlaceholder') || 'Search by supplier name, mobile, or invoice/bill number...'}
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+              <Calendar size={13} /> {t('periodLabel')}
+            </span>
+            {([
+              ['all', t('rangeAllTime')],
+              ['thisMonth', t('rangeThisMonth')],
+              ['lastMonth', t('rangeLastMonth')],
+              ['thisYear', t('rangeThisYear')],
+              ['custom', t('rangeCustom')],
+            ] as [RangePreset, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => applyPreset(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  preset === key
+                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {preset === 'custom' && (
+              <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
+                <input
+                  type="date"
+                  value={range.from}
+                  onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <span className="text-xs text-slate-400">{t('toSeparator')}</span>
+                <input
+                  type="date"
+                  value={range.to}
+                  onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          {loading ? (
+            <div className="flex justify-center p-16">
+              <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="py-16 text-center">
+              <Truck size={40} className="text-slate-300 dark:text-slate-700 mx-auto mb-3" />
+              <p className="text-slate-600 dark:text-slate-300 font-bold">
+                {isPending ? (t('noPendingBillsFound') || 'No pending bills found') : (t('noPaymentsFound') || 'No payments found')}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[760px]">
+                <thead className="bg-slate-50 dark:bg-slate-800/40 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="px-5 py-3">{t('supplierHeader')}</th>
+                    <th className="px-5 py-3">{t('billNumberHeader') || 'Bill No'}</th>
+                    <th className="px-5 py-3">{isPending ? (t('billDateHeader') || 'Bill Date') : (t('dateHeader') || 'Date')}</th>
+                    {isPending && <th className="px-5 py-3">{t('dueDateHeader') || 'Due Date'}</th>}
+                    {isPending ? (
+                      <th className="px-5 py-3 text-right">{t('remainingHeader')}</th>
+                    ) : (
+                      <>
+                        <th className="px-5 py-3 text-right">{t('amountHeader') || 'Amount'}</th>
+                        <th className="px-5 py-3">{t('noteHeader') || 'Note'}</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {rows.map((r) => (
+                    <tr
+                      key={r.id}
+                      onClick={() => setViewing({
+                        supplierId: r.supplierId,
+                        supplierName: r.supplierName,
+                        transaction: {
+                          id: r.id,
+                          type: isPending ? 'purchase' : 'payment',
+                          amount: isPending ? r.originalAmount : r.amount,
+                          note: r.note || '',
+                          billNumber: r.billNumber || '',
+                          date: r.date,
+                        },
+                      })}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors"
+                    >
+                      <td className="px-5 py-3.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onOpenSupplier(r.supplierId); }}
+                          className="text-left font-bold text-slate-900 dark:text-white text-sm hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline"
+                        >
+                          {r.supplierName}
+                        </button>
+                        <p className="text-xs text-slate-500">{r.supplierMobile || t('noNumber')}</p>
+                      </td>
+                      <td className="px-5 py-3.5 font-mono text-xs text-slate-600 dark:text-slate-300">
+                        {r.billNumber || '-'}
+                      </td>
+                      <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                        {r.date ? new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                      </td>
+                      {isPending && (
+                        <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                          {r.dueDate ? new Date(r.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                        </td>
+                      )}
+                      {isPending ? (
+                        <td className="px-5 py-3.5 text-right font-black text-red-600 dark:text-red-400">
+                          {rupee(r.remaining)}
+                        </td>
+                      ) : (
+                        <>
+                          <td className="px-5 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">
+                            {rupee(r.amount)}
+                          </td>
+                          <td className="px-5 py-3.5 text-xs text-slate-500 truncate max-w-[200px]">
+                            {r.note || '-'}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {viewing && (
+        <TransactionDetailModal
+          supplierId={viewing.supplierId}
+          supplierName={viewing.supplierName}
+          transaction={viewing.transaction}
+          billPhoto={null}
+          onViewDoc={() => {}}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Small presentational pieces ─────────────────────────────────────────── */
 
-function StatCard({ label, value, subtitle, icon, tone }: {
+function StatCard({ label, value, subtitle, icon, tone, onClick }: {
   label: string; value: string; subtitle?: string; icon: React.ReactNode;
-  tone: 'blue' | 'emerald' | 'red' | 'amber';
+  tone: 'blue' | 'emerald' | 'red' | 'amber'; onClick?: () => void;
 }) {
   const ring: Record<string, string> = {
     blue: 'border-b-blue-500/40',
@@ -383,15 +740,19 @@ function StatCard({ label, value, subtitle, icon, tone }: {
     red: 'border-b-red-500/40',
     amber: 'border-b-amber-500/40',
   };
+  const Wrapper = onClick ? 'button' : 'div';
   return (
-    <div className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 ${ring[tone]} rounded-2xl p-4`}>
+    <Wrapper
+      onClick={onClick}
+      className={`w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 ${ring[tone]} rounded-2xl p-4 ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all' : ''}`}
+    >
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-tight">{label}</p>
         {icon}
       </div>
       <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{value}</p>
       {subtitle && <p className="text-[11px] font-bold text-slate-400 mt-0.5">{subtitle}</p>}
-    </div>
+    </Wrapper>
   );
 }
 
@@ -741,18 +1102,26 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
 }) {
   const t = useTranslations('Suppliers');
   const locale = useLocale();
+  const { profile } = useBusinessStore();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState({ from: '', to: '' });
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
   const [mode, setMode] = useState<'none' | 'purchase' | 'payment'>('none');
+  const [generatingStatement, setGeneratingStatement] = useState(false);
   // 'general' = the top-level Bill Photos uploader; a transaction id = that
   // specific purchase row's inline uploader. Keyed so uploading one doesn't
   // show every row as busy.
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
+  const [viewingTransaction, setViewingTransaction] = useState<any | null>(null);
+  const [billSearch, setBillSearch] = useState('');
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Password re-verification gate — replaces the old first confirm() "are you
+  // sure" dialog. The Trash icon just opens this; the actual delete only
+  // fires from ConfirmPasswordModal's onConfirm, after verify-pin succeeds.
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   async function handleDeleteSupplier() {
     // Two-step delete: the server refuses (409) when the supplier has any
@@ -760,9 +1129,10 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
     // signal. On that, we ask a second time whether to purge everything and
     // retry with ?cascade=true — otherwise the raw Prisma FK error would leak
     // into the alert (that's the "supplier_transactions_supplier_id_fkey"
-    // message the user actually saw).
+    // message the user actually saw). This second confirm is informational
+    // (data-loss scope), not identity, so it stays a plain confirm() rather
+    // than folding into the password modal.
     if (!s) return;
-    if (!confirm(`Delete supplier "${s.name}"?\n\nThis cannot be undone.`)) return;
     setDeleting(true);
     try {
       await api.delete(`/suppliers/${supplierId}`);
@@ -774,19 +1144,21 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
         const ok = confirm(
           `${body.error}\n\nClick OK to permanently delete "${s.name}" along with ${body.txnCount} transaction${body.txnCount === 1 ? '' : 's'}${body.invoiceCount ? ` and ${body.invoiceCount} purchase invoice${body.invoiceCount === 1 ? '' : 's'}` : ''}.\n\nClick Cancel to keep the supplier and its history.`
         );
-        if (!ok) { setDeleting(false); return; }
-        try {
-          await api.delete(`/suppliers/${supplierId}?cascade=true`);
-          onChanged();
-          onClose();
-        } catch (err2: any) {
-          alert(err2?.response?.data?.error || err2?.message || 'Failed to delete supplier.');
+        if (ok) {
+          try {
+            await api.delete(`/suppliers/${supplierId}?cascade=true`);
+            onChanged();
+            onClose();
+          } catch (err2: any) {
+            alert(err2?.response?.data?.error || err2?.message || 'Failed to delete supplier.');
+          }
         }
       } else {
         alert(body?.error || err?.message || 'Failed to delete supplier.');
       }
     } finally {
       setDeleting(false);
+      setShowDeleteConfirm(false);
     }
   }
 
@@ -810,6 +1182,36 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
 
   useEffect(() => { load(); }, [load]);
 
+  async function handleDownloadPendingBills() {
+    if (!data?.supplier) return;
+    setGeneratingStatement(true);
+    try {
+      await generatePendingBillsPDF({
+        shop: {
+          name: profile.shopName || 'Vyapar Sarthi',
+          address: profile.address || null,
+          mobile: profile.mobile || null,
+          gst: profile.gst || null,
+          pan: profile.pan || null,
+        },
+        party: {
+          name: data.supplier.name,
+          address: data.supplier.address || null,
+          mobile: data.supplier.mobile || null,
+          gst: data.supplier.gst || null,
+        },
+        bills: data.dueBills || [],
+        reportTitle: 'Pending Bills - Adjustment Wise',
+        filename: `pending-bills-${(data.supplier.name || 'supplier').toString().trim().replace(/\s+/g, '-').toLowerCase()}`,
+      });
+    } catch (e) {
+      console.error('Failed to generate pending bills PDF', e);
+      alert(t('failedToGenerateStatement') || 'Failed to generate the statement PDF.');
+    } finally {
+      setGeneratingStatement(false);
+    }
+  }
+
   const s = data?.supplier;
   const totals = data?.totals || { totalPurchased: 0, totalPaid: 0, remaining: 0, dueInvoicesCount: 0, overdueAmount: 0 };
   // transactionId, when present, ties a bill photo to one specific purchase
@@ -819,6 +1221,24 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   // purchase row — those are shown inline on their row instead, so a bill
   // doesn't appear twice.
   const generalDocuments = documents.filter((d) => !d.transactionId);
+
+  // Bill-number search within this one supplier's history — filters the
+  // already-loaded month buckets client-side (nothing here needs a round
+  // trip; a single supplier's history is never large enough to matter), and
+  // drops any month left with zero matches so the search reads as a real
+  // filter rather than just highlighting.
+  const billSearchNeedle = billSearch.trim().toLowerCase();
+  const filteredMonths = billSearchNeedle
+    ? (data?.months || [])
+        .map((m: any) => ({
+          ...m,
+          items: m.items.filter((it: any) =>
+            (it.billNumber || '').toLowerCase().includes(billSearchNeedle) ||
+            (it.note || '').toLowerCase().includes(billSearchNeedle)
+          ),
+        }))
+        .filter((m: any) => m.items.length > 0)
+    : (data?.months || []);
 
   async function handleUploadBill(e: React.ChangeEvent<HTMLInputElement>, transactionId?: string) {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -891,7 +1311,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
               <Pencil size={16} />
             </button>
             <button
-              onClick={handleDeleteSupplier}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={deleting}
               title="Delete supplier"
               className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
@@ -980,6 +1400,15 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
           >
             <Wallet size={15} /> {t('recordPaymentBtn')}
+          </button>
+          <button
+            onClick={handleDownloadPendingBills}
+            disabled={generatingStatement}
+            className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 px-4 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
+            title={t('pendingBillsStatementTitle') || 'Download a Pending Bills statement (bill-by-bill outstanding, adjustment-wise)'}
+          >
+            {generatingStatement ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+            {t('pendingBillsStatementBtn') || 'Pending Bills PDF'}
           </button>
           <div className="flex items-center gap-2 ml-auto">
             <input
@@ -1108,6 +1537,26 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             />
           </div>
 
+          <div className="relative mb-4">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={billSearch}
+              onChange={(e) => setBillSearch(e.target.value)}
+              placeholder={t('searchByBillNumberPlaceholder') || 'Search by bill number or description...'}
+              className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            {billSearch && (
+              <button
+                onClick={() => setBillSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"
+                title={t('clearBtn')}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="w-7 h-7 animate-spin text-emerald-500" />
@@ -1116,10 +1565,18 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             <div className="py-12 text-center text-sm text-slate-500">
               {t('noTransactionsInPeriod')}
             </div>
+          ) : billSearchNeedle && filteredMonths.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-500">
+              {t('noBillsMatchSearch') || `No bills match "${billSearch}".`}
+            </div>
           ) : (
             <div className="space-y-3">
-              {data.months.map((m: any) => {
-                const open = !!openMonths[m.month];
+              {filteredMonths.map((m: any) => {
+                // Force every bucket open while actively searching — a match
+                // sitting inside a collapsed older month would otherwise look
+                // like a search miss. Reverts to the normal manual open/close
+                // state the moment the search is cleared.
+                const open = billSearchNeedle ? true : !!openMonths[m.month];
                 return (
                   <div key={m.month} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 overflow-hidden">
                     <button
@@ -1139,7 +1596,11 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                     {open && (
                       <div className="divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-100 dark:border-slate-800">
                         {m.items.map((it: any) => (
-                          <div key={it.id} className="flex items-center justify-between px-4 py-3">
+                          <div
+                            key={it.id}
+                            onClick={() => setViewingTransaction(it)}
+                            className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+                          >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                                 it.type === 'payment'
@@ -1206,7 +1667,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                 const linked = documents.find((d) => d.transactionId === it.id);
                                 return linked ? (
                                   <button
-                                    onClick={() => setViewingDoc({ url: linked.url, label: t('billPhotoLabel') })}
+                                    onClick={(e) => { e.stopPropagation(); setViewingDoc({ url: linked.url, label: t('billPhotoLabel') }); }}
                                     title={t('viewBillTitle')}
                                     className="p-1.5 rounded-lg text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
                                   >
@@ -1214,6 +1675,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                   </button>
                                 ) : (
                                   <label
+                                    onClick={(e) => e.stopPropagation()}
                                     title={t('attachBillTitle')}
                                     className={`p-1.5 rounded-lg cursor-pointer ${uploadingFor === it.id ? 'text-slate-300 dark:text-slate-600' : 'text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10'}`}
                                   >
@@ -1256,6 +1718,182 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
       {viewingDoc && (
         <DocumentViewerModal url={viewingDoc.url} label={viewingDoc.label} onClose={() => setViewingDoc(null)} />
       )}
+
+      {viewingTransaction && (
+        <TransactionDetailModal
+          supplierId={supplierId}
+          supplierName={s?.name || ''}
+          transaction={viewingTransaction}
+          billPhoto={documents.find((d) => d.transactionId === viewingTransaction.id) || null}
+          onViewDoc={(doc) => setViewingDoc(doc)}
+          onClose={() => setViewingTransaction(null)}
+        />
+      )}
+
+      <ConfirmPasswordModal
+        open={showDeleteConfirm}
+        itemLabel="supplier"
+        onConfirm={handleDeleteSupplier}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+    </div>
+  );
+}
+
+function TransactionDetailModal({ supplierId, supplierName, transaction, billPhoto, onViewDoc, onClose }: {
+  supplierId: string;
+  supplierName: string;
+  transaction: { id: string; type: string; amount: number; note: string; billNumber: string; date: string };
+  billPhoto: { url: string; uploadedAt: string } | null;
+  onViewDoc: (doc: { url: string; label: string }) => void;
+  onClose: () => void;
+}) {
+  const t = useTranslations('Suppliers');
+  const { profile } = useBusinessStore();
+  const [detail, setDetail] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.get(`/suppliers/${supplierId}/transactions/${transaction.id}`)
+      .then((res) => { if (!cancelled) setDetail(res.data); })
+      .catch((e) => console.error('Failed to load transaction detail', e))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [supplierId, transaction.id]);
+
+  const items = detail?.invoice?.items || [];
+  const isPayment = transaction.type === 'payment';
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      await generatePurchaseBillPDF({
+        shop: {
+          name: profile.shopName || 'Vyapar Sarthi',
+          address: profile.address || null,
+          mobile: profile.mobile || null,
+          gst: profile.gst || null,
+          pan: profile.pan || null,
+        },
+        supplierName,
+        bill: {
+          type: transaction.type,
+          amount: transaction.amount,
+          note: transaction.note,
+          billNumber: detail?.invoice?.invoiceNumber || transaction.billNumber,
+          date: transaction.date,
+          dueDate: detail?.transaction?.dueDate || null,
+        },
+        items,
+        // Prefer the linked PurchaseInvoice's own invoiceNumber, then the
+        // transaction's billNumber, before ever falling back to a raw
+        // internal id — a filename like "purchase-4c0030bc-....pdf" isn't
+        // something a shopkeeper can recognize later in a downloads folder.
+        filename: `${isPayment ? 'payment' : 'purchase'}-${(detail?.invoice?.invoiceNumber || transaction.billNumber || transaction.id).toString().trim().replace(/\s+/g, '-').toLowerCase()}`,
+      });
+    } catch (e) {
+      console.error('Failed to generate bill PDF', e);
+      alert(t('failedToGenerateStatement') || 'Failed to generate the PDF.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              {transaction.note || (isPayment ? t('paymentType') : t('purchaseType'))}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${isPayment ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>
+                {isPayment ? t('paymentType') : t('purchaseType')}
+              </span>
+              {transaction.billNumber && <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">#{transaction.billNumber}</span>}
+              <span>{transaction.date ? new Date(transaction.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5 space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              {isPayment ? t('paidHeader') : t('purchasedHeader')}
+            </span>
+            <span className={`text-xl font-black ${isPayment ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+              {isPayment ? '−' : '+'}{rupee(transaction.amount)}
+            </span>
+          </div>
+
+          {billPhoto && (
+            <button
+              onClick={() => onViewDoc({ url: billPhoto.url, label: t('billPhotoLabel') })}
+              className="w-full flex items-center gap-2 p-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-sm font-bold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+            >
+              <FileImage size={16} /> {t('viewBillTitle') || 'View attached bill photo'}
+            </button>
+          )}
+
+          <div>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              {t('itemsHeader') || 'Products'}
+            </h3>
+            {loading ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+              </div>
+            ) : items.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">
+                {t('noItemBreakdown') || 'No itemised product breakdown is available for this entry.'}
+              </p>
+            ) : (
+              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-bold">{t('product') || 'Product'}</th>
+                      <th className="px-3 py-2 text-right font-bold">{t('qty') || 'Qty'}</th>
+                      <th className="px-3 py-2 text-right font-bold">{t('costPrice') || 'Cost'}</th>
+                      <th className="px-3 py-2 text-right font-bold">{t('totalUpper') || 'Total'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {items.map((it: any, i: number) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
+                          {it.productName}{it.variant ? <span className="text-slate-400"> · {it.variant}</span> : null}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{it.quantity}{it.unit ? ` ${it.unit}` : ''}</td>
+                        <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{rupee(it.cost)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">{rupee(it.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+          <button
+            onClick={handleDownload}
+            disabled={downloading || loading}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
+          >
+            {downloading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
+            {t('downloadBillPdfBtn') || 'Download PDF'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

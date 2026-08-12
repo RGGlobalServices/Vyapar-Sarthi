@@ -293,7 +293,10 @@ export default function MainLayoutClient({
       // so it isn't in any package's module list — allow it here and let the
       // page itself render the "doesn't track expiry" hint if the shopkeeper
       // navigates there on a category that doesn't need it.
-      const alwaysAllowed = ['profile', 'settings', 'support', 'dukandar-alerts', 'expiry', 'brands', 'mill'];
+      // 'trash' (Recycle Bin) is available to every package regardless of
+      // module list, same reasoning as 'expiry' above — see Sidebar.tsx's
+      // matching bypass for the nav item itself.
+      const alwaysAllowed = ['profile', 'settings', 'support', 'dukandar-alerts', 'expiry', 'brands', 'mill', 'trash'];
       
       // If staff, apply additional restrictions
       const staffRestricted = role === 'staff' && ['reports', 'import', 'warehouses', 'suppliers', 'purchases', 'transfers'].includes(moduleName);

@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2 } from 'lucide-react';
+import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import useSWR from 'swr';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
+import CustomerRollupView from '@/components/crm/CustomerRollupView';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -154,6 +156,14 @@ export default function CustomersPage() {
   const [activeTab, setActiveTab] = useState<'ledger' | 'sales'>('ledger');
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
+  const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
+
+  // Just for the "Total Collected" card below — CustomerRollupView itself is
+  // the real source of truth for the full payment list, this only needs the summary.
+  const { data: paymentsSummary } = useSWR(
+    activeShopId ? `/crm/payments-all?entityType=customer&_shop=${activeShopId}` : null,
+    (url: string) => api.get(url).then(res => res.data)
+  );
 
   const [form, setForm] = useState({
     name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0',
@@ -324,6 +334,33 @@ export default function CustomersPage() {
             <Plus size={18} /> {t('addCustomer')}
           </button>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <button
+          onClick={() => setRollupMode('pending')}
+          className="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 border-b-orange-500/40 rounded-2xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('kpiOutstanding')}</p>
+            <AlertCircle size={16} className="text-orange-500" />
+          </div>
+          <p className="text-xl font-black text-orange-600 dark:text-orange-400">
+            ₹{Math.round(customers.reduce((s, c) => s + (Number(c.totalDue) || 0), 0)).toLocaleString('en-IN')}
+          </p>
+        </button>
+        <button
+          onClick={() => setRollupMode('paid')}
+          className="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 border-b-emerald-500/40 rounded-2xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalCollected') || 'Total Collected'}</p>
+            <CheckCircle2 size={16} className="text-emerald-500" />
+          </div>
+          <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+            ₹{Math.round(paymentsSummary?.summary?.totalPaid || 0).toLocaleString('en-IN')}
+          </p>
+        </button>
       </div>
 
       {typeRollup.length > 0 && (
@@ -613,6 +650,19 @@ export default function CustomersPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {rollupMode && (
+        <CustomerRollupView
+          entityType="customer"
+          mode={rollupMode}
+          onBack={() => setRollupMode(null)}
+          onOpenEntity={(id) => {
+            setRollupMode(null);
+            const c = customers.find(x => x.id === id);
+            if (c) setSelectedCustomer(c);
+          }}
+        />
       )}
     </div>
   );

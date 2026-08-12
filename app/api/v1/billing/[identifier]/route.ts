@@ -1,6 +1,8 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, ApiError } from '@/lib/server/http';
+import { recordDeletion } from '@/lib/server/trash';
+import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches } from '@/lib/server/sales';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,28 +53,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
   if (!sale) throw new ApiError(404, 'Invoice not found');
 
-  const priorReturns = await prisma.materialReturn.findMany({
-    where: {
-      shopId,
-      note: {
-        contains: sale.id
-      }
-    }
-  });
-
-  const returnedQuantities: Record<string, number> = {};
-  for (const r of priorReturns) {
-    let noteData: any = {};
-    try {
-      if (r.note) noteData = JSON.parse(r.note);
-    } catch (e) {}
-    
-    // Match by saleItemId first, then productId, then itemName
-    const key = noteData?.saleItemId || r.productId || r.itemName;
-    if (key) {
-      returnedQuantities[key] = (returnedQuantities[key] || 0) + r.quantity;
-    }
-  }
+  const returnedQuantities = await getReturnedQuantitiesForSale(prisma, shopId, sale.id);
 
   return json({
     id: sale.id,
@@ -103,4 +84,40 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       };
     }),
   });
+});
+
+export const DELETE = handle<Ctx>(async (req, { params }) => {
+  const { identifier } = await params;
+  const { shop, user } = await requireShop(req);
+
+  const sale = await prisma.sale.findFirst({
+    where: { id: identifier, shopId: shop.id },
+    include: { items: true },
+  });
+  if (!sale) throw new ApiError(404, 'Invoice not found');
+
+  // Snapshot before reversal — recoverable from the recycle bin even though
+  // the reversal below already restores stock/ledger, matching every other
+  // delete route's snapshot-before-destroy ordering.
+  await recordDeletion({
+    shopId: shop.id,
+    entityType: 'sale',
+    entityId: sale.id,
+    label: sale.invoice_number,
+    data: sale,
+    deletedBy: user.email,
+  });
+
+  const { netQuantitiesByProduct } = await prisma.$transaction(
+    (tx) => reverseSaleEffects(tx, shop.id, sale.id),
+    { timeout: 15000, maxWait: 10000 }
+  );
+
+  try {
+    await cleanupSaleBatches(prisma, shop.id, sale.id, shop.packageType, netQuantitiesByProduct);
+  } catch (e) {
+    console.error('Sale batch/movement cleanup failed:', e);
+  }
+
+  return json({ detail: 'Bill deleted' });
 });

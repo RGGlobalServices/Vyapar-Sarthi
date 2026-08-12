@@ -1,16 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight } from 'lucide-react';
+import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
+import CustomerRollupView from '@/components/crm/CustomerRollupView';
 import { ExportButton } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import useSWR from 'swr';
 import toast from 'react-hot-toast';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
+import { useRowSelection } from '@/lib/hooks/useRowSelection';
 
 const fetcher = (url: string) => api.get(url, { cache: 'no-store' }).then(res => res.data);
 
@@ -109,6 +113,13 @@ function PartiesPanel() {
     fetcher
   );
   const parties: Party[] = Array.isArray(partiesData) ? partiesData : [];
+  // Just for the "Total Collected" card below — the rollup view itself is
+  // the real source of truth for the full payment list, this only needs its summary.
+  const { data: paymentsSummary } = useSWR(
+    activeShopId ? `/crm/payments-all?entityType=party&_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
 
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [showPayment, setShowPayment] = useState(false);
@@ -120,7 +131,8 @@ function PartiesPanel() {
   const [isEditing, setIsEditing] = useState(false);
 
   const [deletingParty, setDeletingParty] = useState<Party | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmBulkDeleteParties, setConfirmBulkDeleteParties] = useState(false);
+  const [bulkDeletingParties, setBulkDeletingParties] = useState(false);
 
   const [form, setForm] = useState({ name: '', shopName: '', mobile: '', gst: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
 
@@ -177,7 +189,6 @@ function PartiesPanel() {
 
   const handleDeleteParty = async () => {
     if (!deletingParty) return;
-    setIsDeleting(true);
     try {
       await api.delete(`/crm/customers/${deletingParty.id}`);
       toast.success('Party deleted successfully');
@@ -187,8 +198,6 @@ function PartiesPanel() {
     } catch (e) {
       console.error(e);
       toast.error('Failed to delete party');
-    } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -197,6 +206,29 @@ function PartiesPanel() {
     (p.shopName && p.shopName.toLowerCase().includes(search.toLowerCase())) ||
     (p.mobile && p.mobile.includes(search))
   );
+
+  const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(filtered.map(p => p.id));
+
+  const handleBulkDeleteParties = async () => {
+    setBulkDeletingParties(true);
+    try {
+      const res = await api.delete(`/crm/customers/bulk?ids=${selectedIds.join(',')}`);
+      const failed = res.data?.failed || [];
+      if (failed.length > 0) {
+        toast.error(`${failed.length} ${failed.length === 1 ? 'party' : 'parties'} could not be deleted`);
+      } else {
+        toast.success('Parties deleted successfully');
+      }
+      await mutateParties();
+      clearSelection();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to delete parties');
+    } finally {
+      setBulkDeletingParties(false);
+      setConfirmBulkDeleteParties(false);
+    }
+  };
 
   // Report export: same search-filtered set shown on screen, further narrowed
   // by an optional date-added range — doesn't affect the always-visible card
@@ -243,6 +275,33 @@ function PartiesPanel() {
 
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <button
+          onClick={() => setRollupMode('pending')}
+          className="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 border-b-orange-500/40 rounded-2xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalOutstanding') || 'Total Outstanding'}</p>
+            <AlertCircle size={16} className="text-orange-500" />
+          </div>
+          <p className="text-xl font-black text-orange-600 dark:text-orange-400">
+            ₹{Math.round(filtered.reduce((s, p) => s + (p.totalDue || 0), 0)).toLocaleString('en-IN')}
+          </p>
+        </button>
+        <button
+          onClick={() => setRollupMode('paid')}
+          className="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 border-b-emerald-500/40 rounded-2xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalCollected') || 'Total Collected'}</p>
+            <CheckCircle2 size={16} className="text-emerald-500" />
+          </div>
+          <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+            ₹{Math.round(paymentsSummary?.summary?.totalPaid || 0).toLocaleString('en-IN')}
+          </p>
+        </button>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center justify-end gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('fromDate') || 'From'}</span>
@@ -301,45 +360,73 @@ function PartiesPanel() {
           />
         </div>
 
+        <SelectionActionBar
+          count={selectedIds.length}
+          itemLabel="party"
+          onDelete={() => setConfirmBulkDeleteParties(true)}
+          onClear={clearSelection}
+          disabled={bulkDeletingParties}
+        />
+
         {isLoading ? (
           <div className="flex justify-center p-12">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(p => (
-              <div
-                key={p.id}
-                onClick={() => setSelectedParty(p)}
-                className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors bg-slate-50 dark:bg-slate-800/50"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold">
-                    <Building2 size={18} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">{p.shopName || p.name}</h3>
-                    <p className="text-xs text-slate-500 truncate flex items-center gap-1">
-                      {p.name} • <Phone size={10} /> {p.mobile || t('noNumber')}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right shrink-0 ml-2">
-                  {p.totalDue > 0 ? (
-                    <span className="text-sm font-bold text-orange-600">₹{p.totalDue.toLocaleString()}</span>
-                  ) : (
-                    <span className="text-sm font-bold text-emerald-600">{t('settled')}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {filtered.length === 0 && (
-              <div className="col-span-full py-12 text-center text-slate-500">
-                {t('noPartiesFound', { search })}
-              </div>
+          <>
+            {filtered.length > 0 && (
+              <label className="flex items-center gap-2 mb-3 px-1 w-fit cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={toggleAll}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select All</span>
+              </label>
             )}
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => setSelectedParty(p)}
+                  className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors bg-slate-50 dark:bg-slate-800/50"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(p.id)}
+                      onChange={() => toggleOne(p.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer shrink-0"
+                    />
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold shrink-0">
+                      <Building2 size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">{p.shopName || p.name}</h3>
+                      <p className="text-xs text-slate-500 truncate flex items-center gap-1">
+                        {p.name} • <Phone size={10} /> {p.mobile || t('noNumber')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    {p.totalDue > 0 ? (
+                      <span className="text-sm font-bold text-orange-600">₹{p.totalDue.toLocaleString()}</span>
+                    ) : (
+                      <span className="text-sm font-bold text-emerald-600">{t('settled')}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {filtered.length === 0 && (
+                <div className="col-span-full py-12 text-center text-slate-500">
+                  {t('noPartiesFound', { search })}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
@@ -544,25 +631,34 @@ function PartiesPanel() {
         </div>
       )}
 
-      {/* Delete Confirmation */}
-      {deletingParty && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-xl flex flex-col overflow-hidden">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center mx-auto mb-5">
-                <Trash2 size={32} />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Party?</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">Are you sure you want to delete <strong className="text-slate-700 dark:text-slate-300">{deletingParty.shopName || deletingParty.name}</strong>? This will not delete their associated ledgers but will remove them from the active parties list. This action cannot be undone.</p>
-              <div className="flex gap-3 w-full">
-                <button onClick={() => setDeletingParty(null)} className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Cancel</button>
-                <button onClick={handleDeleteParty} disabled={isDeleting} className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                  {isDeleting ? <><Loader2 size={16} className="animate-spin" /> Deleting</> : 'Delete'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Delete Confirmation (single) */}
+      <ConfirmPasswordModal
+        open={!!deletingParty}
+        itemLabel="party"
+        onConfirm={handleDeleteParty}
+        onCancel={() => setDeletingParty(null)}
+      />
+
+      {/* Delete Confirmation (bulk) */}
+      <ConfirmPasswordModal
+        open={confirmBulkDeleteParties}
+        itemLabel="party"
+        itemCount={selectedIds.length}
+        onConfirm={handleBulkDeleteParties}
+        onCancel={() => setConfirmBulkDeleteParties(false)}
+      />
+
+      {rollupMode && (
+        <CustomerRollupView
+          entityType="party"
+          mode={rollupMode}
+          onBack={() => setRollupMode(null)}
+          onOpenEntity={(id) => {
+            setRollupMode(null);
+            const p = parties.find(x => x.id === id);
+            if (p) setSelectedParty(p);
+          }}
+        />
       )}
     </div>
   );
@@ -598,6 +694,11 @@ function CustomersPanel() {
     fetcher
   );
   const customers: UdharCustomer[] = Array.isArray(customersData) ? customersData : [];
+  const { data: paymentsSummary } = useSWR(
+    activeShopId ? `/crm/payments-all?entityType=customer&_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
 
   const [selectedCustomer, setSelectedCustomer] = useState<UdharCustomer | null>(null);
   const [showPayment, setShowPayment] = useState(false);
@@ -608,7 +709,8 @@ function CustomersPanel() {
   const [isEditing, setIsEditing] = useState(false);
 
   const [deletingCustomer, setDeletingCustomer] = useState<UdharCustomer | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmBulkDeleteCustomers, setConfirmBulkDeleteCustomers] = useState(false);
+  const [bulkDeletingCustomers, setBulkDeletingCustomers] = useState(false);
 
   const [form, setForm] = useState({ name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', openingBalance: '0' });
 
@@ -665,7 +767,6 @@ function CustomersPanel() {
 
   const handleDeleteCustomer = async () => {
     if (!deletingCustomer) return;
-    setIsDeleting(true);
     try {
       await api.delete(`/crm/customers/${deletingCustomer.id}`);
       toast.success('Customer deleted successfully');
@@ -675,8 +776,6 @@ function CustomersPanel() {
     } catch (e) {
       console.error(e);
       toast.error('Failed to delete customer');
-    } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -684,6 +783,29 @@ function CustomersPanel() {
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.mobile && c.mobile.includes(search))
   );
+
+  const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(filtered.map(c => c.id));
+
+  const handleBulkDeleteCustomers = async () => {
+    setBulkDeletingCustomers(true);
+    try {
+      const res = await api.delete(`/crm/customers/bulk?ids=${selectedIds.join(',')}`);
+      const failed = res.data?.failed || [];
+      if (failed.length > 0) {
+        toast.error(`${failed.length} customer${failed.length === 1 ? '' : 's'} could not be deleted`);
+      } else {
+        toast.success('Customers deleted successfully');
+      }
+      await mutateCustomers();
+      clearSelection();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to delete customers');
+    } finally {
+      setBulkDeletingCustomers(false);
+      setConfirmBulkDeleteCustomers(false);
+    }
+  };
 
   // Report export: same search-filtered set shown on screen, further narrowed
   // by an optional date-added range — doesn't affect the always-visible card
@@ -704,8 +826,6 @@ function CustomersPanel() {
     { key: 'name', label: 'Customer Name' },
     { key: 'mobile', label: 'Phone' },
     { key: 'address', label: 'Address' },
-    { key: 'creditLimit', label: 'Credit Limit', type: 'currency' as const },
-    { key: 'creditDays', label: 'Credit Days', type: 'number' as const },
     { key: 'totalDue', label: 'Remaining Amount', type: 'currency' as const },
     { key: 'status', label: 'Status' },
     { key: 'dateAdded', label: 'Date Added', type: 'date' as const },
@@ -714,8 +834,6 @@ function CustomersPanel() {
     name: c.name || '',
     mobile: c.mobile || '',
     address: c.address || '',
-    creditLimit: c.creditLimit || 0,
-    creditDays: c.creditDays || 0,
     totalDue: c.totalDue || 0,
     status: (c.totalDue || 0) > 0 ? 'Due' : 'Settled',
     dateAdded: c.createdAt,
@@ -726,6 +844,33 @@ function CustomersPanel() {
 
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <button
+          onClick={() => setRollupMode('pending')}
+          className="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 border-b-orange-500/40 rounded-2xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalOutstanding') || 'Total Outstanding'}</p>
+            <AlertCircle size={16} className="text-orange-500" />
+          </div>
+          <p className="text-xl font-black text-orange-600 dark:text-orange-400">
+            ₹{Math.round(filtered.reduce((s, c) => s + (c.totalDue || 0), 0)).toLocaleString('en-IN')}
+          </p>
+        </button>
+        <button
+          onClick={() => setRollupMode('paid')}
+          className="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 border-b-emerald-500/40 rounded-2xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalCollected') || 'Total Collected'}</p>
+            <CheckCircle2 size={16} className="text-emerald-500" />
+          </div>
+          <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+            ₹{Math.round(paymentsSummary?.summary?.totalPaid || 0).toLocaleString('en-IN')}
+          </p>
+        </button>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center justify-end gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('fromDate') || 'From'}</span>
@@ -784,45 +929,73 @@ function CustomersPanel() {
           />
         </div>
 
+        <SelectionActionBar
+          count={selectedIds.length}
+          itemLabel="customer"
+          onDelete={() => setConfirmBulkDeleteCustomers(true)}
+          onClear={clearSelection}
+          disabled={bulkDeletingCustomers}
+        />
+
         {isLoading ? (
           <div className="flex justify-center p-12">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(c => (
-              <div
-                key={c.id}
-                onClick={() => setSelectedCustomer(c)}
-                className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors bg-slate-50 dark:bg-slate-800/50"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold">
-                    <Users size={18} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">{c.name}</h3>
-                    <p className="text-xs text-slate-500 truncate flex items-center gap-1">
-                      <Phone size={10} /> {c.mobile || t('noNumber')}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right shrink-0 ml-2">
-                  {c.totalDue > 0 ? (
-                    <span className="text-sm font-bold text-orange-600">₹{c.totalDue.toLocaleString()}</span>
-                  ) : (
-                    <span className="text-sm font-bold text-emerald-600">{t('settled')}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {filtered.length === 0 && (
-              <div className="col-span-full py-12 text-center text-slate-500">
-                {t('noCustomersFound', { search })}
-              </div>
+          <>
+            {filtered.length > 0 && (
+              <label className="flex items-center gap-2 mb-3 px-1 w-fit cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={toggleAll}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select All</span>
+              </label>
             )}
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(c => (
+                <div
+                  key={c.id}
+                  onClick={() => setSelectedCustomer(c)}
+                  className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors bg-slate-50 dark:bg-slate-800/50"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.id)}
+                      onChange={() => toggleOne(c.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer shrink-0"
+                    />
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold shrink-0">
+                      <Users size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">{c.name}</h3>
+                      <p className="text-xs text-slate-500 truncate flex items-center gap-1">
+                        <Phone size={10} /> {c.mobile || t('noNumber')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    {c.totalDue > 0 ? (
+                      <span className="text-sm font-bold text-orange-600">₹{c.totalDue.toLocaleString()}</span>
+                    ) : (
+                      <span className="text-sm font-bold text-emerald-600">{t('settled')}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {filtered.length === 0 && (
+                <div className="col-span-full py-12 text-center text-slate-500">
+                  {t('noCustomersFound', { search })}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
@@ -865,7 +1038,7 @@ function CustomersPanel() {
               </div>
             </div>
 
-            <div className="p-4 grid grid-cols-2 gap-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+            <div className="p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
               <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/50 rounded-xl">
                 <p className="text-xs font-bold text-orange-800 dark:text-orange-400 uppercase tracking-wider mb-1">{t('totalOutstanding')}</p>
                 <p className="text-2xl font-black text-orange-600 dark:text-orange-500">₹{selectedCustomer.totalDue.toLocaleString()}</p>
@@ -877,17 +1050,6 @@ function CustomersPanel() {
                     <Wallet size={14} /> {t('collectPayment')}
                   </button>
                 )}
-              </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl">
-                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{t('creditTerms')}</p>
-                <div className="space-y-1 mt-2">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 flex justify-between">
-                    <span>{t('limit')}</span> <span>{selectedCustomer.creditLimit > 0 ? `₹${selectedCustomer.creditLimit.toLocaleString()}` : t('noLimit')}</span>
-                  </p>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 flex justify-between">
-                    <span>{t('days')}</span> <span>{selectedCustomer.creditDays > 0 ? `${selectedCustomer.creditDays} ${t('daysSuffix')}` : t('notApplicable')}</span>
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -938,19 +1100,9 @@ function CustomersPanel() {
                   <label className="block text-sm font-bold mb-1">{t('address')}</label>
                   <input value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold mb-1 truncate" title={t('openingBalanceFull')}>{t('openingBalance')}</label>
-                    <input type="number" value={form.openingBalance} onChange={e=>setForm({...form, openingBalance: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-1 truncate" title={t('creditLimitFull')}>{t('creditLimit')}</label>
-                    <input type="number" value={form.creditLimit} onChange={e=>setForm({...form, creditLimit: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-1 truncate" title={t('creditDaysFull')}>{t('creditDays')}</label>
-                    <input type="number" value={form.creditDays} onChange={e=>setForm({...form, creditDays: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1 truncate" title={t('openingBalanceFull')}>{t('openingBalance')}</label>
+                  <input type="number" value={form.openingBalance} onChange={e=>setForm({...form, openingBalance: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
                 </div>
                 <button type="submit" disabled={isSaving} className="w-full h-12 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-70 flex items-center justify-center gap-2 transition-colors">
                   {isSaving ? <Loader2 size={20} className="animate-spin" /> : t('saveCustomerBtn')}
@@ -986,16 +1138,6 @@ function CustomersPanel() {
                   <label className="block text-sm font-bold mb-1">{t('address')}</label>
                   <input value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold mb-1 truncate" title={t('creditLimitFull')}>{t('creditLimit')}</label>
-                    <input type="number" value={form.creditLimit} onChange={e=>setForm({...form, creditLimit: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-1 truncate" title={t('creditDaysFull')}>{t('creditDays')}</label>
-                    <input type="number" value={form.creditDays} onChange={e=>setForm({...form, creditDays: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 transition-shadow" />
-                  </div>
-                </div>
                 <button type="submit" disabled={isEditing} className="w-full h-12 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-70 flex items-center justify-center gap-2 transition-colors">
                   {isEditing ? <Loader2 size={20} className="animate-spin" /> : 'Save Changes'}
                 </button>
@@ -1005,25 +1147,34 @@ function CustomersPanel() {
         </div>
       )}
 
-      {/* Delete Confirmation */}
-      {deletingCustomer && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-xl flex flex-col overflow-hidden">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center mx-auto mb-5">
-                <Trash2 size={32} />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Customer?</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">Are you sure you want to delete <strong className="text-slate-700 dark:text-slate-300">{deletingCustomer.name}</strong>? This will not delete their associated ledgers but will remove them from the active customers list. This action cannot be undone.</p>
-              <div className="flex gap-3 w-full">
-                <button onClick={() => setDeletingCustomer(null)} className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Cancel</button>
-                <button onClick={handleDeleteCustomer} disabled={isDeleting} className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                  {isDeleting ? <><Loader2 size={16} className="animate-spin" /> Deleting</> : 'Delete'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Delete Confirmation (single) */}
+      <ConfirmPasswordModal
+        open={!!deletingCustomer}
+        itemLabel="customer"
+        onConfirm={handleDeleteCustomer}
+        onCancel={() => setDeletingCustomer(null)}
+      />
+
+      {/* Delete Confirmation (bulk) */}
+      <ConfirmPasswordModal
+        open={confirmBulkDeleteCustomers}
+        itemLabel="customer"
+        itemCount={selectedIds.length}
+        onConfirm={handleBulkDeleteCustomers}
+        onCancel={() => setConfirmBulkDeleteCustomers(false)}
+      />
+
+      {rollupMode && (
+        <CustomerRollupView
+          entityType="customer"
+          mode={rollupMode}
+          onBack={() => setRollupMode(null)}
+          onOpenEntity={(id) => {
+            setRollupMode(null);
+            const c = customers.find(x => x.id === id);
+            if (c) setSelectedCustomer(c);
+          }}
+        />
       )}
     </div>
   );

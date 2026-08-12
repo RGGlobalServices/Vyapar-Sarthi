@@ -228,6 +228,8 @@ export interface UdharCustomer {
   totalDue?: number;
   createdAt?: string;
   transactions: UdharTransaction[];
+  // Only present when the owner's All Shop Access preference is on.
+  shopName?: string;
 }
 
 interface UdharStore {
@@ -481,6 +483,9 @@ export interface StockItem {
   size_variants?: string | null;
   metadata?: any;
   recentlyAdded?: number;
+  // Only present when the owner's All Shop Access preference is on.
+  shopName?: string;
+  shopBusinessType?: string;
 }
 
 export interface StockLogEntry {
@@ -565,6 +570,8 @@ export const useStockStore = create<StockStore>((set, get) => ({
         size_variants: p.size_variants || null,
         metadata: p.metadata ?? null,
         recentlyAdded: p.recentlyAdded || 0,
+        shopName: p.shopName,
+        shopBusinessType: p.shopBusinessType,
       }));
 
       set({ items, loading: false });

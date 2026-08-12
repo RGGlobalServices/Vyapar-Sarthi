@@ -25,9 +25,22 @@ export const POST = handle<Ctx>(async (req, { params }) => {
 
   switch (record.entityType) {
     case 'product': {
+      // A "deleted" product very often never actually left the table — if it
+      // was referenced by a Sale/StockLog etc, DELETE /products/:id falls
+      // back to archiving instead of a hard delete, which is the common case
+      // for any product with real sales history. Restoring an archived row
+      // must un-archive it, not try to `create` a duplicate id (which always
+      // 409s, since the row was never gone) — same reasoning as the
+      // 'customer' case below un-prefixing instead of re-inserting.
       const existing = await prisma.product.findUnique({ where: { id: record.entityId } });
-      if (existing) throw new ApiError(409, 'A product with this ID already exists — it may have been restored or re-created already.');
-      await prisma.product.create({ data });
+      if (existing) {
+        if (!existing.archived) {
+          throw new ApiError(409, 'A product with this ID already exists and is not archived — it may have been restored or re-created already.');
+        }
+        await prisma.product.update({ where: { id: record.entityId }, data: { archived: false } });
+      } else {
+        await prisma.product.create({ data });
+      }
       break;
     }
 

@@ -14,6 +14,7 @@ import useSWR, { useSWRConfig } from 'swr';
 import ReceiveDrawer from '../stock/ReceiveDrawer';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
@@ -40,6 +41,7 @@ export default function ProductDetailsSheet({
   
   const { activeShopId, profile } = useBusinessStore();
   const [showReceive, setShowReceive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { data: godowns = [] } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, fetcher);
 
   useEffect(() => {
@@ -105,11 +107,7 @@ export default function ProductDetailsSheet({
             {onDelete && (
               <button
                 disabled={loading}
-                onClick={() => {
-                  if (confirm(t('confirmDelete') || 'Are you sure you want to delete this product?')) {
-                    onDelete(productId);
-                  }
-                }}
+                onClick={() => setConfirmDelete(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors disabled:opacity-40"
               >
                 <Trash2 size={13} /> {t('delete') || 'Delete'}
@@ -328,7 +326,7 @@ export default function ProductDetailsSheet({
       </div>
       
       {showReceive && data?.product && (
-        <ReceiveDrawer 
+        <ReceiveDrawer
           product={data.product}
           godowns={godowns}
           onClose={() => setShowReceive(false)}
@@ -339,6 +337,12 @@ export default function ProductDetailsSheet({
           }}
         />
       )}
+      <ConfirmPasswordModal
+        open={confirmDelete}
+        itemLabel="product"
+        onConfirm={() => { setConfirmDelete(false); onDelete?.(productId); }}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }

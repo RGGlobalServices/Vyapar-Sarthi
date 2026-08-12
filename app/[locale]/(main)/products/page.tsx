@@ -30,12 +30,15 @@ import useSWR from 'swr';
 
 import { fetchProductsMapped } from '@/lib/fetchers';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 
 const BarcodeQRModal = dynamic(() => import('@/components/BarcodeQRModal'), { ssr: false });
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 
 type Product = {
   id: string | number;
+  shopId?: string;
   name: string;
   category: string;
   stock: number;
@@ -62,6 +65,8 @@ type Product = {
   conversion_factor?: number;
   recentlyAdded?: number;
   barcode?: string;
+  shopName?: string;
+  shopBusinessType?: string;
 };
 
 function buildEmptyForm(btype: string) {
@@ -97,7 +102,7 @@ function LegacyProductsUI() {
   const t = useTranslations('Products');
   const tv = useTranslations('Variants');
   const locale = useLocale();
-  const { profile, allShops, activeShopId, switchShop } = useBusinessStore();
+  const { profile, allShops, activeShopId, switchShop, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
   const isWholesale = profile.subscriptionPlan === 'wholesale';
   const [mounted, setMounted] = useState(false);
@@ -139,6 +144,9 @@ function LegacyProductsUI() {
   const [editForm, setEditForm] = useState(buildEmptyForm(profile.businessType));
   const [editSpMode, setEditSpMode] = useState<'inclusive' | 'exclusive'>('inclusive');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string | number>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -483,6 +491,30 @@ function LegacyProductsUI() {
     return matchSearch && matchCat && matchStatus;
   }), [products, search, filterCategory, filterStatus]);
 
+  // When All Shop Access is on, group into one table per shop (heading +
+  // its own table) instead of one flat table with a Shop column — a single
+  // group with no heading when off, so the exact same render path produces
+  // today's unchanged output for every existing single-shop user.
+  const productGroups = useMemo(() => {
+    if (!allShopAccess) return [{ shopName: null as string | null, items: filtered }];
+    const map = new Map<string, typeof filtered>();
+    for (const p of filtered) {
+      const key = p.shopName || 'Unknown Shop';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    const groups = Array.from(map.entries()).map(([shopName, items]) => ({ shopName, items }));
+    // The shop currently switched to always leads the list — otherwise it
+    // lands wherever the Map's insertion order happens to put it, which
+    // isn't necessarily what the shopkeeper is looking at right now.
+    groups.sort((a, b) => {
+      const aActive = a.items[0]?.shopId === activeShopId;
+      const bActive = b.items[0]?.shopId === activeShopId;
+      return aActive === bActive ? 0 : aActive ? -1 : 1;
+    });
+    return groups;
+  }, [filtered, allShopAccess, activeShopId]);
+
   // Drop composite "Colour / Size" variant + price entries whose colour is no longer selected.
   function pruneByColors<T>(map: Record<string, T>, keepColors: string[]): Record<string, T> {
     const out: Record<string, T> = {};
@@ -694,6 +726,28 @@ function LegacyProductsUI() {
   }
   async function doDelete(id: string | number) {
     try { await api.delete(`/products/${id}`); invalidateProductCaches(); setDeleteConfirmId(null); } catch { /* */ }
+  }
+
+  function toggleProductSelect(id: string | number) {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDeleteProducts() {
+    setBulkDeleting(true);
+    try {
+      await api.delete(`/products/bulk?ids=${Array.from(selectedProductIds).join(',')}`);
+      invalidateProductCaches();
+      setSelectedProductIds(new Set());
+    } catch {
+      alert('Failed to delete some products.');
+    } finally {
+      setBulkDeleting(false);
+      setConfirmBulkDelete(false);
+    }
   }
 
   const statusOptions = [
@@ -1216,7 +1270,29 @@ function LegacyProductsUI() {
         </div>
       )}
 
-      {/* Product Table */}
+      <SelectionActionBar
+        count={selectedProductIds.size}
+        itemLabel="product"
+        onDelete={() => setConfirmBulkDelete(true)}
+        onClear={() => setSelectedProductIds(new Set())}
+        disabled={bulkDeleting}
+      />
+
+      {/* Product Table — one per shop when All Shop Access is grouping the list */}
+      {productGroups.map((group) => {
+      // Each shop can be a different business type — use ITS OWN column set,
+      // not the globally-active shop's, so a Footwear shop's group doesn't
+      // show Electronics columns just because the active shop is Electronics.
+      const groupBizConfig = getBusinessConfig(group.items[0]?.shopBusinessType || bizConfig.type);
+      return (
+      <div key={group.shopName || 'all'} className="space-y-3">
+        {group.shopName && (
+          <div className="flex items-center gap-2 px-1 pt-2">
+            <Store size={16} className="text-indigo-500 dark:text-indigo-400" />
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">{group.shopName}</h3>
+            <span className="text-xs text-slate-500">({group.items.length})</span>
+          </div>
+        )}
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
         <CardContent className="p-0">
           <div className="overflow-x-auto relative">
@@ -1228,17 +1304,32 @@ function LegacyProductsUI() {
             <table className="w-full text-left">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
                 <tr>
+                  <th className="px-6 py-4 w-10">
+                    <input
+                      type="checkbox"
+                      checked={group.items.length > 0 && group.items.every(p => selectedProductIds.has(p.id))}
+                      onChange={() => {
+                        setSelectedProductIds(prev => {
+                          const allSelected = group.items.every(p => prev.has(p.id));
+                          const next = new Set(prev);
+                          group.items.forEach(p => allSelected ? next.delete(p.id) : next.add(p.id));
+                          return next;
+                        });
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4">{t('colName')}</th>
                   <th className="px-6 py-4">{t('colCategory')}</th>
                   <th className="px-6 py-4">{t('colStock')}</th>
                   <th className="px-6 py-4">{t('colMinStock')}</th>
-                  {bizConfig.hasExpiry && <th className="px-6 py-4">Expiry</th>}
-                  {bizConfig.hasBatch && <th className="px-6 py-4">Batch</th>}
-                  {bizConfig.hasModel && <th className="px-6 py-4">Model</th>}
-                  {bizConfig.hasWarranty && <th className="px-6 py-4">Warranty</th>}
-                  {bizConfig.hasShades && <th className="px-6 py-4">{['electric', 'electronics'].includes(bizConfig.type) ? 'Color' : 'Shade'}</th>}
-                  {bizConfig.hasGender && <th className="px-6 py-4">Gender</th>}
-                  {bizConfig.hasLiquorSpecs && <th className="px-6 py-4">Brand / ABV</th>}
+                  {groupBizConfig.hasExpiry && <th className="px-6 py-4">Expiry</th>}
+                  {groupBizConfig.hasBatch && <th className="px-6 py-4">Batch</th>}
+                  {groupBizConfig.hasModel && <th className="px-6 py-4">Model</th>}
+                  {groupBizConfig.hasWarranty && <th className="px-6 py-4">Warranty</th>}
+                  {groupBizConfig.hasShades && <th className="px-6 py-4">{['electric', 'electronics'].includes(groupBizConfig.type) ? 'Color' : 'Shade'}</th>}
+                  {groupBizConfig.hasGender && <th className="px-6 py-4">Gender</th>}
+                  {groupBizConfig.hasLiquorSpecs && <th className="px-6 py-4">Brand / ABV</th>}
                   <th className="px-6 py-4 text-right">{t('colMRP')}</th>
                   <th className="px-6 py-4 text-right">{t('colSelling')}</th>
                   <th className="px-6 py-4 text-right">{t('colStockValue')}</th>
@@ -1247,7 +1338,7 @@ function LegacyProductsUI() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filtered.map(product => {
+                {group.items.map(product => {
                   const isLowStock = product.stock <= product.minStock && product.stock > 0;
                   const isOut = product.stock === 0;
                   const sizeVariants = parseSizeVariants(product.size_variants);
@@ -1302,6 +1393,14 @@ function LegacyProductsUI() {
 
                   return (
                     <tr key={product.id} className="group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200">
+                      <td className="px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedProductIds.has(product.id)}
+                          onChange={() => toggleProductSelect(product.id)}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4 font-medium">
                         <div className="flex items-center gap-2 flex-wrap">
                           <SmartTranslator text={product.name} locale={locale} />
@@ -1312,7 +1411,7 @@ function LegacyProductsUI() {
                       <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400"><SmartTranslator text={product.category} locale={locale} /></td>
                       <td className="px-6 py-4">
                         <div className={cn('flex items-center gap-1 font-bold', isOut ? 'text-red-400' : isLowStock ? 'text-orange-400' : 'text-emerald-400')}>
-                          {(bizConfig.hasSizes || Object.keys(sizeVariants).length > 0) ? (
+                          {(groupBizConfig.hasSizes || Object.keys(sizeVariants).length > 0) ? (
                             <div>
                               <div className="text-sm font-bold flex items-center gap-1">
                                 {product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit || 'Unit'} locale={locale} /></span>
@@ -1376,10 +1475,10 @@ function LegacyProductsUI() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{product.minStock}</td>
-                      {bizConfig.hasExpiry && <td className="px-6 py-4"><ExpiryBadge date={product.expiry_date} /></td>}
-                      {bizConfig.hasBatch && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.batch_number || '—'}</td>}
-                      {bizConfig.hasModel && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-300 font-mono">{product.model_number || '—'}</td>}
-                      {bizConfig.hasWarranty && (
+                      {groupBizConfig.hasExpiry && <td className="px-6 py-4"><ExpiryBadge date={product.expiry_date} /></td>}
+                      {groupBizConfig.hasBatch && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.batch_number || '—'}</td>}
+                      {groupBizConfig.hasModel && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-300 font-mono">{product.model_number || '—'}</td>}
+                      {groupBizConfig.hasWarranty && (
                         <td className="px-6 py-4 text-xs">
                           {product.warranty_months ? (
                             <span className="flex items-center gap-1 text-sky-500 dark:text-sky-400">
@@ -1388,9 +1487,9 @@ function LegacyProductsUI() {
                           ) : '—'}
                         </td>
                       )}
-                      {bizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-500 dark:text-pink-400">{product.shade || '—'}</td>}
-                      {bizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.gender || '—'}</td>}
-                      {bizConfig.hasLiquorSpecs && (
+                      {groupBizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-500 dark:text-pink-400">{product.shade || '—'}</td>}
+                      {groupBizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.gender || '—'}</td>}
+                      {groupBizConfig.hasLiquorSpecs && (
                         <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">
                           {product.brand || '—'}
                           {(product.metadata as any)?.alcoholPercentage && <span className="ml-1 text-rose-500 dark:text-rose-400 font-semibold">· {(product.metadata as any).alcoholPercentage}%</span>}
@@ -1437,16 +1536,16 @@ function LegacyProductsUI() {
                     </tr>
                   );
                 })}
-                {filtered.length === 0 && !loading && (
+                {group.items.length === 0 && !loading && (
                   <tr><td colSpan={20} className="px-6 py-12 text-center text-slate-500">{t('noProducts')}</td></tr>
                 )}
               </tbody>
-              {filtered.length > 0 && (
+              {group.items.length > 0 && (
                 <tfoot className="bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700">
                   <tr>
                     <td className="px-6 py-3 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
                     <td className="px-6 py-3 text-right text-amber-500 dark:text-amber-400 font-bold text-base" colSpan={2}>
-                      ₹{filtered.reduce((sum: number, p: any) => {
+                      ₹{group.items.reduce((sum: number, p: any) => {
                         const sizeVariants = parseSizeVariants(p.size_variants);
                         const sizePriceData = parseSizePrices(p.metadata);
                         const hasPerSizePricing = Object.keys(sizePriceData).length > 0;
@@ -1470,6 +1569,9 @@ function LegacyProductsUI() {
           </div>
         </CardContent>
       </Card>
+      </div>
+      );
+      })}
 
       {/* Barcode & QR Generator Modal */}
       {qrProduct && (
@@ -2409,26 +2511,19 @@ function LegacyProductsUI() {
         </div>
       )}
 
-      {/* Delete Confirm */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
-                <Trash2 size={18} className="text-red-500 dark:text-red-400" />
-              </div>
-              <div>
-                <p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteConfirm')}</p>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{t('deleteWarning')}</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteConfirmId(null)} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">{t('cancel')}</button>
-              <button onClick={() => doDelete(deleteConfirmId)} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400">{t('delete')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmPasswordModal
+        open={!!deleteConfirmId}
+        itemLabel="product"
+        onConfirm={() => doDelete(deleteConfirmId!)}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
+      <ConfirmPasswordModal
+        open={confirmBulkDelete}
+        itemLabel="product"
+        itemCount={selectedProductIds.size}
+        onConfirm={handleBulkDeleteProducts}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
       </> /* end viewMode === 'all' */
       )}
     </div>

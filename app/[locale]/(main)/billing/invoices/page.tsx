@@ -9,6 +9,9 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { cn } from '@/lib/utils';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
+import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
+import { useRowSelection } from '@/lib/hooks/useRowSelection';
 import {
   IndianRupee, Search, Filter, ArrowLeft, RefreshCw, Eye, Calendar,
   User, Printer, Download, MessageCircle, Copy, RotateCcw, Trash2,
@@ -423,6 +426,8 @@ export default function InvoiceHistoryPage() {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [returnInvoice, setReturnInvoice] = useState<Invoice | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const shopId = profile?.id;
 
@@ -464,6 +469,8 @@ export default function InvoiceHistoryPage() {
     return true;
   });
 
+  const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(filtered.map(i => i.id));
+
   const getFormattedPaymentType = (type: string, details: any) => {
     if (type !== 'Split' || !details) return type;
     try {
@@ -502,18 +509,46 @@ export default function InvoiceHistoryPage() {
     }
   };
 
-  // ── Delete (soft-delete via activityLog — API level)
-  const handleDelete = async (id: string) => {
-    if (!confirm(t('confirmDeleteInvoice'))) return;
-    setDeleting(id);
-    try {
-      await api.delete(`/billing/${id}`);
-      setInvoices(prev => prev.filter(i => i.id !== id));
-    } catch (e: any) {
-      alert(e?.response?.data?.detail || t('deleteFailedNoPermission'));
-    } finally {
-      setDeleting(null);
+  // ── Delete — reverses stock/ledger effects server-side and snapshots to
+  // the recycle bin (see lib/server/sales.ts). Password-gated: clicking
+  // Delete only queues the id(s); the actual call happens from the
+  // ConfirmPasswordModal's onConfirm, after verify-pin succeeds.
+  const handleDelete = (id: string) => setPendingDeleteIds([id]);
+  const handleBulkDeleteClick = () => {
+    if (selectedIds.length > 0) setPendingDeleteIds(selectedIds);
+  };
+
+  const confirmPendingDelete = async () => {
+    const ids = pendingDeleteIds;
+    if (!ids || ids.length === 0) return;
+    if (ids.length === 1) {
+      setDeleting(ids[0]);
+      try {
+        await api.delete(`/billing/${ids[0]}`);
+        setInvoices(prev => prev.filter(i => i.id !== ids[0]));
+      } catch (e: any) {
+        alert(e?.response?.data?.detail || t('deleteFailedNoPermission'));
+      } finally {
+        setDeleting(null);
+      }
+    } else {
+      setBulkDeleting(true);
+      try {
+        const res = await api.delete(`/billing/bulk?ids=${ids.join(',')}`);
+        const deletedIds: string[] = res.data?.deleted || [];
+        setInvoices(prev => prev.filter(i => !deletedIds.includes(i.id)));
+        clearSelection();
+        const failed = res.data?.failed || [];
+        if (failed.length > 0) {
+          alert(`${deletedIds.length} bill(s) deleted. ${failed.length} failed.`);
+        }
+      } catch (e: any) {
+        alert(e?.response?.data?.detail || t('deleteFailedNoPermission'));
+      } finally {
+        setBulkDeleting(false);
+      }
     }
+    setPendingDeleteIds(null);
   };
 
   // ── Load full invoice for preview
@@ -685,9 +720,30 @@ export default function InvoiceHistoryPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
+            {role === 'admin' && (
+              <div className="px-5 pt-4">
+                <SelectionActionBar
+                  count={selectedIds.length}
+                  itemLabel="bill"
+                  onDelete={handleBulkDeleteClick}
+                  onClear={clearSelection}
+                  disabled={bulkDeleting}
+                />
+              </div>
+            )}
             <table className="w-full text-left min-w-[900px]">
               <thead className="bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
                 <tr>
+                  {role === 'admin' && (
+                    <th className="px-5 py-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleAll}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="px-5 py-4">Invoice</th>
                   <th className="px-5 py-4">Date & Time</th>
                   <th className="px-5 py-4">Customer</th>
@@ -709,6 +765,16 @@ export default function InvoiceHistoryPage() {
 
                   return (
                     <tr key={inv.id} className={cn('hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group', isDeleting && 'opacity-50 pointer-events-none')}>
+                      {role === 'admin' && (
+                        <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(inv.id)}
+                            onChange={() => toggleOne(inv.id)}
+                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                          />
+                        </td>
+                      )}
                       {/* Invoice No */}
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
@@ -863,6 +929,13 @@ export default function InvoiceHistoryPage() {
           onDone={() => { setReturnInvoice(null); fetchInvoices(); }}
         />
       )}
+      <ConfirmPasswordModal
+        open={!!pendingDeleteIds}
+        itemLabel="bill"
+        itemCount={pendingDeleteIds?.length || 1}
+        onConfirm={confirmPendingDelete}
+        onCancel={() => setPendingDeleteIds(null)}
+      />
     </div>
   );
 }

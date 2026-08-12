@@ -36,5 +36,6 @@ export const GET = handle(async (req) => {
       current: shops.length,
       multiShop: canUseMultiShop(primaryPlan),
     },
+    allShopAccess: user.allShopAccess === true,
   });
 });

@@ -5,10 +5,11 @@ import { useState, useEffect, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut } from 'lucide-react';
+import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
+import { ExportButton } from '@/lib/hooks/useExport';
 import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
 import { getBaseAmount, getGstAmount, getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
 import { useLocale } from 'next-intl';
@@ -17,7 +18,7 @@ import { useLocale } from 'next-intl';
 function SettingsPageInner() {
   const t = useTranslations('Settings');
   const locale = useLocale();
-  const { profile, fetchProfile, updateProfile } = useBusinessStore();
+  const { profile, fetchProfile, updateProfile, allShops, allShopAccess, setAllShopAccess } = useBusinessStore();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -27,6 +28,30 @@ function SettingsPageInner() {
   const [activatingPlan, setActivatingPlan] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [savingGstProfit, setSavingGstProfit] = useState(false);
+  const [savingAllShopAccess, setSavingAllShopAccess] = useState(false);
+  const [allShopsSummary, setAllShopsSummary] = useState<{
+    shops: { shopId: string; shopName: string; shopCode: string | null; salesTotal: number; profitTotal: number; stockValue: number; lowStockCount: number; productCount: number; udharOutstanding: number }[];
+    grandTotal: { salesTotal: number; profitTotal: number; stockValue: number; lowStockCount: number; productCount: number; udharOutstanding: number };
+  } | null>(null);
+  const [loadingAllShopsSummary, setLoadingAllShopsSummary] = useState(false);
+
+  const handleToggleAllShopAccess = async (checked: boolean) => {
+    setSavingAllShopAccess(true);
+    try {
+      await setAllShopAccess(checked);
+      setStatus({
+        type: 'success',
+        message: checked
+          ? 'All Shop Access enabled — Products, Stock and Reports now show every shop you own.'
+          : 'All Shop Access disabled — back to single-shop view.',
+      });
+      setTimeout(() => setStatus(null), 3000);
+    } catch {
+      setStatus({ type: 'error', message: 'Failed to save All Shop Access preference.' });
+    } finally {
+      setSavingAllShopAccess(false);
+    }
+  };
 
   const handleToggleGstInclusiveProfit = async (checked: boolean) => {
     setSavingGstProfit(true);
@@ -45,6 +70,16 @@ function SettingsPageInner() {
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // Only fetch the multi-shop summary for owners it's actually relevant to.
+  useEffect(() => {
+    if (allShops.length <= 1) return;
+    setLoadingAllShopsSummary(true);
+    api.get('/reports/all-shops-summary')
+      .then((res) => setAllShopsSummary(res.data))
+      .catch(() => setAllShopsSummary(null))
+      .finally(() => setLoadingAllShopsSummary(false));
+  }, [allShops.length]);
 
   // Handle return from PayU payment — activate plan automatically
   useEffect(() => {
@@ -421,6 +456,119 @@ function SettingsPageInner() {
             </div>
           </CardContent>
         </Card>
+
+        {/* All Shop Access — only meaningful for owners of 2+ shops */}
+        {allShops.length > 1 && (
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
+            <CardHeader>
+              <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400 mb-4">
+                <Store size={24} />
+              </div>
+              <CardTitle className="text-slate-900 dark:text-white">All Shop Access</CardTitle>
+              <CardDescription className="text-slate-500">See every shop you own in one place, or keep them separate</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="space-y-1 pr-4">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Show all {allShops.length} shops together</p>
+                  <p className="text-xs text-slate-500">
+                    {allShopAccess
+                      ? 'On — Products, Stock, Dashboard and Reports show every shop you own, each row labeled with its shop. Billing and Import still work on only your currently open shop.'
+                      : 'Off (default) — every page only shows the shop you currently have open, exactly as before.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleToggleAllShopAccess(!allShopAccess)}
+                  disabled={savingAllShopAccess}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50",
+                    allShopAccess ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-800"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm",
+                    allShopAccess ? "left-7" : "left-1"
+                  )} />
+                </button>
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Shop-wise summary</p>
+                  {allShopsSummary && allShopsSummary.shops.length > 0 && (
+                    <ExportButton
+                      filename="all_shops_summary"
+                      title="All Shops Summary"
+                      columns={[
+                        { key: 'shopName', label: 'Shop' },
+                        { key: 'salesTotal', label: 'Sales', type: 'currency' },
+                        { key: 'profitTotal', label: 'Profit', type: 'currency' },
+                        { key: 'stockValue', label: 'Stock Value', type: 'currency' },
+                        { key: 'lowStockCount', label: 'Low Stock Items', type: 'number' },
+                        { key: 'udharOutstanding', label: 'Udhar Outstanding', type: 'currency' },
+                      ]}
+                      data={allShopsSummary.shops}
+                      summary={[
+                        { label: 'Total Sales', value: `₹${allShopsSummary.grandTotal.salesTotal.toLocaleString('en-IN')}` },
+                        { label: 'Total Profit', value: `₹${allShopsSummary.grandTotal.profitTotal.toLocaleString('en-IN')}`, tone: 'positive' },
+                        { label: 'Total Stock Value', value: `₹${allShopsSummary.grandTotal.stockValue.toLocaleString('en-IN')}` },
+                        { label: 'Total Udhar Outstanding', value: `₹${allShopsSummary.grandTotal.udharOutstanding.toLocaleString('en-IN')}`, tone: 'negative' },
+                      ]}
+                    />
+                  )}
+                </div>
+                {loadingAllShopsSummary ? (
+                  <div className="flex items-center justify-center py-8 text-slate-400">
+                    <Loader2 size={20} className="animate-spin" />
+                  </div>
+                ) : allShopsSummary && allShopsSummary.shops.length > 0 ? (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 uppercase font-bold">
+                        <tr>
+                          <th className="px-4 py-2.5">Shop</th>
+                          <th className="px-4 py-2.5 text-right">Sales</th>
+                          <th className="px-4 py-2.5 text-right">Profit</th>
+                          <th className="px-4 py-2.5 text-right">Stock Value</th>
+                          <th className="px-4 py-2.5 text-right">Low Stock</th>
+                          <th className="px-4 py-2.5 text-right">Udhar Outstanding</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {allShopsSummary.shops.map((s) => (
+                          <tr key={s.shopId} className="text-slate-700 dark:text-slate-300">
+                            <td className="px-4 py-2.5 font-bold text-slate-900 dark:text-white">{s.shopName}</td>
+                            <td className="px-4 py-2.5 text-right">₹{s.salesTotal.toLocaleString('en-IN')}</td>
+                            <td className="px-4 py-2.5 text-right">₹{s.profitTotal.toLocaleString('en-IN')}</td>
+                            <td className="px-4 py-2.5 text-right">₹{s.stockValue.toLocaleString('en-IN')}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              {s.lowStockCount > 0 ? (
+                                <span className="text-orange-600 dark:text-orange-400 font-bold">{s.lowStockCount}</span>
+                              ) : '0'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right">₹{s.udharOutstanding.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 dark:bg-slate-800/50 font-bold text-slate-900 dark:text-white border-t border-slate-200 dark:border-slate-800">
+                        <tr>
+                          <td className="px-4 py-2.5">Total</td>
+                          <td className="px-4 py-2.5 text-right">₹{allShopsSummary.grandTotal.salesTotal.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-2.5 text-right">₹{allShopsSummary.grandTotal.profitTotal.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-2.5 text-right">₹{allShopsSummary.grandTotal.stockValue.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-2.5 text-right">{allShopsSummary.grandTotal.lowStockCount}</td>
+                          <td className="px-4 py-2.5 text-right">₹{allShopsSummary.grandTotal.udharOutstanding.toLocaleString('en-IN')}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 text-center py-6">No shop data yet.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Device Notifications */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">

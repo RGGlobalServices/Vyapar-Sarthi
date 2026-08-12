@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireShop } from '@/lib/server/auth';
+import { requireShop, requireShopScope } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { startOfDay } from '@/lib/server/dates';
 
@@ -7,7 +7,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = handle(async (req) => {
-  const { shop } = await requireShop(req, { enforceSubscription: false });
+  const scope = await requireShopScope(req, { enforceSubscription: false });
+  const { shop, shopIds, allShopAccess, ownedShops } = scope;
+  const shopNameById = new Map(ownedShops.map(s => [s.id, s.name]));
+  // Each shop can be a different business type (a footwear shop vs a
+  // clothing shop) — sent alongside shopName so a pooled list can render
+  // each shop's own column set instead of blindly using the active shop's.
+  const shopBusinessTypeById = new Map(ownedShops.map(s => [s.id, s.businessType]));
   const url = new URL(req.url);
   const q = url.searchParams.get('q') || '';
   const pageStr = url.searchParams.get('page');
@@ -18,8 +24,8 @@ export const GET = handle(async (req) => {
   const limit = limitStr ? parseInt(limitStr, 10) : (q ? 50 : 2000); // Max 2000 if not specified to prevent crashes
   const skip = (page - 1) * limit;
 
-  const where: any = { 
-    shopId: shop.id,
+  const where: any = {
+    shopId: { in: shopIds },
     OR: [{ archived: false }, { archived: null }]
   };
 
@@ -46,6 +52,7 @@ export const GET = handle(async (req) => {
       where,
       select: {
         id: true,
+        shopId: true,
         name: true,
         barcode: true,
         sku: true,
@@ -63,7 +70,10 @@ export const GET = handle(async (req) => {
       take: limit,
       orderBy: { name: 'asc' }
     });
-    return json({ data: products, page, limit }, 200, {
+    const liteData = allShopAccess
+      ? products.map(p => ({ ...p, shopName: p.shopId ? shopNameById.get(p.shopId) : undefined, shopBusinessType: p.shopId ? shopBusinessTypeById.get(p.shopId) : undefined }))
+      : products;
+    return json({ data: liteData, page, limit }, 200, {
       'Cache-Control': 'public, max-age=10, stale-while-revalidate=50'
     });
   }
@@ -93,7 +103,7 @@ export const GET = handle(async (req) => {
     pageStr || limitStr ? prisma.product.count({ where }) : Promise.resolve(0),
     prisma.stockLog.groupBy({
       by: ['productId'],
-      where: { shopId: shop.id, quantity: { gt: 0 }, createdAt: { gte: since }, type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment', 'daily_register_receive'] } },
+      where: { shopId: { in: shopIds }, quantity: { gt: 0 }, createdAt: { gte: since }, type: { in: ['in', 'opening', 'import', 'receive', 'purchase', 'adjustment', 'daily_register_receive'] } },
       _sum: { quantity: true },
     }).catch(() => [] as any[]),
   ]);
@@ -102,7 +112,11 @@ export const GET = handle(async (req) => {
   for (const r of recentAdds as any[]) {
     if (r.productId) recentMap.set(r.productId, Number(r._sum?.quantity) || 0);
   }
-  const withRecent = products.map((p: any) => ({ ...p, recentlyAdded: recentMap.get(p.id) || 0 }));
+  const withRecent = products.map((p: any) => ({
+    ...p,
+    recentlyAdded: recentMap.get(p.id) || 0,
+    ...(allShopAccess ? { shopName: shopNameById.get(p.shopId), shopBusinessType: shopBusinessTypeById.get(p.shopId) } : {}),
+  }));
 
   if (pageStr || limitStr) {
     return json({ data: withRecent, total, page, limit });
