@@ -7,7 +7,7 @@ import {
   Loader2, Package, Tag, ShieldCheck,
   LayoutGrid, List, ArrowUp, ArrowDown, Warehouse,
   Calendar, FlaskConical, Ruler, Palette, MonitorSmartphone, User, Shirt, Footprints,
-  IndianRupee, Store
+  IndianRupee, Store, QrCode
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -20,7 +20,11 @@ import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVar
 import { ExportButton } from '@/lib/hooks/useExport';
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, sellingPriceForMargin } from '@/lib/profitCalc';
+import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
 import useSWR from 'swr';
+import dynamic from 'next/dynamic';
+
+const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
@@ -29,6 +33,9 @@ const fetcher = (url: string | string[]) => {
 
 type WholesaleProduct = {
   id: string;
+  // Only present when All Shop Access pools rows from every owned shop —
+  // needed to target a non-active-shop row's own shop on edit/delete.
+  shopId?: string;
   name: string;
   brand: string;
   category: string;
@@ -70,6 +77,15 @@ type WholesaleProduct = {
   maxStock?: number;
   wholesaleMoq?: number;
 };
+
+// With All Shop Access on, a pooled cross-shop list can show (and let you act
+// on) a row belonging to a shop other than whichever one is currently
+// "active" — lib/api.ts otherwise always targets the active shop, which
+// 404s any edit/delete of a non-active-shop row. Passing the row's own
+// shopId here overrides that for just this one request.
+function shopIdHeader(shopId?: string | null) {
+  return shopId ? { headers: { 'x-shop-id': String(shopId) } } : {};
+}
 
 function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
   const config = getBusinessConfig(bizType);
@@ -139,24 +155,30 @@ export default function WholesaleProductsUI() {
   // persists new categories to /master-data (shared with the master-data
   // Category table); brands get the same treatment inline via
   // `saveBrandIfNew` in handleSave, since there's no useBrands hook yet.
-  const usedCategories = useMemo(() => Array.from(new Set((products || []).map((p: any) => p.category).filter(Boolean))), [products]);
+  // Scoped to the active shop's own rows even when All Shop Access pools every
+  // owned shop into `products` — otherwise categories/brands from a totally
+  // different shop (different owner-held business) bleed into this shop's
+  // suggestion list just because they share an account.
+  const activeShopProducts = useMemo(() => (products || []).filter((p: any) => p.shopId === activeShopId), [products, activeShopId]);
+  const usedCategories = useMemo(() => Array.from(new Set(activeShopProducts.map((p: any) => p.category).filter(Boolean))), [activeShopProducts]);
   const { suggestions: categorySuggestions, saveCategory } = useCategories(profile.businessType, usedCategories);
   const brandSuggestions = useMemo(() => {
     const out: string[] = [];
     const seen = new Set<string>();
-    for (const name of [...(masterData?.brands || []).map((b: any) => b.name), ...(products || []).map((p: any) => p.brand)]) {
+    for (const name of [...(masterData?.brands || []).map((b: any) => b.name), ...activeShopProducts.map((p: any) => p.brand)]) {
       const clean = String(name ?? '').trim();
       if (!clean || seen.has(clean.toLowerCase())) continue;
       seen.add(clean.toLowerCase());
       out.push(clean);
     }
     return out;
-  }, [masterData, products]);
+  }, [masterData, activeShopProducts]);
 
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('productViewMode');
@@ -182,6 +204,15 @@ export default function WholesaleProductsUI() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState<Partial<WholesaleProduct>>(emptyProduct);
   const [saving, setSaving] = useState(false);
+
+  // Hardware (keyboard-wedge) scanner — same detection logic Billing already
+  // uses. Feeds the scanned code straight into the existing text search
+  // (which already matches barcode/SKU), disabled while the Add/Edit form's
+  // own text fields are open.
+  useBarcodeScanner({
+    enabled: !showAddModal && !showScanner,
+    onScan: (code) => { setSearch(code); playScanBeep(true); },
+  });
 
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
@@ -400,6 +431,21 @@ export default function WholesaleProductsUI() {
     }
   };
 
+  // Selection can span rows from several different shops when All Shop
+  // Access pools them together — the bulk routes only act on ids that belong
+  // to the shop named in the request's header, so a single request would
+  // silently skip every non-active-shop id. Group by each row's own shop and
+  // issue one request per group instead.
+  const groupIdsByShop = (ids: string[]) => {
+    const idsByShop = new Map<string, string[]>();
+    for (const id of ids) {
+      const shopId = (products || []).find((p: any) => p.id === id)?.shopId || '';
+      if (!idsByShop.has(shopId)) idsByShop.set(shopId, []);
+      idsByShop.get(shopId)!.push(id);
+    }
+    return Array.from(idsByShop.entries());
+  };
+
   const handleBulkSave = async () => {
     if (!bulkForm.category && !bulkForm.brand) {
       alert(t('enterAtLeastOneField'));
@@ -407,7 +453,11 @@ export default function WholesaleProductsUI() {
     }
     setSaving(true);
     try {
-      await api.put('/products/bulk', { ids: selectedIds, data: bulkForm });
+      await Promise.all(
+        groupIdsByShop(selectedIds).map(([shopId, ids]) =>
+          api.put('/products/bulk', { ids, data: bulkForm }, shopIdHeader(shopId))
+        )
+      );
       mutateProducts((prev: any[] = []) => prev.map(p => selectedIds.includes(p.id) ? { ...p, ...bulkForm } : p), { revalidate: false });
       mutateProducts();
       setShowBulkEditModal(false);
@@ -422,12 +472,13 @@ export default function WholesaleProductsUI() {
 
   const handleSingleDelete = async (id: string) => {
     setSaving(true);
+    const target = (products || []).find((p: any) => p.id === id);
     // Optimistic Update
     mutateProducts((prev: any[] = []) => prev.filter(p => p.id !== id), false);
     setSelectedProduct(null);
 
     try {
-      await api.delete(`/products/${id}`);
+      await api.delete(`/products/${id}`, shopIdHeader(target?.shopId));
     } catch (err: any) {
       alert(t('errorPrefix', { msg: err.message || t('failedToDeleteProduct') }));
       mutateProducts(); // Rollback
@@ -439,12 +490,15 @@ export default function WholesaleProductsUI() {
 
   const handleBulkDelete = async () => {
     setSaving(true);
-    
+    const idsByShop = groupIdsByShop(selectedIds);
+
     // Optimistic Update
     mutateProducts((prev: any[] = []) => prev.filter(p => !selectedIds.includes(p.id)), false);
-    
+
     try {
-      await api.delete(`/products/bulk?ids=${selectedIds.join(',')}`);
+      await Promise.all(
+        idsByShop.map(([shopId, ids]) => api.delete(`/products/bulk?ids=${ids.join(',')}`, shopIdHeader(shopId)))
+      );
       setSelectedIds([]);
     } catch (err: any) {
       alert(t('errorPrefix', { msg: err.message || t('failedToBulkDelete') }));
@@ -544,7 +598,10 @@ export default function WholesaleProductsUI() {
 
       let updatedProd;
       if (isEdit) {
-        const res = await api.put(`/products/${form.id}`, payload);
+        // form still carries the original row's shopId (spread in by
+        // handleEdit) — target that shop explicitly, since it may not be the
+        // currently active one in a pooled All Shop Access list.
+        const res = await api.put(`/products/${form.id}`, payload, shopIdHeader((form as any).shopId));
         updatedProd = res.data;
       } else {
         const res = await api.post('/products', payload);
@@ -705,15 +762,21 @@ export default function WholesaleProductsUI() {
       {/* Search Bar */}
       <Card className="border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
         <CardContent className="p-4 flex flex-col sm:flex-row gap-4 items-center justify-between">
-          <div className="relative flex-1 w-full max-w-2xl">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder={t('searchWholesalePlaceholder') || "Search products by name, barcode, or SKU..."}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all dark:text-white"
-            />
+          <div className="relative flex-1 w-full max-w-2xl flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder={t('searchWholesalePlaceholder') || "Search products by name, barcode, or SKU..."}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all dark:text-white"
+              />
+            </div>
+            <button type="button" onClick={() => setShowScanner(true)} title="Scan Barcode to Find"
+              className="shrink-0 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-emerald-500 hover:border-emerald-500/50 transition-colors">
+              <QrCode size={18} />
+            </button>
           </div>
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
             <button
@@ -1093,9 +1156,10 @@ export default function WholesaleProductsUI() {
       )}
 
       {selectedProduct && (
-        <ProductDetailsSheet 
-          productId={selectedProduct.id} 
-          onClose={() => setSelectedProduct(null)} 
+        <ProductDetailsSheet
+          productId={selectedProduct.id}
+          shopId={selectedProduct.shopId}
+          onClose={() => setSelectedProduct(null)}
           onEdit={(p) => {
             setSelectedProduct(null);
             handleEdit(p);
@@ -1110,6 +1174,13 @@ export default function WholesaleProductsUI() {
         onConfirm={async () => { setConfirmBulkDelete(false); await handleBulkDelete(); }}
         onCancel={() => setConfirmBulkDelete(false)}
       />
+
+      {showScanner && (
+        <CameraScanner
+          onScan={(res: string) => { setSearch(res); setShowScanner(false); }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
 
       {/* Add / Edit Product Modal */}
       {showAddModal && (

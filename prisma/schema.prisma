@@ -140,6 +140,7 @@ model Shop {
   productionBatches       ProductionBatch[]
   byProducts              ByProduct[]
   deletedRecords          DeletedRecord[]
+  collectionSheets        CollectionSheet[]
 
   @@index([name], map: "ix_shops_name")
   @@index([ownerId], map: "ix_shops_owner_id")
@@ -398,6 +399,7 @@ model Customer {
   shop                  Shop?                   @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sales                 Sale[]
   orders                Order[]
+  collectionEntries     CollectionEntry[]
 
   @@index([mobile], map: "ix_customers_mobile")
   @@index([name], map: "ix_customers_name")
@@ -766,6 +768,58 @@ model customer_transactions {
   customers   Customer? @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([customer_id])
+}
+
+// A named, dated sheet grouping many party-payment rows collected in one
+// round (see CollectionEntry) — modeled on a distributor's physical daily
+// collection ledger. `status` is a bookkeeping seal, not a gate on whether
+// money moved: every CollectionEntry posts a real payment (via the same
+// helper crm/payments uses) the moment it's saved, draft or not. Finalizing
+// just locks the sheet and files it into the searchable history.
+model CollectionSheet {
+  id          String            @id @default(uuid()) @db.Uuid
+  shopId      String            @map("shop_id") @db.Uuid
+  name        String            @db.VarChar
+  date        DateTime          @db.Date
+  status      String            @default("draft") @db.VarChar
+  finalizedAt DateTime?         @map("finalized_at") @db.Timestamptz(6)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  entries     CollectionEntry[]
+  shop        Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopId, status])
+  @@index([shopId, date])
+  @@map("collection_sheets")
+}
+
+// One party row within a CollectionSheet. `customerTransactionId` links back
+// to the customer_transactions row this entry's payment created — present
+// as soon as the row is saved, used to reverse (edit/delete) via the same
+// path a directly-deleted payment already uses (see
+// lib/server/customerPayment.ts).
+model CollectionEntry {
+  id                    String          @id @default(uuid()) @db.Uuid
+  sheetId               String          @map("sheet_id") @db.Uuid
+  customerId            String          @map("customer_id") @db.Uuid
+  amount                Float
+  paymentMode           String          @map("payment_mode") @db.VarChar
+  note                  String?         @db.VarChar
+  customerTransactionId String?         @map("customer_transaction_id") @db.Uuid
+  // Same same-day insertion-order tiebreaker purpose as
+  // SupplierTransaction.sequence (see that model for why createdAt alone
+  // isn't enough — a date-only picker collapses same-day rows to midnight).
+  sequence              Int             @default(autoincrement())
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sheet                 CollectionSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  customer              Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([sheetId])
+  @@index([customerId])
+  @@map("collection_entries")
 }
 
 model SupplierTransaction {

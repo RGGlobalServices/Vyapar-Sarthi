@@ -40,6 +40,11 @@ export async function POST(req: NextRequest) {
     let updated = 0;
     let skipped = 0;
     const rowErrors: string[] = [];
+    // Products actually touched this batch — 'purchase' and 'stock' only,
+    // the two import types that create/update real Product rows. Lets the
+    // wizard offer "Print Barcode Labels" for exactly what was just
+    // imported, without re-fetching/guessing from the row data.
+    const affectedProductIds = new Set<string>();
 
     // Helper to extract values case-insensitively and space-insensitively
     const getVal = (row: any, possibleKeys: string[]) => {
@@ -589,6 +594,7 @@ export async function POST(req: NextRequest) {
                 });
               }
             }
+            if (matchId) affectedProductIds.add(matchId);
 
             const itemCost = quantity * unitCost;
             totalInvoiceCost += itemCost;
@@ -750,6 +756,7 @@ export async function POST(req: NextRequest) {
                 });
               }
             }
+            if (matchId) affectedProductIds.add(matchId);
           } catch (rowErr: any) {
             console.error(`Import row ${i + 1} failed [stock]:`, JSON.stringify(row), rowErr.message, rowErr.meta);
             skipped++;
@@ -1107,6 +1114,7 @@ export async function POST(req: NextRequest) {
         processingMs,
         rowsPerSecond: processingMs > 0 ? Math.round((data.length / processingMs) * 1000) : null,
         importLogId,
+        productIds: affectedProductIds.size > 0 ? Array.from(affectedProductIds) : undefined,
       }
     });
 

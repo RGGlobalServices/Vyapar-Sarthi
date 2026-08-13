@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { applyCustomerPayment } from '@/lib/server/customerPayment';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,49 +19,14 @@ export const POST = handle(async (req) => {
   // Use a transaction to ensure atomicity
   const result = await prisma.$transaction(async (tx) => {
     if (entityType === 'customer' || entityType === 'party') {
-      const customer = await tx.customer.findUnique({
-        where: { id: entityId, shopId: shop.id }
+      const { customerTransactionId } = await applyCustomerPayment(tx, {
+        shopId: shop.id,
+        customerId: entityId,
+        amount,
+        paymentMode,
+        note,
       });
-      if (!customer) throw new ApiError(404, 'Customer/Party not found');
-
-      // Reduce Outstanding (TotalDue)
-      const updated = await tx.customer.update({
-        where: { id: entityId },
-        data: { totalDue: { decrement: amount } }
-      });
-
-      // Insert Ledger Entry
-      const transaction = await tx.customer_transactions.create({
-        data: {
-          customer_id: entityId,
-          type: 'payment',
-          amount: amount,
-          note: `Payment via ${paymentMode || 'Cash'} - ${note || ''}`.trim(),
-        }
-      });
-
-      if ((paymentMode || 'Cash').toLowerCase() === 'cash') {
-        await tx.cashBook.create({
-          data: {
-            shopId: shop.id,
-            type: 'collection',
-            amount: amount,
-            referenceId: transaction.id,
-            description: `Payment from Customer: ${customer.name}`
-          }
-        });
-      }
-
-      await tx.activityLog.create({
-        data: {
-          shopId: shop.id,
-          action: 'payment_collected',
-          entityId: transaction.id,
-          details: { entityType: 'customer', name: customer.name, amount }
-        }
-      });
-
-      return { updated, transaction };
+      return { transaction: { id: customerTransactionId } };
 
     } else if (entityType === 'supplier') {
       const supplier = await tx.supplier.findUnique({
@@ -109,7 +75,7 @@ export const POST = handle(async (req) => {
     } else {
       throw new ApiError(400, 'Invalid entityType');
     }
-  });
+  }, { timeout: 15000, maxWait: 10000 });
 
   return json(result);
 });

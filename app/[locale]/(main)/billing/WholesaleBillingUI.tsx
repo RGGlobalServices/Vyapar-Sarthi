@@ -8,7 +8,7 @@ import { getBusinessConfig } from '@/lib/businessConfig';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { useBarcodeScanner, playScanBeep, matchProductByCode } from '@/lib/useBarcodeScanner';
+import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
 // Keeps html5-qrcode out of the server bundle and off the initial payload.
 const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { ssr: false });
@@ -236,25 +236,73 @@ export default function WholesaleBillingUI() {
   const isMobile = useIsMobile();
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [showManualBillUpload, setShowManualBillUpload] = useState(false);
-  const [manualProduct, setManualProduct] = useState({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '' });
+  const [manualProduct, setManualProduct] = useState({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '', barcode: '' });
+  // A scan that matched nothing locally or on the server — offers "Create
+  // Product" (pre-fills manualProduct.barcode so the submit below registers
+  // it in the catalogue instead of just adding a one-off cart line), same
+  // flow Legacy/Vyapar billing already has.
+  const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
 
-  const handleManualAddSubmit = (e: React.FormEvent) => {
+  const handleManualAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualProduct.name || !manualProduct.price) return;
     const sellingPrice = Number(manualProduct.price) || 0;
     const costPrice = Number(manualProduct.costPrice) || 0;
     const mrp = Number(manualProduct.mrp) || sellingPrice;
+    const barcode = manualProduct.barcode?.trim() || '';
 
-    addToCart({
-      name: manualProduct.name,
-      sellingPrice,
-      wholesaleCost: costPrice,
-      mrp,
-      baseUnit: manualProduct.unit,
-      isManualItem: true,
-    }, manualProduct.variant || undefined);
+    // Triggered from a scan-miss: persist a real catalogue product with this
+    // barcode first, so scanning the same code again finds it instead of
+    // repeating "Not found". Without a barcode (a genuine one-off line, not
+    // from a scan), keep the original cart-only behaviour.
+    if (barcode) {
+      try {
+        const res = await api.post('/products', {
+          name: manualProduct.name.trim(),
+          category: 'General',
+          current_stock: 0,
+          min_stock: 0,
+          mrp,
+          selling_price: sellingPrice,
+          wholesale_cost: costPrice,
+          base_unit: manualProduct.unit || 'Unit',
+          barcode,
+        });
+        addToCart(res.data, manualProduct.variant || undefined);
+        fetchProducts();
+      } catch (err: any) {
+        const msg = err?.response?.data?.detail || err?.message || '';
+        if (String(msg).toLowerCase().includes('already exists')) {
+          try {
+            const lookup = await api.get(`/products/barcode/${encodeURIComponent(barcode)}`);
+            if (lookup.data?.id) {
+              addToCart(lookup.data, manualProduct.variant || undefined);
+              fetchProducts();
+            } else {
+              alert(msg || 'Failed to create product');
+              return;
+            }
+          } catch {
+            alert(msg || 'Failed to create product');
+            return;
+          }
+        } else {
+          alert(msg || 'Failed to create product');
+          return;
+        }
+      }
+    } else {
+      addToCart({
+        name: manualProduct.name,
+        sellingPrice,
+        wholesaleCost: costPrice,
+        mrp,
+        baseUnit: manualProduct.unit,
+        isManualItem: true,
+      }, manualProduct.variant || undefined);
+    }
 
-    setManualProduct({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '' });
+    setManualProduct({ name: '', costPrice: '', mrp: '', price: '', unit: 'Unit', variant: '', barcode: '' });
     setShowManualAdd(false);
   };
 
@@ -577,12 +625,23 @@ export default function WholesaleBillingUI() {
       return;
     }
 
+    // Per-variant barcode match (e.g. a desktop-scanner code for one exact
+    // colour/size) — drops that variant into the cart, not the base row.
+    const variantHit = matchVariantByCode(products, raw);
+    if (variantHit) {
+      addToCart(variantHit.product, variantHit.variantKey);
+      playScanBeep(true);
+      setScanFeedback({ status: 'ok', text: `${variantHit.product.name} · ${variantHit.variantKey}` });
+      return;
+    }
+
     // A non-empty list below the 2000-row cap is the whole catalogue, so a local
     // miss is genuinely "not found" — answer instantly. An empty list is still
     // loading, so fall through to the (bounded) server lookup instead.
     if (products.length > 0 && products.length < 2000) {
       playScanBeep(false);
       setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
+      setUnknownBarcode(raw);
       return;
     }
 
@@ -596,9 +655,9 @@ export default function WholesaleBillingUI() {
       if (seq !== scanSeqRef.current) return; // superseded by a newer scan
       const found = res.data;
       if (found?.id) {
-        addToCart(found);
+        addToCart(found, found.matched_variant || undefined);
         playScanBeep(true);
-        setScanFeedback({ status: 'ok', text: found.name });
+        setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });
         return;
       }
       throw new Error('not found');
@@ -608,11 +667,12 @@ export default function WholesaleBillingUI() {
       // unrecognised code from one that simply hadn't registered.
       playScanBeep(false);
       setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
+      setUnknownBarcode(raw);
     }
   }, [addToCart, products]);
 
   // Hardware scanner — shared detection logic (see lib/useBarcodeScanner).
-  useBarcodeScanner({ onScan: handleScan });
+  useBarcodeScanner({ onScan: handleScan, enabled: !unknownBarcode });
 
   useEffect(() => {
     if (!scanFeedback || scanFeedback.status === 'pending') return;
@@ -1343,6 +1403,13 @@ export default function WholesaleBillingUI() {
                 <input required autoFocus className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
                   value={manualProduct.name} onChange={e => setManualProduct({...manualProduct, name: e.target.value})} />
               </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">
+                  Barcode {manualProduct.barcode ? <span className="text-emerald-500 normal-case font-medium">— registers this as a real product</span> : <span className="normal-case font-medium">(optional — leave blank for a one-off cart item)</span>}
+                </label>
+                <input className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white font-mono"
+                  value={manualProduct.barcode} onChange={e => setManualProduct({...manualProduct, barcode: e.target.value})} />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1 block">Cost Price (₹)</label>
@@ -1361,9 +1428,35 @@ export default function WholesaleBillingUI() {
                   value={manualProduct.price} onChange={e => setManualProduct({...manualProduct, price: e.target.value})} />
               </div>
               <button type="submit" className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-colors text-sm shadow-sm">
-                Add to Cart
+                {manualProduct.barcode ? 'Create Product & Add' : 'Add to Cart'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Unknown Barcode Modal — a scan that matched nothing. */}
+      {unknownBarcode && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Scan size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Product Not Found</h3>
+            <p className="text-slate-500 mb-6">No product found for barcode <strong className="text-slate-700 dark:text-slate-300">{unknownBarcode}</strong></p>
+            <div className="flex gap-3">
+              <button onClick={() => setUnknownBarcode(null)}
+                className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700">
+                Cancel
+              </button>
+              <button onClick={() => {
+                setManualProduct(p => ({ ...p, barcode: unknownBarcode }));
+                setUnknownBarcode(null);
+                setShowManualAdd(true);
+              }} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold">
+                Create Product
+              </button>
+            </div>
           </div>
         </div>
       )}

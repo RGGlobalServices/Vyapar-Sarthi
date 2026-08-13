@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
   Loader2, Camera, ShieldCheck, Package,
-  Warehouse, Store, MapPin, IndianRupee,
+  Warehouse, Store, MapPin, IndianRupee, Barcode as BarcodeIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -14,7 +14,7 @@ import { useLocale } from 'next-intl';
 import { translateData } from '@/lib/translateData';
 import SmartTranslator from '@/components/SmartTranslator';
 import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
-import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata, generateVariantBarcodes } from '@/components/SizeVariantGrid';
+import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata, generateVariantBarcodes, SizePicker } from '@/components/SizeVariantGrid';
 import type { SizePriceEntry } from '@/components/SizeVariantGrid';
 import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey, VARIANT_SEP } from '@/components/ColorSizeVariantGrid';
 import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
@@ -32,6 +32,8 @@ import { fetchProductsMapped } from '@/lib/fetchers';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
+import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import toast from 'react-hot-toast';
 
 const BarcodeQRModal = dynamic(() => import('@/components/BarcodeQRModal'), { ssr: false });
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
@@ -65,6 +67,7 @@ type Product = {
   conversion_factor?: number;
   recentlyAdded?: number;
   barcode?: string;
+  cartonBarcode?: string;
   shopName?: string;
   shopBusinessType?: string;
 };
@@ -84,6 +87,15 @@ function buildEmptyForm(btype: string) {
     // Liquor (Beer Bar & Wine Shop) fields
     brand: '', alcohol_percentage: '', bottle_type: '', conversion_factor: ''
   };
+}
+
+// With All Shop Access on, a pooled cross-shop list can show (and let you act
+// on) a row belonging to a shop other than whichever one is currently
+// "active" — lib/api.ts otherwise always targets the active shop, which
+// 404s any edit/delete of a non-active-shop row. Passing the row's own
+// shopId here overrides that for just this one request.
+function shopIdHeader(shopId?: string | null) {
+  return shopId ? { headers: { 'x-shop-id': String(shopId) } } : {};
 }
 
 export default function ProductsPage() {
@@ -154,6 +166,15 @@ function LegacyProductsUI() {
   const [showCamera, setShowCamera] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
+  // Hardware (keyboard-wedge) scanner — same detection logic Billing already
+  // uses. Feeds the scanned code straight into the existing text search
+  // (which already matches against barcode/sku), so scanning a shelf label
+  // here works like typing it, just faster. Disabled while a modal with its
+  // own text fields is open, so a stray scan can't land in the wrong field.
+  useBarcodeScanner({
+    enabled: !showAddModal && !showEditModal && !showScanner,
+    onScan: (code) => { setSearch(code); playScanBeep(true); },
+  });
   const filterRef = useRef<HTMLDivElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -169,6 +190,14 @@ function LegacyProductsUI() {
   // (colours for apparel, types like LED/Tubelight for electricals).
   const [colors, setColors] = useState<string[]>([]);
   const [editColors, setEditColors] = useState<string[]>([]);
+  // Selected size labels (XS/S/M/L, shoe sizes, ml/L, …) — a business type's
+  // sizeChart/spec.sizeChart is only ever the starting palette; SizePicker
+  // lets a shopkeeper trim or add to it per product, same spirit as `colors`
+  // above. Seeded once when a chart becomes known (Add-modal open / a
+  // category with a spec resolves) rather than re-synced on every category
+  // change, matching `colors`/`editColors`'s own non-resyncing behaviour.
+  const [sizeSelection, setSizeSelection] = useState<string[]>([]);
+  const [editSizeSelection, setEditSizeSelection] = useState<string[]>([]);
   // Outer real-colour picker for the 3-way (Colour × Type × Spec) grid used by
   // electronics/electric spec-categories. Kept separate from `colors` above,
   // which drives the *inner* spec-type chips (RAM, Wattage, …) in the 2-way path.
@@ -199,6 +228,38 @@ function LegacyProductsUI() {
   }
   const addVariantDim = buildVariantDim(form.category);
   const editVariantDim = buildVariantDim(editForm.category);
+
+  // Every stocked variant should show a barcode value (auto-generated from the
+  // product base if the shopkeeper hasn't typed one), so an empty input never
+  // hides what the printed label / scanner will actually see. Same
+  // generateVariantBarcodes() the "Generate barcodes for all variants" button
+  // uses — but applied unconditionally in render so it appears without a
+  // button click. It only fills MISSING entries (preserves any typed value),
+  // and the same effective map is used at submit time so what the shopkeeper
+  // sees on screen is exactly what gets persisted; a blank-and-cleared field
+  // silently falls back to the auto value on the next render, matching the
+  // user's ask: "if not manual add so default you can see previous Added type
+  // PRD and generated code end color and size."
+  const sizePricesEffective = useMemo(() => {
+    const base = form.barcode || 'PRD-NEW';
+    return generateVariantBarcodes(base, form.size_variants, sizePrices);
+  }, [form.barcode, form.size_variants, sizePrices]);
+  const editSizePricesEffective = useMemo(() => {
+    const base = editForm.barcode || `PRD-${String(editProduct?.id || '').slice(0, 8).toUpperCase()}`;
+    return generateVariantBarcodes(base, editForm.size_variants, editSizePrices);
+  }, [editForm.barcode, editForm.size_variants, editSizePrices, editProduct?.id]);
+  // The Add form's size chart isn't known until a category resolves a spec
+  // (unlike bizConfig.sizeChart, seeded immediately when the modal opens —
+  // see the "+ Add Product" button). Seed sizeSelection the first time one
+  // becomes available; once the shopkeeper has an actual selection, further
+  // category changes don't fight it, matching colors/editColors' own
+  // no-resync-after-first-set behaviour.
+  useEffect(() => {
+    if (showAddModal && addVariantDim && sizeSelection.length === 0) {
+      setSizeSelection(addVariantDim.sizeChart);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAddModal, addVariantDim?.sizeChart?.join(',')]);
 
   // 3-way mode: an electronics/electric shop with a spec-category (Mobile,
   // Laptop, Bulb…) AND a colour palette declared in businessConfig. Only
@@ -462,7 +523,14 @@ function LegacyProductsUI() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const categories = useMemo(() => Array.from(new Set(products.map(p => p.category))).sort(), [products]);
+  // Scoped to the active shop's own products even when All Shop Access pools
+  // every owned shop's rows into `products` — otherwise a Kirana shop's
+  // categories bleed into the Category dropdown for a Clothes shop just
+  // because they share an owner, which is exactly what defaultCategories
+  // (business-type-specific) and the /master-data categories (shop-scoped
+  // server-side) below deliberately are NOT supposed to do.
+  const activeShopProducts = useMemo(() => products.filter(p => p.shopId === activeShopId), [products, activeShopId]);
+  const categories = useMemo(() => Array.from(new Set(activeShopProducts.map(p => p.category))).sort(), [activeShopProducts]);
 
   // Saved master categories + the ones already on products + business defaults.
   // `saveCategory` persists anything the user types so it is offered next time.
@@ -541,7 +609,12 @@ function LegacyProductsUI() {
     e.preventDefault();
     const sizeVariantsJson = addVariantActive ? serializeSizeVariants(form.size_variants) : undefined;
     const stockQty = addVariantActive ? totalFromSizes(form.size_variants) : Number(form.stock);
-    let metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePrices, Object.keys(sizePrices).length > 0) : undefined;
+    // Uses the *effective* map (with auto-generated barcodes filled in for
+    // every stocked variant that doesn't have a typed override) so what the
+    // shopkeeper saw on screen for each variant's barcode is exactly what
+    // gets persisted — no gap between the visible auto-code and what a
+    // future scanner will match against.
+    let metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePricesEffective, Object.keys(sizePricesEffective).length > 0) : undefined;
     // Liquor: alcohol % & bottle type ride along in the metadata JSON (no schema change).
     if (bizConfig.hasLiquorSpecs && (form.alcohol_percentage || form.bottle_type)) {
       metadataPayload = { ...(metadataPayload || {}),
@@ -649,6 +722,18 @@ function LegacyProductsUI() {
     const parsedVariants = parseSizeVariants(product.size_variants);
     setEditColors(colorsFromVariants(parsedVariants));
     setEditOuterColors(outerColorsFromVariants(parsedVariants));
+    // Seed the size picker from whichever chart applies to this product's
+    // own category (not the still-default editForm.category, which hasn't
+    // been set yet at this point) unioned with sizes already present in its
+    // saved data — covers a legacy/custom size that predates the current
+    // default chart, same merge already used inline for the colour+size grid.
+    {
+      const productVariantDim = buildVariantDim(product.category || '');
+      setEditSizeSelection(Array.from(new Set([
+        ...((productVariantDim?.sizeChart) || bizConfig.sizeChart || []),
+        ...sizesFromVariants(parsedVariants),
+      ])));
+    }
     setEditBaseVariants(parsedVariants);
     setShowEditModal(true);
   }
@@ -678,7 +763,7 @@ function LegacyProductsUI() {
     setSaving(true);
     try {
       let editMetadata = editVariantActive
-        ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePrices, Object.keys(editSizePrices).length > 0)
+        ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePricesEffective, Object.keys(editSizePricesEffective).length > 0)
         : undefined;
       // Preserve/refresh liquor extras in the metadata JSON.
       if (bizConfig.hasLiquorSpecs) {
@@ -717,15 +802,29 @@ function LegacyProductsUI() {
         barcode: editForm.barcode?.trim() || undefined,
         sku: editForm.sku?.trim() || null,
         cartonBarcode: editForm.cartonBarcode?.trim() || null,
-      });
+      }, shopIdHeader(editProduct.shopId));
       saveCategory(editForm.category);
       invalidateProductCaches();
+      toast.success('Product saved');
       setShowEditModal(false);
       setEditProduct(null);
-    } catch { /* */ } finally { setSaving(false); }
+    } catch (err: any) {
+      // Previously this was a silent `catch {}` — a real save failure (validation
+      // error from the API, network timeout, or the additive-mode data-drop guard
+      // above being rejected) just left the modal open with nothing on screen to
+      // say why, reading identically to "the save button doesn't work." Surface it.
+      const detail = err?.response?.data?.detail || err?.message || 'Failed to save product';
+      toast.error(detail);
+      console.error('[Edit Product save failed]', err);
+    } finally { setSaving(false); }
   }
   async function doDelete(id: string | number) {
-    try { await api.delete(`/products/${id}`); invalidateProductCaches(); setDeleteConfirmId(null); } catch { /* */ }
+    try {
+      const target = products.find(p => p.id === id);
+      await api.delete(`/products/${id}`, shopIdHeader(target?.shopId));
+      invalidateProductCaches();
+      setDeleteConfirmId(null);
+    } catch { /* */ }
   }
 
   function toggleProductSelect(id: string | number) {
@@ -739,7 +838,24 @@ function LegacyProductsUI() {
   async function handleBulkDeleteProducts() {
     setBulkDeleting(true);
     try {
-      await api.delete(`/products/bulk?ids=${Array.from(selectedProductIds).join(',')}`);
+      // With All Shop Access on, the selection can span rows from several
+      // different shops (each shop's table has its own "select all", and the
+      // bulk-delete bar acts on the one shared selection) — the bulk route
+      // only deletes ids that belong to the shop in the request's header, so
+      // a single request would silently skip every non-active-shop id. Split
+      // by each product's own shop and issue one request per group instead.
+      const idsByShop = new Map<string, (string | number)[]>();
+      for (const id of selectedProductIds) {
+        const shopId = products.find(p => p.id === id)?.shopId;
+        const key = shopId || '';
+        if (!idsByShop.has(key)) idsByShop.set(key, []);
+        idsByShop.get(key)!.push(id);
+      }
+      await Promise.all(
+        Array.from(idsByShop.entries()).map(([shopId, ids]) =>
+          api.delete(`/products/bulk?ids=${ids.join(',')}`, shopIdHeader(shopId))
+        )
+      );
       invalidateProductCaches();
       setSelectedProductIds(new Set());
     } catch {
@@ -788,7 +904,7 @@ function LegacyProductsUI() {
               {products.length.toLocaleString('en-IN')} / Unlimited products
             </p>
           </div>
-          <button onClick={() => { setColors([]); setOuterColors([]); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
+          <button onClick={() => { setColors([]); setOuterColors([]); setSizeSelection(bizConfig.sizeChart || []); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}
           </button>
@@ -1582,6 +1698,9 @@ function LegacyProductsUI() {
             // can list every colour/size + its per-variant barcode.
             size_variants: qrProduct.size_variants,
             metadata: qrProduct.metadata,
+            stock: qrProduct.stock,
+            cartonBarcode: qrProduct.cartonBarcode,
+            wholesaleCost: qrProduct.cost,
           }}
           onClose={() => setQrProduct(null)}
         />
@@ -1610,7 +1729,13 @@ function LegacyProductsUI() {
                   <p className="text-xs text-slate-500 truncate max-w-[200px]">{editProduct.name}</p>
                 </div>
               </div>
-              <button onClick={() => { setShowEditModal(false); setEditProduct(null); }} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"><X size={20} /></button>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setQrProduct(editProduct)} title="Barcode / QR"
+                  className="p-2 rounded-lg text-indigo-500 hover:bg-indigo-500/10 transition-colors">
+                  <BarcodeIcon size={18} />
+                </button>
+                <button onClick={() => { setShowEditModal(false); setEditProduct(null); }} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"><X size={20} /></button>
+              </div>
             </div>
 
             <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
@@ -1766,6 +1891,7 @@ function LegacyProductsUI() {
                   {bizConfig.hasSpecs && editVariantDim && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
                   )}
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('editVariantAdditiveHint')}</p>
                   {(() => {
                     // A product created / imported / stock-adjusted with only an
                     // aggregate count (no per-size split) opens here with every
@@ -1802,7 +1928,7 @@ function LegacyProductsUI() {
                       onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
                       unitLabel={editForm.unit?.toLowerCase() || 'units'}
                       perSizePricing={editPerSizePricing}
-                      sizePrices={editSizePrices}
+                      sizePrices={editSizePricesEffective}
                       onSizePricesChange={setEditSizePrices}
                       innerRowLabel={editVariantDim!.typeLabel || editVariantDim!.label}
                       innerColLabel={editVariantDim!.sizeLabel || 'Size'}
@@ -1812,14 +1938,15 @@ function LegacyProductsUI() {
                   ) : editVariantDim ? (
                     <div className="space-y-3">
                       <ColorPicker colorChart={editVariantDim!.options} value={editColors} onChange={handleEditColorsChange} showSwatch={editVariantDim!.swatch} />
+                      <SizePicker sizeChart={editVariantDim!.sizeChart} value={editSizeSelection} onChange={setEditSizeSelection} />
                       <ColorSizeVariantGrid
                         colors={editColors}
-                        sizeChart={Array.from(new Set([...editVariantDim!.sizeChart, ...sizesFromVariants(editForm.size_variants)]))}
+                        sizeChart={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
                         value={editForm.size_variants}
                         onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
                         unitLabel={editForm.unit?.toLowerCase() || 'units'}
                         perSizePricing={editPerSizePricing}
-                        sizePrices={editSizePrices}
+                        sizePrices={editSizePricesEffective}
                         onSizePricesChange={setEditSizePrices}
                         showSwatch={editVariantDim!.swatch}
                         dimensionLabel={editVariantDim!.label}
@@ -1828,17 +1955,20 @@ function LegacyProductsUI() {
                       />
                     </div>
                   ) : (
-                  <SizeVariantGrid
-                    sizeChart={bizConfig.sizeChart!}
-                    value={editForm.size_variants}
-                    onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
-                    unitLabel={editForm.unit?.toLowerCase() || 'units'}
-                    perSizePricing={editPerSizePricing}
-                    sizePrices={editSizePrices}
-                    onSizePricesChange={setEditSizePrices}
-                    additiveMode
-                    baseValue={editBaseVariants}
-                  />
+                  <div className="space-y-3">
+                    <SizePicker sizeChart={bizConfig.sizeChart || []} value={editSizeSelection} onChange={setEditSizeSelection} />
+                    <SizeVariantGrid
+                      sizeChart={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
+                      value={editForm.size_variants}
+                      onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
+                      unitLabel={editForm.unit?.toLowerCase() || 'units'}
+                      perSizePricing={editPerSizePricing}
+                      sizePrices={editSizePricesEffective}
+                      onSizePricesChange={setEditSizePrices}
+                      additiveMode
+                      baseValue={editBaseVariants}
+                    />
+                  </div>
                   )}
                 </section>
               )}
@@ -1857,13 +1987,22 @@ function LegacyProductsUI() {
                 </div>
               )}
 
-              {/* Global Min Stock Level. Skipped when per-size pricing is on
-                  because that panel already carries a per-variant Min Stock
-                  field — showing both makes the total field ambiguous. */}
-              {editVariantActive && !editPerSizePricing && (
+              {/* Global Min Stock Level — the fallback threshold used by low-stock
+                  reports/alerts for any variant that doesn't have its own
+                  per-size override (see sizePrices[size].minStock in the grid
+                  above). Shown regardless of the per-size-pricing toggle: it's
+                  not a duplicate of that panel's per-variant field, it's what
+                  every variant falls back to when it has no override — and
+                  per-size-pricing defaults ON for any colour product, so
+                  gating this on it left variant products with no way to set
+                  a Min Stock at all. */}
+              {editVariantActive && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Min Stock Level (Total)</label>
                   <input required type="number" min="0" className={modalInp} value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} />
+                  {editPerSizePricing && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{tv('minStockFallbackHint')}</p>
+                  )}
                 </div>
               )}
 
@@ -2239,7 +2378,7 @@ function LegacyProductsUI() {
                       onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
                       unitLabel={form.unit?.toLowerCase() || 'units'}
                       perSizePricing={perSizePricing}
-                      sizePrices={sizePrices}
+                      sizePrices={sizePricesEffective}
                       onSizePricesChange={setSizePrices}
                       innerRowLabel={addVariantDim!.typeLabel || addVariantDim!.label}
                       innerColLabel={addVariantDim!.sizeLabel || 'Size'}
@@ -2247,29 +2386,33 @@ function LegacyProductsUI() {
                   ) : addVariantDim ? (
                     <div className="space-y-3">
                       <ColorPicker colorChart={addVariantDim!.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim!.swatch} />
+                      <SizePicker sizeChart={addVariantDim!.sizeChart} value={sizeSelection} onChange={setSizeSelection} />
                       <ColorSizeVariantGrid
                         colors={colors}
-                        sizeChart={addVariantDim!.sizeChart}
+                        sizeChart={sizeSelection}
                         value={form.size_variants}
                         onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
                         unitLabel={form.unit?.toLowerCase() || 'units'}
                         perSizePricing={perSizePricing}
-                        sizePrices={sizePrices}
+                        sizePrices={sizePricesEffective}
                         onSizePricesChange={setSizePrices}
                         showSwatch={addVariantDim!.swatch}
                         dimensionLabel={addVariantDim!.label}
                       />
                     </div>
                   ) : (
-                  <SizeVariantGrid
-                    sizeChart={bizConfig.sizeChart!}
-                    value={form.size_variants}
-                    onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
-                    unitLabel={form.unit?.toLowerCase() || 'units'}
-                    perSizePricing={perSizePricing}
-                    sizePrices={sizePrices}
-                    onSizePricesChange={setSizePrices}
-                  />
+                  <div className="space-y-3">
+                    <SizePicker sizeChart={bizConfig.sizeChart || []} value={sizeSelection} onChange={setSizeSelection} />
+                    <SizeVariantGrid
+                      sizeChart={sizeSelection}
+                      value={form.size_variants}
+                      onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
+                      unitLabel={form.unit?.toLowerCase() || 'units'}
+                      perSizePricing={perSizePricing}
+                      sizePrices={sizePricesEffective}
+                      onSizePricesChange={setSizePrices}
+                    />
+                  </div>
                   )}
                 </section>
               )}
@@ -2294,13 +2437,17 @@ function LegacyProductsUI() {
                 </div>
               )}
 
-              {/* Global Min Stock (Total) — hidden when per-size pricing is on
-                  because that panel already carries a per-variant Min Stock. */}
-              {addVariantActive && !perSizePricing && (
+              {/* Global Min Stock (Total) — the fallback threshold for any
+                  variant without its own per-size override. Shown regardless
+                  of per-size-pricing (see matching comment in the Edit modal). */}
+              {addVariantActive && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMinStock')} (Total)</label>
                   <input required type="number" min="0" className={modalInp} placeholder="5"
                     value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: e.target.value }))} />
+                  {perSizePricing && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{tv('minStockFallbackHint')}</p>
+                  )}
                 </div>
               )}
 

@@ -2,12 +2,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useUdharStore } from '@/lib/store';
 import { getImportTemplate, applyTemplate } from '@/lib/importTemplates';
+import { printLabelSheet } from '@/lib/printLabels';
 
 type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' | 'sales' | 'ledger';
 type Step = 'upload' | 'preview' | 'importing' | 'done';
@@ -25,6 +26,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const [headers, setHeaders] = useState<string[]>([]);
   const [errors, setErrors] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
+  const [printingLabels, setPrintingLabels] = useState(false);
   const [godowns, setGodowns] = useState<any[]>([]);
   const [selectedGodown, setSelectedGodown] = useState<string>('');
   // Conflict resolution: which incoming rows match existing records, the global
@@ -441,6 +443,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     let importLogId = existingLogId;
     let offset = startOffset;
     const acc = { created: 0, updated: 0, skipped: 0, failed: 0 };
+    const allProductIds: string[] = [];
     const allErrors: string[] = [];
     setProgress({ processed: offset, total, created: 0, updated: 0, skipped: 0, failed: 0,
       batch: Math.floor(offset / DB_BATCH_SIZE), totalBatches, rps: 0, etaSec: 0, stage: 'Saving products…' });
@@ -483,6 +486,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         acc.created += s.created || 0; acc.updated += s.updated || 0;
         acc.skipped += s.skipped || 0; acc.failed += (s.failed ?? (s.rowErrors?.length || 0));
         if (Array.isArray(s.rowErrors)) allErrors.push(...s.rowErrors);
+        if (Array.isArray(s.productIds)) allProductIds.push(...s.productIds);
 
         offset = Math.min(offset + DB_BATCH_SIZE, total);
         const elapsed = (Date.now() - t0) / 1000;
@@ -497,7 +501,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
       localStorage.removeItem(RESUME_KEY);
       try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
-      setSummary({ totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors });
+      setSummary({ totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds });
       setStep('done');
       import('swr').then(({ mutate }) => {
         mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
@@ -517,6 +521,41 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     } finally {
       setIsProcessing(false);
       setProgress(null);
+    }
+  };
+
+  // Print labels for exactly what this import touched. The execute route
+  // only returns ids (see app/api/v1/wholesale-import/execute/route.ts) —
+  // fetch full rows once here rather than growing the response per-batch.
+  const handlePrintImportedLabels = async () => {
+    const ids: string[] = summary?.productIds || [];
+    if (ids.length === 0) return;
+    setPrintingLabels(true);
+    try {
+      const res = await api.get('/products');
+      const idSet = new Set(ids);
+      const imported = (res.data || []).filter((p: any) => idSet.has(p.id));
+
+      // Neither import path forces a barcode when the file doesn't provide
+      // one (unlike the Add-Product form), so persist a real code for any
+      // row missing one BEFORE printing it — the same "never print something
+      // that isn't also saved" fix as BarcodeQRModal.tsx, otherwise the
+      // label would encode a value the scanner can never resolve back.
+      const rows = await Promise.all(imported.map(async (p: any) => {
+        let barcode = p.barcode;
+        if (!barcode) {
+          barcode = `PRD-${String(p.id).substring(0, 8).toUpperCase()}`;
+          try { await api.put(`/products/${p.id}`, { barcode }); } catch { /* best-effort, matches BarcodeQRModal's own fallback */ }
+        }
+        return { name: p.name, barcode, sellingPrice: p.sellingPrice, mrp: p.mrp };
+      }));
+
+      await printLabelSheet(rows, { title: `${importType === 'purchase' ? 'Purchase Import' : 'Stock Import'} — Labels` });
+    } catch (err) {
+      console.error('Failed to print import labels:', err);
+      alert('Failed to load products for printing. Try again from the Products page instead.');
+    } finally {
+      setPrintingLabels(false);
     }
   };
 
@@ -1019,9 +1058,21 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               </div>
             )}
 
-            <button onClick={onBack} className="mt-8 px-6 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-              Start Another Import
-            </button>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              {summary.productIds?.length > 0 && (
+                <button
+                  onClick={handlePrintImportedLabels}
+                  disabled={printingLabels}
+                  className="flex items-center gap-2 px-6 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg font-bold"
+                >
+                  {printingLabels ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                  Print Barcode Labels ({summary.productIds.length})
+                </button>
+              )}
+              <button onClick={onBack} className="px-6 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                Start Another Import
+              </button>
+            </div>
           </CardContent>
         </Card>
       )}

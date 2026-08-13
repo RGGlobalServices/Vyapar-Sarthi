@@ -6,7 +6,7 @@ import {
   X, Package, RefreshCw, Loader2, ArrowRightLeft,
   TrendingDown, MapPin, CheckCircle, Edit, Hash,
   IndianRupee, TrendingUp, Warehouse, ArrowUp, ArrowDown,
-  Tag, Trash2
+  Tag, Trash2, Barcode as BarcodeIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -15,20 +15,38 @@ import ReceiveDrawer from '../stock/ReceiveDrawer';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import BarcodeQRModal from '@/components/BarcodeQRModal';
+
+// Products can be viewed via a pooled cross-shop list (All Shop Access) where
+// a row belongs to a shop other than whichever one is currently "active" —
+// lib/api.ts auto-fills x-shop-id from the active shop, so a bare request
+// here 404s any product/godown lookup for a non-active-shop row. Passing the
+// row's own shopId (see the `shopId` prop below) overrides that for just
+// this request, matching the same shopIdHeader() pattern already used for
+// edit/delete in WholesaleProductsUI.tsx and products/page.tsx.
+function shopIdHeader(shopId?: string | null) {
+  return shopId ? { headers: { 'x-shop-id': String(shopId) } } : {};
+}
 
 const fetcher = (url: string | string[]) => {
-  const target = Array.isArray(url) ? url[0] : url;
-  return api.get(target).then(res => res.data);
+  const [target, shopIdForHeader] = Array.isArray(url) ? url : [url, undefined];
+  return api.get(target, shopIdHeader(shopIdForHeader)).then(res => res.data);
 };
 import { useBusinessStore } from '@/lib/businessStore';
 
 export default function ProductDetailsSheet({
   productId,
+  shopId,
   onClose,
   onEdit,
   onDelete
 }: {
   productId: string;
+  /** The product's own shop — pass this whenever the caller might be
+   *  showing a pooled cross-shop list, so this sheet's fetches target the
+   *  right shop instead of silently falling back to whichever one is
+   *  globally active. Falls back to the active shop when omitted. */
+  shopId?: string;
   onClose: () => void;
   onEdit: (product: any) => void;
   onDelete?: (productId: string) => void;
@@ -36,13 +54,15 @@ export default function ProductDetailsSheet({
   const t = useTranslations('ProductDetails');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
-  
+
   const { mutate } = useSWRConfig();
-  
+
   const { activeShopId, profile } = useBusinessStore();
+  const effectiveShopId = shopId || activeShopId || undefined;
   const [showReceive, setShowReceive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { data: godowns = [] } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, fetcher);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const { data: godowns = [] } = useSWR(effectiveShopId ? ['/godowns', effectiveShopId] : null, fetcher);
 
   useEffect(() => {
     if (productId) fetchDetails();
@@ -51,7 +71,7 @@ export default function ProductDetailsSheet({
   const fetchDetails = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/products/${productId}/erp-details`);
+      const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
       setData(res.data);
     } catch (err) {
       console.error(err);
@@ -103,6 +123,13 @@ export default function ProductDetailsSheet({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
             >
               <Package size={13} /> Receive Stock
+            </button>
+            <button
+              disabled={loading || !data?.product}
+              onClick={() => setShowBarcodeModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors disabled:opacity-40"
+            >
+              <BarcodeIcon size={13} /> Barcode / QR
             </button>
             {onDelete && (
               <button
@@ -343,6 +370,16 @@ export default function ProductDetailsSheet({
         onConfirm={() => { setConfirmDelete(false); onDelete?.(productId); }}
         onCancel={() => setConfirmDelete(false)}
       />
+      {showBarcodeModal && data?.product && (
+        <BarcodeQRModal
+          product={{
+            ...data.product,
+            stock: data.product.currentStock ?? data.product.stock,
+          }}
+          isWholesale
+          onClose={() => setShowBarcodeModal(false)}
+        />
+      )}
     </div>
   );
 }

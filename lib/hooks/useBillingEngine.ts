@@ -4,8 +4,8 @@ import { calculateInvoice, InputLineItem, BillType, DiscountInput } from '@/lib/
 
 const EMPTY_ARRAY: CartItem[] = [];
 
-export type PaymentMethod = 'cash' | 'upi' | 'card' | 'udhar';
-export type CollectedMethod = Exclude<PaymentMethod, 'udhar'>;
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'udhar' | 'mixed';
+export type CollectedMethod = Exclude<PaymentMethod, 'udhar' | 'mixed'>;
 
 // 'bank' is used only by Wholesale/Udyog billing's split mode (Bank Transfer
 // / Cheque). Retail's 'method' mode never sets it (its PaymentMethod type
@@ -86,6 +86,10 @@ export function useBillingEngine(
   const splitPayments = useMemo(() => {
     if (mode !== 'method') return manualSplit;
     if (isEmi) return ZERO_SPLIT;
+    // 'mixed' is the one 'method'-mode choice that isn't a pure function of
+    // (method, total) — the cashier freely allocates cash/upi/card themselves
+    // via setSplitPayments, same manual state 'split' mode always used.
+    if (paymentMethod === 'mixed') return manualSplit;
     if (paymentMethod === 'udhar') {
       return { ...ZERO_SPLIT, [udharAdvanceMethod]: effectiveUdharAdvance };
     }

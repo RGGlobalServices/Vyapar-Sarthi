@@ -23,39 +23,30 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
   const product = await prisma.product.findFirst({ where: { id: productId, shopId: shop.id } });
   if (!product) throw new ApiError(404, 'Product not found');
   try {
+    // Normalize size_variants to a JSON string for the DB column, but TRUST
+    // whatever the caller sent for the actual values — every editor of this
+    // field (Edit Product form, BarcodeQRModal generate-variants, Import)
+    // ships the full intended set of {sizeKey: qty}. An earlier version of
+    // this route replaced every incoming value with the pre-existing DB
+    // value, so every "add stock to a new size" save silently landed as 0
+    // for that size while current_stock updated correctly — reading exactly
+    // as "the save button doesn't work" from the shopkeeper's side, with no
+    // way to notice unless they cross-checked the individual size cells.
     let finalSizeVariants = b.size_variants ?? b.sizeVariants;
-    if (finalSizeVariants !== undefined && finalSizeVariants !== null) {
-      try {
-        const incoming = typeof finalSizeVariants === 'string' ? JSON.parse(finalSizeVariants) : finalSizeVariants;
-        const existing = typeof product.size_variants === 'string' ? JSON.parse(product.size_variants) : (product.size_variants || {});
-        const merged: Record<string, number> = {};
-        for (const key of Object.keys(incoming)) {
-          merged[key] = existing[key] ?? 0;
-        }
-        finalSizeVariants = JSON.stringify(merged);
-      } catch (e) {}
+    if (finalSizeVariants !== undefined && finalSizeVariants !== null && typeof finalSizeVariants !== 'string') {
+      try { finalSizeVariants = JSON.stringify(finalSizeVariants); } catch {}
     }
 
     // Uuid FK columns reject '' (the "-- Select --" empty option's value) —
     // only null/a real uuid is valid, so coerce the empty-string case.
     const uuidOrNull = (v: any) => (v === '' ? null : v);
 
-    let finalVariants = b.variants;
-    if (finalVariants !== undefined && Array.isArray(finalVariants)) {
-      try {
-        const existing = Array.isArray(product.variants) 
-          ? product.variants 
-          : (typeof product.variants === 'string' ? JSON.parse(product.variants || '[]') : []);
-        finalVariants = finalVariants.map((incomingVariant: any) => {
-          const matched = existing.find((ev: any) => ev.color === incomingVariant.color && ev.size === incomingVariant.size);
-          return {
-            ...incomingVariant,
-            quantity: matched ? (matched.quantity ?? 0) : 0,
-            stock: matched ? (matched.stock ?? 0) : 0
-          };
-        });
-      } catch (e) {}
-    }
+    // Same lesson for the Udyog variants[] array: trust the caller. The old
+    // merge replaced `quantity`/`stock` on every incoming variant with the
+    // pre-existing value (or 0 if the variant was new), so adding stock to
+    // a new colour+size row went through silently as a no-op — same
+    // "not-working" symptom the size_variants merge above caused.
+    const finalVariants = b.variants;
 
     // If the caller changed currentStock via product-edit, emit a matching
     // StockLog row so downstream views (Daily Register live re-baselining,

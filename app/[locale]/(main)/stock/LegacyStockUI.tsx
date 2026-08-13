@@ -13,16 +13,22 @@ import {
   Search, ArrowDownLeft, ArrowUpRight, AlertTriangle,
   Plus, Trash2, X, Check, Package, Archive, ArchiveRestore,
   Pencil, ShieldCheck, Trash, Loader2, Warehouse, Store, MapPin, IndianRupee, CalendarDays,
+  Barcode as BarcodeIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStockStore, StockItem } from '@/lib/store';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
+import BarcodeQRModal from '@/components/BarcodeQRModal';
 import DailyStockRegister from './DailyStockRegister';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
+import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import dynamic from 'next/dynamic';
+
+const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 
 function getStatus(item: StockItem) {
   if (item.current === 0) return 'out';
@@ -72,6 +78,8 @@ export default function LegacyStockUI() {
   }, [fetchStock]);
 
   const [menuId, setMenuId]   = useState<number | string | null>(null);
+  const [qrItem, setQrItem]   = useState<StockItem | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
   const [editModal, setEditModal] = useState<{
     item: StockItem;
     adjQty: string;
@@ -89,6 +97,15 @@ export default function LegacyStockUI() {
   const [submitting, setSubmitting] = useState(false);
   const [isNew, setIsNew]     = useState(false);
   const [selId, setSelId]     = useState<number | string | ''>('');
+
+  // Hardware (keyboard-wedge) scanner — same detection logic Billing already
+  // uses. Feeds the scanned code into the existing text search (which already
+  // matches barcode/name/category), disabled while any modal with its own
+  // text fields is open.
+  useBarcodeScanner({
+    enabled: !modal && !editModal && !showScanner,
+    onScan: (code) => { setSearch(code); playScanBeep(true); },
+  });
   const [productSearch, setProductSearch] = useState('');
   const [addSizes, setAddSizes] = useState<Record<string, number>>({});  // per net-weight stock-in amounts
   const [qty, setQty]         = useState('');
@@ -524,6 +541,13 @@ export default function LegacyStockUI() {
               </button>
 
               <button
+                onClick={() => setQrItem(item)}
+                title="Barcode / QR"
+                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-indigo-500/20 hover:text-indigo-400 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50">
+                <BarcodeIcon size={14} />
+              </button>
+
+              <button
                 onClick={() => toggleArchive(item.id)}
                 title={item.archived ? t('unarchive') : t('archive')}
                 className={cn(
@@ -776,8 +800,16 @@ export default function LegacyStockUI() {
         <div className="relative flex-[2]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input type="text" placeholder={t('searchPlaceholder')}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-12 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             value={search} onChange={e => setSearch(e.target.value)} />
+          <button
+            type="button"
+            title="Scan Barcode to Find"
+            onClick={() => setShowScanner(true)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 p-1.5 rounded-lg hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+          >
+            <BarcodeIcon size={18} />
+          </button>
         </div>
         
         <div className="relative flex-1">
@@ -1496,6 +1528,30 @@ export default function LegacyStockUI() {
         onConfirm={handleBulkDeleteStock}
         onCancel={() => setConfirmBulkDelete(false)}
       />
+      {showScanner && (
+        <CameraScanner
+          onScan={(res: string) => { setSearch(res); setShowScanner(false); }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
+      {qrItem && (
+        <BarcodeQRModal
+          product={{
+            id: qrItem.id,
+            name: qrItem.name,
+            barcode: qrItem.barcode || undefined,
+            cartonBarcode: qrItem.cartonBarcode || undefined,
+            sellingPrice: qrItem.sellingPrice,
+            mrp: qrItem.mrp,
+            wholesaleCost: qrItem.cost,
+            category: qrItem.category,
+            stock: qrItem.current,
+            size_variants: qrItem.size_variants || undefined,
+            metadata: qrItem.metadata,
+          }}
+          onClose={() => setQrItem(null)}
+        />
+      )}
       </> /* end viewMode === 'all' */
       )}
     </div>

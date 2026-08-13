@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Box, Package, Archive, AlertTriangle, Search, Loader2, ArrowRightLeft,
   TrendingDown, Clock, CheckCircle, X, Filter, Download, Printer,
-  Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp, CalendarDays, Store, Trash2
+  Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp, CalendarDays, Store, Trash2,
+  Barcode as BarcodeIcon,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -20,6 +21,10 @@ import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { cssColor } from '@/components/ColorSizeVariantGrid';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import dynamic from 'next/dynamic';
+
+const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 
 function ProfitabilityTab({ product }: { product: any }) {
   const [period, setPeriod] = useState(30);
@@ -172,6 +177,16 @@ export default function WholesaleStockUI() {
   const [actionModal, setActionModal] = useState<string | null>(null); // 'receive', 'transfer', 'adjust'
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [showDailyRegister, setShowDailyRegister] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+
+  // Hardware (keyboard-wedge) scanner — same detection logic Billing already
+  // uses. Feeds the scanned code into the existing text search (which already
+  // matches barcode/name/category), disabled while an action modal with its
+  // own text fields is open.
+  useBarcodeScanner({
+    enabled: !actionModal && !showScanner,
+    onScan: (code) => { setSearch(code); playScanBeep(true); },
+  });
 
   // Delete selection state — single delete goes through `deleteTarget` +
   // ConfirmPasswordModal; bulk delete through `selectedStockIds` + the
@@ -577,12 +592,20 @@ export default function WholesaleStockUI() {
             <div className="flex flex-col lg:flex-row gap-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 transition-colors shadow-sm"
-                  placeholder={t('searchPlaceholder')} 
-                  value={search} 
-                  onChange={e => setSearch(e.target.value)} 
+                <input
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-9 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 transition-colors shadow-sm"
+                  placeholder={t('searchPlaceholder')}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
                 />
+                <button
+                  type="button"
+                  title="Scan Barcode to Find"
+                  onClick={() => setShowScanner(true)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-500 transition-colors"
+                >
+                  <BarcodeIcon size={16} />
+                </button>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar">
                 <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
@@ -1022,8 +1045,19 @@ export default function WholesaleStockUI() {
       {/* Barcode/QR Modal */}
       {showBarcodeModal && selectedProduct && (
         <BarcodeQRModal
-          product={selectedProduct}
+          product={{
+            ...selectedProduct,
+            stock: selectedProduct.currentStock ?? selectedProduct.stock,
+          }}
+          isWholesale
           onClose={() => setShowBarcodeModal(false)}
+        />
+      )}
+
+      {showScanner && (
+        <CameraScanner
+          onScan={(res: string) => { setSearch(res); setShowScanner(false); }}
+          onClose={() => setShowScanner(false)}
         />
       )}
 

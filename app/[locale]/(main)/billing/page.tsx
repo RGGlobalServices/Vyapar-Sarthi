@@ -12,7 +12,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {
   Search, Scan, Trash2, Plus, Minus, CreditCard, IndianRupee,
   User, X, Printer, Calculator as CalcIcon, PlusCircle, Download,
-  AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone, FileUp
+  AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone, FileUp, Layers
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
@@ -200,7 +200,7 @@ function StandardBillingUI() {
   const {
     items, addItem, removeItem, updateQuantity, updatePrice, updateBatchNumber, clearCart,
     subtotal, discount, setDiscount, total,
-    splitPayments, collectedAmount,
+    splitPayments, setSplitPayments, collectedAmount,
     remainingAmount, isEmi, setIsEmi,
     paymentMethod, setPaymentMethod,
     udharAdvance, setUdharAdvance,
@@ -449,8 +449,16 @@ function StandardBillingUI() {
       return;
     }
 
-    // Prompt for a variant when the business uses sizes OR this product carries its own
-    // variant breakdown (colour/size, type/watt, net-weight) — works for any category.
+    // Prompt for a variant only when THIS product actually carries its own
+    // per-size/colour stock — not merely because the business type generally
+    // deals in sizes. `bizConfig.hasSizes` alone used to force this prompt
+    // open for EVERY product in a Clothes/Footwear/etc. shop, even one added
+    // through the flat "Quantity" field with no size grid ever filled in (or
+    // stocked later via Stock's flat add-quantity, which only bumps
+    // currentStock and never touches size_variants) — the picker then had
+    // nothing real to offer, just zero-stock tiles for sizes the shopkeeper
+    // never intended to track. A product only needs this prompt when it has
+    // genuine, distributed per-size/colour stock to choose between.
     let productVariants: Record<string, number> = {};
     try {
       productVariants = typeof product.size_variants === 'string'
@@ -458,7 +466,7 @@ function StandardBillingUI() {
         : (product.size_variants || {});
     } catch { productVariants = {}; }
     const productHasVariants = Object.values(productVariants).some((v: any) => Number(v) > 0);
-    if ((bizConfig.hasSizes || productHasVariants) && !variant) {
+    if (productHasVariants && !variant) {
       setVariantSelectionProduct(product);
       return;
     }
@@ -691,6 +699,12 @@ function StandardBillingUI() {
   };
 
   const handleCreateBillClick = () => {
+    // Only 'mixed' can overshoot — every other method's split is derived
+    // straight from the total, so it can never exceed it (see useBillingEngine).
+    if (collectedAmount > total) {
+      alert(t('collectedExceedsTotal') || 'Collected amount cannot be greater than Total bill.');
+      return;
+    }
     setCustomerName('');
     setCustomerMobile('');
     setCustomerEmail('');
@@ -881,17 +895,21 @@ function StandardBillingUI() {
     { id: 'upi', label: t('upi') || 'UPI', icon: <Smartphone size={20}/> },
     { id: 'card', label: t('card') || 'Card', icon: <CreditCard size={20}/> },
     { id: 'udhar', label: t('udhar') || 'Udhar', icon: <User size={20}/> },
+    { id: 'mixed', label: t('mixed') || 'Mixed', icon: <Layers size={20}/> },
   ];
 
   const paymentMethodLabel = paymentOptions.find(o => o.id === paymentMethod)?.label ?? '';
   const isUdharSale = paymentMethod === 'udhar';
+  const isMixedSale = paymentMethod === 'mixed';
   const isPartialUdhar = isUdharSale && udharAdvance > 0;
   // Matches the payment_type values the invoice + reports screens already read.
   // A part-paid udhar bill is a genuine Split: the backend books only the cash
   // slice of payment_details to the drawer, so a UPI/card advance stays out of it.
-  const paymentTypeForApi = isPartialUdhar
+  // Mixed is always reported as Split too, whether or not it's fully allocated —
+  // same wire convention Wholesale/Udyog billing already uses for its own Mixed.
+  const paymentTypeForApi = (isPartialUdhar || isMixedSale)
     ? 'Split'
-    : { cash: 'Cash', upi: 'UPI', card: 'Card', udhar: 'Udhar' }[paymentMethod];
+    : { cash: 'Cash', upi: 'UPI', card: 'Card', udhar: 'Udhar', mixed: 'Split' }[paymentMethod];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-full lg:h-full relative overflow-y-auto lg:overflow-visible">
@@ -1506,7 +1524,7 @@ function StandardBillingUI() {
 
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('paymentMethod') || 'Payment Method'}</div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     {paymentOptions.map(option => {
                       const isSelected = !isEmi && paymentMethod === option.id;
                       const isUdhar = option.id === 'udhar';
@@ -1576,7 +1594,7 @@ function StandardBillingUI() {
                         <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('receivedVia') || 'Received via'}</label>
                         <div className="grid grid-cols-3 gap-2">
                           {paymentOptions
-                            .filter((o): o is typeof o & { id: CollectedMethod } => o.id !== 'udhar')
+                            .filter((o): o is typeof o & { id: CollectedMethod } => o.id !== 'udhar' && o.id !== 'mixed')
                             .map(option => (
                               <button
                                 key={option.id}
@@ -1604,6 +1622,51 @@ function StandardBillingUI() {
                   </div>
                 )}
 
+                {/* Mixed — a customer paying part cash, part UPI (etc.) for one
+                    bill. Each field writes straight into the engine's split
+                    state; any part of the total left unallocated falls through
+                    to the same "remaining → Udhar" flow as a partial Udhar
+                    advance, reusing that flow rather than duplicating it. */}
+                {isMixedSale && (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/20 p-3 space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('cash') || 'Cash'}</label>
+                        <input
+                          type="number" min={0} max={total} placeholder="0"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                          value={splitPayments.cash === 0 ? '' : splitPayments.cash}
+                          onChange={e => setSplitPayments(p => ({ ...p, cash: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('upi') || 'UPI'}</label>
+                        <input
+                          type="number" min={0} max={total} placeholder="0"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                          value={splitPayments.upi === 0 ? '' : splitPayments.upi}
+                          onChange={e => setSplitPayments(p => ({ ...p, upi: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t('card') || 'Card'}</label>
+                        <input
+                          type="number" min={0} max={total} placeholder="0"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                          value={splitPayments.card === 0 ? '' : splitPayments.card}
+                          onChange={e => setSplitPayments(p => ({ ...p, card: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))}
+                        />
+                      </div>
+                    </div>
+                    {remainingAmount > 0 && (
+                      <div className="flex justify-between items-center pt-2 border-t border-orange-200/60 dark:border-orange-500/20">
+                        <span className="text-sm font-semibold text-orange-500">{t('payLater') || 'Pay Later (Udhar)'}</span>
+                        <span className="text-lg font-black text-orange-500">₹{remainingAmount.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-semibold text-slate-500">{isEmi ? (t('financedViaEmi') || 'Financed via EMI') : (t('collectedAmount') || 'Collected')}</span>
@@ -1614,7 +1677,7 @@ function StandardBillingUI() {
                     <span className="text-xs font-bold text-slate-500">Status</span>
                     {isEmi ? (
                       <span className="text-xs font-black text-sky-600 dark:text-sky-400 bg-sky-500/10 px-2 py-1 rounded">{t('paidByMethod', { method: 'EMI' }) || 'Paid by EMI'}</span>
-                    ) : !isUdharSale ? (
+                    ) : (!isUdharSale && !isMixedSale) ? (
                       <span className="text-xs font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">{t('paidByMethod', { method: paymentMethodLabel }) || `Paid by ${paymentMethodLabel}`}</span>
                     ) : collectedAmount === 0 ? (
                       <span className="text-xs font-black text-orange-500 bg-orange-500/10 px-2 py-1 rounded">Unpaid / Udhar</span>
@@ -1625,7 +1688,7 @@ function StandardBillingUI() {
                     )}
                   </div>
 
-                  {isUdharSale && remainingAmount > 0 && (
+                  {(isUdharSale || isMixedSale) && remainingAmount > 0 && (
                     <p className="text-[10px] font-medium text-orange-500/80 leading-relaxed">
                       {t('udharHint') || "The remaining amount will be added to the customer's udhar ledger. Customer name is required on the next step."}
                     </p>
@@ -1907,7 +1970,7 @@ function StandardBillingUI() {
                       <span className="text-slate-600 dark:text-slate-400">{t('paymentMethod') || 'Payment Method'}</span>
                       <span className={cn(
                         "font-black",
-                        isEmi ? "text-sky-500" : paymentMethod === 'udhar' ? "text-orange-500" : "text-emerald-500"
+                        isEmi ? "text-sky-500" : (paymentMethod === 'udhar' || (isMixedSale && remainingAmount > 0)) ? "text-orange-500" : "text-emerald-500"
                       )}>{isEmi ? 'EMI' : paymentMethodLabel}</span>
                     </div>
                     {isPartialUdhar && (

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronUp, IndianRupee } from 'lucide-react';
+import { ChevronDown, ChevronUp, IndianRupee, Plus, X } from 'lucide-react';
 
 /**
  * Legacy shoe products stored bare "UK8"-style size keys before the shoe
@@ -14,6 +14,73 @@ import { ChevronDown, ChevronUp, IndianRupee } from 'lucide-react';
 export function formatSizeLabel(size: string): string {
   const m = size.trim().match(/^UK\s*(\d+(?:\.\d+)?)$/i);
   return m ? `UK/IND ${m[1]}` : size;
+}
+
+/** Chip multi-select + free-text "add custom" for which sizes appear as grid
+ *  columns — mirrors ColorPicker's exact UX (components/ColorSizeVariantGrid.tsx)
+ *  so a business-type's default size chart (XS/S/M/L…) is a starting palette
+ *  a shopkeeper can trim or extend, not a hard-coded list. Deselecting a chip
+ *  only removes it from the *chart*; it doesn't touch any stock already
+ *  entered for that size — the caller is expected to keep passing that size
+ *  in `value` (via sizeChart's caller-side union with existing data) so real
+ *  stock is never silently hidden or dropped. */
+export function SizePicker({
+  sizeChart, value, onChange, placeholder,
+}: {
+  sizeChart: string[];
+  value: string[];
+  onChange: (sizes: string[]) => void;
+  placeholder?: string;
+}) {
+  const t = useTranslations('Variants');
+  const [custom, setCustom] = useState('');
+  function toggle(s: string) {
+    onChange(value.includes(s) ? value.filter(x => x !== s) : [...value, s]);
+  }
+  function addCustom() {
+    const s = custom.trim();
+    if (s && !value.includes(s)) onChange([...value, s]);
+    setCustom('');
+  }
+  const palette = Array.from(new Set([...sizeChart, ...value]));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {palette.map(s => {
+          const active = value.includes(s);
+          return (
+            <button
+              type="button"
+              key={s}
+              onClick={() => toggle(s)}
+              className={cn(
+                'flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all',
+                active
+                  ? 'bg-violet-500/15 border-violet-500/40 text-violet-600 dark:text-violet-300'
+                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              )}
+            >
+              {formatSizeLabel(s)}
+              {active && <X size={10} />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={custom}
+          onChange={e => setCustom(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }}
+          placeholder={placeholder ?? t('addCustomPlaceholder')}
+          className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-500"
+        />
+        <button type="button" onClick={addCustom} className="px-3 rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-300 text-xs font-bold flex items-center gap-1">
+          <Plus size={12} />{t('add')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export interface SizePriceEntry {
@@ -86,13 +153,14 @@ export default function SizeVariantGrid({
     onSizePricesChange?.(updated);
   }
 
-  // Barcode is a free-text field, not numeric — needs its own setter so a
-  // shopkeeper can paste a real EAN, a scanner-generated code, or leave it
-  // blank to fall back to the product-level barcode. Empty string clears it
-  // (works as the client's requested "delete" action).
+  // Barcode is a free-text field, not numeric. Store the raw typed value —
+  // including an explicit empty string when the shopkeeper clears the field
+  // — so the caller-side auto-fill can distinguish "user has never touched
+  // this field" (undefined → auto-fill) from "user deliberately cleared it"
+  // (empty string → leave empty, don't auto-fill back on the next render).
   function handleBarcodeChange(size: string, raw: string) {
     const current = sizePrices[size] || { mrp: 0, sellingPrice: 0, cost: 0 };
-    const updated = { ...sizePrices, [size]: { ...current, barcode: raw.trim() || undefined } };
+    const updated = { ...sizePrices, [size]: { ...current, barcode: raw } };
     onSizePricesChange?.(updated);
   }
 
@@ -127,15 +195,20 @@ export default function SizeVariantGrid({
                 {formatSizeLabel(size)}
               </div>
 
-              {/* Current-stock badge */}
+              {/* Current-stock badge. The label is a visible line, not just a
+                  `title` tooltip — a tooltip never shows on the touchscreens
+                  this app is mostly used on, which left the bare number here
+                  reading as "stock is N" with no indication that the (empty)
+                  input below it is an ADD delta, not the stock itself. */}
               {!readOnly && baseValue !== undefined && (
                 <div className={cn(
-                  'text-center text-[10px] font-bold rounded-md px-1 py-0.5',
+                  'text-center rounded-md px-1 py-0.5 leading-tight',
                   base === 0
                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
                     : 'bg-sky-50 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300'
-                )} title={t('currentInStock')}>
-                  {base}
+                )}>
+                  <div className="text-[11px] font-bold">{base}</div>
+                  <div className="text-[8px] font-semibold uppercase tracking-wide opacity-80">{t('currentInStock')}</div>
                 </div>
               )}
 
@@ -263,22 +336,44 @@ export default function SizeVariantGrid({
               />
             </div>
           </div>
-          {/* Per-variant barcode. When set, the billing scanner matches this
-              exact code and drops the right colour/size straight into the bill. */}
-          <div>
-            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1" title="Scannable code for this specific variant. Leave empty to fall back to the product's barcode.">
-              {t('variantBarcode')}
-            </label>
-            <input
-              type="text"
-              placeholder={t('variantBarcodePlaceholder')}
-              value={sizePrices[expandedSize]?.barcode || ''}
-              onChange={e => handleBarcodeChange(expandedSize, e.target.value)}
-              className={cn(priceInp, 'text-left px-3 font-mono')}
-            />
-          </div>
         </div>
       )}
+
+      {/* Every stocked variant's barcode, always visible and editable — not
+          hidden behind expanding one size at a time. This is what "Generate
+          variant barcodes" (the caller's button, above this grid) actually
+          produces a visible result for: without this list, clicking Generate
+          silently filled sizePrices[*].barcode with nothing on screen to show
+          for it. When set, the billing scanner matches this exact code and
+          drops the right colour/size straight onto the bill; left blank, a
+          scan falls back to the product's own barcode. */}
+      {perSizePricing && !readOnly && (() => {
+        const stocked = sizeChart.filter(s => (value[s] ?? 0) > 0);
+        if (stocked.length === 0) return null;
+        return (
+          <div className="space-y-1.5 pt-1">
+            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+              {t('variantBarcodesTitle')}
+            </p>
+            <div className="space-y-1">
+              {stocked.map(size => (
+                <div key={size} className="flex items-center gap-1.5">
+                  <span className="shrink-0 w-16 text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate" title={formatSizeLabel(size)}>
+                    {formatSizeLabel(size)}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder={t('variantBarcodePlaceholder')}
+                    value={sizePrices[size]?.barcode || ''}
+                    onChange={e => handleBarcodeChange(size, e.target.value)}
+                    className={cn(priceInp, 'flex-1 text-left px-2.5 font-mono')}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Total Stock Bar */}
       <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-lg px-4 py-2 border border-slate-200 dark:border-slate-700/50">
@@ -316,7 +411,12 @@ export function generateVariantBarcodes(
   for (const key of Object.keys(variants)) {
     if (variants[key] <= 0) continue; // skip zero-qty rows to avoid label clutter
     const entry = next[key] || { mrp: 0, sellingPrice: 0, cost: 0 };
-    if (entry.barcode && entry.barcode.trim()) continue; // preserve user edits
+    // Preserve any user-set value INCLUDING an explicit empty string. A blank
+    // input reads as "shopkeeper doesn't want a per-variant code here, fall
+    // back to the product-level barcode when scanning" — never as "please
+    // fill it in for me again." Only genuinely-untouched entries (undefined
+    // barcode) get the auto-generated default.
+    if (entry.barcode !== undefined) continue;
     const suffix = key.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
     let code = `${base}-${suffix}`;
     // In the rare case the same suffix collides (e.g. duplicated variant keys

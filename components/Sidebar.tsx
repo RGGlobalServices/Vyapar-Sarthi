@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle
+  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle, HandCoins
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -216,6 +216,7 @@ export default function Sidebar({
     { key: 'billing',   icon: IndianRupee,     href: '/billing' },
     { key: 'products',  icon: Package,         href: '/products' },
     { key: 'party',     icon: Users,           href: '/party' },
+    { key: 'collection',icon: HandCoins,       href: '/collection' },
     { key: 'purchases', icon: ShoppingCart,    href: '/purchases' },
     { key: 'suppliers', icon: Users,           href: '/suppliers' },
     { key: 'warehouses',icon: Warehouse,       href: '/godowns' },

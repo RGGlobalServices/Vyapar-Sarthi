@@ -71,10 +71,17 @@ async function request(url: string, options: RequestInit = {}) {
 
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  // Inject active shop ID for multi-shop switching (skip for shop-management endpoints)
+  // Inject active shop ID for multi-shop switching (skip for shop-management endpoints).
+  // Only fills in when the caller hasn't already set one — with All Shop Access
+  // on, a page can be acting on a specific row that belongs to a DIFFERENT shop
+  // than whichever one is currently "active" (e.g. editing a pooled cross-shop
+  // list row without switching shops first), and needs to target that row's own
+  // shop explicitly rather than silently 404ing against the active shop's id.
   if (!url.startsWith('/shop/my-shops') && !url.startsWith('/shop/create')) {
-    const activeShopId = typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null;
-    if (activeShopId) headers.set('x-shop-id', activeShopId);
+    if (!headers.has('x-shop-id')) {
+      const activeShopId = typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null;
+      if (activeShopId) headers.set('x-shop-id', activeShopId);
+    }
   }
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
