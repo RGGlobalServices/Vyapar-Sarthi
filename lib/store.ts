@@ -484,6 +484,9 @@ export interface StockItem {
   metadata?: any;
   barcode?: string | null;
   cartonBarcode?: string | null;
+  location?: string | null;
+  costPriceMode?: string | null;
+  purchaseDiscountPercent?: number | null;
   recentlyAdded?: number;
   // Only present when the owner's All Shop Access preference is on.
   shopName?: string;
@@ -573,6 +576,9 @@ export const useStockStore = create<StockStore>((set, get) => ({
         metadata: p.metadata ?? null,
         barcode: p.barcode || null,
         cartonBarcode: p.cartonBarcode || null,
+        location: p.location || null,
+        costPriceMode: p.costPriceMode || null,
+        purchaseDiscountPercent: p.purchaseDiscountPercent ?? null,
         recentlyAdded: p.recentlyAdded || 0,
         shopName: p.shopName,
         shopBusinessType: p.shopBusinessType,

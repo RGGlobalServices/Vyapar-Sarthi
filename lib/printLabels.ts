@@ -19,6 +19,10 @@ export interface PrintableLabel {
 export interface PrintLabelSheetOptions {
   /** Optional extra line printed on every label (promo note, batch tag, etc.). */
   labelText?: string;
+  /** Optional two-line header printed above the product name — shop name,
+   *  address, tagline, whatever the shopkeeper wants leading every sticker. */
+  labelLine1?: string;
+  labelLine2?: string;
   labelSize?: 'a4' | 'thermal';
   /** Print-window / document title. */
   title?: string;
@@ -39,6 +43,14 @@ export async function printLabelSheet(rows: PrintableLabel[], options: PrintLabe
   const { default: JsBarcode } = await import('jsbarcode');
   const isThermal = options.labelSize === 'thermal';
   const noteLine = options.labelText?.trim() ? `<div class="lbl-note">${escapeHtml(options.labelText.trim())}</div>` : '';
+  const line1 = options.labelLine1?.trim();
+  const line2 = options.labelLine2?.trim();
+  const headerBlock = (line1 || line2)
+    ? `<div class="lbl-header">
+        ${line1 ? `<div class="lbl-header1">${escapeHtml(line1)}</div>` : ''}
+        ${line2 ? `<div class="lbl-header2">${escapeHtml(line2)}</div>` : ''}
+      </div>`
+    : '';
   const title = options.title || 'Labels';
 
   // Render each distinct barcode's SVG once, then repeat the whole label
@@ -59,6 +71,7 @@ export async function printLabelSheet(rows: PrintableLabel[], options: PrintLabe
     const price = sellingPrice > 0 ? `₹${sellingPrice.toLocaleString('en-IN')}` : (mrp > 0 ? `MRP ₹${mrp.toLocaleString('en-IN')}` : '');
     const label = `
       <div class="lbl">
+        ${headerBlock}
         <div class="lbl-name">${escapeHtml(row.name)}</div>
         ${row.variantKey ? `<div class="lbl-variant">${escapeHtml(row.variantKey)}</div>` : ''}
         <div class="lbl-barcode">${svgStr}</div>
@@ -85,6 +98,9 @@ export async function printLabelSheet(rows: PrintableLabel[], options: PrintLabe
         text-align: center;
         background: #fff;
       }
+      .lbl-header  { margin-bottom: 1mm; padding-bottom: 1mm; border-bottom: 0.3mm solid #cbd5e1; }
+      .lbl-header1 { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.2; }
+      .lbl-header2 { font-size: 7px; font-weight: 600; color: #475569; line-height: 1.2; margin-top: 0.3mm; }
       .lbl-name    { font-size: 10px; font-weight: 800; line-height: 1.15; margin-bottom: 1mm;
                       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .lbl-variant { font-size: 9px; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1mm; }

@@ -92,9 +92,11 @@ export const GET = handle(async (req) => {
       sales.flatMap((s) => s.items.map((i) => i.productId)).filter((id): id is string => !!id)
     ));
     const products = productIds.length > 0
-      ? await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, costPrice: true } })
+      ? await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, costPrice: true, mrp: true, purchaseDiscountPercent: true } })
       : [];
     const costById = new Map(products.map((p) => [p.id, p.costPrice]));
+    const mrpById = new Map(products.map((p) => [p.id, p.mrp]));
+    const purchasePercentById = new Map(products.map((p) => [p.id, p.purchaseDiscountPercent]));
 
     const enriched = combined.map((t) => {
       const sale = t.bill_number ? saleByInvoice.get(t.bill_number) : undefined;
@@ -118,6 +120,10 @@ export const GET = handle(async (req) => {
           quantity: Number(i.quantity) || 0,
           sellingPrice: Number(i.pricePerUnit) || 0,
           costPrice,
+          // Same "current product state, not a historical snapshot" caveat
+          // as costPrice above — these reflect the product's setting today.
+          mrp: i.productId ? mrpById.get(i.productId) ?? null : null,
+          purchaseDiscountPercent: i.productId ? purchasePercentById.get(i.productId) ?? null : null,
           profitPerUnit: marginPerUnit,
           profitPercent: costPrice > 0 ? Math.round((marginPerUnit / costPrice) * 100 * 10) / 10 : null,
         };

@@ -7,7 +7,7 @@ import {
   Loader2, Package, Tag, ShieldCheck,
   LayoutGrid, List, ArrowUp, ArrowDown, Warehouse,
   Calendar, FlaskConical, Ruler, Palette, MonitorSmartphone, User, Shirt, Footprints,
-  IndianRupee, Store, QrCode
+  IndianRupee, Store, QrCode, MapPin
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -47,9 +47,14 @@ type WholesaleProduct = {
   sellingPrice: number;
   wholesaleCost: number;
   costPrice: number;
+  costPriceMode?: string;
+  purchaseDiscountPercent?: number;
   baseUnit: string;
   currentStock?: number;
   minStock?: number;
+  // Free-text shelf/rack/bin locator — distinct from the Godown feature (a
+  // whole warehouse); this is a lightweight note on the product itself.
+  location?: string;
   _count?: { godownProducts: number };
   // Business-type specific fields
   expiryDate?: string;
@@ -87,6 +92,19 @@ function shopIdHeader(shopId?: string | null) {
   return shopId ? { headers: { 'x-shop-id': String(shopId) } } : {};
 }
 
+// Single source of truth for what Cost Price actually is right now, shared
+// by every live display AND the submit payload so they can never disagree —
+// 'manual' returns costPrice unchanged (today's behavior); 'mrp_based'
+// derives it from mrp/purchaseDiscountPercent instead.
+function effectiveCostPrice(f: { costPrice?: number; mrp?: number; costPriceMode?: string; purchaseDiscountPercent?: number }): number {
+  if (f.costPriceMode === 'mrp_based') {
+    const mrp = Number(f.mrp) || 0;
+    const pct = Number(f.purchaseDiscountPercent) || 0;
+    return Math.max(0, mrp * (1 - pct / 100));
+  }
+  return Number(f.costPrice) || 0;
+}
+
 function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
   const config = getBusinessConfig(bizType);
   return {
@@ -101,7 +119,10 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     sellingPrice: 0,
     wholesaleCost: 0,
     costPrice: 0,
+    costPriceMode: 'manual',
+    purchaseDiscountPercent: undefined,
     baseUnit: config.defaultUnits[0] || 'PCS',
+    location: '',
     expiryDate: '',
     batch_number: '',
     drug_schedule: 'OTC',
@@ -562,6 +583,10 @@ export default function WholesaleProductsUI() {
         ...form,
         barcode: form.barcode?.trim() || null,
         variants: isVariantProduct ? effectiveVariants : [],
+        // Only applies to the flat/non-per-variant cost price — firstVariant
+        // (per-variant pricing) still wins below when it applies, since it's
+        // spread in after this.
+        costPrice: effectiveCostPrice(form),
         ...(firstVariant ? {
           costPrice: firstVariant.costPrice || 0,
           wholesaleCost: firstVariant.wholesalePrice || 0,
@@ -744,6 +769,7 @@ export default function WholesaleProductsUI() {
               { key: 'sellingPrice', label: 'Selling Price', type: 'currency' },
               { key: 'wholesaleCost', label: 'Wholesale Rate', type: 'currency' },
               { key: 'costPrice', label: 'Cost Price', type: 'currency' },
+              { key: 'purchaseDiscountPercent', label: 'Purchase %', type: 'number' },
               { key: 'currentStock', label: 'Stock', type: 'number' },
               { key: 'baseUnit', label: 'Unit' },
             ]}
@@ -929,6 +955,9 @@ export default function WholesaleProductsUI() {
                     <th className="p-4 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('category')}>
                       <div className="flex items-center gap-1">{t('colCategory') || 'Category'} {sortConfig?.key === 'category' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
+                    <th className="p-4 font-semibold">
+                      <div className="flex items-center gap-1"><MapPin size={13}/> {t('productLocation') || 'Location'}</div>
+                    </th>
                     {/* Business-type specific columns */}
                     {groupBizConfig.hasExpiry && (
                       <th className="p-4 font-semibold text-orange-500 dark:text-orange-400">
@@ -985,6 +1014,7 @@ export default function WholesaleProductsUI() {
                     <th className="p-4 font-semibold text-right">
                       <div className="flex items-center justify-end gap-1">{t('colProfit') || 'Profit %'}</div>
                     </th>
+                    <th className="p-4 font-semibold text-right">Purchase %</th>
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('currentStock')}>
                       <div className="flex items-center justify-end gap-1">{t('colStock') || 'Stock'} {sortConfig?.key === 'currentStock' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
@@ -1043,6 +1073,7 @@ export default function WholesaleProductsUI() {
                         <td className="p-4 text-slate-600 dark:text-slate-300 font-mono text-xs cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.barcode || '-'}</td>
                         <td className="p-4 text-slate-900 dark:text-white font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.brand || '-'}</td>
                         <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.category || '-'}</td>
+                        <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.location || '-'}</td>
                         {/* Business-type specific data cells */}
                         {groupBizConfig.hasExpiry && (
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
@@ -1119,6 +1150,9 @@ export default function WholesaleProductsUI() {
                               set cost
                             </button>
                           )}
+                        </td>
+                        <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                          {p.costPriceMode === 'mrp_based' && p.purchaseDiscountPercent != null ? `${p.purchaseDiscountPercent}%` : '—'}
                         </td>
                         <td className="p-4 text-right cursor-pointer" onClick={() => setSelectedProduct(p)}>
                           <span className={cn("font-medium", isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-slate-900 dark:text-white")}>
@@ -1285,6 +1319,14 @@ export default function WholesaleProductsUI() {
                         <option value={18}>18%</option>
                         <option value={28}>28%</option>
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                        {t('productLocation') || 'Product Location'} <span className="font-normal normal-case text-slate-400">({t('optional') || 'optional'})</span>
+                      </label>
+                      <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                        placeholder="e.g. Shelf A3, Rack 2, Bin 14"
+                        value={form.location || ''} onChange={e => setForm({...form, location: e.target.value})} />
                     </div>
                   </div>
                 </section>
@@ -1720,12 +1762,36 @@ export default function WholesaleProductsUI() {
                             value={form.barcode || ''} onChange={e => setForm({...form, barcode: e.target.value})} placeholder={t('scanOrTypeBarcode') || "Scan or type barcode"} />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('costPrice') || 'Cost Price'}</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
-                            <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                              value={form.costPrice || ''} onChange={e => setForm({...form, costPrice: parseFloat(e.target.value) || 0})} />
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('costPrice') || 'Cost Price'}</label>
+                            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
+                              {(['manual', 'mrp_based'] as const).map(mode => (
+                                <button key={mode} type="button"
+                                  onClick={() => setForm({ ...form, costPriceMode: mode })}
+                                  className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all',
+                                    (form.costPriceMode || 'manual') === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
+                                  {mode === 'manual' ? 'Manual' : 'MRP'}
+                                </button>
+                              ))}
+                            </div>
                           </div>
+                          {form.costPriceMode === 'mrp_based' ? (
+                            <>
+                              <div className="relative">
+                                <input type="number" step="0.01" min={0} max={100} placeholder="Discount %"
+                                  className="w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                                  value={form.purchaseDiscountPercent ?? ''} onChange={e => setForm({ ...form, purchaseDiscountPercent: parseFloat(e.target.value) || 0 })} />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">%</span>
+                              </div>
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold mt-1">= ₹{effectiveCostPrice(form).toFixed(2)}</p>
+                            </>
+                          ) : (
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
+                              <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                                value={form.costPrice || ''} onChange={e => setForm({...form, costPrice: parseFloat(e.target.value) || 0})} />
+                            </div>
+                          )}
                           <p className="text-[10px] text-slate-400 mt-1">What you pay your vendor/supplier — used for profit &amp; margin.</p>
                         </div>
                         <div>
@@ -1755,8 +1821,9 @@ export default function WholesaleProductsUI() {
                           </div>
                         </div>
                      </div>
-                     {(form.costPrice || 0) > 0 && (() => {
-                        const result = calculateProductProfit(form.sellingPrice || 0, form.costPrice || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                     {effectiveCostPrice(form) > 0 && (() => {
+                        const costForProfit = effectiveCostPrice(form);
+                        const result = calculateProductProfit(form.sellingPrice || 0, costForProfit, form.gstPercent || 0, !!profile.gstInclusiveProfit);
                         const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                         const textCls = profitColorClass(result.status);
                         return (
@@ -1772,7 +1839,7 @@ export default function WholesaleProductsUI() {
                                 value={result.percent ? Number(result.percent.toFixed(1)) : ''}
                                 onChange={e => {
                                   const pct = parseFloat(e.target.value) || 0;
-                                  const newSp = Math.round(sellingPriceForMargin(form.costPrice || 0, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
+                                  const newSp = Math.round(sellingPriceForMargin(costForProfit, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
                                   setForm(f => ({ ...f, sellingPrice: newSp, wholesaleCost: newSp }));
                                 }}
                               />
@@ -1807,9 +1874,29 @@ export default function WholesaleProductsUI() {
                       {sameVariantPricing && (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
-                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                              value={form.costPrice || ''} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Cost</label>
+                              <div className="flex bg-white dark:bg-slate-900 rounded p-0.5 border border-slate-200 dark:border-slate-700">
+                                {(['manual', 'mrp_based'] as const).map(mode => (
+                                  <button key={mode} type="button"
+                                    onClick={() => setForm({ ...form, costPriceMode: mode })}
+                                    className={cn('px-1 rounded text-[8px] font-bold uppercase',
+                                      (form.costPriceMode || 'manual') === mode ? 'bg-emerald-500 text-white' : 'text-slate-400')}>
+                                    {mode === 'manual' ? 'Man' : 'MRP'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {form.costPriceMode === 'mrp_based' ? (
+                              <>
+                                <input type="number" min={0} max={100} placeholder="Disc %" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                  value={form.purchaseDiscountPercent ?? ''} onChange={e => setForm({ ...form, purchaseDiscountPercent: parseFloat(e.target.value) || 0 })} />
+                                <p className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-1">= ₹{effectiveCostPrice(form).toFixed(2)}</p>
+                              </>
+                            ) : (
+                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                value={form.costPrice || ''} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
+                            )}
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
@@ -1829,8 +1916,9 @@ export default function WholesaleProductsUI() {
                         </div>
                       )}
 
-                      {sameVariantPricing && (form.costPrice || 0) > 0 && (() => {
-                        const result = calculateProductProfit(form.sellingPrice || 0, form.costPrice || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                      {sameVariantPricing && effectiveCostPrice(form) > 0 && (() => {
+                        const costForProfit = effectiveCostPrice(form);
+                        const result = calculateProductProfit(form.sellingPrice || 0, costForProfit, form.gstPercent || 0, !!profile.gstInclusiveProfit);
                         const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                         const textCls = profitColorClass(result.status);
                         return (
@@ -1846,7 +1934,7 @@ export default function WholesaleProductsUI() {
                                 value={result.percent ? Number(result.percent.toFixed(1)) : ''}
                                 onChange={e => {
                                   const pct = parseFloat(e.target.value) || 0;
-                                  const newSp = Math.round(sellingPriceForMargin(form.costPrice || 0, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
+                                  const newSp = Math.round(sellingPriceForMargin(costForProfit, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
                                   setForm(f => ({ ...f, sellingPrice: newSp, wholesaleCost: newSp }));
                                 }}
                               />

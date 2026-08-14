@@ -5,10 +5,11 @@ import { useState, useEffect, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store } from 'lucide-react';
+import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store, Plus } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
+import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
 import { getBaseAmount, getGstAmount, getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
@@ -18,7 +19,7 @@ import { useLocale } from 'next-intl';
 function SettingsPageInner() {
   const t = useTranslations('Settings');
   const locale = useLocale();
-  const { profile, fetchProfile, updateProfile, allShops, allShopAccess, setAllShopAccess } = useBusinessStore();
+  const { profile, fetchProfile, updateProfile, allShops, allShopAccess, setAllShopAccess, selectedShopIds, setSelectedShopIds } = useBusinessStore();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -53,6 +54,61 @@ function SettingsPageInner() {
     }
   };
 
+  // null = "not yet touched this visit", so the picker mirrors the saved
+  // selection directly. Becomes a real Set the moment the owner ticks/
+  // unticks a shop, so Save/Cancel act on a local draft instead of writing
+  // on every click.
+  const [pendingSelected, setPendingSelected] = useState<Set<string> | null>(null);
+  const [showAddShop, setShowAddShop] = useState(false);
+  const [savingSelection, setSavingSelection] = useState(false);
+
+  // Empty saved selection = never customized yet, which every pooled route
+  // already treats as "every owned shop" — mirror that here so the picker
+  // opens with everything ticked instead of looking empty.
+  const savedSelectedIds = selectedShopIds.length > 0 ? selectedShopIds : allShops.map((s) => s.id);
+  const effectiveSelected = pendingSelected ?? new Set(savedSelectedIds);
+  const selectedShopsList = allShops.filter((s) => effectiveSelected.has(s.id));
+  const remainingShops = allShops.filter((s) => !effectiveSelected.has(s.id));
+  const hasPendingChanges =
+    pendingSelected !== null &&
+    (pendingSelected.size !== savedSelectedIds.length || savedSelectedIds.some((id) => !pendingSelected.has(id)));
+
+  const addToSelection = (shopId: string) => {
+    setPendingSelected(new Set([...effectiveSelected, shopId]));
+  };
+  const removeFromSelection = (shopId: string) => {
+    const next = new Set(effectiveSelected);
+    next.delete(shopId);
+    setPendingSelected(next);
+  };
+
+  const handleSaveSelection = async () => {
+    if (effectiveSelected.size === 0) return;
+    setSavingSelection(true);
+    try {
+      await setSelectedShopIds(Array.from(effectiveSelected));
+      setPendingSelected(null);
+      setShowAddShop(false);
+      setStatus({ type: 'success', message: 'Selected shops saved.' });
+      setTimeout(() => setStatus(null), 3000);
+      // setSelectedShopIds updates the store optimistically, before its PATCH
+      // actually lands — the effect below reacts to that optimistic change
+      // and can race the save, fetching the summary just before the new
+      // selection is committed server-side. Re-fetch explicitly now that the
+      // await above has confirmed the save landed, so the table is never
+      // left showing the pre-save scope.
+      setLoadingAllShopsSummary(true);
+      api.get('/reports/all-shops-summary')
+        .then((res) => setAllShopsSummary(res.data))
+        .catch(() => {})
+        .finally(() => setLoadingAllShopsSummary(false));
+    } catch {
+      setStatus({ type: 'error', message: 'Failed to save selected shops.' });
+    } finally {
+      setSavingSelection(false);
+    }
+  };
+
   const handleToggleGstInclusiveProfit = async (checked: boolean) => {
     setSavingGstProfit(true);
     try {
@@ -72,6 +128,14 @@ function SettingsPageInner() {
   }, [fetchProfile]);
 
   // Only fetch the multi-shop summary for owners it's actually relevant to.
+  // Deliberately NOT keyed on selectedShopIds: setSelectedShopIds updates the
+  // store optimistically before its PATCH lands, and this app's shared DB
+  // pooler has wildly variable latency (documented elsewhere in this repo) —
+  // reacting to that optimistic change here raced the explicit post-save
+  // re-fetch in handleSaveSelection below, and whichever response happened
+  // to land LAST won, occasionally leaving the table showing the pre-save
+  // scope. handleSaveSelection re-fetches once, only after its await
+  // confirms the save actually landed, which is the only trigger this needs.
   useEffect(() => {
     if (allShops.length <= 1) return;
     setLoadingAllShopsSummary(true);
@@ -473,7 +537,7 @@ function SettingsPageInner() {
                   <p className="font-bold text-slate-800 dark:text-slate-200">Show all {allShops.length} shops together</p>
                   <p className="text-xs text-slate-500">
                     {allShopAccess
-                      ? 'On — Products, Stock, Dashboard and Reports show every shop you own, each row labeled with its shop. Billing and Import still work on only your currently open shop.'
+                      ? `On — Products, Stock, Dashboard and Reports pool ${selectedShopIds.length > 0 ? `the ${selectedShopIds.length} shop${selectedShopIds.length === 1 ? '' : 's'} selected below` : 'every shop you own'}, each row labeled with its shop. Billing and Import still work on only your currently open shop.`
                       : 'Off (default) — every page only shows the shop you currently have open, exactly as before.'}
                   </p>
                 </div>
@@ -491,6 +555,78 @@ function SettingsPageInner() {
                   )} />
                 </button>
               </div>
+
+              {allShopAccess && (
+                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Selected shops</p>
+                    {hasPendingChanges && (
+                      <button
+                        onClick={handleSaveSelection}
+                        disabled={savingSelection || effectiveSelected.size === 0}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50 transition-colors"
+                      >
+                        {savingSelection ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                        Save Selection
+                      </button>
+                    )}
+                  </div>
+
+                  {effectiveSelected.size === 0 && (
+                    <p className="text-xs text-orange-600 dark:text-orange-400 mb-2">Select at least one shop.</p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {selectedShopsList.map((s) => (
+                      <div key={s.id} className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
+                        <span className="text-slate-400">{getBusinessConfig((s.businessType || 'general') as BusinessType).label}</span>
+                        <button type="button" onClick={() => removeFromSelection(s.id)} className="text-slate-400 hover:text-red-500">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    {!showAddShop && remainingShops.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddShop(true)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-dashed border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-500 hover:border-emerald-500 hover:text-emerald-600 transition-colors"
+                      >
+                        <Plus size={12} /> Add Shop
+                      </button>
+                    )}
+                  </div>
+
+                  {showAddShop && (
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 mb-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Remaining shops</p>
+                        <button type="button" onClick={() => setShowAddShop(false)} className="text-slate-400 hover:text-slate-600">
+                          <X size={14} />
+                        </button>
+                      </div>
+                      {remainingShops.length === 0 ? (
+                        <p className="text-xs text-slate-500 py-2">All shops are already selected.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {remainingShops.map((s) => (
+                            <label key={s.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-900 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={false}
+                                onChange={() => addToSelection(s.id)}
+                                className="w-4 h-4 rounded accent-emerald-500"
+                              />
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
+                              <span className="text-[11px] text-slate-400">{getBusinessConfig((s.businessType || 'general') as BusinessType).label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-3">

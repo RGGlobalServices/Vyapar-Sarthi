@@ -14,22 +14,25 @@ import { useLocale } from 'next-intl';
 import { translateData } from '@/lib/translateData';
 import SmartTranslator from '@/components/SmartTranslator';
 import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
-import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata, generateVariantBarcodes, SizePicker } from '@/components/SizeVariantGrid';
+import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata, generateVariantBarcodes, SizePicker, LocalInput } from '@/components/SizeVariantGrid';
 import type { SizePriceEntry } from '@/components/SizeVariantGrid';
 import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey, VARIANT_SEP } from '@/components/ColorSizeVariantGrid';
+import { CategoryPicker } from '@/components/CategoryPicker';
 import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
-import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
+import { getBusinessConfig, getCategoryVariantSpec, resolveClothingSizeChart, FootwearSizeSystem } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 
 import { QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import WholesaleProductsUI from './WholesaleProductsUI';
+import ProductDetailsSheet from './ProductDetailsSheet';
 import useSWR from 'swr';
 
 import { fetchProductsMapped } from '@/lib/fetchers';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
+import { ExportButton } from '@/lib/hooks/useExport';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
@@ -68,6 +71,9 @@ type Product = {
   recentlyAdded?: number;
   barcode?: string;
   cartonBarcode?: string;
+  location?: string;
+  costPriceMode?: string;
+  purchaseDiscountPercent?: number;
   shopName?: string;
   shopBusinessType?: string;
 };
@@ -75,8 +81,16 @@ type Product = {
 function buildEmptyForm(btype: string) {
   const config = getBusinessConfig(btype);
   return {
-    name: '', category: '', unit: config.defaultUnits[0] || 'Unit', stock: '', minStock: '',
+    // minStock defaults to '5' (matching its own placeholder hint) — it's a
+    // required field with no sensible reason to force every first-time Add
+    // through an extra required box; still fully editable if they want a
+    // different threshold.
+    name: '', category: '', unit: config.defaultUnits[0] || 'Unit', stock: '', minStock: '5',
     mrp: '', sellingPrice: '', cost: '',
+    // 'manual' (default) types Cost Price directly, exactly as before.
+    // 'mrp_based' derives it live from mrp * (1 - purchaseDiscountPercent/100)
+    // — see effectiveCostPrice() below, used at both display and submit time.
+    costPriceMode: 'manual' as 'manual' | 'mrp_based', purchaseDiscountPercent: '',
     is_loose: false,
     expiry_date: '', batch_number: '', drug_schedule: 'OTC',
     model_number: '', warranty_months: '', gender: 'Unisex',
@@ -84,9 +98,24 @@ function buildEmptyForm(btype: string) {
     gstPercent: 0, hsnCode: '',
     // Scannable identifiers — help desktop barcode billing.
     barcode: '', sku: '', cartonBarcode: '',
+    // Free-text shelf/rack/bin locator — where the item physically sits.
+    location: '',
     // Liquor (Beer Bar & Wine Shop) fields
     brand: '', alcohol_percentage: '', bottle_type: '', conversion_factor: ''
   };
+}
+
+// Single source of truth for what Cost Price actually is right now, shared
+// by the live display AND the submit payload so they can never disagree —
+// 'manual' returns the typed cost.cost field unchanged (today's behavior);
+// 'mrp_based' derives it from mrp/purchaseDiscountPercent instead.
+function effectiveCostPrice(f: { cost: any; mrp: any; costPriceMode?: string; purchaseDiscountPercent: any }): number {
+  if (f.costPriceMode === 'mrp_based') {
+    const mrp = Number(f.mrp) || 0;
+    const pct = Number(f.purchaseDiscountPercent) || 0;
+    return Math.max(0, mrp * (1 - pct / 100));
+  }
+  return Number(f.cost) || 0;
 }
 
 // With All Shop Access on, a pooled cross-shop list can show (and let you act
@@ -135,6 +164,13 @@ function LegacyProductsUI() {
   const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<Product[]>(swrKey, fetchProductsMapped);
   
   const [saving, setSaving] = useState(false);
+  // `saving` (state) drives the disabled/spinner UI, but a real rapid
+  // double-click fires both event handlers before React commits the first
+  // setSaving(true) and re-renders — confirmed live: two clicks produced two
+  // POSTs even with the button visually disabling correctly moments later.
+  // This ref is mutated synchronously, so the guard actually holds within
+  // the same tick, unlike a state read.
+  const submittingRef = useRef(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Deep-link: /products?add=1 auto-opens the Add-Product modal. Used by the
@@ -156,6 +192,7 @@ function LegacyProductsUI() {
   const [editForm, setEditForm] = useState(buildEmptyForm(profile.businessType));
   const [editSpMode, setEditSpMode] = useState<'inclusive' | 'exclusive'>('inclusive');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string | number>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -197,7 +234,19 @@ function LegacyProductsUI() {
   // category with a spec resolves) rather than re-synced on every category
   // change, matching `colors`/`editColors`'s own non-resyncing behaviour.
   const [sizeSelection, setSizeSelection] = useState<string[]>([]);
+  // True until the shopkeeper manually edits the size picker — lets the
+  // auto-seed effect below keep upgrading the chart as Category/Gender get
+  // typed (e.g. blank → "Jeans" → numeric waist sizes) instead of only ever
+  // getting one shot at modal-open, when category is still empty.
+  const [sizeSelectionAuto, setSizeSelectionAuto] = useState(true);
   const [editSizeSelection, setEditSizeSelection] = useState<string[]>([]);
+  // Footwear only — India/UK sizes are numerically identical, so that's the
+  // practical default for an Indian shopkeeper; US/EU are the same physical
+  // sizes relabeled (see FOOTWEAR_SIZE_TABLES). Changing this re-resolves
+  // the size chart the same way a Category/Gender change does, through the
+  // same addVariantDim/editVariantDim memo below.
+  const [sizeSystem, setSizeSystem] = useState<FootwearSizeSystem>('uk');
+  const [editSizeSystem, setEditSizeSystem] = useState<FootwearSizeSystem>('uk');
   // Outer real-colour picker for the 3-way (Colour × Type × Spec) grid used by
   // electronics/electric spec-categories. Kept separate from `colors` above,
   // which drives the *inner* spec-type chips (RAM, Wattage, …) in the 2-way path.
@@ -211,9 +260,10 @@ function LegacyProductsUI() {
   // Build the variant dimensions for a product. Apparel = Colour × Size (always on).
   // Electricals/electronics = a Type × Spec matrix resolved from the product's CATEGORY
   // (bulb → Type × Watt, battery → Type × Capacity, …); null when the category has no spec.
-  function buildVariantDim(category: string) {
+  function buildVariantDim(category: string, gender?: string, footwearSizeSystem: FootwearSizeSystem = 'uk') {
     if (bizConfig.hasColors) {
-      return { options: bizConfig.colorChart || [], label: 'colour', swatch: true, sectionLabel: tv('colourSizeInventory'), sizeChart: bizConfig.sizeChart || [] };
+      const chart = resolveClothingSizeChart(category, gender, bizConfig.type === 'shoes', bizConfig.sizeChart || [], footwearSizeSystem);
+      return { options: bizConfig.colorChart || [], label: 'colour', swatch: true, sectionLabel: tv('colourSizeInventory'), sizeChart: chart };
     }
     if (bizConfig.hasSpecs) {
       const spec = getCategoryVariantSpec(category, bizConfig.type);
@@ -226,8 +276,17 @@ function LegacyProductsUI() {
     }
     return null;
   }
-  const addVariantDim = buildVariantDim(form.category);
-  const editVariantDim = buildVariantDim(editForm.category);
+  // Memoized: buildVariantDim() only actually depends on category/gender/
+  // bizConfig (bizConfig is a stable reference — getBusinessConfig() indexes
+  // a static lookup table, never constructs a fresh object). Recomputing it
+  // unconditionally on every render of this ~2700-line component — which
+  // happens on every keystroke into ANY field, not just category/gender —
+  // was measurable, avoidable overhead stacking on top of everything else in
+  // this form; this is the general fix, not a one-off, for the same class of
+  // "hard-coded to recompute every render" issue the LocalInput work below
+  // exists to avoid for individual fields.
+  const addVariantDim = useMemo(() => buildVariantDim(form.category, form.gender, sizeSystem), [form.category, form.gender, sizeSystem, bizConfig]);
+  const editVariantDim = useMemo(() => buildVariantDim(editForm.category, editForm.gender, editSizeSystem), [editForm.category, editForm.gender, editSizeSystem, bizConfig]);
 
   // Every stocked variant should show a barcode value (auto-generated from the
   // product base if the shopkeeper hasn't typed one), so an empty input never
@@ -248,14 +307,16 @@ function LegacyProductsUI() {
     const base = editForm.barcode || `PRD-${String(editProduct?.id || '').slice(0, 8).toUpperCase()}`;
     return generateVariantBarcodes(base, editForm.size_variants, editSizePrices);
   }, [editForm.barcode, editForm.size_variants, editSizePrices, editProduct?.id]);
-  // The Add form's size chart isn't known until a category resolves a spec
-  // (unlike bizConfig.sizeChart, seeded immediately when the modal opens —
-  // see the "+ Add Product" button). Seed sizeSelection the first time one
-  // becomes available; once the shopkeeper has an actual selection, further
-  // category changes don't fight it, matching colors/editColors' own
-  // no-resync-after-first-set behaviour.
+  // The Add form's size chart isn't known until a category (and, for
+  // apparel/footwear, Gender) resolves — unlike bizConfig.sizeChart, which is
+  // seeded immediately when the modal opens (see the "+ Add Product" button).
+  // Keep re-seeding as Category/Gender get typed (blank → "Jeans" → numeric
+  // waist sizes) as long as the shopkeeper hasn't manually touched the size
+  // picker yet — matches colors/editColors' own no-resync-after-manual-edit
+  // behaviour, but gated on an explicit "touched" flag instead of "array is
+  // still empty" so a category typed after modal-open still upgrades the chart.
   useEffect(() => {
-    if (showAddModal && addVariantDim && sizeSelection.length === 0) {
+    if (showAddModal && addVariantDim && sizeSelectionAuto) {
       setSizeSelection(addVariantDim.sizeChart);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -607,6 +668,9 @@ function LegacyProductsUI() {
 
   async function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return; // synchronous guard — see submittingRef's own comment
+    submittingRef.current = true;
+    setSaving(true);
     const sizeVariantsJson = addVariantActive ? serializeSizeVariants(form.size_variants) : undefined;
     const stockQty = addVariantActive ? totalFromSizes(form.size_variants) : Number(form.stock);
     // Uses the *effective* map (with auto-generated barcodes filled in for
@@ -632,7 +696,10 @@ function LegacyProductsUI() {
         current_stock: stockQty, min_stock: Number(form.minStock),
         mrp: Number(form.mrp) || 0,
         selling_price: normalizedSellingPrice,
-        wholesale_cost: Number(form.cost) || 0, base_unit: form.unit || 'Unit',
+        wholesale_cost: effectiveCostPrice(form), base_unit: form.unit || 'Unit',
+        cost_price_mode: form.costPriceMode,
+        purchase_discount_percent: form.costPriceMode === 'mrp_based' && form.purchaseDiscountPercent !== ''
+          ? Number(form.purchaseDiscountPercent) : null,
         is_loose: form.is_loose,
         expiry_date: form.expiry_date || null,
         batch_number: form.batch_number || null,
@@ -650,6 +717,7 @@ function LegacyProductsUI() {
         barcode: form.barcode?.trim() || `BAR-${Date.now()}`,
         sku: form.sku?.trim() || null,
         cartonBarcode: form.cartonBarcode?.trim() || null,
+        location: form.location?.trim() || null,
       });
 
       // If a godown was selected, assign the initial stock to it
@@ -668,6 +736,7 @@ function LegacyProductsUI() {
       saveCategory(form.category);
 
       invalidateProductCaches();
+      toast.success('Product added');
       setForm(buildEmptyForm(profile.businessType));
       setSpMode('inclusive');
       setAddToGodownId('');
@@ -675,7 +744,18 @@ function LegacyProductsUI() {
       setSizePrices({});
       setColors([]);
       setShowAddModal(false);
-    } catch { /* */ }
+    } catch (err: any) {
+      // Previously a silent catch — a real failure (duplicate barcode, a
+      // required field the API rejects, network timeout on the slow shared
+      // pooler) left the modal open with zero indication anything went
+      // wrong, reading identically to "the Add button doesn't work."
+      const detail = err?.response?.data?.detail || err?.message || 'Failed to add product';
+      toast.error(detail);
+      console.error('[Add Product save failed]', err);
+    } finally {
+      submittingRef.current = false;
+      setSaving(false);
+    }
   }
 
   function startEdit(product: Product) {
@@ -706,10 +786,13 @@ function LegacyProductsUI() {
       barcode: (product as any).barcode || '',
       sku: (product as any).sku || '',
       cartonBarcode: (product as any).cartonBarcode || '',
+      location: product.location || '',
       brand: product.brand || '',
       alcohol_percentage: String((product.metadata as any)?.alcoholPercentage ?? ''),
       bottle_type: String((product.metadata as any)?.bottleType ?? ''),
       conversion_factor: String(product.conversionFactor ?? product.conversion_factor ?? ''),
+      costPriceMode: (product.costPriceMode === 'mrp_based' ? 'mrp_based' : 'manual') as 'manual' | 'mrp_based',
+      purchaseDiscountPercent: String(product.purchaseDiscountPercent ?? ''),
     });
     // Load per-size pricing from metadata. Default it ON for variant products (colour/size or a
     // category with a spec matrix) so per-spec price fields are visible without hunting for a toggle.
@@ -728,10 +811,22 @@ function LegacyProductsUI() {
     // saved data — covers a legacy/custom size that predates the current
     // default chart, same merge already used inline for the colour+size grid.
     {
-      const productVariantDim = buildVariantDim(product.category || '');
+      const existingSizes = sizesFromVariants(parsedVariants);
+      // Footwear only — infer which size system this product's existing
+      // variants were already entered in (rather than always resetting the
+      // toggle to UK), so re-opening a product built with US/EU sizes shows
+      // its own sizes as selected instead of looking like they vanished.
+      let footwearSizeSystem: FootwearSizeSystem = 'uk';
+      if (bizConfig.type === 'shoes') {
+        footwearSizeSystem = existingSizes.some(s => s.startsWith('US ')) ? 'us'
+          : existingSizes.some(s => s.startsWith('EU ')) ? 'eu'
+          : 'uk';
+        setEditSizeSystem(footwearSizeSystem);
+      }
+      const productVariantDim = buildVariantDim(product.category || '', product.gender || '', footwearSizeSystem);
       setEditSizeSelection(Array.from(new Set([
         ...((productVariantDim?.sizeChart) || bizConfig.sizeChart || []),
-        ...sizesFromVariants(parsedVariants),
+        ...existingSizes,
       ])));
     }
     setEditBaseVariants(parsedVariants);
@@ -740,6 +835,7 @@ function LegacyProductsUI() {
   async function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!editProduct) return;
+    if (submittingRef.current) return; // synchronous guard — see submittingRef's own comment
     const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
     const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
     // Data-destroying guard: additive mode can only ever ADD to a size's base
@@ -760,6 +856,7 @@ function LegacyProductsUI() {
       );
       if (!ok) return;
     }
+    submittingRef.current = true;
     setSaving(true);
     try {
       let editMetadata = editVariantActive
@@ -783,7 +880,10 @@ function LegacyProductsUI() {
         min_stock: Number(editForm.minStock),
         mrp: Number(editForm.mrp) || 0,
         selling_price: normalizedEditSellingPrice,
-        wholesale_cost: Number(editForm.cost) || 0,
+        wholesale_cost: effectiveCostPrice(editForm),
+        cost_price_mode: editForm.costPriceMode,
+        purchase_discount_percent: editForm.costPriceMode === 'mrp_based' && editForm.purchaseDiscountPercent !== ''
+          ? Number(editForm.purchaseDiscountPercent) : null,
         base_unit: editForm.unit,
         is_loose: editForm.is_loose,
         expiry_date: editForm.expiry_date || null,
@@ -802,6 +902,7 @@ function LegacyProductsUI() {
         barcode: editForm.barcode?.trim() || undefined,
         sku: editForm.sku?.trim() || null,
         cartonBarcode: editForm.cartonBarcode?.trim() || null,
+        location: editForm.location?.trim() || null,
       }, shopIdHeader(editProduct.shopId));
       saveCategory(editForm.category);
       invalidateProductCaches();
@@ -816,15 +917,23 @@ function LegacyProductsUI() {
       const detail = err?.response?.data?.detail || err?.message || 'Failed to save product';
       toast.error(detail);
       console.error('[Edit Product save failed]', err);
-    } finally { setSaving(false); }
+    } finally { submittingRef.current = false; setSaving(false); }
   }
   async function doDelete(id: string | number) {
     try {
       const target = products.find(p => p.id === id);
       await api.delete(`/products/${id}`, shopIdHeader(target?.shopId));
       invalidateProductCaches();
+      toast.success('Product deleted');
       setDeleteConfirmId(null);
-    } catch { /* */ }
+    } catch (err: any) {
+      // Silent catch previously — a blocked delete (e.g. product referenced
+      // elsewhere) closed nothing and showed nothing, so the shopkeeper had
+      // no way to tell a delete attempt had even failed.
+      const detail = err?.response?.data?.detail || err?.message || 'Failed to delete product';
+      toast.error(detail);
+      console.error('[Delete Product failed]', err);
+    }
   }
 
   function toggleProductSelect(id: string | number) {
@@ -904,7 +1013,24 @@ function LegacyProductsUI() {
               {products.length.toLocaleString('en-IN')} / Unlimited products
             </p>
           </div>
-          <button onClick={() => { setColors([]); setOuterColors([]); setSizeSelection(bizConfig.sizeChart || []); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
+          <ExportButton
+            filename="products"
+            title="Product List"
+            summary={[{ label: 'Products', value: String(products.length) }]}
+            columns={[
+              { key: 'name', label: 'Product' },
+              { key: 'category', label: 'Category' },
+              { key: 'mrp', label: 'MRP', type: 'currency' },
+              { key: 'purchaseDiscountPercent', label: 'Purchase %', type: 'number' },
+              { key: 'cost', label: 'Cost Price', type: 'currency' },
+              { key: 'sellingPrice', label: 'Selling Price', type: 'currency' },
+              { key: 'stock', label: 'Stock', type: 'number' },
+              { key: 'unit', label: 'Unit' },
+              { key: 'location', label: 'Location' },
+            ]}
+            data={products}
+          />
+          <button onClick={() => { setColors([]); setOuterColors([]); setSizeSelection(bizConfig.sizeChart || []); setSizeSelectionAuto(true); setSizeSystem('uk'); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}
           </button>
@@ -1450,6 +1576,8 @@ function LegacyProductsUI() {
                   <th className="px-6 py-4 text-right">{t('colSelling')}</th>
                   <th className="px-6 py-4 text-right">{t('colStockValue')}</th>
                   <th className="px-6 py-4 text-right">{t('colProfit')}</th>
+                  <th className="px-6 py-4 text-right">Purchase %</th>
+                  <th className="px-6 py-4">Location</th>
                   <th className="px-6 py-4 text-center">{t('colActions')}</th>
                 </tr>
               </thead>
@@ -1459,8 +1587,32 @@ function LegacyProductsUI() {
                   const isOut = product.stock === 0;
                   const sizeVariants = parseSizeVariants(product.size_variants);
                   const sizePriceData = parseSizePrices(product.metadata);
-                  const hasPerSizePricing = Object.keys(sizePriceData).length > 0;
-                  
+                  // A barcode-only entry (mrp/sellingPrice/cost all 0, auto-filled by
+                  // the variant-barcode generator) must NOT count as "per-size pricing" —
+                  // otherwise every barcoded variant product hides its real flat price
+                  // behind a "Per-size" label with nothing to show a range of. Require
+                  // at least one variant to carry a genuine (non-zero) price.
+                  const hasPerSizePricing = Object.values(sizePriceData).some(sp =>
+                    (Number(sp?.mrp) || 0) > 0 || (Number(sp?.sellingPrice) || 0) > 0 || (Number(sp?.cost) || 0) > 0);
+
+                  // Variants can carry different MRP/selling prices — show the
+                  // actual spread (e.g. "₹699–₹1,599") instead of a flat number,
+                  // same reasoning as the profit-range calc below. Falls back to
+                  // the "Per-size" label only when no variant has a price set yet.
+                  let mrpRange: string | null = null;
+                  let sellingRange: string | null = null;
+                  if (hasPerSizePricing) {
+                    const fmtRange = (vals: number[]) => {
+                      if (vals.length === 0) return null;
+                      const min = Math.min(...vals), max = Math.max(...vals);
+                      return min === max
+                        ? `₹${min.toLocaleString('en-IN')}`
+                        : `₹${min.toLocaleString('en-IN')}–₹${max.toLocaleString('en-IN')}`;
+                    };
+                    mrpRange = fmtRange(Object.values(sizePriceData).map(sp => Number(sp?.mrp) || 0).filter(v => v > 0));
+                    sellingRange = fmtRange(Object.values(sizePriceData).map(sp => Number(sp?.sellingPrice) || 0).filter(v => v > 0));
+                  }
+
                   const hasCost = product.cost > 0 || (hasPerSizePricing && Object.values(sizePriceData).some(sp => sp.cost > 0));
                   const stockValue = hasPerSizePricing
                     ? Object.entries(sizeVariants).reduce((sum, [sz, qty]) => {
@@ -1508,8 +1660,9 @@ function LegacyProductsUI() {
                   }
 
                   return (
-                    <tr key={product.id} className="group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200">
-                      <td className="px-6 py-4">
+                    <tr key={product.id} onClick={() => setSelectedProduct(product)}
+                      className="group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200 cursor-pointer">
+                      <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedProductIds.has(product.id)}
@@ -1613,12 +1766,16 @@ function LegacyProductsUI() {
                       )}
                       <td className="px-6 py-4 text-right text-slate-500 dark:text-slate-400">
                         {hasPerSizePricing
-                          ? <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size</span>
+                          ? (mrpRange
+                              ? <span className="text-[11px] font-semibold text-violet-600 dark:text-violet-400" title="MRP range across variants">{mrpRange}</span>
+                              : <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size</span>)
                           : `₹${product.mrp?.toLocaleString('en-IN') ?? '—'}`}
                       </td>
                       <td className="px-6 py-4 text-right font-bold">
                         {hasPerSizePricing
-                          ? <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size ↕</span>
+                          ? (sellingRange
+                              ? <span className="text-[11px] text-violet-600 dark:text-violet-400" title="Selling price range across variants">{sellingRange}</span>
+                              : <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size ↕</span>)
                           : `₹${product.sellingPrice?.toLocaleString('en-IN') ?? '—'}`}
                       </td>
                       <td className="px-6 py-4 text-right font-semibold">
@@ -1627,13 +1784,17 @@ function LegacyProductsUI() {
                         </span>
                         {!hasCost && <span className="block text-[9px] text-slate-400 dark:text-slate-600 font-normal">add cost price</span>}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
                         {profit !== null
                           ? <span className={cn('font-bold', profitColorClass(profitStatus))}>{profit}%</span>
                           : <button onClick={() => startEdit(product)} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 underline transition-colors">set cost</button>
                         }
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-sm text-right text-slate-500 dark:text-slate-400">
+                        {product.costPriceMode === 'mrp_based' && product.purchaseDiscountPercent != null ? `${product.purchaseDiscountPercent}%` : '—'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{product.location || '—'}</td>
+                      <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity">
                           <button onClick={() => setQrProduct(product)} title={t('barcodeQrTitle')}
                             className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
@@ -1664,8 +1825,9 @@ function LegacyProductsUI() {
                       ₹{group.items.reduce((sum: number, p: any) => {
                         const sizeVariants = parseSizeVariants(p.size_variants);
                         const sizePriceData = parseSizePrices(p.metadata);
-                        const hasPerSizePricing = Object.keys(sizePriceData).length > 0;
-                        
+                        const hasPerSizePricing = Object.values(sizePriceData).some((sp: any) =>
+                          (Number(sp?.mrp) || 0) > 0 || (Number(sp?.sellingPrice) || 0) > 0 || (Number(sp?.cost) || 0) > 0);
+
                         const val = hasPerSizePricing
                           ? Object.entries(sizeVariants).reduce((s, [sz, qty]) => {
                               const cost = sizePriceData[sz]?.cost || p.cost;
@@ -1747,16 +1909,14 @@ function LegacyProductsUI() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Product Name</label>
-                  <input required autoFocus className={modalInp} value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                  <LocalInput required autoFocus className={modalInp} value={editForm.name} onCommit={v => setEditForm(f => ({ ...f, name: v }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Category</label>
-                    <input required className={modalInp} placeholder={t('typeToAddNewCategory')}
-                      value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} list="edit-cat-suggestions" />
-                    <datalist id="edit-cat-suggestions">
-                      {categorySuggestions.map(c => <option key={c} value={c}>{translateData(c, locale) || c}</option>)}
-                    </datalist>
+                    <CategoryPicker required className={modalInp} placeholder={t('typeToAddNewCategory')}
+                      value={editForm.category} onChange={v => setEditForm(f => ({ ...f, category: v }))}
+                      suggestions={categorySuggestions} renderLabel={c => translateData(c, locale)} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Unit</label>
@@ -1773,23 +1933,50 @@ function LegacyProductsUI() {
                     </select>
                   </div>
                 )}
+                {/* Footwear only — India/UK sizes are numerically identical, so
+                    that's the practical default; US/EU relabel the same
+                    physical sizes (see FOOTWEAR_SIZE_TABLES). Resets the size
+                    picker to the new system's chart on change, unioned with
+                    any size that already has real stock so it stays visible
+                    regardless of which system it was originally entered in. */}
+                {bizConfig.type === 'shoes' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Size System</label>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 w-fit">
+                      {(['uk', 'us', 'eu'] as const).map(sys => (
+                        <button key={sys} type="button"
+                          onClick={() => {
+                            if (sys === editSizeSystem) return;
+                            setEditSizeSystem(sys);
+                            const chart = buildVariantDim(editForm.category, editForm.gender, sys)?.sizeChart || [];
+                            setEditSizeSelection(Array.from(new Set([...chart, ...sizesFromVariants(editForm.size_variants)])));
+                          }}
+                          className={cn('px-3 py-1 rounded-md text-[10px] font-bold transition-all',
+                            editSizeSystem === sys ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400')}
+                        >
+                          {sys === 'uk' ? 'India / UK' : sys.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Fabric stays; Shade collapses into the 3-way grid for electronics/electric. */}
                 {(bizConfig.hasFabric || (bizConfig.hasShades && !isThreeWay)) && (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{bizConfig.hasFabric ? 'Fabric / Material' : 'Shade / Color'}</label>
-                    <input className={modalInp} value={editForm.shade} onChange={e => setEditForm(f => ({ ...f, shade: e.target.value }))} />
+                    <LocalInput className={modalInp} value={editForm.shade} onCommit={v => setEditForm(f => ({ ...f, shade: v }))} />
                   </div>
                 )}
                 {bizConfig.hasModel && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Model Number</label>
-                      <input className={modalInp} placeholder="e.g. SM-G990B" value={editForm.model_number} onChange={e => setEditForm(f => ({ ...f, model_number: e.target.value }))} />
+                      <LocalInput className={modalInp} placeholder="e.g. SM-G990B" value={editForm.model_number} onCommit={v => setEditForm(f => ({ ...f, model_number: v }))} />
                     </div>
                     {bizConfig.hasWarranty && (
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Warranty (months)</label>
-                        <input type="number" min="0" className={modalInp} placeholder="12" value={editForm.warranty_months} onChange={e => setEditForm(f => ({ ...f, warranty_months: e.target.value }))} />
+                        <LocalInput type="number" min="0" className={modalInp} placeholder="12" value={editForm.warranty_months} onCommit={v => setEditForm(f => ({ ...f, warranty_months: v }))} />
                       </div>
                     )}
                   </div>
@@ -1800,11 +1987,11 @@ function LegacyProductsUI() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Brand</label>
-                      <input className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} />
+                      <LocalInput className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride" value={editForm.brand} onCommit={v => setEditForm(f => ({ ...f, brand: v }))} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Alcohol %</label>
-                      <input type="number" min="0" step="0.1" className={modalInp} placeholder="e.g. 5 / 42.8" value={editForm.alcohol_percentage} onChange={e => setEditForm(f => ({ ...f, alcohol_percentage: e.target.value }))} />
+                      <LocalInput type="number" min="0" step="0.1" className={modalInp} placeholder="e.g. 5 / 42.8" value={editForm.alcohol_percentage} onCommit={v => setEditForm(f => ({ ...f, alcohol_percentage: v }))} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Bottle Type</label>
@@ -1815,7 +2002,7 @@ function LegacyProductsUI() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Units per Case (1 Case = ? {editForm.unit})</label>
-                      <input type="number" min="0" className={modalInp} placeholder="e.g. 12" value={editForm.conversion_factor} onChange={e => setEditForm(f => ({ ...f, conversion_factor: e.target.value }))} />
+                      <LocalInput type="number" min="0" className={modalInp} placeholder="e.g. 12" value={editForm.conversion_factor} onCommit={v => setEditForm(f => ({ ...f, conversion_factor: v }))} />
                     </div>
                   </div>
                 )}
@@ -1831,7 +2018,7 @@ function LegacyProductsUI() {
                   {bizConfig.hasBatch && (
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Batch Number</label>
-                      <input className={modalInp} value={editForm.batch_number} onChange={e => setEditForm(f => ({ ...f, batch_number: e.target.value }))} />
+                      <LocalInput className={modalInp} value={editForm.batch_number} onCommit={v => setEditForm(f => ({ ...f, batch_number: v }))} />
                     </div>
                   )}
                   {bizConfig.hasDrugSchedule && (
@@ -1978,11 +2165,11 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Stock</label>
-                    <input required type="number" min="0" className={modalInp} value={editForm.stock} onChange={e => setEditForm(f => ({ ...f, stock: e.target.value }))} />
+                    <LocalInput required type="number" min="0" className={modalInp} value={editForm.stock} onCommit={v => setEditForm(f => ({ ...f, stock: v }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Min Stock Level</label>
-                    <input required type="number" min="0" className={modalInp} value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} />
+                    <LocalInput required type="number" min="0" className={modalInp} value={editForm.minStock} onCommit={v => setEditForm(f => ({ ...f, minStock: v }))} />
                   </div>
                 </div>
               )}
@@ -1999,7 +2186,7 @@ function LegacyProductsUI() {
               {editVariantActive && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Min Stock Level (Total)</label>
-                  <input required type="number" min="0" className={modalInp} value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} />
+                  <LocalInput required type="number" min="0" className={modalInp} value={editForm.minStock} onCommit={v => setEditForm(f => ({ ...f, minStock: v }))} />
                   {editPerSizePricing && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{tv('minStockFallbackHint')}</p>
                   )}
@@ -2023,15 +2210,35 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">MRP</label>
-                    <input required={!editPerSizePricing} type="number" min="0" className={modalInp} placeholder="0" value={editForm.mrp} onChange={e => setEditForm(f => ({ ...f, mrp: e.target.value }))} />
+                    <LocalInput required={!editPerSizePricing} type="number" min="0" className={modalInp} placeholder="0" value={editForm.mrp} onCommit={v => setEditForm(f => ({ ...f, mrp: v }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Selling Price</label>
-                    <input required={!editPerSizePricing} type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0" value={editForm.sellingPrice} onChange={e => setEditForm(f => ({ ...f, sellingPrice: e.target.value }))} />
+                    <LocalInput required={!editPerSizePricing} type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0" value={editForm.sellingPrice} onCommit={v => setEditForm(f => ({ ...f, sellingPrice: v }))} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cost Price</label>
-                    <input type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cost Price</label>
+                      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
+                        {(['manual', 'mrp_based'] as const).map(mode => (
+                          <button key={mode} type="button"
+                            onClick={() => setEditForm(f => ({ ...f, costPriceMode: mode }))}
+                            className={cn('px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all',
+                              editForm.costPriceMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
+                            {mode === 'manual' ? 'Manual' : 'MRP'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {editForm.costPriceMode === 'mrp_based' ? (
+                      <>
+                        <LocalInput type="number" min="0" max="100" className={`${modalInp} text-amber-400`} placeholder="Discount %"
+                          value={editForm.purchaseDiscountPercent} onCommit={v => setEditForm(f => ({ ...f, purchaseDiscountPercent: v }))} />
+                        <p className="text-[10px] text-amber-500 dark:text-amber-400 font-bold mt-1">= ₹{effectiveCostPrice(editForm).toFixed(2)}</p>
+                      </>
+                    ) : (
+                      <LocalInput type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0" value={editForm.cost} onCommit={v => setEditForm(f => ({ ...f, cost: v }))} />
+                    )}
                   </div>
                 </div>
 
@@ -2069,14 +2276,14 @@ function LegacyProductsUI() {
                   </p>
                 )}
 
-                {editForm.sellingPrice && editForm.cost && Number(editForm.sellingPrice) > 0 && (() => {
+                {editForm.sellingPrice && effectiveCostPrice(editForm) > 0 && Number(editForm.sellingPrice) > 0 && (() => {
                   // Matches how the products list itself calculates Profit %, so
                   // the modal's live preview never disagrees with what you see
                   // after saving. See lib/profitCalc.ts for the GST-inclusive toggle.
                   // Always feed the normalized (GST-inclusive) price in, regardless
                   // of which mode the shopkeeper is currently typing the price in.
                   const spForProfit = editSpMode === 'exclusive' ? toInclusivePrice(Number(editForm.sellingPrice) || 0, editForm.gstPercent || 0) : Number(editForm.sellingPrice) || 0;
-                  const result = calculateProductProfit(spForProfit, Number(editForm.cost) || 0, editForm.gstPercent || 0, !!profile.gstInclusiveProfit);
+                  const result = calculateProductProfit(spForProfit, effectiveCostPrice(editForm), editForm.gstPercent || 0, !!profile.gstInclusiveProfit);
                   const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                   const textCls = profitColorClass(result.status);
                   return (
@@ -2092,7 +2299,7 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">HSN Code</label>
-                    <input className={modalInp} placeholder="HSN/SAC Code" value={editForm.hsnCode || ''} onChange={e => setEditForm(f => ({ ...f, hsnCode: e.target.value }))} />
+                    <LocalInput className={modalInp} placeholder="HSN/SAC Code" value={editForm.hsnCode || ''} onCommit={v => setEditForm(f => ({ ...f, hsnCode: v }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">GST %</label>
@@ -2111,6 +2318,14 @@ function LegacyProductsUI() {
                   onChange={(k, v) => setEditForm(f => ({ ...f, [k]: v }))}
                   modalInp={modalInp}
                 />
+
+                <div className="mt-3">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Product Location <span className="font-medium normal-case text-slate-400">(optional)</span>
+                  </label>
+                  <LocalInput className={modalInp} placeholder="e.g. Shelf A3, Rack 2, Bin 14"
+                    value={editForm.location} onCommit={v => setEditForm(f => ({ ...f, location: v }))} />
+                </div>
 
               </section>
 
@@ -2185,18 +2400,16 @@ function LegacyProductsUI() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldName')}</label>
-                  <input required className={modalInp} 
+                  <LocalInput required autoFocus className={modalInp}
                     placeholder={bizConfig.productPlaceholder || t('fieldNamePlaceholder')}
-                    value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                    value={form.name} onCommit={v => setForm(f => ({ ...f, name: v }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldCategory')}</label>
-                    <input required className={modalInp} placeholder={`${bizConfig.defaultCategories[0]} — or type a new one`}
-                      value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} list="cat-suggestions" />
-                    <datalist id="cat-suggestions">
-                      {categorySuggestions.map(c => <option key={c} value={c}>{translateData(c, locale) || c}</option>)}
-                    </datalist>
+                    <CategoryPicker required className={modalInp} placeholder={`${bizConfig.defaultCategories[0]} — or type a new one`}
+                      value={form.category} onChange={v => setForm(f => ({ ...f, category: v }))}
+                      suggestions={categorySuggestions} renderLabel={c => translateData(c, locale)} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldUnit') || 'Unit'}</label>
@@ -2230,13 +2443,37 @@ function LegacyProductsUI() {
                     </select>
                   </div>
                 )}
+                {/* Footwear only — see the matching Size System toggle in the
+                    Edit modal for the full reasoning. */}
+                {bizConfig.type === 'shoes' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Size System</label>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 w-fit">
+                      {(['uk', 'us', 'eu'] as const).map(sys => (
+                        <button key={sys} type="button"
+                          onClick={() => {
+                            if (sys === sizeSystem) return;
+                            setSizeSystem(sys);
+                            const chart = buildVariantDim(form.category, form.gender, sys)?.sizeChart || [];
+                            setSizeSelection(Array.from(new Set([...chart, ...sizesFromVariants(form.size_variants)])));
+                            setSizeSelectionAuto(true);
+                          }}
+                          className={cn('px-3 py-1 rounded-md text-[10px] font-bold transition-all',
+                            sizeSystem === sys ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400')}
+                        >
+                          {sys === 'uk' ? 'India / UK' : sys.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Fabric— clothes only */}
                 {bizConfig.hasFabric && (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Fabric / Material</label>
-                    <input className={modalInp} placeholder="e.g. Cotton, Polyester, Silk..." value={form.shade}
-                      onChange={e => setForm(f => ({ ...f, shade: e.target.value }))} />
+                    <LocalInput className={modalInp} placeholder="e.g. Cotton, Polyester, Silk..." value={form.shade}
+                      onCommit={v => setForm(f => ({ ...f, shade: v }))} />
                   </div>
                 )}
 
@@ -2244,8 +2481,8 @@ function LegacyProductsUI() {
                 {bizConfig.hasShades && !isThreeWay && (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Shade / Color Variant</label>
-                    <input className={modalInp} placeholder="e.g. Rose Red, Nude 01, #F5C6D0..."
-                      value={form.shade} onChange={e => setForm(f => ({ ...f, shade: e.target.value }))} />
+                    <LocalInput className={modalInp} placeholder="e.g. Rose Red, Nude 01, #F5C6D0..."
+                      value={form.shade} onCommit={v => setForm(f => ({ ...f, shade: v }))} />
                   </div>
                 )}
 
@@ -2254,14 +2491,14 @@ function LegacyProductsUI() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Model Number</label>
-                      <input className={modalInp} placeholder="e.g. SM-G990B"
-                        value={form.model_number} onChange={e => setForm(f => ({ ...f, model_number: e.target.value }))} />
+                      <LocalInput className={modalInp} placeholder="e.g. SM-G990B"
+                        value={form.model_number} onCommit={v => setForm(f => ({ ...f, model_number: v }))} />
                     </div>
                     {bizConfig.hasWarranty && (
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Warranty (months)</label>
-                        <input type="number" min="0" className={modalInp} placeholder="12"
-                          value={form.warranty_months} onChange={e => setForm(f => ({ ...f, warranty_months: e.target.value }))} />
+                        <LocalInput type="number" min="0" className={modalInp} placeholder="12"
+                          value={form.warranty_months} onCommit={v => setForm(f => ({ ...f, warranty_months: v }))} />
                       </div>
                     )}
                   </div>
@@ -2272,13 +2509,13 @@ function LegacyProductsUI() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Brand</label>
-                      <input className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride"
-                        value={form.brand} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))} />
+                      <LocalInput className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride"
+                        value={form.brand} onCommit={v => setForm(f => ({ ...f, brand: v }))} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Alcohol %</label>
-                      <input type="number" min="0" step="0.1" className={modalInp} placeholder="e.g. 5 / 42.8"
-                        value={form.alcohol_percentage} onChange={e => setForm(f => ({ ...f, alcohol_percentage: e.target.value }))} />
+                      <LocalInput type="number" min="0" step="0.1" className={modalInp} placeholder="e.g. 5 / 42.8"
+                        value={form.alcohol_percentage} onCommit={v => setForm(f => ({ ...f, alcohol_percentage: v }))} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Bottle Type</label>
@@ -2289,8 +2526,8 @@ function LegacyProductsUI() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Units per Case (1 Case = ? {form.unit})</label>
-                      <input type="number" min="0" className={modalInp} placeholder="e.g. 12"
-                        value={form.conversion_factor} onChange={e => setForm(f => ({ ...f, conversion_factor: e.target.value }))} />
+                      <LocalInput type="number" min="0" className={modalInp} placeholder="e.g. 12"
+                        value={form.conversion_factor} onCommit={v => setForm(f => ({ ...f, conversion_factor: v }))} />
                     </div>
                   </div>
                 )}
@@ -2306,8 +2543,8 @@ function LegacyProductsUI() {
                   {bizConfig.hasBatch && (
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Batch Number</label>
-                      <input className={modalInp} placeholder="e.g. BCH-2024-001"
-                        value={form.batch_number} onChange={e => setForm(f => ({ ...f, batch_number: e.target.value }))} />
+                      <LocalInput className={modalInp} placeholder="e.g. BCH-2024-001"
+                        value={form.batch_number} onCommit={v => setForm(f => ({ ...f, batch_number: v }))} />
                     </div>
                   )}
                   {bizConfig.hasDrugSchedule && (
@@ -2386,7 +2623,7 @@ function LegacyProductsUI() {
                   ) : addVariantDim ? (
                     <div className="space-y-3">
                       <ColorPicker colorChart={addVariantDim!.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim!.swatch} />
-                      <SizePicker sizeChart={addVariantDim!.sizeChart} value={sizeSelection} onChange={setSizeSelection} />
+                      <SizePicker sizeChart={addVariantDim!.sizeChart} value={sizeSelection} onChange={sizes => { setSizeSelection(sizes); setSizeSelectionAuto(false); }} />
                       <ColorSizeVariantGrid
                         colors={colors}
                         sizeChart={sizeSelection}
@@ -2426,13 +2663,13 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldStock')}</label>
-                    <input required type="number" min="0" className={modalInp} placeholder="0"
-                      value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} />
+                    <LocalInput required type="number" min="0" className={modalInp} placeholder="0"
+                      value={form.stock} onCommit={v => setForm(f => ({ ...f, stock: v }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMinStock')}</label>
-                    <input required type="number" min="0" className={modalInp} placeholder="0"
-                      value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: e.target.value }))} />
+                    <LocalInput required type="number" min="0" className={modalInp} placeholder="0"
+                      value={form.minStock} onCommit={v => setForm(f => ({ ...f, minStock: v }))} />
                   </div>
                 </div>
               )}
@@ -2443,8 +2680,8 @@ function LegacyProductsUI() {
               {addVariantActive && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMinStock')} (Total)</label>
-                  <input required type="number" min="0" className={modalInp} placeholder="5"
-                    value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: e.target.value }))} />
+                  <LocalInput required type="number" min="0" className={modalInp} placeholder="5"
+                    value={form.minStock} onCommit={v => setForm(f => ({ ...f, minStock: v }))} />
                   {perSizePricing && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{tv('minStockFallbackHint')}</p>
                   )}
@@ -2472,18 +2709,38 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMRP')}</label>
-                    <input required={!perSizePricing} type="number" min="0" className={modalInp} placeholder="0"
-                      value={form.mrp} onChange={e => setForm(f => ({ ...f, mrp: e.target.value }))} />
+                    <LocalInput required={!perSizePricing} type="number" min="0" className={modalInp} placeholder="0"
+                      value={form.mrp} onCommit={v => setForm(f => ({ ...f, mrp: v }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldSelling')}</label>
-                    <input required={!perSizePricing} type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0"
-                      value={form.sellingPrice} onChange={e => setForm(f => ({ ...f, sellingPrice: e.target.value }))} />
+                    <LocalInput required={!perSizePricing} type="number" min="0" className={`${modalInp} text-emerald-400 font-bold`} placeholder="0"
+                      value={form.sellingPrice} onCommit={v => setForm(f => ({ ...f, sellingPrice: v }))} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldCost')}</label>
-                    <input type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0"
-                      value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('fieldCost')}</label>
+                      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
+                        {(['manual', 'mrp_based'] as const).map(mode => (
+                          <button key={mode} type="button"
+                            onClick={() => setForm(f => ({ ...f, costPriceMode: mode }))}
+                            className={cn('px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all',
+                              form.costPriceMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
+                            {mode === 'manual' ? 'Manual' : 'MRP'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {form.costPriceMode === 'mrp_based' ? (
+                      <>
+                        <LocalInput type="number" min="0" max="100" className={`${modalInp} text-amber-400`} placeholder="Discount %"
+                          value={form.purchaseDiscountPercent} onCommit={v => setForm(f => ({ ...f, purchaseDiscountPercent: v }))} />
+                        <p className="text-[10px] text-amber-500 dark:text-amber-400 font-bold mt-1">= ₹{effectiveCostPrice(form).toFixed(2)}</p>
+                      </>
+                    ) : (
+                      <LocalInput type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0"
+                        value={form.cost} onCommit={v => setForm(f => ({ ...f, cost: v }))} />
+                    )}
                   </div>
                 </div>
 
@@ -2521,14 +2778,14 @@ function LegacyProductsUI() {
                   </p>
                 )}
 
-                {form.sellingPrice && form.cost && Number(form.sellingPrice) > 0 && (() => {
+                {form.sellingPrice && effectiveCostPrice(form) > 0 && Number(form.sellingPrice) > 0 && (() => {
                   // Matches how the products list itself calculates Profit %, so
                   // the modal's live preview never disagrees with what you see
                   // after saving. See lib/profitCalc.ts for the GST-inclusive toggle.
                   // Always feed the normalized (GST-inclusive) price in, regardless
                   // of which mode the shopkeeper is currently typing the price in.
                   const spForProfit = spMode === 'exclusive' ? toInclusivePrice(Number(form.sellingPrice) || 0, form.gstPercent || 0) : Number(form.sellingPrice) || 0;
-                  const result = calculateProductProfit(spForProfit, Number(form.cost) || 0, form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                  const result = calculateProductProfit(spForProfit, effectiveCostPrice(form), form.gstPercent || 0, !!profile.gstInclusiveProfit);
                   const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                   const textCls = profitColorClass(result.status);
                   return (
@@ -2544,7 +2801,7 @@ function LegacyProductsUI() {
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">HSN Code</label>
-                    <input className={modalInp} placeholder="HSN/SAC Code" value={form.hsnCode || ''} onChange={e => setForm(f => ({ ...f, hsnCode: e.target.value }))} />
+                    <LocalInput className={modalInp} placeholder="HSN/SAC Code" value={form.hsnCode || ''} onCommit={v => setForm(f => ({ ...f, hsnCode: v }))} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">GST %</label>
@@ -2563,6 +2820,14 @@ function LegacyProductsUI() {
                   onChange={(k, v) => setForm(f => ({ ...f, [k]: v }))}
                   modalInp={modalInp}
                 />
+
+                <div className="mt-3">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Product Location <span className="font-medium normal-case text-slate-400">(optional)</span>
+                  </label>
+                  <LocalInput className={modalInp} placeholder="e.g. Shelf A3, Rack 2, Bin 14"
+                    value={form.location} onCommit={v => setForm(f => ({ ...f, location: v }))} />
+                </div>
 
               </section>
 
@@ -2646,16 +2911,37 @@ function LegacyProductsUI() {
                   className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 transition-all active:scale-95">
                   {t('cancel')}
                 </button>
-                <button type="submit"
+                <button type="submit" disabled={saving}
                   className={`flex-1 bg-gradient-to-r ${
                     bizConfig.gradient || 'from-emerald-600 to-emerald-500'
-                  } text-white py-3 rounded-xl font-black shadow-xl transition-all active:scale-95`}>
-                  {t('addProduct')}
+                  } text-white py-3 rounded-xl font-black shadow-xl transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2`}>
+                  {saving ? <><Loader2 size={16} className="animate-spin" />Adding…</> : t('addProduct')}
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {selectedProduct && (
+        <ProductDetailsSheet
+          productId={String(selectedProduct.id)}
+          shopId={selectedProduct.shopId}
+          onClose={() => setSelectedProduct(null)}
+          onEdit={() => {
+            // Deliberately ignore the Sheet's own callback argument — it's the
+            // raw erp-details response (Prisma field names: currentStock,
+            // wholesaleCost, baseUnit), not the fetchProductsMapped shape
+            // startEdit() expects (stock, cost, unit) — using it directly
+            // would open Edit with Stock/Cost blank and Unit reset to
+            // default. selectedProduct is already the correctly-shaped row
+            // from this table's own data.
+            const p = selectedProduct;
+            setSelectedProduct(null);
+            startEdit(p);
+          }}
+          onDelete={(id) => doDelete(id)}
+        />
       )}
 
       <ConfirmPasswordModal
@@ -2698,20 +2984,20 @@ function BarcodeIdentifierFields({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Company Barcode</label>
-          <input className={modalInp} placeholder="EAN / UPC on the item"
-            value={barcode || ''} onChange={e => onChange('barcode', e.target.value)} />
+          <LocalInput className={modalInp} placeholder="EAN / UPC on the item"
+            value={barcode || ''} onCommit={v => onChange('barcode', v)} />
         </div>
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">SKU</label>
-          <input className={modalInp} placeholder="Your stock code"
-            value={sku || ''} onChange={e => onChange('sku', e.target.value)} />
+          <LocalInput className={modalInp} placeholder="Your stock code"
+            value={sku || ''} onCommit={v => onChange('sku', v)} />
         </div>
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Carton Barcode <span className="font-medium normal-case text-slate-400">(optional)</span>
           </label>
-          <input className={modalInp} placeholder="Outer carton code"
-            value={cartonBarcode || ''} onChange={e => onChange('cartonBarcode', e.target.value)} />
+          <LocalInput className={modalInp} placeholder="Outer carton code"
+            value={cartonBarcode || ''} onCommit={v => onChange('cartonBarcode', v)} />
         </div>
       </div>
     </div>

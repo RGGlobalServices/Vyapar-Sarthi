@@ -190,7 +190,7 @@ export default function MainLayoutClient({
   const t = useTranslations('MainLayout');
   const pathname = usePathname();
   const { loadFromStorage, user, role } = useAuthStore();
-  const { profile, fetchProfile, activeShopId } = useBusinessStore();
+  const { profile, fetchProfile, hydrateFromCache, activeShopId } = useBusinessStore();
   const lastTracked = useRef('');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const router = useRouter();
@@ -213,8 +213,12 @@ export default function MainLayoutClient({
 
   // Setup check is no longer needed as business type is selected during signup
   useEffect(() => {
+    // Apply the last-known cached profile immediately (client-only, so it
+    // can't cause a hydration mismatch — see hydrateFromCache's own
+    // comment), then let fetchProfile() confirm/correct it over the network.
+    hydrateFromCache();
     fetchProfile();
-  }, [fetchProfile]);
+  }, [hydrateFromCache, fetchProfile]);
 
   // Replay any bills that were saved locally while offline. Runs once on
   // mount (covers "was already back online when the app opened") and again

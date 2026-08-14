@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
+import { canUseGodowns } from '@/lib/planGates';
 
 const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
@@ -20,7 +21,24 @@ const emptyItem = () => ({
   // used when the selected product has variant rows; `quantity` above is
   // still what's used for a plain (non-variant) product.
   variantQty: {} as Record<string, string>,
+  // 'manual' types Unit Cost directly (default, today's behavior). 'mrp_based'
+  // derives it from mrp * (1 - discountPercent/100) instead — locked into
+  // this line's own mrp/discountPercent permanently at save time, so a later
+  // change to the product's own MRP/discount never alters what this specific
+  // purchase actually paid.
+  costMode: 'manual' as 'manual' | 'mrp_based', mrp: '', discountPercent: '',
 });
+
+// Shared by every item row — 'manual' just returns the typed cost; 'mrp_based'
+// derives it from that row's own mrp/discountPercent.
+function effectiveItemCost(item: { cost: any; mrp: any; costMode?: string; discountPercent: any }): number {
+  if (item.costMode === 'mrp_based') {
+    const mrp = Number(item.mrp) || 0;
+    const pct = Number(item.discountPercent) || 0;
+    return Math.max(0, mrp * (1 - pct / 100));
+  }
+  return Number(item.cost) || 0;
+}
 
 // Same key a variant row is stored/matched under everywhere else (Products'
 // Variant Builder, Billing's picker, the server-side stock helper) — a
@@ -66,7 +84,14 @@ export default function PurchasesPage() {
     }
   }, [searchParams]);
 
-  const shouldFetchDetails = profile.subscriptionPlan === 'wholesale' && showAdd;
+  // Purchases used to be gated to the Udyog/wholesale tier — now every
+  // package has the 'purchases' module (see lib/config/packageConfig.ts), so
+  // these fetches no longer re-check subscriptionPlan; the sidebar module
+  // list is the single access gate. Godowns/warehouses remain Udyog/Bada
+  // Udyog-only (lib/planGates.ts) — a Dukan/Vyapar purchase just isn't
+  // assigned to one (see warehouseId handling in handleSave below).
+  const shouldFetchDetails = showAdd;
+  const hasWarehouses = canUseGodowns(profile.subscriptionPlan);
 
   const purchasesQuery = useMemo(() => {
     const params = new URLSearchParams({ limit: '200' });
@@ -78,7 +103,7 @@ export default function PurchasesPage() {
   }, [debouncedSearch, filterSupplierId, dateFrom, dateTo]);
 
   const { data: purchasesResp, mutate: mutateInvoices, isLoading } = useSWR(
-    profile.subscriptionPlan === 'wholesale' && activeShopId ? [purchasesQuery, activeShopId] : null,
+    activeShopId ? [purchasesQuery, activeShopId] : null,
     fetcher
   );
   const invoices: any[] = purchasesResp?.data || [];
@@ -88,12 +113,15 @@ export default function PurchasesPage() {
   // the Add/Edit form, so fetch them whenever the page is usable — not just
   // while the form is open.
   const { data: suppliersData = [], mutate: mutateSuppliers } = useSWR(
-    profile.subscriptionPlan === 'wholesale' && activeShopId ? ['/suppliers', activeShopId] : null,
+    activeShopId ? ['/suppliers', activeShopId] : null,
     fetcher
   );
 
+  // Godowns are still an Udyog/Bada Udyog-only concept (see planGates.ts) —
+  // only fetch the warehouse list for tiers that actually have any, so a
+  // Dukan/Vyapar shop never sees an always-empty "select a warehouse" list.
   const { data: warehouses = [] } = useSWR(
-    shouldFetchDetails && activeShopId ? ['/godowns', activeShopId] : null,
+    shouldFetchDetails && hasWarehouses && activeShopId ? ['/godowns', activeShopId] : null,
     godownsFetcher
   );
 
@@ -106,6 +134,10 @@ export default function PurchasesPage() {
     shouldFetchDetails && activeShopId ? ['/master-data', activeShopId] : null,
     fetcher
   );
+
+  // Non-Udyog tiers have no godowns to pick from at all — never block
+  // submit on an empty warehouse selection for them.
+  const warehouseRequired = hasWarehouses;
 
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
 
@@ -162,10 +194,17 @@ export default function PurchasesPage() {
         if (withVariant.length > 0) {
           const variantQty: Record<string, string> = {};
           withVariant.forEach(it => { variantQty[it.variantKey] = String(it.quantity); });
-          grouped.push({ productId, quantity: 1, cost: withVariant[0].cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty });
+          const first = withVariant[0];
+          grouped.push({
+            productId, quantity: 1, cost: first.cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty,
+            costMode: first.mrp != null ? 'mrp_based' : 'manual', mrp: first.mrp ?? '', discountPercent: first.discountPercent ?? '',
+          });
         }
         withoutVariant.forEach(it => {
-          grouped.push({ productId, quantity: it.quantity, cost: it.cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty: {} });
+          grouped.push({
+            productId, quantity: it.quantity, cost: it.cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty: {},
+            costMode: it.mrp != null ? 'mrp_based' : 'manual', mrp: it.mrp ?? '', discountPercent: it.discountPercent ?? '',
+          });
         });
       });
       setItems(grouped.length > 0 ? grouped : [emptyItem()]);
@@ -183,6 +222,9 @@ export default function PurchasesPage() {
   const expandItemsForApi = (rows: any[]) => rows.flatMap((item: any) => {
     const product = products.find((p: any) => p.id === item.productId);
     const productVariants: any[] = Array.isArray(product?.variants) ? product.variants : [];
+    const cost = effectiveItemCost(item);
+    const mrp = item.costMode === 'mrp_based' && item.mrp !== '' ? Number(item.mrp) : null;
+    const discountPercent = item.costMode === 'mrp_based' && item.discountPercent !== '' ? Number(item.discountPercent) : null;
     if (productVariants.length > 0) {
       return Object.entries(item.variantQty || {})
         .filter(([, qty]) => Number(qty) > 0)
@@ -190,13 +232,13 @@ export default function PurchasesPage() {
           productId: item.productId,
           variant: variantKey,
           quantity: Number(qty),
-          cost: item.cost,
+          cost, mrp, discountPercent,
           batchNumber: item.batchNumber,
           unitId: item.unitId,
           conversionFactor: item.conversionFactor,
         }));
     }
-    return item.productId && item.quantity > 0 ? [item] : [];
+    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent }] : [];
   });
 
   const handleSave = async (e: React.FormEvent) => {
@@ -205,7 +247,7 @@ export default function PurchasesPage() {
 
     const payload = {
       supplierId,
-      warehouseId,
+      warehouseId: warehouseId || null,
       invoiceNumber,
       date,
       items: expandItemsForApi(items)
@@ -327,14 +369,20 @@ export default function PurchasesPage() {
                     </div>
                   )}
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('warehouseLocation') || 'Warehouse Location'} <span className="text-red-500">*</span></label>
-                  <select required value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
-                    <option value="">{t('selectWarehouse') || 'Select Warehouse'}</option>
-                    {warehouses.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                  </select>
-                </div>
+                {hasWarehouses ? (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('warehouseLocation') || 'Warehouse Location'} <span className="text-red-500">*</span></label>
+                    <select required value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
+                      <option value="">{t('selectWarehouse') || 'Select Warehouse'}</option>
+                      {warehouses.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-end pb-2.5">
+                    <p className="text-xs text-slate-400">{t('noWarehouseTracking') || "No warehouse tracking on your plan — stock adds directly to shop inventory."}</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('invoiceNumber') || 'Invoice Number'}</label>
                   <input type="text" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
@@ -419,13 +467,41 @@ export default function PurchasesPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="w-28">
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('unitCost') || 'Unit Cost'}</label>
-                      <input type="number" step="0.01" required value={item.cost} onChange={e => {
-                        const newItems = [...items];
-                        newItems[index].cost = parseFloat(e.target.value) || 0;
-                        setItems(newItems);
-                      }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                    <div className="w-32">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">{t('unitCost') || 'Unit Cost'}</label>
+                        <div className="flex bg-slate-200 dark:bg-slate-700 rounded p-0.5">
+                          {(['manual', 'mrp_based'] as const).map(mode => (
+                            <button key={mode} type="button"
+                              onClick={() => {
+                                const newItems = [...items];
+                                newItems[index].costMode = mode;
+                                // Pre-fill from the product's own MRP the first time this
+                                // row switches to MRP-based, so there's usually nothing to
+                                // type but the discount % — still fully editable per line.
+                                if (mode === 'mrp_based' && !newItems[index].mrp && selectedProduct?.mrp) {
+                                  newItems[index].mrp = String(selectedProduct.mrp);
+                                }
+                                setItems(newItems);
+                              }}
+                              className={cn('px-1 rounded text-[7px] font-bold uppercase',
+                                (item.costMode || 'manual') === mode ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400' : 'text-slate-400')}>
+                              {mode === 'manual' ? 'Man' : 'MRP'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {item.costMode === 'mrp_based' ? (
+                        <p className="w-full px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg text-sm text-amber-600 dark:text-amber-400 font-bold">
+                          ₹{effectiveItemCost(item).toFixed(2)}
+                        </p>
+                      ) : (
+                        <input type="number" step="0.01" required value={item.cost} onChange={e => {
+                          const newItems = [...items];
+                          newItems[index].cost = parseFloat(e.target.value) || 0;
+                          setItems(newItems);
+                        }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                      )}
                     </div>
                     <div className="w-32">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('batchOptional') || 'Batch (Opt)'}</label>
@@ -440,6 +516,28 @@ export default function PurchasesPage() {
                       <X size={16} />
                     </button>
                     </div>
+                    {item.costMode === 'mrp_based' && (
+                      <div className="flex gap-3 max-w-xs">
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">MRP</label>
+                          <input type="number" step="0.01" min="0" placeholder={selectedProduct?.mrp ? String(selectedProduct.mrp) : '0'}
+                            value={item.mrp} onChange={e => {
+                              const newItems = [...items];
+                              newItems[index].mrp = e.target.value;
+                              setItems(newItems);
+                            }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Discount %</label>
+                          <input type="number" step="0.01" min="0" max="100" placeholder="0"
+                            value={item.discountPercent} onChange={e => {
+                              const newItems = [...items];
+                              newItems[index].discountPercent = e.target.value;
+                              setItems(newItems);
+                            }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                        </div>
+                      </div>
+                    )}
                     {hasVariants && (
                       <div>
                         <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">
@@ -492,7 +590,7 @@ export default function PurchasesPage() {
           )}
 
           <div className="flex justify-end">
-            <button type="submit" disabled={saving || !supplierId || !warehouseId}
+            <button type="submit" disabled={saving || !supplierId || (warehouseRequired && !warehouseId)}
               className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors">
               {saving ? <Loader2 className="animate-spin" size={20} /> : <FileText size={20} />}
               {editingInvoice ? (t('saveChanges') || 'Save Changes') : (t('recordPurchase') || 'Record Purchase')}
@@ -698,6 +796,8 @@ export default function PurchasesPage() {
                     <tr>
                       <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('productLabel') || 'Product'}</th>
                       <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('qty') || 'Qty'}</th>
+                      <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">MRP</th>
+                      <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">Purchase %</th>
                       <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">{t('unitCost') || 'Unit Cost'}</th>
                     </tr>
                   </thead>
@@ -706,6 +806,8 @@ export default function PurchasesPage() {
                       <tr key={item.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="px-4 py-3 text-slate-900 dark:text-slate-200 font-bold">{item.product?.name}</td>
                         <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.quantity}</td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.mrp != null ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.discountPercent != null ? `${item.discountPercent}%` : '—'}</td>
                         <td className="px-4 py-3 text-slate-900 dark:text-white text-right font-mono font-medium">₹{(item.cost || 0).toLocaleString('en-IN')}</td>
                       </tr>
                     ))}

@@ -17,6 +17,8 @@ type BillItem = {
   quantity: number;
   sellingPrice: number;
   costPrice: number;
+  mrp?: number | null;
+  purchaseDiscountPercent?: number | null;
   profitPerUnit: number;
   profitPercent: number | null;
 };
@@ -134,12 +136,14 @@ export default function LedgerView({
       note: tx.note || '',
     };
     if (tx.items.length === 0) {
-      return [{ ...base, product: '', qty: 0, costPrice: '', sellingPrice: 0, itemProfit: 0, itemProfitPercent: '' }];
+      return [{ ...base, product: '', qty: 0, mrp: '', purchaseDiscountPercent: '', costPrice: '', sellingPrice: 0, itemProfit: 0, itemProfitPercent: '' }];
     }
     return tx.items.map(it => ({
       ...base,
       product: it.name,
       qty: it.quantity,
+      mrp: it.mrp || '',
+      purchaseDiscountPercent: it.purchaseDiscountPercent != null ? `${it.purchaseDiscountPercent}%` : '',
       costPrice: it.costPrice || '',
       sellingPrice: it.sellingPrice,
       itemProfit: Math.round(it.profitPerUnit * it.quantity * 100) / 100,
@@ -159,6 +163,8 @@ export default function LedgerView({
     { key: 'billNumber', label: 'Bill No' },
     { key: 'product', label: 'Product' },
     { key: 'qty', label: 'Qty' },
+    { key: 'mrp', label: 'MRP', type: 'currency' as const },
+    { key: 'purchaseDiscountPercent', label: 'Purch%' },
     { key: 'costPrice', label: 'Cost', type: 'currency' as const },
     { key: 'sellingPrice', label: 'Price', type: 'currency' as const },
     { key: 'itemProfit', label: 'Profit', type: 'currency' as const },

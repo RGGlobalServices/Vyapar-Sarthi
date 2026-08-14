@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import api from './api';
-import { getBusinessConfig, BusinessType } from './businessConfig';
+import { getBusinessConfig, BusinessType, isGenderOnlyLabel } from './businessConfig';
 
 /**
  * Category suggestions for the Add/Edit product forms, plus persistence for
@@ -13,13 +13,27 @@ import { getBusinessConfig, BusinessType } from './businessConfig';
  * nothing remembered it, so the next product had to be typed from scratch and
  * small spelling drifts ("Cold Drinks" / "Cold drink") fragmented the catalogue.
  *
- * Suggestions are merged from three sources, most-relevant first:
- *   1. the shop's saved Category master rows,
- *   2. categories already in use on its products (covers rows created before
- *      this existed, and anything an import brought in),
- *   3. the business-type defaults, as a starting point for a new shop.
+ * Suggestions are merged from two curated sources, most-relevant first:
+ *   1. the business-type defaults — a clean, curated starting point that's
+ *      the same for every shop of this type,
+ *   2. the shop's saved Category master rows (added via "+ Add" — clean by
+ *      construction since gender words are blocked at that point too).
+ *
+ * Deliberately does NOT merge in `usedCategories` (raw distinct values from
+ * the shop's own product rows) — that source pulls in literally anything
+ * ever typed on any product, including years of one-off typos/test values
+ * ("Test", "Powder", generic tags like "Imported Sales"), with no way to
+ * tell those apart from a genuinely useful category algorithmically. A
+ * shopkeeper reported this exact junk mixed into the suggestion list as
+ * looking unprofessional. `usedCategories` is still accepted as a parameter
+ * (existing call sites pass it) but ignored here — nothing reads product
+ * data through this hook, so this is purely a suggestion-list change, not a
+ * data change; every existing product keeps whatever category it already
+ * has. If a real, currently-only-on-products category should be suggested
+ * again, retyping it once on any product calls saveCategory() and promotes
+ * it into the curated `saved` list from then on.
  */
-export function useCategories(businessType?: string, usedCategories: string[] = []) {
+export function useCategories(businessType?: string, _usedCategories: string[] = []) {
   const { data, mutate } = useSWR('/master-data', (url: string) => api.get(url).then((r) => r.data));
 
   const saved: { id: string; name: string }[] = data?.categories ?? [];
@@ -28,29 +42,35 @@ export function useCategories(businessType?: string, usedCategories: string[] = 
     const defaults = getBusinessConfig((businessType || 'general') as BusinessType).defaultCategories || [];
     const out: string[] = [];
     const seen = new Set<string>();
-    // Case-insensitive dedupe that keeps the first spelling encountered, so the
-    // shop's own saved casing wins over a default or an imported variant.
-    for (const name of [...saved.map((c) => c.name), ...usedCategories, ...defaults]) {
+    // Case-insensitive dedupe that keeps the first spelling encountered, so
+    // the curated default's casing wins over a messier shop-typed variant.
+    // Category = what the product IS, Gender = who it's for — a bare gender
+    // word ("Kids", "Men", "Female") is never a valid category suggestion,
+    // however it got there (typed directly, or via an older import that
+    // mapped a gender column into the category field).
+    for (const name of [...defaults, ...saved.map((c) => c.name)]) {
       const clean = String(name ?? '').trim();
-      if (!clean) continue;
+      if (!clean || isGenderOnlyLabel(clean)) continue;
       const key = clean.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(clean);
     }
     return out;
-  }, [saved, usedCategories, businessType]);
+  }, [saved, businessType]);
 
   /**
-   * Persist a typed-in category so it is offered next time. No-ops for blanks
-   * and for anything already saved (compared case-insensitively). Failure is
-   * deliberately swallowed: saving the product matters, remembering the
-   * category label does not, and this runs alongside the product save.
+   * Persist a typed-in category so it is offered next time. No-ops for blanks,
+   * for a bare gender/age word (that belongs in the Gender field, not here —
+   * see isGenderOnlyLabel), and for anything already saved (compared
+   * case-insensitively). Failure is deliberately swallowed: saving the
+   * product matters, remembering the category label does not, and this runs
+   * alongside the product save.
    */
   const saveCategory = useCallback(
     async (name: string | undefined | null) => {
       const clean = String(name ?? '').trim();
-      if (!clean) return;
+      if (!clean || isGenderOnlyLabel(clean)) return;
       if (saved.some((c) => (c.name || '').trim().toLowerCase() === clean.toLowerCase())) return;
       try {
         await api.post('/master-data', { type: 'category', name: clean });

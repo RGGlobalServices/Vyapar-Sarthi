@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     const data = await req.json();
     const { supplierId, invoiceNumber: rawInvoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;
 
-    if (!supplierId || !warehouseId || !items || items.length === 0) {
+    if (!supplierId || !items || items.length === 0) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
     }
 
@@ -141,6 +141,11 @@ export async function POST(req: Request) {
           quantity: item.baseQuantity,
           cost: item.baseCost,
           gst: item.gst || 0,
+          // Locked in permanently at insert time — never recomputed from the
+          // product's current mrp/purchaseDiscountPercent later. Null when
+          // this line was entered in Manual cost mode.
+          mrp: item.mrp != null ? Number(item.mrp) : null,
+          discountPercent: item.discountPercent != null ? Number(item.discountPercent) : null,
         }))
       }),
 
@@ -170,7 +175,11 @@ export async function POST(req: Request) {
 
       // 4. Update Global Stock and Warehouse Inventory concurrently
       ...processedItems.flatMap((item: any) => [
-        prisma.godownProduct.upsert({
+        // Godowns are an Udyog/Bada Udyog-only concept — warehouseId is null
+        // for a Dukan/Vyapar purchase (no godown to assign it to), so skip
+        // this write entirely rather than upserting a row with a null
+        // godownId. current_stock below still updates either way.
+        ...(warehouseId ? [prisma.godownProduct.upsert({
           where: {
             godownId_productId: {
               godownId: warehouseId,
@@ -179,7 +188,7 @@ export async function POST(req: Request) {
           },
           update: { quantity: { increment: item.baseQuantity } },
           create: { godownId: warehouseId, productId: item.productId, quantity: item.baseQuantity }
-        }),
+        })] : []),
         // currentStock has no DB default and is often NULL for products that
         // never had an opening stock set — a plain Prisma `increment` runs as
         // SQL `current_stock + N`, and NULL + N is NULL, so the stock silently

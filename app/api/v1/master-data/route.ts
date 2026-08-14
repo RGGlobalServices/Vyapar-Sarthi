@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody } from '@/lib/server/http';
+import { isGenderOnlyLabel } from '@/lib/businessConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,13 @@ export const POST = handle(async (req) => {
 
   if (!type || !name) {
     return json({ error: 'Type and name are required.' }, 400);
+  }
+  // Category = what the product IS; Gender = who it's for. A bare gender/age
+  // word ("Kids", "Men", "Female") is never a valid category — reject at the
+  // API boundary too, not just in the UI, so an import or any other caller
+  // can't reintroduce the same pollution this was built to clean up.
+  if (type === 'category' && isGenderOnlyLabel(name)) {
+    return json({ error: `"${name}" is a Gender value, not a Category — use the Gender field instead.` }, 400);
   }
 
   let result;

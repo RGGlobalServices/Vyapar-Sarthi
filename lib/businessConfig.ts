@@ -449,7 +449,12 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     hasWireSpecs: false,
     hasVoltWatt: false,
     hasSoleMaterial: false,
-    defaultCategories: ['T-Shirt', 'Shirt', 'Pant', 'Jeans', 'Saree', 'Kurta', 'Dress', 'Jacket', 'Pant Piece', 'Shirt Piece', 'Dress Material'],
+    defaultCategories: [
+      'T-Shirt', 'Shirt', 'Jeans', 'Trousers / Pants', 'Track Pants', 'Shorts',
+      'Kurta', 'Saree', 'Dress', 'Top', 'Skirt', 'Blazer', 'Suit', 'Jacket', 'Sweater',
+      'Innerwear', 'Nightwear', 'Kids Wear', 'School Uniform', 'Sportswear', 'Ethnic Wear',
+      'Pant Piece', 'Shirt Piece', 'Dress Material', 'Other',
+    ],
     defaultUnits: ['Piece', 'Meter', 'Set'],
     productPlaceholder: 'e.g. Cotton T-Shirt (M)',
     productPlaceholderHi: 'जैसे कॉटन टी-शर्ट (M)',
@@ -2065,6 +2070,150 @@ const FOOTWEAR_RULES: SpecRule[] = [
     spec: { typeLabel: 'Colour', typeOptions: ['Black', 'White', 'Brown', 'Tan', 'Blue', 'Red', 'Grey', 'Navy'], sizeLabel: 'Size', sizeChart: ['UK/IND 4', 'UK/IND 5', 'UK/IND 6', 'UK/IND 7', 'UK/IND 8', 'UK/IND 9', 'UK/IND 10', 'UK/IND 11', 'UK/IND 12'] },
   },
 ];
+
+// ── Gender/category-aware size charts for the dedicated Clothes and Footwear
+// shop types (hasColors: true — different from APPAREL_RULES/FOOTWEAR_RULES
+// above, which only apply under the "general" business type's hasSpecs path).
+// Real apparel doesn't use one alphabet chart for everything: bottoms (jeans/
+// trousers) are sold by numeric waist size, sarees/dupattas are Free Size,
+// kids' wear is age-based, and footwear UK ranges differ by Men/Women/Kids.
+const CLOTHING_SIZE_CHARTS = {
+  topwearAlpha: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'],
+  topwearAlphaWomen: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL', 'Free Size'],
+  bottomwearMen: ['28', '30', '32', '34', '36', '38', '40', '42', '44'],
+  bottomwearWomen: ['26', '28', '30', '32', '34', '36', '38'],
+  freeSize: ['Free Size'],
+  kidsClothing: ['0-3M', '3-6M', '6-12M', '1-2Y', '2-3Y', '3-4Y', '4-5Y', '5-6Y', '6-7Y', '7-8Y', '8-9Y', '9-10Y', '10-11Y', '11-12Y', '12-13Y', '13-14Y'],
+} as const;
+
+/**
+ * India/UK shoe sizes are numerically identical, so "UK" covers both — most
+ * practical default for an Indian shopkeeper. US and EU columns are
+ * index-aligned to the same row (UK 7 / US 8 / EU 41 are the same physical
+ * shoe) using standard, commonly-cited conversion tables; exact numbers vary
+ * slightly by brand in real life too, so this is a sensible approximation,
+ * not meant to be lab-precise. Kids here means UK junior sizes 1-6 (the
+ * range that precedes adult sizing), not the age-banded Kids clothing chart
+ * above — footwear and clothing use genuinely different "kids" systems.
+ */
+const FOOTWEAR_SIZE_TABLES: Record<'men' | 'women' | 'kids', Record<FootwearSizeSystem, string[]>> = {
+  men: {
+    uk: ['UK 5', 'UK 6', 'UK 7', 'UK 8', 'UK 9', 'UK 10', 'UK 11', 'UK 12'],
+    us: ['US 6', 'US 7', 'US 8', 'US 9', 'US 10', 'US 11', 'US 12', 'US 13'],
+    eu: ['EU 38', 'EU 39', 'EU 41', 'EU 42', 'EU 43', 'EU 44', 'EU 45', 'EU 46'],
+  },
+  women: {
+    uk: ['UK 3', 'UK 4', 'UK 5', 'UK 6', 'UK 7', 'UK 8', 'UK 9'],
+    us: ['US 5', 'US 6', 'US 7', 'US 8', 'US 9', 'US 10', 'US 11'],
+    eu: ['EU 35', 'EU 36', 'EU 37', 'EU 39', 'EU 40', 'EU 41', 'EU 42'],
+  },
+  kids: {
+    uk: ['UK 1', 'UK 2', 'UK 3', 'UK 4', 'UK 5', 'UK 6'],
+    us: ['US 2', 'US 3', 'US 4', 'US 5', 'US 6', 'US 7'],
+    eu: ['EU 33', 'EU 34', 'EU 35', 'EU 36', 'EU 37', 'EU 38'],
+  },
+};
+
+export type FootwearSizeSystem = 'uk' | 'us' | 'eu';
+
+interface ClothingCategoryRule { match: string[]; group: 'topwear' | 'bottomwear' | 'freeSize'; }
+const CLOTHING_CATEGORY_RULES: ClothingCategoryRule[] = [
+  { match: ['jean', 'trouser', 'pant', 'chino', 'cargo', 'track pant', 'joggers', 'formal pant'], group: 'bottomwear' },
+  { match: ['saree', 'sari', 'lehenga', 'dupatta', 'stole'], group: 'freeSize' },
+  { match: ['t-shirt', 'tshirt', 'shirt', 'kurta', 'kurti', 'dress', 'jacket', 'blouse', 'salwar', 'suit', 'nightwear', 'topwear', 'tops', 'legging', 'sweater', 'hoodie', 'gown', 'frock', 'shorts', 'ethnic', 'apparel', 'clothing', 'garment'], group: 'topwear' },
+];
+
+/**
+ * Real shopkeeper category data is messy — shops in the wild have literal
+ * categories named "Kids", "men", "Female" etc. (gender/age typed straight
+ * into the free-text Category field instead of using the separate Gender
+ * dropdown, or in addition to it, e.g. "Kids Pant"). Detect the effective
+ * gender/age signal from the Gender field first, and fall back to scanning
+ * the category text itself so a bare "Kids" category resolves correctly
+ * even when Gender is left at "Unisex". Word-boundary regex, not `.includes`
+ * — "Women" contains the substring "men" and would false-positive as Men.
+ */
+function detectGenderSignal(
+  gender: string | undefined | null,
+  category: string | undefined | null
+): 'kids' | 'women' | 'men' | null {
+  const g = (gender || '').toLowerCase().trim();
+  if (g === 'boys' || g === 'girls' || g === 'kids') return 'kids';
+  if (g === 'women') return 'women';
+  if (g === 'men') return 'men';
+
+  const c = (category || '').toLowerCase();
+  if (/\b(kids?|baby|babies|infant|toddler|boys?|girls?)\b/.test(c)) return 'kids';
+  if (/\b(women|womens|women's|ladies|female)\b/.test(c)) return 'women';
+  if (/\b(men|mens|men's|male|gents|gentlemen)\b/.test(c)) return 'men';
+  return null;
+}
+
+// Bare gender/age words — "Kids", "Men", "Female" — belong in the Gender
+// field, never in Category (Category = what the product IS, Gender = who
+// it's for). EXACT match only, not a substring/word-boundary test: a real
+// category like "Kids Wear" or "Kids Shoes" must stay unaffected, only a
+// category whose ENTIRE value is just a gender word gets caught.
+const GENDER_ONLY_LABELS = new Set([
+  'men', 'mens', "men's", 'male', 'gents', 'gentlemen',
+  'women', 'womens', "women's", 'ladies', 'female',
+  'kids', 'kid', 'boys', 'boy', 'girls', 'girl',
+  'baby', 'babies', 'infant', 'toddler', 'unisex',
+]);
+
+/** True when `value`, trimmed, is nothing but a gender/age word — see GENDER_ONLY_LABELS. */
+export function isGenderOnlyLabel(value: string | undefined | null): boolean {
+  return GENDER_ONLY_LABELS.has(String(value ?? '').trim().toLowerCase());
+}
+
+/**
+ * Resolve the right size chart for an apparel/footwear product given its
+ * free-text category and Gender field — jeans get numeric waist sizes, sarees
+ * are Free Size, Boys/Girls/Kids get age-based sizes, footwear uses
+ * gender-appropriate UK/US/EU ranges (`sizeSystem`, default 'uk' — India and
+ * UK share the same numbering). Falls back to `fallback` (the shop's static
+ * businessConfig chart) whenever nothing matches yet (category/gender not
+ * typed) so existing behaviour is unaffected until there's enough to go on.
+ */
+export function resolveClothingSizeChart(
+  category: string | undefined | null,
+  gender: string | undefined | null,
+  isFootwear: boolean,
+  fallback: string[],
+  sizeSystem: FootwearSizeSystem = 'uk'
+): string[] {
+  const signal = detectGenderSignal(gender, category);
+  const isKids = signal === 'kids';
+  const isWomen = signal === 'women';
+  const isMen = signal === 'men';
+
+  if (isFootwear) {
+    if (isKids) return [...FOOTWEAR_SIZE_TABLES.kids[sizeSystem]];
+    if (isWomen) return [...FOOTWEAR_SIZE_TABLES.women[sizeSystem]];
+    if (isMen) return [...FOOTWEAR_SIZE_TABLES.men[sizeSystem]];
+    return fallback;
+  }
+
+  if (isKids) return [...CLOTHING_SIZE_CHARTS.kidsClothing];
+
+  const c = (category || '').toLowerCase().trim();
+  if (c) {
+    for (const rule of CLOTHING_CATEGORY_RULES) {
+      if (rule.match.some(m => c.includes(m))) {
+        if (rule.group === 'bottomwear') return [...(isWomen ? CLOTHING_SIZE_CHARTS.bottomwearWomen : CLOTHING_SIZE_CHARTS.bottomwearMen)];
+        if (rule.group === 'freeSize') return [...CLOTHING_SIZE_CHARTS.freeSize];
+        return [...(isWomen ? CLOTHING_SIZE_CHARTS.topwearAlphaWomen : CLOTHING_SIZE_CHARTS.topwearAlpha)];
+      }
+    }
+  }
+  // No garment keyword matched, but the category/gender text alone already
+  // signals Women/Men (e.g. a bare "Kids"/"Men"/"Female" category with no
+  // more specific garment word) — apply the gender-appropriate general chart
+  // instead of silently falling through to the shop's static default.
+  if (isWomen) return [...CLOTHING_SIZE_CHARTS.topwearAlphaWomen];
+  if (isMen) return [...CLOTHING_SIZE_CHARTS.topwearAlpha];
+  return fallback;
+}
 
 // Cosmetics / beauty (Nykaa-style): shade / finish / volume.
 const COSMETIC_RULES: SpecRule[] = [

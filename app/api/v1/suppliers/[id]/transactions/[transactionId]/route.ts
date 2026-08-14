@@ -60,6 +60,8 @@ export const GET = handle(async (req, ctx: any) => {
           quantity: pi.quantity,
           cost: pi.cost,
           gst: pi.gst,
+          mrp: pi.mrp,
+          discountPercent: pi.discountPercent,
           total: Math.round((pi.quantity || 0) * (pi.cost || 0) * 100) / 100,
         })),
       };

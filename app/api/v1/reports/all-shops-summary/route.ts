@@ -5,15 +5,21 @@ import { handle, json } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// GET /reports/all-shops-summary — one row per shop this owner has, for the
-// "download all shops report" pull. Deliberately summarizes EVERY owned shop
-// (not just requireShopScope()'s pooling-eligible shopIds, which excludes
-// lapsed subscriptions) since this is an explicit one-off management report,
-// not an ambient view — an owner checking on a lapsed shop should still see
-// it listed (contributing ₹0), not have it silently vanish.
+// GET /reports/all-shops-summary — one row per shop, for the Settings page's
+// "Shop-wise summary" and the "download all shops report" pull. Scoped to
+// the owner's explicit shop selection when they've saved one (Settings →
+// All Shop Access → Selected Shops); falls back to EVERY owned shop when no
+// selection has been saved yet, same as before that picker existed.
+// Deliberately does NOT further narrow by requireShopScope()'s
+// subscription-eligible shopIds — this is an explicit management report, not
+// an ambient pooled view, so a selected-but-lapsed shop should still show up
+// (contributing ₹0), not silently vanish.
 export const GET = handle(async (req) => {
-  const { ownedShops } = await requireShopScope(req);
-  const shopIds = ownedShops.map((s) => s.id);
+  const { ownedShops, selectedShopIds } = await requireShopScope(req);
+  const scopedShops = selectedShopIds
+    ? ownedShops.filter((s) => selectedShopIds.includes(s.id))
+    : ownedShops;
+  const shopIds = scopedShops.map((s) => s.id);
 
   if (shopIds.length === 0) {
     return json({ shops: [], grandTotal: emptyTotal() });
@@ -50,7 +56,7 @@ export const GET = handle(async (req) => {
   const stockByShop = new Map(stockRows.map((r) => [r.shop_id, r]));
   const udharByShop = new Map(udharAgg.map((r) => [r.shopId, r._sum]));
 
-  const shops = ownedShops.map((shop) => {
+  const shops = scopedShops.map((shop) => {
     const sales = salesByShop.get(shop.id);
     const stock = stockByShop.get(shop.id);
     const udhar = udharByShop.get(shop.id);

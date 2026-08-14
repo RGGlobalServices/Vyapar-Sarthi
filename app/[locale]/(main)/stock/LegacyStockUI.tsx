@@ -521,6 +521,12 @@ export default function LegacyStockUI() {
           </td>
           <td className="px-6 py-4 text-slate-400">{item.min}</td>
           <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.unit} locale={locale} /></td>
+          <td className="px-6 py-4 text-sm text-slate-400">{item.location || '—'}</td>
+          <td className="px-6 py-4 text-sm text-right text-slate-400">{item.mrp ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
+          <td className="px-6 py-4 text-sm text-right text-slate-400">{item.cost ? `₹${item.cost.toLocaleString('en-IN')}` : '—'}</td>
+          <td className="px-6 py-4 text-sm text-right text-slate-400">
+            {item.costPriceMode === 'mrp_based' && item.purchaseDiscountPercent != null ? `${item.purchaseDiscountPercent}%` : '—'}
+          </td>
           <td className="px-6 py-4">
             {!item.archived ? (
               <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit', statusCls(status))}>
@@ -887,6 +893,10 @@ export default function LegacyStockUI() {
                     <th className="px-6 py-4">{t('colCurrentStock')}</th>
                     <th className="px-6 py-4">{t('colMinLevel')}</th>
                     <th className="px-6 py-4">{t('colUnit')}</th>
+                    <th className="px-6 py-4">{t('productLocation') || 'Location'}</th>
+                    <th className="px-6 py-4 text-right">MRP</th>
+                    <th className="px-6 py-4 text-right">Cost Price</th>
+                    <th className="px-6 py-4 text-right">Purchase %</th>
                     <th className="px-6 py-4">{t('colStatus')}</th>
                     <th className="px-6 py-4 text-center">{t('colActions')}</th>
                   </tr>
@@ -894,9 +904,9 @@ export default function LegacyStockUI() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
                   {renderRows(group.items, groupBizConfig, true)}
                   {loading ? (
-                    <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
+                    <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
                   ) : group.items.length === 0 && (
-                    <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-500">{t('noItems')}</td></tr>
+                    <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-500">{t('noItems')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -923,6 +933,10 @@ export default function LegacyStockUI() {
                     <th className="px-6 py-4">{t('colCurrentStock')}</th>
                     <th className="px-6 py-4">{t('colMinLevel')}</th>
                     <th className="px-6 py-4">{t('colUnit')}</th>
+                    <th className="px-6 py-4">{t('productLocation') || 'Location'}</th>
+                    <th className="px-6 py-4 text-right">MRP</th>
+                    <th className="px-6 py-4 text-right">Cost Price</th>
+                    <th className="px-6 py-4 text-right">Purchase %</th>
                     <th className="px-6 py-4">{t('colStatus')}</th>
                     <th className="px-6 py-4 text-center">{t('colActions')}</th>
                   </tr>
@@ -930,7 +944,7 @@ export default function LegacyStockUI() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
                   {renderRows(archivedItems)}
                   {archivedItems.length === 0 && (
-                    <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500">{t('noArchived')}</td></tr>
+                    <tr><td colSpan={11} className="px-6 py-10 text-center text-slate-500">{t('noArchived')}</td></tr>
                   )}
                 </tbody>
               </table>

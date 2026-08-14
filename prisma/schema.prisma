@@ -32,6 +32,7 @@ model User {
   maxShops            Int?          @map("max_shops")
   canAddShop          Boolean?      @default(true) @map("can_add_shop")
   allShopAccess       Boolean?      @default(false) @map("all_shop_access")
+  selectedShopIds     String[]      @default([]) @map("selected_shop_ids")
   toolUsages          ToolUsage[]
   sessions            UserSession[]
 
@@ -299,6 +300,12 @@ model Product {
   // wholesale selling price as if it were COGS.
   wholesaleCost    Float?           @map("wholesale_cost")
   costPrice        Float?           @map("cost_price")
+  // 'manual' (default, today's behavior — costPrice typed directly) or
+  // 'mrp_based' (costPrice is derived as mrp * (1 - purchaseDiscountPercent/100)
+  // and recomputed live in Add/Edit Product; still written into costPrice on
+  // save so every existing consumer of that field needs no changes).
+  costPriceMode    String?          @default("manual") @map("cost_price_mode")
+  purchaseDiscountPercent Float?    @map("purchase_discount_percent")
   conversionFactor Float?           @map("conversion_factor")
   minStock         Float?           @map("min_stock")
   currentStock     Float?           @map("current_stock")
@@ -311,6 +318,9 @@ model Product {
   // Both are alternative keys the billing scanner can resolve a product by.
   sku              String?          @db.VarChar
   cartonBarcode    String?          @map("carton_barcode") @db.VarChar
+  // Free-text shelf/rack/bin locator — distinct from the Godown model (a
+  // whole warehouse, Udyog-only); this is available to every business tier.
+  location         String?          @db.VarChar
   expiryDate       String?          @map("expiry_date") @db.VarChar
   batch_number     String?          @db.VarChar
   drug_schedule    String?          @db.VarChar
@@ -959,6 +969,12 @@ model PurchaseItem {
   quantity          Float
   cost              Float
   gst               Float?
+  // Locked in at the moment this line was purchased — never rewritten after
+  // insert (same as `cost` above), so a later change to the product's MRP or
+  // default purchase_discount_percent never alters what this line actually
+  // paid. Null when this line was entered in Manual cost mode.
+  mrp               Float?
+  discountPercent   Float?  @map("discount_percent")
 
   purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
   product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)

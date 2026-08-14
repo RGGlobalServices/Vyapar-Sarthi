@@ -204,10 +204,21 @@ export async function requireShopScope(
   // Strict equality — null/undefined (every pre-existing user) reads as off.
   const allShopAccess = user.allShopAccess === true;
 
+  // Owner-level narrowing of WHICH shops "All Shop Access" pools — empty
+  // (every pre-existing All-Shop-Access user, and anyone who's never opened
+  // the picker) means "no explicit selection", which must keep behaving
+  // exactly like before this column existed: every owned shop.
+  const selectedShopIds = Array.isArray(user.selectedShopIds) && user.selectedShopIds.length > 0
+    ? user.selectedShopIds
+    : null;
+
   // A lapsed shop shows no data if it were the active shop today, so it
   // shouldn't silently reappear via pooling either.
   const eligibleShops = enforce ? shops.filter(s => !isSubscriptionEnded(s)) : shops;
-  const shopIds = allShopAccess ? eligibleShops.map(s => s.id) : [shop.id];
+  const pooledShops = selectedShopIds
+    ? eligibleShops.filter(s => selectedShopIds.includes(s.id))
+    : eligibleShops;
+  const shopIds = allShopAccess ? pooledShops.map(s => s.id) : [shop.id];
 
   return {
     user: user as typeof user & { uuid: string },
@@ -217,6 +228,10 @@ export async function requireShopScope(
     ownedShops: shops,
     shopIds,
     allShopAccess,
+    // Raw selection, null when unset — for routes (like all-shops-summary)
+    // that need to distinguish "explicitly chose these" from "no selection
+    // yet, default to everything" rather than just consuming shopIds.
+    selectedShopIds,
   };
 }
 

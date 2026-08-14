@@ -55,6 +55,7 @@ export const PATCH = handle(async (req) => {
     adminPin?: string;
     removeAdminPin?: boolean;
     allShopAccess?: boolean;
+    selectedShopIds?: string[];
   }>(req);
 
   const updates: Record<string, unknown> = {};
@@ -74,6 +75,9 @@ export const PATCH = handle(async (req) => {
   // shopUpdates bulk-write below (see the comment there on why name/type
   // fields are excluded from it).
   if (body.allShopAccess !== undefined) updates.allShopAccess = !!body.allShopAccess;
+  if (Array.isArray(body.selectedShopIds)) {
+    updates.selectedShopIds = body.selectedShopIds.filter((id) => typeof id === 'string');
+  }
 
   // Email update
   if (body.email !== undefined) {
@@ -178,6 +182,7 @@ export const PATCH = handle(async (req) => {
       storeName: updatedUser.storeName,
       businessType: updatedUser.businessType,
       allShopAccess: updatedUser.allShopAccess === true,
+      selectedShopIds: Array.isArray(updatedUser.selectedShopIds) ? updatedUser.selectedShopIds : [],
     }
   });
 });

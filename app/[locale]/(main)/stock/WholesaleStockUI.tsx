@@ -660,6 +660,7 @@ export default function WholesaleStockUI() {
                   </th>
                   <th className="px-4 py-3">{t('colProduct')}</th>
                   <th className="px-4 py-3">{t('barcode')}</th>
+                  <th className="px-4 py-3">{t('productLocation') || 'Location'}</th>
                   <th className="px-4 py-3">{t('colVariants') || 'Colour / Size'}</th>
                   <th className="px-4 py-3 text-right">{t('colCurrentStock')}</th>
                   <th className="px-4 py-3 text-right">{t('purchasePrice')}</th>
@@ -675,6 +676,7 @@ export default function WholesaleStockUI() {
                       <td className="px-4 py-4"><div className="h-4 w-4 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                      <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
@@ -685,7 +687,7 @@ export default function WholesaleStockUI() {
                   ))
                 ) : group.items.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
+                    <td colSpan={10} className="px-5 py-12 text-center text-slate-500">
                       {t('noItems')}
                     </td>
                   </tr>
@@ -716,6 +718,7 @@ export default function WholesaleStockUI() {
                         <div className="text-xs text-slate-500 font-normal">{item.category || '-'}</div>
                       </td>
                       <td className="px-4 py-3 text-slate-500 font-mono text-xs">{item.barcode || item.sku || '-'}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{item.location || '-'}</td>
                       <td className="px-4 py-3">
                         {itemVariants.length > 0 ? (
                           <div className="max-w-[170px]">
@@ -884,6 +887,13 @@ export default function WholesaleStockUI() {
                     <div>
                       <p className="text-slate-500 mb-1">MRP</p>
                       <p className="font-bold font-mono line-through text-slate-400">₹{selectedProduct.mrp || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-1">Purchase %</p>
+                      <p className="font-bold font-mono text-amber-500">
+                        {selectedProduct.costPriceMode === 'mrp_based' && selectedProduct.purchaseDiscountPercent != null
+                          ? `${selectedProduct.purchaseDiscountPercent}%` : '—'}
+                      </p>
                     </div>
                     <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                       <p className="text-slate-500 mb-1">Margin (Retail vs Cost)</p>

@@ -113,6 +113,12 @@ export default function ProductDetailsSheet({
                   </span>
                 )}
               </p>
+              {data?.product?.location && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
+                  <MapPin size={10} />
+                  {data.product.location}
+                </p>
+              )}
             </div>
           </div>
 

@@ -37,5 +37,6 @@ export const GET = handle(async (req) => {
       multiShop: canUseMultiShop(primaryPlan),
     },
     allShopAccess: user.allShopAccess === true,
+    selectedShopIds: Array.isArray(user.selectedShopIds) ? user.selectedShopIds : [],
   });
 });

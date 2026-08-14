@@ -8,6 +8,11 @@ export interface PurchaseBillItem {
   cost: number;
   gst?: number | null;
   total: number;
+  // Locked in at the time of this specific purchase line — null when this
+  // line was entered in Manual cost mode, never recomputed from the
+  // product's current mrp/discount% after the fact.
+  mrp?: number | null;
+  discountPercent?: number | null;
 }
 
 export interface PurchaseBillDetail {
@@ -87,13 +92,15 @@ export async function generatePurchaseBillPDF({
     const rows: any[] = items.map((it) => [
       it.productName + (it.variant ? ` (${it.variant})` : ''),
       `${it.quantity}${it.unit ? ` ${it.unit}` : ''}`,
+      { content: it.mrp != null ? fmtInr(it.mrp) : '-', styles: { halign: 'right' } },
+      it.discountPercent != null ? `${it.discountPercent}%` : '-',
       { content: fmtInr(it.cost), styles: { halign: 'right' } },
       it.gst != null ? `${it.gst}%` : '-',
       { content: fmtInr(it.total), styles: { halign: 'right' } },
     ]);
     autoTable(doc, {
       startY: y,
-      head: [['Product', 'Qty', 'Cost/Unit', 'GST %', 'Line Total']],
+      head: [['Product', 'Qty', 'MRP', 'Purchase %', 'Cost/Unit', 'GST %', 'Line Total']],
       body: rows,
       theme: 'grid',
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.5, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },

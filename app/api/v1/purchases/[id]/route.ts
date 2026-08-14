@@ -40,7 +40,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const data = await req.json();
     const { supplierId, invoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;
 
-    if (!supplierId || !warehouseId || !items || items.length === 0) {
+    if (!supplierId || !items || items.length === 0) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
     }
 
@@ -95,6 +95,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
             quantity: item.baseQuantity,
             cost: item.baseCost,
             gst: item.gst || 0,
+            mrp: item.mrp != null ? Number(item.mrp) : null,
+            discountPercent: item.discountPercent != null ? Number(item.discountPercent) : null,
           })),
         }),
         tx.batch.createMany({
@@ -120,11 +122,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
           })),
         }),
         ...processedItems.flatMap((item: any) => [
-          tx.godownProduct.upsert({
+          // Skip when this shop's tier has no godowns (warehouseId null) —
+          // same reasoning as POST /purchases.
+          ...(warehouseId ? [tx.godownProduct.upsert({
             where: { godownId_productId: { godownId: warehouseId, productId: item.productId } },
             update: { quantity: { increment: item.baseQuantity } },
             create: { godownId: warehouseId, productId: item.productId, quantity: item.baseQuantity },
-          }),
+          })] : []),
           // currentStock is nullable with no default — a plain increment
           // silently no-ops when it's NULL, so COALESCE it first (see the
           // matching comment in purchases/route.ts POST).

@@ -70,10 +70,17 @@ interface BusinessStore {
   // select Reports, Udhar) across every shop this owner has, instead of only
   // the active one. Off by default for every existing user.
   allShopAccess: boolean;
+  // Narrows which shops allShopAccess pools together. Empty = no explicit
+  // selection saved yet, which every pooled route treats as "every owned
+  // shop" (today's behavior, unchanged) — only non-empty once the owner
+  // saves a choice in Settings → All Shop Access → Selected Shops.
+  selectedShopIds: string[];
   fetchProfile: (force?: boolean) => Promise<void>;
   fetchAllShops: () => Promise<void>;
+  hydrateFromCache: () => void;
   switchShop: (shopId: string, preventReload?: boolean) => Promise<void>;
   setAllShopAccess: (enabled: boolean) => Promise<void>;
+  setSelectedShopIds: (ids: string[]) => Promise<void>;
   createShop: (data: { name: string; businessType?: string; packageType?: string; subscriptionPlan?: string; address?: string; mobile?: string; gst?: string }) => Promise<ShopSummary>;
   deleteShop: (shopId: string) => Promise<void>;
   updateProfile: (updates: Partial<BusinessProfile>) => Promise<void>;
@@ -183,12 +190,43 @@ let profileCacheTs = 0;
 const PROFILE_CACHE_TTL = 60_000; // ms
 
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
-  profile: { ...DEFAULT_PROFILE, businessType: loadCachedType(), packageType: loadCachedPackage(), subscriptionPlan: loadCachedPlan() },
+  // Deliberately NOT seeded from localStorage here — this initializer runs at
+  // module-eval time on both the server (SSR, no localStorage → always
+  // DEFAULT_PROFILE) and the client (real cached value available), so
+  // reading localStorage here made the client's very first render disagree
+  // with the already-sent SSR HTML — a hydration mismatch on every field
+  // that renders bizConfig.emoji/label (e.g. 🛒 vs 👔), which also forced
+  // React to discard and regenerate the whole affected subtree, occasionally
+  // taking visible UI state (open modals) down with it. Same class of bug
+  // `activeShopId` below already avoids for the same reason (see its own
+  // comment) — apply the cached values instead via hydrateFromCache(),
+  // called from a client-only useEffect after hydration completes.
+  profile: { ...DEFAULT_PROFILE },
   loading: false,
   allShops: [],
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
   shopLimit: DEFAULT_SHOP_LIMIT,
   allShopAccess: false,
+  selectedShopIds: [],
+
+  // Applies last-known businessType/packageType/subscriptionPlan from
+  // localStorage — safe to call only from a client-side effect (post-
+  // hydration), never from the store's own initializer (see the comment on
+  // `profile` above). Lets the UI show the right icon/label instantly on
+  // repeat visits instead of waiting out fetchProfile()'s full network
+  // round-trip against this app's slow shared pooler; fetchProfile() still
+  // runs right after and is the authoritative source of truth.
+  hydrateFromCache: () => {
+    if (typeof window === 'undefined') return;
+    set(state => ({
+      profile: {
+        ...state.profile,
+        businessType: loadCachedType(),
+        packageType: loadCachedPackage(),
+        subscriptionPlan: loadCachedPlan(),
+      },
+    }));
+  },
 
   fetchProfile: async (force = false) => {
     // Skip if we fetched recently (e.g. tab focus fires repeatedly)
@@ -234,7 +272,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         localStorage.setItem('ks_active_shop_id', autoId);
       }
       
-      set({ allShops: shops, activeShopId: autoId, shopLimit, allShopAccess: res.data?.allShopAccess === true });
+      const selectedShopIds = Array.isArray(res.data?.selectedShopIds) ? res.data.selectedShopIds : [];
+      set({ allShops: shops, activeShopId: autoId, shopLimit, allShopAccess: res.data?.allShopAccess === true, selectedShopIds });
     } catch {}
   },
 
@@ -292,6 +331,26 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     // for pooled routes is resolved server-side from the DB, not part of any
     // SWR cache key, so flipping this must not leave stale
     // narrower/wider-scope data on screen under the same cache key.
+    mutate(() => true, undefined, { revalidate: true });
+    useUdharStore.getState().resetCustomers();
+    useStockStore.getState().resetStock();
+    useUdharStore.getState().fetchCustomers();
+    useStockStore.getState().fetchStock();
+  },
+
+  setSelectedShopIds: async (ids: string[]) => {
+    const previous = get().selectedShopIds;
+    set({ selectedShopIds: ids });
+    try {
+      await api.patch('/user/profile', { selectedShopIds: ids });
+    } catch (err) {
+      set({ selectedShopIds: previous });
+      throw err;
+    }
+
+    // Same reasoning as setAllShopAccess above — narrowing/widening which
+    // shops are pooled is resolved server-side, so any already-fetched
+    // pooled data on screen needs the same cache-bust + refetch.
     mutate(() => true, undefined, { revalidate: true });
     useUdharStore.getState().resetCustomers();
     useStockStore.getState().resetStock();

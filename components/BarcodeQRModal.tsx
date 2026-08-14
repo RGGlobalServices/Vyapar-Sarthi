@@ -77,6 +77,11 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // Optional extra line printed on the label below the price — a promo note,
   // batch tag, shop name, whatever the shopkeeper wants on the sticker itself.
   const [labelText, setLabelText] = useState('');
+  // Optional two-line HEADER printed above the product name — shop name on
+  // top, address/tagline below, same idea as the header block on a printed
+  // receipt. Distinct from labelText above (which sits below the price).
+  const [labelLine1, setLabelLine1] = useState('');
+  const [labelLine2, setLabelLine2] = useState('');
   // Udyog-only Carton/Box label — a separate bulk-packaging code from the
   // per-piece barcode above, priced by the whole carton rather than one unit.
   const [unitsPerCarton, setUnitsPerCarton] = useState(1);
@@ -302,7 +307,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     if (tab === 'barcode') {
       printLabelSheetShared(
         [{ name: product.name, barcode: barcodeValue, sellingPrice: product.sellingPrice, mrp: product.mrp, copies: printQty }],
-        { labelText, labelSize, title: `${product.name} — Labels` },
+        { labelText, labelLine1, labelLine2, labelSize, title: `${product.name} — Labels` },
       );
       return;
     }
@@ -351,7 +356,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
         mrp: row.mrp,
         copies: variantPrintQty[row.key] ?? Math.max(1, row.qty),
       })),
-      { labelText, labelSize, title: `${product.name} — Labels` },
+      { labelText, labelLine1, labelLine2, labelSize, title: `${product.name} — Labels` },
     );
   }
 
@@ -360,7 +365,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   function printOneVariant(row: typeof variantRows[number]) {
     printLabelSheetShared(
       [{ name: product.name, variantKey: row.key, barcode: row.barcode, sellingPrice: row.sellingPrice, mrp: row.mrp, copies: variantPrintQty[row.key] ?? Math.max(1, row.qty) }],
-      { labelText, labelSize, title: `${product.name} — ${row.key}` },
+      { labelText, labelLine1, labelLine2, labelSize, title: `${product.name} — ${row.key}` },
     );
   }
 
@@ -386,25 +391,33 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
       const scale = 2;
       const pad = 16 * scale;
       const note = labelText.trim();
+      const header1 = labelLine1.trim();
+      const header2 = labelLine2.trim();
       const sellingPrice = row.sellingPrice || 0;
       const mrp = row.mrp || 0;
       const price = sellingPrice > 0 ? `₹${sellingPrice.toLocaleString('en-IN')}` : (mrp > 0 ? `MRP ₹${mrp.toLocaleString('en-IN')}` : '');
 
+      const header1Font = `800 ${11 * scale}px Arial, sans-serif`;
+      const header2Font = `600 ${9 * scale}px Arial, sans-serif`;
       const nameFont = `800 ${16 * scale}px Arial, sans-serif`;
       const variantFont = `700 ${13 * scale}px Arial, sans-serif`;
       const noteFont = `600 ${12 * scale}px Arial, sans-serif`;
       const priceFont = `700 ${15 * scale}px Arial, sans-serif`;
 
+      const header1LineH = header1 ? 14 * scale : 0;
+      const header2LineH = header2 ? 12 * scale : 0;
       const nameLineH = 22 * scale;
       const variantLineH = 18 * scale;
       const noteLineH = note ? 16 * scale : 0;
       const priceLineH = price ? 20 * scale : 0;
       const gap = 4 * scale;
+      const hasHeader = !!(header1 || header2);
       const contentW = Math.max(img.width, 220 * scale);
 
       const canvas = document.createElement('canvas');
       canvas.width = contentW + pad * 2;
       canvas.height = pad * 2 + nameLineH + variantLineH + gap + img.height
+        + (hasHeader ? header1LineH + header2LineH + gap : 0)
         + (note ? noteLineH + gap : 0) + (price ? priceLineH + gap : 0);
       const ctx = canvas.getContext('2d')!;
       ctx.fillStyle = '#ffffff';
@@ -412,7 +425,33 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const cx = canvas.width / 2;
-      let y = pad + nameLineH / 2;
+      let y = pad;
+
+      if (header1) {
+        y += header1LineH / 2;
+        ctx.fillStyle = '#0f172a';
+        ctx.font = header1Font;
+        ctx.fillText(header1.toUpperCase(), cx, y, contentW);
+        y += header1LineH / 2;
+      }
+      if (header2) {
+        y += header2LineH / 2;
+        ctx.fillStyle = '#475569';
+        ctx.font = header2Font;
+        ctx.fillText(header2, cx, y, contentW);
+        y += header2LineH / 2;
+      }
+      if (hasHeader) {
+        y += gap;
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = scale;
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(canvas.width - pad, y);
+        ctx.stroke();
+      }
+
+      y += nameLineH / 2;
 
       ctx.fillStyle = '#0f172a';
       ctx.font = nameFont;
@@ -714,6 +753,33 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             </div>
           </div>
 
+          {/* Header — two optional lines printed above the product name
+              (shop name, address/tagline), separated from it by a rule. */}
+          <div className="w-full grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine1')}</label>
+              <input
+                type="text"
+                value={labelLine1}
+                onChange={e => setLabelLine1(e.target.value)}
+                placeholder={t('labelLine1Placeholder')}
+                maxLength={40}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine2')}</label>
+              <input
+                type="text"
+                value={labelLine2}
+                onChange={e => setLabelLine2(e.target.value)}
+                placeholder={t('labelLine2Placeholder')}
+                maxLength={40}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
           {/* Custom text — an optional extra line on the printed label
               (promo note, batch tag, etc.) on top of the name/price already
               shown. */}
@@ -817,6 +883,31 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine1')}</label>
+              <input
+                type="text"
+                value={labelLine1}
+                onChange={e => setLabelLine1(e.target.value)}
+                placeholder={t('labelLine1Placeholder')}
+                maxLength={40}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine2')}</label>
+              <input
+                type="text"
+                value={labelLine2}
+                onChange={e => setLabelLine2(e.target.value)}
+                placeholder={t('labelLine2Placeholder')}
+                maxLength={40}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
           </div>
 
           <div>

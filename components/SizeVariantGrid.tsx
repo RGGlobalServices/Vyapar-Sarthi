@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronUp, IndianRupee, Plus, X } from 'lucide-react';
@@ -80,6 +80,62 @@ export function SizePicker({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Types into its own local state and only commits (calls onCommit) on blur
+ *  or Enter — used for every per-variant input in this grid (quantity,
+ *  barcode, MRP/Selling/Cost/MinStock). A plain controlled input on any of
+ *  these re-renders the whole Add/Edit Product form AND every other colour
+ *  section's grid alongside it on every keystroke — for the quantity input
+ *  specifically this is worse than the others, since its onChange updates
+ *  the form's entire `size_variants` object, which the whole modal reads
+ *  from in many places, not just this one field's own row. For a product
+ *  with several colours × sizes that's a lot of unrelated re-rendering for
+ *  one digit typed into one box, and it's exactly what made typing feel
+ *  heavy/laggy. Isolating keystrokes to this one small component's own
+ *  state keeps typing itself cheap regardless of how big the surrounding
+ *  form is; the parent only re-renders once, when the field is actually
+ *  done being edited. Re-syncs from the `value` prop when it changes from
+ *  OUTSIDE this input (Generate-barcodes button, another field's edit
+ *  finishing, switching product) — the effect's dependency is `value`
+ *  alone, so it doesn't fire mid-typing.
+ *
+ *  Trade-off, accepted deliberately: anything computed FROM this field and
+ *  displayed elsewhere (the "= N" running-total hint under a quantity box,
+ *  the Total Stock bar) only refreshes once the field is committed, not on
+ *  every keystroke — standard behaviour for a form this size, not a bug. */
+export function LocalInput({ value, onCommit, type = 'text', placeholder, className, min, max, step, list, required, autoFocus }: {
+  value: string;
+  onCommit: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  className?: string;
+  min?: string | number;
+  max?: string | number;
+  step?: string | number;
+  list?: string;
+  required?: boolean;
+  autoFocus?: boolean;
+}) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  return (
+    <input
+      type={type}
+      min={min}
+      max={max}
+      step={step}
+      list={list}
+      required={required}
+      autoFocus={autoFocus}
+      placeholder={placeholder}
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onCommit(local); }}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      className={className}
+    />
   );
 }
 
@@ -221,21 +277,21 @@ export default function SizeVariantGrid({
                   {qty}
                 </div>
               ) : additiveMode ? (
-                <input
+                <LocalInput
                   type="number"
                   min="0"
-                  value={delta === 0 ? '' : delta}
+                  value={delta === 0 ? '' : String(delta)}
                   placeholder={t('addPlaceholder')}
-                  onChange={e => handleChange(size, e.target.value)}
+                  onCommit={v => handleChange(size, v)}
                   className={cn(inp, delta > 0 && 'border-emerald-400 dark:border-emerald-500/60 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300')}
                 />
               ) : (
-                <input
+                <LocalInput
                   type="number"
                   min="0"
-                  value={qty === 0 ? '' : qty}
+                  value={qty === 0 ? '' : String(qty)}
                   placeholder="0"
-                  onChange={e => handleChange(size, e.target.value)}
+                  onCommit={v => handleChange(size, v)}
                   className={inp}
                 />
               )}
@@ -252,12 +308,12 @@ export default function SizeVariantGrid({
                 <div className="flex items-center gap-0.5">
                   <div className="relative flex-1">
                     <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 pointer-events-none">₹</span>
-                    <input
+                    <LocalInput
                       type="number"
                       min="0"
-                      value={prices.sellingPrice || ''}
+                      value={prices.sellingPrice ? String(prices.sellingPrice) : ''}
                       placeholder={t('pricePlaceholder')}
-                      onChange={e => handlePriceChange(size, 'sellingPrice', e.target.value)}
+                      onCommit={v => handlePriceChange(size, 'sellingPrice', v)}
                       className={cn(priceInp, 'pl-4 text-emerald-600 dark:text-emerald-400')}
                     />
                   </div>
@@ -290,84 +346,97 @@ export default function SizeVariantGrid({
               {t('pricingFor', { size: formatSizeLabel(expandedSize) })}
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('mrp')}</label>
-              <input
+              <LocalInput
                 type="number"
                 min="0"
                 placeholder="0"
-                value={sizePrices[expandedSize]?.mrp || ''}
-                onChange={e => handlePriceChange(expandedSize, 'mrp', e.target.value)}
+                value={sizePrices[expandedSize]?.mrp ? String(sizePrices[expandedSize].mrp) : ''}
+                onCommit={v => handlePriceChange(expandedSize, 'mrp', v)}
                 className={priceInp}
               />
             </div>
             <div>
               <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('selling')}</label>
-              <input
+              <LocalInput
                 type="number"
                 min="0"
                 placeholder="0"
-                value={sizePrices[expandedSize]?.sellingPrice || ''}
-                onChange={e => handlePriceChange(expandedSize, 'sellingPrice', e.target.value)}
+                value={sizePrices[expandedSize]?.sellingPrice ? String(sizePrices[expandedSize].sellingPrice) : ''}
+                onCommit={v => handlePriceChange(expandedSize, 'sellingPrice', v)}
                 className={cn(priceInp, 'text-emerald-600 dark:text-emerald-400')}
               />
             </div>
             <div>
               <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('cost')}</label>
-              <input
+              <LocalInput
                 type="number"
                 min="0"
                 placeholder="0"
-                value={sizePrices[expandedSize]?.cost || ''}
-                onChange={e => handlePriceChange(expandedSize, 'cost', e.target.value)}
+                value={sizePrices[expandedSize]?.cost ? String(sizePrices[expandedSize].cost) : ''}
+                onCommit={v => handlePriceChange(expandedSize, 'cost', v)}
                 className={cn(priceInp, 'text-amber-600 dark:text-amber-400')}
               />
             </div>
-            <div>
-              <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1" title="Fallback to global min stock if empty">Min Stock</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="Global"
-                value={sizePrices[expandedSize]?.minStock || ''}
-                onChange={e => handlePriceChange(expandedSize, 'minStock', e.target.value)}
-                className={priceInp}
-              />
-            </div>
           </div>
+          {/* Min Stock for this one size used to live here too, as a 4th
+              field — moved to the always-visible "Variant Details" list
+              below (with Barcode) so a shopkeeper can see and set every
+              size's Min Stock at a glance, instead of it only existing for
+              whichever size happens to be expanded right now. */}
         </div>
       )}
 
-      {/* Every stocked variant's barcode, always visible and editable — not
-          hidden behind expanding one size at a time. This is what "Generate
-          variant barcodes" (the caller's button, above this grid) actually
-          produces a visible result for: without this list, clicking Generate
-          silently filled sizePrices[*].barcode with nothing on screen to show
-          for it. When set, the billing scanner matches this exact code and
-          drops the right colour/size straight onto the bill; left blank, a
-          scan falls back to the product's own barcode. */}
+      {/* Every stocked variant's Barcode AND Min Stock, always visible and
+          editable — not hidden behind expanding one size at a time. Barcode:
+          this is what "Generate variant barcodes" (the caller's button,
+          above this grid) actually produces a visible result for — without
+          this list, clicking Generate silently filled sizePrices[*].barcode
+          with nothing on screen to show for it. When set, the billing
+          scanner matches this exact code and drops the right colour/size
+          straight onto the bill; left blank, a scan falls back to the
+          product's own barcode. Min Stock: per-size override for the
+          low-stock alert threshold — left blank, that size falls back to
+          the product's own overall Min Stock field further down (see the
+          comment on that field for why it's a separate, not-a-duplicate,
+          control). */}
       {perSizePricing && !readOnly && (() => {
         const stocked = sizeChart.filter(s => (value[s] ?? 0) > 0);
         if (stocked.length === 0) return null;
         return (
           <div className="space-y-1.5 pt-1">
             <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-              {t('variantBarcodesTitle')}
+              Variant Details
             </p>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {stocked.map(size => (
                 <div key={size} className="flex items-center gap-1.5">
-                  <span className="shrink-0 w-16 text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate" title={formatSizeLabel(size)}>
+                  <span className="shrink-0 w-14 text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate" title={formatSizeLabel(size)}>
                     {formatSizeLabel(size)}
                   </span>
-                  <input
-                    type="text"
-                    placeholder={t('variantBarcodePlaceholder')}
-                    value={sizePrices[size]?.barcode || ''}
-                    onChange={e => handleBarcodeChange(size, e.target.value)}
-                    className={cn(priceInp, 'flex-1 text-left px-2.5 font-mono')}
-                  />
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-0.5">{t('variantBarcode')}</label>
+                    <LocalInput
+                      type="text"
+                      placeholder={t('variantBarcodePlaceholder')}
+                      value={sizePrices[size]?.barcode || ''}
+                      onCommit={v => handleBarcodeChange(size, v)}
+                      className={cn(priceInp, 'w-full text-left px-2.5 font-mono')}
+                    />
+                  </div>
+                  <div className="w-16 shrink-0">
+                    <label className="block text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-0.5" title="Fallback to the product's overall Min Stock if left blank">Min Stock</label>
+                    <LocalInput
+                      type="number"
+                      min="0"
+                      placeholder="Fallback"
+                      value={sizePrices[size]?.minStock ? String(sizePrices[size].minStock) : ''}
+                      onCommit={v => handlePriceChange(size, 'minStock', v)}
+                      className={priceInp}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
