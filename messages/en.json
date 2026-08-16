@@ -1100,7 +1100,7 @@
     "waDateLabel": "Date: {date}",
     "waAmountLabel": "Amount: *{amount}*",
     "waNoteLabel": "Note: _{note}_",
-    "waTotalBalanceDue": "*Total Balance Due: {amount}*",
+    "waTotalBalanceDue": "*Total Balance Due: {amount} Dr*",
     "waDownloadReceipt": "📄 Download Receipt: {url}"
   },
   "Suppliers": {
@@ -1366,7 +1366,9 @@
     "upiMode": "UPI",
     "cardMode": "Card",
     "bankTransferMode": "Bank Transfer",
-    "chequeMode": "Cheque"
+    "chequeMode": "Cheque",
+    "sendWhatsApp": "Send WhatsApp",
+    "done": "Done"
   },
   "Common": {
     "kg": "Kg",

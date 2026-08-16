@@ -664,6 +664,7 @@ export default function WholesaleStockUI() {
                   <th className="px-4 py-3">{t('colVariants') || 'Colour / Size'}</th>
                   <th className="px-4 py-3 text-right">{t('colCurrentStock')}</th>
                   <th className="px-4 py-3 text-right">{t('purchasePrice')}</th>
+                  <th className="px-4 py-3 text-right" title="Party discount: (MRP − Wholesale Selling) ÷ MRP">Party Disc %</th>
                   <th className="px-4 py-3 text-right">{t('stockValue')}</th>
                   <th className="px-4 py-3 text-center">{t('colStatus')}</th>
                   <th className="px-4 py-3 text-right">{t('colActions')}</th>
@@ -745,6 +746,16 @@ export default function WholesaleStockUI() {
                         {item.computedStock} <span className="text-xs text-slate-500 font-normal ml-1">{item.baseUnit}</span>
                       </td>
                       <td className="px-4 py-3 text-right font-mono whitespace-nowrap">₹{(item.costPrice || item.wholesaleCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {(() => {
+                          const mrp = Number(item.mrp) || 0;
+                          const wp = Number(item.wholesaleCost) || 0;
+                          if (mrp <= 0 || wp <= 0 || wp > mrp) return <span className="text-slate-400">—</span>;
+                          const pct = ((mrp - wp) / mrp) * 100;
+                          if (pct <= 0) return <span className="text-slate-400">0%</span>;
+                          return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − Wholesale ₹${wp}`}>{pct.toFixed(1)}%</span>;
+                        })()}
+                      </td>
                       <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                         ₹{(item.computedValue || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                       </td>

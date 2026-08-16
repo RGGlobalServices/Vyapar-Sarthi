@@ -30,6 +30,48 @@ import dynamic from 'next/dynamic';
 
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 
+/** Same compact 3-column variant grid the Products page uses in its stock
+ *  column — collapsed shows the first 9, "Show all" reveals the rest with
+ *  no truncation. Beats the old `+N` overflow badge which forced the
+ *  shopkeeper to hover-tooltip to read hidden variants. */
+function StockVariantChips({
+  itemId: _itemId,
+  entries,
+}: {
+  itemId: string;
+  entries: [string, unknown][];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const COLLAPSED = 9;
+  if (entries.length === 0) return null;
+  const shown = expanded ? entries : entries.slice(0, COLLAPSED);
+  // flex-wrap + whitespace-nowrap so long labels never truncate — the row
+  // just wraps to the next line when it runs out of width. See the matching
+  // helper VariantChipGrid in products/page.tsx for the same reasoning.
+  return (
+    <div className="mt-1 max-w-[420px]">
+      <div className="flex flex-wrap gap-1">
+        {shown.map(([sz, q]) => (
+          <span key={sz}
+            className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded whitespace-nowrap"
+            title={`${sz}: ${String(q)}`}>
+            {sz}:{String(q)}
+          </span>
+        ))}
+      </div>
+      {entries.length > COLLAPSED && (
+        <button
+          type="button"
+          onClick={(ev) => { ev.stopPropagation(); setExpanded(v => !v); }}
+          className="mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+        >
+          {expanded ? 'Show less' : `Show all (${entries.length})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function getStatus(item: StockItem) {
   if (item.current === 0) return 'out';
   if (item.current <= item.min) return 'low';
@@ -489,18 +531,10 @@ export default function LegacyStockUI() {
                     +{item.recentlyAdded}
                   </span>
                 )}
-                {(() => {
-                  const sv = parseSizeVariants((item as any).size_variants);
-                  const entries = Object.entries(sv).filter(([,q]) => Number(q) > 0);
-                  if (entries.length === 0) return null;
-                  return (
-                    <div className="flex flex-wrap gap-0.5 mt-1">
-                      {entries.slice(0, 5).map(([sz, q]) => (
-                        <span key={sz} className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 rounded">{sz}:{q}</span>
-                      ))}
-                    </div>
-                  );
-                })()}
+                <StockVariantChips
+                  itemId={String(item.id)}
+                  entries={Object.entries(parseSizeVariants((item as any).size_variants)).filter(([,q]) => Number(q) > 0)}
+                />
               </div>
             ) : (
               <span className="inline-flex items-center gap-1.5">
@@ -525,7 +559,14 @@ export default function LegacyStockUI() {
           <td className="px-6 py-4 text-sm text-right text-slate-400">{item.mrp ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
           <td className="px-6 py-4 text-sm text-right text-slate-400">{item.cost ? `₹${item.cost.toLocaleString('en-IN')}` : '—'}</td>
           <td className="px-6 py-4 text-sm text-right text-slate-400">
-            {item.costPriceMode === 'mrp_based' && item.purchaseDiscountPercent != null ? `${item.purchaseDiscountPercent}%` : '—'}
+            {(() => {
+              const mrp = Number(item.mrp) || 0;
+              const sp = Number(item.sellingPrice) || 0;
+              if (mrp <= 0 || sp <= 0 || sp > mrp) return '—';
+              const pct = ((mrp - sp) / mrp) * 100;
+              if (pct <= 0) return <span className="text-slate-400">0%</span>;
+              return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − SP ₹${sp}`}>{pct.toFixed(1)}%</span>;
+            })()}
           </td>
           <td className="px-6 py-4">
             {!item.archived ? (
@@ -896,7 +937,7 @@ export default function LegacyStockUI() {
                     <th className="px-6 py-4">{t('productLocation') || 'Location'}</th>
                     <th className="px-6 py-4 text-right">MRP</th>
                     <th className="px-6 py-4 text-right">Cost Price</th>
-                    <th className="px-6 py-4 text-right">Purchase %</th>
+                    <th className="px-6 py-4 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc %</th>
                     <th className="px-6 py-4">{t('colStatus')}</th>
                     <th className="px-6 py-4 text-center">{t('colActions')}</th>
                   </tr>
@@ -936,7 +977,7 @@ export default function LegacyStockUI() {
                     <th className="px-6 py-4">{t('productLocation') || 'Location'}</th>
                     <th className="px-6 py-4 text-right">MRP</th>
                     <th className="px-6 py-4 text-right">Cost Price</th>
-                    <th className="px-6 py-4 text-right">Purchase %</th>
+                    <th className="px-6 py-4 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc %</th>
                     <th className="px-6 py-4">{t('colStatus')}</th>
                     <th className="px-6 py-4 text-center">{t('colActions')}</th>
                   </tr>

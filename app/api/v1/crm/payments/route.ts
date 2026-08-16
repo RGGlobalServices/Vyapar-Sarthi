@@ -19,14 +19,14 @@ export const POST = handle(async (req) => {
   // Use a transaction to ensure atomicity
   const result = await prisma.$transaction(async (tx) => {
     if (entityType === 'customer' || entityType === 'party') {
-      const { customerTransactionId } = await applyCustomerPayment(tx, {
+      const { customerTransactionId, customerName, customerMobile, newTotalDue } = await applyCustomerPayment(tx, {
         shopId: shop.id,
         customerId: entityId,
         amount,
         paymentMode,
         note,
       });
-      return { transaction: { id: customerTransactionId } };
+      return { transaction: { id: customerTransactionId }, customerName, customerMobile, newTotalDue };
 
     } else if (entityType === 'supplier') {
       const supplier = await tx.supplier.findUnique({

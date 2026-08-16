@@ -606,6 +606,9 @@ export default function WholesaleBillingUI() {
         // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
         gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
         hsnCode: product.hsnCode ?? product.hsn_code ?? '',
+        // MRP travels with the line so the cart can flag the wholesaler's
+        // "party discount %" off list price per row (mnemonic for the deal).
+        mrp: Number(product.mrp) || 0,
       });
     }
     setSearch('');
@@ -1155,7 +1158,22 @@ export default function WholesaleBillingUI() {
                 <tr key={`${item.id}-${item.variant}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
                   <td className="px-4 py-3 text-slate-400">{idx + 1}</td>
                   <td className="px-4 py-3">
-                    <p className="font-bold text-slate-900 dark:text-white">{item.name}</p>
+                    <p className="font-bold text-slate-900 dark:text-white">
+                      {item.name}
+                      {(() => {
+                        const mrp = Number(item.mrp) || 0;
+                        if (mrp <= 0 || !(item.price > 0) || item.price >= mrp) return null;
+                        const disc = ((mrp - item.price) / mrp) * 100;
+                        return (
+                          <span
+                            className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold align-middle"
+                            title={`MRP ₹${mrp.toFixed(2)} • Selling ₹${item.price.toFixed(2)}`}
+                          >
+                            {disc.toFixed(disc >= 10 ? 0 : 1)}% off
+                          </span>
+                        );
+                      })()}
+                    </p>
                     {item.variant && <p className="text-xs text-slate-500">{item.variant}</p>}
                     {atMax && (
                       <p className="text-[10px] text-amber-500 font-semibold">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>

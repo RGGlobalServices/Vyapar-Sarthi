@@ -225,6 +225,11 @@ export default function WholesaleProductsUI() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState<Partial<WholesaleProduct>>(emptyProduct);
   const [saving, setSaving] = useState(false);
+  // Party (wholesale) Selling Price entry: 'manual' types ₹ directly,
+  // 'mrp_based' types a Party Discount % and derives the ₹ from MRP so the
+  // wholesaler can enter "मी X% ने देतो" without doing the math each time.
+  const [wholesaleMode, setWholesaleMode] = useState<'manual' | 'mrp_based'>('manual');
+  const [wholesaleDiscountPercent, setWholesaleDiscountPercent] = useState<string>('');
 
   // Hardware (keyboard-wedge) scanner — same detection logic Billing already
   // uses. Feeds the scanned code straight into the existing text search
@@ -412,6 +417,10 @@ export default function WholesaleProductsUI() {
     setExpandedVariantCell(null);
     setCustomSizes([]);
     setNewSizeInput('');
+    // % mode is per-modal-session only — nothing about it persists on the
+    // Product row, so every reopen starts in plain ₹ mode.
+    setWholesaleMode('manual');
+    setWholesaleDiscountPercent('');
     setShowAddModal(true);
   };
 
@@ -620,6 +629,8 @@ export default function WholesaleProductsUI() {
       setShowAddModal(false);
       setForm(emptyProduct);
       setVariants([]);
+      setWholesaleMode('manual');
+      setWholesaleDiscountPercent('');
 
       let updatedProd;
       if (isEdit) {
@@ -776,7 +787,7 @@ export default function WholesaleProductsUI() {
             data={filteredProducts}
           />
           <button
-            onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setShowAddModal(true); }}
+            onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setWholesaleMode('manual'); setWholesaleDiscountPercent(''); setShowAddModal(true); }}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
           >
             <Plus size={18} />
@@ -1014,7 +1025,7 @@ export default function WholesaleProductsUI() {
                     <th className="p-4 font-semibold text-right">
                       <div className="flex items-center justify-end gap-1">{t('colProfit') || 'Profit %'}</div>
                     </th>
-                    <th className="p-4 font-semibold text-right">Purchase %</th>
+                    <th className="p-4 font-semibold text-right" title="Party discount: (MRP − Wholesale Selling) ÷ MRP">Party Disc %</th>
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('currentStock')}>
                       <div className="flex items-center justify-end gap-1">{t('colStock') || 'Stock'} {sortConfig?.key === 'currentStock' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
@@ -1152,7 +1163,14 @@ export default function WholesaleProductsUI() {
                           )}
                         </td>
                         <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>
-                          {p.costPriceMode === 'mrp_based' && p.purchaseDiscountPercent != null ? `${p.purchaseDiscountPercent}%` : '—'}
+                          {(() => {
+                            const mrp = Number(p.mrp) || 0;
+                            const wp = Number(p.wholesaleCost) || 0;
+                            if (mrp <= 0 || wp <= 0 || wp > mrp) return '—';
+                            const pct = ((mrp - wp) / mrp) * 100;
+                            if (pct <= 0) return <span className="text-slate-400">0%</span>;
+                            return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − Wholesale ₹${wp}`}>{pct.toFixed(1)}%</span>;
+                          })()}
                         </td>
                         <td className="p-4 text-right cursor-pointer" onClick={() => setSelectedProduct(p)}>
                           <span className={cn("font-medium", isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-slate-900 dark:text-white")}>
@@ -1761,6 +1779,19 @@ export default function WholesaleProductsUI() {
                           <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors font-mono"
                             value={form.barcode || ''} onChange={e => setForm({...form, barcode: e.target.value})} placeholder={t('scanOrTypeBarcode') || "Scan or type barcode"} />
                         </div>
+                        {/* MRP moved first — it anchors both Cost (via
+                            purchaseDiscountPercent) and Wholesale (via
+                            wholesaleDiscountPercent). Wholesalers "मला X% ने
+                            पडतो / मी Y% ने देतो" think in %s off MRP first. */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('mrp') || 'MRP'}</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
+                            <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                              value={form.mrp || ''} onChange={e => setForm({...form, mrp: parseFloat(e.target.value) || 0})} />
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">List price printed on the pack — the anchor for Cost/Wholesale discount %s below.</p>
+                        </div>
                         <div>
                           <div className="flex items-center justify-between mb-1.5">
                             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('costPrice') || 'Cost Price'}</label>
@@ -1795,12 +1826,57 @@ export default function WholesaleProductsUI() {
                           <p className="text-[10px] text-slate-400 mt-1">What you pay your vendor/supplier — used for profit &amp; margin.</p>
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('wholesaleCost') || 'Wholesale Selling Price'}</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
-                            <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                              value={form.wholesaleCost || ''} onChange={e => setForm({...form, wholesaleCost: parseFloat(e.target.value) || 0})} />
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('wholesaleCost') || 'Wholesale Selling Price'}</label>
+                            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
+                              {(['manual', 'mrp_based'] as const).map(mode => (
+                                <button key={mode} type="button"
+                                  onClick={() => {
+                                    setWholesaleMode(mode);
+                                    // When switching TO % mode, seed the % input from the current ₹ so the
+                                    // shopkeeper sees a live starting point instead of a blank field.
+                                    if (mode === 'mrp_based' && (form.mrp || 0) > 0 && (form.wholesaleCost || 0) > 0) {
+                                      const pct = ((form.mrp! - form.wholesaleCost!) / form.mrp!) * 100;
+                                      setWholesaleDiscountPercent(String(Math.max(0, Math.round(pct * 100) / 100)));
+                                    }
+                                  }}
+                                  className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all',
+                                    wholesaleMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
+                                  {mode === 'manual' ? '₹' : '%'}
+                                </button>
+                              ))}
+                            </div>
                           </div>
+                          {wholesaleMode === 'mrp_based' ? (
+                            <>
+                              <div className="relative">
+                                <input type="number" step="0.01" min={0} max={100} placeholder="Party Discount %"
+                                  className="w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                                  value={wholesaleDiscountPercent}
+                                  onChange={e => {
+                                    const raw = e.target.value;
+                                    setWholesaleDiscountPercent(raw);
+                                    const pct = parseFloat(raw) || 0;
+                                    const mrp = Number(form.mrp) || 0;
+                                    // Live-populate the actual ₹ that gets persisted — no separate save
+                                    // path, so nothing extra to remember at submit time.
+                                    const derived = mrp > 0 ? Math.max(0, mrp * (1 - pct / 100)) : 0;
+                                    setForm(f => ({ ...f, wholesaleCost: Math.round(derived * 100) / 100 }));
+                                  }} />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">%</span>
+                              </div>
+                              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
+                                = ₹{(Number(form.wholesaleCost) || 0).toFixed(2)}
+                                {(Number(form.mrp) || 0) === 0 && <span className="text-amber-500 font-normal"> — set MRP above first</span>}
+                              </p>
+                            </>
+                          ) : (
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
+                              <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                                value={form.wholesaleCost || ''} onChange={e => setForm({...form, wholesaleCost: parseFloat(e.target.value) || 0})} />
+                            </div>
+                          )}
                           <p className="text-[10px] text-slate-400 mt-1">Charged when billing in Wholesale mode — selling in bulk to other shopkeepers/dealers.</p>
                         </div>
                         <div>
@@ -1812,39 +1888,56 @@ export default function WholesaleProductsUI() {
                           </div>
                           <p className="text-[10px] text-slate-400 mt-1">Charged when billing in Retail mode — single units to your own end customers.</p>
                         </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('mrp') || 'MRP'}</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
-                            <input type="number" step="0.01" className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                              value={form.mrp || ''} onChange={e => setForm({...form, mrp: parseFloat(e.target.value) || 0})} />
-                          </div>
-                        </div>
                      </div>
                      {effectiveCostPrice(form) > 0 && (() => {
-                        const costForProfit = effectiveCostPrice(form);
-                        const result = calculateProductProfit(form.sellingPrice || 0, costForProfit, form.gstPercent || 0, !!profile.gstInclusiveProfit);
-                        const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
-                        const textCls = profitColorClass(result.status);
+                        // Two independent profit cards — one per selling channel.
+                        // Editing the % in either card overwrites only its own
+                        // price, so Wholesale and Retail no longer share margin
+                        // and the shopkeeper can price each channel deliberately.
+                        const cost = effectiveCostPrice(form);
+                        const gst = Number(form.gstPercent) || 0;
+                        const gstInc = !!profile.gstInclusiveProfit;
+                        const wsRes = calculateProductProfit(Number(form.wholesaleCost) || 0, cost, gst, gstInc);
+                        const rtRes = calculateProductProfit(Number(form.sellingPrice) || 0, cost, gst, gstInc);
+                        const card = (
+                          label: string,
+                          res: ReturnType<typeof calculateProductProfit>,
+                          onPct: (p: number) => void,
+                          hasPrice: boolean,
+                        ) => {
+                          const boxCls = !hasPrice
+                            ? 'bg-slate-500/5 border-slate-300/40 dark:border-slate-700/60'
+                            : res.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20'
+                            : res.status === 'loss' ? 'bg-red-500/10 border-red-500/20'
+                            : 'bg-orange-500/10 border-orange-500/20';
+                          const textCls = hasPrice ? profitColorClass(res.status) : 'text-slate-500';
+                          return (
+                            <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-3', boxCls)}>
+                              <div>
+                                <span className={cn('text-[10px] font-semibold opacity-70 block uppercase tracking-wider', textCls)}>{label}</span>
+                                <span className={cn('text-sm font-bold', textCls)}>{hasPrice ? `₹${res.amount.toFixed(2)}` : '—'}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number" step="0.1"
+                                  className={cn('w-16 px-2 py-1.5 rounded-lg text-right text-base font-black border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-emerald-500', textCls)}
+                                  value={hasPrice && res.percent ? Number(res.percent.toFixed(1)) : ''}
+                                  onChange={e => onPct(parseFloat(e.target.value) || 0)}
+                                  placeholder="0"
+                                />
+                                <span className={cn('text-base font-black', textCls)}>%</span>
+                              </div>
+                            </div>
+                          );
+                        };
                         return (
-                          <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
-                            <div>
-                              <span className={cn('text-xs font-semibold opacity-70 block', textCls)}>{t('profitSetsBothPrices') || 'Profit % (sets Wholesale + Retail)'}</span>
-                              <span className={cn('text-sm font-bold', textCls)}>₹{result.amount.toFixed(2)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number" step="0.1"
-                                className={cn('w-20 px-2 py-1.5 rounded-lg text-right text-lg font-black border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-emerald-500', textCls)}
-                                value={result.percent ? Number(result.percent.toFixed(1)) : ''}
-                                onChange={e => {
-                                  const pct = parseFloat(e.target.value) || 0;
-                                  const newSp = Math.round(sellingPriceForMargin(costForProfit, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
-                                  setForm(f => ({ ...f, sellingPrice: newSp, wholesaleCost: newSp }));
-                                }}
-                              />
-                              <span className={cn('text-lg font-black', textCls)}>%</span>
-                            </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {card('Wholesale Profit', wsRes,
+                              (p) => setForm(f => ({ ...f, wholesaleCost: Math.round(sellingPriceForMargin(cost, p, gst, gstInc) * 100) / 100 })),
+                              (Number(form.wholesaleCost) || 0) > 0)}
+                            {card('Retail Profit', rtRes,
+                              (p) => setForm(f => ({ ...f, sellingPrice: Math.round(sellingPriceForMargin(cost, p, gst, gstInc) * 100) / 100 })),
+                              (Number(form.sellingPrice) || 0) > 0)}
                           </div>
                         );
                       })()}
@@ -1873,6 +1966,12 @@ export default function WholesaleProductsUI() {
 
                       {sameVariantPricing && (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                          {/* MRP first — anchors both Cost and Wholesale disc %s. */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
+                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={form.mrp || ''} onChange={e => setForm({ ...form, mrp: parseFloat(e.target.value) || 0 })} />
+                          </div>
                           <div>
                             <div className="flex items-center justify-between mb-1.5">
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Cost</label>
@@ -1882,7 +1981,7 @@ export default function WholesaleProductsUI() {
                                     onClick={() => setForm({ ...form, costPriceMode: mode })}
                                     className={cn('px-1 rounded text-[8px] font-bold uppercase',
                                       (form.costPriceMode || 'manual') === mode ? 'bg-emerald-500 text-white' : 'text-slate-400')}>
-                                    {mode === 'manual' ? 'Man' : 'MRP'}
+                                    {mode === 'manual' ? '₹' : '%'}
                                   </button>
                                 ))}
                               </div>
@@ -1899,47 +1998,103 @@ export default function WholesaleProductsUI() {
                             )}
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
-                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                              value={form.wholesaleCost || ''} onChange={e => setForm({ ...form, wholesaleCost: parseFloat(e.target.value) || 0 })} />
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Wholesale</label>
+                              {/* Same ₹/% toggle the single-product form has —
+                                  "मी X% ने देतो" also works in variant mode now. */}
+                              <div className="flex bg-white dark:bg-slate-900 rounded p-0.5 border border-slate-200 dark:border-slate-700">
+                                {(['manual', 'mrp_based'] as const).map(mode => (
+                                  <button key={mode} type="button"
+                                    onClick={() => {
+                                      setWholesaleMode(mode);
+                                      if (mode === 'mrp_based' && (form.mrp || 0) > 0 && (form.wholesaleCost || 0) > 0) {
+                                        const pct = ((form.mrp! - form.wholesaleCost!) / form.mrp!) * 100;
+                                        setWholesaleDiscountPercent(String(Math.max(0, Math.round(pct * 100) / 100)));
+                                      }
+                                    }}
+                                    className={cn('px-1 rounded text-[8px] font-bold uppercase',
+                                      wholesaleMode === mode ? 'bg-emerald-500 text-white' : 'text-slate-400')}>
+                                    {mode === 'manual' ? '₹' : '%'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {wholesaleMode === 'mrp_based' ? (
+                              <>
+                                <input type="number" min={0} max={100} placeholder="Party Disc %"
+                                  className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                  value={wholesaleDiscountPercent}
+                                  onChange={e => {
+                                    const raw = e.target.value;
+                                    setWholesaleDiscountPercent(raw);
+                                    const pct = parseFloat(raw) || 0;
+                                    const mrp = Number(form.mrp) || 0;
+                                    const derived = mrp > 0 ? Math.max(0, mrp * (1 - pct / 100)) : 0;
+                                    setForm(f => ({ ...f, wholesaleCost: Math.round(derived * 100) / 100 }));
+                                  }} />
+                                <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">= ₹{(Number(form.wholesaleCost) || 0).toFixed(2)}</p>
+                              </>
+                            ) : (
+                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                value={form.wholesaleCost || ''} onChange={e => setForm({ ...form, wholesaleCost: parseFloat(e.target.value) || 0 })} />
+                            )}
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
                             <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                               value={form.sellingPrice || ''} onChange={e => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })} />
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
-                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                              value={form.mrp || ''} onChange={e => setForm({ ...form, mrp: parseFloat(e.target.value) || 0 })} />
-                          </div>
                         </div>
                       )}
 
                       {sameVariantPricing && effectiveCostPrice(form) > 0 && (() => {
-                        const costForProfit = effectiveCostPrice(form);
-                        const result = calculateProductProfit(form.sellingPrice || 0, costForProfit, form.gstPercent || 0, !!profile.gstInclusiveProfit);
-                        const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
-                        const textCls = profitColorClass(result.status);
+                        // Same two-card breakdown as the single-product form —
+                        // Wholesale and Retail profit are tracked separately so
+                        // the shopkeeper sees each channel's actual margin.
+                        const cost = effectiveCostPrice(form);
+                        const gst = Number(form.gstPercent) || 0;
+                        const gstInc = !!profile.gstInclusiveProfit;
+                        const wsRes = calculateProductProfit(Number(form.wholesaleCost) || 0, cost, gst, gstInc);
+                        const rtRes = calculateProductProfit(Number(form.sellingPrice) || 0, cost, gst, gstInc);
+                        const card = (
+                          label: string,
+                          res: ReturnType<typeof calculateProductProfit>,
+                          onPct: (p: number) => void,
+                          hasPrice: boolean,
+                        ) => {
+                          const boxCls = !hasPrice
+                            ? 'bg-slate-500/5 border-slate-300/40 dark:border-slate-700/60'
+                            : res.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20'
+                            : res.status === 'loss' ? 'bg-red-500/10 border-red-500/20'
+                            : 'bg-orange-500/10 border-orange-500/20';
+                          const textCls = hasPrice ? profitColorClass(res.status) : 'text-slate-500';
+                          return (
+                            <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-3', boxCls)}>
+                              <div>
+                                <span className={cn('text-[10px] font-semibold opacity-70 block uppercase tracking-wider', textCls)}>{label}</span>
+                                <span className={cn('text-sm font-bold', textCls)}>{hasPrice ? `₹${res.amount.toFixed(2)}` : '—'}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number" step="0.1"
+                                  className={cn('w-16 px-2 py-1.5 rounded-lg text-right text-base font-black border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-emerald-500', textCls)}
+                                  value={hasPrice && res.percent ? Number(res.percent.toFixed(1)) : ''}
+                                  onChange={e => onPct(parseFloat(e.target.value) || 0)}
+                                  placeholder="0"
+                                />
+                                <span className={cn('text-base font-black', textCls)}>%</span>
+                              </div>
+                            </div>
+                          );
+                        };
                         return (
-                          <div className={cn('border rounded-xl px-4 py-3 flex items-center justify-between gap-4', boxCls)}>
-                            <div>
-                              <span className={cn('text-xs font-semibold opacity-70 block', textCls)}>{t('profitSetsBothPrices') || 'Profit % (sets Wholesale + Retail)'}</span>
-                              <span className={cn('text-sm font-bold', textCls)}>₹{result.amount.toFixed(2)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number" step="0.1"
-                                className={cn('w-20 px-2 py-1.5 rounded-lg text-right text-lg font-black border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-emerald-500', textCls)}
-                                value={result.percent ? Number(result.percent.toFixed(1)) : ''}
-                                onChange={e => {
-                                  const pct = parseFloat(e.target.value) || 0;
-                                  const newSp = Math.round(sellingPriceForMargin(costForProfit, pct, form.gstPercent || 0, !!profile.gstInclusiveProfit) * 100) / 100;
-                                  setForm(f => ({ ...f, sellingPrice: newSp, wholesaleCost: newSp }));
-                                }}
-                              />
-                              <span className={cn('text-lg font-black', textCls)}>%</span>
-                            </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {card('Wholesale Profit', wsRes,
+                              (p) => setForm(f => ({ ...f, wholesaleCost: Math.round(sellingPriceForMargin(cost, p, gst, gstInc) * 100) / 100 })),
+                              (Number(form.wholesaleCost) || 0) > 0)}
+                            {card('Retail Profit', rtRes,
+                              (p) => setForm(f => ({ ...f, sellingPrice: Math.round(sellingPriceForMargin(cost, p, gst, gstInc) * 100) / 100 })),
+                              (Number(form.sellingPrice) || 0) > 0)}
                           </div>
                         );
                       })()}
@@ -1988,25 +2143,61 @@ export default function WholesaleProductsUI() {
                             </div>
                             {!sameVariantPricing && (
                               <>
+                                {/* MRP first — same reasoning as everywhere
+                                    else: cost/wholesale discount %s below
+                                    both derive from MRP. */}
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
+                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                    value={v.mrp || ''} onChange={e => { const nv = [...variants]; nv[i].mrp = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                </div>
                                 <div className="w-24">
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
                                   <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                     value={v.costPrice || ''} onChange={e => { const nv = [...variants]; nv[i].costPrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
                                 </div>
                                 <div className="w-24">
-                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
-                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                                    value={v.wholesalePrice || ''} onChange={e => { const nv = [...variants]; nv[i].wholesalePrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Wholesale</label>
+                                    {/* Per-row ₹/% toggle — party discount % works
+                                        in per-variant mode too now, not just the
+                                        single-product form. */}
+                                    <div className="flex bg-white dark:bg-slate-900 rounded p-0.5 border border-slate-200 dark:border-slate-700">
+                                      {(['manual', 'mrp_based'] as const).map(mode => (
+                                        <button key={mode} type="button"
+                                          onClick={() => { const nv = [...variants]; nv[i].wsMode = mode; setVariants(nv); }}
+                                          className={cn('px-1 rounded text-[8px] font-bold uppercase',
+                                            (v.wsMode || 'manual') === mode ? 'bg-emerald-500 text-white' : 'text-slate-400')}>
+                                          {mode === 'manual' ? '₹' : '%'}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  {v.wsMode === 'mrp_based' ? (
+                                    <>
+                                      <input type="number" min={0} max={100} placeholder="Disc %"
+                                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                        value={v.wholesaleDiscPercent ?? ''}
+                                        onChange={e => {
+                                          const nv = [...variants];
+                                          const raw = e.target.value;
+                                          const pct = parseFloat(raw) || 0;
+                                          const mrp = Number(nv[i].mrp) || 0;
+                                          nv[i].wholesaleDiscPercent = raw;
+                                          nv[i].wholesalePrice = mrp > 0 ? Math.round(Math.max(0, mrp * (1 - pct / 100)) * 100) / 100 : 0;
+                                          setVariants(nv);
+                                        }} />
+                                      <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 truncate">= ₹{(Number(v.wholesalePrice) || 0).toFixed(2)}</p>
+                                    </>
+                                  ) : (
+                                    <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                      value={v.wholesalePrice || ''} onChange={e => { const nv = [...variants]; nv[i].wholesalePrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
+                                  )}
                                 </div>
                                 <div className="w-24">
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
                                   <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                     value={v.sellingPrice || ''} onChange={e => { const nv = [...variants]; nv[i].sellingPrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
-                                </div>
-                                <div className="w-24">
-                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
-                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
-                                    value={v.mrp || ''} onChange={e => { const nv = [...variants]; nv[i].mrp = parseFloat(e.target.value) || 0; setVariants(nv); }} />
                                 </div>
                               </>
                             )}

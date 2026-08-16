@@ -182,6 +182,12 @@ export default function SizeVariantGrid({
   const t = useTranslations('Variants');
   const total = Object.values(value).reduce((s, v) => s + (v || 0), 0);
   const [expandedSize, setExpandedSize] = useState<string | null>(null);
+  // Per-size Cost Price input mode. 'manual' types ₹ directly (default);
+  // 'mrp_based' types a purchase-discount % and derives ₹ from MRP × (1 − %).
+  // Ephemeral (not persisted with the product) — same convention the
+  // WholesaleProductsUI per-variant rows use for their ₹/% toggle.
+  const [costModeBySize, setCostModeBySize] = useState<Record<string, 'manual' | 'mrp_based'>>({});
+  const [purchaseDiscBySize, setPurchaseDiscBySize] = useState<Record<string, string>>({});
 
   const baseFor = (size: string) => baseValue?.[size] || 0;
 
@@ -337,57 +343,131 @@ export default function SizeVariantGrid({
         })}
       </div>
 
-      {/* Expanded per-size pricing panel */}
-      {perSizePricing && expandedSize && !readOnly && (
-        <div className="bg-amber-50/50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 space-y-2 animate-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-2">
-            <IndianRupee size={12} className="text-amber-500" />
-            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">
-              {t('pricingFor', { size: formatSizeLabel(expandedSize) })}
-            </span>
+      {/* Expanded per-size pricing panel. Order: MRP → Cost → Selling
+          (MRP anchors the discount %s; profit compares Selling against Cost). */}
+      {perSizePricing && expandedSize && !readOnly && (() => {
+        const entry = sizePrices[expandedSize] || { mrp: 0, sellingPrice: 0, cost: 0 };
+        const costMode = costModeBySize[expandedSize] || 'manual';
+        const purchDisc = purchaseDiscBySize[expandedSize] || '';
+        const mrp = Number(entry.mrp) || 0;
+        const cost = Number(entry.cost) || 0;
+        const sp = Number(entry.sellingPrice) || 0;
+        const profitAmt = sp > 0 && cost > 0 ? sp - cost : 0;
+        const profitPct = cost > 0 && profitAmt !== 0 ? (profitAmt / cost) * 100 : 0;
+        const profitTone = profitAmt > 0
+          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+          : profitAmt < 0
+            ? 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+            : 'bg-slate-500/5 border-slate-300/30 dark:border-slate-700/60 text-slate-500';
+        return (
+          <div className="bg-amber-50/50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 space-y-2 animate-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-2">
+              <IndianRupee size={12} className="text-amber-500" />
+              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">
+                {t('pricingFor', { size: formatSizeLabel(expandedSize) })}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('mrp')}</label>
+                <LocalInput
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={entry.mrp ? String(entry.mrp) : ''}
+                  onCommit={v => handlePriceChange(expandedSize, 'mrp', v)}
+                  className={priceInp}
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">{t('cost')}</label>
+                  {/* Manual vs MRP-based per-size — same UX as the flat form.
+                      Manual = type ₹. MRP = type disc %, derive ₹ from MRP.
+                      Switching modes carries the value across (₹ ↔ %) so
+                      neither side reads as 0 after a toggle. */}
+                  <div className="flex bg-white dark:bg-slate-900 rounded p-0.5 border border-slate-200 dark:border-slate-700">
+                    {(['manual', 'mrp_based'] as const).map(mode => (
+                      <button key={mode} type="button"
+                        onClick={() => {
+                          if (mode === costMode) return;
+                          if (mode === 'mrp_based') {
+                            const currentMrp = Number(sizePrices[expandedSize]?.mrp) || 0;
+                            const currentCost = Number(sizePrices[expandedSize]?.cost) || 0;
+                            const pct = currentMrp > 0 && currentCost > 0
+                              ? Math.max(0, Math.round(((currentMrp - currentCost) / currentMrp) * 100 * 100) / 100)
+                              : NaN;
+                            setPurchaseDiscBySize(m => ({ ...m, [expandedSize]: Number.isFinite(pct) ? String(pct) : (m[expandedSize] || '') }));
+                          } else {
+                            // Manual: the derived ₹ already sits in `cost`, so no
+                            // extra seeding needed — the input reads it directly.
+                          }
+                          setCostModeBySize(m => ({ ...m, [expandedSize]: mode }));
+                        }}
+                        className={cn('px-1 rounded text-[8px] font-bold uppercase transition-all',
+                          costMode === mode ? 'bg-amber-500 text-white' : 'text-slate-400')}>
+                        {mode === 'manual' ? '₹' : '%'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {costMode === 'mrp_based' ? (
+                  <LocalInput
+                    type="number"
+                    min="0"
+                    placeholder="Disc %"
+                    value={purchDisc}
+                    onCommit={raw => {
+                      setPurchaseDiscBySize(m => ({ ...m, [expandedSize]: raw }));
+                      const pct = parseFloat(raw) || 0;
+                      const currentMrp = Number(sizePrices[expandedSize]?.mrp) || 0;
+                      const derived = currentMrp > 0 ? Math.max(0, currentMrp * (1 - pct / 100)) : 0;
+                      handlePriceChange(expandedSize, 'cost', String(Math.round(derived * 100) / 100));
+                    }}
+                    className={cn(priceInp, 'text-amber-600 dark:text-amber-400')}
+                  />
+                ) : (
+                  <LocalInput
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={entry.cost ? String(entry.cost) : ''}
+                    onCommit={v => handlePriceChange(expandedSize, 'cost', v)}
+                    className={cn(priceInp, 'text-amber-600 dark:text-amber-400')}
+                  />
+                )}
+                {costMode === 'mrp_based' && cost > 0 && (
+                  <p className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-1 text-center">= ₹{cost.toFixed(2)}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('selling')}</label>
+                <LocalInput
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={entry.sellingPrice ? String(entry.sellingPrice) : ''}
+                  onCommit={v => handlePriceChange(expandedSize, 'sellingPrice', v)}
+                  className={cn(priceInp, 'text-emerald-600 dark:text-emerald-400')}
+                />
+              </div>
+            </div>
+            {/* Per-size profit — mirrors the flat pricing form's profit box
+                so the shopkeeper can see each size's actual margin at a glance. */}
+            {sp > 0 && cost > 0 && (
+              <div className={cn('rounded-lg border px-3 py-1.5 flex items-center justify-between text-[11px] font-bold', profitTone)}>
+                <span className="uppercase tracking-wider opacity-70">Profit</span>
+                <span>₹{profitAmt.toFixed(2)} <span className="opacity-80">({profitPct.toFixed(1)}%)</span></span>
+              </div>
+            )}
+            {/* Min Stock for this one size used to live here too, as a 4th
+                field — moved to the always-visible "Variant Details" list
+                below (with Barcode) so a shopkeeper can see and set every
+                size's Min Stock at a glance, instead of it only existing for
+                whichever size happens to be expanded right now. */}
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('mrp')}</label>
-              <LocalInput
-                type="number"
-                min="0"
-                placeholder="0"
-                value={sizePrices[expandedSize]?.mrp ? String(sizePrices[expandedSize].mrp) : ''}
-                onCommit={v => handlePriceChange(expandedSize, 'mrp', v)}
-                className={priceInp}
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('selling')}</label>
-              <LocalInput
-                type="number"
-                min="0"
-                placeholder="0"
-                value={sizePrices[expandedSize]?.sellingPrice ? String(sizePrices[expandedSize].sellingPrice) : ''}
-                onCommit={v => handlePriceChange(expandedSize, 'sellingPrice', v)}
-                className={cn(priceInp, 'text-emerald-600 dark:text-emerald-400')}
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{t('cost')}</label>
-              <LocalInput
-                type="number"
-                min="0"
-                placeholder="0"
-                value={sizePrices[expandedSize]?.cost ? String(sizePrices[expandedSize].cost) : ''}
-                onCommit={v => handlePriceChange(expandedSize, 'cost', v)}
-                className={cn(priceInp, 'text-amber-600 dark:text-amber-400')}
-              />
-            </div>
-          </div>
-          {/* Min Stock for this one size used to live here too, as a 4th
-              field — moved to the always-visible "Variant Details" list
-              below (with Barcode) so a shopkeeper can see and set every
-              size's Min Stock at a glance, instead of it only existing for
-              whichever size happens to be expanded right now. */}
-        </div>
-      )}
+        );
+      })()}
 
       {/* Every stocked variant's Barcode AND Min Stock, always visible and
           editable — not hidden behind expanding one size at a time. Barcode:

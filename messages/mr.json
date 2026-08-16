@@ -1398,7 +1398,7 @@
     "waDateLabel": "दिनांक: {date}",
     "waAmountLabel": "रक्कम: *{amount}*",
     "waNoteLabel": "टीप: _{note}_",
-    "waTotalBalanceDue": "*एकूण थकबाकी: {amount}*",
+    "waTotalBalanceDue": "*एकूण थकबाकी: {amount} डेबिट*",
     "waDownloadReceipt": "📄 पावती डाउनलोड करा: {url}"
   },
   "Suppliers": {
@@ -1664,7 +1664,9 @@
     "upiMode": "UPI",
     "cardMode": "कार्ड",
     "bankTransferMode": "बँक ट्रान्सफर",
-    "chequeMode": "चेक"
+    "chequeMode": "चेक",
+    "sendWhatsApp": "WhatsApp पाठवा",
+    "done": "झाले"
   },
   "Common": {
     "kg": "किलो",

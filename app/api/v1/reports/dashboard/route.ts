@@ -156,9 +156,16 @@ export const GET = handle(async (req) => {
       _count: { id: true },
     }),
 
+    // Profit lost = qty * (selling_price - cost). "Cost" lives in two columns
+    // depending on shop type: Udyog stores the real cost in `cost_price` and
+    // repurposes `wholesale_cost` as the *wholesale selling price*, while
+    // legacy Vyapar/Dukan writes cost into `wholesale_cost` and leaves
+    // `cost_price` NULL. Prefer `cost_price` where it exists so both cases
+    // yield real cost — otherwise Udyog returns almost never dented profit
+    // (wholesale-selling ≈ retail-selling), leaving dashboard totals wrong.
     prisma.$queryRaw<{ profit_lost: number }[]>`
       SELECT SUM(
-        r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.wholesale_cost, 0))
+        r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.cost_price, p.wholesale_cost, 0))
       )::float as profit_lost
       FROM material_returns r
       LEFT JOIN products p ON r.product_id = p.id

@@ -1398,7 +1398,7 @@
     "waDateLabel": "तारीख: {date}",
     "waAmountLabel": "राशि: *{amount}*",
     "waNoteLabel": "नोट: _{note}_",
-    "waTotalBalanceDue": "*कुल बकाया राशि: {amount}*",
+    "waTotalBalanceDue": "*कुल बकाया राशि: {amount} डेबिट*",
     "waDownloadReceipt": "📄 रसीद डाउनलोड करें: {url}"
   },
   "Suppliers": {
@@ -1664,7 +1664,9 @@
     "upiMode": "UPI",
     "cardMode": "कार्ड",
     "bankTransferMode": "बैंक ट्रांसफर",
-    "chequeMode": "चेक"
+    "chequeMode": "चेक",
+    "sendWhatsApp": "WhatsApp भेजें",
+    "done": "हो गया"
   },
   "Common": {
     "kg": "किलो",

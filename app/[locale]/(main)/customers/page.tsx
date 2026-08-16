@@ -589,17 +589,14 @@ export default function CustomersPage() {
       )}
 
       {showPayment && selectedCustomer && (
-        <PaymentCollectionModal 
+        <PaymentCollectionModal
           entityId={selectedCustomer.id}
           entityType="customer"
           entityName={selectedCustomer.name}
+          entityMobile={selectedCustomer.mobile}
           outstanding={selectedCustomer.totalDue}
-          onClose={() => setShowPayment(false)}
-          onSuccess={() => {
-            setShowPayment(false);
-            fetchCustomers();
-            setSelectedCustomer(null);
-          }}
+          onClose={() => { setShowPayment(false); setSelectedCustomer(null); }}
+          onSuccess={() => fetchCustomers()}
         />
       )}
 

@@ -133,7 +133,7 @@ export function generateUdharWhatsAppText(slip: {
   lines.push(t ? t('waAmountLabel', { amount: fmt(slip.amount) }) : `Amount: *${fmt(slip.amount)}*`);
   if (slip.note) lines.push(t ? t('waNoteLabel', { note: slip.note }) : `Note: _${slip.note}_`);
   lines.push('');
-  lines.push(t ? t('waTotalBalanceDue', { amount: fmt(slip.due) }) : `*Total Balance Due: ${fmt(slip.due)}*`);
+  lines.push(t ? t('waTotalBalanceDue', { amount: fmt(slip.due) }) : `*Total Balance Due: ${fmt(slip.due)} Dr*`);
 
   if (slip.pdfUrl) {
     lines.push('');

@@ -22,11 +22,17 @@ import { recordDeletion } from '@/lib/server/trash';
 export async function applyCustomerPayment(
   tx: Prisma.TransactionClient,
   params: { shopId: string; customerId: string; amount: number; paymentMode: string; note?: string }
-): Promise<{ customerTransactionId: string; customerName: string }> {
+): Promise<{ customerTransactionId: string; customerName: string; customerMobile: string | null; newTotalDue: number }> {
   const { shopId, customerId, amount, paymentMode, note } = params;
 
   const customer = await tx.customer.findUnique({ where: { id: customerId, shopId } });
   if (!customer) throw new ApiError(404, 'Customer/Party not found');
+
+  // Computed, not re-read — this update is the only write to totalDue inside
+  // this transaction, so (previous value) - amount is exactly what the row
+  // now holds, without paying for a second round-trip against this app's
+  // slow remote DB just to read back a number we already know.
+  const newTotalDue = Number(customer.totalDue || 0) - amount;
 
   await tx.customer.update({
     where: { id: customerId },
@@ -63,7 +69,12 @@ export async function applyCustomerPayment(
     },
   });
 
-  return { customerTransactionId: transaction.id, customerName: customer.name ?? '' };
+  return {
+    customerTransactionId: transaction.id,
+    customerName: customer.name ?? '',
+    customerMobile: customer.mobile ?? null,
+    newTotalDue,
+  };
 }
 
 /**

@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2, NotebookText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
 import CustomerRollupView from '@/components/crm/CustomerRollupView';
 import { ExportButton } from '@/lib/hooks/useExport';
+import { generateCollectionRegisterPDF } from '@/lib/pdf/collectionRegister';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import useSWR from 'swr';
@@ -105,8 +106,10 @@ export default function PartyPage() {
 function PartiesPanel() {
   const t = useTranslations('Party');
   const activeShopId = useBusinessStore(s => s.activeShopId);
+  const profile = useBusinessStore(s => s.profile);
   const [search, setSearch] = useState('');
   const [range, setRange] = useState({ from: '', to: '' });
+  const [generatingRegister, setGeneratingRegister] = useState(false);
 
   const { data: partiesData = [], mutate: mutateParties, isLoading } = useSWR(
     activeShopId ? `/crm/customers?type=party&_shop=${activeShopId}` : null,
@@ -230,6 +233,48 @@ function PartiesPanel() {
     }
   };
 
+  // Collection Register — the printable route sheet a collection agent
+  // carries door-to-door (Party / Amt / Cash / Chq / Dis, grouped by
+  // route/area, totalled at the bottom). Replaces the old standalone
+  // "Collection" module: that page was a full CRUD sheet-builder nobody
+  // needed since the actual workflow is "print the round, collect cash,
+  // enter payments back in the app" — this one button does exactly that
+  // step without the extra data-entry ceremony. Uses the same search-
+  // filtered list already on screen, same convention as the Export button.
+  const handleDownloadCollectionRegister = async () => {
+    // Only parties who still owe something belong on a collection round —
+    // a settled party has nothing for the agent to collect, so including
+    // them would just pad the printout with rows to skip over.
+    const outstanding = filtered.filter(p => (p.totalDue || 0) > 0);
+    if (outstanding.length === 0) {
+      toast.error('No outstanding parties to collect from');
+      return;
+    }
+    setGeneratingRegister(true);
+    try {
+      await generateCollectionRegisterPDF({
+        shop: {
+          name: profile.shopName || 'Vyapar Sarthi',
+          address: profile.address || null,
+          mobile: profile.mobile || null,
+          gst: profile.gst || null,
+          pan: profile.pan || null,
+        },
+        parties: outstanding.map(p => ({
+          name: p.name,
+          shopName: p.shopName,
+          address: p.address,
+          totalDue: p.totalDue || 0,
+        })),
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate collection register');
+    } finally {
+      setGeneratingRegister(false);
+    }
+  };
+
   // Report export: same search-filtered set shown on screen, further narrowed
   // by an optional date-added range — doesn't affect the always-visible card
   // list above, only what goes into the generated document.
@@ -340,6 +385,15 @@ function PartiesPanel() {
           columns={exportColumns}
           data={exportData}
         />
+        <button
+          onClick={handleDownloadCollectionRegister}
+          disabled={generatingRegister}
+          title="Printable route sheet for today's collection round — outstanding parties only, Party / Amt / Cash / Chq / Dis, grouped by area"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-60"
+        >
+          {generatingRegister ? <Loader2 size={18} className="animate-spin" /> : <NotebookText size={18} />}
+          Collection Register
+        </button>
         <button
           onClick={() => setShowNewParty(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
@@ -512,13 +566,10 @@ function PartiesPanel() {
           entityId={selectedParty.id}
           entityType="party"
           entityName={selectedParty.shopName || selectedParty.name}
+          entityMobile={selectedParty.mobile}
           outstanding={selectedParty.totalDue}
-          onClose={() => setShowPayment(false)}
-          onSuccess={() => {
-            setShowPayment(false);
-            mutateParties();
-            setSelectedParty(null);
-          }}
+          onClose={() => { setShowPayment(false); setSelectedParty(null); }}
+          onSuccess={() => mutateParties()}
         />
       )}
 
@@ -1068,13 +1119,10 @@ function CustomersPanel() {
           entityId={selectedCustomer.id}
           entityType="customer"
           entityName={selectedCustomer.name}
+          entityMobile={selectedCustomer.mobile}
           outstanding={selectedCustomer.totalDue}
-          onClose={() => setShowPayment(false)}
-          onSuccess={() => {
-            setShowPayment(false);
-            mutateCustomers();
-            setSelectedCustomer(null);
-          }}
+          onClose={() => { setShowPayment(false); setSelectedCustomer(null); }}
+          onSuccess={() => mutateCustomers()}
         />
       )}
 

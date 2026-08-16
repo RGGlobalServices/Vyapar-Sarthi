@@ -508,6 +508,10 @@ function StandardBillingUI() {
       // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
       gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
       hsnCode: product.hsnCode ?? product.hsn_code ?? '',
+      // MRP travels with the line so the cart can show the wholesaler's
+      // "party discount %" off list price — a reminder of what deal they
+      // quoted per product.
+      mrp: Number(product.mrp) || 0,
     });
     setSearch('');
     setSearchResults([]);
@@ -1268,6 +1272,22 @@ function StandardBillingUI() {
                           {item.variant}
                         </span>
                       )}
+                      {(() => {
+                        // Wholesaler cue: the party discount % off MRP the
+                        // shopkeeper is quoting on this line. Shown only when
+                        // an MRP exists and the price is actually below it.
+                        const mrp = Number(item.mrp) || 0;
+                        if (mrp <= 0 || !(item.price > 0) || item.price >= mrp) return null;
+                        const disc = ((mrp - item.price) / mrp) * 100;
+                        return (
+                          <span
+                            className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold"
+                            title={`MRP ₹${mrp.toFixed(2)} • Selling ₹${item.price.toFixed(2)}`}
+                          >
+                            {disc.toFixed(disc >= 10 ? 0 : 1)}% off
+                          </span>
+                        );
+                      })()}
                     </td>
                     {bizConfig.hasSizes && (
                       <td className="px-4 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400">

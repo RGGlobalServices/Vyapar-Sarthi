@@ -118,6 +118,53 @@ function effectiveCostPrice(f: { cost: any; mrp: any; costPriceMode?: string; pu
   return Number(f.cost) || 0;
 }
 
+/** Compact variant chip grid used in the Products table's stock column.
+ *  Collapsed = first 9 chips in a 3-column grid + a "Show all (N)" toggle;
+ *  Expanded = every chip, still 3 per row. Beats the old `+N` badge because
+ *  the shopkeeper doesn't have to hover a tooltip to see what's hidden. The
+ *  `productId` prop is accepted (parent-side identity hint / debuggability)
+ *  even though the render doesn't read it — expand state resets naturally
+ *  when React remounts the row, which is what we want. */
+function VariantChipGrid({
+  productId: _productId,
+  entries,
+}: {
+  productId: string;
+  entries: { key: string; label: string; title: string; toneClass: string }[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const COLLAPSED = 9;
+  if (entries.length === 0) return null;
+  const shown = expanded ? entries : entries.slice(0, COLLAPSED);
+  // flex-wrap with `whitespace-nowrap` on each chip beats a strict 3-col
+  // grid here — a full label like "White / M ₹279 (100)" no longer gets
+  // clipped to "White / M ₹279 (1..." because it can consume whatever
+  // width it needs; the row wraps to the next line when it runs out of
+  // space. Reads roughly as 3-per-row for normal labels while long ones
+  // are still fully legible.
+  return (
+    <div className="mt-1 max-w-[440px]">
+      <div className="flex flex-wrap gap-1">
+        {shown.map(e => (
+          <span key={e.key} title={e.title}
+            className={cn('px-1.5 py-0.5 rounded whitespace-nowrap', e.toneClass)}>
+            {e.label}
+          </span>
+        ))}
+      </div>
+      {entries.length > COLLAPSED && (
+        <button
+          type="button"
+          onClick={(ev) => { ev.stopPropagation(); setExpanded(v => !v); }}
+          className="mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+        >
+          {expanded ? 'Show less' : `Show all (${entries.length})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // With All Shop Access on, a pooled cross-shop list can show (and let you act
 // on) a row belonging to a shop other than whichever one is currently
 // "active" — lib/api.ts otherwise always targets the active shop, which
@@ -791,8 +838,13 @@ function LegacyProductsUI() {
       alcohol_percentage: String((product.metadata as any)?.alcoholPercentage ?? ''),
       bottle_type: String((product.metadata as any)?.bottleType ?? ''),
       conversion_factor: String(product.conversionFactor ?? product.conversion_factor ?? ''),
-      costPriceMode: (product.costPriceMode === 'mrp_based' ? 'mrp_based' : 'manual') as 'manual' | 'mrp_based',
-      purchaseDiscountPercent: String(product.purchaseDiscountPercent ?? ''),
+      // Cost is now always typed as ₹ in Vyapar/Dukan. Legacy products saved
+      // in 'mrp_based' mode collapse into a plain manual cost equal to what
+      // that formula computed at last save (product.wholesaleCost already
+      // stores that resolved ₹), so the editor never silently drops the
+      // shopkeeper's typed cost.
+      costPriceMode: 'manual' as 'manual' | 'mrp_based',
+      purchaseDiscountPercent: '',
     });
     // Load per-size pricing from metadata. Default it ON for variant products (colour/size or a
     // category with a spec matrix) so per-spec price fields are visible without hunting for a toggle.
@@ -1089,9 +1141,9 @@ function LegacyProductsUI() {
                 </div>
               )}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
+                <div className="max-h-[calc(100vh-15rem)] overflow-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+                    <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase shadow-sm">
                       <tr>
                         <th className="px-5 py-3 w-10 text-center">
                           <input
@@ -1356,9 +1408,9 @@ function LegacyProductsUI() {
                 <span className="text-sm font-semibold text-slate-900 dark:text-slate-200">{godownData.name}</span>
                 <span className="ml-auto text-xs font-mono text-slate-500">{godownData.godownCode || godownData.godown_code}</span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="max-h-[calc(100vh-15rem)] overflow-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+                  <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase shadow-sm">
                     <tr>
                       <th className="px-5 py-3">Product</th>
                       <th className="px-5 py-3">Category</th>
@@ -1425,8 +1477,12 @@ function LegacyProductsUI() {
       {/* ── All Products view (existing) ── */}
       {viewMode === 'all' && (
       <>
-      {/* Search + Filter */}
-      <div className="flex gap-4">
+      {/* Search + Filter — pinned to the top of the scroll area so column
+          headers below can stack against it (they use top-[76px] to match)
+          and stay visible while browsing rows. The negative margins + matching
+          padding stretch the sticky band edge-to-edge over the page's own
+          horizontal padding so nothing shows through the sides. */}
+      <div className="flex gap-4 sticky top-0 z-30 bg-slate-100 dark:bg-slate-950 py-3 -mx-3 md:-mx-8 px-3 md:px-8">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input type="text" placeholder={t('searchProductsPlaceholder')}
@@ -1535,16 +1591,25 @@ function LegacyProductsUI() {
             <span className="text-xs text-slate-500">({group.items.length})</span>
           </div>
         )}
+      {/* Self-contained scrolling grid: the inner wrapper is the ONE scroll
+          container (both axes), bounded to roughly the viewport height. That
+          keeps the wide table's horizontal overflow INSIDE the card (no more
+          columns spilling past the border) while the thead sticks to the top
+          of this same scroll box — sticky binds to its nearest scroll
+          ancestor, so header and body scroll together horizontally and the
+          header stays pinned vertically. Card keeps overflow-hidden for clean
+          rounded corners; it's an ancestor, not the thead's scroll container,
+          so it doesn't trap the sticky. */}
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
         <CardContent className="p-0">
-          <div className="overflow-x-auto relative">
+          <div className="relative max-h-[calc(100vh-15rem)] overflow-auto">
             {loading && (
               <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm z-10 flex items-center justify-center">
                 <Loader2 className="animate-spin text-emerald-500" size={32} />
               </div>
             )}
             <table className="w-full text-left">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+              <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase shadow-sm">
                 <tr>
                   <th className="px-6 py-4 w-10">
                     <input
@@ -1576,7 +1641,7 @@ function LegacyProductsUI() {
                   <th className="px-6 py-4 text-right">{t('colSelling')}</th>
                   <th className="px-6 py-4 text-right">{t('colStockValue')}</th>
                   <th className="px-6 py-4 text-right">{t('colProfit')}</th>
-                  <th className="px-6 py-4 text-right">Purchase %</th>
+                  <th className="px-6 py-4 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc %</th>
                   <th className="px-6 py-4">Location</th>
                   <th className="px-6 py-4 text-center">{t('colActions')}</th>
                 </tr>
@@ -1691,6 +1756,13 @@ function LegacyProductsUI() {
                                 // to scan than the raw variant chips. Full breakdown stays a
                                 // hover away.
                                 const has3D = Object.keys(sizeVariants).some(k => k.split(' / ').length >= 3);
+                                // A tight 3-column grid keeps the row compact
+                                // when there are many variants — 9 chips render
+                                // as a neat 3×3, not a tall vertical stack. If
+                                // there are more, a "Show all" toggle expands
+                                // the grid in place (no truncation) so the
+                                // shopkeeper never has to hover a tooltip to
+                                // read what's hidden.
                                 if (has3D) {
                                   const byColor: Record<string, { qty: number; parts: string[] }> = {};
                                   for (const [k, q] of Object.entries(sizeVariants)) {
@@ -1701,34 +1773,34 @@ function LegacyProductsUI() {
                                     bucket.parts.push(`${rest.join(' / ')}: ${q}`);
                                   }
                                   return (
-                                    <div className="flex flex-wrap gap-0.5 mt-1">
-                                      {Object.entries(byColor).slice(0, 5).map(([color, { qty, parts }]) => (
-                                        <span
-                                          key={color}
-                                          title={parts.join('\n')}
-                                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300"
-                                        >
-                                          {color}: {qty}
-                                        </span>
-                                      ))}
-                                    </div>
+                                    <VariantChipGrid
+                                      productId={product.id}
+                                      entries={Object.entries(byColor).map(([color, { qty, parts }]) => ({
+                                        key: color,
+                                        label: `${color}: ${qty}`,
+                                        title: parts.join('\n'),
+                                        toneClass: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 text-[10px] font-bold',
+                                      }))}
+                                    />
                                   );
                                 }
+                                const entries = Object.entries(sizeVariants).filter(([,q]) => q > 0);
                                 return (
-                                  <div className="flex flex-wrap gap-0.5 mt-1">
-                                    {Object.entries(sizeVariants).filter(([,q]) => q > 0).slice(0, 5).map(([sz, q]) => {
+                                  <VariantChipGrid
+                                    productId={product.id}
+                                    entries={entries.map(([sz, q]) => {
                                       const sp = sizePriceData[sz];
-                                      return (
-                                        <span key={sz} className={cn(
-                                          'text-[9px] px-1 rounded',
-                                          sp ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                        )}>
-                                          {sz}{sp ? ` ₹${sp.sellingPrice}` : `:${q}`}
-                                          {sp ? <span className="opacity-60"> ({q})</span> : null}
-                                        </span>
-                                      );
+                                      const label = sp ? `${sz} ₹${sp.sellingPrice} (${q})` : `${sz}:${q}`;
+                                      return {
+                                        key: sz,
+                                        label,
+                                        title: sp ? `${sz} ₹${sp.sellingPrice} (${q})` : `${sz}: ${q}`,
+                                        toneClass: sp
+                                          ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[9px]'
+                                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[9px]',
+                                      };
                                     })}
-                                  </div>
+                                  />
                                 );
                               })()}
                             </div>
@@ -1791,7 +1863,14 @@ function LegacyProductsUI() {
                         }
                       </td>
                       <td className="px-6 py-4 text-sm text-right text-slate-500 dark:text-slate-400">
-                        {product.costPriceMode === 'mrp_based' && product.purchaseDiscountPercent != null ? `${product.purchaseDiscountPercent}%` : '—'}
+                        {(() => {
+                          const mrp = Number(product.mrp) || 0;
+                          const sp = Number(product.sellingPrice) || 0;
+                          if (mrp <= 0 || sp <= 0 || sp > mrp) return '—';
+                          const pct = ((mrp - sp) / mrp) * 100;
+                          if (pct <= 0) return <span className="text-slate-400">0%</span>;
+                          return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − SP ₹${sp}`}>{pct.toFixed(1)}%</span>;
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{product.location || '—'}</td>
                       <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
@@ -2219,12 +2298,25 @@ function LegacyProductsUI() {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cost Price</label>
+                      {/* Manual vs MRP-based — same toggle the Add form has. Switching modes
+                          carries the current value across so nothing typed gets dropped. */}
                       <div className="flex bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
                         {(['manual', 'mrp_based'] as const).map(mode => (
                           <button key={mode} type="button"
-                            onClick={() => setEditForm(f => ({ ...f, costPriceMode: mode }))}
+                            onClick={() => setEditForm(f => {
+                              const currentMode = f.costPriceMode || 'manual';
+                              if (mode === currentMode) return f;
+                              if (mode === 'manual') {
+                                const resolved = effectiveCostPrice(f);
+                                return { ...f, costPriceMode: mode, cost: resolved > 0 ? String(Math.round(resolved * 100) / 100) : f.cost };
+                              }
+                              const mrp = Number(f.mrp) || 0;
+                              const cost = Number(f.cost) || 0;
+                              const pct = mrp > 0 && cost > 0 ? ((mrp - cost) / mrp) * 100 : NaN;
+                              return { ...f, costPriceMode: mode, purchaseDiscountPercent: Number.isFinite(pct) ? String(Math.round(Math.max(0, pct) * 100) / 100) : f.purchaseDiscountPercent };
+                            })}
                             className={cn('px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all',
-                              editForm.costPriceMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
+                              (editForm.costPriceMode || 'manual') === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
                             {mode === 'manual' ? 'Manual' : 'MRP'}
                           </button>
                         ))}
@@ -2277,13 +2369,18 @@ function LegacyProductsUI() {
                 )}
 
                 {editForm.sellingPrice && effectiveCostPrice(editForm) > 0 && Number(editForm.sellingPrice) > 0 && (() => {
-                  // Matches how the products list itself calculates Profit %, so
-                  // the modal's live preview never disagrees with what you see
-                  // after saving. See lib/profitCalc.ts for the GST-inclusive toggle.
-                  // Always feed the normalized (GST-inclusive) price in, regardless
-                  // of which mode the shopkeeper is currently typing the price in.
-                  const spForProfit = editSpMode === 'exclusive' ? toInclusivePrice(Number(editForm.sellingPrice) || 0, editForm.gstPercent || 0) : Number(editForm.sellingPrice) || 0;
-                  const result = calculateProductProfit(spForProfit, effectiveCostPrice(editForm), editForm.gstPercent || 0, !!profile.gstInclusiveProfit);
+                  // Profit is over what the shopkeeper actually earns. When SP
+                  // is typed EXCLUSIVE that number IS the earnings basis, so
+                  // don't first inflate it to inclusive and then treat the GST
+                  // portion as profit (that read ₹120+18%GST as ~41% profit
+                  // instead of the real 20%). When typed INCLUSIVE, respect
+                  // the shop's "GST Inclusive Profit Calculation" toggle.
+                  const spTyped = Number(editForm.sellingPrice) || 0;
+                  const gst = Number(editForm.gstPercent) || 0;
+                  const spForProfit = editSpMode === 'exclusive'
+                    ? spTyped
+                    : (profile.gstInclusiveProfit ? spTyped / (1 + gst / 100) : spTyped);
+                  const result = calculateProductProfit(spForProfit, effectiveCostPrice(editForm), 0, false);
                   const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                   const textCls = profitColorClass(result.status);
                   return (
@@ -2355,17 +2452,9 @@ function LegacyProductsUI() {
                   <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('addModal')}</h2>
                   <p className="text-xs text-slate-500">{bizConfig.label}</p>
                 </div>
-                <div className="flex items-center gap-1 bg-emerald-500/10 rounded-lg p-0.5 border border-emerald-500/20 ml-2">
-                  <button type="button" onClick={startCamera}
-                    className="flex items-center gap-1.5 px-3 py-1 text-emerald-500 dark:text-emerald-400 rounded-md text-[10px] font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">
-                    <Camera size={12} /> Photo
-                  </button>
-                  <div className="w-px h-3 bg-emerald-500/20" />
-                  <button type="button" onClick={() => scanInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1 text-emerald-500 dark:text-emerald-400 rounded-md text-[10px] font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">
-                    <Plus size={12} /> Upload
-                  </button>
-                </div>
+                {/* Photo / Upload chips hidden per shopkeeper request — the
+                    header stays clean; scan-input ref (scanInputRef) is still
+                    mounted below so scan-driven autofill continues to work. */}
               </div>
               <button onClick={() => { setShowAddModal(false); setForm(buildEmptyForm(profile.businessType)); setAddToGodownId(''); }} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"><X size={20} /></button>
             </div>
@@ -2720,12 +2809,28 @@ function LegacyProductsUI() {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('fieldCost')}</label>
+                      {/* Manual = type ₹ (default). MRP = type purchase-discount %,
+                          derive ₹ from MRP × (1 − %). Switching modes carries
+                          the current value over — Manual seeds `cost` from the
+                          derived ₹; MRP seeds `%` from cost vs MRP — so the
+                          shopkeeper never loses what they just typed. */}
                       <div className="flex bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
                         {(['manual', 'mrp_based'] as const).map(mode => (
                           <button key={mode} type="button"
-                            onClick={() => setForm(f => ({ ...f, costPriceMode: mode }))}
+                            onClick={() => setForm(f => {
+                              const currentMode = f.costPriceMode || 'manual';
+                              if (mode === currentMode) return f;
+                              if (mode === 'manual') {
+                                const resolved = effectiveCostPrice(f);
+                                return { ...f, costPriceMode: mode, cost: resolved > 0 ? String(Math.round(resolved * 100) / 100) : f.cost };
+                              }
+                              const mrp = Number(f.mrp) || 0;
+                              const cost = Number(f.cost) || 0;
+                              const pct = mrp > 0 && cost > 0 ? ((mrp - cost) / mrp) * 100 : NaN;
+                              return { ...f, costPriceMode: mode, purchaseDiscountPercent: Number.isFinite(pct) ? String(Math.round(Math.max(0, pct) * 100) / 100) : f.purchaseDiscountPercent };
+                            })}
                             className={cn('px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all',
-                              form.costPriceMode === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
+                              (form.costPriceMode || 'manual') === mode ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>
                             {mode === 'manual' ? 'Manual' : 'MRP'}
                           </button>
                         ))}
@@ -2779,13 +2884,18 @@ function LegacyProductsUI() {
                 )}
 
                 {form.sellingPrice && effectiveCostPrice(form) > 0 && Number(form.sellingPrice) > 0 && (() => {
-                  // Matches how the products list itself calculates Profit %, so
-                  // the modal's live preview never disagrees with what you see
-                  // after saving. See lib/profitCalc.ts for the GST-inclusive toggle.
-                  // Always feed the normalized (GST-inclusive) price in, regardless
-                  // of which mode the shopkeeper is currently typing the price in.
-                  const spForProfit = spMode === 'exclusive' ? toInclusivePrice(Number(form.sellingPrice) || 0, form.gstPercent || 0) : Number(form.sellingPrice) || 0;
-                  const result = calculateProductProfit(spForProfit, effectiveCostPrice(form), form.gstPercent || 0, !!profile.gstInclusiveProfit);
+                  // Profit is over what the shopkeeper actually earns. When SP
+                  // is typed EXCLUSIVE that number IS the earnings basis, so
+                  // don't first inflate it to inclusive and then treat the GST
+                  // portion as profit (that read ₹120+18%GST as ~41% profit
+                  // instead of the real 20%). When typed INCLUSIVE, respect
+                  // the shop's "GST Inclusive Profit Calculation" toggle.
+                  const spTyped = Number(form.sellingPrice) || 0;
+                  const gst = Number(form.gstPercent) || 0;
+                  const spForProfit = spMode === 'exclusive'
+                    ? spTyped
+                    : (profile.gstInclusiveProfit ? spTyped / (1 + gst / 100) : spTyped);
+                  const result = calculateProductProfit(spForProfit, effectiveCostPrice(form), 0, false);
                   const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                   const textCls = profitColorClass(result.status);
                   return (

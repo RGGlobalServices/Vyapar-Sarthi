@@ -177,55 +177,87 @@ export default function ProductDetailsSheet({
           ) : (
             <div className="p-5 space-y-5">
 
-              {/* ── Stat Cards ── */}
-              <div className="grid grid-cols-2 gap-3">
-                <StatCard
-                  icon={<Hash size={14} className="text-blue-500 dark:text-blue-400" />}
-                  label={t("totalStock")}
-                  value={`${data.totalStock}${data.product.baseUnit ? ' ' + data.product.baseUnit : ''}`}
-                  valueClass="text-blue-600 dark:text-blue-400"
-                />
-                <StatCard
-                  icon={<IndianRupee size={14} className="text-emerald-500 dark:text-emerald-400" />}
-                  label={t("stockValue")}
-                  value={`₹${data.stockValue.toLocaleString('en-IN')}`}
-                  valueClass="text-emerald-600 dark:text-emerald-400"
-                />
-                <StatCard
-                  icon={<IndianRupee size={14} className="text-slate-500 dark:text-slate-400" />}
-                  label={t("costPrice")}
-                  value={`₹${(data.product.costPrice || 0).toLocaleString('en-IN')}`}
-                  valueClass="text-slate-900 dark:text-white"
-                />
-                <StatCard
-                  icon={<TrendingDown size={14} className="text-slate-500 dark:text-slate-400" />}
-                  label={t("wholesaleRate") || "Wholesale Rate"}
-                  value={`₹${(data.product.wholesaleCost || 0).toLocaleString('en-IN')}`}
-                  valueClass="text-slate-900 dark:text-white"
-                />
-                <StatCard
-                  icon={<TrendingUp size={14} className="text-emerald-500 dark:text-emerald-400" />}
-                  label={t("sellingPrice")}
-                  value={`₹${(data.product.sellingPrice || 0).toLocaleString('en-IN')}`}
-                  valueClass="text-emerald-600 dark:text-emerald-400"
-                />
-                {(() => {
-                  const cost = data.product.costPrice || 0;
-                  const sp = data.product.sellingPrice || 0;
-                  const result = cost > 0 && sp > 0
-                    ? calculateProductProfit(sp, cost, data.product.gstPercent || 0, !!profile.gstInclusiveProfit)
-                    : null;
-                  return (
+              {/* ── Stat Cards ──
+                  Vyapar/Dukan and Udyog store cost differently:
+                    • Udyog: real cost sits in `costPrice`; `wholesaleCost` is the
+                      *wholesale selling* rate charged to other shopkeepers.
+                    • Vyapar/Dukan: `costPrice` is usually NULL; the shopkeeper's
+                      cost is written into `wholesaleCost` (see lib/fetchers.ts
+                      where `cost: p.wholesaleCost` maps for the list).
+                  So use `costPrice ?? wholesaleCost` as the true cost for
+                  profit math, and only surface the Wholesale Rate card to
+                  Udyog shops — Vyapar/Dukan users don't have that concept and
+                  seeing "Wholesale Rate: ₹559" alongside "Cost Price: ₹0" was
+                  confusing them. */}
+              {(() => {
+                const isUdyog = profile.subscriptionPlan === 'wholesale';
+                const cost = Number(data.product.costPrice) || Number(data.product.wholesaleCost) || 0;
+                const sp = Number(data.product.sellingPrice) || 0;
+                const mrp = Number(data.product.mrp) || 0;
+                const profitRes = cost > 0 && sp > 0
+                  ? calculateProductProfit(sp, cost, data.product.gstPercent || 0, !!profile.gstInclusiveProfit)
+                  : null;
+                const mrpOffPct = mrp > 0 && sp > 0 && sp < mrp
+                  ? Math.round(((mrp - sp) / mrp) * 100 * 10) / 10
+                  : null;
+                return (
+                  <div className="grid grid-cols-2 gap-3">
                     <StatCard
-                      icon={<TrendingUp size={14} className={result ? profitColorClass(result.status) : 'text-slate-400'} />}
-                      label={t("profitMargin") || "Profit %"}
-                      value={result ? `${result.percent.toFixed(1)}%` : '—'}
-                      valueClass={result ? profitColorClass(result.status) : 'text-slate-400 dark:text-slate-500'}
+                      icon={<Hash size={14} className="text-blue-500 dark:text-blue-400" />}
+                      label={t("totalStock")}
+                      value={`${data.totalStock}${data.product.baseUnit ? ' ' + data.product.baseUnit : ''}`}
+                      valueClass="text-blue-600 dark:text-blue-400"
                     />
-                  );
-                })()}
-              </div>
+                    <StatCard
+                      icon={<IndianRupee size={14} className="text-emerald-500 dark:text-emerald-400" />}
+                      label={t("stockValue")}
+                      value={`₹${data.stockValue.toLocaleString('en-IN')}`}
+                      valueClass="text-emerald-600 dark:text-emerald-400"
+                    />
+                    <StatCard
+                      icon={<IndianRupee size={14} className="text-slate-500 dark:text-slate-400" />}
+                      label={t("costPrice")}
+                      value={`₹${cost.toLocaleString('en-IN')}`}
+                      valueClass="text-slate-900 dark:text-white"
+                    />
+                    <StatCard
+                      icon={<TrendingUp size={14} className="text-emerald-500 dark:text-emerald-400" />}
+                      label={t("sellingPrice")}
+                      value={`₹${sp.toLocaleString('en-IN')}`}
+                      valueClass="text-emerald-600 dark:text-emerald-400"
+                    />
+                    {isUdyog && (
+                      <StatCard
+                        icon={<TrendingDown size={14} className="text-slate-500 dark:text-slate-400" />}
+                        label={t("wholesaleRate") || "Wholesale Rate"}
+                        value={`₹${(Number(data.product.wholesaleCost) || 0).toLocaleString('en-IN')}`}
+                        valueClass="text-slate-900 dark:text-white"
+                      />
+                    )}
+                    {!isUdyog && mrpOffPct !== null && (
+                      <StatCard
+                        icon={<TrendingDown size={14} className="text-sky-500 dark:text-sky-400" />}
+                        label="% Off MRP"
+                        value={`${mrpOffPct.toFixed(1)}%`}
+                        valueClass="text-sky-600 dark:text-sky-400"
+                      />
+                    )}
+                    <StatCard
+                      icon={<TrendingUp size={14} className={profitRes ? profitColorClass(profitRes.status) : 'text-slate-400'} />}
+                      label={t("profitMargin") || "Profit %"}
+                      value={profitRes ? `${profitRes.percent.toFixed(1)}%` : '—'}
+                      valueClass={profitRes ? profitColorClass(profitRes.status) : 'text-slate-400 dark:text-slate-500'}
+                    />
+                  </div>
+                );
+              })()}
 
+              {/* Batches / Warehouse / Movements are Udyog wholesale concepts —
+                  Vyapar/Dukan shops don't track batches, don't have warehouses,
+                  and don't consume the stock_movements feed. Hiding them keeps
+                  the details sheet focused on what those shopkeepers actually
+                  use. */}
+              {profile.subscriptionPlan === 'wholesale' && <>
               {/* ── Active Batches ── */}
               <Section
                 icon={<CheckCircle size={14} className="text-emerald-500 dark:text-emerald-400" />}
@@ -352,12 +384,13 @@ export default function ProductDetailsSheet({
                   ))}
                 </div>
               </Section>
+              </>}
 
             </div>
           )}
         </div>
       </div>
-      
+
       {showReceive && data?.product && (
         <ReceiveDrawer
           product={data.product}
