@@ -1774,7 +1774,7 @@ function LegacyProductsUI() {
                                   }
                                   return (
                                     <VariantChipGrid
-                                      productId={product.id}
+                                      productId={String(product.id)}
                                       entries={Object.entries(byColor).map(([color, { qty, parts }]) => ({
                                         key: color,
                                         label: `${color}: ${qty}`,
@@ -1787,7 +1787,7 @@ function LegacyProductsUI() {
                                 const entries = Object.entries(sizeVariants).filter(([,q]) => q > 0);
                                 return (
                                   <VariantChipGrid
-                                    productId={product.id}
+                                    productId={String(product.id)}
                                     entries={entries.map(([sz, q]) => {
                                       const sp = sizePriceData[sz];
                                       const label = sp ? `${sz} ₹${sp.sellingPrice} (${q})` : `${sz}:${q}`;
