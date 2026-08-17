@@ -29,6 +29,22 @@ function totalDue(c: UdharCustomer) {
   return (c.transactions || []).reduce((sum, t) => t.type === 'udhar' ? sum + t.amount : sum - t.amount, 0);
 }
 
+/** Local YYYY-MM-DD (avoids the UTC shift toISOString would introduce). */
+function toInputDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Turn the date-picker's plain YYYY-MM-DD into the ISO timestamp a
+ *  transaction gets stamped with. Today's date keeps the exact current
+ *  time (so it still sorts correctly against other same-day entries);
+ *  a backdated pick lands at local midday to dodge any UTC-shift edge
+ *  case that midnight would risk landing on the wrong calendar day. */
+function resolveTxDate(pickedDate: string): string {
+  const now = new Date();
+  if (pickedDate === toInputDate(now)) return now.toISOString();
+  return new Date(`${pickedDate}T12:00:00`).toISOString();
+}
+
 function relativeDate(iso: string) {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60)     return 'Just now';
@@ -161,7 +177,10 @@ export default function UdharPage() {
 
   // Forms
   const [custForm, setCustForm] = useState({ name: '', mobile: '', email: '' });
-  const [txForm, setTxForm]     = useState({ amount: '', note: '' });
+  // `date` lets a shopkeeper backdate an Udhar/Payment entry (e.g. logging
+  // yesterday's credit sale today) instead of every transaction always
+  // landing on "right now" — same backdating support Suppliers already has.
+  const [txForm, setTxForm]     = useState({ amount: '', note: '', date: toInputDate(new Date()) });
   const [txError, setTxError]   = useState('');
   const [custError, setCustError] = useState('');
   const [reminderForm, setReminderForm] = useState({ date: '', time: '', message: '', channel: 'whatsapp' });
@@ -448,8 +467,8 @@ export default function UdharPage() {
 
   function openNew()   { setCustForm({ name: '', mobile: '', email: '' }); setCustError(''); setModal('newCustomer'); }
   function openEdit(c: UdharCustomer) { setCustForm({ name: c.name, mobile: c.mobile, email: c.email || '' }); setCustError(''); setModal('editCustomer'); }
-  function openUdhar()   { setTxForm({ amount: '', note: '' }); setTxError(''); setModal('udhar'); }
-  function openPayment() { setTxForm({ amount: '', note: '' }); setTxError(''); setModal('payment'); }
+  function openUdhar()   { setTxForm({ amount: '', note: '', date: toInputDate(new Date()) }); setTxError(''); setModal('udhar'); }
+  function openPayment() { setTxForm({ amount: '', note: '', date: toInputDate(new Date()) }); setTxError(''); setModal('payment'); }
 
   async function handleAddCustomer(e: React.FormEvent) {
     e.preventDefault();
@@ -532,7 +551,7 @@ export default function UdharPage() {
     e.preventDefault();
     const amt = Number(txForm.amount);
     if (!amt || amt <= 0) { setTxError(t('validAmount')); return; }
-    const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'udhar', amount: amt, note: txForm.note, date: new Date().toISOString() };
+    const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'udhar', amount: amt, note: txForm.note, date: resolveTxDate(txForm.date) };
     setAddingTx(true);
     try {
       await addTransaction(selected!.id, tx);
@@ -556,7 +575,7 @@ export default function UdharPage() {
     const customer = customers.find(c => c.id === selected!.id)!;
     const due = totalDue(customer);
     if (amt > due) { setTxError(`${t('exceedsDue')} ₹${due}.`); return; }
-    const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'payment', amount: amt, note: txForm.note, date: new Date().toISOString() };
+    const tx: UdharTransaction = { id: Math.random().toString(36).substring(7), type: 'payment', amount: amt, note: txForm.note, date: resolveTxDate(txForm.date) };
     setAddingTx(true);
     try {
       await addTransaction(selected!.id, tx);
@@ -790,6 +809,7 @@ export default function UdharPage() {
           <UModal title={t('addUdhar')} icon={<Plus size={17} className="text-orange-400" />} onClose={() => !addingTx && setModal(null)}>
             <form onSubmit={handleAddUdhar} className="space-y-4">
               <UField label={t('amountLabel')}><input type="number" min="1" required disabled={addingTx} inputMode="numeric" className={cn(inp, 'disabled:opacity-50')} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
+              <UField label={t('dateLabel') || 'Date'}><input type="date" required max={toInputDate(new Date())} disabled={addingTx} className={cn(inp, 'disabled:opacity-50')} value={txForm.date} onChange={e => setTxForm(f => ({ ...f, date: e.target.value }))} /></UField>
               <UField label={t('noteLabel')}><input disabled={addingTx} className={cn(inp, 'disabled:opacity-50')} placeholder={t('noteHint')} value={txForm.note} onChange={e => setTxForm(f => ({ ...f, note: e.target.value }))} /></UField>
               {txError && <p className="text-red-400 text-sm">{txError}</p>}
               <UActions onCancel={() => setModal(null)} submitLabel={addingTx ? t('adding') : t('addUdhar')} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400" submitting={addingTx} cancelLabel={t('cancel')} />
@@ -803,6 +823,7 @@ export default function UdharPage() {
                 {t('totalDueLabel')}: <span className="text-orange-400 font-bold">₹{totalDue(customer).toLocaleString('en-IN')}</span>
               </div>
               <UField label={t('amountPaid')}><input type="number" min="1" max={totalDue(customer)} required disabled={addingTx} inputMode="numeric" className={cn(inp, 'disabled:opacity-50')} placeholder="0" value={txForm.amount} onChange={e => { setTxForm(f => ({ ...f, amount: e.target.value })); setTxError(''); }} /></UField>
+              <UField label={t('dateLabel') || 'Date'}><input type="date" required max={toInputDate(new Date())} disabled={addingTx} className={cn(inp, 'disabled:opacity-50')} value={txForm.date} onChange={e => setTxForm(f => ({ ...f, date: e.target.value }))} /></UField>
               <UField label={t('noteLabel')}><input disabled={addingTx} className={cn(inp, 'disabled:opacity-50')} placeholder={t('paymentNoteHint')} value={txForm.note} onChange={e => setTxForm(f => ({ ...f, note: e.target.value }))} /></UField>
               {txError && <p className="text-red-400 text-sm">{txError}</p>}
               <UActions onCancel={() => setModal(null)} submitLabel={addingTx ? t('adding') : t('recordPayment')} submitCls="bg-emerald-500 text-slate-900 hover:bg-emerald-400" submitting={addingTx} cancelLabel={t('cancel')} />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2, NotebookText } from 'lucide-react';
+import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2, NotebookText, ScanLine } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
@@ -9,6 +9,8 @@ import LedgerView from '@/components/crm/LedgerView';
 import CustomerRollupView from '@/components/crm/CustomerRollupView';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { generateCollectionRegisterPDF } from '@/lib/pdf/collectionRegister';
+import ScanCollectionModal from '@/components/party/ScanCollectionModal';
+import AddBillModal from '@/components/party/AddBillModal';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import useSWR from 'swr';
@@ -31,6 +33,7 @@ type Party = {
   creditLimit: number;
   address: string;
   createdAt: string;
+  documents?: { id: string; url: string; uploadedAt: string; transactionId?: string }[];
 };
 
 /** Money in from Suppliers (what we owe them) — headline-only card here,
@@ -110,6 +113,7 @@ function PartiesPanel() {
   const [search, setSearch] = useState('');
   const [range, setRange] = useState({ from: '', to: '' });
   const [generatingRegister, setGeneratingRegister] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
 
   const { data: partiesData = [], mutate: mutateParties, isLoading } = useSWR(
     activeShopId ? `/crm/customers?type=party&_shop=${activeShopId}` : null,
@@ -126,6 +130,7 @@ function PartiesPanel() {
 
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [showAddBill, setShowAddBill] = useState(false);
   const [showNewParty, setShowNewParty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -395,6 +400,14 @@ function PartiesPanel() {
           Collection Register
         </button>
         <button
+          onClick={() => setShowScanModal(true)}
+          title="Photograph your collection round notebook — AI reads each party's Cash/Chq and lets you apply them as payments"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
+        >
+          <ScanLine size={18} />
+          Scan Collection Sheet
+        </button>
+        <button
           onClick={() => setShowNewParty(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
         >
@@ -529,14 +542,22 @@ function PartiesPanel() {
               <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/50 rounded-xl">
                 <p className="text-xs font-bold text-orange-800 dark:text-orange-400 uppercase tracking-wider mb-1">{t('totalOutstanding')}</p>
                 <p className="text-2xl font-black text-orange-600 dark:text-orange-500">₹{selectedParty.totalDue.toLocaleString()}</p>
-                {selectedParty.totalDue > 0 && (
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
                   <button
-                    onClick={() => setShowPayment(true)}
-                    className="mt-2 text-xs font-bold bg-orange-600 text-white px-3 py-1.5 rounded-lg w-full flex items-center justify-center gap-1 hover:bg-orange-700"
+                    onClick={() => setShowAddBill(true)}
+                    className="text-xs font-bold bg-white dark:bg-slate-800 border border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
                   >
-                    <Wallet size={14} /> {t('collectPayment')}
+                    <ReceiptText size={14} /> Add Bill
                   </button>
-                )}
+                  {selectedParty.totalDue > 0 && (
+                    <button
+                      onClick={() => setShowPayment(true)}
+                      className="text-xs font-bold bg-orange-600 text-white px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-700 transition-colors"
+                    >
+                      <Wallet size={14} /> {t('collectPayment')}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl">
                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{t('creditTerms')}</p>
@@ -570,6 +591,15 @@ function PartiesPanel() {
           outstanding={selectedParty.totalDue}
           onClose={() => { setShowPayment(false); setSelectedParty(null); }}
           onSuccess={() => mutateParties()}
+        />
+      )}
+
+      {showAddBill && selectedParty && (
+        <AddBillModal
+          partyId={selectedParty.id}
+          partyDocuments={selectedParty.documents || []}
+          onClose={() => setShowAddBill(false)}
+          onSaved={() => { setShowAddBill(false); setSelectedParty(null); mutateParties(); }}
         />
       )}
 
@@ -626,6 +656,13 @@ function PartiesPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {showScanModal && (
+        <ScanCollectionModal
+          onClose={() => setShowScanModal(false)}
+          onApplied={() => mutateParties()}
+        />
       )}
 
       {/* Edit Party Modal */}

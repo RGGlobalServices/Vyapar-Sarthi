@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, X } from 'lucide-react';
+import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, X, Paperclip } from 'lucide-react';
 import api from '@/lib/api';
 import { ExportButton } from '@/lib/hooks/useExport';
 import TransactionDetailModal from './TransactionDetailModal';
@@ -35,6 +35,9 @@ type Transaction = {
   gstPercent: string | null;
   gstAmount: number | null;
   items: BillItem[];
+  /** Photo(s) of the physical bill, attached via Add Bill (see
+   *  AddBillModal) — empty for entries that never had one. */
+  documents: { id: string; url: string; uploadedAt: string }[];
 };
 
 // Raw shapes as they actually come back from /crm/ledger — customer_transactions
@@ -54,6 +57,7 @@ type RawTransaction = {
   gstPercent?: string | null;
   gstAmount?: number | null;
   items?: BillItem[];
+  documents?: { id: string; url: string; uploadedAt: string }[];
 };
 
 export default function LedgerView({
@@ -90,6 +94,7 @@ export default function LedgerView({
         gstPercent: tx.gstPercent ?? null,
         gstAmount: tx.gstAmount ?? null,
         items: Array.isArray(tx.items) ? tx.items : [],
+        documents: Array.isArray(tx.documents) ? tx.documents : [],
       }));
       setTransactions(normalized);
     } catch (e) {
@@ -302,6 +307,11 @@ export default function LedgerView({
                   {tx.gstPercent != null && (
                     <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded">
                       {tx.gstPercent}% GST · ₹{(tx.gstAmount || 0).toLocaleString('en-IN')}
+                    </span>
+                  )}
+                  {tx.documents.length > 0 && (
+                    <span className="flex items-center gap-0.5 font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded" title="Bill photo attached">
+                      <Paperclip size={10} /> Photo
                     </span>
                   )}
                   {tx.note && <span>{tx.note}</span>}

@@ -87,9 +87,13 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   const [unitsPerCarton, setUnitsPerCarton] = useState(1);
   const [cartonCopies, setCartonCopies] = useState(1);
   // A4 keeps today's behaviour (a small popup for one code, a multi-column
-  // sheet for variants). Thermal targets an actual small-roll label printer —
-  // this app had no physical-page-size print path at all before this.
-  const [labelSize, setLabelSize] = useState<'a4' | 'thermal'>('a4');
+  // sheet for variants). thermal58/thermal80 target an actual small-roll
+  // label printer at its real physical width — printing the wrong width
+  // makes the print bridge scale the page to fit the roll, dragging every
+  // label's height along with it and causing labels to bleed into each
+  // other, which is why both real roll widths need their own option here
+  // rather than one generic "thermal" guess.
+  const [labelSize, setLabelSize] = useState<'a4' | 'thermal58' | 'thermal80'>('a4');
 
   // A stored barcode that starts with PRD-/BAR- is a placeholder the system
   // generated when the product was created without a real code — it is NOT a
@@ -318,15 +322,19 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     const noteLine = labelText.trim() ? `<p style="font-size:10px;margin-top:3px;color:#334155">${escapeHtml(labelText.trim())}</p>` : '';
     const qrSrc = qrCanvasRef.current?.toDataURL('image/png') || '';
     const copies = Math.max(1, Math.floor(printQty) || 1);
-    const isThermal = labelSize === 'thermal';
+    const isThermal = labelSize === 'thermal58' || labelSize === 'thermal80';
+    const thermalWidthMm = labelSize === 'thermal80' ? 80 : 58;
+    const qrPx = isThermal ? (thermalWidthMm === 80 ? 160 : 120) : 180;
     const card = `<div class="qr-lbl">
-        <p style="font-size:12px;font-weight:bold;margin:0 0 6px">${escapeHtml(product.name)}</p>
-        <img src="${qrSrc}" style="width:${isThermal ? '120px' : '180px'};height:${isThermal ? '120px' : '180px'}" />
-        <p style="font-size:11px;margin:6px 0 0">${priceLine}</p>
+        <p style="font-size:${isThermal && thermalWidthMm === 80 ? 14 : 12}px;font-weight:bold;margin:0 0 6px">${escapeHtml(product.name)}</p>
+        <img src="${qrSrc}" style="width:${qrPx}px;height:${qrPx}px" />
+        <p style="font-size:${isThermal && thermalWidthMm === 80 ? 13 : 11}px;margin:6px 0 0">${priceLine}</p>
         ${noteLine}
       </div>`;
+    // 'auto' height — see lib/printLabels.ts for why a fixed mm height was
+    // the root cause of labels overlapping on real 58/80mm roll printers.
     const pageRule = isThermal
-      ? '@page { size: 50mm 25mm; margin: 2mm; } .qr-lbl { page-break-after: always; }'
+      ? `@page { size: ${thermalWidthMm}mm auto; margin: 1.5mm; } .qr-lbl { page-break-after: always; }`
       : '@page { size: A4; margin: 8mm; }';
     const html = `<!DOCTYPE html><html><head><style>
         * { box-sizing: border-box; } body { font-family: sans-serif; margin: 0; }
@@ -501,11 +509,14 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   async function printCartonLabel() {
     if (!product.cartonBarcode) return;
     const { default: JsBarcode } = await import('jsbarcode');
-    const isThermal = labelSize === 'thermal';
+    const isThermal = labelSize === 'thermal58' || labelSize === 'thermal80';
+    const thermalWidthMm = labelSize === 'thermal80' ? 80 : 58;
     const svgTmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     try {
       JsBarcode(svgTmp, product.cartonBarcode, {
-        format: detectBarcodeFormat(product.cartonBarcode), width: isThermal ? 2.2 : 2, height: isThermal ? 40 : 50,
+        format: detectBarcodeFormat(product.cartonBarcode),
+        width: isThermal ? (thermalWidthMm === 80 ? 2.6 : 2.2) : 2,
+        height: isThermal ? (thermalWidthMm === 80 ? 50 : 40) : 50,
         displayValue: true, fontSize: 10, fontOptions: 'bold', margin: 8, background: '#ffffff', lineColor: '#0f172a',
       });
     } catch { /* skip unrenderable code */ }
@@ -528,9 +539,15 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     const copies = Math.max(1, Math.floor(cartonCopies) || 1);
     const labels = Array(copies).fill(card).join('');
 
+    const cfs = isThermal && thermalWidthMm === 80
+      ? { name: 13, variant: 11, note: 10, rate: 10, rateVal: 13 }
+      : { name: 11, variant: 9, note: 8, rate: 9, rateVal: 11 };
+
     const html = `<!doctype html><html><head><title>${escapeHtml(product.name)} — Carton Labels</title>
       <style>
-        @page { size: ${isThermal ? '50mm 25mm' : 'A4'}; margin: ${isThermal ? '2mm' : '8mm'}; }
+        /* 'auto' height — see lib/printLabels.ts for why a fixed mm height
+           was the root cause of labels overlapping on real roll printers. */
+        @page { size: ${isThermal ? `${thermalWidthMm}mm auto` : 'A4'}; margin: ${isThermal ? '1.5mm' : '8mm'}; }
         * { box-sizing: border-box; }
         body { font-family: Helvetica, Arial, sans-serif; margin: 0; color: #0f172a; }
         .sheet { display: ${isThermal ? 'block' : 'grid'}; grid-template-columns: repeat(2, 1fr); gap: 4mm; padding: ${isThermal ? '0' : '2mm'}; }
@@ -543,14 +560,14 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
           text-align: center;
           background: #fff;
         }
-        .lbl-name    { font-size: 11px; font-weight: 800; line-height: 1.15; margin-bottom: 1mm; }
-        .lbl-variant { font-size: 9px; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1mm; }
+        .lbl-name    { font-size: ${cfs.name}px; font-weight: 800; line-height: 1.15; margin-bottom: 1mm; }
+        .lbl-variant { font-size: ${cfs.variant}px; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1mm; }
         .lbl-barcode svg { max-width: 100%; height: auto; }
-        .lbl-note    { font-size: 8px; font-weight: 600; color: #334155; margin: 0.5mm 0; }
+        .lbl-note    { font-size: ${cfs.note}px; font-weight: 600; color: #334155; margin: 0.5mm 0; }
         .lbl-rates   { display: flex; justify-content: space-around; margin-top: 1mm; border-top: 0.3mm solid #cbd5e1; padding-top: 1mm; }
-        .lbl-rates div { display: flex; flex-direction: column; font-size: 9px; }
+        .lbl-rates div { display: flex; flex-direction: column; font-size: ${cfs.rate}px; }
         .lbl-rates span { color: #64748b; font-weight: 600; }
-        .lbl-rates b { font-size: 11px; }
+        .lbl-rates b { font-size: ${cfs.rateVal}px; }
         @media print { html, body { background: #fff; } .lbl { border-color: #cbd5e1; } }
       </style></head><body>
       <div class="sheet">${labels}</div>
@@ -674,7 +691,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
               </div>
 
               <div className="flex bg-slate-800 rounded-xl p-1 w-full">
-                {([['a4', t('labelSizeA4')], ['thermal', t('labelSizeThermal')]] as const).map(([key, label]) => (
+                {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
                   <button key={key} type="button" onClick={() => setLabelSize(key)}
                     className={cn(
                       'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
@@ -690,7 +707,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
                 onClick={printCartonLabel}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
               >
-                <Printer size={16} /> {t('print')} ({cartonCopies}) · {labelSize === 'thermal' ? t('labelSizeThermal') : t('labelSizeA4')}
+                <Printer size={16} /> {t('print')} ({cartonCopies}) · {labelSize === 'thermal58' ? t('labelSizeThermal58') : labelSize === 'thermal80' ? t('labelSizeThermal80') : t('labelSizeA4')}
               </button>
             </>
           )}
@@ -798,7 +815,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
           {/* Label size — A4 keeps today's popup; Thermal targets an actual
               small-roll label printer with a real physical page size. */}
           <div className="flex bg-slate-800 rounded-xl p-1 w-full">
-            {([['a4', t('labelSizeA4')], ['thermal', t('labelSizeThermal')]] as const).map(([key, label]) => (
+            {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
               <button key={key} type="button" onClick={() => setLabelSize(key)}
                 className={cn(
                   'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
@@ -923,7 +940,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
           </div>
 
           <div className="flex bg-slate-800 rounded-xl p-1 w-full">
-            {([['a4', t('labelSizeA4')], ['thermal', t('labelSizeThermal')]] as const).map(([key, label]) => (
+            {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
               <button key={key} type="button" onClick={() => setLabelSize(key)}
                 className={cn(
                   'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
@@ -941,7 +958,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             onClick={printLabelSheet}
             className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
           >
-            <Printer size={16} /> {t('print')} ({variantRows.reduce((sum, row) => sum + (variantPrintQty[row.key] ?? row.qty), 0)}) · {labelSize === 'thermal' ? t('labelSizeThermal') : t('labelSizeA4')}
+            <Printer size={16} /> {t('print')} ({variantRows.reduce((sum, row) => sum + (variantPrintQty[row.key] ?? row.qty), 0)}) · {labelSize === 'thermal58' ? t('labelSizeThermal58') : labelSize === 'thermal80' ? t('labelSizeThermal80') : t('labelSizeA4')}
           </button>
         </div>
         )}

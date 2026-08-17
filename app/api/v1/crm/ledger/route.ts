@@ -31,7 +31,7 @@ export const GET = handle(async (req) => {
     // app/api/v1/billing/route.ts) and would otherwise be invisible here
     // even though a real sale happened. Doubles as the existing GST/items
     // enrichment join, batched into one query instead of N+1 per row.
-    const [ledger, sales] = await Promise.all([
+    const [ledger, sales, customerDocs] = await Promise.all([
       prisma.customer_transactions.findMany({
         where: { customer_id: entityId, customers: { shopId: shop.id }, ...dateFilter('created_at') },
         orderBy: { created_at: 'desc' },
@@ -49,7 +49,19 @@ export const GET = handle(async (req) => {
           },
         },
       }),
+      prisma.customer.findUnique({ where: { id: entityId }, select: { documents: true } }),
     ]);
+    // Bill photos attached via AddBillModal — a flat JSON array on the
+    // customer row (same convention as Supplier.documents), each entry
+    // tagged with the customer_transactions.id it belongs to so it can be
+    // shown inline on its own ledger row instead of a generic unlinked pile.
+    const docsByTxId = new Map<string, { id: string; url: string; uploadedAt: string }[]>();
+    for (const d of (Array.isArray(customerDocs?.documents) ? (customerDocs!.documents as any[]) : [])) {
+      if (!d?.transactionId) continue;
+      const list = docsByTxId.get(d.transactionId) || [];
+      list.push({ id: d.id, url: d.url, uploadedAt: d.uploadedAt });
+      docsByTxId.set(d.transactionId, list);
+    }
     const saleByInvoice = new Map(sales.map((s) => [s.invoice_number, s]));
 
     // A bill only gets a real 'udhar' customer_transactions row when it left
@@ -134,6 +146,7 @@ export const GET = handle(async (req) => {
         gstPercent,
         gstAmount: isGstBill ? Number(sale?.gstAmount) || 0 : null,
         items,
+        documents: docsByTxId.get(t.id) || [],
       };
     });
 

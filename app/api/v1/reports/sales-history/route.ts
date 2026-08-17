@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { startOfDay, startOfWeek, startOfMonth, startOfQuarter, startOfYear, format, parseISO, subDays, subMonths, subYears } from 'date-fns';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/server/prisma';
 
 export async function GET(req: NextRequest) {
   try {

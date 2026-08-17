@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { X, ReceiptText, Loader2 } from 'lucide-react';
+import { X, ReceiptText, Loader2, ImageIcon } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { generateCustomerBillPDF } from '@/lib/pdf/customerBillDetail';
@@ -26,6 +26,7 @@ type Transaction = {
   gstPercent: string | null;
   gstAmount: number | null;
   items: BillItem[];
+  documents?: { id: string; url: string; uploadedAt: string }[];
 };
 
 const rupee = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -77,6 +78,7 @@ export default function TransactionDetailModal({
             items: Array.isArray(match.items) ? match.items : [],
             gstPercent: match.gstPercent ?? null,
             gstAmount: match.gstAmount ?? null,
+            documents: Array.isArray(match.documents) ? match.documents : [],
           }));
         }
       })
@@ -169,6 +171,22 @@ export default function TransactionDetailModal({
 
           {transaction.note && (
             <p className="text-sm text-slate-600 dark:text-slate-300">{transaction.note}</p>
+          )}
+
+          {resolved.documents && resolved.documents.length > 0 && (
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <ImageIcon size={12} /> Bill Photo
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {resolved.documents.map((d) => (
+                  <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer"
+                    className="block rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-orange-400 dark:hover:border-orange-600 transition-colors">
+                    <img src={d.url} alt="Bill photo" className="h-28 w-28 object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
           )}
 
           <div>

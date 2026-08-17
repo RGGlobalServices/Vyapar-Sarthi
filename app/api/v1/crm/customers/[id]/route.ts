@@ -27,6 +27,12 @@ export const PUT = handle(async (req, { params }: any) => {
       creditDays: parseInt(data.creditDays) || 0,
       creditLimit: parseFloat(data.creditLimit) || 0,
       notes: data.notes?.trim() || null,
+      // Bill-photo attachments (see AddBillModal) — same convention as
+      // Supplier's `documents` JSON array: [{id, url, uploadedAt,
+      // transactionId?}]. Only touched when the caller actually sends it, so
+      // a routine "Edit Party" save (which doesn't know about documents)
+      // can never accidentally wipe out photos already attached.
+      ...(data.documents !== undefined ? { documents: data.documents } : {}),
     },
   });
 
