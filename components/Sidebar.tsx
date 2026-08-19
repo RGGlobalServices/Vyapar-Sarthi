@@ -7,7 +7,10 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, IndianRupee, Package, Box, Users,
   BarChart3, LogOut, Languages, FolderUp, Settings, User, RotateCcw, Gift, Store, HelpCircle, Bell,
-  Warehouse, ChevronDown, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle
+  Warehouse, ChevronDown, ChevronRight, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle,
+  // Bada Udyog / Mills icons
+  Truck, Scale, Factory, FlaskConical, ClipboardCheck, Handshake, HardHat, Wrench, Cog, Cpu, FileText,
+  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -21,6 +24,35 @@ import { fetchJson, fetchProductsMapped } from '@/lib/fetchers';
 import { isSubscriptionEnded, isAllowedWhenEnded } from '@/lib/subscriptionAccess';
 import { canUseReferEarn, canUseManpower } from '@/lib/planGates';
 import { useNotificationStore } from '@/lib/notificationStore';
+
+// ─── Bada Udyog sidebar grouping ────────────────────────────────────────
+// Mill operations bring 20+ modules to the sidebar; a flat list would drown
+// the shopkeeper. Group them into collapsible sections that mirror the
+// day-to-day workflow (Business → Mill Ops → Logistics → Finance → …).
+// Every KEY listed here MUST exist in `masterMenuItems` further down, or
+// the item silently drops from render.
+//
+// `alwaysExpanded` sections (Dashboard) render as bare links, no header.
+// The rest render as a header with a chevron; clicking toggles.
+interface SidebarSection {
+  id: string;
+  label: string;
+  emoji: string;
+  keys: string[];
+  alwaysExpanded?: boolean;   // no header, no toggle
+  defaultCollapsed?: boolean; // header + starts closed
+}
+
+const BADAUDYOG_SECTIONS: SidebarSection[] = [
+  { id: 'main',        label: 'Main',              emoji: '🏭', alwaysExpanded: true, keys: ['dashboard'] },
+  { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'purchases', 'party', 'products', 'stock', 'warehouses'] },
+  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['gate-entry', 'weighbridge', 'production', 'quality-lab', 'batches', 'raw-material', 'finished-goods', 'by-products'] },
+  { id: 'logistics',   label: 'Logistics',         emoji: '🚚', keys: ['transport', 'dispatch', 'hamali'] },
+  { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'settlement', 'expenses'] },
+  { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers', 'machines', 'maintenance', 'spare-parts'], defaultCollapsed: true },
+  { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
+  { id: 'admin',       label: 'Setup',             emoji: '⚙️', keys: ['staff', 'import', 'referral', 'dukandar', 'calendar', 'returns', 'settings', 'profile', 'trash'], defaultCollapsed: true },
+];
 
 const UsersThree = ({ size = 24, className = "" }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -122,6 +154,20 @@ export default function Sidebar({
   const { theme, setTheme } = useTheme();
   const isDark = theme === 'dark';
   const upcomingEventsCount = useNotificationStore(s => s.upcomingEventsCount);
+  // Per-section collapse state for the Bada Udyog grouped sidebar. Persisted
+  // in localStorage so a shopkeeper's open/closed choices survive reloads.
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem('ks_sidebar_collapsed') || '{}'); }
+    catch { return {}; }
+  });
+  const toggleSection = (id: string) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem('ks_sidebar_collapsed', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
 
   const [showAdminPinModal, setShowAdminPinModal] = useState(false);
   const [adminPinInput, setAdminPinInput] = useState('');
@@ -209,7 +255,7 @@ export default function Sidebar({
     }
   };
 
-  const masterMenuItems = [
+  const masterMenuItems: Array<{ key: string; icon: any; href: string; badge?: number; external?: boolean }> = [
     { key: 'dashboard', icon: LayoutDashboard, href: '/' },
     { key: 'profile',   icon: User,            href: '/profile' },
     { key: 'orders',    icon: ClipboardList,   href: '/orders' },
@@ -233,6 +279,31 @@ export default function Sidebar({
     { key: 'settings',  icon: Settings,        href: '/settings' },
     { key: 'returns',   icon: RotateCcw,       href: '/returns' },
     { key: 'trash',     icon: Trash2,          href: '/trash' },
+    // ─── Bada Udyog / Mills modules (see packageConfig.badaudyog.modules) ──
+    // Rendered as grouped sections when packageType==='badaudyog' via
+    // BADAUDYOG_SECTIONS below; other packages ignore these (their module
+    // list doesn't include the keys, so baseMenuItems filter drops them).
+    { key: 'gate-entry',      icon: Truck,           href: '/gate-entry' },
+    { key: 'weighbridge',     icon: Scale,           href: '/weighbridge' },
+    { key: 'transport',       icon: Truck,           href: '/transport' },
+    { key: 'dispatch',        icon: ArrowUpFromLine, href: '/dispatch' },
+    { key: 'production',      icon: Factory,         href: '/production' },
+    { key: 'raw-material',    icon: Wheat,           href: '/raw-material' },
+    { key: 'finished-goods',  icon: Boxes,           href: '/finished-goods' },
+    { key: 'by-products',     icon: Grid3x3,         href: '/by-products' },
+    { key: 'quality-lab',     icon: FlaskConical,    href: '/quality-lab' },
+    { key: 'batches',         icon: ClipboardCheck,  href: '/batches' },
+    { key: 'brokers',         icon: Handshake,       href: '/brokers' },
+    { key: 'hamali',          icon: HardHat,         href: '/hamali' },
+    { key: 'machines',        icon: Cog,             href: '/machines' },
+    { key: 'maintenance',     icon: Wrench,          href: '/maintenance' },
+    { key: 'spare-parts',     icon: Cpu,             href: '/spare-parts' },
+    { key: 'payments',        icon: ArrowUpFromLine, href: '/payments' },
+    { key: 'receipts',        icon: ArrowDownToLine, href: '/receipts' },
+    { key: 'outstanding',     icon: Hourglass,       href: '/outstanding' },
+    { key: 'ledger',          icon: NotebookText,    href: '/ledger' },
+    { key: 'settlement',      icon: Wallet,          href: '/settlement' },
+    { key: 'documents',       icon: FileText,        href: '/documents' },
     { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
   ];
   
@@ -422,60 +493,137 @@ export default function Sidebar({
           </div>
         )}
 
-        {(!isSwitchingShop && allShops.length > 0) && (
-          <nav className="space-y-0.5">
-            {visibleMenuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = !item.external && pathname === item.href;
-          const linkClass = cn(
-            'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group active:scale-95',
-            isActive
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200'
-          );
-          if (item.external) {
+        {(!isSwitchingShop && allShops.length > 0) && (() => {
+          // ─── Bada Udyog: grouped/collapsible sidebar ──────────────────
+          // Every other package keeps the existing flat nav (below) —
+          // grouping only makes sense once a package has enough modules
+          // for the flat list to strain the eye.
+          const isBadaUdyog = currentPackageConfig.id === 'badaudyog';
+
+          // Shared per-item renderer used by both flat + grouped paths.
+          // Kept inline so hooks (usePathname, activeShopId, translations)
+          // stay in the same closure and we don't have to pass 6 props.
+          const renderItem = (item: typeof visibleMenuItems[number]) => {
+            const Icon = item.icon;
+            const isActive = !item.external && pathname === item.href;
+            const linkClass = cn(
+              'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group active:scale-95',
+              isActive
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200'
+            );
+            // Bada Udyog rows are slightly denser so 30 items fit without
+            // an eye-watering scroll.
+            const itemClass = isBadaUdyog
+              ? cn(linkClass, 'py-2 rounded-lg')
+              : linkClass;
+            const label =
+              item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
+                ? t('parties')
+                : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
+                ? t('partyLedger')
+                : t(item.key as any);
+
+            if (item.external) {
+              return (
+                <a key={item.key} href={item.href} target="_blank" rel="noopener noreferrer" className={itemClass}>
+                  <Icon size={isBadaUdyog ? 18 : 20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors" />
+                  <span className="text-sm">{label}</span>
+                </a>
+              );
+            }
             return (
-              <a key={item.key} href={item.href} target="_blank" rel="noopener noreferrer" className={linkClass}>
-                <Icon size={20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors" />
-                <span className="text-sm">
-                  {item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
-                    ? t('parties')
-                    : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
-                    ? t('partyLedger')
-                    : t(item.key as any)}
-                </span>
-              </a>
+              <Link
+                key={item.key}
+                href={item.href}
+                className={itemClass}
+                onClick={() => setIsMobileOpen?.(false)}
+                onMouseEnter={() => prefetchForSection(item.key, activeShopId)}
+                onTouchStart={() => prefetchForSection(item.key, activeShopId)}
+              >
+                <div className="flex items-center gap-3 flex-1">
+                  <Icon size={isBadaUdyog ? 18 : 20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
+                  <span className="text-sm">{label}</span>
+                </div>
+                {!!item.badge && item.badge > 0 && (
+                  <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          };
+
+          if (isBadaUdyog) {
+            // Index visibleMenuItems by key so section rendering can pull
+            // them out in the exact order BADAUDYOG_SECTIONS declares
+            // (rather than the master-list order).
+            const byKey = new Map(visibleMenuItems.map(i => [i.key, i]));
+            // support gets its own slot below the sections
+            const externals = visibleMenuItems.filter(i => i.external);
+            return (
+              <nav className="space-y-1">
+                {BADAUDYOG_SECTIONS.map(section => {
+                  const items = section.keys.map(k => byKey.get(k)).filter(Boolean) as typeof visibleMenuItems;
+                  if (items.length === 0) return null;
+
+                  if (section.alwaysExpanded) {
+                    return (
+                      <div key={section.id} className="space-y-0.5">
+                        {items.map(renderItem)}
+                      </div>
+                    );
+                  }
+
+                  const explicit = collapsedSections[section.id];
+                  const isCollapsed = explicit === undefined ? !!section.defaultCollapsed : explicit;
+                  // Highlight the section header if the active route is
+                  // inside — helps orient the shopkeeper when a collapsed
+                  // section actually contains the current page.
+                  const containsActive = items.some(i => !i.external && pathname === i.href);
+
+                  return (
+                    <div key={section.id} className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(section.id)}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-colors',
+                          containsActive
+                            ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/5'
+                            : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                        )}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span aria-hidden>{section.emoji}</span>
+                          {section.label}
+                        </span>
+                        <ChevronRight size={12} className={cn('transition-transform', !isCollapsed && 'rotate-90')} />
+                      </button>
+                      {!isCollapsed && (
+                        <div className="mt-0.5 space-y-0.5">
+                          {items.map(renderItem)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {externals.length > 0 && (
+                  <div className="pt-3 mt-3 border-t border-slate-200 dark:border-slate-800 space-y-0.5">
+                    {externals.map(renderItem)}
+                  </div>
+                )}
+              </nav>
             );
           }
+
+          // Default flat nav for every other package
           return (
-            <Link
-              key={item.key}
-              href={item.href}
-              className={linkClass}
-              onClick={() => setIsMobileOpen?.(false)}
-              onMouseEnter={() => prefetchForSection(item.key, activeShopId)}
-              onTouchStart={() => prefetchForSection(item.key, activeShopId)}
-            >
-              <div className="flex items-center gap-3 flex-1">
-                <Icon size={20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
-                <span className="text-sm">
-                  {item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
-                    ? t('parties')
-                    : item.key === 'udhar' && currentPackageConfig.id === 'wholesale'
-                    ? t('partyLedger')
-                    : t(item.key as any)}
-                </span>
-              </div>
-              {!!item.badge && item.badge > 0 && (
-                <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
+            <nav className="space-y-0.5">
+              {visibleMenuItems.map(renderItem)}
+            </nav>
           );
-        })}
-          </nav>
-        )}
+        })()}
       </div>
 
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50 dark:bg-slate-900/50">

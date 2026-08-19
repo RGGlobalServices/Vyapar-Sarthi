@@ -20,6 +20,13 @@ export interface ShopSummary {
 interface BusinessProfile {
   id: string;
   businessType: BusinessType;
+  // Optional sub-type — populated for compound business types (today only the
+  // unified 'millprocessing' type uses it, holding the specific mill kind
+  // — 'ricemill' / 'dalmill' / 'bhagarmill' / …).
+  businessSubtype: string | null;
+  // Optional multi-select of processed products / raw materials. Same
+  // scope as businessSubtype — currently only populated by millprocessing.
+  businessProducts: string[];
   packageType: string;
   shopName: string;
   address: string;
@@ -91,6 +98,8 @@ interface BusinessStore {
 const DEFAULT_PROFILE: BusinessProfile = {
   id: '',
   businessType: 'kirana',
+  businessSubtype: null,
+  businessProducts: [],
   packageType: 'dukan',
   shopName: '',
   address: '',
@@ -158,6 +167,10 @@ function mapShopToProfile(data: any): BusinessProfile {
   return {
     id: data.id ?? '',
     businessType: (data.business_type ?? data.businessType ?? 'kirana') as BusinessType,
+    businessSubtype: data.business_subtype ?? data.businessSubtype ?? null,
+    businessProducts: Array.isArray(data.business_products ?? data.businessProducts)
+      ? (data.business_products ?? data.businessProducts)
+      : [],
     packageType: (data.package_type ?? data.packageType ?? 'dukan').toLowerCase(),
     shopName: data.name ?? '',
     address: data.address ?? '',
@@ -419,6 +432,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.mobile !== undefined) apiUpdates.mobile = updates.mobile;
       if (updates.logoUrl !== undefined) apiUpdates.logoUrl = updates.logoUrl;
       if (updates.businessType !== undefined) apiUpdates.businessType = updates.businessType;
+      if (updates.businessSubtype !== undefined) apiUpdates.businessSubtype = updates.businessSubtype;
+      if (updates.businessProducts !== undefined) apiUpdates.businessProducts = updates.businessProducts;
       if (updates.packageType !== undefined) apiUpdates.packageType = updates.packageType;
       if (updates.gst !== undefined) apiUpdates.gst = updates.gst;
       if (updates.pan !== undefined) apiUpdates.pan = updates.pan;

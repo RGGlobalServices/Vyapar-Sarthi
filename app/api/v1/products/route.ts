@@ -166,6 +166,11 @@ export const POST = handle(async (req) => {
         hsnCode: b.hsnCode ?? b.hsn_code,
         productType: b.productType ?? b.product_type,
         gstPercent: b.gstPercent ?? b.gst_percent,
+        // Bada Udyog / mill classification + bag-packaging spec — all
+        // nullable so non-mill shops POST products exactly as before.
+        millCategory: b.millCategory ?? b.mill_category ?? null,
+        packSize: b.packSize ?? b.pack_size ?? null,
+        packUnit: b.packUnit ?? b.pack_unit ?? null,
         categoryId: uuidOrNull(b.categoryId ?? b.category_id),
         brandId: uuidOrNull(b.brandId ?? b.brand_id),
         baseUnitId: uuidOrNull(b.baseUnitId ?? b.base_unit_id),

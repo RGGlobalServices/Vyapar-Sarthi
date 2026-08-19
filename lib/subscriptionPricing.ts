@@ -9,21 +9,32 @@ export const MONTHLY_BASE_PRICES: Record<string, number> = {
   shop: 299,
   vyapar: 499,
   wholesale: 999,
+  badaudyog: 4999,
 };
 
 export const YEARLY_DISCOUNT_PERCENT = 10;
 export const SUBSCRIPTION_GST_PERCENT = 18;
 
+// Per-plan 5-year discount — Bada Udyog gets a deeper 20% off to reward
+// the long-commitment ask on a higher-ticket plan; all other plans stay at
+// the standard YEARLY_DISCOUNT_PERCENT.
+const FIVE_YEAR_DISCOUNT_BY_PLAN: Record<string, number> = {
+  badaudyog: 20,
+};
+export function getFiveYearDiscount(plan: string): number {
+  return FIVE_YEAR_DISCOUNT_BY_PLAN[plan] ?? YEARLY_DISCOUNT_PERCENT;
+}
+
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Pre-tax price for a plan+cycle. Yearly = 12 months at a 10% discount. */
+/** Pre-tax price for a plan+cycle. Yearly = 11 months at 10% off; 5-year uses per-plan rate. */
 export function getBaseAmount(plan: string, cycle: BillingCycle): number {
   const monthly = MONTHLY_BASE_PRICES[plan] ?? 0;
   if (cycle === 'yearly') {
     return round2(monthly * 12 * (1 - YEARLY_DISCOUNT_PERCENT / 100));
   }
   if (cycle === '5_years') {
-    return round2(monthly * 60 * (1 - YEARLY_DISCOUNT_PERCENT / 100));
+    return round2(monthly * 60 * (1 - getFiveYearDiscount(plan) / 100));
   }
   return monthly;
 }
@@ -43,6 +54,7 @@ const PLAN_NAME: Record<string, string> = {
   shop: 'Dukaan',
   vyapar: 'Vyapar',
   wholesale: 'Udyog',
+  badaudyog: 'Bada Udyog',
 };
 
 /** PayU `productinfo` string for a plan+cycle, e.g. "Dukaan Plan — ₹352.82/mo (incl. GST)". */

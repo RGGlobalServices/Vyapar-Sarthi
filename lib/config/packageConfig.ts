@@ -90,16 +90,27 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
   badaudyog: {
     id: 'badaudyog',
     label: 'Bada Udyog Package',
+    // Full mill / grain-processing feature set. Existing modules (dashboard,
+    // billing, products, party, suppliers, purchases, stock, warehouses,
+    // transfers, expenses, staff, returns, reports, import, settings,
+    // profile, calendar, referral, dukandar) work as-is; the mill-specific
+    // keys (gate-entry, weighbridge, transport, dispatch, production,
+    // quality-lab, batches, brokers, hamali, machines, maintenance,
+    // spare-parts, settlement, documents, outstanding, payments, receipts,
+    // ledger, raw-material, finished-goods, by-products) are rendered as
+    // "Coming in v2" scaffolds today — the sidebar surfaces them so the
+    // shopkeeper sees the promised feature set, each module ships fully
+    // over follow-up sessions.
     modules: [
+      // Core (existing)
       'dashboard',
-      'orders',
       'billing',
       'products',
       'party',
       'suppliers',
-      'warehouses',
       'purchases',
       'stock',
+      'warehouses',
       'transfers',
       'expenses',
       'staff',
@@ -110,7 +121,34 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'calendar',
       'returns',
       'referral',
-      'dukandar'
+      'dukandar',
+      'orders',
+      // Mill Operations (v2 scaffolds)
+      'gate-entry',
+      'weighbridge',
+      'production',
+      'quality-lab',
+      'batches',
+      'raw-material',
+      'finished-goods',
+      'by-products',
+      // Logistics (v2 scaffolds)
+      'transport',
+      'dispatch',
+      'hamali',
+      // Finance (v2 scaffolds + existing)
+      'payments',
+      'receipts',
+      'outstanding',
+      'ledger',
+      'settlement',
+      // Management (v2 scaffolds)
+      'brokers',
+      'machines',
+      'maintenance',
+      'spare-parts',
+      // Documents (v2 scaffold)
+      'documents'
     ]
   }
 };

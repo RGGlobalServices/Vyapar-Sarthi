@@ -163,7 +163,7 @@ export default function LoginPage() {
   /* ── Done ── */
   if (view === 'done') {
     return (
-    <div className="min-h-screen flex">
+    <div suppressHydrationWarning className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
             <div className="w-full max-w-sm text-center space-y-6">
@@ -188,7 +188,7 @@ export default function LoginPage() {
   /* ── Reset password (step 3) ── */
   if (view === 'reset') {
     return (
-    <div className="min-h-screen flex">
+    <div suppressHydrationWarning className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -242,7 +242,7 @@ export default function LoginPage() {
   /* ── OTP entry (step 2) ── */
   if (view === 'otp') {
     return (
-    <div className="min-h-screen flex">
+    <div suppressHydrationWarning className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -300,7 +300,7 @@ export default function LoginPage() {
   /* ── Forgot (step 1: email) ── */
   if (view === 'forgot') {
     return (
-      <div className="min-h-screen flex">
+      <div suppressHydrationWarning className="min-h-screen flex">
         {leftPanel}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
           <div className="w-full max-w-sm space-y-8">
@@ -345,7 +345,7 @@ export default function LoginPage() {
 
   /* ── Login form ── */
   return (
-    <div className="min-h-screen flex">
+    <div suppressHydrationWarning className="min-h-screen flex">
       {leftPanel}
       <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
         <div className="w-full max-w-sm space-y-8">

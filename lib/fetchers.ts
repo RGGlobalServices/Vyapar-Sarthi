@@ -48,6 +48,12 @@ export const fetchProductsMapped = (url: string) =>
       hsnCode: p.hsnCode,
       brand: p.brand,
       conversionFactor: p.conversionFactor,
+      // Bada Udyog / mill classification + bag-packaging spec. Null on
+      // every non-mill product — the Products page shows the picker only
+      // when businessType === 'millprocessing'.
+      millCategory: p.millCategory,
+      packSize: p.packSize,
+      packUnit: p.packUnit,
       recentlyAdded: p.recentlyAdded,
       createdAt: p.createdAt,
       // Only present when the owner's All Shop Access preference is on —

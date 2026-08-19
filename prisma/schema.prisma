@@ -72,6 +72,16 @@ model Shop {
   address                 String?              @db.VarChar
   createdAt               DateTime?            @default(now()) @map("created_at") @db.Timestamptz(6)
   businessType            String?              @default("kirana") @map("business_type") @db.VarChar
+  // Sub-type for compound business types — used today by the unified
+  // "Mills & Grain Processing" (businessType='millprocessing') to record
+  // WHICH kind of mill this shop actually runs (ricemill / dalmill / bhagarmill
+  // / flourmill / oilmill / …). Kept generic so other future compound types
+  // can reuse the same column without a fresh migration.
+  businessSubtype         String?              @map("business_subtype") @db.VarChar
+  // Products / raw materials this shop processes — e.g. ["Rice","Wheat","Jowar"]
+  // for a mill that does multiple grains. Multi-select so a single shop that
+  // handles Rice + Dal + Flour doesn't need three business accounts.
+  businessProducts        String[]             @default([]) @map("business_products")
   setupComplete           Boolean?             @default(false) @map("setup_complete")
   mobile                  String?
   logoUrl                 String?              @map("logo_url")
@@ -336,6 +346,22 @@ model Product {
   brand            String?          @db.VarChar
   hsnCode          String?          @map("hsn_code") @db.VarChar
   productType      String?          @default("single") @map("product_type") @db.VarChar
+  // Bada Udyog / Mills only — classifies a product on the mill workflow:
+  // 'raw_material' (Paddy, Wheat, Bajra…) / 'finished_goods' (Rice, Flour,
+  // Oil…) / 'by_product' (Bran, Husk, Chuni…) / 'waste'. Null for every
+  // non-mill shop; existing millprocessing shops can classify their catalogue
+  // gradually — no default forces a category on unsorted items.
+  millCategory     String?          @map("mill_category") @db.VarChar
+  // Bag / pack size for weight-based selling (30 = 30 Kg per bag). Powers
+  // the Bag × BagSize = Total Weight auto-calc used by Sales & Purchase
+  // billing in the mill workflow. Independent of baseUnit above — the base
+  // unit stays Kg / Ltr / Piece; packSize is *how many baseUnits per bag*.
+  packSize         Float?           @map("pack_size")
+  // Unit of packSize itself — usually 'Kg' but a mill that packs oil sells
+  // 15 Litre tins ('15' + 'Ltr') or a papad unit sells 250-gram packets
+  // ('250' + 'GM'). Stored separately so the label reads "30 Kg Bag" not
+  // just "30" and the multiplier is unambiguous during billing.
+  packUnit         String?          @map("pack_unit") @db.VarChar
   gstPercent       Float?           @map("gst_percent")
   // When the product was first added. Backfilled for pre-existing rows from the
   // earliest stock activity, so it reflects real history, not the migration date.

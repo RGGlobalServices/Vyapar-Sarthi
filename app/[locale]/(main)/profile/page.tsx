@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
-import { getBusinessTypesForPackage, isBusinessTypeAllowedForPackage, getBusinessConfig } from '@/lib/businessConfig';
+import { getBusinessTypesForPackage, isBusinessTypeAllowedForPackage, getBusinessConfig, MILL_TYPES, MILL_PRODUCT_TYPES } from '@/lib/businessConfig';
 
 
 export default function ProfilePage() {
@@ -132,6 +132,13 @@ export default function ProfilePage() {
         logo_url: profile.logoUrl,
         business_type: bType,
         businessType: bType,
+        // Mill sub-type + processed products — only meaningful for the unified
+        // 'millprocessing' businessType, but hydrated always so switching TO
+        // millprocessing shows any previously-saved values instead of empty.
+        business_subtype: (profile as any).businessSubtype ?? (profile as any).business_subtype ?? '',
+        business_products: Array.isArray((profile as any).businessProducts ?? (profile as any).business_products)
+          ? ((profile as any).businessProducts ?? (profile as any).business_products)
+          : [],
         package_type: profile.packageType,
         gst: profile.gst || '',
         pan: profile.pan || '',
@@ -160,6 +167,12 @@ export default function ProfilePage() {
       await updateProfile({
         shopName: shop.name, address: shop.address,
         mobile: shop.mobile, logoUrl: shop.logo_url, businessType: shop.business_type,
+        // Only send mill sub-type / products when businessType is the
+        // unified 'millprocessing' — otherwise force-null them so switching
+        // AWAY from millprocessing wipes any stale mill data instead of
+        // silently keeping it hidden on the row.
+        businessSubtype: shop.business_type === 'millprocessing' ? (shop.business_subtype || null) : null,
+        businessProducts: shop.business_type === 'millprocessing' ? (shop.business_products || []) : [],
         packageType: shop.package_type,
         gst: shop.gst, pan: shop.pan,
         invoiceFormat: shop.invoice_format,
@@ -409,6 +422,92 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Mill Type + Products — only shown for the unified
+                  'millprocessing' business type (Bada Udyog signup flow).
+                  Lets the shopkeeper change the specific mill kind + tick
+                  which raw materials this shop processes without losing any
+                  other profile data. Saved via the same handleSave path. */}
+              {shop?.business_type === 'millprocessing' && (
+                <div className="rounded-2xl border-2 border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🌾</span>
+                    <div>
+                      <h3 className="text-sm font-black text-amber-900 dark:text-amber-300 uppercase tracking-wider">
+                        Mills & Grain Processing
+                      </h3>
+                      <p className="text-xs text-amber-800/70 dark:text-amber-400/70">
+                        Fine-tune what this mill actually processes.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase">
+                        Mill / Processing Type
+                      </label>
+                      <select
+                        value={shop?.business_subtype || ''}
+                        onChange={(e) => setShop({ ...shop, business_subtype: e.target.value })}
+                        className="w-full bg-white dark:bg-slate-950 border border-amber-300 dark:border-amber-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-amber-400 focus:border-amber-500 outline-none transition-colors text-sm"
+                      >
+                        <option value="">— Select Mill Type —</option>
+                        {MILL_TYPES.map((mt) => (
+                          <option key={mt.key} value={mt.key}>
+                            {mt.emoji} {mt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase">
+                      Products Processed
+                    </label>
+                    <p className="text-xs text-slate-500 dark:text-slate-500 -mt-1">
+                      Tick every raw material / product this mill handles.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {MILL_PRODUCT_TYPES.map((p) => {
+                        const current: string[] = Array.isArray(shop?.business_products) ? shop.business_products : [];
+                        const isChecked = current.includes(p.key);
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => {
+                              const next = isChecked
+                                ? current.filter((x: string) => x !== p.key)
+                                : [...current, p.key];
+                              setShop({ ...shop, business_products: next });
+                            }}
+                            className={cn(
+                              'flex items-center gap-2 px-3 py-2 rounded-lg border-2 text-left text-sm font-medium transition-all',
+                              isChecked
+                                ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-amber-300'
+                            )}
+                          >
+                            <span className={cn(
+                              'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0',
+                              isChecked ? 'border-amber-600 bg-amber-600' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
+                            )}>
+                              {isChecked && (
+                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </span>
+                            <span className="truncate">{p.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase">{t('gstin')}</label>

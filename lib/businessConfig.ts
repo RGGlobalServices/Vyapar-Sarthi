@@ -15,6 +15,7 @@ export type BusinessType =
   | 'electric'
   | 'electronics'
   | 'liquor'
+  | 'millprocessing'
   | 'ricemill'
   | 'flourmill'
   | 'oilmill'
@@ -851,6 +852,10 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     emoji: '🌾',
     color: 'amber',
     gradient: 'from-amber-600 to-yellow-600',
+    // Superseded by the unified 'millprocessing' type — kept valid via
+    // getBusinessConfig() for legacy shops but hidden from every new picker
+    // so signups always land on the compound type instead.
+    hidden: true,
     description: 'Rice mill, dal mill & grain processing — raw material lots, production batches, recovery %, by-products',
     features: [
       'Raw material lot tracking (moisture %, farmer, weight)',
@@ -1009,6 +1014,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     emoji: '🌾',
     color: 'stone',
     gradient: 'from-stone-600 to-amber-700',
+    hidden: true, // superseded by 'millprocessing' — legacy only
     description: 'Wheat, jowar & multi-grain flour milling — batch grinding, packing sizes',
     features: [
       'Raw material lot tracking',
@@ -1050,6 +1056,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     emoji: '🛢️',
     color: 'yellow',
     gradient: 'from-yellow-600 to-amber-600',
+    hidden: true, // superseded by 'millprocessing' — legacy only
     description: 'Groundnut, mustard & sesame oil pressing — batch extraction, by-products',
     features: [
       'Raw material lot tracking (seed weight, oil recovery %)',
@@ -1091,6 +1098,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     emoji: '🏭',
     color: 'lime',
     gradient: 'from-lime-600 to-green-600',
+    hidden: true, // superseded by 'millprocessing' — legacy only
     description: 'Papad, pickle, masala, snacks & packaged food manufacturing',
     features: [
       'Raw material + batch tracking',
@@ -1131,6 +1139,7 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     emoji: '⚙️',
     color: 'indigo',
     gradient: 'from-indigo-600 to-slate-600',
+    hidden: true, // superseded by 'millprocessing' — legacy only
     description: 'Small-scale production units — raw material to finished-goods stock',
     features: [
       'Raw material + finished goods tracking',
@@ -1156,6 +1165,74 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholder: 'e.g. Product Name / Batch No.',
     productPlaceholderHi: 'जैसे उत्पाद का नाम / बैच नंबर',
     productPlaceholderMr: 'उदा. उत्पादनाचे नाव / बॅच क्रमांक',
+    defaultPackage: 'badaudyog',
+  },
+  // ────────────────────────────────────────────────────────────────────────
+  // Unified compound type — covers every kind of mill / grain-processing
+  // shop in one entry. The specific mill (Rice / Dal / Bhagar / Flour / Oil
+  // / …) is recorded in Shop.businessSubtype (see MILL_TYPES below), and
+  // the raw materials / products this shop processes are recorded as a
+  // multi-select in Shop.businessProducts (see MILL_PRODUCT_TYPES below).
+  //
+  // Replaces the split ricemill / flourmill / oilmill / foodprocessing /
+  // smallmanufacturing entries (all now hidden:true above), since a real
+  // mill often does Rice + Dal + Flour together and shouldn't need three
+  // separate business accounts to bill from.
+  millprocessing: {
+    type: 'millprocessing',
+    category: 'manufacturing',
+    label: 'Mills & Grain Processing',
+    labelHi: 'मिल और अनाज प्रसंस्करण',
+    labelMr: 'मिल आणि धान्य प्रक्रिया',
+    emoji: '🌾',
+    color: 'amber',
+    gradient: 'from-amber-600 to-yellow-600',
+    description: 'Every kind of mill under one setup — rice / dal / bhagar / wheat / bajra / jowar / oil / spice. Pick the mill type + products you process; a single shop can handle multiple.',
+    features: [
+      'One profile handles Rice + Dal + Flour + Oil together',
+      'Raw material lot tracking (farmer, moisture %, weight)',
+      'Production batch workflow (cleaning → drying → milling → packing)',
+      'Yield / recovery % per batch',
+      'By-product accounting (bran, husk, chuni, polish, cake)',
+      'Multi-size packing (5 / 10 / 25 / 50 Kg)',
+      'Godown-wise stock + batch-wise valuation',
+    ],
+    hasExpiry: true,
+    hasExpiryRequired: false,
+    hasBatch: true,
+    hasDrugSchedule: false,
+    hasSizes: false,
+    hasShades: false,
+    hasWarranty: false,
+    hasModel: false,
+    hasGender: false,
+    hasFabric: false,
+    hasWireSpecs: false,
+    hasVoltWatt: false,
+    hasSoleMaterial: false,
+    // Union of every real mill's category list — Products/Categories can be
+    // refined per-shop through the normal Category mgmt UI after signup.
+    defaultCategories: [
+      // Raw materials
+      'Paddy', 'Wheat', 'Bajra', 'Jowar', 'Maize', 'Ragi',
+      'Turad', 'Chana', 'Moong', 'Udad', 'Masoor',
+      'Groundnut', 'Mustard Seed', 'Sesame', 'Sunflower Seed', 'Coconut',
+      // Finished — rice/dal
+      'Rice', 'Steam Rice', 'Premium Rice', 'Broken Rice',
+      'Tur Dal', 'Chana Dal', 'Moong Dal', 'Masoor Dal', 'Udad Dal',
+      // Finished — flour
+      'Wheat Flour', 'Multi-grain Flour', 'Jowar Flour', 'Bajra Flour', 'Besan',
+      // Finished — oil
+      'Groundnut Oil', 'Mustard Oil', 'Sesame Oil', 'Sunflower Oil', 'Coconut Oil',
+      // Finished — other
+      'Bhagar', 'Poha', 'Rava', 'Masala',
+      // By-products
+      'Bran', 'Husk', 'Chuni', 'Polish', 'Dust', 'Oil Cake', 'Chokar',
+    ],
+    defaultUnits: ['Kg', 'Quintal', 'Bag', 'Ton', '1 Kg', '5 Kg', '10 Kg', '25 Kg', '50 Kg', 'Litre', 'ML', 'Tin'],
+    productPlaceholder: 'e.g. Basmati Rice 25 Kg / Bhagar 10 Kg',
+    productPlaceholderHi: 'जैसे बासमती चावल 25 किलो / भगर 10 किलो',
+    productPlaceholderMr: 'उदा. बासमती तांदूळ 25 किलो / भगर 10 किलो',
     defaultPackage: 'badaudyog',
   },
   fmcgdistributor: {
@@ -1821,6 +1898,108 @@ export function getBusinessConfig(type: BusinessType | string): BusinessConfig {
 }
 
 export const ALL_BUSINESS_TYPES = Object.values(BUSINESS_CONFIGS).filter(c => !c.hidden);
+
+// ─── Mill sub-types ─────────────────────────────────────────────────────
+// The specific kind of mill / grain-processing operation a shop runs.
+// Persisted in Shop.businessSubtype whenever businessType='millprocessing'.
+// The dropdown label + emoji shows in both the landing signup and the
+// in-app Profile page — one source of truth for both.
+export interface MillTypeOption {
+  key: string;
+  label: string;
+  emoji: string;
+}
+
+export const MILL_TYPES: MillTypeOption[] = [
+  { key: 'ricemill',        label: 'Rice Mill',                          emoji: '🌾' },
+  { key: 'bhagarmill',      label: 'Bhagar / Barnyard Millet Mill',      emoji: '🌾' },
+  { key: 'wheatflourmill',  label: 'Wheat Flour Mill',                   emoji: '🌽' },
+  { key: 'jowarmill',       label: 'Jowar / Sorghum Mill',               emoji: '🌾' },
+  { key: 'bajramill',       label: 'Bajra / Pearl Millet Mill',          emoji: '🌾' },
+  { key: 'maizemill',       label: 'Maize / Corn Mill',                  emoji: '🌽' },
+  { key: 'dalmill',         label: 'Dal Mill / Pulse Mill',              emoji: '🫘' },
+  { key: 'grainprocessing', label: 'Grain Processing Mill',              emoji: '🌾' },
+  { key: 'oilmill',         label: 'Oil Mill',                           emoji: '🛢️' },
+  { key: 'spicemill',       label: 'Spice Grinding Mill',                emoji: '🌶️' },
+  { key: 'multigrainmill',  label: 'Multi-Grain Mill',                   emoji: '🌾' },
+  { key: 'flourgrain',      label: 'Flour & Grain Processing',           emoji: '🌾' },
+  { key: 'pohamill',        label: 'Poha / Flattened Rice Mill',         emoji: '🍚' },
+  { key: 'ravamill',        label: 'Rava / Semolina Mill',               emoji: '🌾' },
+  { key: 'othermill',       label: 'Other Mill / Processing',            emoji: '⚙️' },
+];
+
+// ─── Mill product types ─────────────────────────────────────────────────
+// The raw materials / finished products this shop actually handles. Stored
+// as a Postgres String[] in Shop.businessProducts; the shop can process
+// several at once (e.g. Rice + Dal + Flour) without needing multiple
+// business accounts.
+export interface MillProductOption {
+  key: string;
+  label: string;
+}
+
+// ─── Mill Product classification (Product.millCategory) ────────────────
+// Every product in a mill catalogue is one of four kinds. Powers the
+// Products form dropdown, Dashboard's Raw/Finished split, and the
+// Sidebar shortcuts to /raw-material / /finished-goods / /by-products.
+// The key here is EXACTLY the value stored in Product.millCategory (see
+// prisma/schema.prisma) — the API and DB agree on the same slug.
+export interface MillCategoryOption {
+  key: 'raw_material' | 'finished_goods' | 'by_product' | 'waste';
+  label: string;
+  labelHi: string;
+  labelMr: string;
+  emoji: string;
+  // Tailwind color used on chips/pills — same palette as the sidebar
+  // accents so the visual language stays consistent.
+  accent: 'amber' | 'emerald' | 'blue' | 'slate';
+  description: string;
+}
+
+export const MILL_CATEGORIES: MillCategoryOption[] = [
+  { key: 'raw_material',   label: 'Raw Material',   labelHi: 'कच्चा माल',    labelMr: 'कच्चा माल',   emoji: '🌾', accent: 'amber',   description: 'Paddy, Wheat, Bajra, Jowar, Oil-seeds — inputs that go into production.' },
+  { key: 'finished_goods', label: 'Finished Goods', labelHi: 'तैयार माल',     labelMr: 'तयार माल',   emoji: '📦', accent: 'emerald', description: 'Rice, Flour, Oil, Bhagar — sellable output from the mill.' },
+  { key: 'by_product',     label: 'By-Product',     labelHi: 'सह-उत्पाद',     labelMr: 'उप-उत्पादन', emoji: '🌾', accent: 'blue',    description: 'Bran, Husk, Chuni, Oil Cake — secondary output that is also sold.' },
+  { key: 'waste',          label: 'Waste / Reject', labelHi: 'अपशिष्ट',       labelMr: 'कचरा / नकार', emoji: '♻️', accent: 'slate',   description: 'Damaged stock, process waste, rejected material — tracked for loss %.' },
+];
+
+// ─── Party Types (Customer.customerType) ────────────────────────────────
+// A single Customer row can play any of four roles in a mill's ledger.
+// Extends the pre-existing 'customer' / 'party' distinction with the two
+// mill-specific relationships. Slugs stay short (broker/transporter) so
+// the customer_type column stays compact.
+export interface PartyTypeOption {
+  key: 'customer' | 'party' | 'broker' | 'transporter';
+  label: string;
+  emoji: string;
+  // Included in the Party page tab list only when true — every mill and
+  // wholesale-tier shop sees all four; retail-tier shops keep the
+  // existing Customer / Party split only.
+  mill: boolean;
+  description: string;
+}
+
+export const PARTY_TYPES: PartyTypeOption[] = [
+  { key: 'party',       label: 'Party',       emoji: '🧑‍💼', mill: true, description: 'Wholesale party you buy from or sell to (existing).' },
+  { key: 'customer',    label: 'Customer',    emoji: '🛒',    mill: true, description: 'Retail customer / dukandar (existing).' },
+  { key: 'broker',      label: 'Broker',      emoji: '🤝',    mill: true, description: 'Middleman who brings a deal — earns commission (dalali) per bill.' },
+  { key: 'transporter', label: 'Transporter', emoji: '🚚',    mill: true, description: 'Truck operator / freight vendor — carries goods, billed separately.' },
+];
+
+export const MILL_PRODUCT_TYPES: MillProductOption[] = [
+  { key: 'Rice',      label: 'Rice' },
+  { key: 'Wheat',     label: 'Wheat' },
+  { key: 'Jowar',     label: 'Jowar' },
+  { key: 'Bajra',     label: 'Bajra' },
+  { key: 'Maize',     label: 'Maize' },
+  { key: 'Pulses',    label: 'Pulses / Dal' },
+  { key: 'OilSeeds',  label: 'Oil Seeds' },
+  { key: 'Bhagar',    label: 'Bhagar / Millet' },
+  { key: 'Spices',    label: 'Spices' },
+  { key: 'Poha',      label: 'Poha' },
+  { key: 'Rava',      label: 'Rava / Semolina' },
+  { key: 'Other',     label: 'Other' },
+];
 
 /** ALL_BUSINESS_TYPES grouped and ordered by category, for pickers that show section headers. */
 export const BUSINESS_TYPES_BY_CATEGORY: { meta: BusinessCategoryMeta; types: BusinessConfig[] }[] =

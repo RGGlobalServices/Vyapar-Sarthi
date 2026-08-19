@@ -46,6 +46,12 @@ export const PATCH = handle(async (req) => {
   if (body.business_type && !body.businessType) {
     body.businessType = body.business_type;
   }
+  if (body.business_subtype && !body.businessSubtype) {
+    body.businessSubtype = body.business_subtype;
+  }
+  if (body.business_products && !body.businessProducts) {
+    body.businessProducts = body.business_products;
+  }
   if (body.shop_name && !body.name) {
     body.name = body.shop_name;
   }
@@ -54,7 +60,8 @@ export const PATCH = handle(async (req) => {
   }
 
   const allowedFields = [
-    'name', 'address', 'mobile', 'businessType', 'packageType', 'logoUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit',
+    'name', 'address', 'mobile', 'businessType', 'businessSubtype', 'businessProducts',
+    'packageType', 'logoUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit',
     'invoiceFormat', 'invoiceFooter', 'showQrCode',
     'upiId', 'bankName', 'bankAccountName', 'bankAccountNumber', 'bankIfsc',
   ];

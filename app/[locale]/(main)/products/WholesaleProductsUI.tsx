@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { getBusinessConfig } from '@/lib/businessConfig';
+import { getBusinessConfig, MILL_CATEGORIES } from '@/lib/businessConfig';
 import SmartTranslator from '@/components/SmartTranslator';
 import ProductDetailsSheet from './ProductDetailsSheet';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
@@ -73,6 +73,16 @@ type WholesaleProduct = {
   fabric?: string;
   sole_material?: string;
   metadata?: any;
+  // ─── Mills & Grain Processing (Bada Udyog) — mill-only fields ────────
+  // millCategory classifies the product on the mill workflow ('raw_material'
+  // / 'finished_goods' / 'by_product' / 'waste'). packSize + packUnit
+  // describe the standard bag/tin the product ships in (30 + 'Kg' = 30 Kg
+  // bag), and drive the Bag × Bag Size = Total Weight auto-calc in
+  // Sales & Purchase billing. All three are null on every non-mill shop
+  // and safely optional even inside a mill shop until classified.
+  millCategory?: string;
+  packSize?: number;
+  packUnit?: string;
   // Master data relations
   categoryId?: string;
   brandId?: string;
@@ -134,6 +144,11 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     fabric: '',
     sole_material: '',
     metadata: {},
+    // Mill fields left undefined for non-mill shops so serialization
+    // sends no key at all — the API's ?? null keeps the DB column null.
+    millCategory: undefined,
+    packSize: undefined,
+    packUnit: undefined,
   };
 }
 
@@ -389,6 +404,10 @@ export default function WholesaleProductsUI() {
       defaultPurchaseUnitId: p.defaultPurchaseUnitId || '',
       maxStock: p.maxStock || undefined,
       wholesaleMoq: p.wholesaleMoq || undefined,
+      // Mill fields — populated for Bada Udyog products, undefined otherwise.
+      millCategory: p.millCategory || undefined,
+      packSize: p.packSize || undefined,
+      packUnit: p.packUnit || undefined,
     });
     // Older variant rows stored the bulk/wholesale price under the key
     // `costPrice` (the field was mislabeled "Wholesale" in the UI but never
@@ -610,6 +629,14 @@ export default function WholesaleProductsUI() {
         gender: bizConfig.hasGender ? (form.gender || null) : null,
         shade: bizConfig.hasShades ? (form.shade || null) : null,
         metadata: mergedMeta,
+        // Mill classification + bag-packaging spec (Bada Udyog). Sent only
+        // when they carry a real value — never empty-string, which would be
+        // stored literally in a nullable column. Null is fine — the API
+        // treats `null` and `undefined` identically via ?? — so a shop that
+        // clears the picker properly wipes the DB column too.
+        millCategory: form.millCategory || null,
+        packSize: form.packSize && Number(form.packSize) > 0 ? Number(form.packSize) : null,
+        packUnit: form.packUnit || null,
         // remove virtual fields from payload
         color: undefined,
         colors: undefined,
@@ -1347,6 +1374,78 @@ export default function WholesaleProductsUI() {
                         value={form.location || ''} onChange={e => setForm({...form, location: e.target.value})} />
                     </div>
                   </div>
+
+                  {/* Mills & Grain Processing — only shows when businessType is
+                      the unified 'millprocessing' type. Two mill-only fields
+                      (Product Type classification + Bag/Pack Size) tucked into
+                      the same section so they read as first-class catalogue
+                      fields rather than a separate ad-hoc block. */}
+                  {profile.businessType === 'millprocessing' && (
+                    <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-900/40">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-lg">🌾</span>
+                        <h4 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest">Mill Classification</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Product Type
+                          </label>
+                          <select
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            value={form.millCategory || ''}
+                            onChange={e => setForm({ ...form, millCategory: e.target.value || undefined })}
+                          >
+                            <option value="">— Uncategorised —</option>
+                            {MILL_CATEGORIES.map(mc => (
+                              <option key={mc.key} value={mc.key}>
+                                {mc.emoji} {mc.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {form.millCategory
+                              ? (MILL_CATEGORIES.find(mc => mc.key === form.millCategory)?.description || '')
+                              : 'Raw / Finished / By-Product / Waste — powers Dashboard splits.'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Pack Size <span className="font-normal normal-case text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            type="number" min="0" step="0.01"
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            placeholder="e.g. 30"
+                            value={form.packSize ?? ''}
+                            onChange={e => setForm({ ...form, packSize: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">One bag = this many pack-units.</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Pack Unit
+                          </label>
+                          <select
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            value={form.packUnit || ''}
+                            onChange={e => setForm({ ...form, packUnit: e.target.value || undefined })}
+                          >
+                            <option value="">— None —</option>
+                            <option value="Kg">Kg</option>
+                            <option value="GM">Gram</option>
+                            <option value="Ltr">Litre</option>
+                            <option value="ML">ML</option>
+                            <option value="Ton">Ton</option>
+                            <option value="Quintal">Quintal</option>
+                          </select>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {form.packSize && form.packUnit ? `1 Bag = ${form.packSize} ${form.packUnit}` : 'Powers Bag × Weight in billing.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 {/* Business-Type Specific Fields */}

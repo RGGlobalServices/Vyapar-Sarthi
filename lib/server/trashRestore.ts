@@ -159,12 +159,16 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
           let variantsChanged = false;
 
           for (const item of productItems) {
-            totalQty += item.quantity;
+            // Sale item quantity is nullable in Prisma (`Float?`). Coerce
+            // once here so `next build`'s strict null check is satisfied
+            // and downstream Math never sees `null - number = NaN`.
+            const qty = Number(item.quantity) || 0;
+            totalQty += qty;
             if (item.variant && newSizeVariants) {
               try {
                 const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
                 if (parsed[item.variant] !== undefined) {
-                  parsed[item.variant] = Math.max(0, (Number(parsed[item.variant]) || 0) - item.quantity);
+                  parsed[item.variant] = Math.max(0, (Number(parsed[item.variant]) || 0) - qty);
                   newSizeVariants = JSON.stringify(parsed);
                 }
               } catch {}
@@ -172,7 +176,7 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
             if (item.variant && newVariants) {
               const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
               if (row) {
-                row.stock = Math.max(0, (Number(row.stock) || 0) - item.quantity);
+                row.stock = Math.max(0, (Number(row.stock) || 0) - qty);
                 variantsChanged = true;
               }
             }

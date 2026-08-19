@@ -92,6 +92,13 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       hsnCode: b.hsnCode ?? b.hsn_code,
       productType: b.productType ?? b.product_type,
       gstPercent: b.gstPercent ?? b.gst_percent,
+      // Mill classification + pack spec (Bada Udyog). All three nullable
+      // so a shopkeeper can also *clear* a wrong pick by sending null.
+      // Skipped entirely when the client doesn't send the key at all —
+      // spread-guarded via ?? undefined below via defaults on the object.
+      millCategory: b.millCategory ?? b.mill_category ?? undefined,
+      packSize: b.packSize ?? b.pack_size ?? undefined,
+      packUnit: b.packUnit ?? b.pack_unit ?? undefined,
       categoryId: uuidOrNull(b.categoryId ?? b.category_id),
       brandId: uuidOrNull(b.brandId ?? b.brand_id),
       baseUnitId: uuidOrNull(b.baseUnitId ?? b.base_unit_id),

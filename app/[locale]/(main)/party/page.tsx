@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2, NotebookText, ScanLine } from 'lucide-react';
+import { Search, Loader2, Phone, X, Plus, Wallet, MapPin, ReceiptText, Building2, Pencil, Trash2, Users, Truck, ArrowRight, AlertCircle, CheckCircle2, NotebookText, ScanLine, Handshake } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
@@ -69,7 +69,26 @@ function SupplierCreditCard() {
 
 export default function PartyPage() {
   const t = useTranslations('Party');
-  const [activeTab, setActiveTab] = useState<'parties' | 'customers'>('parties');
+  // Bada Udyog / Mills adds two new party roles — brokers (earn commission)
+  // and transporters (carry goods). Tabs render only when the shop is on
+  // millprocessing so the retail/general Udyog UX stays unchanged.
+  const [activeTab, setActiveTab] = useState<'parties' | 'customers' | 'brokers' | 'transporters'>('parties');
+  const businessType = useBusinessStore(s => s.profile.businessType);
+  const isMill = businessType === 'millprocessing';
+
+  const tabBtn = (id: typeof activeTab, icon: React.ReactNode, label: string) => (
+    <button
+      key={id}
+      onClick={() => setActiveTab(id)}
+      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${
+        activeTab === id
+          ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+      }`}
+    >
+      {icon} {label}
+    </button>
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto">
@@ -80,26 +99,216 @@ export default function PartyPage() {
 
       <SupplierCreditCard />
 
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit overflow-x-auto max-w-full">
+        {tabBtn('parties',   <Building2 size={15} />, t('title'))}
+        {tabBtn('customers', <Users size={15} />,     t('customersUdharTab'))}
+        {isMill && tabBtn('brokers',      <Handshake size={15} />, 'Brokers')}
+        {isMill && tabBtn('transporters', <Truck size={15} />,     'Transporters')}
+      </div>
+
+      {activeTab === 'parties'      && <PartiesPanel />}
+      {activeTab === 'customers'    && <CustomersPanel />}
+      {activeTab === 'brokers'      && <MillPartyPanel customerType="broker"      label="Broker"      icon={<Handshake size={15} />} accent="rose" />}
+      {activeTab === 'transporters' && <MillPartyPanel customerType="transporter" label="Transporter" icon={<Truck size={15} />}      accent="orange" />}
+    </div>
+  );
+}
+
+/* ─── Mill-only lightweight party panel ─────────────────────────────────
+ * Bada Udyog Brokers + Transporters share the same Customer table (with
+ * customerType='broker' / 'transporter') but the ledger workflow they need
+ * (commission tracking, freight ledger) lives in Sprint 2/3. This panel
+ * covers CRUD + contact info + notes so the shopkeeper can start capturing
+ * their broker/transporter roster today; billing-side integration lands
+ * with the Sales & Purchase mill enhancements. */
+function MillPartyPanel({ customerType, label, icon, accent }: {
+  customerType: 'broker' | 'transporter';
+  label: string;
+  icon: React.ReactNode;
+  accent: 'rose' | 'orange';
+}) {
+  const activeShopId = useBusinessStore(s => s.activeShopId);
+  const { data: rows = [], isLoading, mutate } = useSWR<any[]>(
+    activeShopId ? `/crm/customers?type=${customerType}&_shop=${activeShopId}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [form, setForm] = useState({ name: '', mobile: '', address: '', notes: '' });
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const openNew = () => { setEditing(null); setForm({ name: '', mobile: '', address: '', notes: '' }); setShowAdd(true); };
+  const openEdit = (row: any) => { setEditing(row); setForm({ name: row.name || '', mobile: row.mobile || '', address: row.address || '', notes: row.notes || '' }); setShowAdd(true); };
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { toast.error('Name is required'); return; }
+    setSaving(true);
+    try {
+      if (editing) {
+        await api.put(`/crm/customers/${editing.id}`, { ...form, customerType });
+        toast.success(`${label} updated`);
+      } else {
+        await api.post('/crm/customers', { ...form, customerType });
+        toast.success(`${label} added`);
+      }
+      setShowAdd(false);
+      mutate();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || `Failed to save ${label.toLowerCase()}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(row: any) {
+    if (!confirm(`Delete ${label.toLowerCase()} "${row.name}"?`)) return;
+    try {
+      await api.delete(`/crm/customers/${row.id}`);
+      toast.success(`${label} deleted`);
+      mutate();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || `Failed to delete ${label.toLowerCase()}`);
+    }
+  }
+
+  const filtered = rows.filter((r: any) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (r.name || '').toLowerCase().includes(q) || (r.mobile || '').includes(q);
+  });
+
+  const accentClasses = accent === 'rose'
+    ? { chip: 'bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-300', btn: 'bg-rose-500 hover:bg-rose-600', ring: 'focus:ring-rose-500' }
+    : { chip: 'bg-orange-100 text-orange-800 dark:bg-orange-500/10 dark:text-orange-300', btn: 'bg-orange-500 hover:bg-orange-600', ring: 'focus:ring-orange-500' };
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${label.toLowerCase()}s by name or mobile`}
+            className={`w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 ${accentClasses.ring}`}
+          />
+        </div>
         <button
-          onClick={() => setActiveTab('parties')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-            activeTab === 'parties' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
+          onClick={openNew}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm transition-colors ${accentClasses.btn}`}
         >
-          <Building2 size={15} /> {t('title')}
-        </button>
-        <button
-          onClick={() => setActiveTab('customers')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-            activeTab === 'customers' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          <Users size={15} /> {t('customersUdharTab')}
+          <Plus size={15} /> Add {label}
         </button>
       </div>
 
-      {activeTab === 'parties' ? <PartiesPanel /> : <CustomersPanel />}
+      {/* Empty / loading / list */}
+      {isLoading ? (
+        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+          <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+            {icon}
+          </div>
+          <p className="font-bold text-slate-700 dark:text-slate-300">
+            {rows.length === 0 ? `No ${label.toLowerCase()}s yet` : 'No matches'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {rows.length === 0
+              ? `Add your first ${label.toLowerCase()} — ${customerType === 'broker' ? 'they earn commission per deal you close through them.' : 'they carry the goods; freight is billed separately.'}`
+              : 'Try a different search.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {filtered.map((row: any) => (
+            <div key={row.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-900 dark:text-white truncate">{row.name}</h3>
+                    <span className={`text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${accentClasses.chip}`}>{label}</span>
+                  </div>
+                  {row.mobile && (
+                    <a href={`tel:${row.mobile}`} className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-600">
+                      <Phone size={11} /> {row.mobile}
+                    </a>
+                  )}
+                  {row.address && (
+                    <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-400 line-clamp-2">
+                      <MapPin size={11} className="mt-0.5 shrink-0" /> {row.address}
+                    </p>
+                  )}
+                  {row.notes && <p className="mt-2 text-xs text-slate-500 italic line-clamp-2">{row.notes}</p>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10" title="Edit">
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => handleDelete(row)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10" title="Delete">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit modal */}
+      {showAdd && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">{icon} {editing ? `Edit ${label}` : `Add ${label}`}</h2>
+              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleSave} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Name <span className="text-red-500">*</span></label>
+                <input
+                  value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 ${accentClasses.ring}`}
+                  placeholder={customerType === 'broker' ? 'e.g. Ramesh Dalal' : 'e.g. Prakash Transport'}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Mobile</label>
+                <input
+                  value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 ${accentClasses.ring}`}
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Address</label>
+                <input
+                  value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 ${accentClasses.ring}`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Notes</label>
+                <textarea
+                  rows={2}
+                  value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm resize-none focus:outline-none focus:ring-2 ${accentClasses.ring}`}
+                  placeholder={customerType === 'broker' ? 'e.g. default commission 2%, area Solapur' : 'e.g. per-Km ₹28, 10-ton capacity'}
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-700 dark:text-slate-300">Cancel</button>
+                <button type="submit" disabled={saving} className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm transition-colors disabled:opacity-60 ${accentClasses.btn}`}>
+                  {saving ? <Loader2 size={15} className="animate-spin inline" /> : (editing ? 'Save Changes' : `Add ${label}`)}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
