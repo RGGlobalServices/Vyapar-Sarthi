@@ -158,21 +158,25 @@ export async function POST(req: NextRequest) {
     if (files.length === 0) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
+    // Multi-key Gemini support: rotate through GEMINI_API_KEY, GEMINI_API_KEY_2,
+    // GEMINI_API_KEY_3 … when one key's daily free quota is exhausted.
+    // All keys are optional — the chain skips missing ones automatically.
+    const geminiKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GEMINI_API_KEY_2,
+      process.env.GEMINI_API_KEY_3,
+      process.env.GEMINI_API_KEY_4,
+    ].filter(Boolean) as string[];
+    const geminiKey = geminiKeys[0] || '';
 
-    const nvidiaKey = process.env.NVIDIA_API_KEY || '';
-    const geminiKey = process.env.GEMINI_API_KEY || '';
-    const openRouterKey = process.env.OPENROUTER_API_KEY || '';
-    if (!nvidiaKey && !geminiKey && !openRouterKey) {
-      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY (recommended), NVIDIA_API_KEY, or OPENROUTER_API_KEY.' }, { status: 500 });
+    if (!geminiKey) {
+      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY in .env.local.' }, { status: 500 });
     }
-    // Three-tier provider fallback for the import pipeline. Gemini is preferred
-    // (accurate on messy Indian invoices/handwriting, huge context window);
-    // Nvidia is the first fallback (fast, free-tier Llama 3.2 Vision); and
-    // OpenRouter is the third (unified gateway to Llama, Qwen, Mistral etc.,
-    // with its own free-tier vision models that survive Gemini/Nvidia quota
-    // days). Each is optional — configure whichever combination you have keys
-    // for and the chain skips the missing ones automatically.
-    const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
+    // Gemini provider for the import pipeline
+    // (accurate on messy Indian invoices/handwriting, huge context window).
+    // geminiClients[0] is the primary; rest are rotated on quota exhaustion.
+    const geminiClients = geminiKeys.map(k => new GoogleGenAI({ apiKey: k }));
+    const gemini = geminiClients[0] ?? null;
     
     let businessSpecificFields = '';
     let businessSpecificSchema = '';
@@ -475,111 +479,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       }
     };
 
-    // One Nvidia chat-completion call → returns the raw message content string.
-    // max_tokens is high so a chunk's worth of rows never gets cut off mid-JSON.
-    // An AbortController enforces importConfig.timeoutMs so a hung upstream
-    // request can never block a whole batch forever.
-    const callNvidia = async (messages: any[], model: string): Promise<string> => {
-      if (!nvidiaKey) throw new Error('Nvidia API key not configured');
-      const requestBody: any = { model, messages, temperature: 0, max_tokens: importConfig.aiMaxTokens };
-      requestBody.response_format = targetType === 'purchase' ? purchaseSchema : { type: 'json_object' };
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), importConfig.timeoutMs);
-      let response: Response;
-      try {
-        response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${nvidiaKey}` },
-          body: JSON.stringify(requestBody),
-          signal: ac.signal,
-        });
-      } catch (e: any) {
-        if (e?.name === 'AbortError') {
-          throw new Error(`Nvidia API call timed out after ${importConfig.timeoutMs}ms`);
-        }
-        throw e;
-      } finally {
-        clearTimeout(timer);
-      }
-      const responseText = await response.text();
-      let data;
-      try { data = JSON.parse(responseText); }
-      catch { throw new Error(`Nvidia API returned an invalid response (${response.status}): ${responseText.substring(0, 300)}`); }
-      if (!response.ok) throw new Error(data.error?.message || data.detail || `Nvidia API Error ${response.status}`);
-      return data.choices?.[0]?.message?.content || '';
-    };
 
-    // OpenRouter — third-tier fallback. OpenAI-compatible API that fronts
-    // many providers (Meta Llama, Qwen, Mistral, etc.) through one key;
-    // several vision / text models have a permanent free tier that survives
-    // Gemini + Nvidia quota days.
-    //
-    // Takes a comma-separated MODEL CHAIN — a single "no endpoints found"
-    // error (free model retired or your account isn't yet whitelisted for
-    // it) is the norm on OpenRouter's free tier, so callOpenRouter walks
-    // the chain internally and only throws when EVERY model in the list
-    // has failed. Callers pass the chain string directly (same shape used
-    // by the Gemini chain above).
-    //
-    // OpenRouter recommends the HTTP-Referer + X-Title headers so the app
-    // is visible in their analytics — set from env, with safe defaults.
-    const callOpenRouterOnce = async (messages: any[], model: string): Promise<string> => {
-      const requestBody: any = { model, messages, temperature: 0, max_tokens: importConfig.aiMaxTokens };
-      // OpenRouter honours the OpenAI response_format contract on most models
-      // but not all — a plain json_object hint works everywhere and avoids a
-      // "schema not supported by this model" hard-fail on the free tier.
-      requestBody.response_format = { type: 'json_object' };
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), importConfig.timeoutMs);
-      let response: Response;
-      try {
-        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openRouterKey}`,
-            'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://app.vyaparsarthii.com',
-            'X-Title': process.env.OPENROUTER_APP_NAME || 'Vyapar Sarthi Import',
-          },
-          body: JSON.stringify(requestBody),
-          signal: ac.signal,
-        });
-      } catch (e: any) {
-        if (e?.name === 'AbortError') {
-          throw new Error(`OpenRouter API call to ${model} timed out after ${importConfig.timeoutMs}ms`);
-        }
-        throw e;
-      } finally {
-        clearTimeout(timer);
-      }
-      const responseText = await response.text();
-      let data;
-      try { data = JSON.parse(responseText); }
-      catch { throw new Error(`OpenRouter API returned an invalid response (${response.status}): ${responseText.substring(0, 300)}`); }
-      if (!response.ok) throw new Error(data.error?.message || data.detail || `OpenRouter API Error ${response.status}`);
-      return data.choices?.[0]?.message?.content || '';
-    };
-
-    const callOpenRouter = async (messages: any[], modelChain: string): Promise<string> => {
-      if (!openRouterKey) throw new Error('OpenRouter API key not configured');
-      const models = modelChain.split(',').map(s => s.trim()).filter(Boolean);
-      const errors: string[] = [];
-      for (const model of models) {
-        try { return await callOpenRouterOnce(messages, model); }
-        catch (e: any) {
-          const msg = e?.message || String(e);
-          errors.push(`${model}: ${msg.slice(0, 160)}`);
-          // "No endpoints found" / 404 model-not-available means this model
-          // is gone from your account — try the next one in the chain. Same
-          // pattern the Gemini chain uses. On any other error (500 / auth /
-          // parse), short-circuit: retrying the same content on a different
-          // model won't help and just wastes credit.
-          const isModelMissing = /no endpoints|not.*found|invalid.*model|model.*not.*available|\b404\b/i.test(msg);
-          if (!isModelMissing) throw e;
-        }
-      }
-      throw new Error(`OpenRouter: all models in chain unavailable. ${errors.join(' | ')}`);
-    };
 
     // Parse Gemini's retryDelay hint (e.g. "4.242585419s") from a 429 error.
     // Returns ms to wait, capped so we don't stall the whole request forever.
@@ -611,28 +511,37 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // hard-code deprecated 1.5/2.0 IDs. Add newer 3.x models to the front
     // of the env chain to opt in.
     const geminiChain = (process.env.IMPORT_GEMINI_MODELS || process.env.IMPORT_GEMINI_MODEL
-      || 'gemini-2.5-flash,gemini-2.5-flash-lite')
+      || 'gemini-3.5-flash,gemini-3.5-flash-lite')
       .split(',').map(s => s.trim()).filter(Boolean);
 
     // One Gemini generateContent invocation with per-attempt timeout, retry
     // on transient 429s (respecting the retryDelay hint), and automatic
-    // fall-through to the next model in the chain on hard quota failure.
+    // fall-through across BOTH models AND keys on hard quota failure.
+    // Matrix: key1×model1 → key1×model2 → key2×model1 → key2×model2 → …
     const callGeminiOnce = async (contents: any, kind: string): Promise<string> => {
-      if (!gemini) throw new Error('Gemini API key not configured');
-      const attempt = async (model: string): Promise<string> => {
-        const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), importConfig.timeoutMs);
+      if (geminiClients.length === 0) throw new Error('Gemini API key not configured');
+
+      const attempt = async (client: GoogleGenAI, model: string): Promise<string> => {
+        let timer: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            const err = new Error(`Gemini ${kind} call to ${model} timed out after ${importConfig.timeoutMs}ms`);
+            err.name = 'TimeoutError';
+            reject(err);
+          }, importConfig.timeoutMs);
+        });
+
         try {
-          const resp = await gemini.models.generateContent({
+          const callPromise = client.models.generateContent({
             model,
             contents,
+            // Native SDK config doesn't accept signals, so we race it.
+            // Also enable the native API-side timeout if supported by the library.
             config: { responseMimeType: 'application/json', temperature: 0 },
-          });
-          return resp.text || '';
+          }).then(resp => resp.text || '');
+          
+          return await Promise.race([callPromise, timeoutPromise]);
         } catch (e: any) {
-          if (e?.name === 'AbortError') {
-            throw new Error(`Gemini ${kind} call to ${model} timed out after ${importConfig.timeoutMs}ms`);
-          }
           throw e;
         } finally {
           clearTimeout(timer);
@@ -640,34 +549,42 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       };
 
       const lastErrors: string[] = [];
-      for (const model of geminiChain) {
-        // Up to 3 attempts per model, honoring server-provided retryDelay on
-        // 429 and using exponential backoff on transient 503 UNAVAILABLE.
-        let escalate = false;
-        for (let i = 0; i < 3; i++) {
-          try { return await attempt(model); }
-          catch (e: any) {
-            const msg = e?.message || String(e);
-            const wait = parseRetryDelayMs(e);
-            if (wait !== null && i < 2 && !/limit:\s*0|PerDay/i.test(msg)) {
-              await sleep(wait);
-              continue;
+      // Walk every key × every model. On quota (429 / PerDay), try next model
+      // on the same key first; if ALL models on a key are quota-exhausted, move
+      // to the next key. Non-quota errors short-circuit immediately.
+      for (const client of geminiClients) {
+        let anyModelQuotaExhausted = false;
+        for (const model of geminiChain) {
+          let escalate = false;
+          for (let i = 0; i < 3; i++) {
+            try { return await attempt(client, model); }
+            catch (e: any) {
+              const msg = e?.message || String(e);
+              const wait = parseRetryDelayMs(e);
+              // Transient 429 with retryDelay hint: honour it and retry same model.
+              if (wait !== null && i < 2 && !/limit:\s*0|PerDay/i.test(msg)) {
+                await sleep(wait);
+                continue;
+              }
+              // Transient overload: 2s → 4s → 8s, then escalate to next model.
+              if (isTransientUnavailable(e) && i < 2) {
+                await sleep(2000 * Math.pow(2, i));
+                continue;
+              }
+              lastErrors.push(`key${geminiClients.indexOf(client) + 1}/${model}: ${msg.slice(0, 180)}`);
+              
+              // Always escalate to the next model/key on ANY failure
+              // (quota, invalid key, timeout, bad request) to ensure maximum robustness.
+              escalate = true;
+              anyModelQuotaExhausted = true;
+              break;
             }
-            // Transient overload: 2s → 4s → 8s, then escalate to next model.
-            if (isTransientUnavailable(e) && i < 2) {
-              await sleep(2000 * Math.pow(2, i));
-              continue;
-            }
-            lastErrors.push(`${model}: ${msg.slice(0, 240)}`);
-            // Hard quota OR overload survives 3 attempts → escalate: another
-            // model in the chain is often on a different shard and answers.
-            if (wait !== null || isTransientUnavailable(e)) escalate = true;
-            break;
           }
         }
-        if (!escalate) break; // non-recoverable error: don't burn every model
+        // Move to the next key if this key had ANY failure on its models
+        if (!anyModelQuotaExhausted) break;
       }
-      throw new Error(`Gemini ${kind} call failed: ${lastErrors.join(' | ')}`);
+      throw new Error(`Gemini ${kind} call failed (all keys × models exhausted): ${lastErrors.join(' | ')}`);
     };
 
     const callGeminiText = (promptText: string) => callGeminiOnce(promptText, 'text');
@@ -754,37 +671,8 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     type Task = { label: string; run: () => Promise<string> };
     const tasks: Task[] = [];
 
-    // Provider selection — Gemini is preferred when configured (accurate on
-    // messy Indian invoices, fast, generous context). Falls back to Nvidia
-    // llama with an 8B default that is proven working on Nvidia's free tier.
-    // Override either model via env: IMPORT_GEMINI_MODEL / IMPORT_TEXT_MODEL.
-    const useGemini = !!gemini;
-    const hasNvidiaFallback = !!nvidiaKey;
-    const hasOpenRouterFallback = !!openRouterKey;
-    const textModel = process.env.IMPORT_TEXT_MODEL || 'meta/llama-3.1-8b-instruct';
-    const visionModel = process.env.IMPORT_VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
-    // OpenRouter model chains — comma-separated fallback lists. Free-tier
-    // model availability on OpenRouter changes constantly (models get
-    // retired, added, or your account isn't whitelisted for a specific
-    // one), so we ship each entry as a CHAIN of known-good candidates and
-    // callOpenRouter walks it until one works. Override either via env
-    // (IMPORT_OPENROUTER_TEXT_MODELS / _VISION_MODELS, plural) or via the
-    // singular legacy vars for a single fixed pick.
-    // Order matters — most JSON-compliant models FIRST so the salvage
-    // machinery downstream is exercised as little as possible.
-    //   text  → Gemini 2.0 Flash (via OpenRouter) is the gold standard for
-    //           structured JSON output; Mistral small ranks second on
-    //           OpenRouter's own function-calling leaderboard; Llama comes
-    //           last because it needs the salvager.
-    //   vision → Qwen 2.5 VL 72B is state-of-the-art free vision + follows
-    //           JSON instructions well; Gemini 2.0 Flash next; Llama Vision
-    //           (both sizes) last as a hail-mary.
-    const openRouterTextChain = process.env.IMPORT_OPENROUTER_TEXT_MODELS
-      || process.env.IMPORT_OPENROUTER_TEXT_MODEL
-      || 'google/gemini-2.0-flash-exp:free,mistralai/mistral-small-3.1-24b-instruct:free,meta-llama/llama-3.3-70b-instruct:free,meta-llama/llama-3.1-405b-instruct:free';
-    const openRouterVisionChain = process.env.IMPORT_OPENROUTER_VISION_MODELS
-      || process.env.IMPORT_OPENROUTER_VISION_MODEL
-      || 'qwen/qwen-2.5-vl-72b-instruct:free,google/gemini-2.0-flash-exp:free,meta-llama/llama-3.2-90b-vision-instruct:free,meta-llama/llama-3.2-11b-vision-instruct:free';
+    // Provider selection — Only Gemini is configured for AI tasks.
+    const retryCount = Number(process.env.IMPORT_RETRY_COUNT ?? 0);
 
     // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Falls
     // through on TWO kinds of failure — quota errors (429/RESOURCE_EXHAUSTED)
@@ -1001,19 +889,10 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // to the next provider instead of letting the bad response poison
     // downstream `collect()` parsing.
     textChunks.forEach((chunk, idx) => {
-      const geminiText     = async () => assertJsonParseable(await callGeminiText(buildPrompt(chunk)));
-      const nvidiaText     = async () => assertJsonParseable(await callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel));
-      const openRouterText = async () => assertJsonParseable(await callOpenRouter([{ role: 'user', content: buildPrompt(chunk) }], openRouterTextChain));
-      const primary        = useGemini ? geminiText : hasNvidiaFallback ? nvidiaText : openRouterText;
-      // Fallback list assembled dynamically so the primary provider isn't
-      // also listed as its own fallback (that'd 429 immediately again).
-      const fallbacks = [
-        { name: 'nvidia',     enabled: hasNvidiaFallback     && primary !== nvidiaText,     run: nvidiaText },
-        { name: 'openrouter', enabled: hasOpenRouterFallback && primary !== openRouterText, run: openRouterText },
-      ];
+      const geminiText = async () => assertJsonParseable(await callGeminiText(buildPrompt(chunk)));
       tasks.push({
         label: `Text chunk ${idx + 1}/${textChunks.length}`,
-        run: () => withFallback(primary, fallbacks),
+        run: () => withFallback(geminiText, []),
       });
     });
 
@@ -1021,36 +900,18 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
     imagesToProcess.forEach((img: any, idx) => {
       const geminiVision = async () => assertJsonParseable(await callGeminiVision(buildPrompt(''), img.mimeType, img.b64));
-      const nvidiaVision = async () => assertJsonParseable(await callNvidia(
-        [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, { type: img.type, image_url: img.image_url }] }],
-        visionModel,
-      ));
-      const openRouterVision = async () => assertJsonParseable(await callOpenRouter(
-        // OpenRouter's OpenAI-compat vision format: always type='image_url'
-        // with a `{ url }` sub-object — same shape Nvidia uses for URLs, and
-        // it accepts base64 as `data:<mime>;base64,<...>` inside url.
-        [{ role: 'user', content: [
-          { type: 'text', text: buildPrompt('') },
-          { type: 'image_url', image_url: { url: img.image_url?.url || `data:${img.mimeType};base64,${img.b64}` } },
-        ]}],
-        openRouterVisionChain,
-      ));
-      // Tesseract tier — zero-API last resort. Runs only when every AI
-      // provider above has failed. Returns salvaged JSON (may be partial)
-      // rather than throwing, so the shopkeeper gets what could be read.
+      
+      // Tesseract tier — zero-API last resort. Runs only when Gemini fails.
       const tesseractVision = async () => assertJsonParseable(
         await callTesseractSalvage(img.b64, img.mimeType)
       );
 
-      const primary = useGemini ? geminiVision : hasNvidiaFallback ? nvidiaVision : openRouterVision;
       const fallbacks = [
-        { name: 'nvidia',     enabled: hasNvidiaFallback     && primary !== nvidiaVision,     run: nvidiaVision },
-        { name: 'openrouter', enabled: hasOpenRouterFallback && primary !== openRouterVision, run: openRouterVision },
-        { name: 'tesseract',  enabled: true,                                                  run: tesseractVision },
+        { name: 'tesseract', enabled: true, run: tesseractVision },
       ];
       tasks.push({
         label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
-        run: () => withFallback(primary, fallbacks),
+        run: () => withFallback(geminiVision, fallbacks),
       });
     });
 
@@ -1114,21 +975,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         friendly = 'The AI could not read this bill in a structured way — every provider returned prose instead of the required JSON. This usually happens when the image is very unclear, rotated, or contains handwriting the model can\'t parse. Please try a clearer photo, or enter the bill manually.';
       } else if (isAllQuota) {
         code = 'AI_QUOTA_EXHAUSTED';
-        const configured = [
-          useGemini ? 'Google Gemini' : null,
-          hasNvidiaFallback ? 'Nvidia' : null,
-          hasOpenRouterFallback ? 'OpenRouter' : null,
-        ].filter(Boolean) as string[];
-        if (configured.length >= 2) {
-          friendly = `AI quota exhausted for today on every configured provider (${configured.join(' + ')}). Please try again after the daily reset, or enter this bill manually. Your data is safe.`;
-        } else {
-          const missing = [
-            !hasNvidiaFallback ? 'NVIDIA_API_KEY' : null,
-            !hasOpenRouterFallback ? 'OPENROUTER_API_KEY' : null,
-          ].filter(Boolean) as string[];
-          friendly = `Free AI quota exhausted for today (${configured[0] || 'AI provider'}). Please try again after the daily reset, or enter this bill manually.` +
-            (missing.length ? ` To avoid this, set ${missing.join(' or ')} as a fallback provider.` : '');
-        }
+        friendly = 'Free AI quota exhausted for today on all configured Gemini keys. Please try again after the daily reset, or add another Gemini API key in .env.local. Your data is safe.';
       } else if (perCallErrors.length) {
         friendly = `Couldn't read the file. ${perCallErrors[0].split(':').slice(1).join(':').trim().slice(0, 200) || perCallErrors[0]}`;
       } else {

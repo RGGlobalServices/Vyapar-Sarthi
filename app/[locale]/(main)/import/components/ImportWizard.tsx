@@ -194,7 +194,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     }
   };
 
-  const compressImageClientSide = async (file: File, maxWidth = 1600): Promise<File> => {
+  const compressImageClientSide = async (file: File, maxWidth = 1024): Promise<File> => {
     if (!file.type.startsWith('image/')) return file;
     return new Promise((resolve) => {
       const img = new Image();
@@ -217,7 +217,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             } else {
               resolve(file); // fallback
             }
-          }, 'image/jpeg', 0.85);
+          }, 'image/jpeg', 0.6);
         } else {
           resolve(file);
         }
@@ -322,14 +322,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               for (let i = 1; i <= numPages; i++) {
                 setLoadingText(`Converting scanned PDF ${file.name} (Page ${i} of ${numPages})...`);
                 const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 2.0 });
+                const viewport = page.getViewport({ scale: 1.0 });
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                   await page.render({ canvasContext: ctx, viewport }).promise;
-                  const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                  const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.6));
                   if (blob) {
                     filesToSend.push(new File([blob], `${file.name}-page${i}.jpg`, { type: 'image/jpeg' }));
                   }
@@ -346,7 +346,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         }
 
         if (filesToSend.length > 0) {
-          setLoadingText('Analyzing documents with Nvidia...');
+          const pageCount = filesToSend.filter(f => f.name.includes('-page')).length;
+          const imgCount = filesToSend.length - (pageCount > 0 ? pageCount : 0);
+          const countLabel = filesToSend.length === 1
+            ? '1 file'
+            : pageCount > 0
+              ? `${pageCount} pages`
+              : `${filesToSend.length} files`;
+          setLoadingText(`🤖 Scanning ${countLabel} with AI — please wait...`);
           const fd = new FormData();
           filesToSend.forEach(f => fd.append('files[]', f));
           fd.append('targetType', importType);

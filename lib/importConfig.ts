@@ -53,7 +53,7 @@ export const importConfig: ImportEngineConfig = {
   backgroundWorkerThresholdRows: num(process.env.IMPORT_BG_THRESHOLD_ROWS, 100),
   backgroundWorkerThresholdPages: num(process.env.IMPORT_BG_THRESHOLD_PAGES, 10),
   memoryLimitMb: num(process.env.IMPORT_MEMORY_LIMIT_MB, 512),
-  timeoutMs: num(process.env.IMPORT_TIMEOUT_MS, 60000),
+  timeoutMs: num(process.env.IMPORT_TIMEOUT_MS, 30000),
   retryCount: num(process.env.IMPORT_RETRY_COUNT, 1),
   aiMaxTokens: num(process.env.IMPORT_AI_MAX_TOKENS, 8192),
   maxChunks: num(process.env.IMPORT_MAX_CHUNKS, 100000),
