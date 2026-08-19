@@ -407,6 +407,13 @@ Target Data Type: ${targetType.toUpperCase()}
 ${specificInstructions}
 ${jsonSchemaInstructions}
 
+CRITICAL OUTPUT FORMAT — READ FIRST:
+- Return ONLY a raw JSON object. No prose, no explanation, no Markdown formatting.
+- Do NOT wrap output in \`\`\`json\`\`\` fences.
+- Do NOT use Markdown headings like **Invoice Details** or bullet lists.
+- Do NOT prefix with "Here is..." or add commentary before/after.
+- Your entire response must start with { and end with }. Anything else will fail parsing.
+
 EXTRACTION RULES:
 - Extract EVERY row present in the data below. Do not stop early, do not summarise, do not truncate.
 - If a table row wraps across lines, treat it as one product.
@@ -722,15 +729,44 @@ ${dataText}`;
     const openRouterTextModel = process.env.IMPORT_OPENROUTER_TEXT_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
     const openRouterVisionModel = process.env.IMPORT_OPENROUTER_VISION_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct:free';
 
-    // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Every hop is
-    // taken ONLY when the previous hop failed with a quota / 429 error AND
-    // that hop's key is configured — a plain parse error or a real 500 is not
-    // a reason to burn a second provider's quota on the same task. Runs
-    // sequentially; total worst-case latency = sum of per-provider timeouts.
+    // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Falls
+    // through on TWO kinds of failure — quota errors (429/RESOURCE_EXHAUSTED)
+    // and JSON-format errors (weaker free-tier models like Nvidia's Llama
+    // sometimes return Markdown bullets instead of JSON despite the
+    // response_format hint). Runs sequentially; total worst-case latency =
+    // sum of per-provider timeouts. Any OTHER error (malformed request,
+    // real 500 from the provider) short-circuits — those would hit every
+    // provider identically and only waste quota.
     const isQuotaError = (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       return /\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(msg);
     };
+    const isParseError = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /INVALID_JSON|unexpected character|unexpected token|not.*valid json|invalid.*json/i.test(msg);
+    };
+    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err);
+
+    // Verify the raw AI response is parseable JSON (bare or via jsonrepair)
+    // BEFORE handing it back as a "success" — otherwise Nvidia's Markdown
+    // slips through the task layer and only blows up in `collect()` too
+    // late for the fallback chain to help.
+    const assertJsonParseable = (raw: string): string => {
+      const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const a = cleaned.indexOf('{'), b = cleaned.lastIndexOf('}');
+      const jsonSlice = a !== -1 && b !== -1 && b > a ? cleaned.substring(a, b + 1) : cleaned;
+      try { JSON.parse(jsonSlice); return raw; }
+      catch {
+        try {
+          const { jsonrepair } = require('jsonrepair');
+          JSON.parse(jsonrepair(jsonSlice));
+          return raw;
+        } catch {
+          throw new Error(`INVALID_JSON: response is not valid JSON (starts with "${raw.slice(0, 40).replace(/\n/g, ' ')}...")`);
+        }
+      }
+    };
+
     const withFallback = async <T,>(
       primary: () => Promise<T>,
       fallbacks: Array<{ name: string; enabled: boolean; run: () => Promise<T> }>,
@@ -739,17 +775,13 @@ ${dataText}`;
       try { return await primary(); }
       catch (e) {
         errors.push(`primary: ${(e instanceof Error ? e.message : String(e)).slice(0, 140)}`);
-        // Only cascade on quota — a wrong-payload or real-500 error would
-        // hit the same wall on every provider and just waste their quota.
-        if (!isQuotaError(e)) throw e;
+        if (!shouldFallback(e)) throw e;
         for (const fb of fallbacks) {
           if (!fb.enabled) continue;
           try { return await fb.run(); }
           catch (fbErr) {
             errors.push(`${fb.name}: ${(fbErr instanceof Error ? fbErr.message : String(fbErr)).slice(0, 140)}`);
-            // Keep going on quota errors from the fallback too; stop and
-            // re-throw on anything else (means the fallback itself is broken).
-            if (!isQuotaError(fbErr)) throw fbErr;
+            if (!shouldFallback(fbErr)) throw fbErr;
           }
         }
         throw new Error(`All providers exhausted. ${errors.join(' | ')}`);
@@ -786,14 +818,16 @@ ${dataText}`;
 
     // Only fall back to the model when the layout gave us nothing to read.
     const textChunks = usedDeterministicTable || !extractedText.trim() ? [] : chunkText(extractedText);
+    // Each provider call is wrapped with assertJsonParseable so a Markdown /
+    // plain-prose response (Nvidia Llama's occasional habit) throws
+    // INVALID_JSON immediately — which withFallback recognises and cascades
+    // to the next provider instead of letting the bad response poison
+    // downstream `collect()` parsing.
     textChunks.forEach((chunk, idx) => {
-      const nvidiaText     = () => callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel);
-      const openRouterText = () => callOpenRouter([{ role: 'user', content: buildPrompt(chunk) }], openRouterTextModel);
-      const primary        = useGemini
-        ? () => callGeminiText(buildPrompt(chunk))
-        : hasNvidiaFallback
-          ? nvidiaText
-          : openRouterText;
+      const geminiText     = async () => assertJsonParseable(await callGeminiText(buildPrompt(chunk)));
+      const nvidiaText     = async () => assertJsonParseable(await callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel));
+      const openRouterText = async () => assertJsonParseable(await callOpenRouter([{ role: 'user', content: buildPrompt(chunk) }], openRouterTextModel));
+      const primary        = useGemini ? geminiText : hasNvidiaFallback ? nvidiaText : openRouterText;
       // Fallback list assembled dynamically so the primary provider isn't
       // also listed as its own fallback (that'd 429 immediately again).
       const fallbacks = [
@@ -809,11 +843,12 @@ ${dataText}`;
     const MAX_IMAGES = importConfig.maxImages; // each image = one page of a scanned/photographed doc
     const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
     imagesToProcess.forEach((img: any, idx) => {
-      const nvidiaVision = () => callNvidia(
+      const geminiVision = async () => assertJsonParseable(await callGeminiVision(buildPrompt(''), img.mimeType, img.b64));
+      const nvidiaVision = async () => assertJsonParseable(await callNvidia(
         [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, { type: img.type, image_url: img.image_url }] }],
         visionModel,
-      );
-      const openRouterVision = () => callOpenRouter(
+      ));
+      const openRouterVision = async () => assertJsonParseable(await callOpenRouter(
         // OpenRouter's OpenAI-compat vision format: always type='image_url'
         // with a `{ url }` sub-object — same shape Nvidia uses for URLs, and
         // it accepts base64 as `data:<mime>;base64,<...>` inside url.
@@ -822,12 +857,8 @@ ${dataText}`;
           { type: 'image_url', image_url: { url: img.image_url?.url || `data:${img.mimeType};base64,${img.b64}` } },
         ]}],
         openRouterVisionModel,
-      );
-      const primary = useGemini
-        ? () => callGeminiVision(buildPrompt(''), img.mimeType, img.b64)
-        : hasNvidiaFallback
-          ? nvidiaVision
-          : openRouterVision;
+      ));
+      const primary = useGemini ? geminiVision : hasNvidiaFallback ? nvidiaVision : openRouterVision;
       const fallbacks = [
         { name: 'nvidia',     enabled: hasNvidiaFallback     && primary !== nvidiaVision,     run: nvidiaVision },
         { name: 'openrouter', enabled: hasOpenRouterFallback && primary !== openRouterVision, run: openRouterVision },
@@ -841,9 +872,12 @@ ${dataText}`;
     // Direct-PDF fallback tasks — one call per PDF that text-extraction couldn't
     // read. Gemini reads the raw PDF including scanned pages via native OCR.
     pdfFallbackDocs.forEach((doc, idx) => {
+      // Gemini-only path (Nvidia/OpenRouter free vision models don't read raw
+      // PDFs). Still validated so a Markdown-formatted response fails clean
+      // with INVALID_JSON instead of poisoning downstream collect().
       tasks.push({
         label: `PDF direct-OCR ${idx + 1}/${pdfFallbackDocs.length} (${doc.name})`,
-        run: () => callGeminiPdf(buildPrompt(''), doc.b64),
+        run: async () => assertJsonParseable(await callGeminiPdf(buildPrompt(''), doc.b64)),
       });
     });
 
@@ -887,9 +921,13 @@ ${dataText}`;
       // actionable message instead of a wall of raw provider JSON.
       const allJoined = perCallErrors.join('\n');
       const isAllQuota = perCallErrors.length > 0 && perCallErrors.every(e => /\b429\b|RESOURCE_EXHAUSTED|quota/i.test(e));
+      const isAllInvalidJson = perCallErrors.length > 0 && perCallErrors.every(e => /INVALID_JSON|unexpected character|unexpected token|not.*valid json|invalid.*json/i.test(e));
       let friendly: string;
       let code: string | undefined;
-      if (isAllQuota) {
+      if (isAllInvalidJson) {
+        code = 'AI_INVALID_JSON';
+        friendly = 'The AI could not read this bill in a structured way — every provider returned prose instead of the required JSON. This usually happens when the image is very unclear, rotated, or contains handwriting the model can\'t parse. Please try a clearer photo, or enter the bill manually.';
+      } else if (isAllQuota) {
         code = 'AI_QUOTA_EXHAUSTED';
         const configured = [
           useGemini ? 'Google Gemini' : null,
