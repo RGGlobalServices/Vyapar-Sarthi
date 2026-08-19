@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import { parseSizeRange } from '@/lib/sizeRange';
 
 interface PartyDoc {
   id: string;
@@ -111,11 +112,19 @@ export default function AddBillModal({
   partyDocuments,
   onClose,
   onSaved,
+  // 'party' (Udyog wholesale — original use case, default) or 'customer'
+  // (Udyog retail Udhar tab + Vyapar/Dukan customer pages). Only affects
+  // the optional photo-attachment step, which fetches the customer row
+  // to merge the new document into its `documents` array — the underlying
+  // bill/stock/udhar posting works identically for both types since the
+  // Customer model is unified.
+  entityType = 'party',
 }: {
   partyId: string;
   partyDocuments: PartyDoc[];
   onClose: () => void;
   onSaved: () => void;
+  entityType?: 'party' | 'customer';
 }) {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -439,9 +448,46 @@ export default function AddBillModal({
     return { subtotal, gstTotal, grandTotal: subtotal + (gstEnabled ? gstTotal : 0), unmatched, overSelling };
   }, [lines, gstEnabled]);
 
+  /** Expand any line whose `variant` is a size range ("6*8", "S-XL", …) into
+   *  one line per individual size, all sharing qty/rate/product. The
+   *  shopkeeper writes the range as a shorthand; the ledger and stock
+   *  decrement need one row per real size. Sibling variants inherit the
+   *  parent product's per-variant stock via matchVariantStock() below. */
+  function expandSizeRanges(source: BillLine[]): BillLine[] {
+    const out: BillLine[] = [];
+    for (const l of source) {
+      const sizes = parseSizeRange(l.variant);
+      if (sizes.length <= 1) { out.push(l); continue; }
+      for (const s of sizes) {
+        // Try to reuse the linked product's own variant option for this size
+        // (so per-variant stock warnings work). Falls back to a plain text
+        // variant if the product doesn't carry a matching row.
+        const opt = l.variantOptions.find(o => o.key === s || o.size === s);
+        out.push({
+          ...l,
+          key: makeKey(),
+          variant: opt ? opt.key : s,
+          variantStock: opt ? opt.stock : null,
+          rateText: opt && opt.price ? String(opt.price) : l.rateText,
+        });
+      }
+    }
+    return out;
+  }
+
   function goToFinalize() {
     if (!lines.length) { setError('Add at least one item before continuing.'); return; }
-    for (const l of lines) {
+    // Expand size ranges BEFORE validating — a row typed as "6*8 qty 3" is
+    // valid; it just means 3 pairs each of sizes 6, 7, 8 (three rows). Doing
+    // this on Continue rather than on every keystroke lets the shopkeeper
+    // finish typing (including numbers past 10) without the range firing
+    // prematurely.
+    const expanded = expandSizeRanges(lines);
+    if (expanded.length !== lines.length) {
+      setLines(expanded);
+      toast.success(`Split into ${expanded.length} lines by size`);
+    }
+    for (const l of expanded) {
       if (!l.name.trim()) { setError('One of the items has no name — fill it in or remove the row.'); return; }
       if (!(num(l.qtyText) > 0)) { setError(`Quantity must be greater than 0 (item "${l.name}").`); return; }
       if (num(l.rateText) < 0) { setError(`Rate cannot be negative (item "${l.name}").`); return; }
@@ -517,7 +563,9 @@ export default function AddBillModal({
 
       if (billImageUrl) {
         try {
-          const currentRes = await api.get('/crm/customers?type=party');
+          // Fetch the right ledger side (parties vs customers) so the
+          // customer.documents merge below finds the row we're billing.
+          const currentRes = await api.get(`/crm/customers?type=${entityType}`);
           const list = Array.isArray(currentRes.data) ? currentRes.data : [];
           const party = list.find((p: any) => p.id === partyId);
           if (party) {
@@ -533,7 +581,9 @@ export default function AddBillModal({
               address: party.address,
               creditLimit: party.creditLimit,
               creditDays: party.creditDays,
-              customerType: 'party',
+              // Preserve the caller's ledger side — don't silently convert
+              // a retail customer to a wholesale party via the PUT.
+              customerType: entityType,
               documents: nextDocs,
             });
           }
@@ -552,8 +602,12 @@ export default function AddBillModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[92vh] relative">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
+      {/* Full-screen on mobile, centred card on tablet+. h-[100dvh] tracks
+          the dynamic viewport so the mobile keyboard doesn't push the
+          Continue/Save buttons off-screen when a shopkeeper is typing in a
+          product name or quantity field. */}
+      <div className="bg-white dark:bg-slate-900 w-full max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[92vh] rounded-none sm:rounded-2xl shadow-xl flex flex-col overflow-hidden relative">
 
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
@@ -802,9 +856,14 @@ export default function AddBillModal({
                             type="text"
                             value={l.variant}
                             onChange={(e) => updateLine(l.key, { variant: e.target.value })}
-                            placeholder="e.g. Black / UK 8"
+                            placeholder="e.g. Black / UK 8   —   size range: 6*8"
                             className="w-full h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
                           />
+                          {parseSizeRange(l.variant).length > 1 && (
+                            <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                              Will split into {parseSizeRange(l.variant).length} lines on Continue: {parseSizeRange(l.variant).join(', ')}
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -1045,8 +1104,8 @@ export default function AddBillModal({
         {/* Product picker overlay — floats inside the modal so stacking &
             outside-tap-to-close work naturally. */}
         {pickerForKey && (
-          <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm flex flex-col rounded-2xl">
-            <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2 shrink-0">
+          <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm flex flex-col rounded-none sm:rounded-2xl">
+            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2 shrink-0">
               <button type="button" onClick={() => setPickerForKey(null)} className="w-8 h-8 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center">
                 <ChevronLeft size={16} />
               </button>
@@ -1078,7 +1137,7 @@ export default function AddBillModal({
                   placeholder="Product name"
                   className="w-full h-9 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                 />
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
                     <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Price ₹</label>
                     <input

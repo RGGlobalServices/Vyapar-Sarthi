@@ -84,18 +84,22 @@ export default function ProductDetailsSheet({
     type === 'purchase' || type === 'transfer_in' || type === 'return';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-6">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
-      {/* Panel */}
-      <div className="relative w-full max-w-3xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+      {/* Panel — full-screen on phones, centred card on tablet+. h-[100dvh]
+          uses the dynamic viewport so mobile browser chrome (URL bar) and
+          any keyboard don't push content off-screen. Fixes the overlap the
+          client showed: the earlier p-4 gap on all sides let the busy
+          product-list background bleed through around the modal edges. */}
+      <div className="relative w-full max-w-3xl h-[100dvh] sm:h-auto sm:max-h-[90vh] bg-white dark:bg-slate-900 rounded-none sm:rounded-2xl shadow-2xl flex flex-col border-0 sm:border sm:border-slate-200 sm:dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
 
         {/* ── Header ── */}
-        <div className="flex-shrink-0 flex items-center justify-between gap-4 px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur">
+        <div className="flex-shrink-0 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 flex items-center justify-center flex-shrink-0">
               <Package size={20} className="text-emerald-500 dark:text-emerald-400" />
@@ -122,40 +126,51 @@ export default function ProductDetailsSheet({
             </div>
           </div>
 
+          {/* Action buttons — on mobile the text labels are hidden (icons
+              only) so all four fit inside the header without wrapping.
+              Tablet+ shows both icon + label. Close button always visible
+              and standalone. Was previously overflowing past the modal
+              edge on 360px screens which contributed to the "overlap"
+              client report. */}
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
               disabled={loading}
               onClick={() => setShowReceive(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
+              title="Receive Stock"
             >
-              <Package size={13} /> Receive Stock
+              <Package size={13} /> <span className="hidden sm:inline">Receive Stock</span>
             </button>
             <button
               disabled={loading || !data?.product}
               onClick={() => setShowBarcodeModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors disabled:opacity-40"
+              title="Barcode / QR"
             >
-              <BarcodeIcon size={13} /> Barcode / QR
+              <BarcodeIcon size={13} /> <span className="hidden sm:inline">Barcode / QR</span>
             </button>
             {onDelete && (
               <button
                 disabled={loading}
                 onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors disabled:opacity-40"
+                title={t('delete') || 'Delete'}
               >
-                <Trash2 size={13} /> {t('delete') || 'Delete'}
+                <Trash2 size={13} /> <span className="hidden sm:inline">{t('delete') || 'Delete'}</span>
               </button>
             )}
             <button
               disabled={loading}
               onClick={() => onEdit(data?.product)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
+              title={t('edit')}
             >
-              <Edit size={13} /> {t('edit')}
+              <Edit size={13} /> <span className="hidden sm:inline">{t('edit')}</span>
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors ml-1"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors ml-0.5 sm:ml-1"
+              title="Close"
             >
               <X size={18} />
             </button>

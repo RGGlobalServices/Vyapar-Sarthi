@@ -143,15 +143,35 @@ export function calculateInvoice(
     let profitTaxableAmount = 0;
 
     if (billType === 'gst' && item.gstPercent > 0) {
+      // GST bill — the sale price the shopkeeper typed is GST-inclusive by
+      // convention, so we back out the taxable amount and the GST portion
+      // for the printed invoice's rate-wise breakdown.
       taxableAmount = round2(discountedTotal / (1 + item.gstPercent / 100));
       gstAmount = round2(discountedTotal - taxableAmount);
-      profitTaxableAmount = taxableAmount;
+      // Profit uses the FULL line total (not the extracted taxable amount)
+      // to match the product form's "Retail Profit = selling − cost" figure.
+      // Client mental model: "I sold at ₹1790, cost me ₹1400, made ₹390" —
+      // GST is treated as a pass-through the shopkeeper handles separately,
+      // not a deduction from the per-bill profit shown on the dashboard.
+      // The old accountant-style calc (taxable − cost) confused shopkeepers
+      // by making dashboard profit read ₹273 lower than the product form
+      // promised. See client feedback:
+      // "cost chya vr kahi amount yevo profit disayala hava".
+      profitTaxableAmount = discountedTotal;
     } else {
+      // Non-GST bill — even if the product has a gstPercent set (a lot of
+      // shops set it for reporting), NOTHING is being extracted for tax on
+      // this specific bill. So the whole line total is revenue AND the whole
+      // margin (revenue - cost) is profit the shopkeeper keeps. The old
+      // code divided profit-taxable by (1 + gst%) here anyway, which made a
+      // 2500 line on an 18% product look like ~2119 for profit purposes —
+      // and when the cost basis was close, profit went negative on paper
+      // for a bill the shopkeeper knew had a real margin. Client feedback:
+      // "cost chya vr kahi amount yevo profit disayala hava" — anything
+      // above cost should show as profit, no GST-fudge on a non-GST bill.
       taxableAmount = discountedTotal;
       gstAmount = 0;
-      profitTaxableAmount = item.gstPercent > 0 
-        ? round2(discountedTotal / (1 + item.gstPercent / 100))
-        : discountedTotal;
+      profitTaxableAmount = discountedTotal;
     }
 
     const purchaseCostTotal = round2(item.purchasePrice * item.quantity);

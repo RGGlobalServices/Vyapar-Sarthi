@@ -499,10 +499,15 @@ function PartiesPanel() {
 
       {/* Party Panel */}
       {selectedParty && (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
+        // z-[60] beats the app's sticky sidebar (default z-40/50 range) so
+        // the drawer never renders BEHIND the nav on tablets in landscape.
+        // On mobile: full-screen (h-[100dvh]), no radii, no top gap — the
+        // earlier h-[90vh] bottom-sheet left a 10vh strip of the party
+        // list showing at the top which read as "overlap" to the client.
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-2xl rounded-none sm:rounded-2xl shadow-xl flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
 
-            <div className="p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between">
+            <div className="p-4 sm:p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                   {selectedParty.shopName || selectedParty.name}
@@ -576,7 +581,7 @@ function PartiesPanel() {
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <ReceiptText size={16} /> {t('partyLedgerTimeline')}
               </h3>
-              <LedgerView entityId={selectedParty.id} entityType="party" entityName={selectedParty.shopName || selectedParty.name} />
+              <LedgerView entityId={selectedParty.id} entityType="party" entityName={selectedParty.shopName || selectedParty.name} onLedgerChanged={() => mutateParties()} />
             </div>
           </div>
         </div>
@@ -792,6 +797,14 @@ function CustomersPanel() {
   const [showPayment, setShowPayment] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Collection features ported from the Wholesale Parties tab so retail
+  // Udhar shopkeepers get the same "collect from N customers in a round"
+  // workflow — printable register PDF, AI-scanned handwritten sheet, and
+  // per-customer Add Bill for manual paper-bill entry.
+  const [showAddBill, setShowAddBill] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [generatingRegister, setGeneratingRegister] = useState(false);
+  const profile = useBusinessStore(s => s.profile);
 
   const [editingCustomer, setEditingCustomer] = useState<UdharCustomer | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -873,6 +886,39 @@ function CustomersPanel() {
   );
 
   const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(filtered.map(c => c.id));
+
+  // Ported from the wholesale Parties tab — printable collection round
+  // sheet, outstanding customers only, same generator + PDF layout.
+  const handleDownloadCollectionRegister = async () => {
+    const outstanding = filtered.filter(c => (c.totalDue || 0) > 0);
+    if (outstanding.length === 0) {
+      toast.error('No outstanding customers to collect from');
+      return;
+    }
+    setGeneratingRegister(true);
+    try {
+      await generateCollectionRegisterPDF({
+        shop: {
+          name: profile?.shopName || 'Vyapar Sarthi',
+          address: profile?.address || null,
+          mobile: profile?.mobile || null,
+          gst: profile?.gst || null,
+          pan: profile?.pan || null,
+        },
+        parties: outstanding.map(c => ({
+          name: c.name,
+          shopName: null,
+          address: c.address || null,
+          totalDue: c.totalDue || 0,
+        })),
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate collection register');
+    } finally {
+      setGeneratingRegister(false);
+    }
+  };
 
   const handleBulkDeleteCustomers = async () => {
     setBulkDeletingCustomers(true);
@@ -998,6 +1044,23 @@ function CustomersPanel() {
           data={exportData}
         />
         <button
+          onClick={handleDownloadCollectionRegister}
+          disabled={generatingRegister}
+          title="Printable route sheet for today's collection round — outstanding customers only"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-60"
+        >
+          {generatingRegister ? <Loader2 size={18} className="animate-spin" /> : <NotebookText size={18} />}
+          Collection Register
+        </button>
+        <button
+          onClick={() => setShowScanModal(true)}
+          title="Photograph your collection round notebook — AI reads each customer's Cash/Chq and lets you apply them as payments"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
+        >
+          <ScanLine size={18} />
+          Scan Collection Sheet
+        </button>
+        <button
           onClick={() => setShowNewCustomer(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
         >
@@ -1089,10 +1152,12 @@ function CustomersPanel() {
 
       {/* Customer Panel */}
       {selectedCustomer && (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
+        // Same full-screen treatment as the Party panel above — see comment
+        // there for why z-[60] and h-[100dvh] matter on mobile.
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-2xl rounded-none sm:rounded-2xl shadow-xl flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
 
-            <div className="p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between">
+            <div className="p-4 sm:p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                   {selectedCustomer.name}
@@ -1130,14 +1195,22 @@ function CustomersPanel() {
               <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/50 rounded-xl">
                 <p className="text-xs font-bold text-orange-800 dark:text-orange-400 uppercase tracking-wider mb-1">{t('totalOutstanding')}</p>
                 <p className="text-2xl font-black text-orange-600 dark:text-orange-500">₹{selectedCustomer.totalDue.toLocaleString()}</p>
-                {selectedCustomer.totalDue > 0 && (
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
                   <button
-                    onClick={() => setShowPayment(true)}
-                    className="mt-2 text-xs font-bold bg-orange-600 text-white px-3 py-1.5 rounded-lg w-full flex items-center justify-center gap-1 hover:bg-orange-700"
+                    onClick={() => setShowAddBill(true)}
+                    className="text-xs font-bold bg-white dark:bg-slate-800 border border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
                   >
-                    <Wallet size={14} /> {t('collectPayment')}
+                    <ReceiptText size={14} /> Add Bill
                   </button>
-                )}
+                  {selectedCustomer.totalDue > 0 && (
+                    <button
+                      onClick={() => setShowPayment(true)}
+                      className="text-xs font-bold bg-orange-600 text-white px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-700 transition-colors"
+                    >
+                      <Wallet size={14} /> {t('collectPayment')}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1145,7 +1218,7 @@ function CustomersPanel() {
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <ReceiptText size={16} /> {t('customerLedgerTimeline')}
               </h3>
-              <LedgerView entityId={selectedCustomer.id} entityType="customer" entityName={selectedCustomer.name} />
+              <LedgerView entityId={selectedCustomer.id} entityType="customer" entityName={selectedCustomer.name} onLedgerChanged={() => mutateCustomers()} />
             </div>
           </div>
         </div>
@@ -1160,6 +1233,30 @@ function CustomersPanel() {
           outstanding={selectedCustomer.totalDue}
           onClose={() => { setShowPayment(false); setSelectedCustomer(null); }}
           onSuccess={() => mutateCustomers()}
+        />
+      )}
+
+      {/* Add Bill for retail customer — same modal the Wholesale Parties
+          tab uses, with entityType='customer' so the photo-attachment
+          step targets the customer row's own documents array. */}
+      {showAddBill && selectedCustomer && (
+        <AddBillModal
+          partyId={selectedCustomer.id}
+          partyDocuments={[]}
+          entityType="customer"
+          onClose={() => setShowAddBill(false)}
+          onSaved={() => { setShowAddBill(false); setSelectedCustomer(null); mutateCustomers(); }}
+        />
+      )}
+
+      {/* Scan handwritten collection notebook for retail customers —
+          same ScanCollectionModal, with entityType='customer' so the
+          matched-against list is the retail customer roster. */}
+      {showScanModal && (
+        <ScanCollectionModal
+          entityType="customer"
+          onClose={() => setShowScanModal(false)}
+          onApplied={() => { setShowScanModal(false); mutateCustomers(); }}
         />
       )}
 

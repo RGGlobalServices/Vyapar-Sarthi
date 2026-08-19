@@ -3,6 +3,7 @@ import { requireShop } from '@/lib/server/auth';
 import { handle, json, ApiError } from '@/lib/server/http';
 import { aiVisionComplete } from '@/lib/server/ai';
 import { getSimilarity } from '@/lib/fuzzy';
+import { parseSizeRange } from '@/lib/sizeRange';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -103,10 +104,34 @@ Rules:
 - Strip currency symbols and thousands separators from numbers (e.g. "1,250.00" -> 1250).
 - The "name" field is the BASE product (brand + model/style). If the bill has separate Colour and Size columns, put those in the colour and size fields — NOT in the name. If only the name column has "Black UK/IND 4" glued together, still split colour and size out from it into their own fields.
 - Preserve size strings exactly as written (e.g. "UK/IND 4", "40", "M", "XL", "8.5"). Preserve colour spelling too.
+- **If the bill writes a size RANGE like "6*8", "6-8", "6 to 8", or "S-XL" as a shorthand for multiple sizes on ONE row, keep that range VERBATIM in the size field — do NOT expand it into separate rows and do NOT multiply the quantity.** The caller expands ranges downstream using its own rules. Same applies to "40*44" (40, 41, 42, 43, 44) and "M-XL" etc.
 - If the bill shows only qty and total but not per-unit rate, still include the row with pricePerUnit as null — the caller back-computes from amount / quantity.`;
 
   const raw = await aiVisionComplete(dataUrl, prompt, { maxTokens: 3000 });
-  const items = parseJsonArray(raw);
+  const rawItems = parseJsonArray(raw);
+
+  // Indian shopkeepers routinely write a range on one line — "size 6*8, qty
+  // 3" meaning "3 pairs each of sizes 6, 7 and 8". Expand any such row into
+  // one row per individual size, all sharing the row's other fields. Each
+  // per-size row carries the SAME quantity as the parent row — a shopkeeper
+  // writing "6*8 qty 3" almost always means 3 pairs at EVERY size in the
+  // range (that's the whole shorthand's point: matched sets of sizes).
+  // Non-range sizes and rows with no size at all pass through unchanged.
+  // See lib/sizeRange.ts for the accepted formats.
+  const items: typeof rawItems = [];
+  for (const row of rawItems) {
+    const sizes = parseSizeRange(row.size);
+    if (sizes.length <= 1) {
+      items.push(row);
+      continue;
+    }
+    // amount was a per-line-item figure written for the range as a whole —
+    // when we split into N rows each with the SAME qty, the per-line amount
+    // for each split is (qty * unitRate), same as before. So we can leave
+    // amount alone; it becomes the amount PER expanded row, matching the
+    // shopkeeper's expectation of "3 pairs @ ₹X per size = ₹3X per size".
+    for (const s of sizes) items.push({ ...row, size: s });
+  }
 
   const products = await prisma.product.findMany({
     where: { shopId: shop.id, archived: false },

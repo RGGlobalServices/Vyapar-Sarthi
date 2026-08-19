@@ -475,16 +475,26 @@ function StandardBillingUI() {
     // Resolve per-size pricing: if this product has a price set for the chosen
     // variant/size, charge that instead of the flat fallback selling price.
     let price = product.sellingPrice || Number(product.price);
-    let cost = product.wholesaleCost || 0;
+    // Cost is the SHOP's real purchase cost — used for profit math AND sent
+    // to the backend as purchase_price. Prefer costPrice (Udyog's real
+    // cost column) over wholesaleCost (repurposed on Udyog as wholesale
+    // selling price). See udyog-three-tier-pricing memory.
+    let cost = Number(product.costPrice) || Number(product.wholesaleCost) || 0;
     if (variant) {
       try {
         const meta = typeof product.metadata === 'string' ? JSON.parse(product.metadata) : (product.metadata || {});
         const sp = meta?.size_prices?.[variant];
         if (sp && (sp.sellingPrice > 0 || sp.mrp > 0)) {
           price = sp.sellingPrice || sp.mrp;
-          cost = sp.cost || cost;
+          cost = Number(sp.cost) || cost;
         }
       } catch { /* fall back to flat price */ }
+      // Per-variant costPrice on Udyog variants[] wins over the flat cost.
+      if (Array.isArray(product.variants)) {
+        const row = product.variants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === variant);
+        const vc = Number(row?.costPrice) || 0;
+        if (vc > 0) cost = vc;
+      }
     }
     // `variant` is the raw stock key — a plain size ("M") or, for colour/size
     // products, a composite "Colour / Size" key (see ColorSizeVariantGrid). Split

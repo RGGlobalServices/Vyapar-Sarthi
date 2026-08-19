@@ -41,6 +41,10 @@ export const GET = handle(async (req) => {
         select: {
           id: true, invoice_number: true, totalAmount: true, amountPaid: true, createdAt: true,
           gstAmount: true, gstDetails: true, billType: true,
+          // paymentType + paymentDetails power the "How this bill was paid"
+          // block in TransactionDetailModal — same shape the return-refund
+          // attribution and the AddBill "This return will…" preview use.
+          paymentType: true, paymentDetails: true,
           items: {
             select: {
               itemName: true, quantity: true, pricePerUnit: true, marginPerUnit: true, productId: true, variant: true,
@@ -141,12 +145,29 @@ export const GET = handle(async (req) => {
         };
       });
 
+      // Per-bill money breakdown — total, paid so far, remaining Udhar,
+      // and the payment-mode split (Cash / UPI / Card) when the bill was
+      // Split. Same shape TransactionDetailModal and the Add-Bill preview
+      // already expect. Null when the row isn't tied to a Sale (payment/
+      // opening-balance/refund rows).
+      const saleTotalAmount = sale ? Number(sale.totalAmount) || 0 : null;
+      const saleAmountPaid = sale ? Number(sale.amountPaid) || 0 : null;
+      const outstandingAmount = saleTotalAmount !== null && saleAmountPaid !== null
+        ? Math.max(0, saleTotalAmount - saleAmountPaid)
+        : null;
+
       return {
         ...t,
         gstPercent,
         gstAmount: isGstBill ? Number(sale?.gstAmount) || 0 : null,
         items,
         documents: docsByTxId.get(t.id) || [],
+        // The bill money breakdown — nulls on non-sale rows (payments etc).
+        saleTotalAmount,
+        saleAmountPaid,
+        outstandingAmount,
+        paymentType: sale?.paymentType || null,
+        paymentDetails: sale?.paymentDetails ?? null,
       };
     });
 

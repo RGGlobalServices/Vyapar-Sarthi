@@ -90,8 +90,22 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { identifier } = await params;
   const { shop, user } = await requireShop(req);
 
+  // Accept BOTH a raw Sale.id (uuid) AND an invoice_number ("INV-1234ABCD")
+  // — mirrors the GET handler above so the ledger view can delete a row
+  // by the bill number it already has (customer_transactions carries
+  // bill_number, not sale.id).
+  const cleanId = identifier.replace(/^INV[-_]?/i, '').replace(/[^a-zA-Z0-9]/g, '');
+  const invVariants = [`INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+
   const sale = await prisma.sale.findFirst({
-    where: { id: identifier, shopId: shop.id },
+    where: {
+      OR: [
+        ...(isUUID ? [{ id: identifier }] : []),
+        ...invVariants.map((inv) => ({ invoice_number: inv })),
+      ],
+      shopId: shop.id,
+    },
     include: { items: true },
   });
   if (!sale) throw new ApiError(404, 'Invoice not found');

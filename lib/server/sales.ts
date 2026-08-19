@@ -119,25 +119,41 @@ export async function reverseSaleEffects(
   }
 
   if (sale.customerId) {
-    const [txns, customer] = await Promise.all([
+    // Pull BOTH the udhar row(s) this sale created AND any `refund` rows a
+    // subsequent return recorded against the same invoice. When we tear this
+    // sale down we need to undo the net effect on customer.totalDue —
+    // originally +sum(udhar) and later -sum(refund) — so the correct delta
+    // to reverse is (udhar - refund), not just udhar. Missing the refund
+    // rows was over-decrementing totalDue by the returned amount every time
+    // a bill-with-return was deleted.
+    const [udharTxns, refundTxns, customer] = await Promise.all([
       tx.customer_transactions.findMany({
         where: { customer_id: sale.customerId, type: 'udhar', bill_number: sale.invoice_number },
       }),
+      tx.customer_transactions.findMany({
+        where: { customer_id: sale.customerId, type: 'refund', bill_number: sale.invoice_number },
+      }),
       tx.customer.findUnique({ where: { id: sale.customerId } }),
     ]);
-    if (txns.length && customer) {
-      const totalUdhar = txns.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const netDue = udharTxns.reduce((s, t) => s + (t.amount || 0), 0)
+                 - refundTxns.reduce((s, t) => s + (t.amount || 0), 0);
+    const allIds = [...udharTxns.map(t => t.id), ...refundTxns.map(t => t.id)];
+    if (allIds.length && customer) {
       await Promise.all([
-        tx.customer_transactions.deleteMany({ where: { id: { in: txns.map(t => t.id) } } }),
+        tx.customer_transactions.deleteMany({ where: { id: { in: allIds } } }),
         tx.customer.update({
           where: { id: sale.customerId },
-          data: { totalDue: Math.max(0, (customer.totalDue || 0) - totalUdhar) },
+          data: { totalDue: Math.max(0, (customer.totalDue || 0) - netDue) },
         }),
       ]);
     }
   }
 
-  await tx.cashBook.deleteMany({ where: { shopId, referenceId: saleId, type: 'sale' } });
+  // Same net-effect discipline as the customer side: clear the sale's cash
+  // inflow AND any refund cash outflow the return route wrote — leaving a
+  // stale refund row after the sale is gone would keep phantom money in the
+  // daily register.
+  await tx.cashBook.deleteMany({ where: { shopId, referenceId: saleId, type: { in: ['sale', 'refund'] } } });
 
   await tx.saleItem.deleteMany({ where: { saleId } });
   await tx.sale.delete({ where: { id: saleId } });

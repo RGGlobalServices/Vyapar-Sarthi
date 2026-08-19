@@ -48,9 +48,15 @@ const MATCH_THRESHOLD_DISPLAY = 0.55;
 export default function ScanCollectionModal({
   onClose,
   onApplied,
+  // Which ledger side to match scanned rows against. Defaults to 'party'
+  // (Udyog wholesale — the original use case) so existing callers keep
+  // working with no change; retail Udhar callers pass 'customer' to match
+  // rows against Customer rows with customerType='customer' (or null).
+  entityType = 'party',
 }: {
   onClose: () => void;
   onApplied: () => void;
+  entityType?: 'party' | 'customer';
 }) {
   const [stage, setStage] = useState<Stage>('pick');
   const [file, setFile] = useState<File | null>(null);
@@ -76,7 +82,7 @@ export default function ScanCollectionModal({
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const res = await api.post('/party/scan-collection', fd);
+      const res = await api.post(`/party/scan-collection?entityType=${entityType}`, fd);
       const scannedRows: ScanRow[] = res.data?.rows || [];
       const partyList: PartyOption[] = res.data?.parties || [];
       setParties(partyList);
@@ -117,13 +123,13 @@ export default function ScanCollectionModal({
       try {
         if (cash > 0) {
           await api.post('/crm/payments', {
-            entityType: 'party', entityId: row.partyId, amount: cash,
+            entityType, entityId: row.partyId, amount: cash,
             paymentMode: 'Cash', note: `Collection round scan (${row.party})`,
           });
         }
         if (chq > 0) {
           await api.post('/crm/payments', {
-            entityType: 'party', entityId: row.partyId, amount: chq,
+            entityType, entityId: row.partyId, amount: chq,
             paymentMode: 'Cheque', note: `Collection round scan (${row.party})`,
           });
         }

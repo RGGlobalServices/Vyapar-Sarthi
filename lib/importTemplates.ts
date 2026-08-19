@@ -51,6 +51,13 @@ function productColumns(businessType?: string): ImportColumn[] {
   if (cfg.hasWarranty) cols.push({ label: 'Warranty Months', aliases: ['warranty'], numeric: true });
   if (cfg.hasGender) cols.push({ label: 'Gender', aliases: [] });
   if (cfg.hasShades) cols.push({ label: 'Shade', aliases: ['color', 'colour'] });
+  // Variant columns — footwear/apparel supplier bills routinely have Colour
+  // and Size columns; without these template entries the review UI drops
+  // them into "extra headers" and the processor never sees them, so per-
+  // variant stock never gets created. The Size field also accepts range
+  // shorthand like "6*8" — the processor expands it into per-size rows.
+  if (cfg.hasColors) cols.push({ label: 'Colour', aliases: ['color', 'colour', 'shade'], profile: 'text' });
+  if (cfg.hasSizes) cols.push({ label: 'Size', aliases: ['size', 'sz', 'sizes', 'sizerange', 'no', 'number'], profile: 'text' });
   return cols;
 }
 
@@ -59,8 +66,15 @@ export function getImportTemplate(importType: string, businessType?: string): Im
     case 'product':
     case 'stock':
       return productColumns(businessType);
-    case 'purchase':
-      return [
+    case 'purchase': {
+      // Purchase-invoice review needs the same variant awareness the
+      // stock/product template already has — a footwear supplier bill has
+      // Colour and Size columns per row, and without them the review UI
+      // drops them into "extra" and the imported PurchaseItems land with
+      // no variant, so per-variant stock never gets created. Business-type
+      // gate keeps the review compact for shops that don't need it.
+      const cfg = getBusinessConfig((businessType || 'general') as BusinessType);
+      const cols: ImportColumn[] = [
         { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname', 'itemname', 'particulars', 'goods'], profile: 'name' },
         { label: 'Barcode', aliases: ['companybarcode', 'itembarcode', 'ean', 'upc'], profile: 'barcode' },
         { label: 'SKU', aliases: ['skucode', 'itemcode', 'stockcode', 'code', 'articleno', 'articlecode'], profile: 'text' },
@@ -76,6 +90,10 @@ export function getImportTemplate(importType: string, businessType?: string): Im
         { label: 'Invoice Number', aliases: ['billnumber', 'invoice', 'invoiceno'], profile: 'text' },
         { label: 'Date', aliases: ['billdate', 'invoicedate'], profile: 'date' },
       ];
+      if (cfg.hasColors) cols.push({ label: 'Colour', aliases: ['color', 'colour', 'shade'], profile: 'text' });
+      if (cfg.hasSizes) cols.push({ label: 'Size', aliases: ['size', 'sz', 'sizes', 'sizerange', 'no', 'number'], profile: 'text' });
+      return cols;
+    }
     case 'customers':
       return [
         { label: 'Customer Name', aliases: ['name', 'customer', 'client', 'partyname', 'party'] },

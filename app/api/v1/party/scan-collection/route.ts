@@ -57,6 +57,15 @@ function parseJsonArray(raw: string): ExtractedRow[] {
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
 
+  // Which side of the ledger to match against — 'party' (Udyog wholesale
+  // parties, the original use case) or 'customer' (retail Udhar buyers,
+  // and Vyapar/Dukan where every buyer is a plain customer). Passed by the
+  // ScanCollectionModal caller so one endpoint handles both — a shopkeeper
+  // running Udyog might collect from both wholesale parties AND retail
+  // customers, and needs separate scan rounds for each.
+  const url = new URL(req.url);
+  const entityType = url.searchParams.get('entityType') === 'customer' ? 'customer' : 'party';
+
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
   if (!file) throw new ApiError(400, 'No photo uploaded');
@@ -83,8 +92,14 @@ Rules:
   const raw = await aiVisionComplete(dataUrl, prompt, { maxTokens: 3000 });
   const rows = parseJsonArray(raw);
 
+  // customerType='customer' rows are stored with `customerType` either
+  // literally 'customer' or null (older rows). Match both so an old shop's
+  // pre-Udyog retail customers still show up in the scan match list.
+  const whereType = entityType === 'party'
+    ? { customerType: 'party' as const }
+    : { OR: [{ customerType: 'customer' as const }, { customerType: null }] };
   const parties = await prisma.customer.findMany({
-    where: { shopId: shop.id, customerType: 'party' },
+    where: { shopId: shop.id, ...whereType },
     select: { id: true, name: true, shopName: true, mobile: true, totalDue: true },
   });
 

@@ -8,6 +8,9 @@ import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { detectBarcodeFormat } from '@/lib/barcode';
 import { printLabelSheet as printLabelSheetShared } from '@/lib/printLabels';
 import { generateVariantBarcodes } from '@/components/SizeVariantGrid';
+import BarcodePrintSettings from '@/components/BarcodePrintSettings';
+import { resolveActiveProfile, PrinterProfile } from '@/lib/printProfiles';
+import { Settings } from 'lucide-react';
 
 interface BarcodeQRModalProps {
   product: {
@@ -26,6 +29,10 @@ interface BarcodeQRModalProps {
     stock?: number;
     /** Composite variant key → qty. Keys look like "Blue / 8GB / 128GB". */
     size_variants?: string | Record<string, number>;
+    /** Udyog per-colour/size rows: [{color, size, stock, sellingPrice, mrp, ...}].
+     *  Bridged with size_variants above by unifyVariantMap() so this modal
+     *  can enumerate variants regardless of which package the shop uses. */
+    variants?: Array<Record<string, unknown>>;
     /** Metadata carries per-variant pricing + barcodes under `size_prices`. */
     metadata?: any;
   };
@@ -39,6 +46,36 @@ function parseObj(v: any): Record<string, any> {
   if (!v) return {};
   if (typeof v === 'string') { try { return JSON.parse(v); } catch { return {}; } }
   return v;
+}
+
+/**
+ * Unified per-variant qty map, keyed by the same `"Colour / Size"` composite
+ * everything else in the system uses. Bridges Vyapar/Dukan's
+ * `size_variants` JSON (`{"M": 4, "L": 2}`) with Udyog's `variants[]` array
+ * (`[{color:"Black", size:"UK 6", stock:5, ...}]`) so this modal shows
+ * per-variant barcodes regardless of package. Was reading only
+ * `size_variants` before — Udyog products fell straight through to the
+ * plain single-code Barcode tab, which is exactly what the client called
+ * out ("varient wise barcode also want, same as Vyapar").
+ */
+function unifyVariantMap(product: any): Record<string, number> {
+  const out: Record<string, number> = {};
+  const sv = parseObj(product?.size_variants);
+  for (const [k, v] of Object.entries(sv)) {
+    const n = Number(v);
+    if (n > 0) out[k] = (out[k] || 0) + n;
+  }
+  if (Array.isArray(product?.variants)) {
+    for (const v of product.variants as Array<Record<string, unknown>>) {
+      const color = v.color ? String(v.color).trim() : '';
+      const size = v.size ? String(v.size).trim() : '';
+      const key = color && size ? `${color} / ${size}` : (size || color || '');
+      if (!key) continue;
+      const stock = Number(v.stock ?? v.quantity ?? 0);
+      if (stock > 0) out[key] = (out[key] || 0) + stock;
+    }
+  }
+  return out;
 }
 
 /** Collapse anything that isn't filesystem-safe (spaces, slashes in a
@@ -65,8 +102,10 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // any specific real variant and was confusing shopkeepers into thinking
   // that was "the" barcode to print for every colour/size.
   const [tab, setTab] = useState<'barcode' | 'qr' | 'variants' | 'carton'>(() => {
-    const variants = parseObj(product.size_variants);
-    const hasVariants = Object.values(variants).some(q => Number(q) > 0);
+    // Check BOTH the retail-style size_variants JSON AND Udyog's variants[]
+    // array — either shape means this product has variant stock worth its
+    // own set of per-colour/size barcodes.
+    const hasVariants = Object.keys(unifyVariantMap(product)).length > 0;
     return hasVariants ? 'variants' : 'barcode';
   });
   const [copied, setCopied] = useState(false);
@@ -94,6 +133,24 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // other, which is why both real roll widths need their own option here
   // rather than one generic "thermal" guess.
   const [labelSize, setLabelSize] = useState<'a4' | 'thermal58' | 'thermal80'>('a4');
+  // Professional print-settings state (2026-08). The active profile
+  // resolves lazily from localStorage — a shop that never opened Settings
+  // gets DEFAULT_PROFILE and behaves like before. Opening Settings lets
+  // them save a per-shop printer profile that persists across sessions.
+  const [showPrintSettings, setShowPrintSettings] = useState(false);
+  const [activeProfile, setActiveProfile] = useState<PrinterProfile | null>(null);
+  // Look up shopId from localStorage — the same key used everywhere else in
+  // this app (see AddBillModal, dashboard). No new global context needed.
+  const shopId = typeof window !== 'undefined' ? (localStorage.getItem('ks_active_shop_id') || '') : '';
+  useEffect(() => {
+    if (!shopId) return;
+    setActiveProfile(resolveActiveProfile(shopId));
+  }, [shopId]);
+  // Optional label fields (shop header, custom note) — a Udyog product with
+  // 13+ variants needs the vertical space MORE than these rarely-used
+  // fields do. Collapsed by default; the shopkeeper expands them if they
+  // actually want a shop-name header or promo note on the printed sticker.
+  const [showLabelOptions, setShowLabelOptions] = useState(false);
 
   // A stored barcode that starts with PRD-/BAR- is a placeholder the system
   // generated when the product was created without a real code — it is NOT a
@@ -139,8 +196,30 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // the same "never print something that isn't also saved" discipline as
   // the product-level fix above.
   const ensuredSizePrices = useMemo(() => {
-    const variants = parseObj(product.size_variants);
+    // Unified per-variant map so both Vyapar's size_variants JSON and
+    // Udyog's variants[] array feed the barcode generator — the client
+    // hit this exact gap: Udyog products showed a single "PRD-XXX" code
+    // for the whole product instead of one per colour/size row.
+    const variants = unifyVariantMap(product);
     const existing = parseObj(parseObj(product.metadata).size_prices);
+
+    // For Udyog variants[], seed sellingPrice/mrp from the array row so
+    // per-variant labels print the right price without the shopkeeper
+    // having to re-key it under metadata.size_prices. Only fills in when
+    // the size_prices entry doesn't already carry the field, so a shop's
+    // own edit is never overwritten.
+    if (Array.isArray(product?.variants)) {
+      for (const v of product.variants as Array<Record<string, unknown>>) {
+        const color = v?.color ? String(v.color).trim() : '';
+        const size = v?.size ? String(v.size).trim() : '';
+        const key = color && size ? `${color} / ${size}` : (size || color || '');
+        if (!key) continue;
+        existing[key] = existing[key] || {};
+        if (!existing[key].sellingPrice && v?.sellingPrice != null) existing[key].sellingPrice = Number(v.sellingPrice);
+        if (!existing[key].mrp && v?.mrp != null) existing[key].mrp = Number(v.mrp);
+      }
+    }
+
     return generateVariantBarcodes(barcodeValue, variants, existing);
   }, [product, barcodeValue]);
 
@@ -194,7 +273,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   }
 
   const variantRows = useMemo(() => {
-    const variants = parseObj(product.size_variants);
+    const variants = unifyVariantMap(product);
     return Object.keys(variants)
       .filter(k => Number(variants[k]) > 0)
       .map(k => {
@@ -311,7 +390,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     if (tab === 'barcode') {
       printLabelSheetShared(
         [{ name: product.name, barcode: barcodeValue, sellingPrice: product.sellingPrice, mrp: product.mrp, copies: printQty }],
-        { labelText, labelLine1, labelLine2, labelSize, title: `${product.name} — Labels` },
+        { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — Labels` },
       );
       return;
     }
@@ -364,7 +443,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
         mrp: row.mrp,
         copies: variantPrintQty[row.key] ?? Math.max(1, row.qty),
       })),
-      { labelText, labelLine1, labelLine2, labelSize, title: `${product.name} — Labels` },
+      { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — Labels` },
     );
   }
 
@@ -373,7 +452,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   function printOneVariant(row: typeof variantRows[number]) {
     printLabelSheetShared(
       [{ name: product.name, variantKey: row.key, barcode: row.barcode, sellingPrice: row.sellingPrice, mrp: row.mrp, copies: variantPrintQty[row.key] ?? Math.max(1, row.qty) }],
-      { labelText, labelLine1, labelLine2, labelSize, title: `${product.name} — ${row.key}` },
+      { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — ${row.key}` },
     );
   }
 
@@ -582,23 +661,60 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-0 sm:p-4">
+      {/* Give the modal more room on tablet+desktop — the variant list needs
+          it, and cramping it under max-w-sm was the layout complaint. Stays
+          max-w-sm on phones so mobile still fits. Height uses h-[85vh] so
+          the modal ALWAYS fills most of the viewport (not shrinks to
+          content) — a 13-variant list has 400+ px to breathe in instead of
+          being squished under a 350 px footer. */}
+      {/* Full-screen on mobile phones (h-[100dvh] tracks the dynamic
+          viewport so an on-screen keyboard doesn't crop the modal); the
+          padding on the outer overlay disappears too so no black border
+          eats horizontal space. Tablets+ get the earlier card look. */}
+      <div className="bg-slate-900 border-0 sm:border sm:border-slate-700 rounded-none sm:rounded-2xl w-full max-w-sm sm:max-w-md md:max-w-lg h-[100dvh] sm:h-[85vh] sm:max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-800/30 shrink-0">
+        <div className="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-4 border-b border-slate-800 bg-slate-800/30 shrink-0">
           <div>
             <h2 className="font-bold text-slate-100 text-base truncate max-w-[200px]">{product.name}</h2>
-            <p className="text-xs text-slate-500">{product.category} · ₹{product.sellingPrice || product.mrp}</p>
+            <p className="text-xs text-slate-500">
+              {product.category} · ₹{product.sellingPrice || product.mrp}
+              {activeProfile && (
+                <> · <span className="text-emerald-400 font-semibold" title="Active printer profile">🖨 {activeProfile.name}</span></>
+              )}
+            </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-1">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowPrintSettings(true)}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:border-emerald-500 hover:text-emerald-400 transition"
+              title="Barcode & QR print settings — set label size, DPI, calibration, per-shop printer profile"
+            >
+              <Settings size={13} /> Settings
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-1">
+              <X size={20} />
+            </button>
+          </div>
         </div>
+
+        {showPrintSettings && (
+          <BarcodePrintSettings
+            shopId={shopId}
+            sampleName={product.name}
+            sampleBarcode={barcodeValue}
+            sampleVariant={variantRows[0]?.key}
+            samplePrice={product.sellingPrice || product.mrp}
+            initialProfile={activeProfile || undefined}
+            onSaved={(p) => { setActiveProfile(p); setShowPrintSettings(false); }}
+            onClose={() => setShowPrintSettings(false)}
+          />
+        )}
 
         {/* Tabs — the Variants tab only shows up when the product actually has
             per-variant barcodes to print. Keeps the modal single-column for
             plain products (no rows to fill). */}
-        <div className="flex border-b border-slate-800 shrink-0">
+        <div className="flex border-b border-slate-800 shrink-0 overflow-x-auto">
           {([
             'barcode', 'qr',
             ...(variantRows.length > 0 ? ['variants' as const] : []),
@@ -606,13 +722,16 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
           ] as const).map(tabKey => (
             <button key={tabKey} onClick={() => setTab(tabKey)}
               className={cn(
-                'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-bold transition-colors',
+                // shrink-0 so long labels like "Variant Barcodes · 13" don't
+                // squeeze the sibling tabs into unreadable slivers on
+                // narrow phones — the tab bar scrolls horizontally instead.
+                'flex-1 shrink-0 min-w-[80px] py-2.5 sm:py-3 px-2 flex items-center justify-center gap-1.5 text-xs sm:text-sm font-bold transition-colors whitespace-nowrap',
                 tab === tabKey ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-slate-500 hover:text-slate-300'
               )}>
-              {tabKey === 'barcode' ? <><Barcode size={16} /> {t('barcodeTab')}</>
-                : tabKey === 'qr' ? <><QrCode size={16} /> {t('qrCodeTab')}</>
-                : tabKey === 'variants' ? <><LayoutGrid size={16} /> {tv('variantBarcodesTitle')} · {variantRows.length}</>
-                : <><Package size={16} /> {t('cartonTab')}</>}
+              {tabKey === 'barcode' ? <><Barcode size={14} className="sm:w-4 sm:h-4" /> {t('barcodeTab')}</>
+                : tabKey === 'qr' ? <><QrCode size={14} className="sm:w-4 sm:h-4" /> {t('qrCodeTab')}</>
+                : tabKey === 'variants' ? <><LayoutGrid size={14} className="sm:w-4 sm:h-4" /> {tv('variantBarcodesTitle')} · {variantRows.length}</>
+                : <><Package size={14} className="sm:w-4 sm:h-4" /> {t('cartonTab')}</>}
             </button>
           ))}
         </div>
@@ -844,11 +963,14 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
           </div>
         </div>
         ) : (
-        <div className="p-4 flex flex-col gap-3 overflow-y-auto min-h-0">
-          <p className="text-[11px] text-slate-500 leading-snug">
+        <div className="p-4 flex flex-col gap-3 flex-1 min-h-0">
+          <p className="text-[11px] text-slate-500 leading-snug shrink-0">
             {tv('variantBarcodesTitle')} — <span className="text-slate-400">{variantRows.length}</span>
           </p>
-          <div className="max-h-[50vh] overflow-y-auto pr-1 -mr-1 flex flex-col gap-2">
+          {/* Variant list eats ALL remaining space and scrolls inside — no
+              longer capped at 50vh, so the shopkeeper can browse 13+ rows
+              without the header/footer eating the visible area. */}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 flex flex-col gap-2">
             {variantRows.map(row => (
               <div key={row.key} className="bg-slate-800/70 rounded-lg px-3 py-2.5 border border-slate-700/60 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -902,64 +1024,81 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine1')}</label>
-              <input
-                type="text"
-                value={labelLine1}
-                onChange={e => setLabelLine1(e.target.value)}
-                placeholder={t('labelLine1Placeholder')}
-                maxLength={40}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
+          {/* Footer group — grouped into ONE shrink-0 block so nothing here
+              can squeeze the variant list above it. Line 1/2 + Custom label
+              are collapsed by default; only A4/Thermal + Print are visible
+              on first open (the two controls a shopkeeper actually uses on
+              nearly every print job). */}
+          <div className="shrink-0 space-y-2 pt-2 border-t border-slate-800/60">
+            <button
+              type="button"
+              onClick={() => setShowLabelOptions(v => !v)}
+              className="w-full text-[10px] font-bold text-slate-500 hover:text-slate-300 uppercase tracking-wider flex items-center justify-center gap-1 py-0.5"
+            >
+              {showLabelOptions ? '▲' : '▼'} Label header & note (optional)
+            </button>
+
+            {showLabelOptions && (
+              <div className="space-y-2 animate-in slide-in-from-top-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine1')}</label>
+                    <input
+                      type="text"
+                      value={labelLine1}
+                      onChange={e => setLabelLine1(e.target.value)}
+                      placeholder={t('labelLine1Placeholder')}
+                      maxLength={40}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine2')}</label>
+                    <input
+                      type="text"
+                      value={labelLine2}
+                      onChange={e => setLabelLine2(e.target.value)}
+                      placeholder={t('labelLine2Placeholder')}
+                      maxLength={40}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('customLabelText')}</label>
+                  <input
+                    type="text"
+                    value={labelText}
+                    onChange={e => setLabelText(e.target.value)}
+                    placeholder={t('customLabelTextPlaceholder')}
+                    maxLength={60}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex bg-slate-800 rounded-xl p-1 w-full">
+              {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setLabelSize(key)}
+                  className={cn(
+                    'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                    labelSize === key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
+                  )}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('labelLine2')}</label>
-              <input
-                type="text"
-                value={labelLine2}
-                onChange={e => setLabelLine2(e.target.value)}
-                placeholder={t('labelLine2Placeholder')}
-                maxLength={40}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
 
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('customLabelText')}</label>
-            <input
-              type="text"
-              value={labelText}
-              onChange={e => setLabelText(e.target.value)}
-              placeholder={t('customLabelTextPlaceholder')}
-              maxLength={60}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
+            <button
+              type="button"
+              onClick={printLabelSheet}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
+            >
+              <Printer size={16} /> {t('print')} ({variantRows.reduce((sum, row) => sum + (variantPrintQty[row.key] ?? row.qty), 0)}) · {labelSize === 'thermal58' ? t('labelSizeThermal58') : labelSize === 'thermal80' ? t('labelSizeThermal80') : t('labelSizeA4')}
+            </button>
           </div>
-
-          <div className="flex bg-slate-800 rounded-xl p-1 w-full">
-            {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => setLabelSize(key)}
-                className={cn(
-                  'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
-                  labelSize === key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
-                )}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Solid emerald so this reads as the primary action of the tab — the
-              earlier dim-blue variant looked disabled on dark backgrounds. */}
-          <button
-            type="button"
-            onClick={printLabelSheet}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
-          >
-            <Printer size={16} /> {t('print')} ({variantRows.reduce((sum, row) => sum + (variantPrintQty[row.key] ?? row.qty), 0)}) · {labelSize === 'thermal58' ? t('labelSizeThermal58') : labelSize === 'thermal80' ? t('labelSizeThermal80') : t('labelSizeA4')}
-          </button>
         </div>
         )}
       </div>

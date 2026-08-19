@@ -1,13 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2, NotebookText, ScanLine } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
 import LedgerView from '@/components/crm/LedgerView';
 import CustomerRollupView from '@/components/crm/CustomerRollupView';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
+// Collection features carried over from the Udyog Parties tab so Vyapar/
+// Dukan users get the same "collect from many customers in a round"
+// workflow — printable register PDF, AI-scanned handwritten sheet, and
+// per-customer Add Bill for manual paper-bill entry.
+import AddBillModal from '@/components/party/AddBillModal';
+import ScanCollectionModal from '@/components/party/ScanCollectionModal';
+import toast from 'react-hot-toast';
+import { generateCollectionRegisterPDF } from '@/lib/pdf/collectionRegister';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
@@ -153,6 +161,9 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [showAddBill, setShowAddBill] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [generatingRegister, setGeneratingRegister] = useState(false);
   const [activeTab, setActiveTab] = useState<'ledger' | 'sales'>('ledger');
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
@@ -265,9 +276,44 @@ export default function CustomersPage() {
       .sort((a, b) => b.outstanding - a.outstanding || b.count - a.count);
   })();
 
+  // Ported from the Udyog Parties tab — printable collection round sheet,
+  // outstanding customers only. Same generator + PDF layout every other
+  // module uses, so the file that comes out of Vyapar/Dukan reads
+  // identically to the Udyog one.
+  const handleDownloadCollectionRegister = async () => {
+    const outstanding = customers.filter(c => (c.totalDue || 0) > 0);
+    if (outstanding.length === 0) {
+      toast.error('No outstanding customers to collect from');
+      return;
+    }
+    setGeneratingRegister(true);
+    try {
+      await generateCollectionRegisterPDF({
+        shop: {
+          name: profile?.shopName || 'Vyapar Sarthi',
+          address: profile?.address || null,
+          mobile: profile?.mobile || null,
+          gst: profile?.gst || null,
+          pan: profile?.pan || null,
+        },
+        parties: outstanding.map(c => ({
+          name: c.name,
+          shopName: null,
+          address: (c as any).address || null,
+          totalDue: c.totalDue || 0,
+        })),
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate collection register');
+    } finally {
+      setGeneratingRegister(false);
+    }
+  };
+
   const filtered = customers
-    .filter(c => 
-      c.name.toLowerCase().includes(search.toLowerCase()) || 
+    .filter(c =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.mobile && c.mobile.includes(search))
     )
     .sort((a: any, b: any) => {
@@ -327,6 +373,23 @@ export default function CustomersPage() {
               customerType: customerTypeLabel(profile.businessType, c.customerType, tt),
             }))}
           />
+          <button
+            onClick={handleDownloadCollectionRegister}
+            disabled={generatingRegister}
+            title="Printable route sheet for today's collection round — outstanding customers only"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-400 dark:hover:border-emerald-600 hover:text-emerald-600 dark:hover:text-emerald-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-60"
+          >
+            {generatingRegister ? <Loader2 size={18} className="animate-spin" /> : <NotebookText size={18} />}
+            Collection Register
+          </button>
+          <button
+            onClick={() => setShowScanModal(true)}
+            title="Photograph your collection round notebook — AI reads each customer's Cash/Chq and lets you apply them as payments"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-400 dark:hover:border-emerald-600 hover:text-emerald-600 dark:hover:text-emerald-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
+          >
+            <ScanLine size={18} />
+            Scan Collection Sheet
+          </button>
           <button
             onClick={() => setShowNewCustomer(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
@@ -456,10 +519,12 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {/* Customer Panel */}
+      {/* Customer Panel — same full-screen-on-mobile pattern as the party
+          page (z-[60] so it beats the sidebar in desktop-mode-on-mobile;
+          h-[100dvh] so the mobile keyboard doesn't push content off-screen). */}
       {selectedCustomer && (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-2xl rounded-none sm:rounded-2xl shadow-xl flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
             
             <div className="p-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between">
               <div>
@@ -483,14 +548,22 @@ export default function CustomersPage() {
               <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/50 rounded-xl">
                 <p className="text-xs font-bold text-orange-800 dark:text-orange-400 uppercase tracking-wider mb-1">{t('totalOutstanding')}</p>
                 <p className="text-2xl font-black text-orange-600 dark:text-orange-500">₹{selectedCustomer.totalDue.toLocaleString()}</p>
-                {selectedCustomer.totalDue > 0 && (
-                  <button 
-                    onClick={() => setShowPayment(true)}
-                    className="mt-2 text-xs font-bold bg-orange-600 text-white px-3 py-1.5 rounded-lg w-full flex items-center justify-center gap-1 hover:bg-orange-700"
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => setShowAddBill(true)}
+                    className="text-xs font-bold bg-white dark:bg-slate-800 border border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
                   >
-                    <Wallet size={14} /> {t('collectPayment')}
+                    <ReceiptText size={14} /> Add Bill
                   </button>
-                )}
+                  {selectedCustomer.totalDue > 0 && (
+                    <button
+                      onClick={() => setShowPayment(true)}
+                      className="text-xs font-bold bg-orange-600 text-white px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-700 transition-colors"
+                    >
+                      <Wallet size={14} /> {t('collectPayment')}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl">
                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{t('creditTerms')}</p>
@@ -575,7 +648,7 @@ export default function CustomersPage() {
 
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-slate-900">
               {activeTab === 'ledger' ? (
-                <LedgerView entityId={selectedCustomer.id} entityType="customer" entityName={selectedCustomer.name} />
+                <LedgerView entityId={selectedCustomer.id} entityType="customer" entityName={selectedCustomer.name} onLedgerChanged={() => fetchCustomers()} />
               ) : (
                 <CustomerSalesView entityId={selectedCustomer.id} />
               )}
@@ -597,6 +670,32 @@ export default function CustomersPage() {
           outstanding={selectedCustomer.totalDue}
           onClose={() => { setShowPayment(false); setSelectedCustomer(null); }}
           onSuccess={() => fetchCustomers()}
+        />
+      )}
+
+      {/* Add Bill for the selected customer — reuses the same modal
+          Udyog's Parties tab uses, entityType='customer' so the photo-
+          attachment step targets the customer row (not a party). Wraps
+          the existing POST /billing flow so stock decrement + udhar
+          posting go through the identical pipeline as normal billing. */}
+      {showAddBill && selectedCustomer && (
+        <AddBillModal
+          partyId={selectedCustomer.id}
+          partyDocuments={(selectedCustomer as any).documents || []}
+          entityType="customer"
+          onClose={() => setShowAddBill(false)}
+          onSaved={() => { setShowAddBill(false); setSelectedCustomer(null); fetchCustomers(); }}
+        />
+      )}
+
+      {/* Scan handwritten collection notebook for retail customers. Same
+          AI vision pipeline as Udyog, entityType='customer' so the fuzzy
+          match targets the customer roster instead of the party roster. */}
+      {showScanModal && (
+        <ScanCollectionModal
+          entityType="customer"
+          onClose={() => setShowScanModal(false)}
+          onApplied={() => { setShowScanModal(false); fetchCustomers(); }}
         />
       )}
 

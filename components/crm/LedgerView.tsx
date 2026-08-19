@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useTranslations } from 'next-intl';
-import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, X, Paperclip } from 'lucide-react';
+import { useTranslations, useLocale } from 'next-intl';
+import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, X, Paperclip, ExternalLink } from 'lucide-react';
 import api from '@/lib/api';
 import { ExportButton } from '@/lib/hooks/useExport';
 import TransactionDetailModal from './TransactionDetailModal';
@@ -38,6 +38,12 @@ type Transaction = {
   /** Photo(s) of the physical bill, attached via Add Bill (see
    *  AddBillModal) — empty for entries that never had one. */
   documents: { id: string; url: string; uploadedAt: string }[];
+  // Per-bill money breakdown from /crm/ledger. Nulls on non-sale rows.
+  saleTotalAmount?: number | null;
+  saleAmountPaid?: number | null;
+  outstandingAmount?: number | null;
+  paymentType?: string | null;
+  paymentDetails?: { cash?: number; upi?: number; card?: number } | null;
 };
 
 // Raw shapes as they actually come back from /crm/ledger — customer_transactions
@@ -58,18 +64,30 @@ type RawTransaction = {
   gstAmount?: number | null;
   items?: BillItem[];
   documents?: { id: string; url: string; uploadedAt: string }[];
+  saleTotalAmount?: number | null;
+  saleAmountPaid?: number | null;
+  outstandingAmount?: number | null;
+  paymentType?: string | null;
+  paymentDetails?: { cash?: number; upi?: number; card?: number } | null;
 };
 
 export default function LedgerView({
   entityId,
   entityType,
-  entityName
+  entityName,
+  onLedgerChanged,
 }: {
   entityId: string;
   entityType: 'customer' | 'party' | 'supplier';
   entityName?: string;
+  // Fires when a bill was deleted or a photo attached — used by the
+  // parent page (/party, /customers) to re-fetch the outer customer
+  // list so the panel header's outstanding total stays in sync with the
+  // just-refetched ledger below.
+  onLedgerChanged?: () => void;
 }) {
   const t = useTranslations('LedgerView');
+  const locale = useLocale();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState({ from: '', to: '' });
@@ -95,6 +113,11 @@ export default function LedgerView({
         gstAmount: tx.gstAmount ?? null,
         items: Array.isArray(tx.items) ? tx.items : [],
         documents: Array.isArray(tx.documents) ? tx.documents : [],
+        saleTotalAmount: tx.saleTotalAmount ?? null,
+        saleAmountPaid: tx.saleAmountPaid ?? null,
+        outstandingAmount: tx.outstandingAmount ?? null,
+        paymentType: tx.paymentType ?? null,
+        paymentDetails: tx.paymentDetails ?? null,
       }));
       setTransactions(normalized);
     } catch (e) {
@@ -309,6 +332,20 @@ export default function LedgerView({
                       {tx.gstPercent}% GST · ₹{(tx.gstAmount || 0).toLocaleString('en-IN')}
                     </span>
                   )}
+                  {/* At-a-glance Paid & Udhar chips — sourced from the same
+                      per-bill breakdown block the modal shows on open. Only
+                      rendered when the row has a real Sale attached (payment/
+                      opening-balance rows keep the strip lean). */}
+                  {tx.saleAmountPaid != null && (tx.saleAmountPaid || 0) > 0 && (
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded" title="Amount already paid on this bill">
+                      Paid ₹{Math.round(tx.saleAmountPaid || 0).toLocaleString('en-IN')}
+                    </span>
+                  )}
+                  {tx.outstandingAmount != null && (tx.outstandingAmount || 0) > 0 && (
+                    <span className="font-bold text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/10 px-1.5 py-0.5 rounded" title="Still owed on this bill">
+                      Udhar ₹{Math.round(tx.outstandingAmount || 0).toLocaleString('en-IN')}
+                    </span>
+                  )}
                   {tx.documents.length > 0 && (
                     <span className="flex items-center gap-0.5 font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded" title="Bill photo attached">
                       <Paperclip size={10} /> Photo
@@ -318,13 +355,31 @@ export default function LedgerView({
                 </p>
               </div>
 
-              <div className="text-right shrink-0">
-                <div className={`font-black ${credit ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                  {credit ? '+' : '-'}₹{tx.amount.toLocaleString()}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="text-right">
+                  <div className={`font-black ${credit ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {credit ? '+' : '-'}₹{tx.amount.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1">
+                    <Calendar size={10} /> {tx.date ? new Date(tx.date).toLocaleDateString() : ''}
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1">
-                  <Calendar size={10} /> {tx.date ? new Date(tx.date).toLocaleDateString() : ''}
-                </div>
+                {/* Direct link to the original invoice detail page. Only for
+                    real bill rows (udhar/sale) — payments/opening-balance
+                    rows have no invoice to open. stopPropagation so the row's
+                    modal-open click doesn't also fire underneath. */}
+                {tx.billNumber && (tx.type === 'udhar' || tx.type === 'sale') && (
+                  <a
+                    href={`/${locale}/billing/invoices/${encodeURIComponent(tx.billNumber)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Open the original invoice page"
+                    className="p-2 rounded-lg text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 border border-transparent hover:border-orange-200 dark:hover:border-orange-500/30 transition-colors"
+                  >
+                    <ExternalLink size={16} />
+                  </a>
+                )}
               </div>
             </div>
           );
@@ -333,9 +388,17 @@ export default function LedgerView({
 
       {viewingTransaction && (
         <TransactionDetailModal
+          // Pass the entity context so the modal can (a) attach photos to
+          // the right customer.documents array, and (b) know which
+          // customer to refetch after a delete. Supplier ledgers use a
+          // different pipeline and don't have per-bill delete here.
+          entityId={entityType === 'supplier' ? undefined : entityId}
+          entityType={entityType === 'supplier' ? undefined : (entityType as 'customer' | 'party')}
           entityName={entityName || entityType}
           transaction={viewingTransaction}
           onClose={() => setViewingTransaction(null)}
+          onDeleted={() => { fetchLedger(); onLedgerChanged?.(); }}
+          onPhotoUploaded={() => { fetchLedger(); onLedgerChanged?.(); }}
         />
       )}
     </div>

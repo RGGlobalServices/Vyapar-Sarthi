@@ -36,7 +36,36 @@ export const POST = handle(async (req) => {
     const pid = i.product_id || i.productId;
     const dbProduct = pid ? productMap.get(pid) : null;
     const sp = Number(i.price_per_unit ?? i.pricePerUnit ?? i.price) || 0;
-    const cp = Number(i.purchase_price) || Number(i.purchasePrice) || Number(i.cost) || Number(dbProduct?.wholesaleCost) || 0;
+
+    // Cost basis, in priority order:
+    //   1. Whatever the client explicitly sent for this line (purchase_price
+    //      / purchasePrice / cost) — always wins, lets the shopkeeper
+    //      override for a one-off item.
+    //   2. Per-variant costPrice from Product.variants[] — Udyog stores the
+    //      real cost here per size/colour, and any single variant may have
+    //      been bought at a different price. Match by the exact
+    //      "colour / size" key the sale row carries.
+    //   3. Product.costPrice — the top-level real cost. On Udyog packages
+    //      wholesaleCost is REPURPOSED as "wholesale selling price" (see
+    //      memory: udyog-three-tier-pricing), so it MUST NOT be used as
+    //      cost basis or profit turns negative on Udyog shops. Legacy
+    //      Vyapar/Dukan shops store cost in wholesaleCost with costPrice
+    //      null, so wholesaleCost remains the fallback for them.
+    //   4. Product.wholesaleCost — legacy Vyapar/Dukan cost column.
+    let cp = Number(i.purchase_price) || Number(i.purchasePrice) || Number(i.cost) || 0;
+    if (!cp && dbProduct) {
+      const variantKey = i.variant || null;
+      if (variantKey && Array.isArray(dbProduct.variants)) {
+        for (const v of dbProduct.variants as any[]) {
+          const key = v.color ? `${v.color} / ${v.size || ''}` : (v.size || '');
+          if (key === variantKey) {
+            cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0;
+            break;
+          }
+        }
+      }
+      if (!cp) cp = Number(dbProduct.costPrice) || Number(dbProduct.wholesaleCost) || 0;
+    }
     const gstRate = Number(i.gst_percent ?? i.gstPercent ?? dbProduct?.gstPercent) || 0;
 
     return {

@@ -495,14 +495,16 @@ export default function WholesaleBillingUI() {
   };
 
   const getPrice = useCallback((product: any, variant?: string, wholesale: boolean = isWholesale) => {
+    // NB: `cost` here is misleadingly named — for Udyog it holds the
+    // WHOLESALE SELLING PRICE (what a wholesale customer pays), not the
+    // shop's actual purchase cost. That confusion caused profit to be
+    // computed against the wrong basis; the shop's real cost is resolved
+    // separately by getShopCost() below and sent as purchase_price. Keeping
+    // the name here to avoid touching the wholesale/retail price toggle.
     let cost = product.wholesaleCost || 0;
     let selling = product.sellingPrice || product.price || 0;
 
     if (variant) {
-      // Udyog variants[] rows are keyed by the full "Colour / Size" composite
-      // and carry their own cost/wholesale/retail/MRP — check this first since
-      // it's exact; metadata.size_prices below is keyed by bare size only, so
-      // it can't distinguish two colours sharing a size.
       const row = Array.isArray(product.variants)
         ? product.variants.find((v: any) => variantRowKey(v) === variant)
         : null;
@@ -522,6 +524,41 @@ export default function WholesaleBillingUI() {
     }
     return wholesale ? cost : selling;
   }, [isWholesale]);
+
+  /**
+   * Resolves the SHOP'S real purchase cost for a product (± variant) — the
+   * number that goes into profit math, not the number the customer pays.
+   *
+   * Priority:
+   *   1. Per-variant `costPrice` (Udyog variants[] carry it per colour/size)
+   *   2. Per-variant `metadata.size_prices[variant].cost`
+   *   3. Product-level `costPrice` — Udyog's real cost column
+   *   4. Product-level `wholesaleCost` — Vyapar/Dukan legacy cost column
+   *
+   * The old code just returned `wholesaleCost`, but on Udyog packages that
+   * column is repurposed as the WHOLESALE SELLING PRICE (see memory:
+   * udyog-three-tier-pricing). Using it as cost made profit look tiny or
+   * negative for every Udyog bill — client-reported: "Today's Profit ₹-133
+   * even though wholesale profit is set to ₹250".
+   */
+  const getShopCost = useCallback((product: any, variant?: string): number => {
+    if (variant) {
+      const row = Array.isArray(product?.variants)
+        ? product.variants.find((v: any) => variantRowKey(v) === variant)
+        : null;
+      if (row) {
+        const c = Number(row.costPrice) || 0;
+        if (c > 0) return c;
+      }
+      try {
+        const meta = typeof product?.metadata === 'string' ? JSON.parse(product.metadata) : (product?.metadata || {});
+        const sp = meta?.size_prices?.[variant];
+        const c = Number(sp?.cost) || 0;
+        if (c > 0) return c;
+      } catch {}
+    }
+    return Number(product?.costPrice) || Number(product?.wholesaleCost) || 0;
+  }, []);
 
   // When Wholesale/Retail toggle changes, update all prices in cart
   const prevIsWholesale = useRef(isWholesale);
@@ -586,7 +623,11 @@ export default function WholesaleBillingUI() {
     } else {
       const defaultQty = product.is_loose ? 0.5 : 1;
       const price = getPrice(product, variant);
-      const cost = product.wholesaleCost || 0;
+      // `cost` here is the shop's actual purchase cost — used both for the
+      // cart's live profit display AND sent to the backend as
+      // `purchase_price`. Must NOT be the wholesale-selling-price (that's
+      // the customer-facing rate and lives in `price` above via getPrice).
+      const cost = getShopCost(product, variant);
       const { color, size } = variant ? splitVariantKey(variant) : { color: '', size: '' };
 
       addItem({

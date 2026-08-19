@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import Link from 'next/link';
 import api from '@/lib/api';
+import { invalidateReturnCaches } from '@/lib/swrInvalidate';
 import { 
   Card, 
   CardContent, 
@@ -187,7 +188,11 @@ export default function ReturnsPage() {
       setBill(null);
       setReturnItems([]);
       setSearchQuery('');
-      fetchHistory(); // refresh history
+      fetchHistory(); // refresh return history in-page
+      // Every screen that reads customer.totalDue, product stock, dashboard
+      // KPIs or the cashbook has just been changed by this return — nudge
+      // SWR so those pages don't show yesterday's numbers on next visit.
+      invalidateReturnCaches();
     } catch (err: any) {
       console.error('Failed to process return detail:', err);
       const errorDetail = {
@@ -244,38 +249,109 @@ export default function ReturnsPage() {
             </CardContent>
           </Card>
 
-          {bill && (
-            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 animate-in slide-in-from-left-4">
-              <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 pb-4">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('invoiceSummary') || 'Invoice Summary'}</CardTitle>
-                  <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    {bill.invoice_number || `ID: ${bill.id.substring(0, 8)}`}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-6 space-y-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">{t('customer') || 'Customer'}</span>
-                  <span className="text-slate-900 dark:text-slate-200 font-bold">{bill.customer_name || t('guest') || 'Guest'}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">{t('date') || 'Date'}</span>
-                  <span className="text-slate-900 dark:text-slate-200 font-bold">{new Date(bill.created_at).toLocaleDateString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">{t('totalPaid') || 'Total Paid'}</span>
-                  <span className="text-slate-900 dark:text-slate-200 font-bold">₹{bill.total_amount.toLocaleString()}</span>
-                </div>
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-800/50 flex justify-between items-center">
-                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('payment') || 'Payment'}</span>
-                   <span className="bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded text-[10px] font-black uppercase border border-emerald-500/20">
-                     {bill.payment_type}
-                   </span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {bill && (() => {
+            // Payment breakdown for THIS bill. amountPaid is what actually
+            // came into the drawer at bill time; the remainder is Udhar.
+            // Detailed Split breakdown lives in paymentDetails{cash,upi,card}.
+            const totalAmt = Number(bill.total_amount) || 0;
+            const paidAmt = Number(bill.amount_paid ?? bill.amountPaid ?? bill.total_amount) || 0;
+            const udharAmt = Math.max(0, totalAmt - paidAmt);
+            const pd = bill.payment_details || bill.paymentDetails || {};
+            const cashPaid = Number(pd?.cash) || (bill.payment_type === 'Cash' ? paidAmt : 0);
+            const upiPaid = Number(pd?.upi) || (bill.payment_type === 'UPI' ? paidAmt : 0);
+            const cardPaid = Number(pd?.card) || (bill.payment_type === 'Card' ? paidAmt : 0);
+
+            // What the CURRENT ask (returnQty on each line) will do — udhar
+            // clears first, then cash goes out. Same attribution the backend
+            // does, computed here so the shopkeeper sees the plan before OK.
+            const totalRefund = returnItems.reduce((acc, it) => acc + (it.returnQty * it.price_per_unit), 0);
+            const willClearUdhar = Math.min(totalRefund, udharAmt);
+            const willRefundCash = totalRefund - willClearUdhar;
+
+            return (
+              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 animate-in slide-in-from-left-4">
+                <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 pb-4">
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('invoiceSummary') || 'Invoice Summary'}</CardTitle>
+                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      {bill.invoice_number || `ID: ${bill.id.substring(0, 8)}`}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">{t('customer') || 'Customer'}</span>
+                    <span className="text-slate-900 dark:text-slate-200 font-bold">{bill.customer_name || t('guest') || 'Guest'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">{t('date') || 'Date'}</span>
+                    <span className="text-slate-900 dark:text-slate-200 font-bold">{new Date(bill.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Bill Total</span>
+                    <span className="text-slate-900 dark:text-slate-200 font-bold">₹{totalAmt.toLocaleString('en-IN')}</span>
+                  </div>
+
+                  {/* Payment breakdown — the whole point of surfacing this on
+                      the returns page is so a shopkeeper knows what to refund
+                      (cash out the drawer? credit back on the party?). */}
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5 bg-slate-50 dark:bg-slate-800/40 space-y-1.5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">How this bill was paid</p>
+                    {cashPaid > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-600 dark:text-slate-300">💵 Cash paid</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{cashPaid.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    {upiPaid > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-600 dark:text-slate-300">📱 UPI / Online</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{upiPaid.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    {cardPaid > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-600 dark:text-slate-300">💳 Card</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{cardPaid.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    {udharAmt > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-orange-600 dark:text-orange-400 font-semibold">🧾 Udhar (unpaid)</span>
+                        <span className="font-bold text-orange-600 dark:text-orange-400">₹{udharAmt.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    {paidAmt === 0 && udharAmt === 0 && (
+                      <p className="text-[11px] text-slate-500 italic">No payment details recorded.</p>
+                    )}
+                  </div>
+
+                  {/* Live plan for what this return will actually do — clears
+                      udhar first, then physical cash back. Matches the
+                      backend attribution one-for-one so the number the
+                      shopkeeper sees before confirming is what actually
+                      happens on save. */}
+                  {totalRefund > 0 && (
+                    <div className="rounded-lg border border-emerald-300 dark:border-emerald-700 p-2.5 bg-emerald-50 dark:bg-emerald-500/10 space-y-1.5">
+                      <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">This return will</p>
+                      {willClearUdhar > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-emerald-800 dark:text-emerald-300">↓ Clear from party's udhar</span>
+                          <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willClearUdhar.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {willRefundCash > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-emerald-800 dark:text-emerald-300">💵 Refund to customer (cash out)</span>
+                          <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willRefundCash.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
 
         {/* Right: Return Items */}

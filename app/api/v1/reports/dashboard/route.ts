@@ -143,12 +143,22 @@ export const GET = handle(async (req) => {
         AND min_stock > 0
     `,
 
-    prisma.materialReturn.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
-      _sum: { amount: true },
-      _count: { id: true },
-    }),
+    // Returns aggregate — only counts rows the closed-loop pipeline HASN'T
+    // already settled through Sale/customer.totalDue/cashBook. Post-fix
+    // returns are marked settled:true in their note JSON so we don't
+    // double-subtract them here. Legacy rows (no marker) are still summed
+    // the old way so pre-existing dashboards keep the number they had.
+    prisma.$queryRaw<{ total: number; cnt: number }[]>`
+      SELECT COALESCE(SUM(amount), 0)::float as total, COUNT(*)::int as cnt
+      FROM material_returns
+      WHERE shop_id = ANY(${shopIds}::uuid[])
+        AND date >= ${startDate} AND date <= ${endDate}
+        AND (note IS NULL OR note NOT LIKE '%"settled":true%')
+    `,
 
+    // Grouped by reason — kept unfiltered so the "returns breakdown" card
+    // still shows the full picture (legacy + new). It's display-only, doesn't
+    // participate in the math.
     prisma.materialReturn.groupBy({
       by: ['reason'],
       where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
@@ -156,20 +166,21 @@ export const GET = handle(async (req) => {
       _count: { id: true },
     }),
 
-    // Profit lost = qty * (selling_price - cost). "Cost" lives in two columns
-    // depending on shop type: Udyog stores the real cost in `cost_price` and
-    // repurposes `wholesale_cost` as the *wholesale selling price*, while
-    // legacy Vyapar/Dukan writes cost into `wholesale_cost` and leaves
-    // `cost_price` NULL. Prefer `cost_price` where it exists so both cases
-    // yield real cost — otherwise Udyog returns almost never dented profit
-    // (wholesale-selling ≈ retail-selling), leaving dashboard totals wrong.
+    // Profit-lost for LEGACY (unsettled) rows only — uses current product
+    // cost as a rough estimate. Post-fix rows carry the *actual* historical
+    // per-unit margin in note.refundProfit (computed from SaleItem.
+    // marginPerUnit at return time), so those are read straight out below
+    // and NOT recomputed here. This was the source of the "profit minus"
+    // bug: the old query used product's current selling_price which drifts.
     prisma.$queryRaw<{ profit_lost: number }[]>`
       SELECT SUM(
         r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.cost_price, p.wholesale_cost, 0))
       )::float as profit_lost
       FROM material_returns r
       LEFT JOIN products p ON r.product_id = p.id
-      WHERE r.shop_id = ANY(${shopIds}::uuid[]) AND r.date >= ${startDate} AND r.date <= ${endDate}
+      WHERE r.shop_id = ANY(${shopIds}::uuid[])
+        AND r.date >= ${startDate} AND r.date <= ${endDate}
+        AND (r.note IS NULL OR r.note NOT LIKE '%"settled":true%')
     `,
 
     prisma.$queryRaw<{ realized_sales_profit: number }[]>`
@@ -310,8 +321,14 @@ export const GET = handle(async (req) => {
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
+  // Legacy (unsettled) returns only. Post-fix returns are already reflected
+  // in the Sale row, so they participate via salesAndProfit — subtracting
+  // them here again would double-count and swing the KPIs negative when a
+  // return day has few sales (the original bug).
+  const legacyReturnsAmount = Number((returnsSummary as any[])[0]?.total || 0);
+  const legacyReturnsCount = Number((returnsSummary as any[])[0]?.cnt || 0);
   let returnsProfit = Number((returnsProfitLost as any[])[0]?.profit_lost || 0);
-  const returnsAmount = returnsSummary._sum.amount || 0;
+  const returnsAmount = legacyReturnsAmount;
 
   // Realized Profit Calculation
   const realizedSalesProfit = Number((realizedProfitData as any[])[0]?.realized_sales_profit || 0);
@@ -401,7 +418,7 @@ export const GET = handle(async (req) => {
       period_udhar: Number((udharGivenData as any[])[0]?.total_udhar_given || 0),
       low_stock_count: lowStockCount,
       returns_amount: returnsAmount,
-      returns_count: returnsSummary._count.id || 0,
+      returns_count: legacyReturnsCount,
       // New cash-flow KPIs
       sales_collection: salesCollection,
       udhar_collection: udharCollection,

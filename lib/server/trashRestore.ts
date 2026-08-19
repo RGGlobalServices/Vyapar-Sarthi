@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { ApiError } from '@/lib/server/http';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 /**
  * Restoring means re-creating each row from its own snapshot with its
@@ -108,30 +109,106 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
     }
 
     case 'sale': {
-      // Recreates the Sale + its line items and replays the financial
-      // ledger effects (Udhar entry + totalDue, cash entry) exactly as
-      // POST /billing originally computed them — all unambiguous, derived
-      // straight from the sale's own stored totals. Deliberately does NOT
-      // attempt to re-decrement stock/variant JSON or restore
-      // batches/StockMovement rows: unlike the ledger math, that would
-      // require re-deriving how much of the ORIGINAL sale's stock is still
-      // safe to remove given everything that's happened since (further
-      // sales, adjustments, transfers) — the same class of judgment call
-      // Purchase-reversal guards against going negative for, but with no
-      // safe automatic answer here. Reported back so the shopkeeper knows
-      // to true up stock manually instead of the restore silently
-      // guessing wrong.
+      // Restore is the exact mirror of DELETE (`reverseSaleEffects` in
+      // lib/server/sales.ts): re-creates the Sale + its items, re-applies
+      // stock decrement (currentStock + size_variants + Udyog variants[] +
+      // wholesale batches), reposts Udhar to customer + ledger, and puts
+      // the cash entry back in the drawer. Client requirement — "restore
+      // kel tar tech tyach sales/profit/udhar releated ani stock kami
+      // hone zal pahije" — needs restore to be truly symmetric with
+      // delete, not a partial one that leaves stock stuck. The earlier
+      // "skip stock — can't safely reverse" note was over-cautious; a
+      // manual restore is by definition the shopkeeper saying "put this
+      // exact bill's effect back", so stock going negative is a legitimate
+      // audit signal ("you sold what you no longer had") not a bug to
+      // silently avoid.
       const { items, ...saleFields } = data;
       const existing = await prisma.sale.findUnique({ where: { id: record.entityId } });
       if (existing) throw new ApiError(409, 'A sale with this ID already exists — it may have been restored already.');
 
-      await prisma.sale.create({
+      // Look up shop once for the wholesale-tier gate below (batch/movement)
+      const shop = await prisma.shop.findUnique({ where: { id: shopId }, select: { packageType: true } });
+
+      const created = await prisma.sale.create({
         data: {
           ...saleFields,
           items: { create: (items || []).map((it: any) => { const { saleId, ...rest } = it; return rest; }) },
         },
+        include: { items: true },
       });
 
+      // --- Stock decrement, symmetric with billing/route.ts creation path ---
+      const itemsByProduct = new Map<string, typeof created.items>();
+      for (const it of created.items) {
+        if (!it.productId) continue;
+        const arr = itemsByProduct.get(it.productId) || [];
+        arr.push(it);
+        itemsByProduct.set(it.productId, arr);
+      }
+      const productIds = [...itemsByProduct.keys()];
+      if (productIds.length) {
+        const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
+        const productById = new Map(products.map(p => [p.id, p]));
+        for (const [productId, productItems] of itemsByProduct.entries()) {
+          const product = productById.get(productId);
+          if (!product) { skipped.push(`Product no longer exists — stock not restored for one line.`); continue; }
+
+          let totalQty = 0;
+          let newSizeVariants = product.size_variants;
+          const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
+          let variantsChanged = false;
+
+          for (const item of productItems) {
+            totalQty += item.quantity;
+            if (item.variant && newSizeVariants) {
+              try {
+                const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
+                if (parsed[item.variant] !== undefined) {
+                  parsed[item.variant] = Math.max(0, (Number(parsed[item.variant]) || 0) - item.quantity);
+                  newSizeVariants = JSON.stringify(parsed);
+                }
+              } catch {}
+            }
+            if (item.variant && newVariants) {
+              const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
+              if (row) {
+                row.stock = Math.max(0, (Number(row.stock) || 0) - item.quantity);
+                variantsChanged = true;
+              }
+            }
+          }
+
+          await prisma.product.update({
+            where: { id: product.id },
+            data: {
+              ...(product.currentStock !== null ? { currentStock: { decrement: totalQty } } : {}),
+              size_variants: newSizeVariants,
+              ...(variantsChanged ? { variants: newVariants as any } : {}),
+            },
+          });
+
+          // Wholesale batch + movement mirror (Udyog/Bada Udyog only) — same
+          // FIFO the sale used originally: re-consume the oldest active batch(es).
+          if (isWholesaleTierPackage(shop?.packageType)) {
+            let remaining = totalQty;
+            const batches = await prisma.batch.findMany({
+              where: { productId, shopId, quantity: { gt: 0 } },
+              orderBy: { createdAt: 'asc' },
+            });
+            for (const batch of batches) {
+              if (remaining <= 0) break;
+              const deduct = Math.min(batch.quantity, remaining);
+              await prisma.batch.update({ where: { id: batch.id }, data: { quantity: { decrement: deduct } } });
+              remaining -= deduct;
+            }
+            await prisma.stockMovement.create({
+              data: { shopId, productId, type: 'sale', quantity: totalQty, referenceId: created.id },
+            });
+          }
+        }
+      }
+
+      // --- Udhar + ledger row (same shape POST /billing writes) ---
       const totalAmount = saleFields.totalAmount || 0;
       const amountPaid = saleFields.amountPaid || 0;
       const outstanding = Math.max(0, totalAmount - amountPaid);
@@ -157,6 +234,7 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
         }
       }
 
+      // --- Cash back in the drawer ---
       const paymentDetails = saleFields.paymentDetails || {};
       const cashAmount = saleFields.paymentType === 'Split' ? Number(paymentDetails?.cash || 0) : (saleFields.paymentType === 'Cash' ? amountPaid : 0);
       if (cashAmount > 0) {
@@ -170,8 +248,6 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
           },
         });
       }
-
-      skipped.push('Stock levels were not automatically restored for this sale — please verify and adjust stock manually for its items if needed.');
       break;
     }
 

@@ -33,3 +33,21 @@ export function invalidateApiCache(prefix: string) {
 export function invalidateProductCaches() {
   invalidateApiCache('/products');
 }
+
+/**
+ * Fires when a return closes on the backend: the customer ledger, product
+ * stock, dashboard KPIs, cashbook, and returns history all read stale.
+ * Named for the whole side-effect surface rather than any one page, so a
+ * caller just says "return happened" and every screen that touches those
+ * numbers re-fetches on next mount — no per-page mutate() sprinkling.
+ */
+export function invalidateReturnCaches() {
+  invalidateApiCache('/products');
+  invalidateApiCache('/crm/customers');
+  invalidateApiCache('/customers');
+  invalidateApiCache('/reports/dashboard');
+  invalidateApiCache('/reports');
+  invalidateApiCache('/cashbook');
+  invalidateApiCache('/billing');
+  invalidateApiCache('/returns');
+}

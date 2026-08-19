@@ -3,6 +3,62 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import Fuse from 'fuse.js';
 import { parseFlexibleDate } from '@/lib/server/dates';
+import { parseSizeRange } from '@/lib/sizeRange';
+
+/**
+ * Build the "<Colour> / <Size>" composite key used everywhere else in the
+ * system to identify a specific variant row (matches billing/route.ts's
+ * stock-decrement code and the returns route). Bare size or bare colour
+ * fall back to just that half. Empty → null so the caller can guard on it.
+ */
+function variantKey(colour: string | null, size: string | null): string | null {
+  const c = (colour || '').trim();
+  const sz = (size || '').trim();
+  if (c && sz) return `${c} / ${sz}`;
+  return sz || c || null;
+}
+
+/**
+ * Merge a per-variant qty into a product's `variants[]` JSON — creates a new
+ * row when the colour/size combination doesn't exist yet, otherwise adds
+ * the qty to the existing row's stock. Prices from the imported row are
+ * used only for a NEW variant (so an existing variant's carefully-set
+ * price isn't clobbered by an import).
+ */
+function mergeVariantIntoArray(
+  existing: any,
+  colour: string | null,
+  size: string | null,
+  qty: number,
+  costPrice: number,
+  mrp: number,
+): any[] {
+  const arr: any[] = Array.isArray(existing) ? existing.map((v: any) => ({ ...v })) : [];
+  const c = (colour || '').trim();
+  const sz = (size || '').trim();
+  const idx = arr.findIndex((v: any) =>
+    (String(v.color || '').trim() === c) && (String(v.size || '').trim() === sz)
+  );
+  if (idx >= 0) {
+    arr[idx].stock = (Number(arr[idx].stock) || 0) + qty;
+    // Keep price fields as-is on an existing variant so an import doesn't
+    // silently over-write per-variant prices the shopkeeper set by hand.
+    if (!arr[idx].costPrice && costPrice > 0) arr[idx].costPrice = costPrice;
+    if (!arr[idx].wholesalePrice && costPrice > 0) arr[idx].wholesalePrice = costPrice;
+    if (!arr[idx].mrp && mrp > 0) arr[idx].mrp = mrp;
+  } else {
+    arr.push({
+      color: c || null,
+      size: sz || null,
+      stock: qty,
+      costPrice: costPrice > 0 ? costPrice : undefined,
+      wholesalePrice: costPrice > 0 ? costPrice : undefined,
+      sellingPrice: costPrice > 0 ? Math.round(costPrice * 1.2) : undefined,
+      mrp: mrp > 0 ? mrp : undefined,
+    });
+  }
+  return arr;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -176,16 +232,45 @@ export async function POST(req: NextRequest) {
         // match each other instead of both hitting the DB unique constraint.
         const barcodeIndex = new Map<string, string>();
         for (const p of existingProducts) if (p.barcode) barcodeIndex.set(p.barcode, p.id);
+        // Per-product variants[] cache so multiple rows for the same product
+        // merge into ONE variants array (each row is a distinct colour/size).
+        // Need to fetch variants for products we might merge into.
+        const productVariantsCache = new Map<string, any[]>();
+        const existingWithVariants = await prisma.product.findMany({
+          where: { id: { in: existingProducts.map(p => p.id) } },
+          select: { id: true, variants: true },
+        });
+        for (const p of existingWithVariants) {
+          productVariantsCache.set(p.id, Array.isArray(p.variants) ? (p.variants as any[]).map((v: any) => ({ ...v })) : []);
+        }
 
-        for (let i = 0; i < data.length; i++) {
-          const row = data[i];
+        // Expand size ranges before iterating so a "6*8, qty 2" row becomes
+        // 3 individual per-size rows (6, 7, 8) each qty 2 — same convention
+        // the scan-bill route + AddBillModal use (see lib/sizeRange.ts).
+        // Preserves the file's original size-column header name so downstream
+        // getVal(...) picks it up unchanged.
+        const expandedProductData: any[] = [];
+        for (const row of data) {
+          const sizeRaw = getVal(row, ['size']);
+          const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '');
+          if (sizes.length <= 1) { expandedProductData.push(row); continue; }
+          const sizeKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'size');
+          for (const s of sizes) {
+            const clone: any = { ...row };
+            if (sizeKey) clone[sizeKey] = s; else clone.Size = s;
+            expandedProductData.push(clone);
+          }
+        }
+
+        for (let i = 0; i < expandedProductData.length; i++) {
+          const row = expandedProductData[i];
           try {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
             const barcode = getVal(row, ['barcode']);
-            if (!name) { 
-              skipped++; 
+            if (!name) {
+              skipped++;
               rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`);
-              continue; 
+              continue;
             }
             const barcodeStr = barcode ? String(barcode) : null;
 
@@ -202,6 +287,11 @@ export async function POST(req: NextRequest) {
             const quantity = parseFloat(getVal(row, ['quantity', 'stock', 'qty']) || 0);
             const extras = getProductExtras(row);
 
+            // Row-level colour+size (may be null for plain products).
+            const rowColour = String(getVal(row, ['colour', 'color']) || '').trim() || null;
+            const rowSize   = String(getVal(row, ['size']) || '').trim() || null;
+            const rowVariantKey = variantKey(rowColour, rowSize);
+
             if (matchId) {
               // Existing product the user chose to keep as-is → leave untouched.
               if (skipExisting(i)) { skipped++; continue; }
@@ -215,54 +305,78 @@ export async function POST(req: NextRequest) {
               if (has(row, ['category'])) upd.category = category;
               if (has(row, ['minstock', 'minlevel'])) upd.minStock = parseFloat(getVal(row, ['minstock', 'minlevel']));
               if (has(row, ['quantity', 'stock', 'qty'])) upd.currentStock = quantity;
-              
+
+              // Per-variant stock — merge into variants[] so billing's stock
+              // decrement can find the specific colour/size row. Falls back
+              // to plain currentStock behaviour when no variant on the row.
+              if (rowVariantKey && quantity > 0) {
+                const merged = mergeVariantIntoArray(
+                  productVariantsCache.get(matchId) ?? [],
+                  rowColour, rowSize, quantity, cost, mrp,
+                );
+                upd.variants = merged as any;
+                productVariantsCache.set(matchId, merged);
+                // currentStock rollup mirrors the sum of variant stocks —
+                // increment by this row's qty (not SET to it), so a
+                // multi-row import for the same product adds correctly.
+                if (has(row, ['quantity', 'stock', 'qty'])) upd.currentStock = { increment: quantity };
+              }
+
               const metaUpdates: any = {};
-              if (has(row, ['size', 'size_variants'])) metaUpdates.size = getVal(row, ['size', 'size_variants']);
-              if (has(row, ['color'])) metaUpdates.color = getVal(row, ['color']);
+              if (has(row, ['color', 'colour'])) metaUpdates.color = getVal(row, ['color', 'colour']);
               if (has(row, ['fabric'])) metaUpdates.fabric = getVal(row, ['fabric']);
               if (has(row, ['sole_material', 'solematerial'])) metaUpdates.sole_material = getVal(row, ['sole_material', 'solematerial']);
               if (has(row, ['weight'])) metaUpdates.weight = getVal(row, ['weight']);
-              
-              if (Object.keys(metaUpdates).length > 0) {
-                // To avoid fetching existing metadata, we'll just set it. In a real scenario you might want to merge.
-                upd.metadata = metaUpdates;
-              }
+
+              if (Object.keys(metaUpdates).length > 0) upd.metadata = metaUpdates;
 
               await prisma.product.update({ where: { id: matchId }, data: upd });
               updated++;
             } else {
               const minStock = getVal(row, ['minstock', 'minlevel']);
-              
+
               const meta: any = {};
-              if (getVal(row, ['size', 'size_variants'])) meta.size = getVal(row, ['size', 'size_variants']);
-              if (getVal(row, ['color'])) meta.color = getVal(row, ['color']);
+              if (getVal(row, ['color', 'colour'])) meta.color = getVal(row, ['color', 'colour']);
               if (getVal(row, ['fabric'])) meta.fabric = getVal(row, ['fabric']);
               if (getVal(row, ['sole_material', 'solematerial'])) meta.sole_material = getVal(row, ['sole_material', 'solematerial']);
               if (getVal(row, ['weight'])) meta.weight = getVal(row, ['weight']);
+
+              // Seed variants[] with this row's variant so per-size stock is
+              // tracked from row 1. Subsequent rows for the same product will
+              // merge into this array via mergeVariantIntoArray().
+              const initialVariants = rowVariantKey && quantity > 0
+                ? [{
+                    color: rowColour,
+                    size: rowSize,
+                    stock: quantity,
+                    costPrice: cost > 0 ? cost : undefined,
+                    wholesalePrice: cost > 0 ? cost : undefined,
+                    sellingPrice: price > 0 ? price : undefined,
+                    mrp: mrp > 0 ? mrp : undefined,
+                  }]
+                : [];
 
               const newProd = await prisma.product.create({
                 data: {
                   shopId,
                   name: String(name),
-                  // Always store a barcode so the product is searchable/scannable
-                  // in Billing — generate one when the file doesn't provide it.
                   barcode: barcodeStr ?? `BAR-${Date.now()}-${i}`,
                   sellingPrice: price,
                   wholesaleCost: cost,
+                  costPrice: cost > 0 ? cost : undefined,
                   mrp,
                   category,
-                  // Only set on create — a re-import matching an EXISTING product
-                  // must not silently overwrite its real, sales-adjusted stock
-                  // or a threshold the user has since tuned by hand.
                   currentStock: quantity,
                   minStock: minStock ? parseFloat(minStock) : undefined,
                   baseUnit: getVal(row, ['unit']) || (masterUnits.length > 0 ? masterUnits[0].name : 'pcs'),
+                  variants: initialVariants.length ? (initialVariants as any) : undefined,
                   metadata: meta,
                   ...extras
                 }
               });
               matchId = newProd.id;
               if (barcodeStr) barcodeIndex.set(barcodeStr, matchId);
+              productVariantsCache.set(matchId, initialVariants);
               created++;
               // Log the imported opening stock so the "+N newly added" badge shows.
               if (quantity > 0) {
@@ -506,25 +620,60 @@ export async function POST(req: NextRequest) {
 
         let totalInvoiceCost = 0;
 
+        // Also pull the variants[] JSON up-front so we can merge per-variant
+        // qty into it below without a per-row round-trip. Archived products
+        // are excluded so a re-import doesn't silently un-archive and reuse
+        // a soft-deleted row when the shopkeeper genuinely wants a new one.
         const existingProducts = await prisma.product.findMany({
-          where: { shopId },
-          select: { id: true, name: true, barcode: true, currentStock: true }
+          where: { shopId, archived: false },
+          select: { id: true, name: true, barcode: true, currentStock: true, variants: true }
         });
         const fuse = new Fuse(existingProducts, { keys: ['name', 'barcode'], threshold: 0.3 });
 
-        // Live barcode -> productId index (same reasoning as the 'product' case
-        // above): without this, two rows sharing a brand-new barcode both try
-        // to create a product with that barcode and the second throws a Prisma
-        // unique-constraint error that used to abort the whole import.
         const barcodeIndex = new Map<string, string>();
         const stockIndex = new Map<string, number>();
+        // Two rows referencing the same NEW product (same name, no barcode)
+        // used to both hit fuse.search — which only knows about DB-existing
+        // products — miss, and each create a separate product. Keyed by
+        // lowercased product name, updated as we create, this makes them
+        // find each other and merge into a single product's variants[].
+        const nameIndex = new Map<string, string>();
+        // Live variants[] cache so two rows for the same product both merge
+        // into the same array (last write wins would drop the first row's
+        // qty otherwise).
+        const variantsIndex = new Map<string, any[]>();
         for (const p of existingProducts) {
           if (p.barcode) barcodeIndex.set(p.barcode, p.id);
+          if (p.name) nameIndex.set(p.name.toLowerCase().trim(), p.id);
           stockIndex.set(p.id, p.currentStock || 0);
+          variantsIndex.set(p.id, Array.isArray(p.variants) ? (p.variants as any[]).map((v: any) => ({ ...v })) : []);
         }
 
-        for (let i = 0; i < data.length; i++) {
-          const row = data[i];
+        // Size-range expansion: a supplier bill row for "size 6*8, qty 2" is
+        // shorthand for 3 rows (6, 7, 8) each qty 2. Do this ONCE before the
+        // main loop so downstream logic sees only concrete sizes. Same rule
+        // the party/scan-bill route and AddBillModal already use — see
+        // lib/sizeRange.ts. Non-range sizes and rows with no size at all
+        // pass through unchanged, so this can't break existing imports.
+        const expandedData: any[] = [];
+        for (const row of data) {
+          const sizeRaw = getVal(row, ['size']);
+          const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '');
+          if (sizes.length <= 1) { expandedData.push(row); continue; }
+          for (const s of sizes) {
+            // Clone the row and overwrite whichever key the file used for size
+            // so downstream getVal(row, ['size']) picks the individual value.
+            const clone: any = { ...row };
+            const sizeKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'size');
+            if (sizeKey) clone[sizeKey] = s;
+            else clone.Size = s;
+            expandedData.push(clone);
+          }
+        }
+        // Iterate expanded rows so a "6*8" shorthand actually creates 3
+        // per-size PurchaseItem rows + 3 variant entries downstream.
+        for (let i = 0; i < expandedData.length; i++) {
+          const row = expandedData[i];
           try {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
             const quantity = parseFloat(getVal(row, ['quantity', 'qty', 'stock']) || 0);
@@ -539,12 +688,37 @@ export async function POST(req: NextRequest) {
             const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
+            // Exact-name check BEFORE fuse — catches subsequent rows in the
+            // same batch that reference a product freshly created earlier in
+            // this same import. fuse only knows about DB-existing products.
+            if (!matchId) matchId = nameIndex.get(String(name).toLowerCase().trim()) ?? null;
             if (!matchId) {
               const results = fuse.search(name);
               if (results.length > 0) matchId = results[0].item.id;
             }
 
+            // Colour / Size from THIS specific row — after size-range
+            // expansion above, this is always one concrete pair (or empty
+            // for a plain product row).
+            const rowColour = String(getVal(row, ['colour', 'color']) || '').trim() || null;
+            const rowSize   = String(getVal(row, ['size']) || '').trim() || null;
+            const rowVariantKey = variantKey(rowColour, rowSize);
+
             if (!matchId) {
+              // New product — seed variants[] with the current row's variant
+              // if present, so per-variant stock tracking is live from row 1.
+              const newVariants = rowVariantKey
+                ? [{
+                    color: rowColour,
+                    size: rowSize,
+                    stock: quantity,
+                    costPrice: unitCost > 0 ? unitCost : undefined,
+                    wholesalePrice: unitCost > 0 ? unitCost : undefined,
+                    sellingPrice: unitCost > 0 ? Math.round(unitCost * 1.2) : undefined,
+                    mrp: extractedMrp > 0 ? extractedMrp : (unitCost > 0 ? Math.round(unitCost * 1.25) : undefined),
+                  }]
+                : [];
+
               const newProduct = await prisma.product.create({
                 data: {
                   shopId,
@@ -552,29 +726,42 @@ export async function POST(req: NextRequest) {
                   barcode: barcodeStr ?? undefined,
                   baseUnit: getVal(row, ['unit']) || 'pcs',
                   wholesaleCost: unitCost,
+                  costPrice: unitCost > 0 ? unitCost : undefined,
                   sellingPrice: unitCost * 1.2,
                   mrp: extractedMrp > 0 ? extractedMrp : unitCost * 1.25,
                   category: getVal(row, ['category']) || 'General',
                   currentStock: quantity,
-                  metadata: getVal(row, ['size']) || getVal(row, ['color']) ? { size: getVal(row, ['size']), color: getVal(row, ['color']) } : {},
-                  // HSN + SKU + carton barcode from the invoice, so a purchased
-                  // product is billable by any of its codes right away.
+                  variants: newVariants.length ? (newVariants as any) : undefined,
+                  metadata: rowColour ? { color: rowColour } : {},
                   ...getProductExtras(row),
                 }
               });
               matchId = newProduct.id;
               if (barcodeStr) barcodeIndex.set(barcodeStr, matchId);
+              nameIndex.set(String(name).toLowerCase().trim(), matchId);
               stockIndex.set(matchId, quantity);
+              variantsIndex.set(matchId, newVariants);
               created++;
             } else {
+              // Existing product — accumulate the row's qty on both the
+              // top-level currentStock rollup AND its specific variant row.
+              // The variants[] merge is the same shape the Add-Product form
+              // + Purchases module already write, so downstream billing's
+              // stock-decrement path can find it.
               const newStock = (stockIndex.get(matchId) || 0) + quantity;
-              await prisma.product.update({
-                where: { id: matchId },
-                data: {
-                  wholesaleCost: unitCost,
-                  currentStock: newStock
-                }
-              });
+              const updateData: any = {
+                wholesaleCost: unitCost,
+                currentStock: newStock,
+              };
+              if (rowVariantKey) {
+                const mergedVariants = mergeVariantIntoArray(
+                  variantsIndex.get(matchId) ?? [],
+                  rowColour, rowSize, quantity, unitCost, extractedMrp,
+                );
+                updateData.variants = mergedVariants as any;
+                variantsIndex.set(matchId, mergedVariants);
+              }
+              await prisma.product.update({ where: { id: matchId }, data: updateData });
               stockIndex.set(matchId, newStock);
               updated++;
             }
@@ -603,9 +790,15 @@ export async function POST(req: NextRequest) {
               data: {
                 purchaseInvoiceId: purchaseInvoice.id,
                 productId: matchId,
+                // Same "Colour / Size" composite key everything else uses to
+                // identify a variant row — see billing/route.ts stock
+                // decrement + the returns pipeline. Null when there's no
+                // variant on this line (plain products keep working).
+                variantKey: rowVariantKey ?? undefined,
                 quantity,
                 cost: unitCost,
-                gst: parseFloat(getVal(row, ['gst']) || 0)
+                gst: parseFloat(getVal(row, ['gst']) || 0),
+                mrp: extractedMrp > 0 ? extractedMrp : undefined,
               }
             });
 
