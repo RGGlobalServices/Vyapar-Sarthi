@@ -161,11 +161,17 @@ export async function POST(req: NextRequest) {
 
     const nvidiaKey = process.env.NVIDIA_API_KEY || '';
     const geminiKey = process.env.GEMINI_API_KEY || '';
-    if (!nvidiaKey && !geminiKey) {
-      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY (recommended) or NVIDIA_API_KEY.' }, { status: 500 });
+    const openRouterKey = process.env.OPENROUTER_API_KEY || '';
+    if (!nvidiaKey && !geminiKey && !openRouterKey) {
+      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY (recommended), NVIDIA_API_KEY, or OPENROUTER_API_KEY.' }, { status: 500 });
     }
-    // Gemini is preferred: accurate on messy Indian invoices/handwriting, fast,
-    // and a huge context window means fewer chunks. Falls back to Nvidia.
+    // Three-tier provider fallback for the import pipeline. Gemini is preferred
+    // (accurate on messy Indian invoices/handwriting, huge context window);
+    // Nvidia is the first fallback (fast, free-tier Llama 3.2 Vision); and
+    // OpenRouter is the third (unified gateway to Llama, Qwen, Mistral etc.,
+    // with its own free-tier vision models that survive Gemini/Nvidia quota
+    // days). Each is optional — configure whichever combination you have keys
+    // for and the chain skips the missing ones automatically.
     const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
     
     let businessSpecificFields = '';
@@ -483,6 +489,51 @@ ${dataText}`;
       return data.choices?.[0]?.message?.content || '';
     };
 
+    // OpenRouter — third-tier fallback. OpenAI-compatible API that fronts
+    // many providers (Meta Llama, Qwen, Mistral, etc.) through one key;
+    // several vision / text models have a permanent free tier that survives
+    // Gemini + Nvidia quota days. Model list is overridable via env; the
+    // ':free' suffix on the defaults pins the free tier explicitly.
+    // OpenRouter recommends the HTTP-Referer + X-Title headers so the app is
+    // visible in their analytics — set from env, with safe defaults.
+    const callOpenRouter = async (messages: any[], model: string): Promise<string> => {
+      if (!openRouterKey) throw new Error('OpenRouter API key not configured');
+      const requestBody: any = { model, messages, temperature: 0, max_tokens: importConfig.aiMaxTokens };
+      // OpenRouter honours the OpenAI response_format contract on most models
+      // but not all — a plain json_object hint works everywhere and avoids a
+      // "schema not supported by this model" hard-fail on the free tier.
+      requestBody.response_format = { type: 'json_object' };
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), importConfig.timeoutMs);
+      let response: Response;
+      try {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openRouterKey}`,
+            'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://app.vyaparsarthii.com',
+            'X-Title': process.env.OPENROUTER_APP_NAME || 'Vyapar Sarthi Import',
+          },
+          body: JSON.stringify(requestBody),
+          signal: ac.signal,
+        });
+      } catch (e: any) {
+        if (e?.name === 'AbortError') {
+          throw new Error(`OpenRouter API call timed out after ${importConfig.timeoutMs}ms`);
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
+      const responseText = await response.text();
+      let data;
+      try { data = JSON.parse(responseText); }
+      catch { throw new Error(`OpenRouter API returned an invalid response (${response.status}): ${responseText.substring(0, 300)}`); }
+      if (!response.ok) throw new Error(data.error?.message || data.detail || `OpenRouter API Error ${response.status}`);
+      return data.choices?.[0]?.message?.content || '';
+    };
+
     // Parse Gemini's retryDelay hint (e.g. "4.242585419s") from a 429 error.
     // Returns ms to wait, capped so we don't stall the whole request forever.
     const parseRetryDelayMs = (err: any): number | null => {
@@ -661,8 +712,49 @@ ${dataText}`;
     // llama with an 8B default that is proven working on Nvidia's free tier.
     // Override either model via env: IMPORT_GEMINI_MODEL / IMPORT_TEXT_MODEL.
     const useGemini = !!gemini;
+    const hasNvidiaFallback = !!nvidiaKey;
+    const hasOpenRouterFallback = !!openRouterKey;
     const textModel = process.env.IMPORT_TEXT_MODEL || 'meta/llama-3.1-8b-instruct';
     const visionModel = process.env.IMPORT_VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
+    // OpenRouter's model slugs are namespaced. Free-tier defaults chosen for:
+    //   text   → good multi-lingual JSON reasoning + generous free daily cap
+    //   vision → strong OCR on messy invoices + accepts image_url content
+    const openRouterTextModel = process.env.IMPORT_OPENROUTER_TEXT_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
+    const openRouterVisionModel = process.env.IMPORT_OPENROUTER_VISION_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct:free';
+
+    // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Every hop is
+    // taken ONLY when the previous hop failed with a quota / 429 error AND
+    // that hop's key is configured — a plain parse error or a real 500 is not
+    // a reason to burn a second provider's quota on the same task. Runs
+    // sequentially; total worst-case latency = sum of per-provider timeouts.
+    const isQuotaError = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(msg);
+    };
+    const withFallback = async <T,>(
+      primary: () => Promise<T>,
+      fallbacks: Array<{ name: string; enabled: boolean; run: () => Promise<T> }>,
+    ): Promise<T> => {
+      const errors: string[] = [];
+      try { return await primary(); }
+      catch (e) {
+        errors.push(`primary: ${(e instanceof Error ? e.message : String(e)).slice(0, 140)}`);
+        // Only cascade on quota — a wrong-payload or real-500 error would
+        // hit the same wall on every provider and just waste their quota.
+        if (!isQuotaError(e)) throw e;
+        for (const fb of fallbacks) {
+          if (!fb.enabled) continue;
+          try { return await fb.run(); }
+          catch (fbErr) {
+            errors.push(`${fb.name}: ${(fbErr instanceof Error ? fbErr.message : String(fbErr)).slice(0, 140)}`);
+            // Keep going on quota errors from the fallback too; stop and
+            // re-throw on anything else (means the fallback itself is broken).
+            if (!isQuotaError(fbErr)) throw fbErr;
+          }
+        }
+        throw new Error(`All providers exhausted. ${errors.join(' | ')}`);
+      }
+    };
 
     // Read any real table straight from the document's own column layout. When
     // this succeeds the values are exactly what the PDF contains, so we do NOT
@@ -695,25 +787,54 @@ ${dataText}`;
     // Only fall back to the model when the layout gave us nothing to read.
     const textChunks = usedDeterministicTable || !extractedText.trim() ? [] : chunkText(extractedText);
     textChunks.forEach((chunk, idx) => {
+      const nvidiaText     = () => callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel);
+      const openRouterText = () => callOpenRouter([{ role: 'user', content: buildPrompt(chunk) }], openRouterTextModel);
+      const primary        = useGemini
+        ? () => callGeminiText(buildPrompt(chunk))
+        : hasNvidiaFallback
+          ? nvidiaText
+          : openRouterText;
+      // Fallback list assembled dynamically so the primary provider isn't
+      // also listed as its own fallback (that'd 429 immediately again).
+      const fallbacks = [
+        { name: 'nvidia',     enabled: hasNvidiaFallback     && primary !== nvidiaText,     run: nvidiaText },
+        { name: 'openrouter', enabled: hasOpenRouterFallback && primary !== openRouterText, run: openRouterText },
+      ];
       tasks.push({
         label: `Text chunk ${idx + 1}/${textChunks.length}`,
-        run: () => useGemini
-          ? callGeminiText(buildPrompt(chunk))
-          : callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel),
+        run: () => withFallback(primary, fallbacks),
       });
     });
 
     const MAX_IMAGES = importConfig.maxImages; // each image = one page of a scanned/photographed doc
     const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
     imagesToProcess.forEach((img: any, idx) => {
+      const nvidiaVision = () => callNvidia(
+        [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, { type: img.type, image_url: img.image_url }] }],
+        visionModel,
+      );
+      const openRouterVision = () => callOpenRouter(
+        // OpenRouter's OpenAI-compat vision format: always type='image_url'
+        // with a `{ url }` sub-object — same shape Nvidia uses for URLs, and
+        // it accepts base64 as `data:<mime>;base64,<...>` inside url.
+        [{ role: 'user', content: [
+          { type: 'text', text: buildPrompt('') },
+          { type: 'image_url', image_url: { url: img.image_url?.url || `data:${img.mimeType};base64,${img.b64}` } },
+        ]}],
+        openRouterVisionModel,
+      );
+      const primary = useGemini
+        ? () => callGeminiVision(buildPrompt(''), img.mimeType, img.b64)
+        : hasNvidiaFallback
+          ? nvidiaVision
+          : openRouterVision;
+      const fallbacks = [
+        { name: 'nvidia',     enabled: hasNvidiaFallback     && primary !== nvidiaVision,     run: nvidiaVision },
+        { name: 'openrouter', enabled: hasOpenRouterFallback && primary !== openRouterVision, run: openRouterVision },
+      ];
       tasks.push({
         label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
-        run: () => useGemini
-          ? callGeminiVision(buildPrompt(''), img.mimeType, img.b64)
-          : callNvidia(
-              [{ role: 'user', content: [{ type: 'text', text: buildPrompt('') }, { type: img.type, image_url: img.image_url }] }],
-              visionModel
-            ),
+        run: () => withFallback(primary, fallbacks),
       });
     });
 
@@ -761,12 +882,42 @@ ${dataText}`;
     const failedCount = results.filter(r => r.error).length;
 
     if (aggregatedItems.length === 0) {
+      // Every AI task blocked by a 429 / quota error is a very different
+      // failure than "parsed but returned nothing" — show the shopkeeper an
+      // actionable message instead of a wall of raw provider JSON.
+      const allJoined = perCallErrors.join('\n');
+      const isAllQuota = perCallErrors.length > 0 && perCallErrors.every(e => /\b429\b|RESOURCE_EXHAUSTED|quota/i.test(e));
+      let friendly: string;
+      let code: string | undefined;
+      if (isAllQuota) {
+        code = 'AI_QUOTA_EXHAUSTED';
+        const configured = [
+          useGemini ? 'Google Gemini' : null,
+          hasNvidiaFallback ? 'Nvidia' : null,
+          hasOpenRouterFallback ? 'OpenRouter' : null,
+        ].filter(Boolean) as string[];
+        if (configured.length >= 2) {
+          friendly = `AI quota exhausted for today on every configured provider (${configured.join(' + ')}). Please try again after the daily reset, or enter this bill manually. Your data is safe.`;
+        } else {
+          const missing = [
+            !hasNvidiaFallback ? 'NVIDIA_API_KEY' : null,
+            !hasOpenRouterFallback ? 'OPENROUTER_API_KEY' : null,
+          ].filter(Boolean) as string[];
+          friendly = `Free AI quota exhausted for today (${configured[0] || 'AI provider'}). Please try again after the daily reset, or enter this bill manually.` +
+            (missing.length ? ` To avoid this, set ${missing.join(' or ')} as a fallback provider.` : '');
+        }
+      } else if (perCallErrors.length) {
+        friendly = `Couldn't read the file. ${perCallErrors[0].split(':').slice(1).join(':').trim().slice(0, 200) || perCallErrors[0]}`;
+      } else {
+        friendly = 'AI read the file but found no items to import. Please check the file is a real bill / invoice.';
+      }
       return NextResponse.json({
-        error: perCallErrors.length
-          ? `AI extraction failed:\n${perCallErrors.join('\n')}`
-          : 'AI extraction succeeded but returned no items.',
+        error: friendly,
+        code,
+        // Full detail kept for debugging — the client shouldn't render it,
+        // but support tickets can read it via the browser network tab.
+        detail: allJoined || undefined,
         rawAiResponse: lastRaw,
-        parseError: perCallErrors.join('; '),
       }, { status: 422 });
     }
 
