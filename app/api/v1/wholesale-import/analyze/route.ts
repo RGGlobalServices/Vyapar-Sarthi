@@ -499,12 +499,18 @@ ${dataText}`;
     // OpenRouter — third-tier fallback. OpenAI-compatible API that fronts
     // many providers (Meta Llama, Qwen, Mistral, etc.) through one key;
     // several vision / text models have a permanent free tier that survives
-    // Gemini + Nvidia quota days. Model list is overridable via env; the
-    // ':free' suffix on the defaults pins the free tier explicitly.
-    // OpenRouter recommends the HTTP-Referer + X-Title headers so the app is
-    // visible in their analytics — set from env, with safe defaults.
-    const callOpenRouter = async (messages: any[], model: string): Promise<string> => {
-      if (!openRouterKey) throw new Error('OpenRouter API key not configured');
+    // Gemini + Nvidia quota days.
+    //
+    // Takes a comma-separated MODEL CHAIN — a single "no endpoints found"
+    // error (free model retired or your account isn't yet whitelisted for
+    // it) is the norm on OpenRouter's free tier, so callOpenRouter walks
+    // the chain internally and only throws when EVERY model in the list
+    // has failed. Callers pass the chain string directly (same shape used
+    // by the Gemini chain above).
+    //
+    // OpenRouter recommends the HTTP-Referer + X-Title headers so the app
+    // is visible in their analytics — set from env, with safe defaults.
+    const callOpenRouterOnce = async (messages: any[], model: string): Promise<string> => {
       const requestBody: any = { model, messages, temperature: 0, max_tokens: importConfig.aiMaxTokens };
       // OpenRouter honours the OpenAI response_format contract on most models
       // but not all — a plain json_object hint works everywhere and avoids a
@@ -527,7 +533,7 @@ ${dataText}`;
         });
       } catch (e: any) {
         if (e?.name === 'AbortError') {
-          throw new Error(`OpenRouter API call timed out after ${importConfig.timeoutMs}ms`);
+          throw new Error(`OpenRouter API call to ${model} timed out after ${importConfig.timeoutMs}ms`);
         }
         throw e;
       } finally {
@@ -539,6 +545,27 @@ ${dataText}`;
       catch { throw new Error(`OpenRouter API returned an invalid response (${response.status}): ${responseText.substring(0, 300)}`); }
       if (!response.ok) throw new Error(data.error?.message || data.detail || `OpenRouter API Error ${response.status}`);
       return data.choices?.[0]?.message?.content || '';
+    };
+
+    const callOpenRouter = async (messages: any[], modelChain: string): Promise<string> => {
+      if (!openRouterKey) throw new Error('OpenRouter API key not configured');
+      const models = modelChain.split(',').map(s => s.trim()).filter(Boolean);
+      const errors: string[] = [];
+      for (const model of models) {
+        try { return await callOpenRouterOnce(messages, model); }
+        catch (e: any) {
+          const msg = e?.message || String(e);
+          errors.push(`${model}: ${msg.slice(0, 160)}`);
+          // "No endpoints found" / 404 model-not-available means this model
+          // is gone from your account — try the next one in the chain. Same
+          // pattern the Gemini chain uses. On any other error (500 / auth /
+          // parse), short-circuit: retrying the same content on a different
+          // model won't help and just wastes credit.
+          const isModelMissing = /no endpoints|not.*found|invalid.*model|model.*not.*available|\b404\b/i.test(msg);
+          if (!isModelMissing) throw e;
+        }
+      }
+      throw new Error(`OpenRouter: all models in chain unavailable. ${errors.join(' | ')}`);
     };
 
     // Parse Gemini's retryDelay hint (e.g. "4.242585419s") from a 429 error.
@@ -723,11 +750,19 @@ ${dataText}`;
     const hasOpenRouterFallback = !!openRouterKey;
     const textModel = process.env.IMPORT_TEXT_MODEL || 'meta/llama-3.1-8b-instruct';
     const visionModel = process.env.IMPORT_VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
-    // OpenRouter's model slugs are namespaced. Free-tier defaults chosen for:
-    //   text   → good multi-lingual JSON reasoning + generous free daily cap
-    //   vision → strong OCR on messy invoices + accepts image_url content
-    const openRouterTextModel = process.env.IMPORT_OPENROUTER_TEXT_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
-    const openRouterVisionModel = process.env.IMPORT_OPENROUTER_VISION_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct:free';
+    // OpenRouter model chains — comma-separated fallback lists. Free-tier
+    // model availability on OpenRouter changes constantly (models get
+    // retired, added, or your account isn't whitelisted for a specific
+    // one), so we ship each entry as a CHAIN of known-good candidates and
+    // callOpenRouter walks it until one works. Override either via env
+    // (IMPORT_OPENROUTER_TEXT_MODELS / _VISION_MODELS, plural) or via the
+    // singular legacy vars for a single fixed pick.
+    const openRouterTextChain = process.env.IMPORT_OPENROUTER_TEXT_MODELS
+      || process.env.IMPORT_OPENROUTER_TEXT_MODEL
+      || 'meta-llama/llama-3.3-70b-instruct:free,google/gemini-2.0-flash-exp:free,mistralai/mistral-small-3.1-24b-instruct:free,meta-llama/llama-3.1-405b-instruct:free';
+    const openRouterVisionChain = process.env.IMPORT_OPENROUTER_VISION_MODELS
+      || process.env.IMPORT_OPENROUTER_VISION_MODEL
+      || 'meta-llama/llama-3.2-90b-vision-instruct:free,qwen/qwen-2.5-vl-72b-instruct:free,google/gemini-2.0-flash-exp:free,meta-llama/llama-3.2-11b-vision-instruct:free';
 
     // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Falls
     // through on TWO kinds of failure — quota errors (429/RESOURCE_EXHAUSTED)
@@ -745,7 +780,15 @@ ${dataText}`;
       const msg = err instanceof Error ? err.message : String(err);
       return /INVALID_JSON|unexpected character|unexpected token|not.*valid json|invalid.*json/i.test(msg);
     };
-    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err);
+    // Every OpenRouter model in the chain returned "no endpoints" (free tier
+    // deprecated / not whitelisted) — retry on Nvidia / Gemini instead of
+    // giving up. Same class as quota: the request itself is fine, the
+    // provider just can't serve it right now.
+    const isModelUnavailable = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /no endpoints|not.*found|invalid.*model|model.*not.*available|all models in chain unavailable|\b404\b/i.test(msg);
+    };
+    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err) || isModelUnavailable(err);
 
     // Verify the raw AI response is parseable JSON (bare or via jsonrepair)
     // BEFORE handing it back as a "success" — otherwise Nvidia's Markdown
@@ -826,7 +869,7 @@ ${dataText}`;
     textChunks.forEach((chunk, idx) => {
       const geminiText     = async () => assertJsonParseable(await callGeminiText(buildPrompt(chunk)));
       const nvidiaText     = async () => assertJsonParseable(await callNvidia([{ role: 'user', content: buildPrompt(chunk) }], textModel));
-      const openRouterText = async () => assertJsonParseable(await callOpenRouter([{ role: 'user', content: buildPrompt(chunk) }], openRouterTextModel));
+      const openRouterText = async () => assertJsonParseable(await callOpenRouter([{ role: 'user', content: buildPrompt(chunk) }], openRouterTextChain));
       const primary        = useGemini ? geminiText : hasNvidiaFallback ? nvidiaText : openRouterText;
       // Fallback list assembled dynamically so the primary provider isn't
       // also listed as its own fallback (that'd 429 immediately again).
@@ -856,7 +899,7 @@ ${dataText}`;
           { type: 'text', text: buildPrompt('') },
           { type: 'image_url', image_url: { url: img.image_url?.url || `data:${img.mimeType};base64,${img.b64}` } },
         ]}],
-        openRouterVisionModel,
+        openRouterVisionChain,
       ));
       const primary = useGemini ? geminiVision : hasNvidiaFallback ? nvidiaVision : openRouterVision;
       const fallbacks = [
