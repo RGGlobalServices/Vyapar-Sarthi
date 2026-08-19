@@ -194,6 +194,39 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     }
   };
 
+  const compressImageClientSide = async (file: File, maxWidth = 1600): Promise<File> => {
+    if (!file.type.startsWith('image/')) return file;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+            } else {
+              resolve(file); // fallback
+            }
+          }, 'image/jpeg', 0.85);
+        } else {
+          resolve(file);
+        }
+      };
+      img.onerror = () => resolve(file);
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const processFiles = async (selectedFiles: File[]) => {
     setFiles(selectedFiles);
     if (selectedFiles.length === 0) return;
@@ -303,6 +336,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 }
               }
             }
+          } else if (file.type.startsWith('image/')) {
+            setLoadingText(`Compressing image ${file.name}...`);
+            const compressed = await compressImageClientSide(file);
+            filesToSend.push(compressed);
           } else {
             filesToSend.push(file);
           }

@@ -402,6 +402,14 @@ CRITICAL INSTRUCTIONS FOR AI:
     // Build a prompt for one slice of document data. Text is processed in
     // chunks (see below) so every row is extracted regardless of file size —
     // for images, dataText is empty and the image itself carries the data.
+    // One-shot example is the single highest-leverage prompt technique for
+    // free-tier models like Llama 3.2 that ignore "return JSON only" rules
+    // but faithfully mimic a shown example. The example is minimal, uses
+    // clearly fake data, and covers both purchase and non-purchase shapes.
+    const purchaseExample = `{"supplier":"ACME Traders","invoiceNumber":"INV-001","invoiceDate":"2026-08-19","warehouse":"Main","items":[{"name":"Paddy 50 Kg","hsn":"1006","quantity":100,"unit":"Bag","rate":57,"gst":5,"amount":5985}],"subtotal":5700,"gst":285,"grandTotal":5985}`;
+    const genericExample = `{"items":[{"name":"Item 1","quantity":10,"unit":"Piece","rate":100},{"name":"Item 2","quantity":5,"unit":"Kg","rate":80}]}`;
+    const outputExample = targetType === 'purchase' ? purchaseExample : genericExample;
+
     const buildPrompt = (dataText: string) => `You are Vyapar Sarthi AI, an expert enterprise data extraction agent.
 Target Data Type: ${targetType.toUpperCase()}
 ${specificInstructions}
@@ -414,6 +422,9 @@ CRITICAL OUTPUT FORMAT — READ FIRST:
 - Do NOT prefix with "Here is..." or add commentary before/after.
 - Your entire response must start with { and end with }. Anything else will fail parsing.
 
+EXAMPLE — your entire response must look EXACTLY like this shape (values will differ):
+${outputExample}
+
 EXTRACTION RULES:
 - Extract EVERY row present in the data below. Do not stop early, do not summarise, do not truncate.
 - If a table row wraps across lines, treat it as one product.
@@ -421,7 +432,9 @@ EXTRACTION RULES:
 - A " | " in the data is a COLUMN SEPARATOR taken from the document's own layout. Treat each "|"-delimited value as its own field and never join two of them into one number. The first data line is usually the header row naming those columns.
 
 DOCUMENT DATA:
-${dataText}`;
+${dataText}
+
+REMEMBER: Respond with ONLY a JSON object like the example above. Start with { and end with }.`;
 
     const purchaseSchema = {
       type: "json_schema" as const,
@@ -757,12 +770,21 @@ ${dataText}`;
     // callOpenRouter walks it until one works. Override either via env
     // (IMPORT_OPENROUTER_TEXT_MODELS / _VISION_MODELS, plural) or via the
     // singular legacy vars for a single fixed pick.
+    // Order matters — most JSON-compliant models FIRST so the salvage
+    // machinery downstream is exercised as little as possible.
+    //   text  → Gemini 2.0 Flash (via OpenRouter) is the gold standard for
+    //           structured JSON output; Mistral small ranks second on
+    //           OpenRouter's own function-calling leaderboard; Llama comes
+    //           last because it needs the salvager.
+    //   vision → Qwen 2.5 VL 72B is state-of-the-art free vision + follows
+    //           JSON instructions well; Gemini 2.0 Flash next; Llama Vision
+    //           (both sizes) last as a hail-mary.
     const openRouterTextChain = process.env.IMPORT_OPENROUTER_TEXT_MODELS
       || process.env.IMPORT_OPENROUTER_TEXT_MODEL
-      || 'meta-llama/llama-3.3-70b-instruct:free,google/gemini-2.0-flash-exp:free,mistralai/mistral-small-3.1-24b-instruct:free,meta-llama/llama-3.1-405b-instruct:free';
+      || 'google/gemini-2.0-flash-exp:free,mistralai/mistral-small-3.1-24b-instruct:free,meta-llama/llama-3.3-70b-instruct:free,meta-llama/llama-3.1-405b-instruct:free';
     const openRouterVisionChain = process.env.IMPORT_OPENROUTER_VISION_MODELS
       || process.env.IMPORT_OPENROUTER_VISION_MODEL
-      || 'meta-llama/llama-3.2-90b-vision-instruct:free,qwen/qwen-2.5-vl-72b-instruct:free,google/gemini-2.0-flash-exp:free,meta-llama/llama-3.2-11b-vision-instruct:free';
+      || 'qwen/qwen-2.5-vl-72b-instruct:free,google/gemini-2.0-flash-exp:free,meta-llama/llama-3.2-90b-vision-instruct:free,meta-llama/llama-3.2-11b-vision-instruct:free';
 
     // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Falls
     // through on TWO kinds of failure — quota errors (429/RESOURCE_EXHAUSTED)
@@ -790,24 +812,136 @@ ${dataText}`;
     };
     const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err) || isModelUnavailable(err);
 
-    // Verify the raw AI response is parseable JSON (bare or via jsonrepair)
-    // BEFORE handing it back as a "success" — otherwise Nvidia's Markdown
-    // slips through the task layer and only blows up in `collect()` too
-    // late for the fallback chain to help.
+    // ─── Zero-API OCR fallback (Tesseract) ───────────────────────────────
+    // Terminal fallback when EVERY AI provider fails. tesseract.js is a
+    // pure-WASM OCR engine that runs entirely in Node without any external
+    // API — the shopkeeper's bill can still get read even if all three AI
+    // providers are down / out of quota / returning Markdown. Dynamic
+    // import so the ~15MB WASM cost is only paid on the rare code path
+    // where OCR actually runs; cold-start latency stays low.
+    //
+    // Output is best-effort: tesseract gives raw text, then the existing
+    // parseInvoiceHeader + parseLayoutTables machinery (same helpers the
+    // AI path uses) turns that text into the invoice JSON shape. Handles
+    // clean printed bills well; handwritten / rotated / very low-quality
+    // photos will produce garbage the parsers then reject — at which
+    // point we've genuinely exhausted every option.
+    const callTesseractSalvage = async (imgB64: string, mimeType: string): Promise<string> => {
+      const { createWorker } = await import('tesseract.js');
+      // 'eng' covers most printed Indian invoices; users whose bills are
+      // predominantly Hindi/Marathi script can add 'hin'/'mar' via env
+      // (each language file is ~10MB and downloaded on first use).
+      const langs = (process.env.IMPORT_TESSERACT_LANGS || 'eng').split(',').map(s => s.trim()).filter(Boolean);
+      const worker = await createWorker(langs);
+      try {
+        const imgSrc = `data:${mimeType};base64,${imgB64}`;
+        const { data } = await worker.recognize(imgSrc);
+        const rawText = data.text || '';
+        if (!rawText.trim()) throw new Error('INVALID_JSON: Tesseract OCR extracted no text from the image');
+        // Feed OCR output through the same layout parsers the AI text
+        // path already uses. If the bill has any tabular structure at
+        // all, parseLayoutTables recovers it; otherwise parseInvoiceHeader
+        // at least pulls supplier / invoice / date so the shopkeeper gets
+        // a partial pre-fill they can finish manually.
+        const header = parseInvoiceHeader(rawText);
+        const items = rawText.includes('|') ? parseLayoutTables(rawText) : [];
+        if (items.length === 0 && !header.supplier && !header.invoiceNumber) {
+          throw new Error('INVALID_JSON: Tesseract OCR ran but no invoice fields could be extracted from the text');
+        }
+        return JSON.stringify({
+          supplier: header.supplier,
+          invoiceNumber: header.invoiceNumber,
+          invoiceDate: header.invoiceDate,
+          items,
+        });
+      } finally {
+        // Free the WASM memory — one worker per request; caching workers
+        // across requests would leak in Next.js dev's hot-reload model.
+        try { await worker.terminate(); } catch {}
+      }
+    };
+
+    // Verify the raw AI response is parseable JSON (bare, via jsonrepair, or
+    // via Markdown salvage) BEFORE handing it back as a "success" — otherwise
+    // Nvidia's Markdown slips through the task layer and only blows up in
+    // `collect()` too late for the fallback chain to help.
+    //
+    // Salvage tiers, tried in order:
+    //   1. Plain JSON.parse of the {...} slice
+    //   2. jsonrepair of the {...} slice (trailing-comma, missing-quote fixes)
+    //   3. Markdown key/value salvage — turns `**Supplier:** X\n* **Item:** ...`
+    //      bullet responses (Llama 3.2's favourite output) into structured JSON
+    //      by extracting **key:**/`- key:` pairs and grouping items.
+    //   4. Give up — throw INVALID_JSON so the fallback chain moves on.
+    const salvageMarkdownToJson = (raw: string): string | null => {
+      // Kill any HTML/Markdown formatting cruft, keep newline structure.
+      const text = raw.replace(/\*\*/g, '').replace(/^#+\s*/gm, '').replace(/^[-*]\s+/gm, '').trim();
+      // Split into logical blocks separated by blank lines. First block is
+      // usually the header (supplier/invoice/date); later blocks are items.
+      const blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+      if (blocks.length === 0) return null;
+
+      const parseKV = (block: string): Record<string, string> => {
+        const out: Record<string, string> = {};
+        for (const line of block.split('\n')) {
+          // Matches "Key: Value", "Key : Value", "Item Name: X"; case-insensitive.
+          const m = line.match(/^\s*([A-Za-z][A-Za-z0-9 _/()\-]{0,40}?)\s*[:\-]\s*(.+?)\s*$/);
+          if (m) out[m[1].trim().toLowerCase().replace(/\s+/g, '')] = m[2].trim();
+        }
+        return out;
+      };
+
+      const header = parseKV(blocks[0]);
+      const items: any[] = [];
+      // Every subsequent block that mentions a name/quantity/rate becomes an item.
+      for (let i = 1; i < blocks.length; i++) {
+        const kv = parseKV(blocks[i]);
+        if (Object.keys(kv).length === 0) continue;
+        const name = kv.itemname || kv.name || kv.product || kv.description;
+        const qty = kv.quantity || kv.qty || kv.bags;
+        const rate = kv.rate || kv.price || kv.priceperunit || kv.rateperunit;
+        if (!name && !qty && !rate) continue;
+        items.push({
+          name, hsn: kv.hsn || kv.hsncode, quantity: qty ? Number(String(qty).replace(/[^\d.]/g, '')) : undefined,
+          unit: kv.unit, rate: rate ? Number(String(rate).replace(/[^\d.]/g, '')) : undefined,
+          gst: kv.gst || kv.tax, amount: kv.amount || kv.total,
+        });
+      }
+      // If we couldn't find real items but the header had something, still
+      // return an empty-items JSON — downstream code drops empty imports
+      // safely and shows a friendlier "no items found" message.
+      if (!header.supplier && !header.invoicenumber && items.length === 0) return null;
+      const salvaged = {
+        supplier: header.supplier,
+        invoiceNumber: header.invoicenumber || header.invno || header.billno,
+        invoiceDate: header.invoicedate || header.date || header.billdate,
+        warehouse: header.warehouse,
+        items,
+      };
+      try { return JSON.stringify(salvaged); }
+      catch { return null; }
+    };
+
     const assertJsonParseable = (raw: string): string => {
       const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
       const a = cleaned.indexOf('{'), b = cleaned.lastIndexOf('}');
       const jsonSlice = a !== -1 && b !== -1 && b > a ? cleaned.substring(a, b + 1) : cleaned;
-      try { JSON.parse(jsonSlice); return raw; }
-      catch {
-        try {
-          const { jsonrepair } = require('jsonrepair');
-          JSON.parse(jsonrepair(jsonSlice));
-          return raw;
-        } catch {
-          throw new Error(`INVALID_JSON: response is not valid JSON (starts with "${raw.slice(0, 40).replace(/\n/g, ' ')}...")`);
-        }
+      // Tier 1: bare JSON.parse
+      try { JSON.parse(jsonSlice); return raw; } catch {}
+      // Tier 2: jsonrepair (fixes trailing commas, missing quotes, etc.)
+      try {
+        const { jsonrepair } = require('jsonrepair');
+        JSON.parse(jsonrepair(jsonSlice));
+        return raw;
+      } catch {}
+      // Tier 3: Markdown key/value salvage. Returns freshly-stringified JSON
+      // downstream — not the raw text — because callers will re-parse it and
+      // the salvaged shape is the one that actually contains extracted data.
+      const salvaged = salvageMarkdownToJson(raw);
+      if (salvaged) {
+        try { JSON.parse(salvaged); return salvaged; } catch {}
       }
+      throw new Error(`INVALID_JSON: response is not valid JSON (starts with "${raw.slice(0, 40).replace(/\n/g, ' ')}...")`);
     };
 
     const withFallback = async <T,>(
@@ -901,10 +1035,18 @@ ${dataText}`;
         ]}],
         openRouterVisionChain,
       ));
+      // Tesseract tier — zero-API last resort. Runs only when every AI
+      // provider above has failed. Returns salvaged JSON (may be partial)
+      // rather than throwing, so the shopkeeper gets what could be read.
+      const tesseractVision = async () => assertJsonParseable(
+        await callTesseractSalvage(img.b64, img.mimeType)
+      );
+
       const primary = useGemini ? geminiVision : hasNvidiaFallback ? nvidiaVision : openRouterVision;
       const fallbacks = [
         { name: 'nvidia',     enabled: hasNvidiaFallback     && primary !== nvidiaVision,     run: nvidiaVision },
         { name: 'openrouter', enabled: hasOpenRouterFallback && primary !== openRouterVision, run: openRouterVision },
+        { name: 'tesseract',  enabled: true,                                                  run: tesseractVision },
       ];
       tasks.push({
         label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
