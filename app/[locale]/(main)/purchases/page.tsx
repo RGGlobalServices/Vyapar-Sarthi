@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -45,9 +45,35 @@ function effectiveItemCost(item: { cost: any; mrp: any; costMode?: string; disco
 // product with no colour dimension just uses its bare size.
 const variantRowKey = (v: any) => (v.color ? makeVariantKey(v.color, v.size || '') : (v.size || ''));
 
+/**
+ * Normalise a free-typed money/qty field to a clean numeric string — strips
+ * ₹, thousands commas and stray spaces so "₹1,200" / "12 " no longer read as
+ * 0 in the cost maths. Truly-empty stays empty (an empty variant qty means
+ * "not this size", an empty discount means 0). Powers the Auto-Calculate
+ * button; it does NOT change any formula, only cleans what's typed.
+ */
+const cleanPurchaseNumStr = (s: any): string => {
+  const raw = (s ?? '').toString();
+  if (raw.trim() === '') return '';
+  const cleaned = raw.replace(/[₹,\s]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? String(n) : '';
+};
+
+/** Stable signature of the cost-relevant fields of the item rows — used to
+ *  tell when an Auto-Calculate result has gone stale after a later edit. */
+const purchaseItemsSig = (rows: any[]): string =>
+  rows.map(i => `${i.productId}|${i.quantity}|${i.cost}|${i.mrp}|${i.discountPercent}|${i.costMode}|${JSON.stringify(i.variantQty || {})}`).join(';');
+
 export default function PurchasesPage() {
   const t = useTranslations('Purchases');
+  const tCalc = useTranslations('BillAutoCalc');
   const { profile, activeShopId } = useBusinessStore();
+
+  // Result of the last Auto-Calculate run in the add/edit form. `sig` pins it
+  // to the item snapshot it ran on, so it auto-hides the moment any line is
+  // edited afterwards (no per-input wiring needed).
+  const [autoCalc, setAutoCalc] = useState<{ type: 'ok' | 'fixed' | 'needQty' | 'empty'; count?: number; sig: string } | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -309,6 +335,35 @@ export default function PurchasesPage() {
   const baselineOutstanding = (selectedSupplier?.balance || 0) - (editingInvoice?.totalCost || 0);
   const projectedOutstanding = baselineOutstanding + purchaseTotal;
   const overCreditLimitBy = selectedSupplier?.creditLimit > 0 ? projectedOutstanding - selectedSupplier.creditLimit : 0;
+
+  /**
+   * Auto-Calculate for the purchase form: re-run the SAME Qty × Cost maths
+   * (via effectiveItemCost / expandItemsForApi) the total already uses, and
+   * snap every mistyped MRP / discount / variant-qty field to a clean number
+   * so a "₹1,200" that was silently reading as 0 is fixed and the total
+   * refreshes. Reports whether all lines were already correct, how many it
+   * cleaned, or how many still have no quantity. Never changes the formula.
+   */
+  function autoCalculatePurchase() {
+    if (!items.length) { setAutoCalc({ type: 'empty', sig: '' }); return; }
+    let fixed = 0;
+    const next = items.map((it: any) => {
+      const mrp = it.costMode === 'mrp_based' ? cleanPurchaseNumStr(it.mrp) : it.mrp;
+      const discountPercent = it.costMode === 'mrp_based' ? cleanPurchaseNumStr(it.discountPercent) : it.discountPercent;
+      const variantQty: Record<string, string> = {};
+      for (const [k, v] of Object.entries(it.variantQty || {})) variantQty[k] = cleanPurchaseNumStr(v);
+      if (mrp !== it.mrp || discountPercent !== it.discountPercent || JSON.stringify(variantQty) !== JSON.stringify(it.variantQty || {})) fixed++;
+      return { ...it, mrp, discountPercent, variantQty };
+    });
+    setItems(next);
+    // A line that has a product but expands to zero receivable units still
+    // needs a quantity — surface that rather than silently saving nothing.
+    const needQty = next.filter((it: any) => it.productId && expandItemsForApi([it]).length === 0).length;
+    const sig = purchaseItemsSig(next);
+    if (fixed > 0) setAutoCalc({ type: 'fixed', count: fixed, sig });
+    else if (needQty > 0) setAutoCalc({ type: 'needQty', count: needQty, sig });
+    else setAutoCalc({ type: 'ok', sig });
+  }
 
   const exportRows = useMemo(() => invoices.map((inv: any) => ({
     ...inv,
@@ -578,6 +633,44 @@ export default function PurchasesPage() {
                   className="w-full py-3 border-2 border-dashed border-emerald-200 dark:border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2">
                   <Plus size={18} /> {t('addAnotherProduct') || 'Add Another Product'}
                 </button>
+
+                {/* Auto-Calculate — re-runs the same Qty × Cost maths, cleans
+                    any mistyped MRP/discount/variant qty, and surfaces the
+                    running total the form otherwise never shows. Translation-
+                    driven (BillAutoCalc namespace). */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={autoCalculatePurchase}
+                    title={tCalc('tooltip')}
+                    className="sm:w-auto py-2.5 px-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-blue-300 font-bold text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Calculator size={16} /> {tCalc('button')}
+                  </button>
+                  <div className="flex-1 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('totalAmount') || 'Total Amount'}</span>
+                    <span className="text-lg font-black text-slate-900 dark:text-white font-mono">₹{purchaseTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+                {autoCalc && autoCalc.sig === purchaseItemsSig(items) && (
+                  autoCalc.type === 'ok' ? (
+                    <p className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 px-1">
+                      <Check size={14} className="shrink-0" /> {tCalc('allCorrect')}
+                    </p>
+                  ) : autoCalc.type === 'fixed' ? (
+                    <p className="text-[12px] font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1.5 px-1">
+                      <Sparkles size={14} className="shrink-0" /> {tCalc('corrected', { count: autoCalc.count ?? 0 })}
+                    </p>
+                  ) : autoCalc.type === 'needQty' ? (
+                    <p className="text-[12px] font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 px-1">
+                      <AlertTriangle size={14} className="shrink-0" /> {tCalc('needsQty', { count: autoCalc.count ?? 0 })}
+                    </p>
+                  ) : (
+                    <p className="text-[12px] font-semibold text-slate-500 flex items-center gap-1.5 px-1">
+                      <AlertTriangle size={14} className="shrink-0" /> {tCalc('noItems')}
+                    </p>
+                  )
+                )}
               </div>
             </CardContent>
           </Card>

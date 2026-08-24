@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   X, Camera, Upload, Loader2, ReceiptText, ImageIcon, Trash2, ScanLine, Sparkles,
-  Plus, Search, Package, AlertTriangle, Check, ChevronLeft, Wallet, Coins, PackagePlus,
+  Plus, Search, Package, AlertTriangle, Check, ChevronLeft, Wallet, Coins, PackagePlus, Calculator,
 } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -99,6 +100,19 @@ const num = (s: string): number => {
 };
 
 /**
+ * Normalise a free-typed money/qty field to the clean numeric string the
+ * bill maths actually uses — strips ₹, thousands commas and stray spaces so
+ * a value like "₹1,200" or "12 " no longer silently reads as 0. Does NOT
+ * change the calculation itself: it just makes what's shown equal what's
+ * computed (Qty × Rate ± GST is unchanged). Powers the Auto-Calculate button.
+ */
+const cleanNumStr = (s: string): string => {
+  const cleaned = (s ?? '').toString().replace(/[₹,\s]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) && cleaned !== '' ? String(n) : '0';
+};
+
+/**
  * "Add Bill" — the shopkeeper's flow for bills they wrote on paper for a
  * party but still want the system to know about, so stock + ledger stay
  * honest. Three steps: entry → review → finalize. Save posts to the
@@ -126,9 +140,16 @@ export default function AddBillModal({
   onSaved: () => void;
   entityType?: 'party' | 'customer';
 }) {
+  const tCalc = useTranslations('BillAutoCalc');
   const today = new Date().toISOString().slice(0, 10);
 
   const [step, setStep] = useState<Step>('entry');
+
+  // Result of the last Auto-Calculate run (null = not run / stale after an
+  // edit). 'ok' = every line's price is clean & valid; 'fixed' = we snapped
+  // N mistyped fields to their clean number; 'needQty' = N lines still have
+  // no quantity. Cleared on any manual line edit so it never goes stale.
+  const [autoCalc, setAutoCalc] = useState<{ type: 'ok' | 'fixed' | 'needQty' | 'empty'; count?: number } | null>(null);
 
   // Step 1 — photo + scan
   const [file, setFile] = useState<File | null>(null);
@@ -320,6 +341,7 @@ export default function AddBillModal({
   }
 
   function addBlankLine() {
+    setAutoCalc(null);
     setLines(prev => [...prev, {
       key: makeKey(),
       productId: null,
@@ -336,11 +358,41 @@ export default function AddBillModal({
   }
 
   function removeLine(key: string) {
+    setAutoCalc(null);
     setLines(prev => prev.filter(l => l.key !== key));
   }
 
   function updateLine(key: string, patch: Partial<BillLine>) {
+    setAutoCalc(null);
     setLines(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  /**
+   * Auto-Calculate: re-run the SAME Qty × Rate (± GST) maths the totals block
+   * already uses and snap every line's typed number back to a clean value —
+   * so a mistyped "₹1,200" / "12 " that was silently counting as 0 is fixed
+   * and the amounts/total refresh immediately. Reports whether everything was
+   * already correct or how many fields it corrected. Never invents prices or
+   * changes the formula — it only cleans what's shown to match what's summed.
+   */
+  function autoCalculate() {
+    if (!lines.length) { setAutoCalc({ type: 'empty' }); return; }
+    let fixed = 0;
+    let needQty = 0;
+    const next = lines.map(l => {
+      const q = cleanNumStr(l.qtyText);
+      const r = cleanNumStr(l.rateText);
+      const g = cleanNumStr(l.gstText);
+      if (q !== l.qtyText || r !== l.rateText || g !== l.gstText) fixed++;
+      if (num(q) <= 0) needQty++;
+      return { ...l, qtyText: q, rateText: r, gstText: g };
+    });
+    setLines(next);
+    // Order the messaging by severity: a corrected field is the headline;
+    // otherwise flag any missing quantity; otherwise everything is clean.
+    if (fixed > 0) setAutoCalc({ type: 'fixed', count: fixed });
+    else if (needQty > 0) setAutoCalc({ type: 'needQty', count: needQty });
+    else setAutoCalc({ type: 'ok' });
   }
 
   function pickProductForLine(key: string, product: ProductPickerRow) {
@@ -729,7 +781,7 @@ export default function AddBillModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setGstEnabled(v => !v)}
+                  onClick={() => { setGstEnabled(v => !v); setAutoCalc(null); }}
                   className={`relative w-11 h-6 rounded-full transition-colors ${gstEnabled ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-600'}`}
                   role="switch"
                   aria-checked={gstEnabled}
@@ -925,6 +977,41 @@ export default function AddBillModal({
               >
                 <Plus size={16} /> Add Item
               </button>
+
+              {/* Auto-Calculate — re-runs the same Qty × Rate (± GST) maths and
+                  cleans any mistyped amount so what's shown equals what's
+                  summed. Translation-driven (BillAutoCalc namespace). */}
+              {lines.length > 0 && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={autoCalculate}
+                    title={tCalc('tooltip')}
+                    className="w-full py-2.5 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-blue-300 font-bold text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Calculator size={16} /> {tCalc('button')}
+                  </button>
+                  {autoCalc && (
+                    autoCalc.type === 'ok' ? (
+                      <p className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 px-1">
+                        <Check size={14} className="shrink-0" /> {tCalc('allCorrect')}
+                      </p>
+                    ) : autoCalc.type === 'fixed' ? (
+                      <p className="text-[12px] font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1.5 px-1">
+                        <Sparkles size={14} className="shrink-0" /> {tCalc('corrected', { count: autoCalc.count ?? 0 })}
+                      </p>
+                    ) : autoCalc.type === 'needQty' ? (
+                      <p className="text-[12px] font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 px-1">
+                        <AlertTriangle size={14} className="shrink-0" /> {tCalc('needsQty', { count: autoCalc.count ?? 0 })}
+                      </p>
+                    ) : (
+                      <p className="text-[12px] font-semibold text-slate-500 flex items-center gap-1.5 px-1">
+                        <AlertTriangle size={14} className="shrink-0" /> {tCalc('noItems')}
+                      </p>
+                    )
+                  )}
+                </div>
+              )}
 
               {(totals.unmatched > 0 || totals.overSelling > 0) && (
                 <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-3 py-2.5 space-y-1">

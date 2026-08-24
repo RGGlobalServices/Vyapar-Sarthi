@@ -22,7 +22,7 @@
  */
 
 import type { PrinterProfile } from './printProfiles';
-import { autoFitBarcode, mmToPx, ptToMm } from './printProfiles';
+import { autoFitBarcode, mmToPx, ptToMm, computeSheetGeometry, DEFAULT_SHEET } from './printProfiles';
 import { autoDetectFormat } from './barcodeValidation';
 
 export interface LabelRow {
@@ -327,6 +327,14 @@ export async function renderBarcodeSvg(value: string, format: NonNullable<LabelL
  * exactly what we need.
  */
 export async function generateLabelPdf(rows: LabelRow[], profile: PrinterProfile, opts: { labelText?: string; labelLine1?: string; labelLine2?: string; title?: string } = {}): Promise<string> {
+  // A4 label-sheet / plain-A4 profiles tile many labels on one page — a
+  // completely different page geometry. Route to the grid renderer, which
+  // reuses the very same per-label drawing code (drawLabel below) so a cell
+  // on a sheet is pixel-identical to a standalone sticker.
+  if (profile.printType === 'a4-sheet' || profile.printType === 'a4-plain') {
+    return generateA4SheetPdf(rows, profile, opts);
+  }
+
   const { default: JsPDF } = await import('jspdf');
 
   // Explode `copies` into individual page-per-copy — one printed sticker
@@ -338,18 +346,19 @@ export async function generateLabelPdf(rows: LabelRow[], profile: PrinterProfile
   }
   if (!exploded.length) return '';
 
+  const rotation = profile.rotation ?? 0;
+  const rotated = rotation === 90 || rotation === 270;
+
   // First page — compute layout to derive its exact mm height (roll paper
-  // varies per label; fixed labels are always profile.labelHeightMm).
+  // varies per label; fixed labels are always profile.labelHeightMm). When
+  // the label is rotated 90/270 the PAGE dims swap (a 60×30 label rotated
+  // sideways needs a 30×60 page) so the sticker still fits its physical media.
   const firstLayout = computeLabelLayout(profile, exploded[0], opts);
-  const firstPageDims: [number, number] = firstLayout.widthMm >= firstLayout.heightMm
-    ? [firstLayout.widthMm, firstLayout.heightMm]
+  const firstPageDims: [number, number] = rotated
+    ? [firstLayout.heightMm, firstLayout.widthMm]
     : [firstLayout.widthMm, firstLayout.heightMm];
 
   const doc = new JsPDF({
-    // Custom format: [width, height] in mm. jsPDF v4 accepts this
-    // directly. Orientation is derived from the aspect ratio — a 60×30
-    // label = landscape naturally; a 30×60 label = portrait naturally.
-    // No manual rotate() calls anywhere.
     orientation: firstPageDims[0] >= firstPageDims[1] ? 'landscape' : 'portrait',
     unit: 'mm',
     format: firstPageDims,
@@ -357,80 +366,156 @@ export async function generateLabelPdf(rows: LabelRow[], profile: PrinterProfile
     hotfixes: ['px_scaling'],
   });
 
-  // Per-axis calibration % (clamped to safe range). Applied as a jsPDF
-  // transformation matrix rather than a CSS scale — same net effect but
-  // works with vector output. Only touches the label content, never the
-  // page format itself, so the PDF's declared page size stays at the
-  // exact configured mm.
-  const scaleH = Math.max(0.9, Math.min(1.1, profile.scaleH / 100));
-  const scaleV = Math.max(0.9, Math.min(1.1, profile.scaleV / 100));
-
   for (let i = 0; i < exploded.length; i++) {
     const row = exploded[i];
     const layout = computeLabelLayout(profile, row, opts);
-    // Add a new page for every row EXCEPT the first (first was set at
-    // constructor time). Every page uses its own dimensions — roll paper
-    // labels can differ in height, fixed labels are all identical.
     if (i > 0) {
-      const dims: [number, number] = [layout.widthMm, layout.heightMm];
+      const dims: [number, number] = rotated ? [layout.heightMm, layout.widthMm] : [layout.widthMm, layout.heightMm];
       doc.addPage(dims, dims[0] >= dims[1] ? 'landscape' : 'portrait');
     }
-
-    // Calibration transform — origin at (0,0), scale content only.
-    if (scaleH !== 1 || scaleV !== 1) {
-      // jsPDF v4 transformation: matrix a,b,c,d,e,f — a scaleX, d scaleY.
-      doc.saveGraphicsState();
-      // Use setCurrentTransformationMatrix if available; fallback silent.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const anyDoc = doc as any;
-      if (typeof anyDoc.setCurrentTransformationMatrix === 'function') {
-        anyDoc.setCurrentTransformationMatrix([scaleH, 0, 0, scaleV, 0, 0]);
-      }
-    }
-
-    // Barcode image — render DIRECTLY to an off-screen canvas via
-    // JsBarcode(canvas, …) and take canvas.toDataURL(). The earlier
-    // SVG-serialise → Blob URL → Image → canvas path failed silently on
-    // some browsers (Chrome dropped the unattached-SVG rasterisation
-    // step, so the PNG came back blank and the PDF landed with no
-    // barcode). The direct-to-canvas path is what JsBarcode's own docs
-    // recommend for PDF/image use cases — always works, no image-load
-    // timing races, no xmlns quirks.
-    if (layout.barcode && row.barcode) {
-      try {
-        const dpi = profile.dpi > 0 ? profile.dpi : 300; // raster at 300 unless the user pinned a printer DPI
-        const pngPxW = Math.max(60, Math.round(mmToPx(layout.barcode.width, dpi)));
-        const pngPxH = Math.max(30, Math.round(mmToPx(layout.barcode.height, dpi)));
-        const dataUrl = await renderBarcodePngDataUrl(row.barcode, layout.barcode.format, pngPxW, pngPxH, layout.barcode.displayValue, profile.fontSizePt);
-        doc.addImage(dataUrl, 'PNG', layout.barcode.x, layout.barcode.y, layout.barcode.width, layout.barcode.height, undefined, 'FAST');
-      } catch (e) {
-        // Skip un-renderable rows silently rather than aborting the batch.
-      }
-    }
-
-    // Text lines — mm coordinates, mm-based font sizing (pt→mm via ptToMm).
-    for (const line of layout.lines) {
-      const [r, g, b] = hexToRgb(line.color);
-      doc.setTextColor(r, g, b);
-      doc.setFontSize(line.fontSizePt);
-      doc.setFont('helvetica', line.fontWeight === 'bold' ? 'bold' : line.fontWeight === 'medium' ? 'bold' : 'normal');
-      // jsPDF text y is baseline; add ~font size (converted to mm) so the
-      // top of the text sits at the layout y.
-      const baselineY = line.y + ptToMm(line.fontSizePt) * 0.85;
-      const anchor: 'left' | 'center' | 'right' = line.align;
-      const x = anchor === 'left' ? profile.margins.left
-              : anchor === 'right' ? layout.widthMm - profile.margins.right
-              : layout.widthMm / 2;
-      doc.text(line.text, x, baselineY, { align: anchor, maxWidth: layout.widthMm - profile.margins.left - profile.margins.right });
-    }
-
-    if (scaleH !== 1 || scaleV !== 1) doc.restoreGraphicsState();
+    // Draw the label at page origin. Calibration offset (offsetXMm/offsetYMm)
+    // is a per-print head-alignment nudge applied here, at the page level.
+    await drawLabel(doc, profile, layout, row, profile.offsetXMm || 0, profile.offsetYMm || 0);
   }
 
   // Open the PDF blob in a new tab so the shopkeeper can inspect the
   // real page dimensions and print/save from there.
   const blobUrl = doc.output('bloburl') as unknown as string;
   return blobUrl;
+}
+
+/**
+ * A4 (or A4-landscape) multi-label sheet renderer. Tiles `columns × rows`
+ * labels per page at physical mm positions (computeSheetGeometry), paging
+ * automatically when a sheet fills. Each cell is drawn by the SAME drawLabel
+ * routine as a standalone sticker — the only difference is a per-cell mm
+ * origin and, for 'a4-plain', a hairline cut border so the shopkeeper can
+ * scissor the labels apart.
+ *
+ * This is the fix for the client's core complaint ("on A4 the barcode
+ * becomes unnecessarily long"): a barcode is sized to its CELL (e.g. 63×33
+ * mm), never stretched across the whole 210 mm page.
+ */
+export async function generateA4SheetPdf(rows: LabelRow[], profile: PrinterProfile, opts: { labelText?: string; labelLine1?: string; labelLine2?: string; title?: string } = {}): Promise<string> {
+  const { default: JsPDF } = await import('jspdf');
+  const sheet = profile.sheet ?? { ...DEFAULT_SHEET };
+  const { page, cells } = computeSheetGeometry(sheet);
+  if (!cells.length) return '';
+
+  // Explode copies into a flat list — one printed label per copy.
+  const exploded: LabelRow[] = [];
+  for (const row of rows) {
+    const copies = Math.max(1, Math.floor(row.copies ?? 1));
+    for (let i = 0; i < copies; i++) exploded.push(row);
+  }
+  if (!exploded.length) return '';
+
+  const doc = new JsPDF({
+    orientation: page.widthMm >= page.heightMm ? 'landscape' : 'portrait',
+    unit: 'mm',
+    format: [page.widthMm, page.heightMm],
+    compress: true,
+    hotfixes: ['px_scaling'],
+  });
+
+  // A per-cell profile: the label engine thinks each cell IS the whole label
+  // (labelWidthMm/HeightMm = the cell size, fixed height, no rotation, no
+  // page-level offset). Everything else — fields, fonts, quiet zone, barcode
+  // type, autofit — carries over unchanged, so the cell renders identically
+  // to that same product printed as a single sticker of the cell size.
+  const cellProfile: PrinterProfile = {
+    ...profile,
+    printType: 'thermal-sticker',
+    rotation: 0,
+    labelWidthMm: sheet.labelWidthMm,
+    labelHeightMm: sheet.labelHeightMm,
+    offsetXMm: 0,
+    offsetYMm: 0,
+  };
+
+  for (let i = 0; i < exploded.length; i++) {
+    const cellIndex = i % cells.length;
+    if (i > 0 && cellIndex === 0) {
+      doc.addPage([page.widthMm, page.heightMm], page.widthMm >= page.heightMm ? 'landscape' : 'portrait');
+    }
+    const cell = cells[cellIndex];
+    const layout = computeLabelLayout(cellProfile, exploded[i], opts);
+    // 'a4-plain' draws a light cut-guide border around every cell; 'a4-sheet'
+    // (pre-die-cut Avery stock) leaves it clean since the sheet is already
+    // perforated.
+    if (profile.printType === 'a4-plain') {
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.2);
+      doc.rect(cell.x, cell.y, sheet.labelWidthMm, sheet.labelHeightMm);
+    }
+    await drawLabel(doc, cellProfile, layout, exploded[i], cell.x, cell.y);
+  }
+
+  return doc.output('bloburl') as unknown as string;
+}
+
+/**
+ * Draw ONE label's barcode + text into `doc`, offset to (ox,oy) in mm, with
+ * the profile's calibration scale + rotation applied. Shared by the single-
+ * sticker renderer and the A4 grid renderer so their output can never drift
+ * apart. All coordinates from `layout` are label-local (0,0 = label top-left)
+ * and get translated by (ox,oy) here.
+ */
+async function drawLabel(doc: any, profile: PrinterProfile, layout: LabelLayout, row: LabelRow, ox: number, oy: number): Promise<void> {
+  // Per-axis calibration % (clamped) + rotation, expressed as ONE jsPDF
+  // transformation matrix so vector text and the barcode image rotate/scale
+  // together. Only touches content — never the declared page size.
+  const scaleH = Math.max(0.9, Math.min(1.1, profile.scaleH / 100));
+  const scaleV = Math.max(0.9, Math.min(1.1, profile.scaleV / 100));
+  const rotation = profile.rotation ?? 0;
+  const anyDoc = doc as any;
+  const canTransform = typeof anyDoc.setCurrentTransformationMatrix === 'function';
+  const needsTransform = canTransform && (scaleH !== 1 || scaleV !== 1 || rotation !== 0);
+
+  if (needsTransform) {
+    doc.saveGraphicsState();
+    // Rotation maps label-local (x,y) into page space; see printProfiles
+    // rotation notes. Page dims for 90/270 were swapped by the caller.
+    const w = layout.widthMm, h = layout.heightMm;
+    let m: [number, number, number, number, number, number];
+    if (rotation === 90)       m = [0, scaleV, -scaleH, 0, h, 0];
+    else if (rotation === 180) m = [-scaleH, 0, 0, -scaleV, w, h];
+    else if (rotation === 270) m = [0, -scaleV, scaleH, 0, 0, w];
+    else                        m = [scaleH, 0, 0, scaleV, 0, 0];
+    // Fold the (ox,oy) page translation into the matrix so callers work in
+    // label-local coords regardless of rotation.
+    m = [m[0], m[1], m[2], m[3], m[4] + ox, m[5] + oy];
+    anyDoc.setCurrentTransformationMatrix(m);
+    ox = 0; oy = 0; // already folded into the matrix
+  }
+
+  // Barcode image — render DIRECTLY to an off-screen canvas (JsBarcode's
+  // recommended PDF path; avoids the SVG-rasterise silent-fail in Chrome).
+  if (layout.barcode && row.barcode) {
+    try {
+      const dpi = profile.dpi > 0 ? profile.dpi : 300;
+      const pngPxW = Math.max(60, Math.round(mmToPx(layout.barcode.width, dpi)));
+      const pngPxH = Math.max(30, Math.round(mmToPx(layout.barcode.height, dpi)));
+      const dataUrl = await renderBarcodePngDataUrl(row.barcode, layout.barcode.format, pngPxW, pngPxH, layout.barcode.displayValue, profile.fontSizePt);
+      doc.addImage(dataUrl, 'PNG', ox + layout.barcode.x, oy + layout.barcode.y, layout.barcode.width, layout.barcode.height, undefined, 'FAST');
+    } catch { /* skip un-renderable rows rather than aborting the batch */ }
+  }
+
+  // Text lines — mm coordinates, mm-based font sizing.
+  for (const line of layout.lines) {
+    const [r, g, b] = hexToRgb(line.color);
+    doc.setTextColor(r, g, b);
+    doc.setFontSize(line.fontSizePt);
+    doc.setFont('helvetica', line.fontWeight === 'bold' ? 'bold' : line.fontWeight === 'medium' ? 'bold' : 'normal');
+    const baselineY = oy + line.y + ptToMm(line.fontSizePt) * 0.85;
+    const anchor: 'left' | 'center' | 'right' = line.align;
+    const x = ox + (anchor === 'left' ? profile.margins.left
+            : anchor === 'right' ? layout.widthMm - profile.margins.right
+            : layout.widthMm / 2);
+    doc.text(line.text, x, baselineY, { align: anchor, maxWidth: layout.widthMm - profile.margins.left - profile.margins.right });
+  }
+
+  if (needsTransform) doc.restoreGraphicsState();
 }
 
 // ─── Small helpers ─────────────────────────────────────────────────────────

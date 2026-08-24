@@ -92,6 +92,19 @@ function escapeHtml(s: string): string {
   return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
 }
 
+/** Compact physical-size label for the active printer profile — used on the
+ *  print buttons + profile chip so what the shopkeeper sees is what actually
+ *  prints (the mm size the profile drives, not the legacy A4/thermal toggle
+ *  which the profile overrides). */
+function profileSizeLabel(p: PrinterProfile): string {
+  if (p.printType === 'a4-sheet' || p.printType === 'a4-plain') {
+    const cols = p.sheet?.columns ?? 3, rows = p.sheet?.rows ?? 8;
+    return `A4 sheet · ${cols}×${rows}`;
+  }
+  if (p.labelHeightMm <= 0) return `${p.labelWidthMm} mm roll`;
+  return `${p.labelWidthMm}×${p.labelHeightMm} mm`;
+}
+
 export default function BarcodeQRModal({ product, isWholesale, onClose }: BarcodeQRModalProps) {
   const t = useTranslations('BarcodeQRModal');
   const tv = useTranslations('Variants');
@@ -931,19 +944,31 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             />
           </div>
 
-          {/* Label size — A4 keeps today's popup; Thermal targets an actual
-              small-roll label printer with a real physical page size. */}
-          <div className="flex bg-slate-800 rounded-xl p-1 w-full">
-            {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => setLabelSize(key)}
-                className={cn(
-                  'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
-                  labelSize === key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
-                )}>
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* When a printer profile is active it drives the physical output
+              (size, DPI, calibration) — so show WHAT will print + a shortcut
+              to Settings, instead of the legacy A4/thermal toggle that the
+              profile overrides. Only the BARCODE tab is profile-driven; the
+              QR tab still uses the legacy labelSize path, so it keeps the
+              toggle (and shops with no profile fall back to it too). */}
+          {activeProfile && tab === 'barcode' ? (
+            <button type="button" onClick={() => setShowPrintSettings(true)}
+              className="w-full flex items-center justify-between gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs hover:border-emerald-500 transition-colors">
+              <span className="flex items-center gap-1.5 text-slate-300 font-bold truncate"><Settings size={13} className="text-emerald-400 shrink-0" /><span className="truncate">{activeProfile.name}</span></span>
+              <span className="text-emerald-400 font-bold shrink-0">{profileSizeLabel(activeProfile)}</span>
+            </button>
+          ) : (
+            <div className="flex bg-slate-800 rounded-xl p-1 w-full">
+              {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setLabelSize(key)}
+                  className={cn(
+                    'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                    labelSize === key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
+                  )}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="grid grid-cols-3 gap-2 w-full">
@@ -1079,24 +1104,32 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
               </div>
             )}
 
-            <div className="flex bg-slate-800 rounded-xl p-1 w-full">
-              {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
-                <button key={key} type="button" onClick={() => setLabelSize(key)}
-                  className={cn(
-                    'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
-                    labelSize === key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
-                  )}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            {activeProfile ? (
+              <button type="button" onClick={() => setShowPrintSettings(true)}
+                className="w-full flex items-center justify-between gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs hover:border-emerald-500 transition-colors">
+                <span className="flex items-center gap-1.5 text-slate-300 font-bold truncate"><Settings size={13} className="text-emerald-400 shrink-0" /><span className="truncate">{activeProfile.name}</span></span>
+                <span className="text-emerald-400 font-bold shrink-0">{profileSizeLabel(activeProfile)}</span>
+              </button>
+            ) : (
+              <div className="flex bg-slate-800 rounded-xl p-1 w-full">
+                {([['a4', t('labelSizeA4')], ['thermal58', t('labelSizeThermal58')], ['thermal80', t('labelSizeThermal80')]] as const).map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => setLabelSize(key)}
+                    className={cn(
+                      'flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                      labelSize === key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
+                    )}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <button
               type="button"
               onClick={printLabelSheet}
               className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl transition-colors text-sm font-black shadow-lg shadow-emerald-500/20"
             >
-              <Printer size={16} /> {t('print')} ({variantRows.reduce((sum, row) => sum + (variantPrintQty[row.key] ?? row.qty), 0)}) · {labelSize === 'thermal58' ? t('labelSizeThermal58') : labelSize === 'thermal80' ? t('labelSizeThermal80') : t('labelSizeA4')}
+              <Printer size={16} /> {t('print')} ({variantRows.reduce((sum, row) => sum + (variantPrintQty[row.key] ?? row.qty), 0)}) · {activeProfile ? profileSizeLabel(activeProfile) : (labelSize === 'thermal58' ? t('labelSizeThermal58') : labelSize === 'thermal80' ? t('labelSizeThermal80') : t('labelSizeA4'))}
             </button>
           </div>
         </div>

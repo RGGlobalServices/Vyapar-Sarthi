@@ -1,20 +1,30 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Save, Printer, Ruler, RotateCcw, Trash2, Check, Sparkles, AlertTriangle } from 'lucide-react';
+import { X, Save, Printer, Ruler, RotateCcw, Trash2, Check, Sparkles, AlertTriangle, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   PrinterProfile,
   LABEL_PRESETS,
   LabelSizePresetKey,
   DEFAULT_PROFILE,
+  DEFAULT_SHEET,
   profileFromPreset,
   recommendedForPreset,
   listProfiles,
   saveProfile,
   deleteProfile,
   setActiveProfileId,
+  getActiveProfileId,
   autoFitBarcode,
+  normalizeProfile,
+  duplicateProfile,
+  PrintType,
+  Rotation,
+  A4SheetConfig,
+  A4_SHEET_PRESETS,
+  fitSheetLabels,
+  computeSheetGeometry,
 } from '@/lib/printProfiles';
 import { validateBarcode } from '@/lib/barcodeValidation';
 import { printTestLabel, printCalibrationSheet } from '@/lib/printLabels';
@@ -63,19 +73,22 @@ export default function BarcodePrintSettings({
   initialProfile,
 }: BarcodePrintSettingsProps) {
   const [profile, setProfile] = useState<PrinterProfile>(() => {
-    if (initialProfile) return { ...initialProfile };
+    // Always normalize so older saved profiles gain printType/rotation/sheet
+    // before the UI reads them.
+    if (initialProfile) return normalizeProfile({ ...initialProfile });
     // If there are any saved profiles, seed from the latest — otherwise
     // from the default.
     if (shopId) {
       const all = listProfiles(shopId);
-      if (all.length) return { ...[...all].sort((a, b) => b.updatedAt - a.updatedAt)[0] };
+      if (all.length) return normalizeProfile({ ...[...all].sort((a, b) => b.updatedAt - a.updatedAt)[0] });
     }
-    return { ...DEFAULT_PROFILE, id: `prof-${Date.now().toString(36)}` };
+    return normalizeProfile({ ...DEFAULT_PROFILE, id: `prof-${Date.now().toString(36)}` });
   });
   const [profiles, setProfiles] = useState<PrinterProfile[]>(() => listProfiles(shopId));
+  const [activeId, setActiveId] = useState<string | null>(() => (shopId ? getActiveProfileId(shopId) : null));
   const [section, setSection] = useState<SectionKey>('paper');
 
-  useEffect(() => { setProfiles(listProfiles(shopId)); }, [shopId]);
+  useEffect(() => { setProfiles(listProfiles(shopId)); setActiveId(shopId ? getActiveProfileId(shopId) : null); }, [shopId]);
 
   function patch(update: Partial<PrinterProfile>) {
     setProfile(prev => ({ ...prev, ...update }));
@@ -102,11 +115,46 @@ export default function BarcodePrintSettings({
     });
   }
 
+  // Switching the top-level Print Type picks a sensible default size preset
+  // for that mode so the shopkeeper isn't left with, say, a 50×30 sticker
+  // size while in "A4 Label Sheet" mode.
+  function onPickPrintType(pt: PrintType) {
+    if (pt === 'a4-sheet' || pt === 'a4-plain') {
+      patch({
+        printType: pt,
+        preset: 'a4',
+        sheet: profile.sheet ?? { ...DEFAULT_SHEET },
+      });
+    } else if (pt === 'thermal-roll') {
+      const rec = recommendedForPreset('thermal58');
+      patch({ printType: pt, preset: 'thermal58', ...rec });
+    } else {
+      const rec = recommendedForPreset('label50x30');
+      patch({ printType: pt, preset: 'label50x30', ...rec });
+    }
+  }
+
+  // Patch the A4 sheet config. Changes to count/margins/gaps re-fit the label
+  // cell size so labels always tile the page without overflow.
+  function patchSheet(update: Partial<A4SheetConfig>, refit = false) {
+    const base = profile.sheet ?? { ...DEFAULT_SHEET };
+    const next = { ...base, ...update };
+    patch({ sheet: refit ? fitSheetLabels(next) : next });
+  }
+
+  function onPickSheetPreset(key: string) {
+    const p = A4_SHEET_PRESETS.find(x => x.key === key);
+    if (!p) return;
+    const base = profile.sheet ?? { ...DEFAULT_SHEET };
+    patch({ sheet: fitSheetLabels({ ...base, columns: p.columns, rows: p.rows, orientation: p.orientation }) });
+  }
+
   function onSave() {
     if (!shopId) { toast.error('No shop selected'); return; }
     if (!profile.name.trim()) { toast.error('Give this profile a name'); return; }
     const saved = saveProfile(shopId, { ...profile });
     setActiveProfileId(shopId, saved.id);
+    setActiveId(saved.id);
     setProfiles(listProfiles(shopId));
     toast.success('Print profile saved');
     onSaved(saved);
@@ -117,6 +165,23 @@ export default function BarcodePrintSettings({
     deleteProfile(shopId, id);
     setProfiles(listProfiles(shopId));
     if (profile.id === id) setProfile({ ...DEFAULT_PROFILE, id: `prof-${Date.now().toString(36)}` });
+  }
+
+  function onDuplicate(p: PrinterProfile) {
+    if (!shopId) { toast.error('No shop selected'); return; }
+    const copy = duplicateProfile(p);
+    saveProfile(shopId, copy);
+    setProfiles(listProfiles(shopId));
+    setProfile(copy);
+    toast.success('Profile duplicated');
+  }
+
+  function onSetDefault(id: string) {
+    if (!shopId) return;
+    setActiveProfileId(shopId, id);
+    setActiveId(id);
+    setProfiles(listProfiles(shopId));
+    toast.success('Set as default printer');
   }
 
   function onResetToRecommended() {
@@ -198,8 +263,13 @@ export default function BarcodePrintSettings({
               {profiles.length === 0 && <p className="text-[11px] text-slate-500 px-1 py-2">No saved profiles yet.</p>}
               {profiles.map(p => (
                 <div key={p.id} className={`group px-2 py-1.5 rounded-lg text-[11px] flex items-center gap-1 ${p.id === profile.id ? 'bg-slate-700/50 text-slate-100' : 'text-slate-400 hover:bg-slate-800'}`}>
-                  <button className="flex-1 min-w-0 text-left truncate" onClick={() => setProfile({ ...p })} title={p.name}>{p.name}</button>
-                  <button onClick={() => onDelete(p.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300"><Trash2 size={12} /></button>
+                  <button className="flex-1 min-w-0 text-left truncate flex items-center gap-1" onClick={() => setProfile(normalizeProfile({ ...p }))} title={p.name}>
+                    {activeId === p.id && <span className="text-emerald-400 shrink-0" title="Default printer">★</span>}
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                  <button onClick={() => onSetDefault(p.id)} title="Set as default" className={`opacity-0 group-hover:opacity-100 shrink-0 ${activeId === p.id ? 'text-emerald-400' : 'text-slate-500 hover:text-emerald-400'}`}>★</button>
+                  <button onClick={() => onDuplicate(p)} title="Duplicate" className="opacity-0 group-hover:opacity-100 shrink-0 text-slate-500 hover:text-slate-200"><Copy size={12} /></button>
+                  <button onClick={() => onDelete(p.id)} title="Delete" className="opacity-0 group-hover:opacity-100 shrink-0 text-red-400 hover:text-red-300"><Trash2 size={12} /></button>
                 </div>
               ))}
             </div>
@@ -214,7 +284,8 @@ export default function BarcodePrintSettings({
                 <span className="text-[10px] font-bold text-slate-500 uppercase self-center px-2">Profiles:</span>
                 {profiles.map(p => (
                   <div key={p.id} className={`px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5 shrink-0 ${p.id === profile.id ? 'bg-slate-700 text-slate-100' : 'bg-slate-800 text-slate-400'}`}>
-                    <button onClick={() => setProfile({ ...p })} className="max-w-[120px] truncate">{p.name}</button>
+                    <button onClick={() => setProfile(normalizeProfile({ ...p }))} className="max-w-[120px] truncate">{activeId === p.id ? '★ ' : ''}{p.name}</button>
+                    <button onClick={() => onDuplicate(p)} className="text-slate-400 hover:text-slate-200"><Copy size={11} /></button>
                     <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-300"><Trash2 size={11} /></button>
                   </div>
                 ))}
@@ -243,7 +314,7 @@ export default function BarcodePrintSettings({
               </button>
             </div>
 
-            {section === 'paper' && <PaperSection profile={profile} patch={patch} onPickPreset={onPickPreset} />}
+            {section === 'paper' && <PaperSection profile={profile} patch={patch} onPickPreset={onPickPreset} onPickPrintType={onPickPrintType} patchSheet={patchSheet} onPickSheetPreset={onPickSheetPreset} />}
             {section === 'barcode' && <BarcodeSection profile={profile} patch={patch} validation={validation} />}
             {section === 'text' && <TextSection profile={profile} patch={patch} />}
             {section === 'qr' && <QRSection profile={profile} patch={patch} />}
@@ -259,15 +330,25 @@ export default function BarcodePrintSettings({
             <div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Live preview</p>
               <LabelPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} />
-              <p className="text-[10px] text-slate-500 mt-1.5 text-center">
-                Label: <b className="text-slate-300">{profile.labelWidthMm} × {profile.labelHeightMm > 0 ? profile.labelHeightMm : 'auto'} mm</b>
-                <br />Barcode:
-                {' '}<b className="text-slate-300">
-                  {(profile.autoFit ? autoFitBarcode(profile).widthMm : profile.barcodeWidthMm).toFixed(1)}
-                  {' × '}
-                  {(profile.autoFit ? autoFitBarcode(profile).heightMm : profile.barcodeHeightMm).toFixed(1)} mm
-                </b>
-              </p>
+              {(profile.printType === 'a4-sheet' || profile.printType === 'a4-plain') ? (
+                <p className="text-[10px] text-slate-500 mt-1.5 text-center">
+                  Page: <b className="text-slate-300">A4 {(profile.sheet ?? DEFAULT_SHEET).orientation}</b>
+                  {' · '}<b className="text-slate-300">{(profile.sheet ?? DEFAULT_SHEET).columns} × {(profile.sheet ?? DEFAULT_SHEET).rows}</b>
+                  <br />Label: <b className="text-slate-300">{(profile.sheet ?? DEFAULT_SHEET).labelWidthMm} × {(profile.sheet ?? DEFAULT_SHEET).labelHeightMm} mm</b>
+                  {' · '}{computeSheetGeometry(profile.sheet ?? DEFAULT_SHEET).perPage}/page
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-500 mt-1.5 text-center">
+                  Label: <b className="text-slate-300">{profile.labelWidthMm} × {profile.labelHeightMm > 0 ? profile.labelHeightMm : 'auto'} mm</b>
+                  {(profile.rotation ?? 0) !== 0 && <> · <b className="text-slate-300">{profile.rotation}°</b></>}
+                  <br />Barcode:
+                  {' '}<b className="text-slate-300">
+                    {(profile.autoFit ? autoFitBarcode(profile).widthMm : profile.barcodeWidthMm).toFixed(1)}
+                    {' × '}
+                    {(profile.autoFit ? autoFitBarcode(profile).heightMm : profile.barcodeHeightMm).toFixed(1)} mm
+                  </b>
+                </p>
+              )}
             </div>
 
             {(validation.errors.length > 0 || validation.warnings.length > 0) && (
@@ -323,8 +404,26 @@ export default function BarcodePrintSettings({
 
 // ─── Section components ────────────────────────────────────────────────────
 
-function PaperSection({ profile, patch, onPickPreset }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; onPickPreset: (k: LabelSizePresetKey) => void; }) {
-  const group = (g: string, label: string) => (
+function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchSheet, onPickSheetPreset }: {
+  profile: PrinterProfile;
+  patch: (u: Partial<PrinterProfile>) => void;
+  onPickPreset: (k: LabelSizePresetKey) => void;
+  onPickPrintType: (pt: PrintType) => void;
+  patchSheet: (u: Partial<A4SheetConfig>, refit?: boolean) => void;
+  onPickSheetPreset: (key: string) => void;
+}) {
+  const printType = profile.printType ?? 'thermal-sticker';
+  const isSheet = printType === 'a4-sheet' || printType === 'a4-plain';
+
+  const PRINT_TYPES: Array<{ key: PrintType; label: string; hint: string; icon: string }> = [
+    { key: 'a4-sheet',        label: 'A4 Label Sheet',       hint: 'Many labels on pre-cut A4 sheets', icon: '▦' },
+    { key: 'a4-plain',        label: 'A4 Plain Paper',       hint: 'Grid on plain A4 with cut guides',  icon: '▤' },
+    { key: 'thermal-sticker', label: 'Thermal Sticker',      hint: 'One die-cut sticker per label',     icon: '🏷' },
+    { key: 'thermal-roll',    label: 'Thermal Continuous',   hint: 'Continuous roll, auto height',      icon: '🧾' },
+  ];
+
+  // Size-preset picker for the thermal modes (label rolls / receipt rolls).
+  const presetGroup = (g: string, label: string) => (
     <div key={g}>
       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{label}</p>
       <div className="grid grid-cols-2 gap-1.5">
@@ -341,20 +440,109 @@ function PaperSection({ profile, patch, onPickPreset }: { profile: PrinterProfil
       </div>
     </div>
   );
+
+  const sheet = profile.sheet ?? DEFAULT_SHEET;
+  const geo = computeSheetGeometry(sheet);
+
   return (
     <div className="space-y-4">
-      {group('label', 'Barcode label rolls')}
-      {group('thermal', 'Thermal receipt (roll)')}
-      {group('a4', 'Office paper')}
-      {group('custom', 'Custom')}
+      {/* Print Type — the primary decision (spec section 1A). Decides which
+          physical renderer runs. */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Print type</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {PRINT_TYPES.map(pt => (
+            <button
+              key={pt.key}
+              onClick={() => onPickPrintType(pt.key)}
+              className={`px-2.5 py-2 rounded-lg text-xs font-bold text-left border transition ${printType === pt.key ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-800/40 text-slate-300 hover:border-slate-500'}`}
+            >
+              <span className="flex items-center gap-1.5">{pt.icon} {pt.label}</span>
+              <span className="block text-[10px] font-medium text-slate-500 mt-0.5">{pt.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {profile.preset === 'custom' && (
-        <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom size (mm)</p>
-          <div className="grid grid-cols-2 gap-2">
-            <NumberInput label="Width" value={profile.labelWidthMm} onChange={v => patch({ labelWidthMm: v })} min={10} max={500} step={1} suffix="mm" />
-            <NumberInput label="Height (0 = roll paper)" value={profile.labelHeightMm} onChange={v => patch({ labelHeightMm: v })} min={0} max={500} step={1} suffix="mm" />
+      {isSheet ? (
+        <div className="space-y-3">
+          {/* Orientation */}
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Page orientation</p>
+            <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
+              {(['portrait', 'landscape'] as const).map(o => (
+                <button key={o} onClick={() => patchSheet({ orientation: o }, true)} className={`flex-1 py-1.5 rounded-md text-xs font-bold capitalize ${sheet.orientation === o ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>A4 {o}</button>
+              ))}
+            </div>
           </div>
+
+          {/* Grid presets */}
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Layout preset</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {A4_SHEET_PRESETS.map(p => {
+                const active = sheet.columns === p.columns && sheet.rows === p.rows;
+                return (
+                  <button key={p.key} onClick={() => onPickSheetPreset(p.key)}
+                    className={`px-2.5 py-2 rounded-lg text-xs font-bold text-left border transition ${active ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-800/40 text-slate-300 hover:border-slate-500'}`}>
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Columns / rows */}
+          <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grid (labels auto-fit the page)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberInput label="Columns" value={sheet.columns} onChange={v => patchSheet({ columns: Math.max(1, Math.round(v)) }, true)} min={1} max={8} step={1} />
+              <NumberInput label="Rows" value={sheet.rows} onChange={v => patchSheet({ rows: Math.max(1, Math.round(v)) }, true)} min={1} max={20} step={1} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberInput label="Label width" value={sheet.labelWidthMm} onChange={v => patchSheet({ labelWidthMm: v })} min={10} max={210} step={0.5} suffix="mm" />
+              <NumberInput label="Label height" value={sheet.labelHeightMm} onChange={v => patchSheet({ labelHeightMm: v })} min={8} max={297} step={0.5} suffix="mm" />
+            </div>
+            <button onClick={() => patchSheet({}, true)} className="w-full h-8 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-[11px] font-bold hover:border-emerald-500">Auto-fit label size to grid</button>
+          </div>
+
+          {/* Gaps + page margins */}
+          <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gaps between labels (mm)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberInput label="Horizontal gap" value={sheet.gapXMm} onChange={v => patchSheet({ gapXMm: v }, true)} min={0} max={30} step={0.5} suffix="mm" />
+              <NumberInput label="Vertical gap" value={sheet.gapYMm} onChange={v => patchSheet({ gapYMm: v }, true)} min={0} max={30} step={0.5} suffix="mm" />
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Page margins (mm)</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <NumberInput label="Top" value={sheet.marginTopMm} onChange={v => patchSheet({ marginTopMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label="Bottom" value={sheet.marginBottomMm} onChange={v => patchSheet({ marginBottomMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label="Left" value={sheet.marginLeftMm} onChange={v => patchSheet({ marginLeftMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label="Right" value={sheet.marginRightMm} onChange={v => patchSheet({ marginRightMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-400 bg-slate-800/40 rounded-lg px-3 py-2 border border-slate-700/50">
+            <b className="text-emerald-300">{geo.perPage}</b> labels per A4 page · cell <b className="text-slate-200">{sheet.labelWidthMm} × {sheet.labelHeightMm} mm</b>. The barcode is sized to the cell — never stretched across the page.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {printType === 'thermal-sticker' && presetGroup('label', 'Die-cut sticker sizes')}
+          {printType === 'thermal-roll' && presetGroup('thermal', 'Continuous roll widths')}
+          {presetGroup('custom', 'Custom size')}
+
+          {profile.preset === 'custom' && (
+            <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom size (mm)</p>
+              <div className="grid grid-cols-2 gap-2">
+                <NumberInput label="Width" value={profile.labelWidthMm} onChange={v => patch({ labelWidthMm: v })} min={10} max={500} step={1} suffix="mm" />
+                <NumberInput label="Height (0 = roll paper)" value={profile.labelHeightMm} onChange={v => patch({ labelHeightMm: v })} min={0} max={500} step={1} suffix="mm" />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -529,6 +717,16 @@ function PositionSection({ profile, patch }: { profile: PrinterProfile; patch: (
       <div className="grid grid-cols-2 gap-2">
         <NumberInput label="Text-to-barcode gap" value={profile.spacingMm} onChange={v => patch({ spacingMm: v })} min={0} max={10} step={0.5} suffix="mm" />
       </div>
+
+      <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rotation</p>
+        <div className="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-lg">
+          {([0, 90, 180, 270] as const).map(r => (
+            <button key={r} onClick={() => patch({ rotation: r as Rotation })} className={`py-1.5 rounded-md text-[11px] font-bold ${(profile.rotation ?? 0) === r ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{r}°</button>
+          ))}
+        </div>
+        <p className="text-[10px] text-slate-500">90° / 270° print the label sideways — useful when a horizontal barcode won't fit a narrow roll. The page size rotates with it. (Not applied to A4 sheets.)</p>
+      </div>
     </div>
   );
 }
@@ -549,7 +747,17 @@ function CalibrationSection({ profile, patch, onPrintRuler }: { profile: Printer
         <NumberInput label="Horizontal scale" value={profile.scaleH} onChange={v => patch({ scaleH: v })} min={90} max={110} step={0.5} suffix="%" />
         <NumberInput label="Vertical scale" value={profile.scaleV} onChange={v => patch({ scaleV: v })} min={90} max={110} step={0.5} suffix="%" />
       </div>
-      <p className="text-[10px] text-slate-500">Applied only to barcode labels — invoices and other prints are never touched.</p>
+
+      <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Print offset (nudge the whole label)</p>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberInput label="Horizontal offset" value={profile.offsetXMm} onChange={v => patch({ offsetXMm: v })} min={-20} max={20} step={0.1} suffix="mm" />
+          <NumberInput label="Vertical offset (feed)" value={profile.offsetYMm} onChange={v => patch({ offsetYMm: v })} min={-20} max={20} step={0.1} suffix="mm" />
+        </div>
+        <p className="text-[10px] text-slate-500">Shifts the content on the sticker if your printer prints too far left/up. Vertical = feed offset. Example: +1.0 / −0.5 mm.</p>
+      </div>
+
+      <p className="text-[10px] text-slate-500">Applied only to barcode labels — invoices and other prints are never touched. <b>Print density &amp; feed gap</b> are set in your printer's own driver/utility, not from the browser.</p>
     </div>
   );
 }
@@ -583,36 +791,72 @@ function NumberInput({ label, value, onChange, min, max, step, suffix, hint }: {
  * the print engine uses, so what the shopkeeper sees IS what prints.
  */
 function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number }) {
+  const isSheet = profile.printType === 'a4-sheet' || profile.printType === 'a4-plain';
+  if (isSheet) {
+    return <SheetPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} />;
+  }
+
   const targetPreviewWidth = 260; // px — width of the right-column preview
   const targetPreviewMax = 240;   // px — max height so tall labels shrink to fit
-  // Scale so `labelWidthMm × previewScale = targetPreviewWidth` (in css px).
-  const previewScale = targetPreviewWidth / profile.labelWidthMm;
+  const rotation = profile.rotation ?? 0;
+  const rotated = rotation === 90 || rotation === 270;
   const heightMm = profile.labelHeightMm > 0 ? profile.labelHeightMm : Math.max(20, profile.labelWidthMm * 0.6);
-  const previewHeightScale = Math.min(previewScale, targetPreviewMax / heightMm);
-  const s = Math.min(previewScale, previewHeightScale);
-  const fit = profile.autoFit ? autoFitBarcode(profile) : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
+  // For a rotated label the on-screen footprint swaps width/height.
+  const footW = rotated ? heightMm : profile.labelWidthMm;
+  const footH = rotated ? profile.labelWidthMm : heightMm;
+  const s = Math.min(targetPreviewWidth / footW, targetPreviewMax / footH);
+
+  return (
+    <div className="bg-white rounded-md mx-auto shadow-lg flex items-center justify-center" style={{ width: footW * s, height: footH * s }}>
+      <div style={{ transform: `rotate(${rotation}deg)` }}>
+        <SingleLabelBox profile={profile} widthMm={profile.labelWidthMm} heightMm={heightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} />
+      </div>
+    </div>
+  );
+}
+
+/** The A4 page + tiled label grid preview. Positions come straight from
+ *  computeSheetGeometry — exactly the same math the PDF renderer uses. */
+function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number }) {
+  const sheet = profile.sheet ?? DEFAULT_SHEET;
+  const { page, cells } = computeSheetGeometry(sheet);
+  const targetW = 260, targetH = 320;
+  const s = Math.min(targetW / page.widthMm, targetH / page.heightMm);
+  return (
+    <div className="bg-white rounded-md mx-auto shadow-lg relative overflow-hidden" style={{ width: page.widthMm * s, height: page.heightMm * s }}>
+      {cells.map((cell, i) => (
+        <div key={i} style={{ position: 'absolute', left: cell.x * s, top: cell.y * s, width: sheet.labelWidthMm * s, height: sheet.labelHeightMm * s, outline: profile.printType === 'a4-plain' ? '0.5px solid #cbd5e1' : 'none', overflow: 'hidden' }}>
+          <SingleLabelBox profile={{ ...profile, labelWidthMm: sheet.labelWidthMm, labelHeightMm: sheet.labelHeightMm, rotation: 0 }} widthMm={sheet.labelWidthMm} heightMm={sheet.labelHeightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} compact />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One label's content, laid out in real mm and scaled to `scale` px/mm.
+ *  Shared by the single-sticker preview and every A4 grid cell so the two
+ *  previews are visually consistent. */
+function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleVariant, sampleBarcode, samplePrice, compact }: { profile: PrinterProfile; widthMm: number; heightMm: number; scale: number; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; compact?: boolean }) {
+  const subProfile = { ...profile, labelWidthMm: widthMm, labelHeightMm: heightMm };
+  const fit = subProfile.autoFit ? autoFitBarcode(subProfile) : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
   const name = sampleName || 'Sample Product';
   const variant = sampleVariant || 'Black / M';
   const barcode = sampleBarcode || '123456789012';
   const price = samplePrice && samplePrice > 0 ? `₹${samplePrice.toLocaleString('en-IN')}` : '';
-
   const alignCss = profile.textAlign;
   const justifyCss = profile.positionH === 'left' ? 'flex-start' : profile.positionH === 'right' ? 'flex-end' : 'center';
   const alignVCss = profile.positionV === 'top' ? 'flex-start' : profile.positionV === 'bottom' ? 'flex-end' : 'center';
 
   return (
-    <div className="bg-white rounded-md overflow-hidden mx-auto shadow-lg" style={{ width: profile.labelWidthMm * s, height: heightMm * s }}>
+    <div style={{ width: widthMm * scale, height: heightMm * scale, overflow: 'hidden' }}>
       <div
         style={{
-          width: profile.labelWidthMm + 'mm',
+          width: widthMm + 'mm',
           height: heightMm + 'mm',
           padding: `${profile.margins.top}mm ${profile.margins.right}mm ${profile.margins.bottom}mm ${profile.margins.left}mm`,
-          // Inner box uses `mm` — 1mm = 3.7795 CSS px at the browser default
-          // 96 DPI. To fit its intrinsic mm-size into a container of
-          // (labelWidthMm × s) pixels we scale by (s / 3.7795), NOT (s ×
-          // 3.7795) which was 14× too big and made the whole preview
-          // overflow out of view (looked blank).
-          transform: `scale(${s / 3.7795})`,
+          // 1mm = 3.7795 CSS px at 96 DPI; scale the intrinsic mm box down to
+          // `scale` px/mm.
+          transform: `scale(${scale / 3.7795})`,
           transformOrigin: 'top left',
           display: 'flex', flexDirection: 'column',
           alignItems: justifyCss as any, justifyContent: alignVCss as any,
@@ -622,19 +866,14 @@ function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
           boxSizing: 'border-box',
         }}
       >
-        {profile.fields.shopName && <div style={{ fontSize: (profile.fontSizePt + 1) + 'pt', fontWeight: 800, textTransform: 'uppercase' }}>Shop Name</div>}
-        {profile.textPosition === 'above' && profile.fields.productName && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800 }}>{name}</div>}
+        {profile.fields.shopName && !compact && <div style={{ fontSize: (profile.fontSizePt + 1) + 'pt', fontWeight: 800, textTransform: 'uppercase' }}>Shop Name</div>}
+        {profile.textPosition === 'above' && profile.fields.productName && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{name}</div>}
         {profile.textPosition === 'above' && (profile.fields.variant || profile.fields.size || profile.fields.colour) && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', fontWeight: 700, color: '#4338ca' }}>{variant}</div>}
         <div style={{ padding: profile.quietZoneMm + 'mm', background: '#fff' }}>
-          {/* Fake "barcode" — vertical stripes at approx the right density. */}
           <div style={{ width: fit.widthMm + 'mm', height: fit.heightMm + 'mm', background: 'repeating-linear-gradient(90deg, #000 0, #000 0.35mm, #fff 0.35mm, #fff 0.7mm)' }} />
         </div>
-        {/* Barcode digits rendered as a single continuous string below the
-            bars — matches labelRenderer.ts's real output (not the EAN-13
-            split default). Fixes client feedback about the number looking
-            "divided". */}
         {profile.fields.barcodeNumber && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', textAlign: 'center', letterSpacing: '0.5px' }}>{barcode}</div>}
-        {profile.textPosition === 'below' && profile.fields.productName && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800 }}>{name}</div>}
+        {profile.textPosition === 'below' && profile.fields.productName && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{name}</div>}
         {profile.textPosition === 'below' && (profile.fields.variant || profile.fields.size || profile.fields.colour) && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', fontWeight: 700, color: '#4338ca' }}>{variant}</div>}
         {price && (profile.fields.sellingPrice || profile.fields.mrp) && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800 }}>{price}</div>}
       </div>

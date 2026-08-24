@@ -1,4 +1,13 @@
 {
+  "BillAutoCalc": {
+    "button": "Auto Calculate",
+    "checking": "Checking prices…",
+    "allCorrect": "All prices are correct",
+    "corrected": "Auto-corrected {count, plural, one {# item} other {# items}}",
+    "needsQty": "{count, plural, one {# item needs a quantity} other {# items need a quantity}}",
+    "noItems": "Add at least one item first",
+    "tooltip": "Recalculate every line and total, and fix any mistyped amount"
+  },
   "Nav": {
     "dashboard": "Dashboard",
     "profile": "Profile",

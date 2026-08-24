@@ -19,6 +19,27 @@
 
 export type BarcodeType = 'auto' | 'CODE128' | 'EAN13' | 'EAN8' | 'UPC' | 'CODE39';
 export type QRErrorLevel = 'L' | 'M' | 'Q' | 'H';
+
+/**
+ * The four physically-distinct output modes the client's spec (section 1A)
+ * calls out. This is orthogonal to the size preset: it decides which
+ * RENDERER runs, not what size the label is.
+ *   - 'a4-sheet'      → many small labels tiled on one A4 page (Avery-style
+ *                        label sheets). Uses the grid engine + `sheet` below.
+ *   - 'a4-plain'      → same grid engine, but on plain A4 with cut guides
+ *                        (scissors-and-glue). Identical geometry to a4-sheet;
+ *                        only the hairline cut border differs.
+ *   - 'thermal-sticker' → one label per physical die-cut sticker (fixed
+ *                        width × height page, one sticker advanced per print).
+ *   - 'thermal-roll'  → continuous roll (fixed width, content-driven height).
+ * Older saved profiles predate this field; normalizeProfile() derives a
+ * sensible value from their `preset` so nothing breaks. */
+export type PrintType = 'a4-sheet' | 'a4-plain' | 'thermal-sticker' | 'thermal-roll';
+
+/** Barcode/label rotation in degrees. 90/270 print the barcode sideways —
+ *  common on narrow continuous roll where a horizontal code won't fit the
+ *  width but a vertical one will. */
+export type Rotation = 0 | 90 | 180 | 270;
 export type LabelSizePresetKey =
   | 'a4'
   | 'thermal58'
@@ -58,12 +79,40 @@ export interface Margins {
 }
 
 /**
+ * A4 (or A4-landscape) multi-label sheet layout. All in millimetres.
+ * The grid engine (labelRenderer.generateA4SheetPdf) tiles `columns × rows`
+ * labels per page, positioned purely from page-size + margins + gaps + label
+ * size — never hard-coded coordinates — so any label-sheet stationery can be
+ * matched exactly. Each cell is then rendered by the SAME single-label layout
+ * engine, so a cell on an A4 sheet looks identical to a standalone sticker.
+ */
+export interface A4SheetConfig {
+  orientation: 'portrait' | 'landscape';
+  columns: number;
+  rows: number;
+  /** Physical size of ONE label cell. */
+  labelWidthMm: number;
+  labelHeightMm: number;
+  /** Gaps BETWEEN adjacent labels (not the page edge). */
+  gapXMm: number;
+  gapYMm: number;
+  /** Page edge → first label. */
+  marginTopMm: number;
+  marginBottomMm: number;
+  marginLeftMm: number;
+  marginRightMm: number;
+}
+
+/**
  * Complete printer profile — all dimensions in millimetres, all
  * calibration values as percentages (100 = no adjustment).
  */
 export interface PrinterProfile {
   id: string;
   name: string;
+  /** Which physical renderer runs. Optional for backward-compat with saved
+   *  profiles that predate it — normalizeProfile() fills it from `preset`. */
+  printType?: PrintType;
   preset: LabelSizePresetKey;
   /** Physical label / paper size in mm. Height 0 = "roll paper, height =
    *  content" (thermal receipt printers advance the roll per print). */
@@ -97,6 +146,12 @@ export interface PrinterProfile {
   positionV: 'top' | 'center' | 'bottom';
   offsetXMm: number;
   offsetYMm: number;
+  /** Barcode/label rotation. Optional for backward-compat (defaults to 0). */
+  rotation?: Rotation;
+  /** A4 multi-label sheet layout. Only consumed when printType is
+   *  'a4-sheet' / 'a4-plain'. Optional for backward-compat — normalizeProfile
+   *  fills a sensible default. */
+  sheet?: A4SheetConfig;
   margins: Margins;
   /** Per-axis scale correction. 100 = untouched. Range 90–110 to keep tiny
    *  driver-side inaccuracies from becoming ridiculous. Applied ONLY to
@@ -139,9 +194,40 @@ export function getPreset(key: LabelSizePresetKey): LabelSizePreset {
  * road small-label printer most footwear/apparel shops start with. Every
  * profile is derived from this + user tweaks.
  */
+/**
+ * A4 page dimensions in mm. Landscape simply swaps the two.
+ */
+export const A4_PORTRAIT = { widthMm: 210, heightMm: 297 } as const;
+
+/**
+ * Default A4 label-sheet grid — 3 columns × 8 rows on portrait A4 with 8 mm
+ * page margins and 2 mm gaps. The label size below is the exact result of
+ * fitSheetLabels() for this grid; it's written as a literal (not a function
+ * call) so this module has no init-time function dependency. fitSheetLabels()
+ * recomputes it whenever the shopkeeper changes columns/rows/margins/gaps.
+ *   usableW = 210 − 8 − 8 − 2×2 = 190 → 190/3 = 63.3 mm
+ *   usableH = 297 − 8 − 8 − 2×7 = 267 → 267/8 = 33.3 mm
+ */
+export const DEFAULT_SHEET: A4SheetConfig = {
+  orientation: 'portrait',
+  columns: 3,
+  rows: 8,
+  labelWidthMm: 63.3,
+  labelHeightMm: 33.3,
+  gapXMm: 2,
+  gapYMm: 2,
+  marginTopMm: 8,
+  marginBottomMm: 8,
+  marginLeftMm: 8,
+  marginRightMm: 8,
+};
+
 export const DEFAULT_PROFILE: PrinterProfile = {
   id: 'default',
   name: 'Default (50 × 30 mm)',
+  printType: 'thermal-sticker',
+  rotation: 0,
+  sheet: DEFAULT_SHEET,
   preset: 'label50x30',
   labelWidthMm: 50,
   labelHeightMm: 30,
@@ -228,6 +314,122 @@ export function profileFromPreset(preset: LabelSizePresetKey, name?: string): Pr
   };
 }
 
+// ─── A4 label-sheet grid ───────────────────────────────────────────────────
+
+export interface A4SheetPreset {
+  key: string;
+  label: string;
+  columns: number;
+  rows: number;
+  orientation: 'portrait' | 'landscape';
+}
+
+/** Common label-sheet grids from the client spec (section 2). Label sizes
+ *  are derived to fill the page (fitSheetLabels) so they always tile cleanly
+ *  — the shopkeeper picks the grid, we compute the geometry. */
+export const A4_SHEET_PRESETS: A4SheetPreset[] = [
+  { key: '2x7',  label: '2 × 7 (14/sheet)',  columns: 2, rows: 7,  orientation: 'portrait' },
+  { key: '2x10', label: '2 × 10 (20/sheet)', columns: 2, rows: 10, orientation: 'portrait' },
+  { key: '3x8',  label: '3 × 8 (24/sheet)',  columns: 3, rows: 8,  orientation: 'portrait' },
+  { key: '3x10', label: '3 × 10 (30/sheet)', columns: 3, rows: 10, orientation: 'portrait' },
+  { key: '4x8',  label: '4 × 8 (32/sheet)',  columns: 4, rows: 8,  orientation: 'portrait' },
+];
+
+/** Page size (mm) for a sheet's chosen orientation. */
+export function sheetPageSize(sheet: A4SheetConfig): { widthMm: number; heightMm: number } {
+  return sheet.orientation === 'landscape'
+    ? { widthMm: A4_PORTRAIT.heightMm, heightMm: A4_PORTRAIT.widthMm }
+    : { widthMm: A4_PORTRAIT.widthMm, heightMm: A4_PORTRAIT.heightMm };
+}
+
+/**
+ * Recompute labelWidthMm/labelHeightMm so `columns × rows` labels fill the
+ * page evenly given the current margins + gaps. Called when the shopkeeper
+ * picks a grid preset or changes count/margins/gaps — guarantees the labels
+ * always tile without overflowing (the exact "never allow overflow into the
+ * next label" requirement). Returns a NEW config; never mutates the input.
+ */
+export function fitSheetLabels(sheet: A4SheetConfig): A4SheetConfig {
+  const page = sheetPageSize(sheet);
+  const cols = Math.max(1, Math.floor(sheet.columns));
+  const rows = Math.max(1, Math.floor(sheet.rows));
+  const usableW = page.widthMm - sheet.marginLeftMm - sheet.marginRightMm - sheet.gapXMm * (cols - 1);
+  const usableH = page.heightMm - sheet.marginTopMm - sheet.marginBottomMm - sheet.gapYMm * (rows - 1);
+  return {
+    ...sheet,
+    columns: cols,
+    rows,
+    labelWidthMm: Math.max(10, Math.floor((usableW / cols) * 10) / 10),
+    labelHeightMm: Math.max(8, Math.floor((usableH / rows) * 10) / 10),
+  };
+}
+
+/** Top-left (x,y) mm origin of every cell on the sheet, row-major. Positions
+ *  are computed purely from page + margins + gaps + label size — no
+ *  hard-coded coordinates. Cells that would spill past the page edge are
+ *  dropped so a bad custom config can never print a clipped half-label. */
+export function computeSheetGeometry(sheet: A4SheetConfig): {
+  page: { widthMm: number; heightMm: number };
+  cells: Array<{ x: number; y: number }>;
+  perPage: number;
+} {
+  const page = sheetPageSize(sheet);
+  const cells: Array<{ x: number; y: number }> = [];
+  const cols = Math.max(1, Math.floor(sheet.columns));
+  const rows = Math.max(1, Math.floor(sheet.rows));
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = sheet.marginLeftMm + c * (sheet.labelWidthMm + sheet.gapXMm);
+      const y = sheet.marginTopMm + r * (sheet.labelHeightMm + sheet.gapYMm);
+      // Guard: keep only cells that fully fit on the physical page.
+      if (x + sheet.labelWidthMm <= page.widthMm + 0.5 && y + sheet.labelHeightMm <= page.heightMm + 0.5) {
+        cells.push({ x, y });
+      }
+    }
+  }
+  return { page, cells, perPage: cells.length };
+}
+
+// ─── Normalization + duplication (backward compat) ─────────────────────────
+
+/** Derive a PrintType for a profile that predates the field, from its size
+ *  preset. Keeps old saved profiles behaving sensibly. */
+function derivePrintType(p: PrinterProfile): PrintType {
+  if (p.preset === 'a4') return 'a4-sheet';
+  if (p.preset === 'thermal58' || p.preset === 'thermal80') return 'thermal-roll';
+  if (p.preset === 'custom') return p.labelHeightMm <= 0 ? 'thermal-roll' : 'thermal-sticker';
+  return 'thermal-sticker';
+}
+
+/**
+ * Fill any fields a stored profile is missing (printType, rotation, sheet)
+ * with safe defaults so profiles saved before these features load cleanly.
+ * Pure — returns a new object, never mutates localStorage.
+ */
+export function normalizeProfile(p: PrinterProfile): PrinterProfile {
+  return {
+    ...p,
+    printType: p.printType ?? derivePrintType(p),
+    rotation: p.rotation ?? 0,
+    sheet: p.sheet ?? { ...DEFAULT_SHEET },
+  };
+}
+
+/** Deep-copy a profile under a new id + name for the "Duplicate" action. */
+export function duplicateProfile(p: PrinterProfile): PrinterProfile {
+  const now = Date.now();
+  return {
+    ...normalizeProfile(p),
+    id: `prof-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: `${p.name} (copy)`,
+    sheet: p.sheet ? { ...p.sheet } : { ...DEFAULT_SHEET },
+    margins: { ...p.margins },
+    fields: { ...p.fields },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 // ─── Storage (per-shop localStorage) ───────────────────────────────────────
 
 /**
@@ -259,7 +461,9 @@ export function listProfiles(shopId: string): PrinterProfile[] {
   try {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
-    return arr as PrinterProfile[];
+    // Upgrade any pre-feature profiles in-memory so callers always get a
+    // fully-populated profile (printType/rotation/sheet present).
+    return (arr as PrinterProfile[]).map(normalizeProfile);
   } catch { return []; }
 }
 
@@ -304,7 +508,7 @@ export function resolveActiveProfile(shopId: string): PrinterProfile {
     if (hit) return hit;
   }
   if (all.length) return [...all].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-  return { ...DEFAULT_PROFILE };
+  return normalizeProfile({ ...DEFAULT_PROFILE });
 }
 
 // ─── Unit conversion + physical accuracy helpers ───────────────────────────
