@@ -69,7 +69,12 @@ export default function AdminUsersPage() {
     try {
       await api.delete(`/admin/users/${userId}`);
       setUsers(prev => prev.filter(u => u.id !== userId));
-    } catch { alert('Failed to delete user'); }
+    } catch (e) {
+      // Surface the server's real reason (e.g. a foreign-key violation naming
+      // the table) instead of a generic message that hides the cause.
+      const msg = (e as { message?: string; response?: { data?: { detail?: string } } });
+      alert(msg?.response?.data?.detail || msg?.message || 'Failed to delete user');
+    }
   }
 
   async function updateMaxShops(userId: number, currentMax: number | null) {

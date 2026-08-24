@@ -76,6 +76,11 @@ export const GET = handle(async (req) => {
     topProd,
     fastProd,
     slowProd,
+    periodPurchasesAgg,
+    todayPurchasesAgg,
+    monthPurchasesAgg,
+    allTimePurchasesAgg,
+    supplierPayableAgg,
   ] = await Promise.all([
     prisma.sale.aggregate({
       where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
@@ -317,6 +322,36 @@ export const GET = handle(async (req) => {
       ORDER BY COALESCE(s_agg.qty, 0) ASC, p.current_stock DESC
       LIMIT 5
     `,
+
+    // ── Purchases (supplier bills) — mirrors the sales/expenses KPIs so the
+    //    dashboard can show what the shop BOUGHT, not just what it sold.
+    //    Aggregated on the purchase `date` (what the shopkeeper picks when
+    //    recording the bill), same field the Purchases page keys off. ──
+    // Period (respects the dashboard's timeframe filter, like today_sales).
+    prisma.purchaseInvoice.aggregate({
+      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
+      _sum: { totalCost: true }, _count: { id: true },
+    }),
+    // Fixed "today" (ignores the filter, like today_expenses).
+    prisma.purchaseInvoice.aggregate({
+      where: { shopId: { in: shopIds }, date: { gte: todayStart, lte: todayEnd } },
+      _sum: { totalCost: true }, _count: { id: true },
+    }),
+    // Fixed "this month".
+    prisma.purchaseInvoice.aggregate({
+      where: { shopId: { in: shopIds }, date: { gte: monthStart, lte: todayEnd } },
+      _sum: { totalCost: true }, _count: { id: true },
+    }),
+    // All-time total purchases (parallel to all-time sales).
+    prisma.purchaseInvoice.aggregate({
+      where: { shopId: { in: shopIds } },
+      _sum: { totalCost: true }, _count: { id: true },
+    }),
+    // Total outstanding payable to suppliers (parallel to total_udhar owed to us).
+    prisma.supplier.aggregate({
+      where: { shopId: { in: shopIds } },
+      _sum: { balance: true },
+    }),
   ]);
 
   const totalUdhar = customers._sum?.totalDue || 0;
@@ -430,6 +465,16 @@ export const GET = handle(async (req) => {
       today_expenses_count: todayExpensesAgg._count.id || 0,
       month_expenses_amount: monthExpensesAgg._sum.amount || 0,
       month_expenses_count: monthExpensesAgg._count.id || 0,
+      // Purchases KPIs (supplier bills) — same shape as the expenses KPIs.
+      purchases_amount: periodPurchasesAgg._sum.totalCost || 0,
+      purchases_count: periodPurchasesAgg._count.id || 0,
+      today_purchases_amount: todayPurchasesAgg._sum.totalCost || 0,
+      today_purchases_count: todayPurchasesAgg._count.id || 0,
+      month_purchases_amount: monthPurchasesAgg._sum.totalCost || 0,
+      month_purchases_count: monthPurchasesAgg._count.id || 0,
+      total_purchases_amount: allTimePurchasesAgg._sum.totalCost || 0,
+      total_purchases_count: allTimePurchasesAgg._count.id || 0,
+      supplier_payable: supplierPayableAgg._sum.balance || 0,
       net_in_hand: netInHand,
       net_profit: netProfit,
       // How the money arrived, and from where.

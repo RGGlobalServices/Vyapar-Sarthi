@@ -126,7 +126,10 @@ export default function AdminUserDetailPage() {
     try {
       await api.delete(`/admin/users/${user.id}`);
       window.location.href = `/${locale}/admin/users`;
-    } catch { alert('Failed to delete'); }
+    } catch (e) {
+      const msg = (e as { message?: string; response?: { data?: { detail?: string } } });
+      alert(msg?.response?.data?.detail || msg?.message || 'Failed to delete');
+    }
     finally { setActionLoading(''); }
   }
 

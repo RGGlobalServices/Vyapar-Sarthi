@@ -11,7 +11,7 @@ import { Link } from '@/i18n/routing';
 import {
   TrendingUp, Wallet, AlertTriangle, ShoppingCart,
   Package, IndianRupee, Calendar, Eye, EyeOff, RefreshCw, X,
-  Sparkles, CheckCircle, Receipt, Banknote, HandCoins,
+  Sparkles, CheckCircle, Receipt, Banknote, HandCoins, ShoppingBag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { planLabel } from '@/lib/planGates';
@@ -80,6 +80,15 @@ function DashboardInner() {
     today_expenses_count: 0,
     month_expenses_amount: 0,
     month_expenses_count: 0,
+    purchases_amount: 0,
+    purchases_count: 0,
+    today_purchases_amount: 0,
+    today_purchases_count: 0,
+    month_purchases_amount: 0,
+    month_purchases_count: 0,
+    total_purchases_amount: 0,
+    total_purchases_count: 0,
+    supplier_payable: 0,
     net_in_hand: 0,
     net_profit: 0,
     collection_cash: 0,
@@ -258,6 +267,15 @@ function DashboardInner() {
         today_expenses_count: payload.summary?.today_expenses_count ?? 0,
         month_expenses_amount: payload.summary?.month_expenses_amount ?? 0,
         month_expenses_count: payload.summary?.month_expenses_count ?? 0,
+        purchases_amount: payload.summary?.purchases_amount ?? 0,
+        purchases_count: payload.summary?.purchases_count ?? 0,
+        today_purchases_amount: payload.summary?.today_purchases_amount ?? 0,
+        today_purchases_count: payload.summary?.today_purchases_count ?? 0,
+        month_purchases_amount: payload.summary?.month_purchases_amount ?? 0,
+        month_purchases_count: payload.summary?.month_purchases_count ?? 0,
+        total_purchases_amount: payload.summary?.total_purchases_amount ?? 0,
+        total_purchases_count: payload.summary?.total_purchases_count ?? 0,
+        supplier_payable: payload.summary?.supplier_payable ?? 0,
         net_in_hand: payload.summary?.net_in_hand ?? 0,
         net_profit: payload.summary?.net_profit ?? 0,
         collection_cash: payload.summary?.collection_cash ?? 0,
@@ -514,6 +532,21 @@ function DashboardInner() {
               icon={<Receipt className="text-rose-500" />}
               href="/expenses"
               accent="rose"
+            />
+            {/* Purchases (money out to suppliers) — today + month + all-time
+                total + outstanding payable, mirroring the expenses card. */}
+            <StatCard
+              title={t('todaysPurchases')}
+              value={`₹ ${Math.round(stats.today_purchases_amount).toLocaleString('en-IN')}`}
+              subtitle={t('plusThisMonth', { amount: Math.round(stats.month_purchases_amount).toLocaleString('en-IN') })}
+              breakdown={[
+                { label: t('totalPurchasesLabel'), amount: stats.total_purchases_amount },
+                { label: t('supplierPayableLabel'), amount: stats.supplier_payable },
+              ]}
+              footnote={stats.today_purchases_count > 0 ? t('billsToday', { count: stats.today_purchases_count }) : t('noPurchasesToday')}
+              icon={<ShoppingBag className="text-amber-500" />}
+              href="/purchases"
+              accent="amber"
             />
           </div>
         </div>
@@ -976,7 +1009,7 @@ export default function Dashboard() {
   );
 }
 
-type Accent = 'slate' | 'emerald' | 'blue' | 'rose' | 'indigo' | 'red';
+type Accent = 'slate' | 'emerald' | 'blue' | 'rose' | 'indigo' | 'red' | 'amber';
 
 // Bottom border tints the card by meaning: money-in green, money-out red,
 // the closing figure indigo. Keeps the row scannable at a glance.
@@ -987,6 +1020,7 @@ const ACCENT_BAR: Record<Accent, string> = {
   rose: 'border-b-rose-500',
   indigo: 'border-b-indigo-500',
   red: 'border-b-red-500',
+  amber: 'border-b-amber-500',
 };
 
 function StatCard({ title, value, icon, href, subtitle, accent = 'slate', highlight, breakdown, footnote }: {
@@ -1019,6 +1053,7 @@ function StatCard({ title, value, icon, href, subtitle, accent = 'slate', highli
               : accent === 'red' ? 'text-red-600 dark:text-red-400'
               : accent === 'blue' ? 'text-blue-600 dark:text-blue-400'
               : accent === 'indigo' ? 'text-indigo-600 dark:text-indigo-400'
+              : accent === 'amber' ? 'text-amber-600 dark:text-amber-400'
               : 'text-emerald-600 dark:text-emerald-400',
           )}>{subtitle}</p>
         )}

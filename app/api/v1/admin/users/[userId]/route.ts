@@ -122,29 +122,91 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   }
   const uuid = user.uuid;
 
-  await prisma.$transaction([
-    prisma.saleItem.deleteMany({ where: { sale: { shop: { ownerId: uuid } } } }),
-    prisma.stockLog.deleteMany({ where: { shop: { ownerId: uuid } } }),
-    prisma.sale.deleteMany({ where: { shop: { ownerId: uuid } } }),
-    prisma.product.deleteMany({ where: { shop: { ownerId: uuid } } }),
-    prisma.customer.deleteMany({ where: { shop: { ownerId: uuid } } }),
-    prisma.dukandarRelationship.deleteMany({
-      where: { OR: [{ wholesalerId: uuid }, { retailerId: uuid }] },
-    }),
-    prisma.referral.deleteMany({ where: { OR: [{ referrerId: uuid }, { referredId: uuid }] } }),
-    prisma.referralCode.deleteMany({ where: { userId: uuid } }),
-    prisma.userNotification.deleteMany({ where: { userId: uuid } }),
-    prisma.pushSubscription.deleteMany({ where: { userId: uuid } }),
-    prisma.notificationSetting.deleteMany({ where: { userId: uuid } }),
-    prisma.supportTicket.deleteMany({ where: { userId: uuid } }),
-    // Godown's shop relation is onDelete: NoAction (unlike every other
-    // shop-scoped model, which cascades) — must be deleted explicitly or
-    // shop.deleteMany below throws a foreign-key violation and rolls back
-    // the whole transaction for any shop that ever created a warehouse.
-    prisma.godown.deleteMany({ where: { shop: { ownerId: uuid } } }),
-    prisma.shop.deleteMany({ where: { ownerId: uuid } }),
-    prisma.user.delete({ where: { id: userId } }),
-  ]);
+  // Every shop the user owns (a user may own more than one). Needed for the
+  // handful of shop-scoped tables that store a raw `shop_id` column WITHOUT a
+  // Prisma `shop` relation (CalendarEvent, StockMovement) — they can only be
+  // filtered by shopId, not by `shop: { ownerId }`.
+  const shopIds = (await prisma.shop.findMany({ where: { ownerId: uuid }, select: { id: true } })).map((s) => s.id);
+
+  // Full ordered cascade. The DB has ~30 shop-scoped tables; most `onDelete:
+  // Cascade` on their shop relation, so they vanish automatically when the
+  // shop row is deleted. But a growing number hold `onDelete: NoAction`
+  // foreign keys pointing at Product / Customer / Supplier / DukandarRelationship
+  // (or at a Cascade table like Supplier that is itself about to be
+  // cascade-deleted). Any one of those blocks the delete with a foreign-key
+  // violation and rolls the whole transaction back — which is exactly the
+  // production "Failed to delete user" bug (the old transaction only cleared
+  // a handful of the tables that existed when it was written).
+  //
+  // Order matters: delete every NoAction child BEFORE the row it points at,
+  // finishing with shop (cascades all the remaining Cascade tables) and the
+  // user. Each entry notes the NoAction FK it unblocks.
+  try {
+    // Interactive transaction (callback form) so we can raise the timeout well
+    // above the 5s default — a shop with lots of history means many deleteMany
+    // statements against the remote DB, which has shown high latency.
+    await prisma.$transaction(async (tx) => {
+      // ─ children with NoAction FKs into Sale / Customer / Product / Supplier ─
+      await tx.saleItem.deleteMany({ where: { sale: { shop: { ownerId: uuid } } } });                 // SaleItem→sale/product NoAction
+      await tx.customer_transactions.deleteMany({ where: { customers: { shop: { ownerId: uuid } } } }); // customer_transactions→customer NoAction (the common blocker)
+      await tx.orderItem.deleteMany({ where: { order: { shop: { ownerId: uuid } } } });
+      await tx.order.deleteMany({ where: { shop: { ownerId: uuid } } });                                // Order→customer/supplier NoAction
+      await tx.returnItem.deleteMany({ where: { materialReturn: { shop: { ownerId: uuid } } } });       // ReturnItem→product NoAction
+      await tx.materialReturn.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.supplierTransaction.deleteMany({ where: { supplier: { shop: { ownerId: uuid } } } });    // SupplierTransaction→supplier NoAction (blocks supplier cascade)
+      await tx.productionBatch.deleteMany({ where: { shop: { ownerId: uuid } } });                      // ProductionBatch→rawLot NoAction
+      await tx.rawMaterialLot.deleteMany({ where: { shop: { ownerId: uuid } } });                       // RawMaterialLot→product/supplier NoAction
+      await tx.batch.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.stockLog.deleteMany({ where: { shop: { ownerId: uuid } } });                             // StockLog→product NoAction
+      await tx.stockMovement.deleteMany({ where: { shopId: { in: shopIds } } });                        // raw shop_id, no relation
+      await tx.dailyStockEntry.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.dailyRegisterLog.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.dukandarStockAlert.deleteMany({ where: { relationship: { OR: [{ wholesalerId: uuid }, { retailerId: uuid }] } } }); // →relationship NoAction
+      await tx.dukandarCredit.deleteMany({ where: { relationship: { OR: [{ wholesalerId: uuid }, { retailerId: uuid }] } } });     // →relationship NoAction
+
+      // ─ parents that are now unblocked ─
+      await tx.purchaseInvoice.deleteMany({ where: { shop: { ownerId: uuid } } });  // cascades PurchaseItem
+      await tx.sale.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.product.deleteMany({ where: { shop: { ownerId: uuid } } });          // cascades ProductVariant / GodownProduct
+      await tx.customer.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.supplier.deleteMany({ where: { shop: { ownerId: uuid } } });
+      // Master data has self-referential NoAction FKs (Category.parent, Unit.baseUnit)
+      // and Product references them — clear after products, before the shop cascade.
+      await tx.category.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.unit.deleteMany({ where: { shop: { ownerId: uuid } } });
+      await tx.calendarEvent.deleteMany({ where: { shopId: { in: shopIds } } });    // raw shop_id, no relation
+      // Godown's shop relation is onDelete: NoAction — must go before shop.
+      await tx.godown.deleteMany({ where: { shop: { ownerId: uuid } } });
+
+      // ─ user-scoped (by uuid) ─
+      await tx.dukandarRelationship.deleteMany({ where: { OR: [{ wholesalerId: uuid }, { retailerId: uuid }] } });
+      await tx.referral.deleteMany({ where: { OR: [{ referrerId: uuid }, { referredId: uuid }] } });
+      await tx.referralCode.deleteMany({ where: { userId: uuid } });
+      await tx.userNotification.deleteMany({ where: { userId: uuid } });
+      await tx.pushSubscription.deleteMany({ where: { userId: uuid } });
+      await tx.notificationSetting.deleteMany({ where: { userId: uuid } });
+      await tx.supportTicket.deleteMany({ where: { userId: uuid } });
+      // ToolUsage keys on the INTEGER user id (not uuid) and its FK has no
+      // cascade — must be cleared or user.delete below hits tool_usage_user_id_fkey.
+      // (UserSession → user IS onDelete: Cascade, so it needs no explicit delete.)
+      await tx.toolUsage.deleteMany({ where: { userId } });
+
+      // ─ shop cascades everything still Cascade-linked (Expense, PaymentTransaction,
+      //   Staff+Attendance+Salary+Advance, CollectionSheet+Entry, DeletedRecord,
+      //   Brand, ExpenseCategory, CashBook, DailyClosing, ActivityLog, ImportLog,
+      //   ByProduct, …) then finally the user. ─
+      await tx.shop.deleteMany({ where: { ownerId: uuid } });
+      await tx.user.delete({ where: { id: userId } });
+    }, { timeout: 60000, maxWait: 10000 });
+  } catch (err) {
+    // Surface the REAL cause instead of an opaque 500 — a Prisma FK violation
+    // (P2003) names the constraint/table, so a future missing table is
+    // diagnosable from the admin UI rather than a silent "Failed to delete".
+    const e = err as { code?: string; message?: string; meta?: Record<string, unknown> };
+    console.error('Admin delete-user failed:', e?.code, e?.message, e?.meta);
+    const where = e?.meta?.modelName || e?.meta?.field_name || e?.meta?.constraint;
+    throw new ApiError(500, `Failed to delete user: ${e?.code === 'P2003' ? `related data still references it${where ? ` (${where})` : ''}` : (e?.message || 'unexpected error')}`);
+  }
 
   return json({ detail: 'User and all related data deleted successfully' });
 });
