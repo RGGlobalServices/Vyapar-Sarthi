@@ -207,16 +207,31 @@ export async function POST(req: NextRequest) {
         metadata: Object.keys(metadata).length > 0 ? metadata : {},
       };
 
-      // ── 2. Duplicate Detection: barcode → name ──────────────────────────
+      // ── 2. Duplicate Detection: only skip/merge a TRUE duplicate ─────────
+      // Rule (per shopkeeper): a row is the SAME product — and must NOT be
+      // added again — only when the full name AND the number (SKU / item code,
+      // stored here in `barcode`) both match an existing product. Anything
+      // else is a genuinely different product and is added as NEW.
+      //
+      // The old logic matched a code ALONE, then fell through to matching a
+      // NAME alone — so two different products that merely shared a name got
+      // silently merged (and a same-named row with a different SKU updated the
+      // wrong product). Requiring name AND code together fixes that.
       let existing: any = null;
 
       if (barcode) {
+        // Has a code → identity is name + code. A same-named product with a
+        // DIFFERENT code stays a separate, new product.
         existing = await prisma.product.findFirst({
-          where: { shopId: shop.id, barcode },
+          where: {
+            shopId: shop.id,
+            barcode,
+            name: { equals: productName, mode: 'insensitive' },
+          },
         });
-      }
-
-      if (!existing) {
+      } else {
+        // No code on the row → fall back to exact-name match so re-importing a
+        // code-less list doesn't pile up duplicates.
         existing = await prisma.product.findFirst({
           where: {
             shopId: shop.id,

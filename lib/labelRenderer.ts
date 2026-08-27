@@ -93,61 +93,71 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   const lineHeightMm = ptToMm(profile.fontSizePt) * 1.3;
   const smallLineMm = ptToMm(Math.max(6, profile.fontSizePt - 1)) * 1.3;
   const headerLineMm = ptToMm(profile.fontSizePt + 1) * 1.3;
-  const lines: LabelTextLine[] = [];
+  // Per-element font sizes: the selling/offer line and the custom note get
+  // their own configurable sizes so a shopkeeper can make the offer rate big
+  // and style the note independently. Defaults keep old labels looking right.
+  const priceFontPt = Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2));
+  const priceLineMm = ptToMm(priceFontPt) * 1.3;
+  const noteFontPt = Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt);
+  const noteLineMm = ptToMm(noteFontPt) * 1.3;
 
-  if (profile.fields.shopName && opts.labelLine1?.trim()) {
-    lines.push({ y: 0, text: opts.labelLine1.trim(), fontSizePt: profile.fontSizePt + 1, fontWeight: 'bold', color: '#000000', emphasis: 'header1', align: profile.textAlign, heightMm: headerLineMm });
-  }
-  if (profile.fields.shopName && opts.labelLine2?.trim()) {
-    lines.push({ y: 0, text: opts.labelLine2.trim(), fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'medium', color: '#333333', emphasis: 'header2', align: profile.textAlign, heightMm: smallLineMm });
-  }
+  // Build the ABOVE-barcode and BELOW-barcode line groups explicitly (instead
+  // of one array + fragile count-slicing) so each element can independently
+  // choose its side.
+  const aboveLines: LabelTextLine[] = [];
+  const belowLines: LabelTextLine[] = [];
+
+  // Shop-name header always sits at the very top.
+  if (profile.fields.shopName && opts.labelLine1?.trim())
+    aboveLines.push({ y: 0, text: opts.labelLine1.trim(), fontSizePt: profile.fontSizePt + 1, fontWeight: 'bold', color: '#000000', emphasis: 'header1', align: profile.textAlign, heightMm: headerLineMm });
+  if (profile.fields.shopName && opts.labelLine2?.trim())
+    aboveLines.push({ y: 0, text: opts.labelLine2.trim(), fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'medium', color: '#333333', emphasis: 'header2', align: profile.textAlign, heightMm: smallLineMm });
 
   const nameLine = profile.fields.productName ? row.name : '';
   const variantLine = ((profile.fields.variant || profile.fields.size || profile.fields.colour) && row.variantKey) ? row.variantKey : '';
   const noteLine = profile.fields.customText && opts.labelText?.trim() ? opts.labelText.trim() : '';
-  const priceLine = (() => {
-    const sellingPrice = row.sellingPrice || 0;
-    const mrp = row.mrp || 0;
-    if (profile.fields.sellingPrice && sellingPrice > 0) return `INR ${sellingPrice.toLocaleString('en-IN')}`;
-    if (profile.fields.mrp && mrp > 0) return `MRP INR ${mrp.toLocaleString('en-IN')}`;
-    return '';
-  })();
-
-  // Text position ABOVE the barcode: name + variant on top; below-price
-  // and note stay below. Text position BELOW: nothing above, all under.
-  const above = profile.textPosition === 'above';
-  if (above && nameLine)    lines.push({ y: 0, text: nameLine, fontSizePt: profile.fontSizePt, fontWeight: profile.fontWeight, color: '#000000', emphasis: 'name', align: profile.textAlign, heightMm: lineHeightMm });
-  if (above && variantLine) lines.push({ y: 0, text: variantLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'bold', color: '#4338ca', emphasis: 'variant', align: profile.textAlign, heightMm: smallLineMm });
-
-  // Barcode slot (always centred horizontally by the position map, y
-  // position derived after we know how many text lines are above it).
-  const barcodeX = (widthMm - barSize.widthMm) / 2 + (profile.positionH === 'left' ? -(widthMm - barSize.widthMm) / 2 + profile.margins.left : profile.positionH === 'right' ? (widthMm - barSize.widthMm) / 2 - profile.margins.right : 0);
-  // We'll fill Y below after computing total content height.
-
-  // Barcode-number line, drawn BELOW the barcode as one continuous string
-  // (e.g. "123456789012") rather than the EAN/UPC-standard split layout
-  // (e.g. "1 234567 890128"). The split IS the international standard for
-  // EAN-13/UPC-A — scanners rely on those positions — but shopkeepers
-  // reading their own inventory codes find the split confusing. Our
-  // compromise: still print bars in the correct symbology (scanner-
-  // compatible), but display the digits as a single clean line below by
-  // turning off JsBarcode's built-in `displayValue` and adding a plain
-  // text line ourselves. Fixes client feedback: "product barcode number
-  // divide you can see it below".
+  // MRP and Selling can BOTH appear. MRP keeps the fixed "MRP" caption; the
+  // selling line uses the editable caption (e.g. "Offer"). jsPDF's Helvetica
+  // has no ₹ glyph → "INR" here (the on-screen preview uses ₹).
+  const sellingPrice = row.sellingPrice || 0;
+  const mrp = row.mrp || 0;
+  const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
+  const mrpTextLine = profile.fields.mrp && mrp > 0 ? `MRP INR ${mrp.toLocaleString('en-IN')}` : '';
+  const sellTextLine = profile.fields.sellingPrice && sellingPrice > 0
+    ? `${sellCaption ? sellCaption + ' ' : ''}INR ${sellingPrice.toLocaleString('en-IN')}`
+    : '';
   const barcodeNumberLine = profile.fields.barcodeNumber && row.barcode ? row.barcode : '';
 
-  if (!above && nameLine)    lines.push({ y: 0, text: nameLine, fontSizePt: profile.fontSizePt, fontWeight: profile.fontWeight, color: '#000000', emphasis: 'name', align: profile.textAlign, heightMm: lineHeightMm });
-  if (!above && variantLine) lines.push({ y: 0, text: variantLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'bold', color: '#4338ca', emphasis: 'variant', align: profile.textAlign, heightMm: smallLineMm });
-  if (barcodeNumberLine)     lines.push({ y: 0, text: barcodeNumberLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'normal', color: '#000000', emphasis: 'note', align: 'center', heightMm: smallLineMm });
-  if (noteLine)              lines.push({ y: 0, text: noteLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'normal', color: '#334155', emphasis: 'note', align: profile.textAlign, heightMm: smallLineMm });
-  if (priceLine)             lines.push({ y: 0, text: priceLine, fontSizePt: profile.fontSizePt, fontWeight: 'bold', color: '#000000', emphasis: 'price', align: profile.textAlign, heightMm: lineHeightMm });
+  // Name + variant follow the (existing) text position toggle.
+  const nvTarget = profile.textPosition === 'above' ? aboveLines : belowLines;
+  if (nameLine)    nvTarget.push({ y: 0, text: nameLine, fontSizePt: profile.fontSizePt, fontWeight: profile.fontWeight, color: '#000000', emphasis: 'name', align: profile.textAlign, heightMm: lineHeightMm });
+  if (variantLine) nvTarget.push({ y: 0, text: variantLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'bold', color: '#4338ca', emphasis: 'variant', align: profile.textAlign, heightMm: smallLineMm });
 
-  // Now vertically stack: margins → above-lines → barcode → below-lines →
-  // margins. `heightMm` on the label is either profile.labelHeightMm or,
-  // for roll paper, computed from content.
-  const aboveLinesCount = above ? (nameLine ? 1 : 0) + (variantLine ? 1 : 0) : 0;
-  const aboveLines = lines.slice(0, (profile.fields.shopName ? (opts.labelLine1?.trim() ? 1 : 0) + (opts.labelLine2?.trim() ? 1 : 0) : 0) + aboveLinesCount);
-  const belowLines = lines.slice(aboveLines.length);
+  // Barcode digits: a single continuous line under the bars (not the EAN-split)
+  // — always below the barcode.
+  if (barcodeNumberLine) belowLines.push({ y: 0, text: barcodeNumberLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'normal', color: '#000000', emphasis: 'note', align: 'center', heightMm: smallLineMm });
+
+  // Custom note — own position / size / weight / alignment.
+  if (noteLine) {
+    (profile.customTextPosition === 'above' ? aboveLines : belowLines).push({
+      y: 0, text: noteLine, fontSizePt: noteFontPt,
+      fontWeight: profile.customTextBold ? 'bold' : 'normal',
+      color: '#334155', emphasis: 'note',
+      align: profile.customTextAlign ?? profile.textAlign, heightMm: noteLineMm,
+    });
+  }
+
+  // MRP + selling/offer — own position (default below). Selling uses the big
+  // price font so the offer rate stands out.
+  const priceTarget = profile.pricePosition === 'above' ? aboveLines : belowLines;
+  if (mrpTextLine)  priceTarget.push({ y: 0, text: mrpTextLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'normal', color: '#475569', emphasis: 'note', align: profile.textAlign, heightMm: smallLineMm });
+  if (sellTextLine) priceTarget.push({ y: 0, text: sellTextLine, fontSizePt: priceFontPt, fontWeight: 'bold', color: '#000000', emphasis: 'price', align: profile.textAlign, heightMm: priceLineMm });
+
+  const lines: LabelTextLine[] = [...aboveLines, ...belowLines];
+
+  // Barcode horizontal anchor (centred, or nudged to the margin for left/right).
+  const barcodeX = (widthMm - barSize.widthMm) / 2 + (profile.positionH === 'left' ? -(widthMm - barSize.widthMm) / 2 + profile.margins.left : profile.positionH === 'right' ? (widthMm - barSize.widthMm) / 2 - profile.margins.right : 0);
+
   const aboveHeightMm = aboveLines.reduce((s, l) => s + l.heightMm, 0);
   const belowHeightMm = belowLines.reduce((s, l) => s + l.heightMm, 0);
 

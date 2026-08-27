@@ -7,7 +7,7 @@ import {
   Upload, FileSpreadsheet, FileImage, FileText, X, CheckCircle,
   Loader2, Trash2, ChevronDown, ChevronUp, AlertCircle,
   BookOpen, Package, ShoppingCart, FileQuestion, Save,
-  GitMerge, Calendar, Camera, Sparkles, ArrowLeft
+  GitMerge, Calendar, Camera, Sparkles, ArrowLeft, IndianRupee
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -111,6 +111,18 @@ export default function RetailImport() {
   const [deleteId, setDeleteId]     = useState<number | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummaryData | null>(null);
+  // ── Cost markup ("landed cost") — bump every extracted cost by a % or a
+  //    flat ₹ (extra per-unit expenses the shopkeeper adds on top of the
+  //    supplier cost), re-deriving the selling price by the same amount so the
+  //    margin is preserved. Applied to the chosen section(s) before import. ──
+  const [markupValue, setMarkupValue] = useState('');
+  const [markupMode, setMarkupMode] = useState<'percent' | 'amount'>('percent');
+  const [markupTarget, setMarkupTarget] = useState<'stock' | 'purchase' | 'both'>('both');
+  // Which price field the %/₹ is applied to (per the shopkeeper: "kontya
+  // section — mrp, selling, cost"). 'cost' also lifts the selling price by the
+  // same so margin is preserved; 'selling'/'mrp' touch only that field.
+  const [markupField, setMarkupField] = useState<'cost' | 'selling' | 'mrp'>('cost');
+  const [markupNote, setMarkupNote] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastImportNameRef = useRef<string>('Import');
@@ -282,6 +294,70 @@ export default function RetailImport() {
       if (field === 'billDate' && val) arr[idx].missingDate = false;
       return { ...prev, [type]: arr };
     });
+  };
+
+  // ── Cost markup: re-price every extracted cost in the chosen section(s) ──
+  // percent → cost × (1 + v/100), selling scaled by the same %;
+  // amount  → cost + v, selling + v (extra per-unit expense passed through so
+  //           the rupee margin is unchanged). Negative v is allowed (a
+  //           discount). Runs on the in-memory AI results before import, so
+  //           the shopkeeper still sees/edits the adjusted figures.
+  const applyMarkup = () => {
+    const v = Number(markupValue);
+    if (!isFinite(v) || v === 0) { setMarkupNote(t('markupEnterValue') || 'Enter a value first'); return; }
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const bump = (raw: any) => {
+      const n = Number(raw) || 0;
+      if (n <= 0) return n;
+      return markupMode === 'percent' ? round2(n * (1 + v / 100)) : Math.max(0, round2(n + v));
+    };
+    // Field → the actual keys on a stock row vs a purchase-bill item row.
+    const keyFor = (kind: 'stock' | 'purchase') =>
+      markupField === 'cost' ? 'wholesaleCost'
+      : markupField === 'mrp' ? 'mrp'
+      : (kind === 'stock' ? 'sellingPrice' : 'suggestedSellingPrice');
+    // Applying to COST also lifts the selling price by the same, so margin is
+    // preserved (matches the shopkeeper's earlier ask). MRP/Selling touch only
+    // their own field.
+    const applyToRow = (row: any, kind: 'stock' | 'purchase') => {
+      const k = keyFor(kind);
+      if (!(Number(row[k]) > 0)) return null;
+      const patch: any = { [k]: bump(row[k]) };
+      if (markupField === 'cost') {
+        const sk = kind === 'stock' ? 'sellingPrice' : 'suggestedSellingPrice';
+        if (Number(row[sk]) > 0) patch[sk] = bump(row[sk]);
+      }
+      return patch;
+    };
+    let touched = 0;
+    setApiResult((prev: any) => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      if ((markupTarget === 'stock' || markupTarget === 'both') && Array.isArray(prev.stock)) {
+        next.stock = prev.stock.map((r: any) => {
+          const patch = applyToRow(r, 'stock');
+          if (!patch) return r;
+          touched++;
+          return { ...r, ...patch };
+        });
+      }
+      if ((markupTarget === 'purchase' || markupTarget === 'both') && Array.isArray(prev.purchase)) {
+        next.purchase = prev.purchase.map((bill: any) => ({
+          ...bill,
+          items: Array.isArray(bill.items) ? bill.items.map((it: any) => {
+            const patch = applyToRow(it, 'purchase');
+            if (!patch) return it;
+            touched++;
+            return { ...it, ...patch };
+          }) : bill.items,
+        }));
+      }
+      return next;
+    });
+    const label = markupMode === 'percent' ? `${v > 0 ? '+' : ''}${v}%` : `${v > 0 ? '+' : ''}₹${v}`;
+    // Pass ICU params (not a post-hoc .replace) — next-intl returns the raw
+    // key path if a placeholder param is missing.
+    setMarkupNote(t('markupApplied', { m: label, n: touched }));
   };
 
   // ── preview → merge modal ───────────────────────────────────────────────
@@ -802,6 +878,57 @@ export default function RetailImport() {
                   ])}
                 />
               </Section>
+            )}
+
+            {/* Cost markup ("landed cost") — bump every extracted cost by a %
+                or flat ₹ and re-derive selling so margin is preserved. */}
+            {(hasStock || apiResult.purchase?.length > 0) && (
+              <div className="rounded-2xl border border-amber-300 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                    <IndianRupee size={15} /> {t('costMarkupTitle') || 'Add extra cost (per-unit expenses)'}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {t('costMarkupHint') || 'Adds freight/loading etc. onto every cost. Selling price is raised by the same amount so your margin stays the same.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('markupValueLabel') || 'Amount'}</label>
+                    <input
+                      type="number" inputMode="decimal" value={markupValue}
+                      onChange={e => setMarkupValue(e.target.value)}
+                      placeholder={markupMode === 'percent' ? '10' : '5'}
+                      className="w-24 h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-0.5 h-9">
+                    {([['percent', '%'], ['amount', '₹']] as const).map(([m, lbl]) => (
+                      <button key={m} type="button" onClick={() => setMarkupMode(m)}
+                        className={`px-3 rounded-md text-sm font-bold ${markupMode === m ? 'bg-amber-500 text-white' : 'text-slate-500'}`}>{lbl}</button>
+                    ))}
+                  </div>
+                  {/* Which price FIELD to apply the %/₹ to. */}
+                  <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-0.5 h-9">
+                    {([['cost', t('markupFieldCost') || 'Cost'], ['selling', t('markupFieldSelling') || 'Selling'], ['mrp', t('markupFieldMrp') || 'MRP']] as const).map(([f, lbl]) => (
+                      <button key={f} type="button" onClick={() => setMarkupField(f as any)}
+                        className={`px-2.5 rounded-md text-xs font-bold ${markupField === f ? 'bg-amber-500 text-white' : 'text-slate-500'}`}>{lbl}</button>
+                    ))}
+                  </div>
+                  {/* Which data section (stock / purchase). */}
+                  <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-0.5 h-9">
+                    {([['stock', t('markupStock') || 'Stock'], ['purchase', t('markupPurchase') || 'Purchase'], ['both', t('markupBoth') || 'Both']] as const).map(([s, lbl]) => (
+                      <button key={s} type="button" onClick={() => setMarkupTarget(s as any)}
+                        className={`px-2.5 rounded-md text-xs font-bold ${markupTarget === s ? 'bg-slate-700 text-white dark:bg-slate-600' : 'text-slate-500'}`}>{lbl}</button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={applyMarkup}
+                    className="h-9 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold">
+                    {t('markupApply') || 'Apply'}
+                  </button>
+                </div>
+                {markupNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{markupNote}</p>}
+              </div>
             )}
 
             {/* Stock table */}

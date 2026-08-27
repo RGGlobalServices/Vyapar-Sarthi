@@ -259,14 +259,17 @@ export async function printLabelSheetWithProfile(
     // Assemble text lines per the field flags.
     const sellingPrice = row.sellingPrice || 0;
     const mrp = row.mrp || 0;
-    const priceLine = profile.fields.sellingPrice && sellingPrice > 0
-      ? `₹${sellingPrice.toLocaleString('en-IN')}`
-      : (profile.fields.mrp && mrp > 0 ? `MRP ₹${mrp.toLocaleString('en-IN')}` : '');
+    // MRP and Selling can both show (two lines). Selling uses the profile's
+    // editable caption (e.g. "Offer").
+    const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
+    const mrpLine = profile.fields.mrp && mrp > 0 ? `MRP ₹${mrp.toLocaleString('en-IN')}` : '';
+    const sellLine = profile.fields.sellingPrice && sellingPrice > 0
+      ? `${sellCaption ? sellCaption + ' ' : ''}₹${sellingPrice.toLocaleString('en-IN')}` : '';
     const variantLine = ((profile.fields.variant || profile.fields.size || profile.fields.colour) && row.variantKey) ? row.variantKey : '';
 
     const nameBlock = profile.fields.productName ? `<div class="lbl-name">${escapeHtml(row.name)}</div>` : '';
     const variantBlock = variantLine ? `<div class="lbl-variant">${escapeHtml(variantLine)}</div>` : '';
-    const priceBlock = priceLine ? `<div class="lbl-foot">${escapeHtml(priceLine)}</div>` : '';
+    const priceBlock = `${mrpLine ? `<div class="lbl-mrp">${escapeHtml(mrpLine)}</div>` : ''}${sellLine ? `<div class="lbl-foot">${escapeHtml(sellLine)}</div>` : ''}`;
 
     // Text position (above / below barcode) drives the two possible orders.
     const above = profile.textPosition === 'above';
@@ -368,8 +371,9 @@ export async function printLabelSheetWithProfile(
         padding: ${profile.quietZoneMm}mm;
         background: #fff;
       }
-      .lbl-note { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; color: #334155; }
-      .lbl-foot { font-size: ${profile.fontSizePt}pt; font-weight: 800; }
+      .lbl-note { font-size: ${Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt)}pt; font-weight: ${profile.customTextBold ? 800 : 400}; color: #334155; text-align: ${profile.customTextAlign ?? 'center'}; }
+      .lbl-mrp  { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 600; color: #475569; text-decoration: line-through; }
+      .lbl-foot { font-size: ${Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2))}pt; font-weight: 800; }
       @media print { html, body { background: #fff; } }
     </style></head><body>
     ${labels}

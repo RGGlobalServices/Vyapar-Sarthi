@@ -1727,6 +1727,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
           billPhoto={documents.find((d) => d.transactionId === viewingTransaction.id) || null}
           onViewDoc={(doc) => setViewingDoc(doc)}
           onClose={() => setViewingTransaction(null)}
+          onSaved={() => { load(); onChanged(); }}
         />
       )}
 
@@ -1740,19 +1741,41 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   );
 }
 
-function TransactionDetailModal({ supplierId, supplierName, transaction, billPhoto, onViewDoc, onClose }: {
+function TransactionDetailModal({ supplierId, supplierName, transaction, billPhoto, onViewDoc, onClose, onSaved }: {
   supplierId: string;
   supplierName: string;
   transaction: { id: string; type: string; amount: number; note: string; billNumber: string; date: string };
   billPhoto: { url: string; uploadedAt: string } | null;
   onViewDoc: (doc: { url: string; label: string }) => void;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const t = useTranslations('Suppliers');
   const { profile } = useBusinessStore();
   const [detail, setDetail] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  // Inline amount edit — correct an imported/typed bill whose total was off.
+  const [editing, setEditing] = useState(false);
+  const [editAmount, setEditAmount] = useState(String(transaction.amount || ''));
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [displayAmount, setDisplayAmount] = useState(transaction.amount);
+
+  async function saveEdit() {
+    const amt = parseFloat(editAmount.replace(/[₹,\s]/g, ''));
+    if (!isFinite(amt) || amt <= 0) { alert(t('enterAmountGreaterThanZero') || 'Enter a valid amount'); return; }
+    setSavingEdit(true);
+    try {
+      await api.patch(`/suppliers/${supplierId}/transactions/${transaction.id}`, { amount: amt });
+      setDisplayAmount(amt);
+      setEditing(false);
+      onSaved?.();
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || e?.message || (t('failedToSave') || 'Failed to save'));
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -1824,13 +1847,46 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
         </div>
 
         <div className="overflow-y-auto px-6 py-5 space-y-4">
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              {isPayment ? t('paidHeader') : t('purchasedHeader')}
-            </span>
-            <span className={`text-xl font-black ${isPayment ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-              {isPayment ? '−' : '+'}{rupee(transaction.amount)}
-            </span>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                {isPayment ? t('paidHeader') : t('purchasedHeader')}
+              </span>
+              {editing ? (
+                <div className="flex items-center gap-1.5">
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                    <input
+                      type="number" autoFocus value={editAmount}
+                      onChange={(e) => setEditAmount(e.target.value)}
+                      className="w-28 h-9 pl-6 pr-2 rounded-lg text-sm font-bold text-right border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <button onClick={saveEdit} disabled={savingEdit} className="h-9 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-60">
+                    {savingEdit ? <Loader2 size={13} className="animate-spin" /> : (t('saveBtn') || 'Save')}
+                  </button>
+                  <button onClick={() => { setEditing(false); setEditAmount(String(displayAmount || '')); }} className="h-9 px-2 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white text-xs font-bold">
+                    {t('cancelBtn') || 'Cancel'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className={`text-xl font-black ${isPayment ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                    {isPayment ? '−' : '+'}{rupee(displayAmount)}
+                  </span>
+                  <button
+                    onClick={() => { setEditAmount(String(displayAmount || '')); setEditing(true); }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                    title={t('editAmountTitle') || 'Edit amount'}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                </div>
+              )}
+            </div>
+            {editing && (
+              <p className="text-[10px] text-slate-500 mt-2">{t('editAmountHint') || 'Correcting the amount updates this supplier’s outstanding and the purchase total.'}</p>
+            )}
           </div>
 
           {billPhoto && (

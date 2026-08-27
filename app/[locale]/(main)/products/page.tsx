@@ -15,6 +15,7 @@ import { translateData } from '@/lib/translateData';
 import SmartTranslator from '@/components/SmartTranslator';
 import ExpiryDateField, { ExpiryBadge } from '@/components/ExpiryDateField';
 import SizeVariantGrid, { parseSizeVariants, serializeSizeVariants, totalFromSizes, parseSizePrices, mergeSizePricesIntoMetadata, generateVariantBarcodes, SizePicker, LocalInput } from '@/components/SizeVariantGrid';
+import CostMarkupControl from '@/components/CostMarkupControl';
 import type { SizePriceEntry } from '@/components/SizeVariantGrid';
 import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariants, splitVariantKey, VARIANT_SEP } from '@/components/ColorSizeVariantGrid';
 import { CategoryPicker } from '@/components/CategoryPicker';
@@ -2845,6 +2846,19 @@ function LegacyProductsUI() {
                     ) : (
                       <LocalInput type="number" min="0" className={`${modalInp} text-amber-400`} placeholder="0"
                         value={form.cost} onCommit={v => setForm(f => ({ ...f, cost: v }))} />
+                    )}
+                    {/* Landed-cost markup: add per-unit expenses onto the cost
+                        and raise selling by the same, keeping margin. Manual
+                        mode only (MRP mode already derives cost). */}
+                    {(form.costPriceMode || 'manual') !== 'mrp_based' && (
+                      <CostMarkupControl
+                        className="mt-2"
+                        onApply={(tf) => setForm(f => ({
+                          ...f,
+                          cost: String(tf(Number(f.cost) || 0)),
+                          sellingPrice: Number(f.sellingPrice) > 0 ? String(tf(Number(f.sellingPrice))) : f.sellingPrice,
+                        }))}
+                      />
                     )}
                   </div>
                 </div>

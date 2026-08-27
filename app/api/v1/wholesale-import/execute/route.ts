@@ -299,9 +299,13 @@ export async function POST(req: NextRequest) {
               // never zeroes a real price/category. Quantity, when provided, is set
               // here too — this is what keeps Products and Stock in sync on import.
               const upd: Record<string, any> = { ...extras };
-              if (has(row, ['sellingprice', 'price', 'rate'])) upd.sellingPrice = price;
-              if (has(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice'])) upd.wholesaleCost = cost;
-              if (has(row, ['mrp'])) upd.mrp = mrp;
+              // Only overwrite a price/cost when the row carries a REAL positive
+              // value. A blank or 0 from an AI extraction that couldn't read the
+              // figure must never zero a product's existing cost/price/MRP —
+              // this was the "cost becomes 0 after AI import" bug.
+              if (has(row, ['sellingprice', 'price', 'rate']) && price > 0) upd.sellingPrice = price;
+              if (has(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice']) && cost > 0) { upd.wholesaleCost = cost; upd.costPrice = cost; }
+              if (has(row, ['mrp']) && mrp > 0) upd.mrp = mrp;
               if (has(row, ['category'])) upd.category = category;
               if (has(row, ['minstock', 'minlevel'])) upd.minStock = parseFloat(getVal(row, ['minstock', 'minlevel']));
               if (has(row, ['quantity', 'stock', 'qty'])) upd.currentStock = quantity;
@@ -361,10 +365,13 @@ export async function POST(req: NextRequest) {
                   shopId,
                   name: String(name),
                   barcode: barcodeStr ?? `BAR-${Date.now()}-${i}`,
-                  sellingPrice: price,
-                  wholesaleCost: cost,
+                  // Leave price/cost UNSET (not 0) when the AI couldn't read a
+                  // figure, so a new product doesn't come in with a hard 0 the
+                  // shopkeeper then has to hunt down and fix.
+                  sellingPrice: price > 0 ? price : undefined,
+                  wholesaleCost: cost > 0 ? cost : undefined,
                   costPrice: cost > 0 ? cost : undefined,
-                  mrp,
+                  mrp: mrp > 0 ? mrp : undefined,
                   category,
                   currentStock: quantity,
                   minStock: minStock ? parseFloat(minStock) : undefined,
@@ -618,7 +625,8 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        let totalInvoiceCost = 0;
+        let totalInvoiceCost = 0;   // base + GST (what the supplier is owed)
+        let totalInvoiceGst = 0;    // tax portion
 
         // Also pull the variants[] JSON up-front so we can merge per-variant
         // qty into it below without a per-row round-trip. Archived products
@@ -725,10 +733,12 @@ export async function POST(req: NextRequest) {
                   name: String(name),
                   barcode: barcodeStr ?? undefined,
                   baseUnit: getVal(row, ['unit']) || 'pcs',
-                  wholesaleCost: unitCost,
+                  // Derive selling/MRP only from a real cost — a 0 cost the AI
+                  // couldn't read should leave these unset, not store 0.
+                  wholesaleCost: unitCost > 0 ? unitCost : undefined,
                   costPrice: unitCost > 0 ? unitCost : undefined,
-                  sellingPrice: unitCost * 1.2,
-                  mrp: extractedMrp > 0 ? extractedMrp : unitCost * 1.25,
+                  sellingPrice: unitCost > 0 ? unitCost * 1.2 : undefined,
+                  mrp: extractedMrp > 0 ? extractedMrp : (unitCost > 0 ? unitCost * 1.25 : undefined),
                   category: getVal(row, ['category']) || 'General',
                   currentStock: quantity,
                   variants: newVariants.length ? (newVariants as any) : undefined,
@@ -750,9 +760,12 @@ export async function POST(req: NextRequest) {
               // stock-decrement path can find it.
               const newStock = (stockIndex.get(matchId) || 0) + quantity;
               const updateData: any = {
-                wholesaleCost: unitCost,
                 currentStock: newStock,
               };
+              // Never overwrite a real cost with 0 — a purchase row whose cost
+              // the AI couldn't read must still add stock without wiping the
+              // product's existing wholesale cost (the "cost becomes 0" bug).
+              if (unitCost > 0) { updateData.wholesaleCost = unitCost; updateData.costPrice = unitCost; }
               if (rowVariantKey) {
                 const mergedVariants = mergeVariantIntoArray(
                   variantsIndex.get(matchId) ?? [],
@@ -783,8 +796,22 @@ export async function POST(req: NextRequest) {
             }
             if (matchId) affectedProductIds.add(matchId);
 
-            const itemCost = quantity * unitCost;
-            totalInvoiceCost += itemCost;
+            // Purchase total = what the shopkeeper actually OWES the supplier =
+            // the REAL bill total, WITH tax. Two things matter here:
+            //   • It must be tax-inclusive (the client's bill's Grand Total,
+            //     not the taxable Sub Total).
+            //   • It must be the supplier's real price — NOT any landed-cost
+            //     markup the shopkeeper adds to `unitCost` for their own
+            //     pricing. The payable stays the real bill.
+            // So prefer the AI-extracted per-line `amount` (the printed line
+            // total after discount + GST), which satisfies both. Fall back to
+            // base + GST%, then bare base, when the bill had no amount column.
+            const rowGstPct = parseFloat(getVal(row, ['gst', 'gstpercent', 'gstrate', 'taxrate', 'tax']) || 0) || 0;
+            const rowAmount = parseFloat(getVal(row, ['amount', 'total', 'lineamount', 'linetotal', 'netamount']) || 0) || 0;
+            const itemBase = quantity * unitCost;
+            const itemTotal = rowAmount > 0 ? rowAmount : itemBase * (1 + rowGstPct / 100);
+            totalInvoiceGst += Math.max(0, itemTotal - itemBase);
+            totalInvoiceCost += itemTotal;
 
             await prisma.purchaseItem.create({
               data: {
@@ -797,7 +824,7 @@ export async function POST(req: NextRequest) {
                 variantKey: rowVariantKey ?? undefined,
                 quantity,
                 cost: unitCost,
-                gst: parseFloat(getVal(row, ['gst']) || 0),
+                gst: rowGstPct,
                 mrp: extractedMrp > 0 ? extractedMrp : undefined,
               }
             });
@@ -820,7 +847,9 @@ export async function POST(req: NextRequest) {
 
         await prisma.purchaseInvoice.update({
           where: { id: purchaseInvoice.id },
-          data: { totalCost: totalInvoiceCost }
+          // totalCost is tax-inclusive; gst holds the tax portion so the
+          // Purchases detail can show Subtotal + GST = Total.
+          data: { totalCost: totalInvoiceCost, gst: Math.round(totalInvoiceGst * 100) / 100 }
         });
 
         // Reflect the invoice on the supplier's ledger — otherwise the imported
@@ -906,8 +935,9 @@ export async function POST(req: NextRequest) {
               // Opening Stock is a snapshot: set stock only when a quantity was
               // actually given, otherwise leave the product's real stock alone.
               if (has(row, ['quantity', 'stock', 'qty', 'openingstock'])) upd.currentStock = quantity;
-              if (has(row, ['sellingprice', 'price', 'rate'])) upd.sellingPrice = price;
-              if (has(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice'])) upd.wholesaleCost = cost;
+              // Guard against a 0/blank price or cost overwriting a real one.
+              if (has(row, ['sellingprice', 'price', 'rate']) && price > 0) upd.sellingPrice = price;
+              if (has(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice']) && cost > 0) { upd.wholesaleCost = cost; upd.costPrice = cost; }
               if (has(row, ['category'])) upd.category = category;
               await prisma.product.update({ where: { id: matchId }, data: upd });
               updated++;

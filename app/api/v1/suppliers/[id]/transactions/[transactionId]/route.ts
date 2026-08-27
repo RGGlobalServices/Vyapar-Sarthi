@@ -1,6 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
-import { handle, json, ApiError } from '@/lib/server/http';
+import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -81,4 +81,70 @@ export const GET = handle(async (req, ctx: any) => {
     supplier: { id: supplier.id, name: supplier.name },
     invoice,
   });
+});
+
+/**
+ * PATCH /api/v1/suppliers/[id]/transactions/[transactionId]
+ * Body: { amount?, note?, billNumber? }
+ *
+ * Correct the amount (or note/bill number) of an existing purchase/payment —
+ * e.g. an imported bill whose total was off because some rows were skipped, so
+ * the shopkeeper re-opens it and types the real amount. The supplier's
+ * outstanding balance is adjusted by the delta (a purchase contributes +amount,
+ * a payment −amount), so Purchased / Remaining stay correct, and any linked
+ * PurchaseInvoice total is kept in sync so the Purchases module matches too.
+ */
+export const PATCH = handle(async (req, ctx: any) => {
+  const { id, transactionId } = await ctx.params;
+  const { shop } = await requireShop(req);
+
+  const supplier = await prisma.supplier.findFirst({ where: { id, shopId: shop.id } });
+  if (!supplier) throw new ApiError(404, 'Supplier not found');
+  const txn = await prisma.supplierTransaction.findFirst({ where: { id: transactionId, supplierId: id } });
+  if (!txn) throw new ApiError(404, 'Transaction not found');
+
+  const body = await readBody<{ amount?: number | string; note?: string; billNumber?: string }>(req);
+  const newAmount = parseFloat(String(body.amount ?? ''));
+  if (!isFinite(newAmount) || newAmount <= 0) throw new ApiError(400, 'A positive amount is required');
+
+  const oldAmount = Number(txn.amount) || 0;
+  // Purchase adds to what's owed (+), payment reduces it (−). Adjust the
+  // balance by the signed change so Remaining reflects the corrected amount.
+  const sign = txn.type === 'payment' ? -1 : 1;
+  const balanceDelta = sign * (newAmount - oldAmount);
+  const nextBillNumber = body.billNumber !== undefined ? (String(body.billNumber).trim() || null) : txn.billNumber;
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedTxn = await tx.supplierTransaction.update({
+      where: { id: transactionId },
+      data: {
+        amount: newAmount,
+        ...(body.note !== undefined ? { note: String(body.note).trim() || txn.note } : {}),
+        ...(body.billNumber !== undefined ? { billNumber: nextBillNumber } : {}),
+      },
+    });
+    const updatedSupplier = await tx.supplier.update({
+      where: { id },
+      data: { balance: { increment: balanceDelta } },
+    });
+    // Best-effort: keep a linked PurchaseInvoice's total in step (matched by
+    // the bill number the importer / Purchases module stamped on both).
+    if (txn.type !== 'payment' && nextBillNumber) {
+      await tx.purchaseInvoice.updateMany({
+        where: { supplierId: id, invoiceNumber: nextBillNumber },
+        data: { totalCost: newAmount },
+      });
+    }
+    await tx.activityLog.create({
+      data: {
+        shopId: shop.id,
+        action: 'supplier_txn_amount_edited',
+        entityId: transactionId,
+        details: { entityType: 'supplier', name: supplier.name, oldAmount, newAmount },
+      },
+    }).catch(() => {});
+    return { transaction: { id: updatedTxn.id, amount: newAmount }, remaining: Number(updatedSupplier.balance) || 0 };
+  });
+
+  return json(result);
 });

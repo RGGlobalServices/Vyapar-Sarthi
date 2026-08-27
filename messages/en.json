@@ -1,4 +1,11 @@
 {
+  "CostMarkup": {
+    "title": "Add extra cost (freight/loading)",
+    "hint": "Bumps cost and raises selling by the same, so margin stays the same.",
+    "apply": "Add to cost",
+    "enterValue": "Enter a value first",
+    "applied": "Added {m} to cost & selling"
+  },
   "BillAutoCalc": {
     "button": "Auto Calculate",
     "checking": "Checking prices…",
@@ -1165,6 +1172,8 @@
     "tryClearingFilters": "Try clearing your filters.",
     "addFirstSupplierHint": "Add your first supplier to start tracking payments.",
     "supplierHeader": "Supplier",
+    "editAmountTitle": "Edit amount",
+    "editAmountHint": "Correcting the amount updates this supplier's outstanding and the purchase total.",
     "purchasedHeader": "Purchased",
     "paidHeader": "Paid",
     "remainingHeader": "Remaining",
@@ -1715,6 +1724,18 @@
     "noReferrals": "You haven't referred anyone yet. Share your link to start earning!"
   },
   "Import": {
+    "costMarkupTitle": "Add extra cost (per-unit expenses)",
+    "costMarkupHint": "Adds freight/loading etc. onto every cost. Selling price is raised by the same amount so your margin stays the same.",
+    "markupValueLabel": "Amount",
+    "markupStock": "Stock",
+    "markupPurchase": "Purchase",
+    "markupBoth": "Both",
+    "markupFieldCost": "Cost",
+    "markupFieldSelling": "Selling",
+    "markupFieldMrp": "MRP",
+    "markupApply": "Apply",
+    "markupEnterValue": "Enter a value first",
+    "markupApplied": "Applied {m} to {n} item(s)",
     "title": "Enterprise Data Import",
     "desc": "Your smart assistant for digitizing files. Scans handwritten papers, bills, and Excel — understands spelling mistakes and automatically matches products with fuzzy logic.",
     "instructions": "Instructions for AI Import",

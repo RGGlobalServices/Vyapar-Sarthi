@@ -20,6 +20,7 @@ import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVar
 import { ExportButton } from '@/lib/hooks/useExport';
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, sellingPriceForMargin } from '@/lib/profitCalc';
+import CostMarkupControl from '@/components/CostMarkupControl';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
@@ -1923,6 +1924,21 @@ export default function WholesaleProductsUI() {
                             </div>
                           )}
                           <p className="text-[10px] text-slate-400 mt-1">What you pay your vendor/supplier — used for profit &amp; margin.</p>
+                          {/* Landed-cost markup: add per-unit expenses onto the
+                              cost and raise both selling prices by the same, so
+                              margin is preserved. Only in Manual mode (MRP mode
+                              already derives cost from MRP × discount). */}
+                          {(form.costPriceMode || 'manual') !== 'mrp_based' && (
+                            <CostMarkupControl
+                              className="mt-2"
+                              onApply={(tf) => setForm(f => ({
+                                ...f,
+                                costPrice: tf(Number(f.costPrice) || 0),
+                                wholesaleCost: tf(Number(f.wholesaleCost) || 0),
+                                sellingPrice: tf(Number(f.sellingPrice) || 0),
+                              }))}
+                            />
+                          )}
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-1.5">

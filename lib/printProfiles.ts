@@ -137,6 +137,22 @@ export interface PrinterProfile {
   qrSizeMm: number;
   qrErrorLevel: QRErrorLevel;
   fields: LabelFieldFlags;
+  /** Caption shown before the selling price on the label (e.g. "Offer",
+   *  "Rate", "Price"). Empty → just the ₹ amount. Lets a shopkeeper brand
+   *  the selling line as an offer. Optional for backward-compat. MRP always
+   *  prints with the fixed "MRP" caption. */
+  sellingPriceLabel?: string;
+  /** Font size (pt) for the SELLING / offer price line specifically — bigger
+   *  than the body so the offer rate stands out. Undefined → fontSizePt + 2. */
+  priceFontSizePt?: number;
+  /** Put the selling/offer price ABOVE the barcode instead of below. */
+  pricePosition?: 'above' | 'below';
+  /** Custom-text (promo note) styling + placement — independent of the rest
+   *  so a shopkeeper can make it big/bold and drop it wherever they want. */
+  customTextFontSizePt?: number;
+  customTextBold?: boolean;
+  customTextAlign?: 'left' | 'center' | 'right';
+  customTextPosition?: 'above' | 'below';
   fontSizePt: number;         // point size for label text (1pt ≈ 0.353 mm)
   fontWeight: 'normal' | 'medium' | 'bold';
   textAlign: 'left' | 'center' | 'right';
@@ -244,13 +260,20 @@ export const DEFAULT_PROFILE: PrinterProfile = {
     sku: false,
     barcodeNumber: true,
     sellingPrice: true,
-    mrp: false,
+    mrp: true,
     variant: true,
     size: true,
     colour: true,
-    shopName: false,
+    shopName: true,
     customText: false,
   },
+  sellingPriceLabel: 'Rate',
+  priceFontSizePt: 10,
+  pricePosition: 'below',
+  customTextFontSizePt: 8,
+  customTextBold: false,
+  customTextAlign: 'center',
+  customTextPosition: 'below',
   fontSizePt: 7,
   fontWeight: 'bold',
   textAlign: 'center',
@@ -412,6 +435,7 @@ export function normalizeProfile(p: PrinterProfile): PrinterProfile {
     printType: p.printType ?? derivePrintType(p),
     rotation: p.rotation ?? 0,
     sheet: p.sheet ?? { ...DEFAULT_SHEET },
+    sellingPriceLabel: p.sellingPriceLabel ?? 'Rate',
   };
 }
 
@@ -592,10 +616,12 @@ function reserveHeightForLines(profile: PrinterProfile): number {
   // Barcode-number line rendered ONCE below the bars whenever barcodeNumber
   // is on. Was completely missing from the old reserve calc.
   if (f.barcodeNumber) mm += line(Math.max(6, profile.fontSizePt - 1));
-  // Custom text (promo note) — one line when enabled.
-  if (f.customText) mm += line(Math.max(6, profile.fontSizePt - 1));
-  // Price / MRP — one line when either is enabled.
-  if (f.sellingPrice || f.mrp) mm += line(profile.fontSizePt);
+  // Custom text (promo note) — one line at its own (possibly bigger) size.
+  if (f.customText) mm += line(Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt));
+  // Price + MRP — each on its OWN line (both can show). Selling uses its own
+  // (bigger) price font so autofit reserves enough for the enlarged offer rate.
+  if (f.mrp) mm += line(Math.max(6, profile.fontSizePt - 1));
+  if (f.sellingPrice) mm += line(Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2)));
   return mm;
 }
 
@@ -609,7 +635,8 @@ export function countTextLines(profile: PrinterProfile): number {
   if (f.productName) n += 1;
   if (f.variant || f.size || f.colour) n += 1;
   if (f.barcodeNumber) n += 1;
-  if (f.sellingPrice || f.mrp) n += 1;
+  if (f.mrp) n += 1;
+  if (f.sellingPrice) n += 1;
   if (f.customText) n += 1;
   return n;
 }

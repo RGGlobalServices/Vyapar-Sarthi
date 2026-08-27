@@ -10,6 +10,7 @@ import { printLabelSheet as printLabelSheetShared } from '@/lib/printLabels';
 import { generateVariantBarcodes } from '@/components/SizeVariantGrid';
 import BarcodePrintSettings from '@/components/BarcodePrintSettings';
 import { resolveActiveProfile, PrinterProfile } from '@/lib/printProfiles';
+import { useBusinessStore } from '@/lib/businessStore';
 import { Settings } from 'lucide-react';
 
 interface BarcodeQRModalProps {
@@ -132,8 +133,22 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // Optional two-line HEADER printed above the product name — shop name on
   // top, address/tagline below, same idea as the header block on a printed
   // receipt. Distinct from labelText above (which sits below the price).
-  const [labelLine1, setLabelLine1] = useState('');
+  // Auto-seeded with the shop's own name so the shopkeeper doesn't retype it
+  // on every label; still fully editable/clearable afterwards.
+  const [labelLine1, setLabelLine1] = useState(() => {
+    try { return useBusinessStore.getState().profile.shopName || ''; } catch { return ''; }
+  });
   const [labelLine2, setLabelLine2] = useState('');
+  // If the shop name loads AFTER the modal mounts (store still hydrating) and
+  // the shopkeeper hasn't typed anything, back-fill it once.
+  const storeShopName = useBusinessStore(s => s.profile.shopName);
+  const shopNameSeededRef = useRef(false);
+  useEffect(() => {
+    if (!shopNameSeededRef.current && storeShopName && !labelLine1) {
+      setLabelLine1(storeShopName);
+      shopNameSeededRef.current = true;
+    }
+  }, [storeShopName, labelLine1]);
   // Udyog-only Carton/Box label — a separate bulk-packaging code from the
   // per-piece barcode above, priced by the whole carton rather than one unit.
   const [unitsPerCarton, setUnitsPerCarton] = useState(1);
@@ -718,6 +733,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             sampleBarcode={barcodeValue}
             sampleVariant={variantRows[0]?.key}
             samplePrice={product.sellingPrice || product.mrp}
+            sampleMrp={product.mrp}
             initialProfile={activeProfile || undefined}
             onSaved={(p) => { setActiveProfile(p); setShowPrintSettings(false); }}
             onClose={() => setShowPrintSettings(false)}
