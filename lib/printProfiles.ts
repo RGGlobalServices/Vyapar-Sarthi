@@ -17,6 +17,8 @@
  * breaks.
  */
 
+import { estimateModules, autoDetectFormat } from './barcodeValidation';
+
 export type BarcodeType = 'auto' | 'CODE128' | 'EAN13' | 'EAN8' | 'UPC' | 'CODE39';
 export type QRErrorLevel = 'L' | 'M' | 'Q' | 'H';
 
@@ -147,6 +149,20 @@ export interface PrinterProfile {
   priceFontSizePt?: number;
   /** Put the selling/offer price ABOVE the barcode instead of below. */
   pricePosition?: 'above' | 'below';
+  /** Per-element font sizes — each row on the label can be independently sized
+   *  so the shopkeeper isn't stuck making everything the same size just to make
+   *  ONE thing bigger. Undefined → derives from `fontSizePt`. */
+  mrpFontSizePt?: number;
+  headerFontSizePt?: number;         // Shop Name (line 1) — line 2 is line1-2
+  productNameFontSizePt?: number;    // Product Name row
+  variantFontSizePt?: number;        // Combined Variant / Size / Colour row
+  barcodeNumberFontSizePt?: number;  // Digits printed under the bars
+  /** Currency prefix printed before every price on the label. jsPDF's built-in
+   *  Helvetica has no ₹ glyph, so past labels showed "INR" — the shopkeeper
+   *  called that ugly. Default empty (just the number, MRP / Offer captions
+   *  already tell the reader it's a price); shopkeepers who want "Rs." or "₹"
+   *  can flip it here. */
+  currencyPrefix?: string;
   /** Custom-text (promo note) styling + placement — independent of the rest
    *  so a shopkeeper can make it big/bold and drop it wherever they want. */
   customTextFontSizePt?: number;
@@ -270,6 +286,12 @@ export const DEFAULT_PROFILE: PrinterProfile = {
   sellingPriceLabel: 'Rate',
   priceFontSizePt: 10,
   pricePosition: 'below',
+  mrpFontSizePt: 8,
+  headerFontSizePt: 9,
+  productNameFontSizePt: 8,
+  variantFontSizePt: 7,
+  barcodeNumberFontSizePt: 7,
+  currencyPrefix: '',
   customTextFontSizePt: 8,
   customTextBold: false,
   customTextAlign: 'center',
@@ -554,16 +576,36 @@ export function ptToMm(pt: number): number {
 
 // ─── Auto-fit calculator ───────────────────────────────────────────────────
 
+/** Target module (thinnest-bar) width in mm used to size a barcode from its
+ *  OWN content length — not the label's available width. 0.33mm matches the
+ *  standard "100% magnification" X-dimension real barcode software (Zebra
+ *  Designer, BarTender) uses for CODE128/EAN/UPC/CODE39, comfortably above
+ *  the 0.25mm reliable-scan floor `validateBarcode` warns below. */
+const SAFE_MODULE_WIDTH_MM = 0.33;
+
 /**
- * Given a profile and the label's physical inner box (label minus
- * margins), return the biggest barcode/QR that fits safely. The returned
- * dimensions respect the profile's quiet zone + a small headroom for the
- * text label the user asked to print above/below.
+ * Given a profile (and, when known, the actual barcode value about to be
+ * printed) return the barcode size that fits safely. Height still comes
+ * from the label's own available vertical space (see below). Width now
+ * comes from the BARCODE'S OWN content length at a constant, scannable
+ * module width — capped to what the label can physically hold — rather
+ * than always stretching every barcode to fill the label.
+ *
+ * Why: the old behaviour forced every barcode to the exact same physical
+ * width regardless of content. A short value (e.g. "6868", ~4 chars) got
+ * stretched into unnaturally fat bars, while a long one (e.g. a generated
+ * "PRD-84C9BADF-WHITE-XXL" variant code, ~20+ chars) got squeezed into that
+ * SAME width, driving its module width down toward — or below — the
+ * reliable-scan floor ("barcode lines is too much so its barcode make to
+ * big" — the shopkeeper's own words for bars becoming too dense/thin).
+ * Real barcode-label software never stretches bars to fill a box; it keeps
+ * module width constant and lets the total width vary with content,
+ * centering the result — that's what this now does.
  *
  * Called only when profile.autoFit is true — a shopkeeper who tuned
  * dimensions by hand keeps their tuned values.
  */
-export function autoFitBarcode(profile: PrinterProfile): { widthMm: number; heightMm: number } {
+export function autoFitBarcode(profile: PrinterProfile, barcodeValue?: string): { widthMm: number; heightMm: number } {
   const innerW = profile.labelWidthMm - profile.margins.left - profile.margins.right;
   // Roll paper: height is unbounded; use a comfortable default proportional to width.
   const innerH = profile.labelHeightMm > 0
@@ -583,7 +625,16 @@ export function autoFitBarcode(profile: PrinterProfile): { widthMm: number; heig
   const gapsReserveMm = 2 * profile.spacingMm;
   const nonBarcodeReserveMm = linesReserveMm + quietZoneReserveMm + gapsReserveMm;
 
-  const widthMm = Math.max(10, innerW - 2 * profile.quietZoneMm);
+  const maxWidthMm = Math.max(10, innerW - 2 * profile.quietZoneMm);
+  let widthMm = maxWidthMm;
+  if (barcodeValue) {
+    const format = profile.barcodeType === 'auto'
+      ? autoDetectFormat(barcodeValue)
+      : (profile.barcodeType === 'CODE39' ? 'CODE39' : profile.barcodeType);
+    const modules = estimateModules(barcodeValue, format);
+    const naturalWidthMm = modules * SAFE_MODULE_WIDTH_MM;
+    widthMm = Math.max(10, Math.min(naturalWidthMm, maxWidthMm));
+  }
   // If the label is genuinely too small for all enabled lines + barcode,
   // clamp barcode to the 6mm minimum and let downstream drop lower-priority
   // lines rather than silently overflowing off the physical page.
@@ -606,21 +657,21 @@ function reserveHeightForLines(profile: PrinterProfile): number {
   // assume the worst case (both used) — better to over-reserve by a mm or
   // two than under-reserve and clip.
   if (f.shopName) {
-    mm += line(profile.fontSizePt + 1); // header1
+    mm += line(profile.headerFontSizePt ?? (profile.fontSizePt + 1)); // header1
     mm += line(Math.max(6, profile.fontSizePt - 1)); // header2
   }
-  // Product name — one line, at the profile's own font size.
-  if (f.productName) mm += line(profile.fontSizePt);
-  // Variant / size / colour — one combined line.
-  if (f.variant || f.size || f.colour) mm += line(Math.max(6, profile.fontSizePt - 1));
+  // Product name — one line, at its own (possibly overridden) font size.
+  if (f.productName) mm += line(profile.productNameFontSizePt ?? profile.fontSizePt);
+  // Variant / size / colour — one combined line, own font size.
+  if (f.variant || f.size || f.colour) mm += line(Math.max(6, profile.variantFontSizePt ?? (profile.fontSizePt - 1)));
   // Barcode-number line rendered ONCE below the bars whenever barcodeNumber
   // is on. Was completely missing from the old reserve calc.
-  if (f.barcodeNumber) mm += line(Math.max(6, profile.fontSizePt - 1));
+  if (f.barcodeNumber) mm += line(Math.max(6, profile.barcodeNumberFontSizePt ?? (profile.fontSizePt - 1)));
   // Custom text (promo note) — one line at its own (possibly bigger) size.
   if (f.customText) mm += line(Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt));
-  // Price + MRP — each on its OWN line (both can show). Selling uses its own
-  // (bigger) price font so autofit reserves enough for the enlarged offer rate.
-  if (f.mrp) mm += line(Math.max(6, profile.fontSizePt - 1));
+  // Price + MRP — each on its OWN line (both can show). Selling/MRP each use
+  // their own (possibly bigger) font so autofit reserves enough space.
+  if (f.mrp) mm += line(Math.max(6, profile.mrpFontSizePt ?? (profile.fontSizePt - 1)));
   if (f.sellingPrice) mm += line(Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2)));
   return mm;
 }

@@ -66,8 +66,11 @@ export interface LabelTextLine {
   color: string;
   /** Emphasis / styling class — 'name' / 'variant' / 'price' etc. Kept
    *  loose so the preview can style with CSS while jsPDF can pick its
-   *  own font weight/color. */
-  emphasis: 'name' | 'variant' | 'header1' | 'header2' | 'price' | 'note';
+   *  own font weight/color. 'mrp' specifically drives a strikethrough in
+   *  BOTH the preview and the PDF (see drawLabel) — kept distinct from the
+   *  generic 'note' emphasis so the MRP line can't be confused with the
+   *  barcode-number or custom-text lines that also render as plain text. */
+  emphasis: 'name' | 'variant' | 'header1' | 'header2' | 'price' | 'note' | 'mrp';
   align: 'left' | 'center' | 'right';
   /** Reserve height for THIS line — includes the small line-height
    *  padding. Used by the caller to advance the y cursor. */
@@ -82,24 +85,42 @@ export interface LabelTextLine {
 export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts: { labelText?: string; labelLine1?: string; labelLine2?: string } = {}): LabelLayout {
   const widthMm = profile.labelWidthMm;
   const isRollPaper = profile.labelHeightMm <= 0;
-  // Auto-fit resolves the barcode's mm dimensions; when off we take
-  // profile values literally.
+  // Auto-fit resolves the barcode's mm dimensions from THIS row's own
+  // barcode value (so a short code prints narrower and a long one prints
+  // wider, instead of every row being stretched/squeezed to one constant
+  // width); when off we take profile values literally.
   const barSize = profile.autoFit
-    ? autoFitBarcode(profile)
+    ? autoFitBarcode(profile, row.barcode)
     : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
 
   // Assemble text lines per the field flags. Line height is roughly 1.3×
   // font size so descenders don't collide. All measurements in mm.
-  const lineHeightMm = ptToMm(profile.fontSizePt) * 1.3;
-  const smallLineMm = ptToMm(Math.max(6, profile.fontSizePt - 1)) * 1.3;
-  const headerLineMm = ptToMm(profile.fontSizePt + 1) * 1.3;
-  // Per-element font sizes: the selling/offer line and the custom note get
-  // their own configurable sizes so a shopkeeper can make the offer rate big
-  // and style the note independently. Defaults keep old labels looking right.
+  // Per-element font sizes: EVERY row on the label (shop, product name,
+  // variant, barcode #, MRP, selling price, note) can be independently
+  // sized so making one row bigger doesn't force every other row to match.
+  // Undefined → derives from the base fontSizePt so old profiles render
+  // exactly as before.
+  const nameFontPt = Math.max(6, profile.productNameFontSizePt ?? profile.fontSizePt);
+  const lineHeightMm = ptToMm(nameFontPt) * 1.3;
+  const variantFontPt = Math.max(6, profile.variantFontSizePt ?? (profile.fontSizePt - 1));
+  const smallLineMm = ptToMm(variantFontPt) * 1.3;
+  const header1FontPt = Math.max(6, profile.headerFontSizePt ?? (profile.fontSizePt + 1));
+  const headerLineMm = ptToMm(header1FontPt) * 1.3;
+  const header2FontPt = Math.max(6, profile.fontSizePt - 1);
+  const header2LineMm = ptToMm(header2FontPt) * 1.3;
+  const barcodeNumFontPt = Math.max(6, profile.barcodeNumberFontSizePt ?? (profile.fontSizePt - 1));
+  const barcodeNumLineMm = ptToMm(barcodeNumFontPt) * 1.3;
+  const mrpFontPt = Math.max(6, profile.mrpFontSizePt ?? (profile.fontSizePt - 1));
+  const mrpLineMm = ptToMm(mrpFontPt) * 1.3;
   const priceFontPt = Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2));
   const priceLineMm = ptToMm(priceFontPt) * 1.3;
   const noteFontPt = Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt);
   const noteLineMm = ptToMm(noteFontPt) * 1.3;
+  // Currency prefix — default empty. Past labels hard-coded "INR" (jsPDF's
+  // Helvetica has no ₹ glyph) which the shopkeeper found unreadable/ugly;
+  // now the number prints alone unless they opt into a prefix.
+  const currency = (profile.currencyPrefix ?? '').trim();
+  const money = (n: number) => currency ? `${currency} ${n.toLocaleString('en-IN')}` : n.toLocaleString('en-IN');
 
   // Build the ABOVE-barcode and BELOW-barcode line groups explicitly (instead
   // of one array + fragile count-slicing) so each element can independently
@@ -109,33 +130,34 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
 
   // Shop-name header always sits at the very top.
   if (profile.fields.shopName && opts.labelLine1?.trim())
-    aboveLines.push({ y: 0, text: opts.labelLine1.trim(), fontSizePt: profile.fontSizePt + 1, fontWeight: 'bold', color: '#000000', emphasis: 'header1', align: profile.textAlign, heightMm: headerLineMm });
+    aboveLines.push({ y: 0, text: opts.labelLine1.trim(), fontSizePt: header1FontPt, fontWeight: 'bold', color: '#000000', emphasis: 'header1', align: profile.textAlign, heightMm: headerLineMm });
   if (profile.fields.shopName && opts.labelLine2?.trim())
-    aboveLines.push({ y: 0, text: opts.labelLine2.trim(), fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'medium', color: '#333333', emphasis: 'header2', align: profile.textAlign, heightMm: smallLineMm });
+    aboveLines.push({ y: 0, text: opts.labelLine2.trim(), fontSizePt: header2FontPt, fontWeight: 'medium', color: '#333333', emphasis: 'header2', align: profile.textAlign, heightMm: header2LineMm });
 
   const nameLine = profile.fields.productName ? row.name : '';
   const variantLine = ((profile.fields.variant || profile.fields.size || profile.fields.colour) && row.variantKey) ? row.variantKey : '';
   const noteLine = profile.fields.customText && opts.labelText?.trim() ? opts.labelText.trim() : '';
   // MRP and Selling can BOTH appear. MRP keeps the fixed "MRP" caption; the
-  // selling line uses the editable caption (e.g. "Offer"). jsPDF's Helvetica
-  // has no ₹ glyph → "INR" here (the on-screen preview uses ₹).
+  // selling line uses the editable caption (e.g. "Offer"). No currency prefix
+  // by default — jsPDF's Helvetica has no ₹ glyph and the shopkeeper found
+  // the old hard-coded "INR" unreadable; opt-in via profile.currencyPrefix.
   const sellingPrice = row.sellingPrice || 0;
   const mrp = row.mrp || 0;
   const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
-  const mrpTextLine = profile.fields.mrp && mrp > 0 ? `MRP INR ${mrp.toLocaleString('en-IN')}` : '';
+  const mrpTextLine = profile.fields.mrp && mrp > 0 ? `MRP ${money(mrp)}` : '';
   const sellTextLine = profile.fields.sellingPrice && sellingPrice > 0
-    ? `${sellCaption ? sellCaption + ' ' : ''}INR ${sellingPrice.toLocaleString('en-IN')}`
+    ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}`
     : '';
   const barcodeNumberLine = profile.fields.barcodeNumber && row.barcode ? row.barcode : '';
 
   // Name + variant follow the (existing) text position toggle.
   const nvTarget = profile.textPosition === 'above' ? aboveLines : belowLines;
-  if (nameLine)    nvTarget.push({ y: 0, text: nameLine, fontSizePt: profile.fontSizePt, fontWeight: profile.fontWeight, color: '#000000', emphasis: 'name', align: profile.textAlign, heightMm: lineHeightMm });
-  if (variantLine) nvTarget.push({ y: 0, text: variantLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'bold', color: '#4338ca', emphasis: 'variant', align: profile.textAlign, heightMm: smallLineMm });
+  if (nameLine)    nvTarget.push({ y: 0, text: nameLine, fontSizePt: nameFontPt, fontWeight: profile.fontWeight, color: '#000000', emphasis: 'name', align: profile.textAlign, heightMm: lineHeightMm });
+  if (variantLine) nvTarget.push({ y: 0, text: variantLine, fontSizePt: variantFontPt, fontWeight: 'bold', color: '#4338ca', emphasis: 'variant', align: profile.textAlign, heightMm: smallLineMm });
 
   // Barcode digits: a single continuous line under the bars (not the EAN-split)
   // — always below the barcode.
-  if (barcodeNumberLine) belowLines.push({ y: 0, text: barcodeNumberLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'normal', color: '#000000', emphasis: 'note', align: 'center', heightMm: smallLineMm });
+  if (barcodeNumberLine) belowLines.push({ y: 0, text: barcodeNumberLine, fontSizePt: barcodeNumFontPt, fontWeight: 'normal', color: '#000000', emphasis: 'note', align: 'center', heightMm: barcodeNumLineMm });
 
   // Custom note — own position / size / weight / alignment.
   if (noteLine) {
@@ -150,7 +172,7 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   // MRP + selling/offer — own position (default below). Selling uses the big
   // price font so the offer rate stands out.
   const priceTarget = profile.pricePosition === 'above' ? aboveLines : belowLines;
-  if (mrpTextLine)  priceTarget.push({ y: 0, text: mrpTextLine, fontSizePt: Math.max(6, profile.fontSizePt - 1), fontWeight: 'normal', color: '#475569', emphasis: 'note', align: profile.textAlign, heightMm: smallLineMm });
+  if (mrpTextLine)  priceTarget.push({ y: 0, text: mrpTextLine, fontSizePt: mrpFontPt, fontWeight: 'normal', color: '#475569', emphasis: 'mrp', align: profile.textAlign, heightMm: mrpLineMm });
   if (sellTextLine) priceTarget.push({ y: 0, text: sellTextLine, fontSizePt: priceFontPt, fontWeight: 'bold', color: '#000000', emphasis: 'price', align: profile.textAlign, heightMm: priceLineMm });
 
   const lines: LabelTextLine[] = [...aboveLines, ...belowLines];
@@ -176,13 +198,48 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
       - aboveHeightMm - belowHeightMm
       - 2 * profile.spacingMm
       - 2 * profile.quietZoneMm;
-    if (availableForBarcode > 0 && barcodeHeightMm > availableForBarcode) {
-      barcodeHeightMm = Math.max(6, availableForBarcode);
-    }
+    // ALWAYS clamp, even when availableForBarcode is negative (too many text
+    // rows enabled for this label size). The old `> 0` guard skipped the
+    // clamp entirely in that case, leaving the un-clamped autoFit height in
+    // place — which could push the barcode image past the label's bottom
+    // edge and off the physical PDF page, making it look like "the barcode
+    // doesn't print" once a shopkeeper enabled one more field (e.g. Sell
+    // Price) than the label had room for. Flooring to 6mm guarantees a
+    // visible (if tightly packed) barcode instead of one silently clipped
+    // off-page.
+    barcodeHeightMm = Math.max(6, Math.min(barcodeHeightMm, availableForBarcode));
   }
   const barcodeBlockMm = barcodeHeightMm + profile.quietZoneMm * 2;
 
-  const totalContentMm = aboveHeightMm + profile.spacingMm + barcodeBlockMm + profile.spacingMm + belowHeightMm;
+  // Fixed-size labels (non-roll) have a page height that CANNOT grow — if
+  // the shopkeeper enables enough fields that the text alone (plus the two
+  // barcode-adjacent gaps) needs more room than the label has left after the
+  // barcode, the extra rows previously got positioned past the label's
+  // bottom edge and were silently cut off the printed PDF page (reported as
+  // "the barcode/[a field] doesn't come in print" the moment one more field,
+  // e.g. Sell Price, was switched on for a small label). Rather than let
+  // that happen, shrink every text line's line-height + the two gaps
+  // proportionally so the whole stack always fits — tighter spacing beats a
+  // vanished row. The barcode itself is never shrunk further here; it was
+  // already floored to a scannable minimum above.
+  let effSpacingMm = profile.spacingMm;
+  if (!isRollPaper) {
+    const innerHForShrink = profile.labelHeightMm - profile.margins.top - profile.margins.bottom;
+    const nonBarcodeMm = aboveHeightMm + belowHeightMm + 2 * profile.spacingMm;
+    const availableForNonBarcode = Math.max(0, innerHForShrink - barcodeBlockMm);
+    if (nonBarcodeMm > 0 && availableForNonBarcode < nonBarcodeMm) {
+      const shrink = Math.max(0, Math.min(1, availableForNonBarcode / nonBarcodeMm));
+      // Shrink the font size along with its line-height slot — otherwise the
+      // slot gets tighter than the (unchanged) glyph height and adjacent
+      // rows visually overlap instead of just sitting closer together.
+      for (const l of lines) { l.heightMm *= shrink; l.fontSizePt = Math.max(5, l.fontSizePt * shrink); }
+      effSpacingMm = profile.spacingMm * shrink;
+    }
+  }
+  const aboveHeightMmFinal = aboveLines.reduce((s, l) => s + l.heightMm, 0);
+  const belowHeightMmFinal = belowLines.reduce((s, l) => s + l.heightMm, 0);
+
+  const totalContentMm = aboveHeightMmFinal + effSpacingMm + barcodeBlockMm + effSpacingMm + belowHeightMmFinal;
   const labelHeightMm = isRollPaper ? (totalContentMm + profile.margins.top + profile.margins.bottom) : profile.labelHeightMm;
 
   // Anchor to the vertical position choice. Available inner height is the
@@ -198,9 +255,9 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   // Assign Y coordinates now.
   let y = startY;
   for (const l of aboveLines) { l.y = y; y += l.heightMm; }
-  y += profile.spacingMm;
+  y += effSpacingMm;
   const barcodeY = y + profile.quietZoneMm;
-  y += barcodeBlockMm + profile.spacingMm;
+  y += barcodeBlockMm + effSpacingMm;
   for (const l of belowLines) { l.y = y; y += l.heightMm; }
 
   return {
@@ -523,6 +580,23 @@ async function drawLabel(doc: any, profile: PrinterProfile, layout: LabelLayout,
             : anchor === 'right' ? layout.widthMm - profile.margins.right
             : layout.widthMm / 2);
     doc.text(line.text, x, baselineY, { align: anchor, maxWidth: layout.widthMm - profile.margins.left - profile.margins.right });
+
+    // MRP prints with a strikethrough — the preview already showed this,
+    // but the PDF never actually drew it (a real preview/print mismatch:
+    // the settings screen looked "correct" while the printed sticker just
+    // showed a plain, unstruck "MRP 999" line). jsPDF has no built-in
+    // strikethrough option, so draw the line manually through the text's
+    // own measured width.
+    if (line.emphasis === 'mrp') {
+      const textWidth = doc.getTextWidth(line.text);
+      const strikeY = baselineY - ptToMm(line.fontSizePt) * 0.30;
+      const [x1, x2] = anchor === 'left' ? [x, x + textWidth]
+        : anchor === 'right' ? [x - textWidth, x]
+        : [x - textWidth / 2, x + textWidth / 2];
+      doc.setDrawColor(r, g, b);
+      doc.setLineWidth(Math.max(0.1, ptToMm(line.fontSizePt) * 0.06));
+      doc.line(x1, strikeY, x2, strikeY);
+    }
   }
 
   if (needsTransform) doc.restoreGraphicsState();

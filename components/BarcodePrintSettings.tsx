@@ -28,6 +28,7 @@ import {
 } from '@/lib/printProfiles';
 import { validateBarcode } from '@/lib/barcodeValidation';
 import { printTestLabel, printCalibrationSheet } from '@/lib/printLabels';
+import { computeLabelLayout } from '@/lib/labelRenderer';
 
 /**
  * The "Barcode & QR Print Settings" panel. Groups every setting from
@@ -194,7 +195,7 @@ export default function BarcodePrintSettings({
 
   const validation = useMemo(() => {
     const val = sampleBarcode || '123456789012';
-    const fit = profile.autoFit ? autoFitBarcode(profile) : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
+    const fit = profile.autoFit ? autoFitBarcode(profile, val) : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
     return validateBarcode(val, profile.barcodeType, fit.widthMm, fit.heightMm);
   }, [profile, sampleBarcode]);
 
@@ -345,9 +346,9 @@ export default function BarcodePrintSettings({
                   {(profile.rotation ?? 0) !== 0 && <> · <b className="text-slate-300">{profile.rotation}°</b></>}
                   <br />Barcode:
                   {' '}<b className="text-slate-300">
-                    {(profile.autoFit ? autoFitBarcode(profile).widthMm : profile.barcodeWidthMm).toFixed(1)}
+                    {(profile.autoFit ? autoFitBarcode(profile, sampleBarcode || '123456789012').widthMm : profile.barcodeWidthMm).toFixed(1)}
                     {' × '}
-                    {(profile.autoFit ? autoFitBarcode(profile).heightMm : profile.barcodeHeightMm).toFixed(1)} mm
+                    {(profile.autoFit ? autoFitBarcode(profile, sampleBarcode || '123456789012').heightMm : profile.barcodeHeightMm).toFixed(1)} mm
                   </b>
                 </p>
               )}
@@ -635,10 +636,32 @@ function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: P
               maxLength={12}
               className="w-full h-9 px-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
             />
-            <p className="text-[10px] text-slate-500 mt-1">Word shown before the selling price (e.g. <b>Offer ₹499</b>). MRP prints separately above it.</p>
+            <p className="text-[10px] text-slate-500 mt-1">Word shown before the selling price (e.g. <b>Offer 499</b>). MRP prints separately above it.</p>
           </div>
         )}
+        <div className="mt-2">
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Currency symbol on price</label>
+          <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
+            {([['', 'None'], ['Rs.', 'Rs.'], ['₹', '₹']] as const).map(([v, lbl]) => (
+              <button key={lbl} onClick={() => patch({ currencyPrefix: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.currencyPrefix ?? '') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{lbl}</button>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">Printed PDF can't render ₹ cleanly on all printers — "None" prints just the number (e.g. <b>MRP 1,300</b>).</p>
+        </div>
       </div>
+
+      {/* MRP size — independent of the selling/offer price size. */}
+      {profile.fields.mrp && (
+        <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MRP</p>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">MRP text size</label>
+            <select value={profile.mrpFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ mrpFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+              {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18].map(n => <option key={n} value={n}>{n}pt</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Offer / selling price size + position — make the offer rate big and
           place it above or below the barcode. */}
@@ -663,6 +686,45 @@ function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: P
           </div>
         </div>
       )}
+
+      {/* Per-row text sizes — Shop name / Product name / Variant / Barcode # */}
+      <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Other row sizes</p>
+        <div className="grid grid-cols-2 gap-2">
+          {profile.fields.shopName && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Shop name size</label>
+              <select value={profile.headerFontSizePt ?? (profile.fontSizePt + 1)} onChange={e => patch({ headerFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+                {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18].map(n => <option key={n} value={n}>{n}pt</option>)}
+              </select>
+            </div>
+          )}
+          {profile.fields.productName && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Product name size</label>
+              <select value={profile.productNameFontSizePt ?? profile.fontSizePt} onChange={e => patch({ productNameFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+                {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18].map(n => <option key={n} value={n}>{n}pt</option>)}
+              </select>
+            </div>
+          )}
+          {(profile.fields.variant || profile.fields.size || profile.fields.colour) && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Variant/Size/Colour size</label>
+              <select value={profile.variantFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ variantFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+                {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
+              </select>
+            </div>
+          )}
+          {profile.fields.barcodeNumber && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Barcode # size</label>
+              <select value={profile.barcodeNumberFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ barcodeNumberFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+                {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Custom text — independent size / bold / alignment / position. */}
       {profile.fields.customText && (
@@ -912,71 +974,94 @@ function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
   );
 }
 
-/** One label's content, laid out in real mm and scaled to `scale` px/mm.
- *  Shared by the single-sticker preview and every A4 grid cell so the two
- *  previews are visually consistent. */
+/**
+ * One label's content, laid out in real mm and scaled to `scale` px/mm.
+ * Shared by the single-sticker preview and every A4 grid cell so the two
+ * previews are visually consistent.
+ *
+ * Renders DIRECTLY from `computeLabelLayout()` — the exact same function
+ * `generateLabelPdf` uses — instead of a separate hand-rolled flex layout.
+ * The old hand-rolled version duplicated the layout math and had silently
+ * drifted from it: when a label had too many fields on for its size, the
+ * real PDF (fixed this session) now shrinks font/spacing to keep everything
+ * visible, but this preview just clipped the overflow via `overflow:hidden`
+ * — so the settings screen looked broken ("part of the content hidden")
+ * for a label that would actually print fine. Rendering from the shared
+ * layout function makes that class of preview/print mismatch structurally
+ * impossible: whatever the PDF will draw, the preview shows.
+ */
 function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, compact }: { profile: PrinterProfile; widthMm: number; heightMm: number; scale: number; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; compact?: boolean }) {
   const subProfile = { ...profile, labelWidthMm: widthMm, labelHeightMm: heightMm };
-  const fit = subProfile.autoFit ? autoFitBarcode(subProfile) : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
+  const barcode = sampleBarcode || '123456789012';
   const name = sampleName || 'Sample Product';
   const variant = sampleVariant || 'Black / M';
-  const barcode = sampleBarcode || '123456789012';
   const sellVal = samplePrice && samplePrice > 0 ? samplePrice : 0;
   // MRP sample: use the real MRP if given; else show a plausible MRP above the
   // selling price so the "both prices" layout is visible in the preview.
   const mrpVal = sampleMrp && sampleMrp > 0 ? sampleMrp : (sellVal > 0 ? Math.round(sellVal * 1.2) : 0);
-  const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
-  const alignCss = profile.textAlign;
-  const justifyCss = profile.positionH === 'left' ? 'flex-start' : profile.positionH === 'right' ? 'flex-end' : 'center';
-  const alignVCss = profile.positionV === 'top' ? 'flex-start' : profile.positionV === 'bottom' ? 'flex-end' : 'center';
 
-  // Per-element sizes + positions.
-  const priceFontPt = Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2));
-  const noteFontPt = Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt);
-  const pricePos = profile.pricePosition ?? 'below';
-  const notePos = profile.customTextPosition ?? 'below';
-  const priceBlock = (
-    <>
-      {profile.fields.mrp && mrpVal > 0 && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', fontWeight: 600, color: '#475569', textDecoration: 'line-through' }}>MRP ₹{mrpVal.toLocaleString('en-IN')}</div>}
-      {profile.fields.sellingPrice && sellVal > 0 && <div style={{ fontSize: priceFontPt + 'pt', fontWeight: 800 }}>{sellCaption ? sellCaption + ' ' : ''}₹{sellVal.toLocaleString('en-IN')}</div>}
-    </>
+  // A4 grid cells skip the shop-name header (compact) to avoid repeating it
+  // on every single cell of a sheet — same placeholder text the header would
+  // show for a real print (the actual shop name is threaded in by the
+  // parent BarcodeQRModal at print time, not known to this settings screen).
+  const layout = computeLabelLayout(
+    subProfile,
+    { name, variantKey: variant, barcode, sellingPrice: sellVal, mrp: mrpVal },
+    {
+      labelLine1: profile.fields.shopName && !compact ? 'Shop Name' : undefined,
+      labelText: profile.fields.customText ? 'Custom text' : undefined,
+    },
   );
-  const noteBlock = profile.fields.customText
-    ? <div style={{ fontSize: noteFontPt + 'pt', fontWeight: profile.customTextBold ? 800 : 400, color: '#334155', textAlign: (profile.customTextAlign ?? 'center') as any, width: '100%' }}>Custom text</div>
-    : null;
+
+  const fontWeightCss = (w: 'normal' | 'medium' | 'bold') => w === 'bold' ? 800 : w === 'medium' ? 600 : 400;
 
   return (
-    <div style={{ width: widthMm * scale, height: heightMm * scale, overflow: 'hidden' }}>
+    <div style={{ width: widthMm * scale, height: layout.heightMm * scale, overflow: 'hidden' }}>
       <div
         style={{
+          position: 'relative',
           width: widthMm + 'mm',
-          height: heightMm + 'mm',
-          padding: `${profile.margins.top}mm ${profile.margins.right}mm ${profile.margins.bottom}mm ${profile.margins.left}mm`,
+          height: layout.heightMm + 'mm',
           // 1mm = 3.7795 CSS px at 96 DPI; scale the intrinsic mm box down to
           // `scale` px/mm.
           transform: `scale(${scale / 3.7795})`,
           transformOrigin: 'top left',
-          display: 'flex', flexDirection: 'column',
-          alignItems: justifyCss as any, justifyContent: alignVCss as any,
-          textAlign: alignCss as any,
-          color: '#000', fontFamily: 'Arial, sans-serif',
-          gap: profile.spacingMm + 'mm',
-          boxSizing: 'border-box',
+          fontFamily: 'Arial, sans-serif',
+          background: '#fff',
         }}
       >
-        {profile.fields.shopName && !compact && <div style={{ fontSize: (profile.fontSizePt + 1) + 'pt', fontWeight: 800, textTransform: 'uppercase' }}>Shop Name</div>}
-        {profile.textPosition === 'above' && profile.fields.productName && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{name}</div>}
-        {profile.textPosition === 'above' && (profile.fields.variant || profile.fields.size || profile.fields.colour) && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', fontWeight: 700, color: '#4338ca' }}>{variant}</div>}
-        {pricePos === 'above' && priceBlock}
-        {notePos === 'above' && noteBlock}
-        <div style={{ padding: profile.quietZoneMm + 'mm', background: '#fff' }}>
-          <div style={{ width: fit.widthMm + 'mm', height: fit.heightMm + 'mm', background: 'repeating-linear-gradient(90deg, #000 0, #000 0.35mm, #fff 0.35mm, #fff 0.7mm)' }} />
-        </div>
-        {profile.fields.barcodeNumber && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', textAlign: 'center', letterSpacing: '0.5px' }}>{barcode}</div>}
-        {profile.textPosition === 'below' && profile.fields.productName && <div style={{ fontSize: profile.fontSizePt + 'pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{name}</div>}
-        {profile.textPosition === 'below' && (profile.fields.variant || profile.fields.size || profile.fields.colour) && <div style={{ fontSize: Math.max(6, profile.fontSizePt - 1) + 'pt', fontWeight: 700, color: '#4338ca' }}>{variant}</div>}
-        {notePos === 'below' && noteBlock}
-        {pricePos === 'below' && priceBlock}
+        {layout.lines.map((line, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              top: line.y + 'mm',
+              left: profile.margins.left + 'mm',
+              right: profile.margins.right + 'mm',
+              textAlign: line.align,
+              fontSize: line.fontSizePt + 'pt',
+              fontWeight: fontWeightCss(line.fontWeight),
+              color: line.color,
+              textDecoration: line.emphasis === 'mrp' ? 'line-through' : 'none',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              lineHeight: 1.15,
+            }}
+          >
+            {line.text}
+          </div>
+        ))}
+        {layout.barcode && (
+          <div
+            style={{
+              position: 'absolute',
+              left: layout.barcode.x + 'mm',
+              top: layout.barcode.y + 'mm',
+              width: layout.barcode.width + 'mm',
+              height: layout.barcode.height + 'mm',
+              background: 'repeating-linear-gradient(90deg, #000 0, #000 0.35mm, #fff 0.35mm, #fff 0.7mm)',
+            }}
+          />
+        )}
       </div>
     </div>
   );

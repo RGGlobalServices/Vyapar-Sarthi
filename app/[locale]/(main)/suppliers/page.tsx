@@ -719,7 +719,7 @@ function SupplierRollupView({ mode, onBack, onOpenSupplier }: {
           supplierId={viewing.supplierId}
           supplierName={viewing.supplierName}
           transaction={viewing.transaction}
-          billPhoto={null}
+          billPhotos={[]}
           onViewDoc={() => {}}
           onClose={() => setViewing(null)}
         />
@@ -1113,6 +1113,14 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   // specific purchase row's inline uploader. Keyed so uploading one doesn't
   // show every row as busy.
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  // Two-step trash-icon "arm then delete" so we don't need window.confirm()
+  // (which is auto-refused in some WebViews and the app's own browser pane).
+  const [deleteArmedId, setDeleteArmedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!deleteArmedId) return;
+    const t = setTimeout(() => setDeleteArmedId(null), 4000);
+    return () => clearTimeout(t);
+  }, [deleteArmedId]);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
   const [viewingTransaction, setViewingTransaction] = useState<any | null>(null);
   const [billSearch, setBillSearch] = useState('');
@@ -1216,7 +1224,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   const totals = data?.totals || { totalPurchased: 0, totalPaid: 0, remaining: 0, dueInvoicesCount: 0, overdueAmount: 0 };
   // transactionId, when present, ties a bill photo to one specific purchase
   // row instead of leaving it as a general, unlinked supplier document.
-  const documents: { id: string; url: string; uploadedAt: string; transactionId?: string }[] = s?.documents || [];
+  const documents: { id: string; url: string; uploadedAt: string; name?: string; transactionId?: string }[] = s?.documents || [];
   // The generic Bill Photos strip is for documents not already tied to one
   // purchase row — those are shown inline on their row instead, so a bill
   // doesn't appear twice.
@@ -1242,26 +1250,49 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
 
   async function handleUploadBill(e: React.ChangeEvent<HTMLInputElement>, transactionId?: string) {
     if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
+    // Multiple photos of ONE bill (front/back/pages) can be picked at once.
+    const files = Array.from(e.target.files);
     e.target.value = '';
     setUploadingFor(transactionId || 'general');
-    const body = new FormData();
-    body.append('file', file);
-    body.append('folder', 'supplier-docs');
+    const uploaded: { id: string; url: string; uploadedAt: string; name?: string; transactionId?: string }[] = [];
     try {
-      const res = await api.post('/upload', body);
-      if (res.data.url) {
-        const next = [...documents, {
-          id: crypto.randomUUID(),
-          url: res.data.url,
-          uploadedAt: new Date().toISOString(),
-          ...(transactionId ? { transactionId } : {}),
-        }];
+      // Upload one at a time — the remote upload endpoint + DB are latency-
+      // sensitive, and sequential keeps memory/connections in check.
+      for (const file of files) {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('folder', 'supplier-docs');
+        const res = await api.post('/upload', body);
+        if (res.data.url) {
+          uploaded.push({
+            id: crypto.randomUUID(),
+            url: res.data.url,
+            uploadedAt: new Date().toISOString(),
+            // Keep the original file name so the chip can show it (mobile
+            // camera captures come through as "IMG_XXXX.jpg" — still more
+            // useful than a bare date).
+            name: file.name || undefined,
+            ...(transactionId ? { transactionId } : {}),
+          });
+        }
+      }
+      if (uploaded.length) {
+        const next = [...documents, ...uploaded];
         await api.patch(`/suppliers/${supplierId}`, { documents: next });
         setData((prev: any) => ({ ...prev, supplier: { ...prev.supplier, documents: next } }));
       }
+      if (uploaded.length < files.length) alert(t('uploadFailed'));
     } catch (err) {
       console.error(err);
+      // Persist whatever DID upload before the error so the shopkeeper doesn't
+      // lose those, then report.
+      if (uploaded.length) {
+        const next = [...documents, ...uploaded];
+        try {
+          await api.patch(`/suppliers/${supplierId}`, { documents: next });
+          setData((prev: any) => ({ ...prev, supplier: { ...prev.supplier, documents: next } }));
+        } catch { /* ignore — reported below */ }
+      }
       alert(t('uploadFailed'));
     } finally {
       setUploadingFor(null);
@@ -1269,14 +1300,19 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   }
 
   async function handleDeleteBill(id: string) {
-    if (!confirm(t('confirmRemoveBill'))) return;
+    // No native confirm() — some environments (Capacitor WebView, and this
+    // app's own in-pane browser during testing) auto-return false from
+    // window.confirm, which was making the trash-icon appear "not working".
+    // Instead the trash icon arms first (`deleteArmedId`) and a second click
+    // actually deletes; if a request fails, surface the real reason.
     const next = documents.filter((d) => d.id !== id);
     try {
       await api.patch(`/suppliers/${supplierId}`, { documents: next });
       setData((prev: any) => ({ ...prev, supplier: { ...prev.supplier, documents: next } }));
-    } catch (err) {
+      setDeleteArmedId(null);
+    } catch (err: any) {
       console.error(err);
-      alert(t('failedToDeleteBill'));
+      alert(err?.response?.data?.detail || err?.message || t('failedToDeleteBill'));
     }
   }
 
@@ -1464,6 +1500,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
               <input
                 type="file"
                 accept="image/*,application/pdf"
+                multiple
                 className="hidden"
                 onChange={(e) => handleUploadBill(e)}
                 disabled={uploadingFor !== null}
@@ -1474,31 +1511,55 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             <p className="text-xs text-slate-500">{t('noBillPhotos')}</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {generalDocuments.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300"
-                >
-                  <FileImage size={14} className="text-slate-400 shrink-0" />
-                  <span>
-                    {new Date(doc.uploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  </span>
-                  <button
-                    onClick={() => setViewingDoc({ url: doc.url, label: t('billPhotoLabel') })}
-                    title={t('viewBillTitle')}
-                    className="p-1 rounded text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+              {generalDocuments.map((doc, i) => {
+                // Prefer the saved file name; strip the folder prefix so a
+                // path like "supplier-docs/…-IMG_1234.jpg" shows just the
+                // human-readable name. Fall back to a positional label
+                // ("Bill 1/2/3") for legacy uploads that never captured a
+                // name — better than every chip reading the same date.
+                const rawName = (doc.name || '').split(/[\\/]/).pop() || '';
+                const shownName = rawName || `${t('billPhotoLabel') || 'Bill'} ${i + 1}`;
+                const dateShort = new Date(doc.uploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                return (
+                  <div
+                    key={doc.id}
+                    className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 max-w-full"
+                    title={`${shownName} · ${dateShort}`}
                   >
-                    <Eye size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteBill(doc.id)}
-                    title={t('deleteBillTitle')}
-                    className="p-1 rounded text-slate-500 hover:text-red-500"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
+                    <FileImage size={14} className="text-slate-400 shrink-0" />
+                    <div className="min-w-0 flex flex-col leading-tight">
+                      <span className="truncate max-w-[160px]">{shownName}</span>
+                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">{dateShort}</span>
+                    </div>
+                    <button
+                      onClick={() => setViewingDoc({ url: doc.url, label: shownName })}
+                      title={t('viewBillTitle')}
+                      className="p-1 rounded text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                    >
+                      <Eye size={14} />
+                    </button>
+                    {deleteArmedId === doc.id ? (
+                      // Second click confirms; the label makes it obvious. Auto-
+                      // disarms after 4s (see the useEffect on deleteArmedId).
+                      <button
+                        onClick={() => handleDeleteBill(doc.id)}
+                        title={t('deleteBillTitle')}
+                        className="px-2 py-1 rounded bg-red-500 hover:bg-red-600 text-white text-[10px] font-black uppercase tracking-wider"
+                      >
+                        {t('deleteBillConfirm') || 'Delete?'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteArmedId(doc.id)}
+                        title={t('deleteBillTitle')}
+                        className="p-1 rounded text-slate-500 hover:text-red-500"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1687,6 +1748,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                     <input
                                       type="file"
                                       accept="image/*,application/pdf"
+                                      multiple
                                       className="hidden"
                                       onChange={(e) => handleUploadBill(e, it.id)}
                                       disabled={uploadingFor !== null}
@@ -1724,7 +1786,10 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
           supplierId={supplierId}
           supplierName={s?.name || ''}
           transaction={viewingTransaction}
-          billPhoto={documents.find((d) => d.transactionId === viewingTransaction.id) || null}
+          // Pass EVERY photo linked to this transaction — the shopkeeper can
+          // now upload multiple pages of one bill (front/back/pages), so the
+          // detail modal needs to see them all, not just the first.
+          billPhotos={documents.filter((d) => d.transactionId === viewingTransaction.id)}
           onViewDoc={(doc) => setViewingDoc(doc)}
           onClose={() => setViewingTransaction(null)}
           onSaved={() => { load(); onChanged(); }}
@@ -1741,11 +1806,13 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   );
 }
 
-function TransactionDetailModal({ supplierId, supplierName, transaction, billPhoto, onViewDoc, onClose, onSaved }: {
+function TransactionDetailModal({ supplierId, supplierName, transaction, billPhotos, onViewDoc, onClose, onSaved }: {
   supplierId: string;
   supplierName: string;
   transaction: { id: string; type: string; amount: number; note: string; billNumber: string; date: string };
-  billPhoto: { url: string; uploadedAt: string } | null;
+  // Every photo attached to THIS transaction (front/back/pages). Sorted
+  // upload-order by the parent so the first upload appears first.
+  billPhotos: { id: string; url: string; uploadedAt: string; name?: string }[];
   onViewDoc: (doc: { url: string; label: string }) => void;
   onClose: () => void;
   onSaved?: () => void;
@@ -1889,13 +1956,39 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
             )}
           </div>
 
-          {billPhoto && (
-            <button
-              onClick={() => onViewDoc({ url: billPhoto.url, label: t('billPhotoLabel') })}
-              className="w-full flex items-center gap-2 p-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-sm font-bold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
-            >
-              <FileImage size={16} /> {t('viewBillTitle') || 'View attached bill photo'}
-            </button>
+          {billPhotos.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                {billPhotos.length > 1
+                  ? (t('billPhotosCount', { count: billPhotos.length }) || `${billPhotos.length} attached bill photos`)
+                  : (t('viewBillTitle') || 'View attached bill photo')}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {billPhotos.map((p, i) => {
+                  const rawName = (p.name || '').split(/[\\/]/).pop() || '';
+                  const shownName = rawName || `${t('billPhotoLabel') || 'Bill'}${billPhotos.length > 1 ? ` ${i + 1}` : ''}`;
+                  return (
+                  <button
+                    key={p.id}
+                    onClick={() => onViewDoc({ url: p.url, label: shownName })}
+                    className="group relative flex flex-col items-center gap-1 p-2 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors overflow-hidden"
+                    title={shownName}
+                  >
+                    {/* Thumbnail — a real preview for image URLs, a plain icon
+                        for PDFs (loading a PDF into an <img> silently blanks). */}
+                    {/\.pdf(\?|$)/i.test(p.url) ? (
+                      <div className="w-full aspect-square flex items-center justify-center text-indigo-500">
+                        <FileImage size={28} />
+                      </div>
+                    ) : (
+                      <img src={p.url} alt="" className="w-full aspect-square object-cover rounded-lg" />
+                    )}
+                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 truncate w-full text-center px-1">{shownName}</span>
+                  </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           <div>

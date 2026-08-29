@@ -1253,7 +1253,7 @@ function LegacyProductsUI() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Category</label>
                   <input
@@ -1274,7 +1274,7 @@ function LegacyProductsUI() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Cost Price (₹)</label>
                   <input
@@ -1304,7 +1304,7 @@ function LegacyProductsUI() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Unit</label>
                   <select
@@ -1326,7 +1326,7 @@ function LegacyProductsUI() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Barcode</label>
                   <input
@@ -1991,7 +1991,7 @@ function LegacyProductsUI() {
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Product Name</label>
                   <LocalInput required autoFocus className={modalInp} value={editForm.name} onCommit={v => setEditForm(f => ({ ...f, name: v }))} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Category</label>
                     <CategoryPicker required className={modalInp} placeholder={t('typeToAddNewCategory')}
@@ -2048,7 +2048,7 @@ function LegacyProductsUI() {
                   </div>
                 )}
                 {bizConfig.hasModel && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Model Number</label>
                       <LocalInput className={modalInp} placeholder="e.g. SM-G990B" value={editForm.model_number} onCommit={v => setEditForm(f => ({ ...f, model_number: v }))} />
@@ -2064,7 +2064,7 @@ function LegacyProductsUI() {
 
                 {/* Liquor — Beer Bar & Wine Shop */}
                 {bizConfig.hasLiquorSpecs && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Brand</label>
                       <LocalInput className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride" value={editForm.brand} onCommit={v => setEditForm(f => ({ ...f, brand: v }))} />
@@ -2242,7 +2242,7 @@ function LegacyProductsUI() {
 
               {/* Stock & Min */}
               {!editVariantActive && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Stock</label>
                     <LocalInput required type="number" min="0" className={modalInp} value={editForm.stock} onCommit={v => setEditForm(f => ({ ...f, stock: v }))} />
@@ -2287,7 +2287,7 @@ function LegacyProductsUI() {
                 {editPerSizePricing && (
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1">{tv('fallbackPriceHint')}</p>
                 )}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">MRP</label>
                     <LocalInput required={!editPerSizePricing} type="number" min="0" className={modalInp} placeholder="0" value={editForm.mrp} onCommit={v => setEditForm(f => ({ ...f, mrp: v }))} />
@@ -2394,7 +2394,7 @@ function LegacyProductsUI() {
                   );
                 })()}
                 
-                <div className="grid grid-cols-2 gap-4 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">HSN Code</label>
                     <LocalInput className={modalInp} placeholder="HSN/SAC Code" value={editForm.hsnCode || ''} onCommit={v => setEditForm(f => ({ ...f, hsnCode: v }))} />
@@ -2494,7 +2494,7 @@ function LegacyProductsUI() {
                     placeholder={bizConfig.productPlaceholder || t('fieldNamePlaceholder')}
                     value={form.name} onCommit={v => setForm(f => ({ ...f, name: v }))} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldCategory')}</label>
                     <CategoryPicker required className={modalInp} placeholder={`${bizConfig.defaultCategories[0]} — or type a new one`}
@@ -2578,7 +2578,7 @@ function LegacyProductsUI() {
 
                 {/* Model / Warranty — electronics */}
                 {bizConfig.hasModel && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Model Number</label>
                       <LocalInput className={modalInp} placeholder="e.g. SM-G990B"
@@ -2596,7 +2596,7 @@ function LegacyProductsUI() {
 
                 {/* Liquor — Beer Bar & Wine Shop */}
                 {bizConfig.hasLiquorSpecs && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Brand</label>
                       <LocalInput className={modalInp} placeholder="e.g. Kingfisher, Blenders Pride"
@@ -2750,7 +2750,7 @@ function LegacyProductsUI() {
 
               {/* ── Stock & Min ── (hidden when stock is driven by the variant grid) */}
               {!addVariantActive && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldStock')}</label>
                     <LocalInput required type="number" min="0" className={modalInp} placeholder="0"
@@ -2796,7 +2796,7 @@ function LegacyProductsUI() {
                 {perSizePricing && (
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1">{tv('fallbackPriceHint')}</p>
                 )}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMRP')}</label>
                     <LocalInput required={!perSizePricing} type="number" min="0" className={modalInp} placeholder="0"
@@ -2922,7 +2922,7 @@ function LegacyProductsUI() {
                   );
                 })()}
                 
-                <div className="grid grid-cols-2 gap-4 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">HSN Code</label>
                     <LocalInput className={modalInp} placeholder="HSN/SAC Code" value={form.hsnCode || ''} onCommit={v => setForm(f => ({ ...f, hsnCode: v }))} />

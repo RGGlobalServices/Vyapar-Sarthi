@@ -213,7 +213,6 @@ export async function printLabelSheetWithProfile(
   const { default: JsBarcode } = await import('jsbarcode');
 
   const isRollPaper = profile.labelHeightMm <= 0;
-  const barSize = profile.autoFit ? autoFitBarcode(profile) : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
 
   const noteLine = options.labelText?.trim() ? `<div class="lbl-note">${escapeHtml(options.labelText.trim())}</div>` : '';
   const line1 = options.labelLine1?.trim();
@@ -235,6 +234,13 @@ export async function printLabelSheetWithProfile(
     const format = profile.barcodeType === 'auto'
       ? autoDetectFormat(row.barcode)
       : (profile.barcodeType === 'CODE39' ? 'CODE39' : profile.barcodeType);
+
+    // Sized from THIS row's own barcode value — a short code renders
+    // narrower, a long one wider, instead of every row being stretched or
+    // squeezed to one shared width (see autoFitBarcode's doc comment).
+    const barSize = profile.autoFit
+      ? autoFitBarcode(profile, row.barcode)
+      : { widthMm: profile.barcodeWidthMm, heightMm: profile.barcodeHeightMm };
 
     const svgTmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     try {
@@ -260,16 +266,23 @@ export async function printLabelSheetWithProfile(
     const sellingPrice = row.sellingPrice || 0;
     const mrp = row.mrp || 0;
     // MRP and Selling can both show (two lines). Selling uses the profile's
-    // editable caption (e.g. "Offer").
+    // editable caption (e.g. "Offer"). Currency prefix is opt-in (default
+    // empty — the old hard-coded "₹"/"INR" was reported as cluttering the
+    // label at small sizes).
+    const currency = (profile.currencyPrefix ?? '').trim();
+    const money = (n: number) => currency ? `${currency} ${n.toLocaleString('en-IN')}` : n.toLocaleString('en-IN');
     const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
-    const mrpLine = profile.fields.mrp && mrp > 0 ? `MRP ₹${mrp.toLocaleString('en-IN')}` : '';
+    const mrpLine = profile.fields.mrp && mrp > 0 ? `MRP ${money(mrp)}` : '';
     const sellLine = profile.fields.sellingPrice && sellingPrice > 0
-      ? `${sellCaption ? sellCaption + ' ' : ''}₹${sellingPrice.toLocaleString('en-IN')}` : '';
+      ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}` : '';
     const variantLine = ((profile.fields.variant || profile.fields.size || profile.fields.colour) && row.variantKey) ? row.variantKey : '';
 
-    const nameBlock = profile.fields.productName ? `<div class="lbl-name">${escapeHtml(row.name)}</div>` : '';
-    const variantBlock = variantLine ? `<div class="lbl-variant">${escapeHtml(variantLine)}</div>` : '';
-    const priceBlock = `${mrpLine ? `<div class="lbl-mrp">${escapeHtml(mrpLine)}</div>` : ''}${sellLine ? `<div class="lbl-foot">${escapeHtml(sellLine)}</div>` : ''}`;
+    const nameFontPt = Math.max(6, profile.productNameFontSizePt ?? profile.fontSizePt);
+    const variantFontPt = Math.max(6, profile.variantFontSizePt ?? (profile.fontSizePt - 1));
+    const mrpFontPt = Math.max(6, profile.mrpFontSizePt ?? (profile.fontSizePt - 1));
+    const nameBlock = profile.fields.productName ? `<div class="lbl-name" style="font-size:${nameFontPt}pt">${escapeHtml(row.name)}</div>` : '';
+    const variantBlock = variantLine ? `<div class="lbl-variant" style="font-size:${variantFontPt}pt">${escapeHtml(variantLine)}</div>` : '';
+    const priceBlock = `${mrpLine ? `<div class="lbl-mrp" style="font-size:${mrpFontPt}pt">${escapeHtml(mrpLine)}</div>` : ''}${sellLine ? `<div class="lbl-foot">${escapeHtml(sellLine)}</div>` : ''}`;
 
     // Text position (above / below barcode) drives the two possible orders.
     const above = profile.textPosition === 'above';
@@ -277,7 +290,7 @@ export async function printLabelSheetWithProfile(
       <div class="lbl">
         ${headerBlock}
         ${above ? `${nameBlock}${variantBlock}` : ''}
-        <div class="lbl-barcode">${svgStr}</div>
+        <div class="lbl-barcode" style="width:${barSize.widthMm}mm;height:${barSize.heightMm}mm;margin:0 auto;box-sizing:content-box">${svgStr}</div>
         ${!above ? `${nameBlock}${variantBlock}` : ''}
         ${noteLine}
         ${priceBlock}
@@ -356,13 +369,17 @@ export async function printLabelSheetWithProfile(
          break. */
       .lbl + .lbl { page-break-before: always; break-before: page; }
       .lbl-header { padding-bottom: 0.5mm; border-bottom: 0.2mm solid #cbd5e1; width: 100%; }
-      .lbl-header1 { font-size: ${profile.fontSizePt + 1}pt; font-weight: 800; text-transform: uppercase; }
+      .lbl-header1 { font-size: ${Math.max(6, profile.headerFontSizePt ?? (profile.fontSizePt + 1))}pt; font-weight: 800; text-transform: uppercase; }
       .lbl-header2 { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 600; color: #475569; }
       .lbl-name    { font-size: ${profile.fontSizePt}pt; font-weight: ${fontWeightCss}; line-height: 1.15; word-break: break-word; }
       .lbl-variant { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 700; color: #4338ca; text-transform: uppercase; }
+      /* Each barcode's own wrapper div carries its width/height inline
+         (sized from that row's own barcode value — see autoFitBarcode) so
+         the SVG just fills whatever box its row assigned it, instead of
+         every row sharing one hard-coded size here. */
       .lbl-barcode svg {
-        width: ${barSize.widthMm}mm;
-        height: ${barSize.heightMm}mm;
+        width: 100%;
+        height: 100%;
         display: block;
       }
       /* Quiet zone (the required silent margin around a barcode for it to

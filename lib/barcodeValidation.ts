@@ -142,8 +142,10 @@ export function validateBarcode(
 
 /** Rough module count per symbology — used to estimate the printed
  *  X-dimension from a total mm width. Numbers below are the standard bar
- *  counts (quiet zones excluded), which is what a scanner actually reads. */
-function estimateModules(value: string, format: ValidationResult['resolvedFormat']): number {
+ *  counts (quiet zones excluded), which is what a scanner actually reads.
+ *  Exported so printProfiles.ts's autoFitBarcode can size a barcode from
+ *  its own content length instead of always filling the label width. */
+export function estimateModules(value: string, format: ValidationResult['resolvedFormat']): number {
   const v = String(value || '').trim();
   switch (format) {
     case 'EAN13': return 95;
