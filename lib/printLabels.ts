@@ -389,7 +389,7 @@ export async function printLabelSheetWithProfile(
         background: #fff;
       }
       .lbl-note { font-size: ${Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt)}pt; font-weight: ${profile.customTextBold ? 800 : 400}; color: #334155; text-align: ${profile.customTextAlign ?? 'center'}; }
-      .lbl-mrp  { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 600; color: #475569; text-decoration: line-through; }
+      .lbl-mrp  { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 600; color: #475569; text-decoration: ${(profile.mrpStrikethrough ?? true) ? 'line-through' : 'none'}; }
       .lbl-foot { font-size: ${Math.max(6, profile.priceFontSizePt ?? (profile.fontSizePt + 2))}pt; font-weight: 800; }
       @media print { html, body { background: #fff; } }
     </style></head><body>

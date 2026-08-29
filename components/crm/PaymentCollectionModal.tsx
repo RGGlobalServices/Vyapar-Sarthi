@@ -94,7 +94,15 @@ export default function PaymentCollectionModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    // z-[70] — the calling pages' own detail panels (customers/page.tsx,
+    // party/page.tsx) render at z-[60], and this modal is opened FROM
+    // inside those panels while they're still on screen. At the old z-50
+    // this modal rendered behind that z-[60] panel — fully mounted and
+    // functional, just invisible, so clicking "Collect Payment" looked
+    // like it did nothing. z-[70] matches the sibling AddBillModal (also
+    // opened from the same panels), which already used z-[70] for the
+    // same reason — this modal was just never updated to match.
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md max-h-[90vh] rounded-2xl shadow-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
 
         {/* Header — stays pinned; the form below scrolls independently */}

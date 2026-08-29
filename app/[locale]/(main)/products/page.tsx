@@ -393,7 +393,21 @@ function LegacyProductsUI() {
   // Stock comes from the grid when: apparel/kirana (always) or an electrical/electronics product
   // whose category has a spec AND the user has picked at least one type / colour.
   const addVariantActive = bizConfig.hasColors ? true : addThreeWayActive ? (outerColors.length > 0) : bizConfig.hasSpecs ? (!!addVariantDim && colors.length > 0) : bizConfig.hasSizes;
-  const editVariantActive = bizConfig.hasColors ? true : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && editColors.length > 0) : bizConfig.hasSizes;
+  // EDIT differs from ADD on purpose: a hasColors business (clothes/shoes)
+  // still has real products with NO colour/size breakdown — created via
+  // bulk import, or before the shop had size tracking — carrying only a
+  // plain aggregate `currentStock`. Forcing editVariantActive=true for
+  // every hasColors product (as ADD does, matching the old code here)
+  // made editing one of those flat products read its size grid (all
+  // zeros, since it never had one) as the stock, then warn/save over the
+  // real currentStock as 0 on submit. Gating on `editColors.length > 0`
+  // instead — seeded from the product's OWN saved size_variants when the
+  // modal opens — means a flat product keeps showing (and saving) its
+  // plain Current Stock field, while a real variant product (or one the
+  // shopkeeper adds a colour to mid-edit) still gets the full grid. The
+  // colour/size picker section itself isn't gated on this flag, so the
+  // option to add colours to a flat product is never hidden either way.
+  const editVariantActive = bizConfig.hasColors ? (editColors.length > 0) : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && editColors.length > 0) : bizConfig.hasSizes;
 
   // ── Add-product godown/shop assignment ──────────────────────────────────
   const [addToGodownId, setAddToGodownId] = useState('');

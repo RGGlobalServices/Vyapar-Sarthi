@@ -66,11 +66,16 @@ export interface LabelTextLine {
   color: string;
   /** Emphasis / styling class — 'name' / 'variant' / 'price' etc. Kept
    *  loose so the preview can style with CSS while jsPDF can pick its
-   *  own font weight/color. 'mrp' specifically drives a strikethrough in
-   *  BOTH the preview and the PDF (see drawLabel) — kept distinct from the
-   *  generic 'note' emphasis so the MRP line can't be confused with the
-   *  barcode-number or custom-text lines that also render as plain text. */
+   *  own font weight/color. 'mrp' identifies the MRP line specifically
+   *  (kept distinct from the generic 'note' emphasis so it can't be
+   *  confused with the barcode-number or custom-text lines) — but whether
+   *  it actually STRIKES THROUGH is controlled separately by `strikethrough`
+   *  below, since that's a shopkeeper-configurable toggle, not a fixed
+   *  property of "being the MRP line". */
   emphasis: 'name' | 'variant' | 'header1' | 'header2' | 'price' | 'note' | 'mrp';
+  /** Draw a strikethrough through this line — set true only for MRP, and
+   *  only when profile.mrpStrikethrough is on (default true). */
+  strikethrough?: boolean;
   align: 'left' | 'center' | 'right';
   /** Reserve height for THIS line — includes the small line-height
    *  padding. Used by the caller to advance the y cursor. */
@@ -172,7 +177,7 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   // MRP + selling/offer — own position (default below). Selling uses the big
   // price font so the offer rate stands out.
   const priceTarget = profile.pricePosition === 'above' ? aboveLines : belowLines;
-  if (mrpTextLine)  priceTarget.push({ y: 0, text: mrpTextLine, fontSizePt: mrpFontPt, fontWeight: 'normal', color: '#475569', emphasis: 'mrp', align: profile.textAlign, heightMm: mrpLineMm });
+  if (mrpTextLine)  priceTarget.push({ y: 0, text: mrpTextLine, fontSizePt: mrpFontPt, fontWeight: 'normal', color: '#475569', emphasis: 'mrp', strikethrough: profile.mrpStrikethrough ?? true, align: profile.textAlign, heightMm: mrpLineMm });
   if (sellTextLine) priceTarget.push({ y: 0, text: sellTextLine, fontSizePt: priceFontPt, fontWeight: 'bold', color: '#000000', emphasis: 'price', align: profile.textAlign, heightMm: priceLineMm });
 
   const lines: LabelTextLine[] = [...aboveLines, ...belowLines];
@@ -581,13 +586,11 @@ async function drawLabel(doc: any, profile: PrinterProfile, layout: LabelLayout,
             : layout.widthMm / 2);
     doc.text(line.text, x, baselineY, { align: anchor, maxWidth: layout.widthMm - profile.margins.left - profile.margins.right });
 
-    // MRP prints with a strikethrough — the preview already showed this,
-    // but the PDF never actually drew it (a real preview/print mismatch:
-    // the settings screen looked "correct" while the printed sticker just
-    // showed a plain, unstruck "MRP 999" line). jsPDF has no built-in
+    // MRP prints with a strikethrough when the shopkeeper has it turned on
+    // (profile.mrpStrikethrough, default true) — jsPDF has no built-in
     // strikethrough option, so draw the line manually through the text's
     // own measured width.
-    if (line.emphasis === 'mrp') {
+    if (line.strikethrough) {
       const textWidth = doc.getTextWidth(line.text);
       const strikeY = baselineY - ptToMm(line.fontSizePt) * 0.30;
       const [x1, x2] = anchor === 'left' ? [x, x + textWidth]

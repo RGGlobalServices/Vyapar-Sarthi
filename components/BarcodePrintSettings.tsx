@@ -653,7 +653,20 @@ function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: P
       {/* MRP size — independent of the selling/offer price size. */}
       {profile.fields.mrp && (
         <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MRP</p>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MRP</p>
+            <button
+              type="button"
+              onClick={() => patch({ mrpStrikethrough: !(profile.mrpStrikethrough ?? true) })}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold border ${(profile.mrpStrikethrough ?? true) ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}
+            >
+              <span className={(profile.mrpStrikethrough ?? true) ? 'line-through' : ''}>Cut-price line</span>
+              <span className={`w-7 h-4 rounded-full relative shrink-0 ${(profile.mrpStrikethrough ?? true) ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${(profile.mrpStrikethrough ?? true) ? 'translate-x-3' : ''}`} />
+              </span>
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-500 -mt-1">On: MRP prints with a line through it (e.g. ₹1,300). Off: MRP prints as a plain number.</p>
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">MRP text size</label>
             <select value={profile.mrpFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ mrpFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
@@ -1042,7 +1055,7 @@ function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleV
               fontSize: line.fontSizePt + 'pt',
               fontWeight: fontWeightCss(line.fontWeight),
               color: line.color,
-              textDecoration: line.emphasis === 'mrp' ? 'line-through' : 'none',
+              textDecoration: line.strikethrough ? 'line-through' : 'none',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               lineHeight: 1.15,
             }}

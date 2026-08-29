@@ -7,7 +7,7 @@ import {
   Upload, FileSpreadsheet, FileImage, FileText, X, CheckCircle,
   Loader2, Trash2, ChevronDown, ChevronUp, AlertCircle,
   BookOpen, Package, ShoppingCart, FileQuestion, Save,
-  GitMerge, Calendar, Camera, Sparkles, ArrowLeft, IndianRupee
+  GitMerge, Calendar, Camera, Sparkles, ArrowLeft, IndianRupee, Percent
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -123,6 +123,17 @@ export default function RetailImport() {
   // same so margin is preserved; 'selling'/'mrp' touch only that field.
   const [markupField, setMarkupField] = useState<'cost' | 'selling' | 'mrp'>('cost');
   const [markupNote, setMarkupNote] = useState('');
+  // ── Per-row price adjust (Stock table only) — shopkeeper ticks specific
+  // rows, picks exactly ONE price field (Cost / MRP / Selling), and bumps
+  // just that field by a %/₹ for just those rows. Unlike the landed-cost
+  // markup above (always all rows in a section, and 'cost' also lifts
+  // selling to preserve margin), this touches only the ticked rows and
+  // only the chosen field — a surgical "these 5 items' MRP +10%" tool.
+  const [selectedStockRows, setSelectedStockRows] = useState<Set<number>>(new Set());
+  const [rowAdjustField, setRowAdjustField] = useState<'cost' | 'selling' | 'mrp'>('mrp');
+  const [rowAdjustMode, setRowAdjustMode] = useState<'percent' | 'amount'>('percent');
+  const [rowAdjustValue, setRowAdjustValue] = useState('');
+  const [rowAdjustNote, setRowAdjustNote] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastImportNameRef = useRef<string>('Import');
@@ -358,6 +369,49 @@ export default function RetailImport() {
     // Pass ICU params (not a post-hoc .replace) — next-intl returns the raw
     // key path if a placeholder param is missing.
     setMarkupNote(t('markupApplied', { m: label, n: touched }));
+  };
+
+  // ── Per-row price adjust (Stock table only) ─────────────────────────────
+  function toggleStockRowSelected(idx: number) {
+    setSelectedStockRows(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  }
+
+  function toggleAllStockRowsSelected() {
+    if (!apiResult?.stock) return;
+    setSelectedStockRows(prev =>
+      prev.size === apiResult.stock.length ? new Set() : new Set(apiResult.stock.map((_: any, i: number) => i))
+    );
+  }
+
+  // Bumps exactly ONE price field, on exactly the ticked rows, by a %/₹ —
+  // no side effects on any other field (contrast with applyMarkup above,
+  // which always touches every row in a section and lifts selling when
+  // cost changes).
+  const applyRowAdjust = () => {
+    const v = Number(rowAdjustValue);
+    if (!isFinite(v) || v === 0) { setRowAdjustNote(t('rowAdjustEnterValue') || 'Enter a value first'); return; }
+    if (selectedStockRows.size === 0) { setRowAdjustNote(t('rowAdjustSelectRows') || 'Select at least one row first'); return; }
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const key = rowAdjustField === 'cost' ? 'wholesaleCost' : rowAdjustField === 'mrp' ? 'mrp' : 'sellingPrice';
+    let touched = 0;
+    setApiResult((prev: any) => {
+      if (!prev?.stock) return prev;
+      const nextStock = prev.stock.map((row: any, idx: number) => {
+        if (!selectedStockRows.has(idx)) return row;
+        const n = Number(row[key]) || 0;
+        if (n <= 0) return row;
+        touched++;
+        const bumped = rowAdjustMode === 'percent' ? round2(n * (1 + v / 100)) : Math.max(0, round2(n + v));
+        return { ...row, [key]: bumped };
+      });
+      return { ...prev, stock: nextStock };
+    });
+    const label = rowAdjustMode === 'percent' ? `${v > 0 ? '+' : ''}${v}%` : `${v > 0 ? '+' : ''}₹${v}`;
+    setRowAdjustNote(t('rowAdjustApplied', { m: label, n: touched }) || `Updated ${touched} row(s) by ${label}`);
   };
 
   // ── preview → merge modal ───────────────────────────────────────────────
@@ -934,9 +988,56 @@ export default function RetailImport() {
             {/* Stock table */}
             {hasStock && (
               <Section title="Stock / Inventory" icon={<Package size={16} className="text-emerald-400"/>}>
+                {/* Per-row price adjust — tick specific rows below, pick ONE
+                    price field, bump it by a %/₹ for just those rows. */}
+                <div className="rounded-2xl border border-indigo-300 dark:border-indigo-500/30 bg-indigo-50/60 dark:bg-indigo-500/5 p-4 space-y-3 mb-3">
+                  <div>
+                    <p className="text-sm font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                      <Percent size={15} /> {t('rowAdjustTitle') || 'Adjust selected rows'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {t('rowAdjustHint') || 'Tick rows in the table below, pick MRP / Cost / Selling, then bump just that field up or down for those rows only.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <button type="button" onClick={toggleAllStockRowsSelected}
+                      className="h-9 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      {selectedStockRows.size === apiResult.stock.length ? (t('rowAdjustClearAll') || 'Clear all') : (t('rowAdjustSelectAll') || 'Select all')}
+                    </button>
+                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 self-center">
+                      {t('rowAdjustSelectedCount', { n: selectedStockRows.size }) || `${selectedStockRows.size} selected`}
+                    </span>
+                    <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-0.5 h-9">
+                      {([['cost', t('markupFieldCost') || 'Cost'], ['mrp', t('markupFieldMrp') || 'MRP'], ['selling', t('markupFieldSelling') || 'Selling']] as const).map(([f, lbl]) => (
+                        <button key={f} type="button" onClick={() => setRowAdjustField(f as any)}
+                          className={`px-2.5 rounded-md text-xs font-bold ${rowAdjustField === f ? 'bg-indigo-500 text-white' : 'text-slate-500'}`}>{lbl}</button>
+                      ))}
+                    </div>
+                    <div>
+                      <input
+                        type="number" inputMode="decimal" value={rowAdjustValue}
+                        onChange={e => setRowAdjustValue(e.target.value)}
+                        placeholder={rowAdjustMode === 'percent' ? '10' : '5'}
+                        className="w-24 h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-0.5 h-9">
+                      {([['percent', '%'], ['amount', '₹']] as const).map(([m, lbl]) => (
+                        <button key={m} type="button" onClick={() => setRowAdjustMode(m)}
+                          className={`px-3 rounded-md text-sm font-bold ${rowAdjustMode === m ? 'bg-indigo-500 text-white' : 'text-slate-500'}`}>{lbl}</button>
+                      ))}
+                    </div>
+                    <button type="button" onClick={applyRowAdjust}
+                      className="h-9 px-4 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold">
+                      {t('markupApply') || 'Apply'}
+                    </button>
+                  </div>
+                  {rowAdjustNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{rowAdjustNote}</p>}
+                </div>
                 <DataTable
-                  headers={['Product', 'Category', 'Qty', 'Unit', 'Wholesale', 'MRP', 'Selling', 'Expiry']}
+                  headers={['', 'Product', 'Category', 'Qty', 'Unit', 'Wholesale', 'MRP', 'Selling', 'Expiry']}
                   rows={apiResult.stock.map((s: ImportedStockEntry & { missingPrice?: boolean }, idx: number) => [
+                    <input key={`s-sel-${idx}`} type="checkbox" checked={selectedStockRows.has(idx)} onChange={() => toggleStockRowSelected(idx)} className="w-4 h-4 accent-indigo-500 cursor-pointer" />,
                     <input key={`s-name-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-32" value={s.productName} onChange={e => handleEditResult('stock', idx, 'productName', e.target.value)} />,
                     <input key={`s-cat-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-24" value={s.category || ''} onChange={e => handleEditResult('stock', idx, 'category', e.target.value)} />,
                     <input key={`s-qty-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.quantity || ''} onChange={e => handleEditResult('stock', idx, 'quantity', Number(e.target.value))} />,
@@ -946,7 +1047,7 @@ export default function RetailImport() {
                     <input key={`s-sell-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${s.missingPrice || (!s.sellingPrice && !s.mrp) ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.sellingPrice || s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'sellingPrice', Number(e.target.value))} placeholder="₹0" />,
                     <input key={`s-exp-${idx}`} type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-32" value={s.expiryDate || ''} onChange={e => handleEditResult('stock', idx, 'expiryDate', e.target.value)} />,
                   ])}
-                  align={['left','left','right','left','right','right','right','left']}
+                  align={['left','left','left','right','left','right','right','right','left']}
                 />
               </Section>
             )}

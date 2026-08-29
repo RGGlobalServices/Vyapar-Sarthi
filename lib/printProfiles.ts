@@ -163,6 +163,14 @@ export interface PrinterProfile {
    *  already tell the reader it's a price); shopkeepers who want "Rs." or "₹"
    *  can flip it here. */
   currencyPrefix?: string;
+  /** Whether the MRP line prints with a strikethrough ("cut price") line
+   *  through it. Default true — matches the traditional retail-label look
+   *  where MRP is always struck. A shopkeeper who just wants to SHOW the
+   *  MRP number (e.g. no discount being advertised, or the label's own
+   *  design already communicates that) can switch it off for a plain MRP
+   *  line. Only affects MRP — the Selling/Offer line never strikes either
+   *  way. */
+  mrpStrikethrough?: boolean;
   /** Custom-text (promo note) styling + placement — independent of the rest
    *  so a shopkeeper can make it big/bold and drop it wherever they want. */
   customTextFontSizePt?: number;
@@ -292,6 +300,7 @@ export const DEFAULT_PROFILE: PrinterProfile = {
   variantFontSizePt: 7,
   barcodeNumberFontSizePt: 7,
   currencyPrefix: '',
+  mrpStrikethrough: true,
   customTextFontSizePt: 8,
   customTextBold: false,
   customTextAlign: 'center',
