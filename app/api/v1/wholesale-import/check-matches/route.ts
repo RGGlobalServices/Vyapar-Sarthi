@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
-import Fuse from 'fuse.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,8 +21,11 @@ function getVal(row: any, possibleKeys: string[]) {
 /**
  * Given an import type + parsed rows, tell the client which rows match an
  * existing record (so the preview can ask "update or keep old?") and which are
- * brand new. Matching mirrors the execute route: barcode exact, then fuzzy name
- * for products; mobile/name for parties. Never mutates anything.
+ * brand new. Matching mirrors the execute route exactly: barcode exact, then
+ * full (case-/whitespace-insensitive) name match for products; mobile/name
+ * for parties. A row whose name only partially resembles an existing product
+ * must preview — and import — as NEW, never as a match. Never mutates
+ * anything.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -45,8 +47,11 @@ export async function POST(req: NextRequest) {
         select: { id: true, name: true, barcode: true },
       });
       const byBarcode = new Map<string, string>();
-      for (const p of products) if (p.barcode) byBarcode.set(p.barcode, p.name || '');
-      const fuse = new Fuse(products, { keys: ['name', 'barcode'], threshold: 0.3 });
+      const byName = new Map<string, string>();
+      for (const p of products) {
+        if (p.barcode) byBarcode.set(p.barcode, p.name || '');
+        if (p.name) byName.set(p.name.toLowerCase().trim(), p.name);
+      }
 
       for (const row of data) {
         const name = getVal(row, ['productname', 'name', 'description', 'item']);
@@ -57,9 +62,9 @@ export async function POST(req: NextRequest) {
           continue;
         }
         if (name) {
-          const res = fuse.search(String(name));
-          if (res.length > 0) {
-            matches.push({ status: 'existing', existingName: res[0].item.name || '' });
+          const hit = byName.get(String(name).toLowerCase().trim());
+          if (hit) {
+            matches.push({ status: 'existing', existingName: hit });
             continue;
           }
         }

@@ -489,6 +489,13 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     const acc = { created: 0, updated: 0, skipped: 0, failed: 0 };
     const allProductIds: string[] = [];
     const allErrors: string[] = [];
+    // Plain local var, NOT the `progress` state — this whole function runs as
+    // one long-lived async closure, so reading React state mid-function only
+    // ever sees the value from when the function was first called (state
+    // updates re-render the component, they don't refresh a closure already
+    // in flight). A local var is the only way a later batch's simulated
+    // speed can actually pick up an earlier batch's REAL measured speed.
+    let lastRealRps = 0;
     setProgress({ processed: offset, total, created: 0, updated: 0, skipped: 0, failed: 0,
       batch: Math.floor(offset / DB_BATCH_SIZE), totalBatches, rps: 0, etaSec: 0, stage: 'Saving products…' });
 
@@ -503,27 +510,53 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
     try {
       for (let b = Math.floor(offset / DB_BATCH_SIZE); offset < total; b++) {
+        const sliceStart = offset;
         const slice = previewData.slice(offset, offset + DB_BATCH_SIZE);
         const sliceDecisions = rowDecisions.slice(offset, offset + DB_BATCH_SIZE);
+        const sliceCount = slice.length;
+
+        // The progress bar/stats only advance once per BATCH (one HTTP round
+        // trip), not per row — so whenever a batch's row count is >= the
+        // whole import (the common case: most shopkeeper imports are a
+        // dozen-odd rows from one bill, well under DB_BATCH_SIZE's default
+        // of 100), the bar sat frozen at its starting value for the entire
+        // request, then jumped straight to "done" with no visible movement
+        // in between. Simulate a smooth, honest-effort creep forward while
+        // this batch's request is in flight — clamped to 95% of the slice so
+        // it can never claim a row is saved before the server confirms it —
+        // then the real numbers below always win once the response lands.
+        const assumedRps = lastRealRps > 0 ? lastRealRps : 4;
+        const simCap = sliceStart + Math.max(1, Math.floor(sliceCount * 0.95));
+        const simStartedAt = Date.now();
+        const simInterval = setInterval(() => {
+          const elapsed = (Date.now() - simStartedAt) / 1000;
+          const simulated = Math.min(simCap, sliceStart + Math.floor(elapsed * assumedRps));
+          setProgress(prev => prev ? { ...prev, processed: simulated, stage: 'Saving products…' } : prev);
+        }, 250);
+
         // Retry the batch up to 2 times; on final failure we stop and offer resume.
         let res: any = null;
-        for (let attempt = 0; attempt < 2 && !res; attempt++) {
-          try {
-            res = await api.post('/wholesale-import/execute', {
-              importType, data: slice, godownId: selectedGodown, existingPolicy,
-              rowDecisions: sliceDecisions,
-              fileName: files[0]?.name || null,
-              stats: offset === 0 ? extractionStats : null,
-              totalRows: total,
-              importLogId,
-              // Purchase-invoice supplier panel overrides — only sent for the
-              // first batch of a purchase import so the server doesn't re-apply
-              // enrichment / re-increment balance on every subsequent chunk.
-              supplier: (importType === 'purchase' && offset === 0) ? purchaseSupplier : undefined,
-            });
-          } catch (e) {
-            if (attempt === 1) throw e;
+        try {
+          for (let attempt = 0; attempt < 2 && !res; attempt++) {
+            try {
+              res = await api.post('/wholesale-import/execute', {
+                importType, data: slice, godownId: selectedGodown, existingPolicy,
+                rowDecisions: sliceDecisions,
+                fileName: files[0]?.name || null,
+                stats: offset === 0 ? extractionStats : null,
+                totalRows: total,
+                importLogId,
+                // Purchase-invoice supplier panel overrides — only sent for the
+                // first batch of a purchase import so the server doesn't re-apply
+                // enrichment / re-increment balance on every subsequent chunk.
+                supplier: (importType === 'purchase' && offset === 0) ? purchaseSupplier : undefined,
+              });
+            } catch (e) {
+              if (attempt === 1) throw e;
+            }
           }
+        } finally {
+          clearInterval(simInterval);
         }
         const s = res.data.summary || {};
         importLogId = s.importLogId || importLogId;
@@ -536,6 +569,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         const elapsed = (Date.now() - t0) / 1000;
         const doneThisRun = offset - startOffset;
         const rps = elapsed > 0 ? doneThisRun / elapsed : 0;
+        if (rps > 0) lastRealRps = rps;
         setProgress({ processed: offset, total, ...acc, batch: b + 1, totalBatches,
           rps: Math.round(rps), etaSec: rps > 0 ? Math.round((total - offset) / rps) : 0, stage: 'Saving products…' });
 

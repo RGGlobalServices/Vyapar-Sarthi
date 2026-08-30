@@ -7,6 +7,7 @@ import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
   Loader2, Camera, ShieldCheck, Package,
   Warehouse, Store, MapPin, IndianRupee, Barcode as BarcodeIcon,
+  Percent,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -31,7 +32,7 @@ import WholesaleProductsUI from './WholesaleProductsUI';
 import ProductDetailsSheet from './ProductDetailsSheet';
 import useSWR from 'swr';
 
-import { fetchProductsMapped } from '@/lib/fetchers';
+import { fetchProductsMapped, mapApiProductToRow } from '@/lib/fetchers';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
@@ -246,6 +247,16 @@ function LegacyProductsUI() {
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string | number>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Bulk price adjust — bump MRP / Cost / Selling on every currently-selected
+  // (real, already-saved) product by a % or ₹, up or down. Mirrors Import's
+  // "Adjust selected rows" panel, but writes straight to the DB via
+  // PATCH /products/bulk instead of staging data before a save.
+  const [bulkAdjustOpen, setBulkAdjustOpen] = useState(false);
+  const [bulkAdjustField, setBulkAdjustField] = useState<'mrp' | 'sellingPrice' | 'wholesaleCost'>('mrp');
+  const [bulkAdjustMode, setBulkAdjustMode] = useState<'percent' | 'amount'>('percent');
+  const [bulkAdjustValue, setBulkAdjustValue] = useState('');
+  const [bulkAdjusting, setBulkAdjusting] = useState(false);
+  const [bulkAdjustNote, setBulkAdjustNote] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -801,6 +812,17 @@ function LegacyProductsUI() {
       saveCategory(form.category);
 
       invalidateProductCaches();
+      // Same reasoning as the Edit-Product save below: patch this page's own
+      // table with the server's confirmed new row, last, so it's guaranteed
+      // correct on screen even if an older /products fetch (still in flight
+      // from something else) resolves after this and would otherwise race
+      // invalidateProductCaches()'s own revalidate.
+      if (res.data?.id) {
+        mutateProducts(
+          (current) => current ? [...current.filter(p => p.id !== res.data.id), mapApiProductToRow(res.data)] : current,
+          { revalidate: false }
+        );
+      }
       toast.success('Product added');
       setForm(buildEmptyForm(profile.businessType));
       setSpMode('inclusive');
@@ -944,7 +966,7 @@ function LegacyProductsUI() {
       // shopkeeper typed it in (see the Including/Excluding GST toggle below).
       const enteredEditSp = Number(editForm.sellingPrice) || 0;
       const normalizedEditSellingPrice = editSpMode === 'exclusive' ? toInclusivePrice(enteredEditSp, Number(editForm.gstPercent) || 0) : enteredEditSp;
-      await api.put(`/products/${editProduct.id}`, {
+      const res = await api.put(`/products/${editProduct.id}`, {
         name: editForm.name,
         category: editForm.category,
         current_stock: stockQty,
@@ -978,6 +1000,25 @@ function LegacyProductsUI() {
       }, shopIdHeader(editProduct.shopId));
       saveCategory(editForm.category);
       invalidateProductCaches();
+      // Patch this page's own table with the server's CONFIRMED response for
+      // just this row, as the last word on the matter. invalidateProductCaches()
+      // above broadcasts a revalidate to every /products-keyed SWR consumer,
+      // but that revalidate is just another GET racing against whatever else
+      // is already in flight (e.g. this same shop's own products list re-fetch
+      // that started moments earlier from adding OR editing a previous
+      // product) — under the DB connection-pool contention this dev
+      // environment already has, an OLDER, pre-edit fetch can easily resolve
+      // AFTER this save and silently overwrite the table with stale data
+      // (reproduced: add a product with colours/sizes, immediately edit its
+      // colours/quantities and save — the table kept showing the pre-edit
+      // values until a manual reload). SWR discards a revalidation that
+      // STARTED before the most recent explicit mutate() for the same key,
+      // so calling mutateProducts() with the real data, last, guarantees this
+      // row is correct on screen regardless of how that race resolves.
+      mutateProducts(
+        (current) => current?.map(p => p.id === editProduct.id ? { ...p, ...mapApiProductToRow(res.data) } : p),
+        { revalidate: false }
+      );
       toast.success('Product saved');
       setShowEditModal(false);
       setEditProduct(null);
@@ -1044,6 +1085,39 @@ function LegacyProductsUI() {
     } finally {
       setBulkDeleting(false);
       setConfirmBulkDelete(false);
+    }
+  }
+
+  async function applyBulkPriceAdjust() {
+    const v = Number(bulkAdjustValue);
+    if (!isFinite(v) || v === 0) { setBulkAdjustNote('Enter a non-zero value first'); return; }
+    if (selectedProductIds.size === 0) { setBulkAdjustNote('Select at least one product first'); return; }
+    setBulkAdjusting(true);
+    try {
+      // Same per-shop split as bulk delete — the route only touches ids
+      // that belong to the shop in the request's header.
+      const idsByShop = new Map<string, (string | number)[]>();
+      for (const id of selectedProductIds) {
+        const shopId = products.find(p => p.id === id)?.shopId;
+        const key = shopId || '';
+        if (!idsByShop.has(key)) idsByShop.set(key, []);
+        idsByShop.get(key)!.push(id);
+      }
+      let touched = 0;
+      const results = await Promise.all(
+        Array.from(idsByShop.entries()).map(([shopId, ids]) =>
+          api.patch('/products/bulk', { ids, field: bulkAdjustField, mode: bulkAdjustMode, value: v }, shopIdHeader(shopId))
+        )
+      );
+      touched = results.reduce((sum, r) => sum + (Number(r.data?.count) || 0), 0);
+      invalidateProductCaches();
+      const label = v > 0 ? `+${v}` : `${v}`;
+      const unit = bulkAdjustMode === 'percent' ? '%' : '₹';
+      setBulkAdjustNote(`Updated ${touched} product(s) by ${label}${unit}`);
+    } catch {
+      setBulkAdjustNote('Failed to update some products.');
+    } finally {
+      setBulkAdjusting(false);
     }
   }
 
@@ -1594,6 +1668,15 @@ function LegacyProductsUI() {
         onDelete={() => setConfirmBulkDelete(true)}
         onClear={() => setSelectedProductIds(new Set())}
         disabled={bulkDeleting}
+        extraActions={
+          <button
+            onClick={() => { setBulkAdjustNote(''); setBulkAdjustOpen(true); }}
+            disabled={bulkDeleting}
+            className="text-xs bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <Percent size={14} /> Adjust Price
+          </button>
+        }
       />
 
       {/* Product Table — one per shop when All Shop Access is grouping the list */}
@@ -3100,6 +3183,72 @@ function LegacyProductsUI() {
         onConfirm={handleBulkDeleteProducts}
         onCancel={() => setConfirmBulkDelete(false)}
       />
+
+      {/* Bulk price adjust — bump MRP / Cost / Selling on every currently
+          selected product by a %/₹, up or down. Writes straight to the
+          real, already-saved products (not a preview/staging step). */}
+      {bulkAdjustOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center shrink-0">
+                  <Percent size={16} className="text-indigo-500 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">Adjust Price</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{selectedProductIds.size} product{selectedProductIds.size === 1 ? '' : 's'} selected</p>
+                </div>
+              </div>
+              <button onClick={() => setBulkAdjustOpen(false)} className="text-slate-400 hover:text-slate-200 p-1"><X size={18} /></button>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Field</label>
+              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+                {([['mrp', 'MRP'], ['wholesaleCost', 'Cost'], ['sellingPrice', 'Selling']] as const).map(([f, lbl]) => (
+                  <button key={f} type="button" onClick={() => setBulkAdjustField(f)}
+                    className={cn('flex-1 py-1.5 rounded-md text-xs font-bold', bulkAdjustField === f ? 'bg-indigo-500 text-white' : 'text-slate-500')}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Amount</label>
+                <input
+                  type="number" inputMode="decimal" value={bulkAdjustValue}
+                  onChange={e => { setBulkAdjustValue(e.target.value); setBulkAdjustNote(''); }}
+                  placeholder={bulkAdjustMode === 'percent' ? '10' : '5'}
+                  className="w-full h-10 px-3 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                />
+              </div>
+              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 h-10">
+                {([['percent', '%'], ['amount', '₹']] as const).map(([m, lbl]) => (
+                  <button key={m} type="button" onClick={() => setBulkAdjustMode(m)}
+                    className={cn('px-3.5 rounded-md text-sm font-bold', bulkAdjustMode === m ? 'bg-indigo-500 text-white' : 'text-slate-500')}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2">
+              Positive increases, negative (e.g. -10) decreases. e.g. Cost ₹500 with +10% becomes ₹550.
+            </p>
+
+            {bulkAdjustNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{bulkAdjustNote}</p>}
+
+            <div className="flex gap-3">
+              <button onClick={() => setBulkAdjustOpen(false)} disabled={bulkAdjusting} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-60">Close</button>
+              <button onClick={applyBulkPriceAdjust} disabled={bulkAdjusting} className="flex-1 bg-indigo-500 text-white py-2.5 rounded-xl font-bold hover:bg-indigo-400 disabled:opacity-60 flex items-center justify-center gap-1.5">
+                {bulkAdjusting && <Loader2 size={14} className="animate-spin" />} Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </> /* end viewMode === 'all' */
       )}
     </div>

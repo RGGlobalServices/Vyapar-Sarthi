@@ -13,53 +13,64 @@ import { withOfflineCache } from '@/lib/offlineCache';
 export const fetchJson = (url: string) =>
   withOfflineCache(`json:${url}`, () => api.get(url).then(res => res.data));
 
+/**
+ * Raw API product shape → the row shape the Products table (and anything
+ * that patches its SWR cache directly, e.g. after a save) reads. Exported
+ * separately from fetchProductsMapped so a single-product mutation response
+ * (POST/PUT) can be mapped through the SAME field renames instead of a
+ * hand-rolled duplicate that would drift from this one over time.
+ */
+export function mapApiProductToRow(p: any) {
+  return {
+    id: p.id,
+    shopId: p.shopId,
+    name: p.name,
+    category: p.category,
+    stock: p.currentStock,
+    minStock: p.minStock,
+    mrp: p.mrp,
+    sellingPrice: p.sellingPrice,
+    cost: p.wholesaleCost,
+    unit: p.baseUnit || 'Unit',
+    expiry_date: p.expiryDate,
+    batch_number: p.batch_number,
+    drug_schedule: p.drug_schedule,
+    model_number: p.model_number,
+    warranty_months: p.warranty_months,
+    gender: p.gender,
+    shade: p.shade,
+    size_variants: p.size_variants,
+    is_loose: p.is_loose,
+    metadata: p.metadata,
+    // The REAL stored barcode — without this the Barcode/QR modal shows an
+    // unsaved PRD-<id> fallback that no scan or search can ever match.
+    barcode: p.barcode,
+    sku: p.sku,
+    otherCode: p.otherCode,
+    cartonBarcode: p.cartonBarcode,
+    location: p.location,
+    costPriceMode: p.costPriceMode,
+    purchaseDiscountPercent: p.purchaseDiscountPercent,
+    gstPercent: p.gstPercent,
+    hsnCode: p.hsnCode,
+    brand: p.brand,
+    conversionFactor: p.conversionFactor,
+    // Bada Udyog / mill classification + bag-packaging spec. Null on
+    // every non-mill product — the Products page shows the picker only
+    // when businessType === 'millprocessing'.
+    millCategory: p.millCategory,
+    packSize: p.packSize,
+    packUnit: p.packUnit,
+    recentlyAdded: p.recentlyAdded,
+    createdAt: p.createdAt,
+    // Only present when the owner's All Shop Access preference is on —
+    // see requireShopScope() / app/api/v1/products/route.ts.
+    shopName: p.shopName,
+    shopBusinessType: p.shopBusinessType,
+  };
+}
+
 export const fetchProductsMapped = (url: string) =>
   withOfflineCache(`products-mapped:${url}`, () => api.get(url).then(res =>
-    res.data.map((p: any) => ({
-      id: p.id,
-      shopId: p.shopId,
-      name: p.name,
-      category: p.category,
-      stock: p.currentStock,
-      minStock: p.minStock,
-      mrp: p.mrp,
-      sellingPrice: p.sellingPrice,
-      cost: p.wholesaleCost,
-      unit: p.baseUnit || 'Unit',
-      expiry_date: p.expiryDate,
-      batch_number: p.batch_number,
-      drug_schedule: p.drug_schedule,
-      model_number: p.model_number,
-      warranty_months: p.warranty_months,
-      gender: p.gender,
-      shade: p.shade,
-      size_variants: p.size_variants,
-      is_loose: p.is_loose,
-      metadata: p.metadata,
-      // The REAL stored barcode — without this the Barcode/QR modal shows an
-      // unsaved PRD-<id> fallback that no scan or search can ever match.
-      barcode: p.barcode,
-      sku: p.sku,
-      otherCode: p.otherCode,
-      cartonBarcode: p.cartonBarcode,
-      location: p.location,
-      costPriceMode: p.costPriceMode,
-      purchaseDiscountPercent: p.purchaseDiscountPercent,
-      gstPercent: p.gstPercent,
-      hsnCode: p.hsnCode,
-      brand: p.brand,
-      conversionFactor: p.conversionFactor,
-      // Bada Udyog / mill classification + bag-packaging spec. Null on
-      // every non-mill product — the Products page shows the picker only
-      // when businessType === 'millprocessing'.
-      millCategory: p.millCategory,
-      packSize: p.packSize,
-      packUnit: p.packUnit,
-      recentlyAdded: p.recentlyAdded,
-      createdAt: p.createdAt,
-      // Only present when the owner's All Shop Access preference is on —
-      // see requireShopScope() / app/api/v1/products/route.ts.
-      shopName: p.shopName,
-      shopBusinessType: p.shopBusinessType,
-    }))
+    res.data.map(mapApiProductToRow)
   ));

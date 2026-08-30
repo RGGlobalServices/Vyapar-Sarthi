@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
-import Fuse from 'fuse.js';
 import { parseFlexibleDate } from '@/lib/server/dates';
 import { parseSizeRange } from '@/lib/sizeRange';
 
@@ -194,8 +193,14 @@ export async function POST(req: NextRequest) {
           where: { shopId },
           select: { id: true, name: true, barcode: true, category: true }
         });
-        
-        const fuse = new Fuse(existingProducts, { keys: ['name', 'barcode'], threshold: 0.3 });
+
+        // Exact (case-/whitespace-insensitive) name match only — a row whose
+        // name merely resembles an existing product (e.g. same shirt in a
+        // different size/colour, or two unrelated products sharing a common
+        // word) must import as a NEW product, never silently merge into an
+        // existing one. Fuzzy matching here previously did exactly that.
+        const nameIndex = new Map<string, string>();
+        for (const p of existingProducts) if (p.name) nameIndex.set(p.name.toLowerCase().trim(), p.id);
 
         // Pre-Validation Pass
         const seenBarcodes = new Set<string>();
@@ -275,10 +280,7 @@ export async function POST(req: NextRequest) {
             const barcodeStr = barcode ? String(barcode) : null;
 
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
-            if (!matchId) {
-              const results = fuse.search(name);
-              if (results.length > 0) matchId = results[0].item.id;
-            }
+            if (!matchId) matchId = nameIndex.get(String(name).toLowerCase().trim()) ?? null;
 
             const price = parseFloat(getVal(row, ['sellingprice', 'price', 'rate']) || 0);
             const cost = parseFloat(getVal(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice']) || 0);
@@ -383,6 +385,7 @@ export async function POST(req: NextRequest) {
               });
               matchId = newProd.id;
               if (barcodeStr) barcodeIndex.set(barcodeStr, matchId);
+              nameIndex.set(String(name).toLowerCase().trim(), matchId);
               productVariantsCache.set(matchId, initialVariants);
               created++;
               // Log the imported opening stock so the "+N newly added" badge shows.
@@ -636,15 +639,14 @@ export async function POST(req: NextRequest) {
           where: { shopId, archived: false },
           select: { id: true, name: true, barcode: true, currentStock: true, variants: true }
         });
-        const fuse = new Fuse(existingProducts, { keys: ['name', 'barcode'], threshold: 0.3 });
-
         const barcodeIndex = new Map<string, string>();
         const stockIndex = new Map<string, number>();
-        // Two rows referencing the same NEW product (same name, no barcode)
-        // used to both hit fuse.search — which only knows about DB-existing
-        // products — miss, and each create a separate product. Keyed by
-        // lowercased product name, updated as we create, this makes them
-        // find each other and merge into a single product's variants[].
+        // Exact (case-/whitespace-insensitive) name match only — see the
+        // 'product' case above for why fuzzy matching was removed. Also
+        // doubles as same-batch dedup: two rows referencing the same NEW
+        // product (same name, no barcode) both miss the DB-seeded half of
+        // this map, but the first row's create() populates it before the
+        // second row runs, so they still merge into one product's variants[].
         const nameIndex = new Map<string, string>();
         // Live variants[] cache so two rows for the same product both merge
         // into the same array (last write wins would drop the first row's
@@ -696,14 +698,7 @@ export async function POST(req: NextRequest) {
             const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
-            // Exact-name check BEFORE fuse — catches subsequent rows in the
-            // same batch that reference a product freshly created earlier in
-            // this same import. fuse only knows about DB-existing products.
             if (!matchId) matchId = nameIndex.get(String(name).toLowerCase().trim()) ?? null;
-            if (!matchId) {
-              const results = fuse.search(name);
-              if (results.length > 0) matchId = results[0].item.id;
-            }
 
             // Colour / Size from THIS specific row — after size-range
             // expansion above, this is always one concrete pair (or empty
@@ -903,10 +898,15 @@ export async function POST(req: NextRequest) {
           where: { shopId },
           select: { id: true, name: true, barcode: true, currentStock: true }
         });
-        const fuse = new Fuse(existingProducts, { keys: ['name', 'barcode'], threshold: 0.3 });
 
         const barcodeIndex = new Map<string, string>();
-        for (const p of existingProducts) if (p.barcode) barcodeIndex.set(p.barcode, p.id);
+        // Exact (case-/whitespace-insensitive) name match only — see the
+        // 'product' case above for why fuzzy matching was removed.
+        const nameIndex = new Map<string, string>();
+        for (const p of existingProducts) {
+          if (p.barcode) barcodeIndex.set(p.barcode, p.id);
+          if (p.name) nameIndex.set(p.name.toLowerCase().trim(), p.id);
+        }
 
         for (let i = 0; i < data.length; i++) {
           const row = data[i];
@@ -918,10 +918,7 @@ export async function POST(req: NextRequest) {
             const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let matchId: string | null = barcodeStr ? barcodeIndex.get(barcodeStr) ?? null : null;
-            if (!matchId) {
-              const results = fuse.search(name);
-              if (results.length > 0) matchId = results[0].item.id;
-            }
+            if (!matchId) matchId = nameIndex.get(String(name).toLowerCase().trim()) ?? null;
 
             const cost = parseFloat(getVal(row, ['costprice', 'wholesalecost', 'cost', 'purchaseprice']) || 0);
             const price = parseFloat(getVal(row, ['sellingprice', 'price', 'rate']) || 0);
@@ -961,6 +958,7 @@ export async function POST(req: NextRequest) {
               });
               matchId = newProduct.id;
               if (barcodeStr) barcodeIndex.set(barcodeStr, matchId);
+              nameIndex.set(String(name).toLowerCase().trim(), matchId);
               created++;
             }
 
@@ -998,9 +996,14 @@ export async function POST(req: NextRequest) {
           where: { shopId },
           select: { id: true, name: true, barcode: true, wholesaleCost: true }
         });
-        const fuse = new Fuse(existingProducts, { keys: ['name', 'barcode'], threshold: 0.3 });
         const barcodeMap = new Map<string, string>();
-        for (const p of existingProducts) if (p.barcode) barcodeMap.set(p.barcode, p.id);
+        // Exact (case-/whitespace-insensitive) name match only — see the
+        // 'product' case above for why fuzzy matching was removed.
+        const nameMap = new Map<string, string>();
+        for (const p of existingProducts) {
+          if (p.barcode) barcodeMap.set(p.barcode, p.id);
+          if (p.name) nameMap.set(p.name.toLowerCase().trim(), p.id);
+        }
 
         // Existing invoice numbers (lower-cased) so re-importing the same file
         // SKIPS already-imported bills instead of creating duplicate rows.
@@ -1046,14 +1049,9 @@ export async function POST(req: NextRequest) {
             const barcode = getVal(row, ['barcode']);
             const barcodeStr = barcode ? String(barcode) : null;
             let productId: string | null = barcodeStr ? barcodeMap.get(barcodeStr) ?? null : null;
+            if (!productId) productId = nameMap.get(String(productName).toLowerCase().trim()) ?? null;
             let productCost = 0;
-            if (!productId) {
-              const results = fuse.search(String(productName));
-              if (results.length > 0) {
-                productId = results[0].item.id;
-                productCost = Number(results[0].item.wholesaleCost) || 0;
-              }
-            } else {
+            if (productId) {
               const p = existingProducts.find(x => x.id === productId);
               productCost = p ? (Number(p.wholesaleCost) || 0) : 0;
             }
@@ -1071,6 +1069,7 @@ export async function POST(req: NextRequest) {
                 }
               });
               productId = newProduct.id;
+              nameMap.set(String(productName).toLowerCase().trim(), productId);
               productCost = price * 0.8;
             }
 
