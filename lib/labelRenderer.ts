@@ -22,7 +22,7 @@
  */
 
 import type { PrinterProfile } from './printProfiles';
-import { autoFitBarcode, mmToPx, ptToMm, computeSheetGeometry, DEFAULT_SHEET } from './printProfiles';
+import { autoFitBarcode, mmToPx, ptToMm, computeSheetGeometry, DEFAULT_SHEET, formatPriceNumber } from './printProfiles';
 import { autoDetectFormat } from './barcodeValidation';
 
 export interface LabelRow {
@@ -32,6 +32,14 @@ export interface LabelRow {
   sellingPrice?: number;
   mrp?: number;
   copies?: number;
+  /** Product's own SKU/stock-code. Only printed when profile.fields.sku is
+   *  on AND the product actually has one set — see computeLabelLayout. */
+  sku?: string;
+  /** Free-text "Other Code" the shopkeeper writes once against the product
+   *  (distinct from SKU/barcode — no scan/lookup meaning, purely a printable
+   *  reference). Only printed when profile.fields.otherCode is on AND the
+   *  product actually has one set — see computeLabelLayout. */
+  otherCode?: string;
 }
 
 /**
@@ -121,11 +129,20 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   const priceLineMm = ptToMm(priceFontPt) * 1.3;
   const noteFontPt = Math.max(6, profile.customTextFontSizePt ?? profile.fontSizePt);
   const noteLineMm = ptToMm(noteFontPt) * 1.3;
+  const skuFontPt = Math.max(6, profile.skuFontSizePt ?? (profile.fontSizePt - 1));
+  const skuLineMm = ptToMm(skuFontPt) * 1.3;
+  const otherCodeFontPt = Math.max(6, profile.otherCodeFontSizePt ?? (profile.fontSizePt - 1));
+  const otherCodeLineMm = ptToMm(otherCodeFontPt) * 1.3;
   // Currency prefix — default empty. Past labels hard-coded "INR" (jsPDF's
   // Helvetica has no ₹ glyph) which the shopkeeper found unreadable/ugly;
-  // now the number prints alone unless they opt into a prefix.
+  // now the number prints alone unless they opt into a prefix. Number
+  // FORMAT (comma / plain / decimal) is separately shopkeeper-editable —
+  // see PrinterProfile.priceNumberFormat.
   const currency = (profile.currencyPrefix ?? '').trim();
-  const money = (n: number) => currency ? `${currency} ${n.toLocaleString('en-IN')}` : n.toLocaleString('en-IN');
+  const money = (n: number) => {
+    const formatted = formatPriceNumber(n, profile.priceNumberFormat);
+    return currency ? `${currency} ${formatted}` : formatted;
+  };
 
   // Build the ABOVE-barcode and BELOW-barcode line groups explicitly (instead
   // of one array + fragile count-slicing) so each element can independently
@@ -154,11 +171,20 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
     ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}`
     : '';
   const barcodeNumberLine = profile.fields.barcodeNumber && row.barcode ? row.barcode : '';
+  // SKU only prints when BOTH the toggle is on AND this product actually
+  // has one set — flipping the toggle on a product with no SKU was
+  // previously a silent no-op (nothing was ever wired to read it at all).
+  const skuLine = profile.fields.sku && row.sku?.trim() ? `SKU: ${row.sku.trim()}` : '';
+  // Other Code — same on/off + has-a-value gating as SKU, so an empty
+  // toggle never prints a blank/empty-labelled line.
+  const otherCodeLine = profile.fields.otherCode && row.otherCode?.trim() ? row.otherCode.trim() : '';
 
   // Name + variant follow the (existing) text position toggle.
   const nvTarget = profile.textPosition === 'above' ? aboveLines : belowLines;
   if (nameLine)    nvTarget.push({ y: 0, text: nameLine, fontSizePt: nameFontPt, fontWeight: profile.fontWeight, color: '#000000', emphasis: 'name', align: profile.textAlign, heightMm: lineHeightMm });
   if (variantLine) nvTarget.push({ y: 0, text: variantLine, fontSizePt: variantFontPt, fontWeight: 'bold', color: '#4338ca', emphasis: 'variant', align: profile.textAlign, heightMm: smallLineMm });
+  if (skuLine)      nvTarget.push({ y: 0, text: skuLine, fontSizePt: skuFontPt, fontWeight: 'normal', color: '#334155', emphasis: 'note', align: profile.textAlign, heightMm: skuLineMm });
+  if (otherCodeLine) nvTarget.push({ y: 0, text: otherCodeLine, fontSizePt: otherCodeFontPt, fontWeight: 'normal', color: '#334155', emphasis: 'note', align: profile.textAlign, heightMm: otherCodeLineMm });
 
   // Barcode digits: a single continuous line under the bars (not the EAN-split)
   // — always below the barcode.

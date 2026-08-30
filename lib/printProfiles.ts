@@ -63,6 +63,7 @@ export type LabelSizePresetKey =
 export interface LabelFieldFlags {
   productName: boolean;
   sku: boolean;
+  otherCode: boolean;
   barcodeNumber: boolean;
   sellingPrice: boolean;
   mrp: boolean;
@@ -163,6 +164,24 @@ export interface PrinterProfile {
    *  already tell the reader it's a price); shopkeepers who want "Rs." or "₹"
    *  can flip it here. */
   currencyPrefix?: string;
+  /** How every price number (MRP + Selling/Offer) is written on the label.
+   *  'comma'   → Indian grouping, e.g. "3,899" (default — prior behavior).
+   *  'plain'   → no grouping, e.g. "3899".
+   *  'decimal' → always 2 decimal places, e.g. "3899.00".
+   *  Shopkeeper-editable because different printers/audiences read numbers
+   *  differently — some find the comma clearer, some find it clutter on a
+   *  small label, some bill in exact paise and want the decimals shown. */
+  priceNumberFormat?: 'comma' | 'plain' | 'decimal';
+  /** Font size (pt) for the SKU line — undefined → fontSizePt - 1, same
+   *  pattern as the other per-element sizes below. Only rendered when
+   *  `fields.sku` is on AND the product actually has an SKU value. */
+  skuFontSizePt?: number;
+  /** Font size (pt) for the Other Code line — a free-text code the shopkeeper
+   *  writes once against a product (distinct from SKU/barcode) so it doesn't
+   *  need retyping every time a label is printed. Same undefined → fontSizePt
+   *  - 1 fallback pattern; only rendered when `fields.otherCode` is on AND
+   *  the product actually has a value set. */
+  otherCodeFontSizePt?: number;
   /** Whether the MRP line prints with a strikethrough ("cut price") line
    *  through it. Default true — matches the traditional retail-label look
    *  where MRP is always struck. A shopkeeper who just wants to SHOW the
@@ -282,6 +301,7 @@ export const DEFAULT_PROFILE: PrinterProfile = {
   fields: {
     productName: true,
     sku: false,
+    otherCode: false,
     barcodeNumber: true,
     sellingPrice: true,
     mrp: true,
@@ -301,6 +321,9 @@ export const DEFAULT_PROFILE: PrinterProfile = {
   barcodeNumberFontSizePt: 7,
   currencyPrefix: '',
   mrpStrikethrough: true,
+  priceNumberFormat: 'comma',
+  skuFontSizePt: 7,
+  otherCodeFontSizePt: 7,
   customTextFontSizePt: 8,
   customTextBold: false,
   customTextAlign: 'center',
@@ -583,6 +606,22 @@ export function ptToMm(pt: number): number {
   return pt * 0.3527777778;
 }
 
+/**
+ * Single source of truth for how a price number is written on a label —
+ * used by the PDF renderer, the legacy/profile-driven HTML fallback, AND
+ * the settings-screen live preview, so all three always agree. See
+ * `PrinterProfile.priceNumberFormat` for what each option means.
+ */
+export function formatPriceNumber(n: number, format?: 'comma' | 'plain' | 'decimal'): string {
+  const v = Number(n) || 0;
+  switch (format) {
+    case 'plain':   return String(Math.round(v));
+    case 'decimal': return v.toFixed(2);
+    case 'comma':
+    default:        return v.toLocaleString('en-IN');
+  }
+}
+
 // ─── Auto-fit calculator ───────────────────────────────────────────────────
 
 /** Target module (thinnest-bar) width in mm used to size a barcode from its
@@ -673,6 +712,13 @@ function reserveHeightForLines(profile: PrinterProfile): number {
   if (f.productName) mm += line(profile.productNameFontSizePt ?? profile.fontSizePt);
   // Variant / size / colour — one combined line, own font size.
   if (f.variant || f.size || f.colour) mm += line(Math.max(6, profile.variantFontSizePt ?? (profile.fontSizePt - 1)));
+  // SKU — one line, own font size. Reserved whenever the toggle is on even
+  // though a specific row might not have an SKU set (same worst-case
+  // over-reserve reasoning as shopName above — safe to reserve a hair more
+  // than needed, not safe to under-reserve and clip).
+  if (f.sku) mm += line(Math.max(6, profile.skuFontSizePt ?? (profile.fontSizePt - 1)));
+  // Other Code — one line, own font size, same worst-case reserve as SKU.
+  if (f.otherCode) mm += line(Math.max(6, profile.otherCodeFontSizePt ?? (profile.fontSizePt - 1)));
   // Barcode-number line rendered ONCE below the bars whenever barcodeNumber
   // is on. Was completely missing from the old reserve calc.
   if (f.barcodeNumber) mm += line(Math.max(6, profile.barcodeNumberFontSizePt ?? (profile.fontSizePt - 1)));

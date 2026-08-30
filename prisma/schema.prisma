@@ -327,6 +327,12 @@ model Product {
   // Shop's own stock-keeping code, and the barcode printed on an outer carton.
   // Both are alternative keys the billing scanner can resolve a product by.
   sku              String?          @db.VarChar
+  // Free-text code the shopkeeper writes once against a product — no
+  // scan/lookup meaning like barcode/sku, purely a printable reference
+  // (e.g. a supplier's own item code) so it doesn't need retyping every
+  // time a barcode label is printed. Surfaced as a text-field toggle in
+  // Barcode Print Settings.
+  otherCode        String?          @map("other_code") @db.VarChar
   cartonBarcode    String?          @map("carton_barcode") @db.VarChar
   // Free-text shelf/rack/bin locator — distinct from the Godown model (a
   // whole warehouse, Udyog-only); this is available to every business tier.

@@ -52,6 +52,12 @@ export interface BarcodePrintSettingsProps {
   sampleVariant?: string;
   samplePrice?: number;
   sampleMrp?: number;
+  /** Product's own SKU, if it has one — powers the "SKU" field toggle's
+   *  live preview (and the hint shown when a product has none set). */
+  sampleSku?: string;
+  /** Product's own Other Code, if it has one — powers the "Other Code"
+   *  field toggle's live preview (and the hint shown when unset). */
+  sampleOtherCode?: string;
   /** Called when the shopkeeper hits Save & Use — parent typically closes
    *  the settings modal and re-triggers Print with the new profile. */
   onSaved: (profile: PrinterProfile) => void;
@@ -71,6 +77,8 @@ export default function BarcodePrintSettings({
   sampleVariant,
   samplePrice,
   sampleMrp,
+  sampleSku,
+  sampleOtherCode,
   onSaved,
   onClose,
   initialProfile,
@@ -244,7 +252,20 @@ export default function BarcodePrintSettings({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 grid grid-rows-[auto_auto_1fr] md:grid-rows-none md:grid-cols-[minmax(140px,180px)_minmax(0,1fr)_minmax(240px,320px)]">
+        {/* Mobile row-sizing: previously the settings row was a bare "auto"
+            track and the preview row (holding the live label preview AND
+            the Save & Use button) was a bare "1fr" — "auto" claims content
+            height first, so settings ate almost everything and left preview
+            with whatever pixels were left over (observed: as little as
+            ~30px on a 700px-wide viewport), making the primary action
+            nearly unreachable without hunting for a tiny internal
+            scrollbar. Now both rows get a floor AND a ceiling: settings
+            (minmax(160px,1fr)) always keeps at least 160px and can grow
+            into leftover space; preview (minmax(260px,42vh)) always gets
+            at least 260px but is capped so it can't crowd settings out
+            entirely either — whichever row's content exceeds its share
+            just scrolls internally (both already have overflow-y-auto). */}
+        <div className="flex-1 min-h-0 grid grid-rows-[auto_minmax(160px,1fr)_minmax(260px,42vh)] md:grid-rows-none md:grid-cols-[minmax(140px,180px)_minmax(0,1fr)_minmax(240px,320px)]">
           {/* Left rail — hidden on mobile (chip bar above replaces it);
               desktop-only. Saved profiles moved into its own drawer below
               on mobile so the middle pane stays usable. */}
@@ -299,7 +320,7 @@ export default function BarcodePrintSettings({
           {/* Middle — section content. On mobile, this scrolls the whole
               remaining viewport; on desktop, it's the centre column of the
               three-column grid. */}
-          <div className="overflow-y-auto p-3 sm:p-4 space-y-3 min-h-0">
+          <div className="[grid-row:2] md:[grid-row:auto] overflow-y-auto p-3 sm:p-4 space-y-3 min-h-0">
             {/* Name + Reset row — visible in every section */}
             <div className="flex items-end gap-2">
               <div className="flex-1">
@@ -319,7 +340,7 @@ export default function BarcodePrintSettings({
 
             {section === 'paper' && <PaperSection profile={profile} patch={patch} onPickPreset={onPickPreset} onPickPrintType={onPickPrintType} patchSheet={patchSheet} onPickSheetPreset={onPickSheetPreset} />}
             {section === 'barcode' && <BarcodeSection profile={profile} patch={patch} validation={validation} />}
-            {section === 'text' && <TextSection profile={profile} patch={patch} />}
+            {section === 'text' && <TextSection profile={profile} patch={patch} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />}
             {section === 'qr' && <QRSection profile={profile} patch={patch} />}
             {section === 'position' && <PositionSection profile={profile} patch={patch} />}
             {section === 'calibration' && <CalibrationSection profile={profile} patch={patch} onPrintRuler={() => printCalibrationSheet(profile)} />}
@@ -329,10 +350,10 @@ export default function BarcodePrintSettings({
               is a bottom sheet-like sticky footer (preview collapses to a
               small strip) so shopkeepers can still tap Save/Print without
               scrolling the whole modal. On desktop it's the right column. */}
-          <div className="border-t md:border-t-0 md:border-l border-slate-800 bg-slate-950/30 overflow-y-auto p-3 sm:p-4 space-y-3 max-h-[42vh] md:max-h-none">
+          <div className="[grid-row:3] md:[grid-row:auto] border-t md:border-t-0 md:border-l border-slate-800 bg-slate-950/30 overflow-y-auto p-3 sm:p-4 space-y-3 md:max-h-none">
             <div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Live preview</p>
-              <LabelPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} />
+              <LabelPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />
               {(profile.printType === 'a4-sheet' || profile.printType === 'a4-plain') ? (
                 <p className="text-[10px] text-slate-500 mt-1.5 text-center">
                   Page: <b className="text-slate-300">A4 {(profile.sheet ?? DEFAULT_SHEET).orientation}</b>
@@ -600,7 +621,7 @@ function BarcodeSection({ profile, patch, validation }: { profile: PrinterProfil
   );
 }
 
-function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void }) {
+function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; sampleSku?: string; sampleOtherCode?: string }) {
   const fieldToggle = (k: keyof PrinterProfile['fields'], label: string) => (
     <button key={k} onClick={() => patch({ fields: { ...profile.fields, [k]: !profile.fields[k] } })}
       className={`px-2 py-1.5 rounded-md text-[11px] font-bold border ${profile.fields[k] ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
@@ -617,6 +638,7 @@ function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: P
           {fieldToggle('shopName', 'Shop Name')}
           {fieldToggle('productName', 'Product Name')}
           {fieldToggle('sku', 'SKU')}
+          {fieldToggle('otherCode', 'Other Code')}
           {fieldToggle('barcodeNumber', 'Barcode #')}
           {fieldToggle('sellingPrice', 'Sell Price')}
           {fieldToggle('mrp', 'MRP')}
@@ -647,6 +669,17 @@ function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: P
             ))}
           </div>
           <p className="text-[10px] text-slate-500 mt-1">Printed PDF can't render ₹ cleanly on all printers — "None" prints just the number (e.g. <b>MRP 1,300</b>).</p>
+        </div>
+        <div className="mt-2">
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Number format</label>
+          <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
+            {([['comma', 'Comma', '3,899'], ['plain', 'Plain', '3899'], ['decimal', 'Decimal', '3899.00']] as const).map(([v, lbl, ex]) => (
+              <button key={v} onClick={() => patch({ priceNumberFormat: v })} className={`flex-1 py-1.5 rounded-md text-[11px] font-bold ${(profile.priceNumberFormat ?? 'comma') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+                {lbl}<span className="block text-[9px] font-medium opacity-80">{ex}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">Applies to both MRP and Selling/Offer price — write the number however reads best on your label.</p>
         </div>
       </div>
 
@@ -736,7 +769,29 @@ function TextSection({ profile, patch }: { profile: PrinterProfile; patch: (u: P
               </select>
             </div>
           )}
+          {profile.fields.sku && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">SKU size</label>
+              <select value={profile.skuFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ skuFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+                {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
+              </select>
+            </div>
+          )}
+          {profile.fields.otherCode && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Other Code size</label>
+              <select value={profile.otherCodeFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ otherCodeFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
+                {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
+              </select>
+            </div>
+          )}
         </div>
+        {profile.fields.sku && !sampleSku?.trim() && (
+          <p className="text-[10px] text-amber-400/90 flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 shrink-0" />This product has no SKU set — add one in Edit Product, or the SKU line won't print.</p>
+        )}
+        {profile.fields.otherCode && !sampleOtherCode?.trim() && (
+          <p className="text-[10px] text-amber-400/90 flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 shrink-0" />This product has no Other Code set — add one in Edit Product, or the line won't print.</p>
+        )}
       </div>
 
       {/* Custom text — independent size / bold / alignment / position. */}
@@ -944,10 +999,10 @@ function NumberInput({ label, value, onChange, min, max, step, suffix, hint }: {
  * fit the preview area. Not a raster, just a DOM box the same shape/rules
  * the print engine uses, so what the shopkeeper sees IS what prints.
  */
-function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number }) {
+function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string }) {
   const isSheet = profile.printType === 'a4-sheet' || profile.printType === 'a4-plain';
   if (isSheet) {
-    return <SheetPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} />;
+    return <SheetPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />;
   }
 
   const targetPreviewWidth = 260; // px — width of the right-column preview
@@ -963,7 +1018,7 @@ function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
   return (
     <div className="bg-white rounded-md mx-auto shadow-lg flex items-center justify-center" style={{ width: footW * s, height: footH * s }}>
       <div style={{ transform: `rotate(${rotation}deg)` }}>
-        <SingleLabelBox profile={profile} widthMm={profile.labelWidthMm} heightMm={heightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} />
+        <SingleLabelBox profile={profile} widthMm={profile.labelWidthMm} heightMm={heightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />
       </div>
     </div>
   );
@@ -971,7 +1026,7 @@ function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
 
 /** The A4 page + tiled label grid preview. Positions come straight from
  *  computeSheetGeometry — exactly the same math the PDF renderer uses. */
-function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number }) {
+function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string }) {
   const sheet = profile.sheet ?? DEFAULT_SHEET;
   const { page, cells } = computeSheetGeometry(sheet);
   const targetW = 260, targetH = 320;
@@ -980,7 +1035,7 @@ function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
     <div className="bg-white rounded-md mx-auto shadow-lg relative overflow-hidden" style={{ width: page.widthMm * s, height: page.heightMm * s }}>
       {cells.map((cell, i) => (
         <div key={i} style={{ position: 'absolute', left: cell.x * s, top: cell.y * s, width: sheet.labelWidthMm * s, height: sheet.labelHeightMm * s, outline: profile.printType === 'a4-plain' ? '0.5px solid #cbd5e1' : 'none', overflow: 'hidden' }}>
-          <SingleLabelBox profile={{ ...profile, labelWidthMm: sheet.labelWidthMm, labelHeightMm: sheet.labelHeightMm, rotation: 0 }} widthMm={sheet.labelWidthMm} heightMm={sheet.labelHeightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} compact />
+          <SingleLabelBox profile={{ ...profile, labelWidthMm: sheet.labelWidthMm, labelHeightMm: sheet.labelHeightMm, rotation: 0 }} widthMm={sheet.labelWidthMm} heightMm={sheet.labelHeightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} compact />
         </div>
       ))}
     </div>
@@ -1003,7 +1058,7 @@ function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
  * layout function makes that class of preview/print mismatch structurally
  * impossible: whatever the PDF will draw, the preview shows.
  */
-function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, compact }: { profile: PrinterProfile; widthMm: number; heightMm: number; scale: number; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; compact?: boolean }) {
+function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode, compact }: { profile: PrinterProfile; widthMm: number; heightMm: number; scale: number; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string; compact?: boolean }) {
   const subProfile = { ...profile, labelWidthMm: widthMm, labelHeightMm: heightMm };
   const barcode = sampleBarcode || '123456789012';
   const name = sampleName || 'Sample Product';
@@ -1012,6 +1067,12 @@ function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleV
   // MRP sample: use the real MRP if given; else show a plausible MRP above the
   // selling price so the "both prices" layout is visible in the preview.
   const mrpVal = sampleMrp && sampleMrp > 0 ? sampleMrp : (sellVal > 0 ? Math.round(sellVal * 1.2) : 0);
+  // SKU sample: real SKU if the product has one; else a placeholder so the
+  // "SKU" toggle actually shows something when previewing, not a blank row.
+  const skuVal = sampleSku?.trim() || 'ABC-123';
+  // Other Code sample: real value if the product has one; else a placeholder
+  // so the toggle actually shows something when previewing, not a blank row.
+  const otherCodeVal = sampleOtherCode?.trim() || 'REF-001';
 
   // A4 grid cells skip the shop-name header (compact) to avoid repeating it
   // on every single cell of a sheet — same placeholder text the header would
@@ -1019,7 +1080,7 @@ function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleV
   // parent BarcodeQRModal at print time, not known to this settings screen).
   const layout = computeLabelLayout(
     subProfile,
-    { name, variantKey: variant, barcode, sellingPrice: sellVal, mrp: mrpVal },
+    { name, variantKey: variant, barcode, sellingPrice: sellVal, mrp: mrpVal, sku: skuVal, otherCode: otherCodeVal },
     {
       labelLine1: profile.fields.shopName && !compact ? 'Shop Name' : undefined,
       labelText: profile.fields.customText ? 'Custom text' : undefined,

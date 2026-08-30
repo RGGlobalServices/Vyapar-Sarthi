@@ -75,6 +75,7 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       baseUnit: b.base_unit ?? b.baseUnit,
       barcode: b.barcode,
       sku: b.sku !== undefined ? b.sku : undefined,
+      otherCode: (b.otherCode ?? b.other_code) !== undefined ? (b.otherCode ?? b.other_code) : undefined,
       cartonBarcode: (b.cartonBarcode ?? b.carton_barcode) !== undefined ? (b.cartonBarcode ?? b.carton_barcode) : undefined,
       location: b.location !== undefined ? b.location : undefined,
       is_loose: b.is_loose ?? b.isLoose,

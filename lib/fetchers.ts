@@ -40,6 +40,7 @@ export const fetchProductsMapped = (url: string) =>
       // unsaved PRD-<id> fallback that no scan or search can ever match.
       barcode: p.barcode,
       sku: p.sku,
+      otherCode: p.otherCode,
       cartonBarcode: p.cartonBarcode,
       location: p.location,
       costPriceMode: p.costPriceMode,

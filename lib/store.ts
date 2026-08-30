@@ -484,6 +484,8 @@ export interface StockItem {
   metadata?: any;
   barcode?: string | null;
   cartonBarcode?: string | null;
+  sku?: string | null;
+  otherCode?: string | null;
   location?: string | null;
   costPriceMode?: string | null;
   purchaseDiscountPercent?: number | null;
@@ -576,6 +578,8 @@ export const useStockStore = create<StockStore>((set, get) => ({
         metadata: p.metadata ?? null,
         barcode: p.barcode || null,
         cartonBarcode: p.cartonBarcode || null,
+        sku: p.sku || null,
+        otherCode: p.otherCode || null,
         location: p.location || null,
         costPriceMode: p.costPriceMode || null,
         purchaseDiscountPercent: p.purchaseDiscountPercent ?? null,
@@ -871,6 +875,9 @@ export interface ImportedStockEntry {
   wholesaleCost?: number;
   mrp?: number;
   sellingPrice?: number;
+  /** Shown/editable in the Import review table but never applied to
+   *  wholesaleCost automatically — see RetailImport.tsx's GST panel. */
+  gstPercent?: number;
 }
 
 export interface ImportedSaleEntry {

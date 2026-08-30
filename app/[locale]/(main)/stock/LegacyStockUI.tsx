@@ -1596,6 +1596,8 @@ export default function LegacyStockUI() {
             name: qrItem.name,
             barcode: qrItem.barcode || undefined,
             cartonBarcode: qrItem.cartonBarcode || undefined,
+            sku: qrItem.sku || undefined,
+            otherCode: qrItem.otherCode || undefined,
             sellingPrice: qrItem.sellingPrice,
             mrp: qrItem.mrp,
             wholesaleCost: qrItem.cost,

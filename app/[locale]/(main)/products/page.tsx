@@ -71,6 +71,8 @@ type Product = {
   conversion_factor?: number;
   recentlyAdded?: number;
   barcode?: string;
+  sku?: string;
+  otherCode?: string;
   cartonBarcode?: string;
   location?: string;
   costPriceMode?: string;
@@ -98,7 +100,7 @@ function buildEmptyForm(btype: string) {
     shade: '', size_variants: {} as Record<string, number>,
     gstPercent: 0, hsnCode: '',
     // Scannable identifiers — help desktop barcode billing.
-    barcode: '', sku: '', cartonBarcode: '',
+    barcode: '', sku: '', otherCode: '', cartonBarcode: '',
     // Free-text shelf/rack/bin locator — where the item physically sits.
     location: '',
     // Liquor (Beer Bar & Wine Shop) fields
@@ -778,6 +780,7 @@ function LegacyProductsUI() {
         hsnCode: form.hsnCode || null,
         barcode: form.barcode?.trim() || `BAR-${Date.now()}`,
         sku: form.sku?.trim() || null,
+        otherCode: form.otherCode?.trim() || null,
         cartonBarcode: form.cartonBarcode?.trim() || null,
         location: form.location?.trim() || null,
       });
@@ -847,6 +850,7 @@ function LegacyProductsUI() {
       hsnCode: product.hsnCode || '',
       barcode: (product as any).barcode || '',
       sku: (product as any).sku || '',
+      otherCode: (product as any).otherCode || '',
       cartonBarcode: (product as any).cartonBarcode || '',
       location: product.location || '',
       brand: product.brand || '',
@@ -968,6 +972,7 @@ function LegacyProductsUI() {
         hsnCode: editForm.hsnCode || null,
         barcode: editForm.barcode?.trim() || undefined,
         sku: editForm.sku?.trim() || null,
+        otherCode: editForm.otherCode?.trim() || null,
         cartonBarcode: editForm.cartonBarcode?.trim() || null,
         location: editForm.location?.trim() || null,
       }, shopIdHeader(editProduct.shopId));
@@ -2426,7 +2431,7 @@ function LegacyProductsUI() {
                 </div>
 
                 <BarcodeIdentifierFields
-                  barcode={editForm.barcode} sku={editForm.sku} cartonBarcode={editForm.cartonBarcode}
+                  barcode={editForm.barcode} sku={editForm.sku} otherCode={editForm.otherCode} cartonBarcode={editForm.cartonBarcode}
                   onChange={(k, v) => setEditForm(f => ({ ...f, [k]: v }))}
                   modalInp={modalInp}
                 />
@@ -2954,7 +2959,7 @@ function LegacyProductsUI() {
                 </div>
 
                 <BarcodeIdentifierFields
-                  barcode={form.barcode} sku={form.sku} cartonBarcode={form.cartonBarcode}
+                  barcode={form.barcode} sku={form.sku} otherCode={form.otherCode} cartonBarcode={form.cartonBarcode}
                   onChange={(k, v) => setForm(f => ({ ...f, [k]: v }))}
                   modalInp={modalInp}
                 />
@@ -3108,10 +3113,10 @@ function LegacyProductsUI() {
  * with — the EAN on the item, an internal SKU, or the barcode on the carton.
  */
 function BarcodeIdentifierFields({
-  barcode, sku, cartonBarcode, onChange, modalInp,
+  barcode, sku, otherCode, cartonBarcode, onChange, modalInp,
 }: {
-  barcode?: string; sku?: string; cartonBarcode?: string;
-  onChange: (key: 'barcode' | 'sku' | 'cartonBarcode', value: string) => void;
+  barcode?: string; sku?: string; otherCode?: string; cartonBarcode?: string;
+  onChange: (key: 'barcode' | 'sku' | 'otherCode' | 'cartonBarcode', value: string) => void;
   modalInp: string;
 }) {
   return (
@@ -3119,7 +3124,7 @@ function BarcodeIdentifierFields({
       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
         Scan Codes <span className="font-medium normal-case text-slate-400">— for barcode billing</span>
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Company Barcode</label>
           <LocalInput className={modalInp} placeholder="EAN / UPC on the item"
@@ -3132,12 +3137,20 @@ function BarcodeIdentifierFields({
         </div>
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            Other Code <span className="font-medium normal-case text-slate-400">(optional)</span>
+          </label>
+          <LocalInput className={modalInp} placeholder="Your own reference code"
+            value={otherCode || ''} onCommit={v => onChange('otherCode', v)} />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
             Carton Barcode <span className="font-medium normal-case text-slate-400">(optional)</span>
           </label>
           <LocalInput className={modalInp} placeholder="Outer carton code"
             value={cartonBarcode || ''} onCommit={v => onChange('cartonBarcode', v)} />
         </div>
       </div>
+      <p className="text-[10px] text-slate-500 mt-2">Other Code is just a printable reference — write it once here and turn on "Other Code" in Barcode Print Settings to show it on the label, no retyping needed each time.</p>
     </div>
   );
 }

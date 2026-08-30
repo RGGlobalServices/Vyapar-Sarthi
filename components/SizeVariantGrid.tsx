@@ -274,6 +274,16 @@ export default function SizeVariantGrid({
                 </div>
               )}
 
+              {/* Plain (non-additive) mode is used when ADDING a brand-new
+                  product — there's no existing stock to show as a badge, so
+                  without a caption the bare number box gave no indication
+                  this is where initial stock goes at all. */}
+              {!readOnly && !additiveMode && (
+                <div className="text-center text-[8px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  {t('stockLabel')}
+                </div>
+              )}
+
               {/* Quantity Input */}
               {readOnly ? (
                 <div className={cn(

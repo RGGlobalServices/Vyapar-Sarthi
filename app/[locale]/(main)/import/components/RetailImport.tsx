@@ -134,6 +134,26 @@ export default function RetailImport() {
   const [rowAdjustMode, setRowAdjustMode] = useState<'percent' | 'amount'>('percent');
   const [rowAdjustValue, setRowAdjustValue] = useState('');
   const [rowAdjustNote, setRowAdjustNote] = useState('');
+  // ── GST — never applied automatically. The AI can extract a gstPercent
+  // from a purchase bill, but silently baking that into the imported
+  // product's GST rate (and possibly into its cost) with no chance to
+  // review was reported as actively wrong ("sarv chukvat ahe" — it messes
+  // everything up) — a misread GST% then corrupts profit/GST math on every
+  // later bill for that product. So: GST% is a plain, always-editable
+  // column in the table below (shows whatever the AI found, but never acts
+  // on it by itself); this panel is the ONLY thing that changes cost from
+  // a GST%, and only when the shopkeeper explicitly sets a value and hits
+  // Apply on rows they've ticked.
+  const [gstApplyValue, setGstApplyValue] = useState('');
+  // 'excludeAdd'  → the Wholesale/Cost shown does NOT include GST yet; Apply
+  //                 adds it on top (cost = cost × (1 + gst%/100)) — use when
+  //                 the bill's rate column is the pre-tax rate.
+  // 'includeOnly' → the Wholesale/Cost shown ALREADY includes GST; Apply only
+  //                 records the GST% for invoicing/profit math and leaves
+  //                 the cost number untouched — use when the rate/amount you
+  //                 typed is already the final tax-inclusive price.
+  const [gstApplyMode, setGstApplyMode] = useState<'excludeAdd' | 'includeOnly'>('excludeAdd');
+  const [gstApplyNote, setGstApplyNote] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastImportNameRef = useRef<string>('Import');
@@ -412,6 +432,35 @@ export default function RetailImport() {
     });
     const label = rowAdjustMode === 'percent' ? `${v > 0 ? '+' : ''}${v}%` : `${v > 0 ? '+' : ''}₹${v}`;
     setRowAdjustNote(t('rowAdjustApplied', { m: label, n: touched }) || `Updated ${touched} row(s) by ${label}`);
+  };
+
+  // Sets gstPercent on the ticked rows to a shopkeeper-chosen value — and
+  // ONLY when they explicitly ask for 'excludeAdd' does it also fold that
+  // % into the cost. Never runs on its own; requires a tick + a value + a
+  // deliberate click, so an AI-misread GST% can no longer silently corrupt
+  // the imported cost.
+  const applyGst = () => {
+    const pct = Number(gstApplyValue);
+    if (!isFinite(pct) || pct < 0) { setGstApplyNote(t('gstEnterValue') || 'Enter a GST % first'); return; }
+    if (selectedStockRows.size === 0) { setGstApplyNote(t('rowAdjustSelectRows') || 'Select at least one row first'); return; }
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    let touched = 0;
+    setApiResult((prev: any) => {
+      if (!prev?.stock) return prev;
+      const nextStock = prev.stock.map((row: any, idx: number) => {
+        if (!selectedStockRows.has(idx)) return row;
+        touched++;
+        const patch: any = { gstPercent: pct };
+        if (gstApplyMode === 'excludeAdd') {
+          const cost = Number(row.wholesaleCost) || 0;
+          if (cost > 0) patch.wholesaleCost = round2(cost * (1 + pct / 100));
+        }
+        return { ...row, ...patch };
+      });
+      return { ...prev, stock: nextStock };
+    });
+    const modeLabel = gstApplyMode === 'excludeAdd' ? 'added to cost' : 'recorded only';
+    setGstApplyNote(t('gstApplied', { n: touched, pct, mode: modeLabel }) || `Set ${pct}% GST (${modeLabel}) on ${touched} row(s)`);
   };
 
   // ── preview → merge modal ───────────────────────────────────────────────
@@ -1034,8 +1083,52 @@ export default function RetailImport() {
                   </div>
                   {rowAdjustNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{rowAdjustNote}</p>}
                 </div>
+
+                {/* GST — never applied on its own. The GST % column below
+                    always just shows/edits whatever was extracted (or 0),
+                    with zero automatic math. This panel is the only thing
+                    that turns a GST % into a cost change, and only for
+                    rows you've ticked, only when you hit Apply. */}
+                <div className="rounded-2xl border border-sky-300 dark:border-sky-500/30 bg-sky-50/60 dark:bg-sky-500/5 p-4 space-y-3 mb-3">
+                  <div>
+                    <p className="text-sm font-bold text-sky-700 dark:text-sky-300 flex items-center gap-1.5">
+                      <Percent size={15} /> {t('gstTitle') || 'GST for selected rows'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {t('gstHint') || "Nothing here runs automatically. Tick rows in the table, set the GST % yourself, choose whether Wholesale/Cost already includes it, then hit Apply."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('gstPercentLabel') || 'GST %'}</label>
+                      <input
+                        type="number" inputMode="decimal" min={0} value={gstApplyValue}
+                        onChange={e => setGstApplyValue(e.target.value)}
+                        placeholder="18"
+                        className="w-24 h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+                    <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-0.5 h-9">
+                      {([['excludeAdd', t('gstModeExclude') || 'Add GST on top'], ['includeOnly', t('gstModeInclude') || 'Cost already has GST']] as const).map(([m, lbl]) => (
+                        <button key={m} type="button" onClick={() => setGstApplyMode(m)}
+                          className={`px-2.5 rounded-md text-xs font-bold ${gstApplyMode === m ? 'bg-sky-500 text-white' : 'text-slate-500'}`}>{lbl}</button>
+                      ))}
+                    </div>
+                    <button type="button" onClick={applyGst}
+                      className="h-9 px-4 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold">
+                      {t('markupApply') || 'Apply'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    {gstApplyMode === 'excludeAdd'
+                      ? (t('gstExcludeExplain') || 'Wholesale/Cost is the pre-tax rate — Apply multiplies it by (1 + GST%) to get the tax-inclusive cost.')
+                      : (t('gstIncludeExplain') || 'Wholesale/Cost is already the final price you paid — Apply only records the GST % for profit/invoice math, the cost number stays unchanged.')}
+                  </p>
+                  {gstApplyNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{gstApplyNote}</p>}
+                </div>
+
                 <DataTable
-                  headers={['', 'Product', 'Category', 'Qty', 'Unit', 'Wholesale', 'MRP', 'Selling', 'Expiry']}
+                  headers={['', 'Product', 'Category', 'Qty', 'Unit', 'Wholesale', 'GST %', 'MRP', 'Selling', 'Expiry']}
                   rows={apiResult.stock.map((s: ImportedStockEntry & { missingPrice?: boolean }, idx: number) => [
                     <input key={`s-sel-${idx}`} type="checkbox" checked={selectedStockRows.has(idx)} onChange={() => toggleStockRowSelected(idx)} className="w-4 h-4 accent-indigo-500 cursor-pointer" />,
                     <input key={`s-name-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-32" value={s.productName} onChange={e => handleEditResult('stock', idx, 'productName', e.target.value)} />,
@@ -1043,11 +1136,12 @@ export default function RetailImport() {
                     <input key={`s-qty-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.quantity || ''} onChange={e => handleEditResult('stock', idx, 'quantity', Number(e.target.value))} />,
                     <input key={`s-unit-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.unit || ''} onChange={e => handleEditResult('stock', idx, 'unit', e.target.value)} />,
                     <input key={`s-cost-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-slate-500" value={s.wholesaleCost || ''} onChange={e => handleEditResult('stock', idx, 'wholesaleCost', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`s-gst-${idx}`} type="number" min={0} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16 text-sky-500" value={s.gstPercent || ''} onChange={e => handleEditResult('stock', idx, 'gstPercent', Number(e.target.value))} placeholder="0" title="Never applied automatically — this is only what prints on the invoice / feeds profit math." />,
                     <input key={`s-mrp-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-slate-500" value={s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'mrp', Number(e.target.value))} placeholder="₹0" />,
                     <input key={`s-sell-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${s.missingPrice || (!s.sellingPrice && !s.mrp) ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.sellingPrice || s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'sellingPrice', Number(e.target.value))} placeholder="₹0" />,
                     <input key={`s-exp-${idx}`} type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-32" value={s.expiryDate || ''} onChange={e => handleEditResult('stock', idx, 'expiryDate', e.target.value)} />,
                   ])}
-                  align={['left','left','left','right','left','right','right','right','left']}
+                  align={['left','left','left','right','left','right','right','right','right','left']}
                 />
               </Section>
             )}

@@ -1,6 +1,6 @@
 import { detectBarcodeFormat } from '@/lib/barcode';
 import type { PrinterProfile } from '@/lib/printProfiles';
-import { autoFitBarcode } from '@/lib/printProfiles';
+import { autoFitBarcode, formatPriceNumber } from '@/lib/printProfiles';
 import { autoDetectFormat } from '@/lib/barcodeValidation';
 import { generateLabelPdf } from '@/lib/labelRenderer';
 
@@ -22,6 +22,13 @@ export interface PrintableLabel {
   /** How many physical copies of this exact label to print — one sticker per
    *  copy, so a shopkeeper can print one per unit in stock. Defaults to 1. */
   copies?: number;
+  /** Product's own SKU/stock-code — only printed when profile.fields.sku is
+   *  on AND the product actually has one set. */
+  sku?: string;
+  /** Free-text "Other Code" the shopkeeper writes once against the product —
+   *  only printed when profile.fields.otherCode is on AND the product
+   *  actually has one set. */
+  otherCode?: string;
 }
 
 export interface PrintLabelSheetOptions {
@@ -270,18 +277,27 @@ export async function printLabelSheetWithProfile(
     // empty — the old hard-coded "₹"/"INR" was reported as cluttering the
     // label at small sizes).
     const currency = (profile.currencyPrefix ?? '').trim();
-    const money = (n: number) => currency ? `${currency} ${n.toLocaleString('en-IN')}` : n.toLocaleString('en-IN');
+    const money = (n: number) => {
+      const formatted = formatPriceNumber(n, profile.priceNumberFormat);
+      return currency ? `${currency} ${formatted}` : formatted;
+    };
     const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
     const mrpLine = profile.fields.mrp && mrp > 0 ? `MRP ${money(mrp)}` : '';
     const sellLine = profile.fields.sellingPrice && sellingPrice > 0
       ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}` : '';
     const variantLine = ((profile.fields.variant || profile.fields.size || profile.fields.colour) && row.variantKey) ? row.variantKey : '';
+    const skuLine = profile.fields.sku && row.sku?.trim() ? `SKU: ${row.sku.trim()}` : '';
+    const otherCodeLine = profile.fields.otherCode && row.otherCode?.trim() ? row.otherCode.trim() : '';
 
     const nameFontPt = Math.max(6, profile.productNameFontSizePt ?? profile.fontSizePt);
     const variantFontPt = Math.max(6, profile.variantFontSizePt ?? (profile.fontSizePt - 1));
     const mrpFontPt = Math.max(6, profile.mrpFontSizePt ?? (profile.fontSizePt - 1));
+    const skuFontPt = Math.max(6, profile.skuFontSizePt ?? (profile.fontSizePt - 1));
+    const otherCodeFontPt = Math.max(6, profile.otherCodeFontSizePt ?? (profile.fontSizePt - 1));
     const nameBlock = profile.fields.productName ? `<div class="lbl-name" style="font-size:${nameFontPt}pt">${escapeHtml(row.name)}</div>` : '';
     const variantBlock = variantLine ? `<div class="lbl-variant" style="font-size:${variantFontPt}pt">${escapeHtml(variantLine)}</div>` : '';
+    const skuBlock = skuLine ? `<div class="lbl-sku" style="font-size:${skuFontPt}pt">${escapeHtml(skuLine)}</div>` : '';
+    const otherCodeBlock = otherCodeLine ? `<div class="lbl-other-code" style="font-size:${otherCodeFontPt}pt">${escapeHtml(otherCodeLine)}</div>` : '';
     const priceBlock = `${mrpLine ? `<div class="lbl-mrp" style="font-size:${mrpFontPt}pt">${escapeHtml(mrpLine)}</div>` : ''}${sellLine ? `<div class="lbl-foot">${escapeHtml(sellLine)}</div>` : ''}`;
 
     // Text position (above / below barcode) drives the two possible orders.
@@ -289,9 +305,9 @@ export async function printLabelSheetWithProfile(
     const label = `
       <div class="lbl">
         ${headerBlock}
-        ${above ? `${nameBlock}${variantBlock}` : ''}
+        ${above ? `${nameBlock}${variantBlock}${skuBlock}${otherCodeBlock}` : ''}
         <div class="lbl-barcode" style="width:${barSize.widthMm}mm;height:${barSize.heightMm}mm;margin:0 auto;box-sizing:content-box">${svgStr}</div>
-        ${!above ? `${nameBlock}${variantBlock}` : ''}
+        ${!above ? `${nameBlock}${variantBlock}${skuBlock}${otherCodeBlock}` : ''}
         ${noteLine}
         ${priceBlock}
       </div>`;
@@ -373,6 +389,8 @@ export async function printLabelSheetWithProfile(
       .lbl-header2 { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 600; color: #475569; }
       .lbl-name    { font-size: ${profile.fontSizePt}pt; font-weight: ${fontWeightCss}; line-height: 1.15; word-break: break-word; }
       .lbl-variant { font-size: ${Math.max(6, profile.fontSizePt - 1)}pt; font-weight: 700; color: #4338ca; text-transform: uppercase; }
+      .lbl-sku     { font-size: ${Math.max(6, profile.skuFontSizePt ?? (profile.fontSizePt - 1))}pt; font-weight: 500; color: #64748b; }
+      .lbl-other-code { font-size: ${Math.max(6, profile.otherCodeFontSizePt ?? (profile.fontSizePt - 1))}pt; font-weight: 500; color: #64748b; }
       /* Each barcode's own wrapper div carries its width/height inline
          (sized from that row's own barcode value — see autoFitBarcode) so
          the SVG just fills whatever box its row assigned it, instead of

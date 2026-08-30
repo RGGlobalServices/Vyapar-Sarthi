@@ -20,6 +20,12 @@ interface BarcodeQRModalProps {
     barcode?: string;
     /** Outer-carton/box code — separate from the per-piece barcode above. */
     cartonBarcode?: string;
+    /** Product's own stock code — only printed on the label when the
+     *  shopkeeper turns on the "SKU" field toggle in Print Settings. */
+    sku?: string;
+    /** Free-text code the shopkeeper wrote once against the product — only
+     *  printed when the "Other Code" field toggle in Print Settings is on. */
+    otherCode?: string;
     sellingPrice?: number;
     mrp?: number;
     /** Shop's own purchase/wholesale cost — the "Wholesale Rate" on a carton label. */
@@ -417,7 +423,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // per copy, not a single label annotated with a count.
     if (tab === 'barcode') {
       printLabelSheetShared(
-        [{ name: product.name, barcode: barcodeValue, sellingPrice: product.sellingPrice, mrp: product.mrp, copies: printQty }],
+        [{ name: product.name, barcode: barcodeValue, sellingPrice: product.sellingPrice, mrp: product.mrp, sku: product.sku, otherCode: product.otherCode, copies: printQty }],
         { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — Labels` },
       );
       return;
@@ -469,6 +475,8 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
         barcode: row.barcode,
         sellingPrice: row.sellingPrice,
         mrp: row.mrp,
+        sku: product.sku,
+        otherCode: product.otherCode,
         copies: variantPrintQty[row.key] ?? Math.max(1, row.qty),
       })),
       { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — Labels` },
@@ -479,7 +487,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // colour/size shouldn't have to print the whole sheet to get one label.
   function printOneVariant(row: typeof variantRows[number]) {
     printLabelSheetShared(
-      [{ name: product.name, variantKey: row.key, barcode: row.barcode, sellingPrice: row.sellingPrice, mrp: row.mrp, copies: variantPrintQty[row.key] ?? Math.max(1, row.qty) }],
+      [{ name: product.name, variantKey: row.key, barcode: row.barcode, sellingPrice: row.sellingPrice, mrp: row.mrp, sku: product.sku, otherCode: product.otherCode, copies: variantPrintQty[row.key] ?? Math.max(1, row.qty) }],
       { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — ${row.key}` },
     );
   }
@@ -734,6 +742,8 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             sampleVariant={variantRows[0]?.key}
             samplePrice={product.sellingPrice || product.mrp}
             sampleMrp={product.mrp}
+            sampleSku={product.sku}
+            sampleOtherCode={product.otherCode}
             initialProfile={activeProfile || undefined}
             onSaved={(p) => { setActiveProfile(p); setShowPrintSettings(false); }}
             onClose={() => setShowPrintSettings(false)}
