@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer, Percent, Plus, Minus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -39,6 +39,16 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [bulkEditField, setBulkEditField] = useState<string>('');
   const [bulkEditValue, setBulkEditValue] = useState<string>('');
+  // Relative (increase/decrease-by-%) price adjust for the review table —
+  // separate from bulkEditField/bulkEditValue above, which only SET a flat
+  // value. One shared amount+mode config powers two ways to apply it: bulk
+  // "Apply to Selected" for ticked rows, or the per-row +/- next to any
+  // single price cell — both read the same pctAdjustValue/pctAdjustMode so
+  // the shopkeeper types the % once and can use either.
+  const [pctAdjustField, setPctAdjustField] = useState<string>('');
+  const [pctAdjustValue, setPctAdjustValue] = useState<string>('');
+  const [pctAdjustMode, setPctAdjustMode] = useState<'percent' | 'amount'>('percent');
+  const [pctAdjustNote, setPctAdjustNote] = useState<string>('');
 
   // Purchase-invoice supplier panel. Only shown when importType === 'purchase'.
   // Prefilled from the first extracted row and matched against existing
@@ -442,6 +452,49 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setBulkEditField('');
     setBulkEditValue('');
     setSelectedRows([]);
+  };
+
+  // Canonical price-column labels this review table can ever show — see
+  // lib/importTemplates.ts (productColumns has MRP/Selling Price/Cost Price;
+  // the 'purchase' template has MRP/Unit Cost only, no Selling Price).
+  const PRICE_FIELD_LABELS = ['MRP', 'Selling Price', 'Cost Price', 'Unit Cost'];
+  const priceHeaders = headers.filter(h => PRICE_FIELD_LABELS.includes(h));
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const computeAdjustedCell = (oldVal: string, value: number, mode: 'percent' | 'amount'): string => {
+    const n = Number(oldVal) || 0;
+    const next = mode === 'percent' ? n * (1 + value / 100) : n + value;
+    return String(Math.max(0, round2(next)));
+  };
+
+  // Bulk path — every currently-ticked row's pctAdjustField, in one go.
+  const applyPctAdjust = () => {
+    const v = Number(pctAdjustValue);
+    if (!pctAdjustField) { setPctAdjustNote('Pick a field first'); return; }
+    if (!isFinite(v) || v === 0) { setPctAdjustNote('Enter a non-zero value first'); return; }
+    if (selectedRows.length === 0) { setPctAdjustNote('Select at least one row first, or use the +/- next to a single row'); return; }
+    setPreviewData(prev => {
+      const next = [...prev];
+      selectedRows.forEach(i => {
+        next[i] = { ...next[i], [pctAdjustField]: computeAdjustedCell(String(next[i][pctAdjustField] ?? ''), v, pctAdjustMode) };
+      });
+      return next;
+    });
+    const label = v > 0 ? `+${v}` : `${v}`;
+    const unit = pctAdjustMode === 'percent' ? '%' : '₹';
+    setPctAdjustNote(`Updated ${pctAdjustField} on ${selectedRows.length} row(s) by ${label}${unit}`);
+  };
+
+  // Single-row path — the little +/- next to one price cell, independent of
+  // any row selection. Reuses the same typed amount + %/₹ mode above.
+  const nudgeCell = (rowIndex: number, header: string, sign: 1 | -1) => {
+    const v = Number(pctAdjustValue);
+    if (!isFinite(v) || v === 0) { setPctAdjustNote('Type a % or ₹ amount above first'); return; }
+    setPreviewData(prev => {
+      const next = [...prev];
+      next[rowIndex] = { ...next[rowIndex], [header]: computeAdjustedCell(String(next[rowIndex][header] ?? ''), sign * v, pctAdjustMode) };
+      return next;
+    });
   };
 
   // Effective action for a row given its match status + global policy + override.
@@ -896,6 +949,56 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               </div>
             )}
 
+            {/* Price % Adjust — increase/decrease MRP / Cost / Selling by a %
+                or ₹, either for every ticked row at once, or per-row via the
+                +/- next to that row's own price cell (see the header note
+                below). Kept separate from the generic "Select Field / New
+                Value" toolbar below, which only SETS an absolute value —
+                this is relative, and price-column-specific. */}
+            {priceHeaders.length > 0 && (
+              <div className="mb-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/30 p-3 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <span className="text-sm font-medium text-indigo-800 dark:text-indigo-300 self-center flex items-center gap-1.5">
+                    <Percent size={14} /> Adjust price by %/₹
+                  </span>
+                  <select
+                    value={pctAdjustField}
+                    onChange={e => setPctAdjustField(e.target.value)}
+                    className="text-sm bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
+                  >
+                    <option value="">-- Select Field --</option>
+                    {priceHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                  <input
+                    type="number" inputMode="decimal"
+                    placeholder={pctAdjustMode === 'percent' ? '10' : '5'}
+                    value={pctAdjustValue}
+                    onChange={e => { setPctAdjustValue(e.target.value); setPctAdjustNote(''); }}
+                    className="text-sm bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-1.5 w-24 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
+                  />
+                  <div className="flex bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg p-0.5">
+                    {(['percent', 'amount'] as const).map(m => (
+                      <button key={m} type="button" onClick={() => setPctAdjustMode(m)}
+                        className={`px-3 py-1 rounded-md text-sm font-bold ${pctAdjustMode === m ? 'bg-indigo-500 text-white' : 'text-slate-500'}`}>
+                        {m === 'percent' ? '%' : '₹'}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={applyPctAdjust}
+                    disabled={!pctAdjustField || pctAdjustValue === '' || selectedRows.length === 0}
+                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 shadow-sm"
+                  >
+                    Apply to Selected{selectedRows.length > 0 ? ` (${selectedRows.length})` : ''}
+                  </button>
+                </div>
+                <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/70">
+                  Positive increases, negative (e.g. -10) decreases. Tick rows above and hit Apply, or leave rows unticked and use the <span className="font-bold">+ / −</span> next to any single row's {priceHeaders.join('/')} box.
+                </p>
+                {pctAdjustNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{pctAdjustNote}</p>}
+              </div>
+            )}
+
             {/* Bulk Actions Toolbar */}
             {selectedRows.length > 0 && (
               <div className="mb-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 p-3 rounded-xl flex flex-wrap items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">
@@ -992,12 +1095,26 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       </td>
                       {headers.map((h, j) => (
                         <td key={j} className="px-1 py-1 whitespace-nowrap">
-                          <input
-                            type="text"
-                            value={String(row[h] ?? '')}
-                            onChange={(e) => handleCellEdit(i, h, e.target.value)}
-                            className="w-full min-w-[90px] px-3 py-1.5 bg-transparent border border-transparent rounded-lg hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition-colors"
-                          />
+                          <div className="flex items-center gap-0.5">
+                            {PRICE_FIELD_LABELS.includes(h) && (
+                              <button type="button" onClick={() => nudgeCell(i, h, -1)} title={`Decrease by the amount above`}
+                                className="shrink-0 p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
+                                <Minus size={12} />
+                              </button>
+                            )}
+                            <input
+                              type="text"
+                              value={String(row[h] ?? '')}
+                              onChange={(e) => handleCellEdit(i, h, e.target.value)}
+                              className="w-full min-w-[70px] px-3 py-1.5 bg-transparent border border-transparent rounded-lg hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition-colors"
+                            />
+                            {PRICE_FIELD_LABELS.includes(h) && (
+                              <button type="button" onClick={() => nudgeCell(i, h, 1)} title={`Increase by the amount above`}
+                                className="shrink-0 p-1 rounded-md text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10">
+                                <Plus size={12} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       ))}
                       <td className="px-2 py-1">

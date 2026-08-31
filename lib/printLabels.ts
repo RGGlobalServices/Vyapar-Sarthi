@@ -201,7 +201,13 @@ export async function printLabelSheetWithProfile(
   // the settings-modal live preview share.
   try {
     const url = await generateLabelPdf(
-      rows.map(r => ({ name: r.name, variantKey: r.variantKey, barcode: r.barcode, sellingPrice: r.sellingPrice, mrp: r.mrp, copies: r.copies })),
+      // sku/otherCode were missing here — the live preview (which reads the
+      // same LabelRow shape via computeLabelLayout) showed them correctly,
+      // giving every appearance the feature worked, but the ACTUAL printed
+      // PDF — this jsPDF path is what real "Print" uses whenever any
+      // profile is active, i.e. almost always — silently dropped both
+      // fields before they ever reached the layout engine.
+      rows.map(r => ({ name: r.name, variantKey: r.variantKey, barcode: r.barcode, sellingPrice: r.sellingPrice, mrp: r.mrp, copies: r.copies, sku: r.sku, otherCode: r.otherCode })),
       profile,
       { labelText: options.labelText, labelLine1: options.labelLine1, labelLine2: options.labelLine2, title: options.title },
     );

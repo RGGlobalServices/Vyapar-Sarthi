@@ -217,6 +217,22 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product.id, hasRealBarcode]);
 
+  // Other Code — writable right here instead of forcing a trip to Edit
+  // Product first. Same "mirrors the prop, moves ahead of it once saved"
+  // pattern as persistedBarcode above: local state so the just-typed value
+  // is usable for print/preview immediately, synced from the prop when a
+  // different product opens, and persisted (best-effort, retried on the
+  // next edit) via PUT on blur.
+  const [otherCodeInput, setOtherCodeInput] = useState(product.otherCode || '');
+  useEffect(() => { setOtherCodeInput(product.otherCode || ''); }, [product.id, product.otherCode]);
+  function saveOtherCode() {
+    const trimmed = otherCodeInput.trim();
+    if (trimmed === (product.otherCode || '')) return;
+    api.put(`/products/${product.id}`, { otherCode: trimmed || null })
+      .then(() => invalidateProductCaches())
+      .catch(() => { /* keeps the typed value either way; retried on next edit/open */ });
+  }
+
   // Real products use a genuinely different barcode per colour/size — they
   // are physically different items with different manufacturer codes. A
   // variant with no barcode of its own previously fell back to sharing the
@@ -423,7 +439,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // per copy, not a single label annotated with a count.
     if (tab === 'barcode') {
       printLabelSheetShared(
-        [{ name: product.name, barcode: barcodeValue, sellingPrice: product.sellingPrice, mrp: product.mrp, sku: product.sku, otherCode: product.otherCode, copies: printQty }],
+        [{ name: product.name, barcode: barcodeValue, sellingPrice: product.sellingPrice, mrp: product.mrp, sku: product.sku, otherCode: otherCodeInput, copies: printQty }],
         { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — Labels` },
       );
       return;
@@ -476,7 +492,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
         sellingPrice: row.sellingPrice,
         mrp: row.mrp,
         sku: product.sku,
-        otherCode: product.otherCode,
+        otherCode: otherCodeInput,
         copies: variantPrintQty[row.key] ?? Math.max(1, row.qty),
       })),
       { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — Labels` },
@@ -487,7 +503,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // colour/size shouldn't have to print the whole sheet to get one label.
   function printOneVariant(row: typeof variantRows[number]) {
     printLabelSheetShared(
-      [{ name: product.name, variantKey: row.key, barcode: row.barcode, sellingPrice: row.sellingPrice, mrp: row.mrp, sku: product.sku, otherCode: product.otherCode, copies: variantPrintQty[row.key] ?? Math.max(1, row.qty) }],
+      [{ name: product.name, variantKey: row.key, barcode: row.barcode, sellingPrice: row.sellingPrice, mrp: row.mrp, sku: product.sku, otherCode: otherCodeInput, copies: variantPrintQty[row.key] ?? Math.max(1, row.qty) }],
       { labelText, labelLine1, labelLine2, labelSize, profile: activeProfile || undefined, title: `${product.name} — ${row.key}` },
     );
   }
@@ -743,7 +759,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             samplePrice={product.sellingPrice || product.mrp}
             sampleMrp={product.mrp}
             sampleSku={product.sku}
-            sampleOtherCode={product.otherCode}
+            sampleOtherCode={otherCodeInput}
             initialProfile={activeProfile || undefined}
             onSaved={(p) => { setActiveProfile(p); setShowPrintSettings(false); }}
             onClose={() => setShowPrintSettings(false)}
@@ -928,6 +944,23 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
             </div>
           </div>
 
+          {/* Other Code — a printable reference the shopkeeper writes once;
+              editable right here so it doesn't require a trip to Edit
+              Product first. Saves on blur; turn the matching toggle on in
+              Settings (or Save & Use This Profile after doing so) to have
+              it actually appear on the printed label. */}
+          <div className="w-full">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Other Code</label>
+            <input
+              type="text"
+              value={otherCodeInput}
+              onChange={e => setOtherCodeInput(e.target.value)}
+              onBlur={saveOtherCode}
+              placeholder="Your own reference code"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
+
           {/* Header — two optional lines printed above the product name
               (shop name, address/tagline), separated from it by a rule. */}
           <div className="w-full grid grid-cols-2 gap-2">
@@ -1081,6 +1114,21 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
               on first open (the two controls a shopkeeper actually uses on
               nearly every print job). */}
           <div className="shrink-0 space-y-2 pt-2 border-t border-slate-800/60">
+            {/* Other Code — product-level (same value on every variant row
+                above), so it lives here rather than per-row. Always visible,
+                not tucked behind the collapsible section below, since
+                unlike Line 1/2/Custom Text this is saved to the product. */}
+            <div className="w-full">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Other Code</label>
+              <input
+                type="text"
+                value={otherCodeInput}
+                onChange={e => setOtherCodeInput(e.target.value)}
+                onBlur={saveOtherCode}
+                placeholder="Your own reference code"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
             <button
               type="button"
               onClick={() => setShowLabelOptions(v => !v)}
