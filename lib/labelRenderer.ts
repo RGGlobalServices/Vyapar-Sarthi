@@ -138,7 +138,14 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   // now the number prints alone unless they opt into a prefix. Number
   // FORMAT (comma / plain / decimal) is separately shopkeeper-editable —
   // see PrinterProfile.priceNumberFormat.
-  const currency = (profile.currencyPrefix ?? '').trim();
+  // The Settings UI still offers "₹" as a currency choice (and it renders
+  // fine in that live HTML preview), but jsPDF's Helvetica/WinAnsiEncoding
+  // has no glyph for U+20B9 — passed through as-is it silently truncates to
+  // byte 0xB9 (prints as a stray superscript "1") AND corrupts the spacing
+  // of the entire surrounding line. Swap it for the always-safe "Rs." only
+  // at this final PDF-text boundary, so the real printed label can never
+  // come out garbled no matter what a shopkeeper picks.
+  const currency = (profile.currencyPrefix ?? '').trim().replace(/₹/g, 'Rs.');
   const money = (n: number) => {
     const formatted = formatPriceNumber(n, profile.priceNumberFormat);
     return currency ? `${currency} ${formatted}` : formatted;
