@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles } from 'lucide-react';
+import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import useSWR from 'swr';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
 import { canUseGodowns } from '@/lib/planGates';
+import PurchaseReturnModal from '@/components/purchases/PurchaseReturnModal';
 
 const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
@@ -38,6 +39,23 @@ function effectiveItemCost(item: { cost: any; mrp: any; costMode?: string; disco
     return Math.max(0, mrp * (1 - pct / 100));
   }
   return Number(item.cost) || 0;
+}
+
+// Plain (non-hook) helpers so they can be called straight from JSX without
+// touching this component's hook order — matches the same rowKey convention
+// the return API and PurchaseReturnModal use.
+function purchaseReturnedQtyByKey(invoice: any): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const ret of invoice?.purchaseReturns || []) {
+    for (const it of ret.items || []) {
+      const k = `${it.productId}::${it.variantKey || ''}`;
+      map.set(k, (map.get(k) || 0) + it.quantity);
+    }
+  }
+  return map;
+}
+function purchaseTotalReturnedAmount(invoice: any): number {
+  return (invoice?.purchaseReturns || []).reduce((sum: number, r: any) => sum + (r.totalAmount || 0), 0);
 }
 
 // Same key a variant row is stored/matched under everywhere else (Products'
@@ -83,6 +101,7 @@ export default function PurchasesPage() {
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
 
   // List search / filter
   const [search, setSearch] = useState('');
@@ -308,6 +327,20 @@ export default function PurchasesPage() {
     } finally {
       setDeleting(false);
     }
+  };
+
+  // After a purchase return saves, `selectedInvoice` (a snapshot captured
+  // when the row was clicked) is stale — re-fetch the single invoice
+  // (now including its purchaseReturns) so "remaining"/"Net Payable" reflect
+  // it immediately, and refresh the background list for the same reason.
+  const refreshSelectedInvoice = async (id: string) => {
+    try {
+      const { data } = await api.get(`/purchases/${id}`);
+      setSelectedInvoice(data);
+    } catch (err) {
+      console.error('Failed to refresh purchase invoice', err);
+    }
+    mutateInvoices();
   };
 
   const saveNewSupplier = async () => {
@@ -878,6 +911,18 @@ export default function PurchasesPage() {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('totalAmount') || 'Total Amount'}</p>
                   <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">₹{(selectedInvoice.totalCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
                 </div>
+                {purchaseTotalReturnedAmount(selectedInvoice) > 0 && (
+                  <>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Returned</p>
+                      <p className="text-sm font-bold text-red-600 dark:text-red-400 font-mono">−₹{purchaseTotalReturnedAmount(selectedInvoice).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Payable</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white font-mono">₹{Math.max(0, (selectedInvoice.totalCost || 0) - purchaseTotalReturnedAmount(selectedInvoice)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+                    </div>
+                  </>
+                )}
               </div>
 
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -895,24 +940,34 @@ export default function PurchasesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {selectedInvoice.purchaseItems?.map((item: any) => (
-                      <tr key={item.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="px-4 py-3 text-slate-900 dark:text-slate-200 font-bold">{item.product?.name}</td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.quantity}</td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.mrp != null ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.discountPercent != null ? `${item.discountPercent}%` : '—'}</td>
-                        <td className="px-4 py-3 text-slate-900 dark:text-white text-right font-mono font-medium">₹{(item.cost || 0).toLocaleString('en-IN')}</td>
-                      </tr>
-                    ))}
+                    {selectedInvoice.purchaseItems?.map((item: any) => {
+                      const returnedForRow = purchaseReturnedQtyByKey(selectedInvoice).get(`${item.productId}::${item.variantKey || ''}`) || 0;
+                      return (
+                        <tr key={item.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-4 py-3 text-slate-900 dark:text-slate-200 font-bold">
+                            {item.product?.name}
+                            {returnedForRow > 0 && <span className="block text-[10px] font-semibold text-red-500 dark:text-red-400">−{returnedForRow} returned</span>}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.quantity}</td>
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.mrp != null ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.discountPercent != null ? `${item.discountPercent}%` : '—'}</td>
+                          <td className="px-4 py-3 text-slate-900 dark:text-white text-right font-mono font-medium">₹{(item.cost || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button onClick={() => openEdit(selectedInvoice)}
                   className="px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 text-slate-700 dark:text-slate-300">
                   <Pencil size={14} /> {t('edit') || 'Edit'}
+                </button>
+                <button onClick={() => setShowReturnModal(true)}
+                  className="px-4 py-2.5 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-colors flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                  <RotateCcw size={14} /> Return
                 </button>
                 <button onClick={() => handleDelete(selectedInvoice)} disabled={deleting}
                   className="px-4 py-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center gap-2 text-red-600 dark:text-red-400 disabled:opacity-50">
@@ -925,6 +980,14 @@ export default function PurchasesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showReturnModal && selectedInvoice && (
+        <PurchaseReturnModal
+          invoice={selectedInvoice}
+          onClose={() => setShowReturnModal(false)}
+          onSaved={() => refreshSelectedInvoice(selectedInvoice.id)}
+        />
       )}
     </div>
   );

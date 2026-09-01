@@ -47,7 +47,11 @@ export async function GET(req: Request) {
           supplier: true,
           purchaseItems: {
             include: { product: true }
-          }
+          },
+          // Lets the Purchase Details modal / Return button compute
+          // per-item "remaining" returnable quantity and a live "Net
+          // Payable" without a second round-trip when a row is opened.
+          purchaseReturns: { include: { items: true } },
         },
         // date alone ties for same-day invoices (e.g. several imported from
         // the same printed date); createdAt breaks the tie so same-day rows

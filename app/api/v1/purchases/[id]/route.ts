@@ -13,7 +13,14 @@ export async function GET(req: Request, { params }: Ctx) {
     const auth = await requireShop(req, { enforceSubscription: false });
     const invoice = await prisma.purchaseInvoice.findFirst({
       where: { id, shopId: auth.shop.id },
-      include: { supplier: true, purchaseItems: { include: { product: true } } },
+      include: {
+        supplier: true,
+        purchaseItems: { include: { product: true } },
+        // Lets the Purchase Details modal compute per-item "remaining"
+        // returnable quantity and a live "Net Payable" (totalCost minus the
+        // sum of these) without ever rewriting the invoice's own totals.
+        purchaseReturns: { include: { items: true }, orderBy: { createdAt: 'desc' } },
+      },
     });
     if (!invoice) return NextResponse.json({ error: 'Purchase invoice not found' }, { status: 404 });
 

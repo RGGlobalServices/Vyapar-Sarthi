@@ -136,6 +136,7 @@ model Shop {
   staff                   Staff[]
   suppliers               Supplier[]
   purchaseInvoices        PurchaseInvoice[]
+  purchaseReturns         PurchaseReturn[]
   batches                 Batch[]
   expenses                Expense[]
   orders                  Order[]
@@ -381,6 +382,7 @@ model Product {
   productVariants  ProductVariant[]
   batches          Batch[]
   purchaseItems    PurchaseItem[]
+  purchaseReturnItems PurchaseReturnItem[]
   orderItems       OrderItem[]
   dailyStockEntries DailyStockEntry[]
   dailyRegisterLogs DailyRegisterLog[]
@@ -961,6 +963,7 @@ model Supplier {
 
   shop                 Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
   purchaseInvoices     PurchaseInvoice[]
+  purchaseReturns      PurchaseReturn[]
   supplierTransactions SupplierTransaction[]
   rawMaterialLots      RawMaterialLot[]
   orders               Order[]
@@ -979,9 +982,10 @@ model PurchaseInvoice {
   gst           Float?
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop          Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  supplier      Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  purchaseItems PurchaseItem[]
+  shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  purchaseItems   PurchaseItem[]
+  purchaseReturns PurchaseReturn[]
 
   @@index([shopId])
   @@index([supplierId])
@@ -1015,6 +1019,58 @@ model PurchaseItem {
   @@index([purchaseInvoiceId])
   @@index([productId])
   @@map("purchase_items")
+}
+
+/** Goods sent back to a supplier from a specific purchase (damaged, wrong
+ *  item, excess stock, …) — a debit note. Deliberately its own model rather
+ *  than reusing MaterialReturn/ReturnItem: those are the SALES side (a
+ *  customer's refund — stockRestored: true, money flows OUT via
+ *  refundAmount) with no link to a purchase or supplier at all. A purchase
+ *  return is the opposite direction (stock DECREASES, money owed to the
+ *  supplier decreases) and always belongs to one PurchaseInvoice. The
+ *  original PurchaseInvoice/PurchaseItem rows are never edited — this is an
+ *  additive record; "net payable" is computed as totalCost minus the sum of
+ *  its returns. */
+model PurchaseReturn {
+  id                String    @id @default(uuid()) @db.Uuid
+  shopId            String    @map("shop_id") @db.Uuid
+  supplierId        String    @map("supplier_id") @db.Uuid
+  purchaseInvoiceId String    @map("purchase_invoice_id") @db.Uuid
+  returnNumber      String?   @map("return_number") @db.VarChar
+  date              DateTime? @default(now()) @db.Timestamptz(6)
+  totalAmount       Float     @map("total_amount")
+  note              String?   @db.VarChar
+  createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  supplier        Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  purchaseInvoice PurchaseInvoice      @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  items           PurchaseReturnItem[]
+
+  @@index([shopId])
+  @@index([purchaseInvoiceId])
+  @@index([supplierId])
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  returnId   String  @map("return_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
+  // Editable snapshot at return time — same idea as BillLine.name in
+  // AddBillModal.tsx, so a shopkeeper can clarify/correct it on the document
+  // without that touching the actual Product record.
+  name       String  @db.VarChar
+  variantKey String? @map("variant_key") @db.VarChar
+  quantity   Float
+  rate       Float
+  amount     Float
+
+  purchaseReturn PurchaseReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+  @@map("purchase_return_items")
 }
 
 model Batch {

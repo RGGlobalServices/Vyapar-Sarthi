@@ -162,6 +162,10 @@ export default function AddBillModal({
   const [products, setProducts] = useState<ProductPickerRow[]>([]);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [pickerForKey, setPickerForKey] = useState<string | null>(null);
+  /** Set instead of `pickerForKey` when the picker was opened from a grouped
+   *  size-range card's header — picking a product applies to every row in
+   *  the group at once instead of just one. See pickProductForGroup below. */
+  const [pickerForGroupKeys, setPickerForGroupKeys] = useState<string[] | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
   const [creatingProduct, setCreatingProduct] = useState(false);
 
@@ -411,6 +415,43 @@ export default function AddBillModal({
     setPickerQuery('');
   }
 
+  /** Same as pickProductForLine, but applies one product link to every row
+   *  in a size-range group at once — used from a grouped card's header so
+   *  linking "Bata School" links all its scanned sizes in one tap instead of
+   *  one at a time. Unlike pickProductForLine (which clears `variant` for a
+   *  fresh single pick), each row's own scanned size text is preserved and
+   *  resolved against the product's real variant options where possible, so
+   *  linking doesn't throw away which size that row was. */
+  function pickProductForGroup(keys: string[], product: ProductPickerRow) {
+    setAutoCalc(null);
+    const norm = (s: string) => s.trim().toLowerCase();
+    setLines(prev => prev.map(l => {
+      if (!keys.includes(l.key)) return l;
+      const raw = l.variant.trim();
+      const opts = product.variants || [];
+      const matched = raw
+        ? opts.find(o => norm(o.key) === norm(raw))
+          || opts.find(o => o.size && norm(o.size) === norm(raw))
+          || opts.find(o => o.colour && norm(o.colour) === norm(raw))
+          || null
+        : null;
+      return {
+        ...l,
+        productId: product.id,
+        name: product.name,
+        variant: matched ? matched.key : raw,
+        variantOptions: opts,
+        variantStock: matched ? matched.stock : null,
+        rateText: matched && matched.price ? String(matched.price) : String(product.price || 0),
+        unit: product.unit,
+        gstText: String(product.gstPercent || 0),
+        currentStock: product.currentStock,
+      };
+    }));
+    setPickerForGroupKeys(null);
+    setPickerQuery('');
+  }
+
   /** Set the variant on a line, and pull that variant's stock + price if the
    *  product tracks per-variant values. Called from the chip picker below the
    *  product name in each line item. */
@@ -458,7 +499,8 @@ export default function AddBillModal({
         variants: computeVariantOptions(created),
       };
       setProducts(prev => [row, ...prev]);
-      if (pickerForKey) pickProductForLine(pickerForKey, row);
+      if (pickerForGroupKeys) pickProductForGroup(pickerForGroupKeys, row);
+      else if (pickerForKey) pickProductForLine(pickerForKey, row);
       // reset the mini-form for the next use
       setNewProdName('');
       setNewProdPriceText('');
@@ -499,6 +541,28 @@ export default function AddBillModal({
     }
     return { subtotal, gstTotal, grandTotal: subtotal + (gstEnabled ? gstTotal : 0), unmatched, overSelling };
   }, [lines, gstEnabled]);
+
+  /** A scanned bill with a size range ("Bata School, size 5 to 9") lands as
+   *  N separate BillLine rows (one per size — see scan-bill/route.ts and
+   *  expandSizeRanges below), all sharing the same product/name. Rendered
+   *  flat, those looked like the SAME product repeated N identical times —
+   *  the size that actually differs between them was scanned into `variant`
+   *  but never shown on an unlinked (no productId) card at all. Group them
+   *  here for display only — the underlying `lines` array and every existing
+   *  save/expand code path are untouched — so the review screen shows ONE
+   *  product card with its sizes listed inside, matching how a linked
+   *  product's variant chips already work. Grouped by productId when linked,
+   *  else by the (editable) name so manually-typed duplicates group too. */
+  const groupedLines = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, BillLine[]>();
+    for (const l of lines) {
+      const gKey = l.productId || `name:${l.name.trim().toLowerCase()}`;
+      if (!map.has(gKey)) { map.set(gKey, []); order.push(gKey); }
+      map.get(gKey)!.push(l);
+    }
+    return order.map(gKey => ({ key: gKey, items: map.get(gKey)! }));
+  }, [lines]);
 
   /** Expand any line whose `variant` is a size range ("6*8", "S-XL", …) into
    *  one line per individual size, all sharing qty/rate/product. The
@@ -796,175 +860,293 @@ export default function AddBillModal({
                     No items yet. Click <b>Add Item</b> below to start.
                   </div>
                 )}
-                {lines.map((l, idx) => {
-                  const qtyNum = num(l.qtyText);
-                  const rateNum = num(l.rateText);
-                  const gstNum = num(l.gstText);
-                  const lineTotal = qtyNum * rateNum;
-                  const lineWithGst = gstEnabled ? lineTotal * (1 + gstNum / 100) : lineTotal;
-                  // Prefer the variant's own stock when tracking per-variant;
-                  // otherwise fall back to the product-level rollup.
-                  const effectiveStock = l.variantStock ?? l.currentStock;
-                  const overStock = l.productId && effectiveStock !== null && qtyNum > Number(effectiveStock);
-                  const hasVariantOptions = l.variantOptions && l.variantOptions.length > 0;
+                {groupedLines.map((group) => {
+                  const head = group.items[0];
+                  const hasVariantOptions = head.variantOptions && head.variantOptions.length > 0;
+
+                  // Shared amounts grid + overstock note — identical for a
+                  // single-item card and for each size row inside a grouped
+                  // card, so both stay visually and behaviourally consistent.
+                  const renderAmounts = (l: BillLine) => {
+                    const qtyNum = num(l.qtyText);
+                    const rateNum = num(l.rateText);
+                    const gstNum = num(l.gstText);
+                    const lineTotal = qtyNum * rateNum;
+                    const lineWithGst = gstEnabled ? lineTotal * (1 + gstNum / 100) : lineTotal;
+                    const effectiveStock = l.variantStock ?? l.currentStock;
+                    const overStock = l.productId && effectiveStock !== null && qtyNum > Number(effectiveStock);
+                    return (
+                      <>
+                        <div className={`grid ${gstEnabled ? 'grid-cols-4' : 'grid-cols-3'} gap-2`}>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Qty</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={l.qtyText}
+                              onChange={(e) => updateLine(l.key, { qtyText: e.target.value })}
+                              className={`w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border outline-none focus:ring-2 focus:ring-orange-500 ${overStock ? 'border-red-400 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'}`}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Rate ₹</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={l.rateText}
+                              onChange={(e) => updateLine(l.key, { rateText: e.target.value })}
+                              className="w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
+                            />
+                          </div>
+                          {gstEnabled && (
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">GST %</label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={l.gstText}
+                                onChange={(e) => updateLine(l.key, { gstText: e.target.value })}
+                                className="w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Amount</label>
+                            <div className="w-full h-9 px-2 rounded-lg text-sm font-bold flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200">
+                              ₹{lineWithGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        </div>
+                        {overStock && (
+                          <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1">
+                            <AlertTriangle size={12} /> Quantity ({qtyNum}) is more than {l.variant ? `${l.variant}'s` : 'current'} stock ({effectiveStock}) — stock will still be reduced but may go negative.
+                          </p>
+                        )}
+                      </>
+                    );
+                  };
+
+                  // Single item — unchanged full card, identical to the old
+                  // flat rendering (name/link header, colour-size picker,
+                  // amounts, overstock note).
+                  if (group.items.length === 1) {
+                    const l = head;
+                    const idx = lines.indexOf(l);
+                    const effectiveStock = l.variantStock ?? l.currentStock;
+                    return (
+                      <div key={group.key} className={`rounded-xl border p-3 space-y-2 ${l.productId ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40' : 'border-amber-300/70 dark:border-amber-600/40 bg-amber-50/50 dark:bg-amber-500/5'}`}>
+                        <div className="flex items-start gap-2">
+                          <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 text-[11px] font-bold flex items-center justify-center shrink-0 mt-1">{idx + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            {l.productId ? (
+                              <button type="button" onClick={() => { setPickerForKey(l.key); setPickerQuery(''); }} className="text-left w-full">
+                                <p className="font-bold text-sm truncate flex items-center gap-1.5">
+                                  <Package size={13} className="text-emerald-500 shrink-0" />
+                                  {l.name}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  {l.unit ? `Unit: ${l.unit} · ` : ''}
+                                  {l.variant && l.variantStock !== null
+                                    ? `In stock (${l.variant}): ${l.variantStock}`
+                                    : effectiveStock !== null ? `In stock: ${effectiveStock}` : 'Stock: not tracked'}
+                                  {' · Tap to change'}
+                                </p>
+                              </button>
+                            ) : (
+                              <div>
+                                <input
+                                  type="text"
+                                  value={l.name}
+                                  onChange={(e) => updateLine(l.key, { name: e.target.value })}
+                                  placeholder="Item name"
+                                  className="w-full bg-transparent text-sm font-bold outline-none border-b border-dashed border-amber-400/60 pb-1"
+                                />
+                                <button type="button" onClick={() => { setPickerForKey(l.key); setPickerQuery(l.name); }} className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold mt-1 flex items-center gap-1">
+                                  <Search size={11} /> Link to a product (needed to reduce stock)
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <button type="button" onClick={() => removeLine(l.key)} className="text-slate-400 hover:text-red-500 p-1" title="Remove this line from the bill">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {l.productId && hasVariantOptions && (
+                          <div className="pl-8 space-y-1.5">
+                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Colour / Size</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {l.variantOptions.map(opt => {
+                                const selected = l.variant === opt.key;
+                                const oos = opt.stock !== null && opt.stock <= 0;
+                                return (
+                                  <button
+                                    key={opt.key}
+                                    type="button"
+                                    onClick={() => pickVariantForLine(l.key, selected ? null : opt)}
+                                    className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition ${
+                                      selected
+                                        ? 'bg-orange-500 text-white border-orange-500'
+                                        : oos
+                                          ? 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
+                                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-orange-400'
+                                    }`}
+                                    title={`${opt.key}${opt.stock !== null ? ` · ${opt.stock} in stock` : ''}`}
+                                  >
+                                    {opt.key}
+                                    {opt.stock !== null && (
+                                      <span className={`ml-1 text-[9px] ${selected ? 'text-white/80' : 'text-slate-500'}`}>({opt.stock})</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {!l.variant && (
+                              <p className="text-[10px] text-amber-700 dark:text-amber-400">Pick a colour/size to reduce the exact variant's stock — otherwise this deducts from base stock.</p>
+                            )}
+                          </div>
+                        )}
+                        {l.productId && !hasVariantOptions && (
+                          <div className="pl-8 space-y-1">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Colour / Size (optional)</label>
+                            <input
+                              type="text"
+                              value={l.variant}
+                              onChange={(e) => updateLine(l.key, { variant: e.target.value })}
+                              placeholder="e.g. Black / UK 8   —   size range: 6*8"
+                              className="w-full h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
+                            />
+                            {parseSizeRange(l.variant).length > 1 && (
+                              <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                                Will split into {parseSizeRange(l.variant).length} lines on Continue: {parseSizeRange(l.variant).join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {renderAmounts(l)}
+                      </div>
+                    );
+                  }
+
+                  // Multiple items sharing the same product/name — e.g. a
+                  // scanned "size 5 to 9" row expands into 5 BillLines that
+                  // all look identical unless their (per-row) scanned size is
+                  // shown somewhere. Group them under ONE header instead of
+                  // repeating the product card once per size, and list each
+                  // size as a compact row underneath — the fix for "same
+                  // product shown many times, one per size".
                   return (
-                    <div key={l.key} className={`rounded-xl border p-3 space-y-2 ${l.productId ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40' : 'border-amber-300/70 dark:border-amber-600/40 bg-amber-50/50 dark:bg-amber-500/5'}`}>
+                    <div key={group.key} className={`rounded-xl border p-3 space-y-2 ${head.productId ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40' : 'border-amber-300/70 dark:border-amber-600/40 bg-amber-50/50 dark:bg-amber-500/5'}`}>
                       <div className="flex items-start gap-2">
-                        <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 text-[11px] font-bold flex items-center justify-center shrink-0 mt-1">{idx + 1}</span>
+                        <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-1" title={`${group.items.length} sizes`}>
+                          {group.items.length}×
+                        </span>
                         <div className="flex-1 min-w-0">
-                          {l.productId ? (
+                          {head.productId ? (
                             <button
                               type="button"
-                              onClick={() => { setPickerForKey(l.key); setPickerQuery(''); }}
+                              onClick={() => { setPickerForGroupKeys(group.items.map(i => i.key)); setPickerQuery(''); }}
                               className="text-left w-full"
                             >
                               <p className="font-bold text-sm truncate flex items-center gap-1.5">
                                 <Package size={13} className="text-emerald-500 shrink-0" />
-                                {l.name}
+                                {head.name}
                               </p>
                               <p className="text-[11px] text-slate-500">
-                                {l.unit ? `Unit: ${l.unit} · ` : ''}
-                                {l.variant && l.variantStock !== null
-                                  ? `In stock (${l.variant}): ${l.variantStock}`
-                                  : effectiveStock !== null ? `In stock: ${effectiveStock}` : 'Stock: not tracked'}
-                                {' · Tap to change'}
+                                {head.unit ? `Unit: ${head.unit} · ` : ''}{group.items.length} sizes on this bill · Tap to change product
                               </p>
                             </button>
                           ) : (
                             <div>
                               <input
                                 type="text"
-                                value={l.name}
-                                onChange={(e) => updateLine(l.key, { name: e.target.value })}
+                                value={head.name}
+                                onChange={(e) => {
+                                  const name = e.target.value;
+                                  setAutoCalc(null);
+                                  setLines(prev => prev.map(l => (group.items.some(gi => gi.key === l.key) ? { ...l, name } : l)));
+                                }}
                                 placeholder="Item name"
                                 className="w-full bg-transparent text-sm font-bold outline-none border-b border-dashed border-amber-400/60 pb-1"
                               />
                               <button
                                 type="button"
-                                onClick={() => { setPickerForKey(l.key); setPickerQuery(l.name); }}
+                                onClick={() => { setPickerForGroupKeys(group.items.map(i => i.key)); setPickerQuery(head.name); }}
                                 className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold mt-1 flex items-center gap-1"
                               >
-                                <Search size={11} /> Link to a product (needed to reduce stock)
+                                <Search size={11} /> Link all {group.items.length} sizes to a product (needed to reduce stock)
                               </button>
                             </div>
                           )}
                         </div>
                         <button
                           type="button"
-                          onClick={() => removeLine(l.key)}
+                          onClick={() => { setAutoCalc(null); setLines(prev => prev.filter(l => !group.items.some(gi => gi.key === l.key))); }}
                           className="text-slate-400 hover:text-red-500 p-1"
-                          title="Remove this line from the bill"
+                          title="Remove all sizes of this item from the bill"
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
 
-                      {/* Variant row — for products with variants, show all
-                          available colour × size options as pickable chips
-                          (with per-variant stock). For products without,
-                          expose a free-text field so the shopkeeper can at
-                          least record colour/size on the bill even if it's
-                          not tracked as separate stock. Only ever shows when
-                          the line is linked to a product; unlinked lines
-                          get the variant along with the product later. */}
-                      {l.productId && hasVariantOptions && (
-                        <div className="pl-8 space-y-1.5">
-                          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Colour / Size</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {l.variantOptions.map(opt => {
-                              const selected = l.variant === opt.key;
-                              const oos = opt.stock !== null && opt.stock <= 0;
-                              return (
-                                <button
-                                  key={opt.key}
-                                  type="button"
-                                  onClick={() => pickVariantForLine(l.key, selected ? null : opt)}
-                                  className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition ${
-                                    selected
-                                      ? 'bg-orange-500 text-white border-orange-500'
-                                      : oos
-                                        ? 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
-                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-orange-400'
-                                  }`}
-                                  title={`${opt.key}${opt.stock !== null ? ` · ${opt.stock} in stock` : ''}`}
-                                >
-                                  {opt.key}
-                                  {opt.stock !== null && (
-                                    <span className={`ml-1 text-[9px] ${selected ? 'text-white/80' : 'text-slate-500'}`}>({opt.stock})</span>
-                                  )}
+                      <div className="pl-8 space-y-2">
+                        {group.items.map((l) => {
+                          const lHasVariantOptions = l.variantOptions && l.variantOptions.length > 0;
+                          return (
+                            <div key={l.key} className="rounded-lg border border-slate-200/70 dark:border-slate-700/60 p-2 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                                  {l.variant ? `Size: ${l.variant}` : <span className="text-amber-600 dark:text-amber-400 italic font-semibold">Size not read from photo — check bill</span>}
+                                </span>
+                                <button type="button" onClick={() => removeLine(l.key)} className="text-slate-400 hover:text-red-500 p-0.5 shrink-0" title="Remove just this size">
+                                  <Trash2 size={12} />
                                 </button>
-                              );
-                            })}
-                          </div>
-                          {!l.variant && (
-                            <p className="text-[10px] text-amber-700 dark:text-amber-400">Pick a colour/size to reduce the exact variant's stock — otherwise this deducts from base stock.</p>
-                          )}
-                        </div>
-                      )}
-                      {l.productId && !hasVariantOptions && (
-                        <div className="pl-8 space-y-1">
-                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Colour / Size (optional)</label>
-                          <input
-                            type="text"
-                            value={l.variant}
-                            onChange={(e) => updateLine(l.key, { variant: e.target.value })}
-                            placeholder="e.g. Black / UK 8   —   size range: 6*8"
-                            className="w-full h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
-                          />
-                          {parseSizeRange(l.variant).length > 1 && (
-                            <p className="text-[10px] text-orange-600 dark:text-orange-400">
-                              Will split into {parseSizeRange(l.variant).length} lines on Continue: {parseSizeRange(l.variant).join(', ')}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                              </div>
 
-                      <div className={`grid ${gstEnabled ? 'grid-cols-4' : 'grid-cols-3'} gap-2`}>
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Qty</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={l.qtyText}
-                            onChange={(e) => updateLine(l.key, { qtyText: e.target.value })}
-                            className={`w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border outline-none focus:ring-2 focus:ring-orange-500 ${overStock ? 'border-red-400 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'}`}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Rate ₹</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={l.rateText}
-                            onChange={(e) => updateLine(l.key, { rateText: e.target.value })}
-                            className="w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
-                          />
-                        </div>
-                        {gstEnabled && (
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">GST %</label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={l.gstText}
-                              onChange={(e) => updateLine(l.key, { gstText: e.target.value })}
-                              className="w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                        )}
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Amount</label>
-                          <div className="w-full h-9 px-2 rounded-lg text-sm font-bold flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200">
-                            ₹{lineWithGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                          </div>
-                        </div>
+                              {l.productId && lHasVariantOptions && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {l.variantOptions.map(opt => {
+                                    const selected = l.variant === opt.key;
+                                    const oos = opt.stock !== null && opt.stock <= 0;
+                                    return (
+                                      <button
+                                        key={opt.key}
+                                        type="button"
+                                        onClick={() => pickVariantForLine(l.key, selected ? null : opt)}
+                                        className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition ${
+                                          selected
+                                            ? 'bg-orange-500 text-white border-orange-500'
+                                            : oos
+                                              ? 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
+                                              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-orange-400'
+                                        }`}
+                                        title={`${opt.key}${opt.stock !== null ? ` · ${opt.stock} in stock` : ''}`}
+                                      >
+                                        {opt.key}
+                                        {opt.stock !== null && (
+                                          <span className={`ml-1 text-[9px] ${selected ? 'text-white/80' : 'text-slate-500'}`}>({opt.stock})</span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {l.productId && !lHasVariantOptions && (
+                                <input
+                                  type="text"
+                                  value={l.variant}
+                                  onChange={(e) => updateLine(l.key, { variant: e.target.value })}
+                                  placeholder="e.g. Black / UK 8"
+                                  className="w-full h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
+                                />
+                              )}
+
+                              {renderAmounts(l)}
+                            </div>
+                          );
+                        })}
                       </div>
-
-                      {overStock && (
-                        <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1">
-                          <AlertTriangle size={12} /> Quantity ({qtyNum}) is more than {l.variant ? `${l.variant}'s` : 'current'} stock ({effectiveStock}) — stock will still be reduced but may go negative.
-                        </p>
-                      )}
                     </div>
                   );
                 })}
@@ -1190,10 +1372,10 @@ export default function AddBillModal({
 
         {/* Product picker overlay — floats inside the modal so stacking &
             outside-tap-to-close work naturally. */}
-        {pickerForKey && (
+        {(pickerForKey || pickerForGroupKeys) && (
           <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm flex flex-col rounded-none sm:rounded-2xl">
             <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2 shrink-0">
-              <button type="button" onClick={() => setPickerForKey(null)} className="w-8 h-8 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center">
+              <button type="button" onClick={() => { setPickerForKey(null); setPickerForGroupKeys(null); }} className="w-8 h-8 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center">
                 <ChevronLeft size={16} />
               </button>
               <div className="relative flex-1">
@@ -1290,7 +1472,7 @@ export default function AddBillModal({
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => pickProductForLine(pickerForKey, p)}
+                    onClick={() => (pickerForGroupKeys ? pickProductForGroup(pickerForGroupKeys, p) : pickProductForLine(pickerForKey!, p))}
                     className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
                   >
                     <Package size={16} className="text-emerald-500 shrink-0" />
