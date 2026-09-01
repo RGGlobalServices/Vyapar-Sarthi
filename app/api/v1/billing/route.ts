@@ -228,11 +228,22 @@ export const POST = handle(async (req) => {
             }
           }
 
+          // currentStock is nullable with no DB default — it's null for any
+          // product that never had an opening stock explicitly set (common
+          // for products created via AI import/scan). A plain Prisma
+          // `decrement` compiles to SQL `current_stock - N`, and NULL - N is
+          // NULL, so the update above used to skip it entirely rather than
+          // leave stock silently wrong — which meant it never initialized at
+          // all, and a sale against that product looked like it did nothing
+          // to Product/Stock section quantities. COALESCE first via raw SQL,
+          // same fix already applied to the Purchases routes.
+          promises.push(
+            tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${product.id}::uuid`
+          );
           promises.push(
             tx.product.update({
               where: { id: product.id },
               data: {
-                ...(product.currentStock !== null ? { currentStock: { decrement: totalQty } } : {}),
                 size_variants: newSizeVariants,
                 ...(variantsChanged ? { variants: newVariants as any } : {}),
               },

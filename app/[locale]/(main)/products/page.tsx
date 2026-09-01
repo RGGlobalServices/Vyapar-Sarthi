@@ -730,14 +730,31 @@ function LegacyProductsUI() {
   }
   function handleAddColorsChange(next: string[]) {
     setColors(next);
-    setForm(f => ({ ...f, size_variants: pruneByColors(f.size_variants, next) }));
+    // Also refresh `stock` (not just `size_variants`) from the pruned map.
+    // Removing the LAST colour drops `editColors`/`colors` to length 0,
+    // which flips `editVariantActive` to false — the submit handler then
+    // reads this plain `stock` field instead of totalFromSizes(size_variants)
+    // (see handleEditSubmit). Without this, `stock` stays whatever stale
+    // snapshot it held from before any colours were touched, so removing a
+    // shop's only colour saved the OLD total instead of the now-correct 0 —
+    // "removed the colour but the stock quantity didn't go down".
+    setForm(f => {
+      const prunedVariants = pruneByColors(f.size_variants, next);
+      return { ...f, size_variants: prunedVariants, stock: String(totalFromSizes(prunedVariants)) };
+    });
     setSizePrices(p => pruneByColors(p, next));
     // Variant products use per-spec pricing by default (apparel always; electricals once a type is picked).
     setPerSizePricing(bizConfig.hasColors || next.length > 0);
   }
   function handleEditColorsChange(next: string[]) {
     setEditColors(next);
-    setEditForm(f => ({ ...f, size_variants: pruneByColors(f.size_variants, next) }));
+    // See handleAddColorsChange's comment — same stale-`stock`-fallback bug
+    // when a colour removal empties `editColors` and flips editVariantActive
+    // to false.
+    setEditForm(f => {
+      const prunedVariants = pruneByColors(f.size_variants, next);
+      return { ...f, size_variants: prunedVariants, stock: String(totalFromSizes(prunedVariants)) };
+    });
     setEditSizePrices(p => pruneByColors(p, next));
   }
 
