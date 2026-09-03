@@ -12,11 +12,11 @@ import {
   CardTitle, 
   CardDescription 
 } from '@/components/ui/card';
-import { 
-  RotateCcw, 
-  Search, 
-  Package, 
-  AlertCircle, 
+import {
+  RotateCcw,
+  Search,
+  Package,
+  AlertCircle,
   CheckCircle,
   ArrowRight,
   History,
@@ -25,11 +25,78 @@ import {
   FileText,
   IndianRupee,
   Calendar,
-  Eye
+  Eye,
+  Repeat,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+interface VariantOption {
+  key: string;
+  colour: string | null;
+  size: string | null;
+  stock: number | null;
+  price: number | null;
+}
+
+interface ExchangeProductRow {
+  id: string;
+  name: string;
+  price: number;
+  currentStock: number | null;
+  variants: VariantOption[];
+}
+
+interface ExchangeLine {
+  key: string;
+  productId: string;
+  name: string;
+  variant: string | null;
+  qty: number;
+  price: number;
+  maxStock: number | null;
+}
+
+/** Same "<colour> / <size>" convention used across the app's billing/variant
+ *  stock code (components/party/AddBillModal.tsx, app/api/v1/billing/route.ts). */
+function variantKeyOf(colour: string | null | undefined, size: string | null | undefined): string {
+  const c = (colour || '').trim();
+  const sz = (size || '').trim();
+  if (c && sz) return `${c} / ${sz}`;
+  return sz || c || '';
+}
+
+function computeVariantOptions(raw: any): VariantOption[] {
+  const opts: VariantOption[] = [];
+  const seen = new Set<string>();
+  const push = (colour: string | null, size: string | null, stock: number | null, price: number | null) => {
+    const key = variantKeyOf(colour, size);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    opts.push({ key, colour, size, stock, price });
+  };
+  if (Array.isArray(raw?.variants)) {
+    for (const v of raw.variants) {
+      const colour = v?.color ? String(v.color) : null;
+      const size = v?.size ? String(v.size) : null;
+      const stock = v?.stock !== undefined && v?.stock !== null ? Number(v.stock) : null;
+      const price = v?.sellingPrice !== undefined && v?.sellingPrice !== null ? Number(v.sellingPrice) : null;
+      push(colour, size, stock, price);
+    }
+  }
+  if (raw?.size_variants) {
+    try {
+      const sv = typeof raw.size_variants === 'string' ? JSON.parse(raw.size_variants) : raw.size_variants;
+      for (const [size, stock] of Object.entries(sv || {})) {
+        push(null, size, Number(stock) || 0, null);
+      }
+    } catch {}
+  }
+  return opts;
+}
 
 export default function ReturnsPage() {
   const t = useTranslations('Returns');
@@ -45,6 +112,60 @@ export default function ReturnsPage() {
   const [returnsHistory, setReturnsHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<any>(null);
+
+  // ── Exchange mode ──────────────────────────────────────────────────────
+  const [exchangeMode, setExchangeMode] = useState(false);
+  const [exchangeLines, setExchangeLines] = useState<ExchangeLine[]>([]);
+  const [exchangeProducts, setExchangeProducts] = useState<ExchangeProductRow[] | null>(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [pickedProduct, setPickedProduct] = useState<ExchangeProductRow | null>(null);
+  const [pickedVariant, setPickedVariant] = useState<string>('');
+  const [settlementMethod, setSettlementMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Udhar'>('Cash');
+
+  async function loadExchangeProducts(): Promise<ExchangeProductRow[]> {
+    if (exchangeProducts) return exchangeProducts;
+    try {
+      const res = await api.get('/products');
+      const list = Array.isArray(res.data) ? res.data : [];
+      const mapped: ExchangeProductRow[] = list.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.sellingPrice ?? p.mrp ?? 0),
+        currentStock: p.currentStock === null || p.currentStock === undefined ? null : Number(p.currentStock),
+        variants: computeVariantOptions(p),
+      }));
+      setExchangeProducts(mapped);
+      return mapped;
+    } catch {
+      return [];
+    }
+  }
+
+  function addExchangeLine() {
+    if (!pickedProduct) return;
+    const variantOpt = pickedProduct.variants.find(v => v.key === pickedVariant) || null;
+    const line: ExchangeLine = {
+      key: `${pickedProduct.id}-${pickedVariant || 'plain'}-${Date.now()}`,
+      productId: pickedProduct.id,
+      name: pickedProduct.name,
+      variant: pickedVariant || null,
+      qty: 1,
+      price: variantOpt?.price ?? pickedProduct.price,
+      maxStock: variantOpt ? variantOpt.stock : pickedProduct.currentStock,
+    };
+    setExchangeLines(prev => [...prev, line]);
+    setPickedProduct(null);
+    setPickedVariant('');
+    setProductSearch('');
+  }
+
+  function updateExchangeLine(key: string, patch: Partial<ExchangeLine>) {
+    setExchangeLines(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  function removeExchangeLine(key: string) {
+    setExchangeLines(prev => prev.filter(l => l.key !== key));
+  }
 
   const downloadReturnPDF = (ret: any) => {
     let noteData: any = {};
@@ -207,6 +328,61 @@ export default function ReturnsPage() {
     }
   };
 
+  const returnValueForExchange = returnItems.reduce((acc, it) => acc + it.returnQty * it.price_per_unit, 0);
+  const exchangeValueTotal = exchangeLines.reduce((acc, l) => acc + l.qty * l.price, 0);
+  const exchangeDifference = Math.round((exchangeValueTotal - returnValueForExchange) * 100) / 100;
+
+  const handleExchangeSubmit = async () => {
+    const itemsToReturn = returnItems.filter(item => item.returnQty > 0);
+    if (itemsToReturn.length === 0) return;
+    if (exchangeLines.length === 0) {
+      alert(t('pickAtLeastOneExchangeItem') || 'Add at least one item to exchange for');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.post(`/billing/exchange`, {
+        bill_id: bill.id,
+        return_items: itemsToReturn.map(item => ({
+          item_id: item.id,
+          quantity: item.returnQty,
+          reason: item.returnReason || 'Customer Return',
+          product_id: item.product_id,
+          name: item.name,
+          price: item.price_per_unit
+        })),
+        exchange_items: exchangeLines.map(l => ({
+          product_id: l.productId,
+          variant: l.variant,
+          quantity: l.qty,
+          price: l.price,
+          name: l.name
+        })),
+        ...(exchangeDifference > 0 ? { settlement_method: settlementMethod } : {})
+      });
+      alert(t('exchangeProcessed') || 'Exchange processed successfully!');
+      setBill(null);
+      setReturnItems([]);
+      setSearchQuery('');
+      setExchangeMode(false);
+      setExchangeLines([]);
+      fetchHistory();
+      invalidateReturnCaches();
+    } catch (err: any) {
+      console.error('Failed to process exchange detail:', err);
+      const errorDetail = {
+        status: err.response?.status || err.status,
+        data: err.response?.data || err.data,
+        message: err.message || (typeof err === 'string' ? err : JSON.stringify(err))
+      };
+      console.error('Failed to process exchange error detail:', errorDetail);
+      alert(`${t('failedToProcessExchange') || 'Failed to process exchange'}: ${errorDetail.data?.detail || errorDetail.message || 'Unknown error'}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -288,7 +464,7 @@ export default function ReturnsPage() {
                     <span className="text-slate-900 dark:text-slate-200 font-bold">{new Date(bill.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Bill Total</span>
+                    <span className="text-slate-500">{t('billTotal') || 'Bill Total'}</span>
                     <span className="text-slate-900 dark:text-slate-200 font-bold">₹{totalAmt.toLocaleString('en-IN')}</span>
                   </div>
 
@@ -296,33 +472,33 @@ export default function ReturnsPage() {
                       the returns page is so a shopkeeper knows what to refund
                       (cash out the drawer? credit back on the party?). */}
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5 bg-slate-50 dark:bg-slate-800/40 space-y-1.5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">How this bill was paid</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('howBillWasPaid') || 'How this bill was paid'}</p>
                     {cashPaid > 0 && (
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300">💵 Cash paid</span>
+                        <span className="text-slate-600 dark:text-slate-300">💵 {t('cashPaidLabel') || 'Cash paid'}</span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">₹{cashPaid.toLocaleString('en-IN')}</span>
                       </div>
                     )}
                     {upiPaid > 0 && (
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300">📱 UPI / Online</span>
+                        <span className="text-slate-600 dark:text-slate-300">📱 {t('upiOnlineLabel') || 'UPI / Online'}</span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">₹{upiPaid.toLocaleString('en-IN')}</span>
                       </div>
                     )}
                     {cardPaid > 0 && (
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300">💳 Card</span>
+                        <span className="text-slate-600 dark:text-slate-300">💳 {t('settleCard') || 'Card'}</span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">₹{cardPaid.toLocaleString('en-IN')}</span>
                       </div>
                     )}
                     {udharAmt > 0 && (
                       <div className="flex justify-between text-xs">
-                        <span className="text-orange-600 dark:text-orange-400 font-semibold">🧾 Udhar (unpaid)</span>
+                        <span className="text-orange-600 dark:text-orange-400 font-semibold">🧾 {t('udharUnpaidLabel') || 'Udhar (unpaid)'}</span>
                         <span className="font-bold text-orange-600 dark:text-orange-400">₹{udharAmt.toLocaleString('en-IN')}</span>
                       </div>
                     )}
                     {paidAmt === 0 && udharAmt === 0 && (
-                      <p className="text-[11px] text-slate-500 italic">No payment details recorded.</p>
+                      <p className="text-[11px] text-slate-500 italic">{t('noPaymentDetailsRecorded') || 'No payment details recorded.'}</p>
                     )}
                   </div>
 
@@ -331,18 +507,18 @@ export default function ReturnsPage() {
                       backend attribution one-for-one so the number the
                       shopkeeper sees before confirming is what actually
                       happens on save. */}
-                  {totalRefund > 0 && (
+                  {!exchangeMode && totalRefund > 0 && (
                     <div className="rounded-lg border border-emerald-300 dark:border-emerald-700 p-2.5 bg-emerald-50 dark:bg-emerald-500/10 space-y-1.5">
-                      <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">This return will</p>
+                      <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">{t('thisReturnWillLabel') || 'This return will'}</p>
                       {willClearUdhar > 0 && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-emerald-800 dark:text-emerald-300">↓ Clear from party's udhar</span>
+                          <span className="text-emerald-800 dark:text-emerald-300">{t('clearFromUdhar') || "↓ Clear from party's udhar"}</span>
                           <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willClearUdhar.toLocaleString('en-IN')}</span>
                         </div>
                       )}
                       {willRefundCash > 0 && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-emerald-800 dark:text-emerald-300">💵 Refund to customer (cash out)</span>
+                          <span className="text-emerald-800 dark:text-emerald-300">{t('refundCashOut') || '💵 Refund to customer (cash out)'}</span>
                           <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willRefundCash.toLocaleString('en-IN')}</span>
                         </div>
                       )}
@@ -431,26 +607,219 @@ export default function ReturnsPage() {
               )}
             </CardContent>
             {bill && (
-              <div className="p-6 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 mt-auto">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('totalRefundAmount') || 'Total Refund Amount'}</p>
-                    <p className="text-2xl font-black text-slate-900 dark:text-white">
-                      ₹{returnItems.reduce((acc, item) => acc + (item.returnQty * item.price_per_unit), 0).toLocaleString()}
-                    </p>
-                  </div>
-                  <button 
-                    onClick={handleReturnSubmit}
-                    disabled={submitting || returnItems.every(i => i.returnQty === 0)}
-                    className="bg-orange-500 text-white px-8 py-3 rounded-xl font-black hover:bg-orange-400 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-30 disabled:active:scale-100 shadow-lg shadow-orange-500/20"
+              <div className="p-6 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 mt-auto space-y-4">
+                {returnItems.some(i => i.returnQty > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => setExchangeMode(v => !v)}
+                    className={cn(
+                      'w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors',
+                      exchangeMode
+                        ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-indigo-400'
+                    )}
                   >
-                    {submitting ? t('processing') || 'Processing...' : t('completeReturn') || 'Complete Return'}
+                    <Repeat size={16} /> {t('exchangeToggle') || '🔁 Exchange for another item'}
+                  </button>
+                )}
+
+                {exchangeMode && (
+                  <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-500/5 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('exchangeItems') || 'Exchange Items'}</p>
+                      <p className="text-xs text-slate-500">{t('exchangeItemsSubtitle') || "Pick what the customer takes instead of a refund"}</p>
+                    </div>
+
+                    {/* Product picker */}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <div className="relative flex-1">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={productSearch}
+                          onFocus={() => loadExchangeProducts()}
+                          onChange={e => { setProductSearch(e.target.value); setPickedProduct(null); loadExchangeProducts(); }}
+                          placeholder={t('searchProductPlaceholder') || 'Search product by name...'}
+                          className="w-full pl-8 pr-2 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        {productSearch.trim() && !pickedProduct && (
+                          <div className="absolute z-10 mt-1 w-full max-h-52 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg">
+                            {(exchangeProducts || []).filter(p => p.name?.toLowerCase().includes(productSearch.trim().toLowerCase())).slice(0, 20).map(p => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => { setPickedProduct(p); setPickedVariant(''); setProductSearch(p.name); }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between gap-2"
+                              >
+                                <span className="text-slate-800 dark:text-slate-200 truncate">{p.name}</span>
+                                <span className="text-xs text-emerald-500 font-bold shrink-0">₹{p.price.toLocaleString('en-IN')}</span>
+                              </button>
+                            ))}
+                            {(exchangeProducts || []).filter(p => p.name?.toLowerCase().includes(productSearch.trim().toLowerCase())).length === 0 && (
+                              <p className="px-3 py-2 text-xs text-slate-500">{t('noProductsFound') || 'No products found'}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {pickedProduct && pickedProduct.variants.length > 0 && (
+                        <select
+                          value={pickedVariant}
+                          onChange={e => setPickedVariant(e.target.value)}
+                          className="text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">{t('selectVariant') || 'Select variant'}</option>
+                          {pickedProduct.variants.map(v => (
+                            <option key={v.key} value={v.key}>{v.key}{v.stock !== null ? ` (${v.stock})` : ''}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        onClick={addExchangeLine}
+                        disabled={!pickedProduct || (pickedProduct.variants.length > 0 && !pickedVariant)}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-bold disabled:opacity-40 transition-colors shrink-0"
+                      >
+                        <Plus size={15} /> {t('addExchangeItem') || 'Add Item'}
+                      </button>
+                    </div>
+
+                    {/* Exchange line items */}
+                    {exchangeLines.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-2">{t('noExchangeItemsYet') || 'No exchange items added yet.'}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {exchangeLines.map(line => (
+                          <div key={line.key} className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
+                            <div className="w-full sm:w-auto sm:flex-1 min-w-0">
+                              <p className="text-sm font-bold text-slate-900 dark:text-slate-200 truncate">{line.name}</p>
+                              {line.variant && <p className="text-[10px] text-indigo-500 font-bold">{line.variant}</p>}
+                            </div>
+                            <div className="flex items-center gap-2 ml-auto">
+                              <input
+                                type="number" min={1}
+                                value={line.qty}
+                                onChange={e => updateExchangeLine(line.key, { qty: Math.max(1, parseInt(e.target.value) || 1) })}
+                                className="w-14 text-center text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1 py-1 text-slate-900 dark:text-slate-100"
+                              />
+                              <input
+                                type="number" min={0}
+                                value={line.price}
+                                onChange={e => updateExchangeLine(line.key, { price: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                className="w-20 text-center text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1 py-1 text-slate-900 dark:text-slate-100"
+                              />
+                              <p className="w-20 text-right text-sm font-black text-indigo-500 shrink-0">₹{(line.qty * line.price).toLocaleString('en-IN')}</p>
+                              <button type="button" onClick={() => removeExchangeLine(line.key)} title={t('remove') || 'Remove'} className="text-slate-400 hover:text-red-500 shrink-0">
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Settlement summary */}
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-slate-900 space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">{t('returnValueLabel') || 'Return Value'}</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{returnValueForExchange.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">{t('exchangeValueLabel') || 'Exchange Value'}</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{exchangeValueTotal.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between text-sm pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">{t('differenceLabel') || 'Difference'}</span>
+                        <span className={cn('font-black', exchangeDifference > 0 ? 'text-orange-500' : exchangeDifference < 0 ? 'text-emerald-500' : 'text-slate-500')}>
+                          {exchangeDifference > 0 ? '+' : ''}₹{exchangeDifference.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+
+                      {exchangeDifference === 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold pt-1">{t('noDifference') || 'Even exchange — no money changes hands.'}</p>
+                      )}
+
+                      {exchangeDifference < 0 && (() => {
+                        const excess = -exchangeDifference;
+                        const totalAmt2 = Number(bill.total_amount) || 0;
+                        const paidAmt2 = Number(bill.amount_paid ?? bill.amountPaid ?? bill.total_amount) || 0;
+                        const udharAmt2 = Math.max(0, totalAmt2 - paidAmt2);
+                        const willClearUdhar2 = Math.min(excess, udharAmt2);
+                        const willRefundCash2 = excess - willClearUdhar2;
+                        return (
+                          <div className="pt-1.5 space-y-1">
+                            <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">{t('shopRefundsDifference') || 'This exchange will'}</p>
+                            {willClearUdhar2 > 0 && (
+                              <div className="flex justify-between text-xs">
+                                <span className="text-emerald-700 dark:text-emerald-300">{t('clearFromUdhar') || "↓ Clear from party's udhar"}</span>
+                                <span className="font-black text-emerald-600 dark:text-emerald-400">₹{willClearUdhar2.toLocaleString('en-IN')}</span>
+                              </div>
+                            )}
+                            {willRefundCash2 > 0 && (
+                              <div className="flex justify-between text-xs">
+                                <span className="text-emerald-700 dark:text-emerald-300">{t('refundCashOut') || '💵 Refund to customer (cash out)'}</span>
+                                <span className="font-black text-emerald-600 dark:text-emerald-400">₹{willRefundCash2.toLocaleString('en-IN')}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {exchangeDifference > 0 && (
+                        <div className="pt-1.5 space-y-1.5">
+                          <p className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">{t('customerPaysMore') || 'Customer needs to pay the difference'}</p>
+                          <label className="text-[10px] text-slate-500 font-bold uppercase block">{t('settleVia') || 'Settle difference via'}</label>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {([['Cash', t('settleCash') || 'Cash'], ['UPI', t('settleUpi') || 'UPI'], ['Card', t('settleCard') || 'Card']] as const).map(([v, lbl]) => (
+                              <button
+                                key={v} type="button"
+                                onClick={() => setSettlementMethod(v)}
+                                className={cn('px-3 py-1.5 rounded-lg text-xs font-bold border', settlementMethod === v ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300')}
+                              >
+                                {lbl}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              disabled={!bill.customer_id}
+                              onClick={() => setSettlementMethod('Udhar')}
+                              title={!bill.customer_id ? (t('settleUdharNoCustomer') || 'Add to Udhar (needs a linked customer)') : undefined}
+                              className={cn('px-3 py-1.5 rounded-lg text-xs font-bold border disabled:opacity-40', settlementMethod === 'Udhar' ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300')}
+                            >
+                              {t('settleUdhar') || 'Add to Udhar'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  {!exchangeMode && (
+                    <div>
+                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('totalRefundAmount') || 'Total Refund Amount'}</p>
+                      <p className="text-2xl font-black text-slate-900 dark:text-white">
+                        ₹{returnItems.reduce((acc, item) => acc + (item.returnQty * item.price_per_unit), 0).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    onClick={exchangeMode ? handleExchangeSubmit : handleReturnSubmit}
+                    disabled={submitting || returnItems.every(i => i.returnQty === 0) || (exchangeMode && exchangeLines.length === 0)}
+                    className={cn(
+                      'text-white px-8 py-3 rounded-xl font-black transition-all flex items-center gap-2 active:scale-95 disabled:opacity-30 disabled:active:scale-100 shadow-lg ml-auto',
+                      exchangeMode ? 'bg-indigo-500 hover:bg-indigo-400 shadow-indigo-500/20' : 'bg-orange-500 hover:bg-orange-400 shadow-orange-500/20'
+                    )}
+                  >
+                    {submitting ? t('processing') || 'Processing...' : (exchangeMode ? (t('completeExchange') || 'Complete Exchange') : (t('completeReturn') || 'Complete Return'))}
                     <ArrowRight size={18} />
                   </button>
                 </div>
                 <div className="flex items-start gap-2 text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
                   <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
-                  {t('returnWarning') || 'Processing a return will automatically adjust your inventory levels and record a refund transaction in your ledger.'}
+                  {exchangeMode
+                    ? (t('exchangeWarning') || 'Processing an exchange will restock the returned item, deduct stock for the replacement, and settle only the price difference in your ledger.')
+                    : (t('returnWarning') || 'Processing a return will automatically adjust your inventory levels and record a refund transaction in your ledger.')}
                 </div>
               </div>
             )}
@@ -518,23 +887,33 @@ export default function ReturnsPage() {
                     <th className="px-6 py-3 font-bold">{t('reason') || 'Reason'}</th>
                     <th className="px-6 py-3 font-bold text-right">{t('qty') || 'Qty'}</th>
                     <th className="px-6 py-3 font-bold text-right">{t('value') || 'Value (₹)'}</th>
-                    <th className="px-6 py-3 font-bold text-center">Action</th>
+                    <th className="px-6 py-3 font-bold text-center">{t('action') || 'Action'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
-                  {returnsHistory.map((r: any) => (
+                  {returnsHistory.map((r: any) => {
+                    let isExchange = false;
+                    try { isExchange = !!(r.note && JSON.parse(r.note)?.exchange); } catch {}
+                    return (
                     <tr key={r.id} className="text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">{new Date(r.date).toLocaleDateString()}</td>
                       <td className="px-6 py-4 font-bold">
-                        <button 
-                          onClick={() => setSelectedReturn(r)} 
+                        <button
+                          onClick={() => setSelectedReturn(r)}
                           className="text-emerald-600 dark:text-emerald-400 hover:underline text-left"
                         >
                           {r.itemName}
                         </button>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded text-[10px] font-bold uppercase">{r.reason}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded text-[10px] font-bold uppercase">{r.reason}</span>
+                          {isExchange && (
+                            <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">
+                              {t('exchangedBadge') || '🔁 Exchanged'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right font-medium">{r.quantity}</td>
                       <td className="px-6 py-4 text-right font-black text-orange-400">₹{r.amount.toLocaleString()}</td>
@@ -543,11 +922,12 @@ export default function ReturnsPage() {
                           onClick={() => setSelectedReturn(r)}
                           className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
                         >
-                          <Eye size={14} /> Details
+                          <Eye size={14} /> {t('details') || 'Details'}
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             ) : (
@@ -577,11 +957,11 @@ export default function ReturnsPage() {
               <div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <FileText className="text-orange-500" size={20} />
-                  Return Details
+                  {t('returnDetails') || 'Return Details'}
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">ID: {selectedReturn.id}</p>
               </div>
-              <button 
+              <button
                 onClick={() => setSelectedReturn(null)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm"
               >
@@ -597,11 +977,11 @@ export default function ReturnsPage() {
                   <div>
                     <h3 className="font-black text-slate-900 dark:text-white text-lg">{selectedReturn.itemName}</h3>
                     <span className="inline-block bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded text-[10px] font-bold uppercase border border-slate-200 dark:border-slate-700 mt-2">
-                      Reason: {selectedReturn.reason}
+                      {t('reason') || 'Reason'}: {selectedReturn.reason}
                     </span>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-slate-500 font-bold uppercase mb-1">Refund Amount</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase mb-1">{t('refundAmount') || 'Refund Amount'}</p>
                     <p className="text-2xl font-black text-orange-500 flex items-center justify-end">
                       <IndianRupee size={18} />
                       {selectedReturn.amount.toLocaleString()}
@@ -610,11 +990,11 @@ export default function ReturnsPage() {
                 </div>
                 <div className="flex gap-4 pt-3 border-t border-orange-200 dark:border-orange-900/30">
                   <div>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase">Returned Qty</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">{t('returnedQty') || 'Returned Qty'}</p>
                     <p className="font-bold text-slate-900 dark:text-white">{selectedReturn.quantity}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase">Date</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">{t('date') || 'Date'}</p>
                     <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
                       <Calendar size={12} className="text-slate-400" />
                       {new Date(selectedReturn.date).toLocaleDateString()}
@@ -626,7 +1006,7 @@ export default function ReturnsPage() {
               {/* Billing Context */}
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Package size={16} className="text-emerald-500" /> Original Billing Details
+                  <Package size={16} className="text-emerald-500" /> {t('originalBillingDetails') || 'Original Billing Details'}
                 </h4>
                 <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
                   {(() => {
@@ -639,46 +1019,74 @@ export default function ReturnsPage() {
                       return (
                         <div className="space-y-3 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Invoice Number</span>
+                            <span className="text-slate-500">{t('invoiceNumber') || 'Invoice Number'}</span>
                             <span className="font-bold text-slate-900 dark:text-white">{noteData.invoiceNumber || noteData.billId?.substring(0, 8)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Customer Name</span>
-                            <span className="font-bold text-slate-900 dark:text-white">{noteData.customerName || 'N/A'}</span>
+                            <span className="text-slate-500">{t('customerName') || 'Customer Name'}</span>
+                            <span className="font-bold text-slate-900 dark:text-white">{noteData.customerName || (t('notAvailable') || 'N/A')}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Payment Type</span>
-                            <span className="font-bold text-slate-900 dark:text-white capitalize">{noteData.paymentType || 'N/A'}</span>
+                            <span className="text-slate-500">{t('paymentType') || 'Payment Type'}</span>
+                            <span className="font-bold text-slate-900 dark:text-white capitalize">{noteData.paymentType || (t('notAvailable') || 'N/A')}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Sale Date</span>
+                            <span className="text-slate-500">{t('saleDate') || 'Sale Date'}</span>
                             <span className="font-bold text-slate-900 dark:text-white">
-                              {noteData.saleDate ? new Date(noteData.saleDate).toLocaleDateString() : 'N/A'}
+                              {noteData.saleDate ? new Date(noteData.saleDate).toLocaleDateString() : (t('notAvailable') || 'N/A')}
                             </span>
                           </div>
                         </div>
                       );
                     } else {
-                      return <p className="text-sm text-slate-500 text-center py-2">Billing details not available for this return.</p>;
+                      return <p className="text-sm text-slate-500 text-center py-2">{t('billingDetailsUnavailable') || 'Billing details not available for this return.'}</p>;
                     }
                   })()}
                 </div>
               </div>
+
+              {/* Exchanged For — only when this return was part of an exchange */}
+              {(() => {
+                let noteData: any = null;
+                try { if (selectedReturn.note) noteData = JSON.parse(selectedReturn.note); } catch (e) {}
+                if (!noteData?.exchange || !Array.isArray(noteData?.exchangedFor)) return null;
+                return (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Repeat size={16} className="text-indigo-500" /> {t('exchangedForLabel') || 'Exchanged For'}
+                    </h4>
+                    <div className="bg-indigo-50 dark:bg-indigo-500/5 rounded-xl border border-indigo-100 dark:border-indigo-900/30 p-4 space-y-2">
+                      {noteData.exchangeInvoiceNumber && (
+                        <div className="flex justify-between text-sm mb-2 pb-2 border-b border-indigo-100 dark:border-indigo-900/30">
+                          <span className="text-slate-500">{t('exchangeInvoiceLabel') || 'Exchange Invoice'}</span>
+                          <span className="font-bold text-slate-900 dark:text-white">{noteData.exchangeInvoiceNumber}</span>
+                        </div>
+                      )}
+                      {noteData.exchangedFor.map((it: any, i: number) => (
+                        <div key={i} className="flex justify-between text-sm">
+                          <span className="text-slate-700 dark:text-slate-300">{it.name}{it.variant ? ` (${it.variant})` : ''} × {it.quantity}</span>
+                          <span className="font-bold text-indigo-600 dark:text-indigo-400">₹{(it.quantity * it.price).toLocaleString('en-IN')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
-              <button 
+              <button
                 onClick={() => setSelectedReturn(null)}
                 className="px-4 py-2 rounded-lg font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
               >
-                Close
+                {t('close') || 'Close'}
               </button>
-              <button 
+              <button
                 onClick={() => downloadReturnPDF(selectedReturn)}
                 className="px-4 py-2 rounded-lg font-bold bg-orange-500 text-white hover:bg-orange-400 transition-colors flex items-center gap-2 shadow-sm shadow-orange-500/20"
               >
-                <Download size={16} /> Download PDF
+                <Download size={16} /> {t('downloadPdf') || 'Download PDF'}
               </button>
             </div>
           </div>

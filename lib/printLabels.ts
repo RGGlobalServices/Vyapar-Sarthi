@@ -288,9 +288,13 @@ export async function printLabelSheetWithProfile(
       return currency ? `${currency} ${formatted}` : formatted;
     };
     const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
+    // Suffix (e.g. "/-") appended exactly as saved — no auto-inserted space,
+    // matching lib/labelRenderer.ts's preview/PDF engine so print and
+    // preview never disagree.
+    const sellSuffix = profile.sellingPriceSuffix ?? '';
     const mrpLine = profile.fields.mrp && mrp > 0 ? `MRP ${money(mrp)}` : '';
     const sellLine = profile.fields.sellingPrice && sellingPrice > 0
-      ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}` : '';
+      ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}${sellSuffix}` : '';
     const variantLine = ((profile.fields.variant || profile.fields.size || profile.fields.colour) && row.variantKey) ? row.variantKey : '';
     const skuLine = profile.fields.sku && row.sku?.trim() ? `SKU: ${row.sku.trim()}` : '';
     const otherCodeLine = profile.fields.otherCode && row.otherCode?.trim() ? row.otherCode.trim() : '';

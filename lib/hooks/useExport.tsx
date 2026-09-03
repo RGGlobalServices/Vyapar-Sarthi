@@ -135,11 +135,12 @@ export function useExport() {
   // and the downloaded PDF are visually the same statement. Any edit to the
   // palette / spacing should also be reflected in lib/pdf/professionalTemplate.ts.
   const printTable = useCallback((
-    { title, columns, data, dateRange, summary }:
+    { title, columns, data, dateRange, summary, orientation = 'portrait' }:
     ExportConfig & {
       title?: string;
       dateRange?: string;
       summary?: { label: string; value: string; tone?: 'default' | 'positive' | 'negative' }[];
+      orientation?: 'portrait' | 'landscape';
     },
   ) => {
     const shop = {
@@ -181,7 +182,7 @@ export function useExport() {
       <meta charset="utf-8" />
       <title>${esc(reportTitle)}</title>
       <style>
-        @page { size: A4; margin: 15mm 15mm 18mm; }
+        @page { size: A4 ${orientation}; margin: 15mm 15mm 18mm; }
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; }
         html, body { background: #ffffff; }
@@ -421,7 +422,7 @@ export function ExportButton({ columns, data, filename, title, dateRange, summar
         {t('csv')}
       </button>
       <button
-        onClick={() => printTable({ columns, data, filename, title, dateRange: effectiveRange, summary })}
+        onClick={() => printTable({ columns, data, filename, title, dateRange: effectiveRange, summary, orientation })}
         className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700"
         title={t('printTooltip')}
       >

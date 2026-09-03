@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, query, ApiError } from '@/lib/server/http';
+import { isCustomerCredit } from '@/lib/server/ledgerClassification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -68,7 +69,7 @@ export const GET = handle(async (req) => {
     const openBills: { id: string; billNumber: string; date: Date | null; originalAmount: number; remaining: number }[] = [];
     for (const t of txns) {
       const amount = Number(t.amount) || 0;
-      if (t.type === 'payment') {
+      if (isCustomerCredit(t.type)) {
         let toApply = amount;
         for (const b of openBills) {
           if (toApply <= 0) break;
@@ -78,7 +79,8 @@ export const GET = handle(async (req) => {
         }
         while (openBills.length && openBills[0].remaining <= 1e-6) openBills.shift();
       } else if (amount > 1e-6) {
-        // udhar / sale / legacy credit — anything that isn't a payment adds to what's owed.
+        // udhar / sale / legacy credit — anything that isn't a payment or a
+        // sales-return refund adds to what's owed.
         openBills.push({ id: t.id, billNumber: t.bill_number || '', date: t.created_at, originalAmount: amount, remaining: amount });
       }
     }

@@ -31,6 +31,7 @@ function mergeVariantIntoArray(
   qty: number,
   costPrice: number,
   mrp: number,
+  sellingPrice: number = 0,
 ): any[] {
   const arr: any[] = Array.isArray(existing) ? existing.map((v: any) => ({ ...v })) : [];
   const c = (colour || '').trim();
@@ -41,10 +42,13 @@ function mergeVariantIntoArray(
   if (idx >= 0) {
     arr[idx].stock = (Number(arr[idx].stock) || 0) + qty;
     // Keep price fields as-is on an existing variant so an import doesn't
-    // silently over-write per-variant prices the shopkeeper set by hand.
+    // silently over-write per-variant prices the shopkeeper set by hand —
+    // except sellingPrice when THIS import row explicitly carried one, which
+    // is a deliberate edit, not a guess.
     if (!arr[idx].costPrice && costPrice > 0) arr[idx].costPrice = costPrice;
     if (!arr[idx].wholesalePrice && costPrice > 0) arr[idx].wholesalePrice = costPrice;
     if (!arr[idx].mrp && mrp > 0) arr[idx].mrp = mrp;
+    if (sellingPrice > 0) arr[idx].sellingPrice = sellingPrice;
   } else {
     arr.push({
       color: c || null,
@@ -52,7 +56,7 @@ function mergeVariantIntoArray(
       stock: qty,
       costPrice: costPrice > 0 ? costPrice : undefined,
       wholesalePrice: costPrice > 0 ? costPrice : undefined,
-      sellingPrice: costPrice > 0 ? Math.round(costPrice * 1.2) : undefined,
+      sellingPrice: sellingPrice > 0 ? sellingPrice : (costPrice > 0 ? Math.round(costPrice * 1.2) : undefined),
       mrp: mrp > 0 ? mrp : undefined,
     });
   }
@@ -691,6 +695,10 @@ export async function POST(req: NextRequest) {
             // Prefer the MRP actually printed on the invoice when the AI
             // extracted one; only fall back to a guessed markup when it didn't.
             const extractedMrp = parseFloat(getVal(row, ['mrp']) || 0);
+            // Same for selling price — a shopkeeper who typed/edited it in the
+            // review table means it, so it must win over the 20%-over-cost
+            // guess used only when nothing was provided.
+            const rowSellingPrice = parseFloat(getVal(row, ['sellingprice', 'sellprice', 'saleprice', 'retailprice']) || 0);
 
             if (!name) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`); continue; }
             if (quantity <= 0) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Quantity must be greater than 0 (fill it in and re-import)`); continue; }
@@ -717,7 +725,7 @@ export async function POST(req: NextRequest) {
                     stock: quantity,
                     costPrice: unitCost > 0 ? unitCost : undefined,
                     wholesalePrice: unitCost > 0 ? unitCost : undefined,
-                    sellingPrice: unitCost > 0 ? Math.round(unitCost * 1.2) : undefined,
+                    sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : (unitCost > 0 ? Math.round(unitCost * 1.2) : undefined),
                     mrp: extractedMrp > 0 ? extractedMrp : (unitCost > 0 ? Math.round(unitCost * 1.25) : undefined),
                   }]
                 : [];
@@ -732,7 +740,7 @@ export async function POST(req: NextRequest) {
                   // couldn't read should leave these unset, not store 0.
                   wholesaleCost: unitCost > 0 ? unitCost : undefined,
                   costPrice: unitCost > 0 ? unitCost : undefined,
-                  sellingPrice: unitCost > 0 ? unitCost * 1.2 : undefined,
+                  sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : (unitCost > 0 ? unitCost * 1.2 : undefined),
                   mrp: extractedMrp > 0 ? extractedMrp : (unitCost > 0 ? unitCost * 1.25 : undefined),
                   category: getVal(row, ['category']) || 'General',
                   currentStock: quantity,
@@ -761,10 +769,14 @@ export async function POST(req: NextRequest) {
               // the AI couldn't read must still add stock without wiping the
               // product's existing wholesale cost (the "cost becomes 0" bug).
               if (unitCost > 0) { updateData.wholesaleCost = unitCost; updateData.costPrice = unitCost; }
+              // Only touch selling price when the shopkeeper actually typed
+              // one this import — an existing product's price is never
+              // guessed/overwritten just because it got restocked.
+              if (rowSellingPrice > 0) { updateData.sellingPrice = rowSellingPrice; }
               if (rowVariantKey) {
                 const mergedVariants = mergeVariantIntoArray(
                   variantsIndex.get(matchId) ?? [],
-                  rowColour, rowSize, quantity, unitCost, extractedMrp,
+                  rowColour, rowSize, quantity, unitCost, extractedMrp, rowSellingPrice,
                 );
                 updateData.variants = mergedVariants as any;
                 variantsIndex.set(matchId, mergedVariants);

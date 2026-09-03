@@ -873,6 +873,10 @@ model SupplierTransaction {
   amount      Float?
   note        String?   @db.VarChar
   billNumber  String?   @map("bill_number") @db.VarChar
+  // Only meaningful on 'payment' rows (a standalone payment or the
+  // auto-generated part-payment leg of a purchase) — a 'purchase' row isn't
+  // itself a payment event, so it stays null. 'Cash' | 'UPI' | 'Card'.
+  paymentMethod String? @map("payment_method") @db.VarChar
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   // Monotonic insertion-order tiebreaker. createdAt alone is ambiguous once
   // backdated: the date picker sends a date-only string, which parses to

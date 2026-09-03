@@ -403,9 +403,17 @@ function LegacyProductsUI() {
     }
     return out;
   };
-  // Stock comes from the grid when: apparel/kirana (always) or an electrical/electronics product
-  // whose category has a spec AND the user has picked at least one type / colour.
-  const addVariantActive = bizConfig.hasColors ? true : addThreeWayActive ? (outerColors.length > 0) : bizConfig.hasSpecs ? (!!addVariantDim && colors.length > 0) : bizConfig.hasSizes;
+  // Stock comes from the grid only once the shopkeeper has actually picked
+  // at least one colour/size/type — mirrors each JSX branch below 1:1
+  // (ThreeWayVariantGrid / ColorSizeVariantGrid / plain SizeVariantGrid).
+  // Previously `hasColors` forced this true unconditionally, so a brand-new
+  // apparel/shoe product with no colour picked yet showed NO stock input at
+  // all (the grid had nothing to render) — only Min Stock was visible, with
+  // no way to record how much stock actually arrived. Gating on the real
+  // selection instead means the flat Stock Qty field shows until a colour/
+  // size is chosen, then the grid takes over — same fix already applied to
+  // editVariantActive below for the identical reason.
+  const addVariantActive = addThreeWayActive ? (outerColors.length > 0) : addVariantDim ? (colors.length > 0) : bizConfig.hasSizes ? (sizeSelection.length > 0) : false;
   // EDIT differs from ADD on purpose: a hasColors business (clothes/shoes)
   // still has real products with NO colour/size breakdown — created via
   // bulk import, or before the shop had size tracking — carrying only a

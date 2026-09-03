@@ -195,7 +195,70 @@
     "itemName": "Item Name",
     "qty": "Qty",
     "value": "Value (₹)",
-    "noReturns": "No returns recorded for"
+    "noReturns": "No returns recorded for",
+    "action": "Action",
+    "details": "Details",
+    "returnDetails": "Return Details",
+    "close": "Close",
+    "downloadPdf": "Download PDF",
+    "originalBillingDetails": "Original Billing Details",
+    "invoiceNumber": "Invoice Number",
+    "customerName": "Customer Name",
+    "paymentType": "Payment Type",
+    "saleDate": "Sale Date",
+    "notAvailable": "N/A",
+    "billingDetailsUnavailable": "Billing details not available for this return.",
+    "returnedQty": "Returned Qty",
+    "refundAmount": "Refund Amount",
+    "reasons": {
+      "customerReturn": "Customer Return",
+      "damage": "Damage / Breakage",
+      "defect": "Manufacturing Defect",
+      "wrongItem": "Wrong Item Delivered",
+      "expired": "Expired",
+      "other": "Other Issue"
+    },
+    "exchangeToggle": "🔁 Exchange for another item",
+    "exchangeItems": "Exchange Items",
+    "exchangeItemsSubtitle": "Pick what the customer takes instead of a refund",
+    "addExchangeItem": "Add Item",
+    "searchProductPlaceholder": "Search product by name...",
+    "noProductsFound": "No products found",
+    "selectVariant": "Select variant",
+    "exchangeQty": "Qty",
+    "exchangePrice": "Price",
+    "remove": "Remove",
+    "noExchangeItemsYet": "No exchange items added yet.",
+    "returnValueLabel": "Return Value",
+    "exchangeValueLabel": "Exchange Value",
+    "differenceLabel": "Difference",
+    "customerPaysMore": "Customer needs to pay the difference",
+    "shopRefundsDifference": "This exchange will",
+    "clearFromUdhar": "↓ Clear from party's udhar",
+    "refundCashOut": "💵 Refund to customer (cash out)",
+    "noDifference": "Even exchange — no money changes hands.",
+    "settleVia": "Settle difference via",
+    "settleCash": "Cash",
+    "settleUpi": "UPI",
+    "settleCard": "Card",
+    "settleUdhar": "Add to Udhar",
+    "settleUdharNoCustomer": "Add to Udhar (needs a linked customer)",
+    "completeExchange": "Complete Exchange",
+    "exchangeWarning": "Processing an exchange will restock the returned item, deduct stock for the replacement, and settle only the price difference in your ledger.",
+    "exchangedBadge": "🔁 Exchanged",
+    "exchangedForLabel": "Exchanged For",
+    "exchangeInvoiceLabel": "Exchange Invoice",
+    "insufficientStock": "Not enough stock for {name}",
+    "pickAtLeastOneExchangeItem": "Add at least one item to exchange for",
+    "exchangeProcessed": "Exchange processed successfully!",
+    "failedToProcessExchange": "Failed to process exchange",
+    "billTotal": "Bill Total",
+    "howBillWasPaid": "How this bill was paid",
+    "cashPaidLabel": "Cash paid",
+    "upiOnlineLabel": "UPI / Online",
+    "udharUnpaidLabel": "Udhar (unpaid)",
+    "noPaymentDetailsRecorded": "No payment details recorded.",
+    "thisReturnWillLabel": "This return will"
   },
   "Settings": {
     "title": "Settings",
@@ -1124,6 +1187,204 @@
     "cartonBarcodeMissing": "This product has no Carton Barcode yet. Add one in Edit Product → Carton Barcode, then reopen this to print a carton label.",
     "perCarton": "per carton"
   },
+  "BarcodePrintSettings": {
+    "title": "Barcode & QR Print Settings",
+    "subtitle": "Set your label size and printer once — Vyapar Sarthi handles the rest.",
+    "close": "Close",
+    "section": {
+      "paper": "Printer & Paper",
+      "barcode": "Barcode",
+      "text": "Text",
+      "qr": "QR",
+      "position": "Position",
+      "calibration": "Calibration"
+    },
+    "profileName": {
+      "label": "Profile name",
+      "placeholder": "e.g. Rahul Footwear Barcode Printer"
+    },
+    "reset": "Reset",
+    "savedProfiles": {
+      "title": "Saved profiles",
+      "empty": "No saved profiles yet.",
+      "mobilePrefix": "Profiles:",
+      "defaultTitle": "Default printer",
+      "setDefaultTitle": "Set as default printer",
+      "duplicateTitle": "Duplicate",
+      "deleteTitle": "Delete"
+    },
+    "toast": {
+      "noShopSelected": "No shop selected",
+      "giveProfileName": "Give this profile a name",
+      "profileSaved": "Print profile saved",
+      "profileDuplicated": "Profile duplicated",
+      "setAsDefault": "Set as default printer",
+      "resetToRecommended": "Reset to recommended for {preset}",
+      "confirmDeleteProfile": "Delete this printer profile?"
+    },
+    "common": {
+      "top": "Top",
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right",
+      "center": "Center",
+      "portrait": "Portrait",
+      "landscape": "Landscape",
+      "above": "above",
+      "below": "below",
+      "normal": "Normal",
+      "medium": "Medium",
+      "bold": "Bold",
+      "none": "None",
+      "auto": "Auto",
+      "low": "Low",
+      "quartile": "Quartile",
+      "high": "High"
+    },
+    "printType": {
+      "title": "Print type",
+      "a4Sheet": { "label": "A4 Label Sheet", "hint": "Many labels on pre-cut A4 sheets" },
+      "a4Plain": { "label": "A4 Plain Paper", "hint": "Grid on plain A4 with cut guides" },
+      "thermalSticker": { "label": "Thermal Sticker", "hint": "One die-cut sticker per label" },
+      "thermalRoll": { "label": "Thermal Continuous", "hint": "Continuous roll, auto height" }
+    },
+    "paper": {
+      "pageOrientation": "Page orientation",
+      "layoutPreset": "Layout preset",
+      "gridTitle": "Grid (labels auto-fit the page)",
+      "columns": "Columns",
+      "rows": "Rows",
+      "labelWidth": "Label width",
+      "labelHeight": "Label height",
+      "autoFitGrid": "Auto-fit label size to grid",
+      "gapsTitle": "Gaps between labels (mm)",
+      "horizontalGap": "Horizontal gap",
+      "verticalGap": "Vertical gap",
+      "pageMarginsTitle": "Page margins (mm)",
+      "perPageSummary": "{count} labels per A4 page · cell {width} × {height} mm. The barcode is sized to the cell — never stretched across the page.",
+      "dieCutSizes": "Die-cut sticker sizes",
+      "continuousRollWidths": "Continuous roll widths",
+      "customSize": "Custom size",
+      "customWidthHeight": "Custom size (mm)",
+      "customWidth": "Width",
+      "customHeight": "Height (0 = roll paper)"
+    },
+    "resolution": {
+      "title": "Printer resolution",
+      "hint": "Most thermal-label printers are 203 DPI. Office laser/inkjet = 600. Leave on Auto if unsure."
+    },
+    "barcodeSection": {
+      "typeTitle": "Barcode type",
+      "autoHint": "Auto picks the right symbology from the barcode value.",
+      "autoHintFormat": " Currently: {format}.",
+      "autoFitTitle": "Auto-Fit Size",
+      "autoFitHint": "Vyapar calculates the biggest barcode that fits inside the label with a safe quiet zone.",
+      "barcodeWidth": "Barcode width",
+      "barcodeHeight": "Barcode height",
+      "quietZone": "Quiet zone (silent margin)",
+      "quietZoneHint": "Required white space around the barcode. 2 mm safe for Code128; 3+ mm for EAN/UPC."
+    },
+    "text": {
+      "showOnLabel": "Show on label",
+      "field": {
+        "shopName": "Shop Name",
+        "productName": "Product Name",
+        "sku": "SKU",
+        "otherCode": "Other Code",
+        "barcodeNumber": "Barcode #",
+        "sellPrice": "Sell Price",
+        "mrp": "MRP",
+        "variant": "Variant",
+        "size": "Size",
+        "colour": "Colour",
+        "customText": "Custom Text"
+      },
+      "sellingCaptionBefore": "Selling-price caption (before)",
+      "sellingCaptionPlaceholder": "e.g. Offer, Rate, Price",
+      "sellingSuffixAfter": "Selling-price suffix (after)",
+      "sellingSuffixPlaceholder": "e.g. /-, each, /kg",
+      "sellingHint": "Fully editable, prints exactly as typed — e.g. Offer 499/-. No gap is added automatically before the suffix; type a leading space yourself (e.g. \" /-\") if you want one. MRP prints separately above it.",
+      "currencySymbol": "Currency symbol on price",
+      "currencyHint": "Printed PDF can't render ₹ cleanly on all printers — \"None\" prints just the number (e.g. MRP 1,300).",
+      "numberFormat": "Number format",
+      "numberFormatComma": "Comma",
+      "numberFormatPlain": "Plain",
+      "numberFormatDecimal": "Decimal",
+      "numberFormatHint": "Applies to both MRP and Selling/Offer price — write the number however reads best on your label.",
+      "mrpTitle": "MRP",
+      "cutPriceLine": "Cut-price line",
+      "cutPriceHint": "On: MRP prints with a line through it (e.g. ₹1,300). Off: MRP prints as a plain number.",
+      "mrpTextSize": "MRP text size",
+      "offerPriceTitle": "Offer / selling price",
+      "priceSize": "Price size",
+      "pricePosition": "Price position",
+      "aboveBarcode": "above barcode",
+      "belowBarcode": "below barcode",
+      "otherRowSizes": "Other row sizes",
+      "shopNameSize": "Shop name size",
+      "productNameSize": "Product name size",
+      "variantSize": "Variant/Size/Colour size",
+      "barcodeNumberSize": "Barcode # size",
+      "skuSize": "SKU size",
+      "otherCodeSize": "Other Code size",
+      "skuMissingWarning": "This product has no SKU set — add one in Edit Product, or the SKU line won't print.",
+      "otherCodeMissingWarning": "This product has no Other Code set — add one in Edit Product, or the line won't print.",
+      "customTextTitle": "Custom text",
+      "customTextSize": "Text size",
+      "thickness": "Thickness",
+      "alignment": "Alignment",
+      "position": "Position",
+      "fontSize": "Font size",
+      "fontWeight": "Font weight",
+      "textPosition": "Text position"
+    },
+    "qr": {
+      "size": "QR size (always square)",
+      "errorCorrection": "Error correction",
+      "hint": "Higher = more damage-tolerant but larger QR pattern. Medium is a safe default."
+    },
+    "position": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical",
+      "margins": "Margins (mm)",
+      "textToBarcodeGap": "Text-to-barcode gap",
+      "rotationTitle": "Rotation",
+      "rotationHint": "90° / 270° print the label sideways — useful when a horizontal barcode won't fit a narrow roll. The page size rotates with it. (Not applied to A4 sheets.)"
+    },
+    "calibration": {
+      "intro": "Print a calibration ruler, measure with a real ruler, then adjust below. Example: if the printed 100 mm mark measures 98 mm on your ruler, set Horizontal to 102%.",
+      "printRuler": "Print Calibration Ruler",
+      "horizontalScale": "Horizontal scale",
+      "verticalScale": "Vertical scale",
+      "printOffsetTitle": "Print offset (nudge the whole label)",
+      "horizontalOffset": "Horizontal offset",
+      "verticalOffset": "Vertical offset (feed)",
+      "offsetHint": "Shifts the content on the sticker if your printer prints too far left/up. Vertical = feed offset. Example: +1.0 / −0.5 mm.",
+      "footerNote": "Applied only to barcode labels — invoices and other prints are never touched. Print density & feed gap are set in your printer's own driver/utility, not from the browser."
+    },
+    "livePreview": "Live preview",
+    "pageInfo": {
+      "page": "Page:",
+      "label": "Label:",
+      "barcode": "Barcode:",
+      "perPage": "{count}/page"
+    },
+    "printScale": {
+      "title": "Print Scale: 100%",
+      "body1": "In the browser print dialog: Destination = your label printer, Paper size = same as this label, Scale = 100% / Actual Size. Do NOT use \"Fit to Page\".",
+      "body2": "⚠ Testing with Save as PDF / Microsoft Print to PDF? Change that PDF printer's paper size to match this label — otherwise Chrome will rotate/scale to A4 and it will look wrong even though the real label printer will print correctly."
+    },
+    "printTestLabel": "Print Test Label",
+    "saveAndUse": "Save & Use This Profile",
+    "sample": {
+      "productName": "Sample Product",
+      "variant": "Black / M",
+      "shopName": "Shop Name",
+      "customText": "Custom text",
+      "sku": "ABC-123",
+      "otherCode": "REF-001"
+    }
+  },
   "UdharSlip": {
     "paymentReceipt": "Payment Receipt",
     "udharGiven": "Udhar Given",
@@ -1273,7 +1534,11 @@
     "descriptionPurchasePlaceholder": "e.g. Rice bags, Cooking oil",
     "descriptionPaymentPlaceholder": "e.g. Cash payment for July dues",
     "billNumberRequiredError": "Bill number is required.",
-    "descriptionRequiredError": "A description is required."
+    "descriptionRequiredError": "A description is required.",
+    "paymentMethodLabel": "Payment Method",
+    "paymentMethodCash": "Cash",
+    "paymentMethodUpi": "UPI",
+    "paymentMethodCard": "Card"
   },
   "DocumentViewerModal": {
     "downloadTitle": "Download",
@@ -1490,7 +1755,8 @@
       "expenses": "Expenses",
       "crm": "CRM",
       "purchases": "Purchases",
-      "staff": "Staff"
+      "staff": "Staff",
+      "ca": "CA Reports"
     },
     "subTabs": {
       "overview": "Overview",
@@ -1645,6 +1911,156 @@
       "noGstInvoicesRegister": "No GST invoices in this period.",
       "noDeadStock": "No dead stock found — all products sold in the selected period.",
       "gstNote": "CGST/SGST shown for same-state sales. Inter-state (IGST) invoices contribute to Total GST but are split as IGST on the invoice itself."
+    },
+    "ca": {
+      "fyPicker": {
+        "label": "Financial Year",
+        "financialYear": "Financial Year",
+        "customRange": "Custom Range",
+        "from": "From",
+        "to": "To"
+      },
+      "disclaimer": "CA/Accountant-ready data pack — figures are read directly from recorded transactions; this is not itself an official GST/Income Tax filing and should be reviewed by your CA/Accountant before use.",
+      "generatePack": "Generate CA Report Pack",
+      "clickWarningHint": "Click a warning below to review the record.",
+      "inputGstSection": "Input GST",
+      "common": {
+        "walkIn": "Walk-in",
+        "unknownItem": "Unknown item",
+        "unknownSupplier": "Unknown supplier",
+        "unknown": "Unknown",
+        "salaryRow": "Salary (Staff Payroll)",
+        "gst": "GST",
+        "nonGst": "Non-GST",
+        "gstInfoMissing": "GST Information Missing"
+      },
+      "paymentStatus": { "paid": "Paid", "partial": "Partial", "unpaid": "Unpaid" },
+      "cashDirection": { "in": "In", "out": "Out" },
+      "ageBuckets": { "0-30": "0-30 days", "31-60": "31-60 days", "61-90": "61-90 days", "91-180": "91-180 days", "180+": "180+ days" },
+      "dataQuality": {
+        "types": {
+          "product_missing_hsn": "Missing HSN Code",
+          "product_missing_gst_rate": "Missing GST Rate",
+          "gst_sale_missing_rate": "GST Sale Missing Rate",
+          "negative_stock": "Negative Stock",
+          "expense_missing_category": "Missing Expense Category",
+          "purchase_missing_gst": "Purchase Missing GST"
+        },
+        "warnings": {
+          "product_missing_hsn": "\"{name}\" has a GST rate but no HSN code",
+          "product_missing_gst_rate": "\"{name}\" has an HSN code but no GST rate",
+          "gst_sale_missing_rate": "Invoice {invoice} billed as GST but \"{name}\" has no GST rate set",
+          "negative_stock": "\"{name}\" has negative stock ({stock})",
+          "expense_missing_category": "Expense \"{description}\" (₹{amount}) has no category",
+          "purchase_missing_gst": "Purchase {invoice} — \"{name}\" has no GST amount recorded"
+        }
+      },
+      "reportNames": {
+        "sales_register": "Sales Register",
+        "purchase_register": "Purchase Register",
+        "gst_summary": "GST Summary",
+        "gst_monthly": "Monthly GST",
+        "non_gst": "Non-GST / Exempt Transactions",
+        "data_quality": "Data Quality / CA Checklist",
+        "profit_loss": "Profit & Loss",
+        "trading_account": "Trading Account",
+        "stock_summary": "Stock Summary",
+        "receivables_ageing": "Receivables (Ageing)",
+        "payables_ageing": "Payables (Ageing)",
+        "cash_bank_summary": "Cash & Bank Summary",
+        "mill_raw_material": "Raw Material Purchase",
+        "mill_production": "Production Summary",
+        "mill_byproducts": "By-Products"
+      },
+      "reports": {
+        "sales_register": {
+          "columns": { "date": "Date", "invoiceNumber": "Invoice No.", "customerName": "Customer", "customerGstin": "GSTIN", "product": "Product", "hsn": "HSN", "quantity": "Qty", "unit": "Unit", "taxableValue": "Taxable Value", "gstRate": "GST Rate", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "invoiceTotal": "Invoice Total", "paymentStatus": "Payment Status", "paymentMode": "Payment Mode" },
+          "summary": { "lines": "Lines", "invoiceTotal": "Invoice Total" }
+        },
+        "purchase_register": {
+          "columns": { "date": "Date", "billNumber": "Bill No.", "supplierName": "Supplier", "supplierGstin": "GSTIN", "product": "Product", "hsn": "HSN", "quantity": "Qty", "taxableValue": "Taxable Value", "gstAmount": "GST Amount", "total": "Total", "gstClass": "GST / Non-GST" },
+          "summary": { "lines": "Lines", "total": "Total" }
+        },
+        "gst_summary": {
+          "columns": { "rate": "Rate %", "taxable": "Taxable", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "total": "Total GST" },
+          "summary": { "outputGst": "Output GST", "inputGst": "Input GST (as recorded)", "netGst": "Net GST Difference" }
+        },
+        "gst_monthly": {
+          "columns": { "label": "Month", "outputTaxable": "Output Taxable", "outputGst": "Output GST", "inputTaxable": "Input Taxable", "inputGst": "Input GST", "netGst": "Net GST" }
+        },
+        "non_gst": {
+          "columns": { "date": "Date", "docNumber": "Invoice/Bill No.", "party": "Party", "product": "Product", "hsn": "HSN", "amount": "Amount", "classification": "Classification" },
+          "summary": { "transactions": "Transactions", "total": "Total" }
+        },
+        "data_quality": {
+          "columns": { "type": "Type", "message": "Warning" },
+          "summary": { "warnings": "Warnings" }
+        },
+        "profit_loss": {
+          "columns": { "category": "Category", "amount": "Amount" },
+          "summary": { "revenue": "Revenue", "grossProfit": "Gross Profit", "netProfit": "Net Profit / Loss" }
+        },
+        "trading_account": {
+          "columns": { "lineItem": "Line Item", "amount": "Amount" },
+          "summary": { "grossProfitLoss": "Gross Profit / Loss" },
+          "lineItems": {
+            "openingStock": "Opening Stock",
+            "purchases": "(+) Purchases",
+            "purchaseReturns": "(-) Purchase Returns",
+            "closingStock": "(-) Closing Stock",
+            "cogs": "= Cost of Goods Sold",
+            "grossSales": "Gross Sales",
+            "salesReturns": "(-) Sales Returns",
+            "netSales": "= Net Sales",
+            "grossProfitOrLoss": "Gross Profit / (Loss)"
+          }
+        },
+        "stock_summary": {
+          "columns": { "product": "Product", "category": "Category", "openingQty": "Opening Qty", "purchasedQty": "Purchased", "soldQty": "Sold", "purchaseReturnQty": "Purchase Returns", "salesReturnQty": "Sales Returns", "closingQty": "Closing Qty", "closingValue": "Closing Value" },
+          "summary": { "closingStockValue": "Closing Stock Value" }
+        },
+        "receivables_ageing": {
+          "columns": { "party": "Party", "billNumber": "Bill No.", "date": "Bill Date", "originalAmount": "Original Amount", "remaining": "Outstanding", "ageBucket": "Age Bucket" }
+        },
+        "payables_ageing": {
+          "columns": { "party": "Supplier", "billNumber": "Bill No.", "date": "Bill Date", "originalAmount": "Original Amount", "remaining": "Outstanding", "ageBucket": "Age Bucket" }
+        },
+        "cash_bank_summary": {
+          "columns": { "type": "Type", "direction": "In / Out", "amount": "Amount" },
+          "summary": { "cashIn": "Cash In", "cashOut": "Cash Out", "netCashFlow": "Net Cash Flow" }
+        },
+        "mill_raw_material": {
+          "columns": { "lotNumber": "Lot No.", "farmerName": "Farmer / Vendor", "purchaseDate": "Date", "weightKg": "Weight (Kg)", "moisturePct": "Moisture %", "ratePerKg": "Rate / Kg", "totalAmount": "Total Amount", "remainingKg": "Remaining (Kg)" },
+          "summary": { "totalWeight": "Total Weight", "totalAmount": "Total Amount" }
+        },
+        "mill_production": {
+          "columns": { "batchNumber": "Batch No.", "startedAt": "Started", "status": "Status", "currentStage": "Stage", "inputKg": "Input (Kg)", "outputKg": "Output (Kg)", "wastageKg": "Wastage (Kg)", "brokenKg": "Broken (Kg)", "branKg": "Bran (Kg)", "huskKg": "Husk (Kg)", "recoveryPct": "Recovery %" },
+          "summary": { "batches": "Batches", "avgRecovery": "Avg Recovery %" }
+        },
+        "mill_byproducts": {
+          "columns": { "name": "By-Product", "quantityKg": "Produced (Kg)", "soldKg": "Sold (Kg)", "remainingKg": "Remaining (Kg)", "ratePerKg": "Rate / Kg", "soldValue": "Sold Value" },
+          "summary": { "totalSoldValue": "Total Sold Value" }
+        }
+      },
+      "pack": {
+        "title": "Generate CA Report Pack",
+        "pdfButton": "PDF Report Pack",
+        "excelButton": "Excel Workbook",
+        "pickAtLeastOne": "Pick at least one report.",
+        "genericError": "Failed to generate the report pack.",
+        "comingSoon": "Coming soon",
+        "comingSoonHamali": "Hamali / Broker / Freight (not tracked in this app yet)"
+      },
+      "notes": {
+        "pnl": "Gross Profit uses each sale's recorded cost basis at the time of billing. \"Book / Software Profit\" above is not the same as Taxable Income — final tax treatment is to be determined by your CA/Accountant.",
+        "gstInput": "Input GST as recorded in Vyapar Sarthi — eligibility to be reviewed by your CA/Accountant.",
+        "tradingAccountBasis": "Opening Stock is estimated by replaying recorded purchases, purchase returns, sales and sales returns from the start of this period against current stock, valued at each product's recorded Cost Price (same basis as Purchases, so Opening + Purchases − Closing gives a real COGS) — not a date-accurate historical valuation.",
+        "tradingAccountUncosted": "{count} product(s) with stock have no recorded Cost Price and are excluded from this valuation entirely.",
+        "tradingAccountAdjustments": "{count} manual stock adjustment(s) totalling {qty} unit(s) occurred in this period and could NOT be included (their direction isn't recorded) — verify against your inventory records.",
+        "tradingAccountNoAdjustments": "No manual stock adjustments were recorded in this period.",
+        "stockSummary": "Variant-level quantities are already netted into each product's single current stock total (no double counting) — see Products for the colour/size breakdown of that total. Stock valued at recorded selling price.",
+        "cashBank": "This app tracks a Cash Book (physical cash movements — sales, purchases, expenses, refunds and withdrawals paid/received in cash) and each sale's recorded payment mode; it does not maintain a separate bank-account ledger or bank reconciliation. Figures for UPI/Card/other modes below are collections recorded against that mode, not a bank statement."
+      }
     }
   },
   "Dukandar": {

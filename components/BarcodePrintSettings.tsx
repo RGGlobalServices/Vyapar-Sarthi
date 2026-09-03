@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Save, Printer, Ruler, RotateCcw, Trash2, Check, Sparkles, AlertTriangle, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTranslations } from 'next-intl';
 import {
   PrinterProfile,
   LABEL_PRESETS,
@@ -69,6 +70,7 @@ export interface BarcodePrintSettingsProps {
 }
 
 type SectionKey = 'paper' | 'barcode' | 'text' | 'qr' | 'position' | 'calibration';
+type T = ReturnType<typeof useTranslations>;
 
 export default function BarcodePrintSettings({
   shopId,
@@ -83,6 +85,7 @@ export default function BarcodePrintSettings({
   onClose,
   initialProfile,
 }: BarcodePrintSettingsProps) {
+  const t = useTranslations('BarcodePrintSettings');
   const [profile, setProfile] = useState<PrinterProfile>(() => {
     // Always normalize so older saved profiles gain printType/rotation/sheet
     // before the UI reads them.
@@ -161,30 +164,30 @@ export default function BarcodePrintSettings({
   }
 
   function onSave() {
-    if (!shopId) { toast.error('No shop selected'); return; }
-    if (!profile.name.trim()) { toast.error('Give this profile a name'); return; }
+    if (!shopId) { toast.error(t('toast.noShopSelected')); return; }
+    if (!profile.name.trim()) { toast.error(t('toast.giveProfileName')); return; }
     const saved = saveProfile(shopId, { ...profile });
     setActiveProfileId(shopId, saved.id);
     setActiveId(saved.id);
     setProfiles(listProfiles(shopId));
-    toast.success('Print profile saved');
+    toast.success(t('toast.profileSaved'));
     onSaved(saved);
   }
 
   function onDelete(id: string) {
-    if (!confirm('Delete this printer profile?')) return;
+    if (!confirm(t('toast.confirmDeleteProfile'))) return;
     deleteProfile(shopId, id);
     setProfiles(listProfiles(shopId));
     if (profile.id === id) setProfile({ ...DEFAULT_PROFILE, id: `prof-${Date.now().toString(36)}` });
   }
 
   function onDuplicate(p: PrinterProfile) {
-    if (!shopId) { toast.error('No shop selected'); return; }
+    if (!shopId) { toast.error(t('toast.noShopSelected')); return; }
     const copy = duplicateProfile(p);
     saveProfile(shopId, copy);
     setProfiles(listProfiles(shopId));
     setProfile(copy);
-    toast.success('Profile duplicated');
+    toast.success(t('toast.profileDuplicated'));
   }
 
   function onSetDefault(id: string) {
@@ -192,13 +195,13 @@ export default function BarcodePrintSettings({
     setActiveProfileId(shopId, id);
     setActiveId(id);
     setProfiles(listProfiles(shopId));
-    toast.success('Set as default printer');
+    toast.success(t('toast.setAsDefault'));
   }
 
   function onResetToRecommended() {
     const rec = recommendedForPreset(profile.preset);
     patch({ ...rec, scaleH: 100, scaleV: 100, offsetXMm: 0, offsetYMm: 0, margins: { top: 1, right: 1, bottom: 1, left: 1 } });
-    toast.success('Reset to recommended for ' + profile.preset);
+    toast.success(t('toast.resetToRecommended', { preset: profile.preset }));
   }
 
   const validation = useMemo(() => {
@@ -208,12 +211,12 @@ export default function BarcodePrintSettings({
   }, [profile, sampleBarcode]);
 
   const sections: Array<{ key: SectionKey; label: string; icon: string }> = [
-    { key: 'paper', label: 'Printer & Paper', icon: '📄' },
-    { key: 'barcode', label: 'Barcode', icon: '▮' },
-    { key: 'text', label: 'Text', icon: '𝐀' },
-    { key: 'qr', label: 'QR', icon: '▨' },
-    { key: 'position', label: 'Position', icon: '⤢' },
-    { key: 'calibration', label: 'Calibration', icon: '📏' },
+    { key: 'paper', label: t('section.paper'), icon: '📄' },
+    { key: 'barcode', label: t('section.barcode'), icon: '▮' },
+    { key: 'text', label: t('section.text'), icon: '𝐀' },
+    { key: 'qr', label: t('section.qr'), icon: '▨' },
+    { key: 'position', label: t('section.position'), icon: '⤢' },
+    { key: 'calibration', label: t('section.calibration'), icon: '📏' },
   ];
 
   return (
@@ -228,11 +231,11 @@ export default function BarcodePrintSettings({
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-2">
               <Printer size={17} className="text-emerald-400 shrink-0" />
-              <span className="truncate">Barcode & QR Print Settings</span>
+              <span className="truncate">{t('title')}</span>
             </h2>
-            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 hidden sm:block">Set your label size and printer once — Vyapar Sarthii handles the rest.</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 hidden sm:block">{t('subtitle')}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-1.5 shrink-0"><X size={20} /></button>
+          <button onClick={onClose} aria-label={t('close')} className="text-slate-400 hover:text-slate-200 p-1.5 shrink-0"><X size={20} /></button>
         </div>
 
         {/* Section chip bar — visible on mobile ONLY (md+ gets the left
@@ -283,17 +286,17 @@ export default function BarcodePrintSettings({
             </div>
 
             <div className="p-2 border-t border-slate-800 mt-2">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-1">Saved profiles</p>
-              {profiles.length === 0 && <p className="text-[11px] text-slate-500 px-1 py-2">No saved profiles yet.</p>}
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-1">{t('savedProfiles.title')}</p>
+              {profiles.length === 0 && <p className="text-[11px] text-slate-500 px-1 py-2">{t('savedProfiles.empty')}</p>}
               {profiles.map(p => (
                 <div key={p.id} className={`group px-2 py-1.5 rounded-lg text-[11px] flex items-center gap-1 ${p.id === profile.id ? 'bg-slate-700/50 text-slate-100' : 'text-slate-400 hover:bg-slate-800'}`}>
                   <button className="flex-1 min-w-0 text-left truncate flex items-center gap-1" onClick={() => setProfile(normalizeProfile({ ...p }))} title={p.name}>
-                    {activeId === p.id && <span className="text-emerald-400 shrink-0" title="Default printer">★</span>}
+                    {activeId === p.id && <span className="text-emerald-400 shrink-0" title={t('savedProfiles.defaultTitle')}>★</span>}
                     <span className="truncate">{p.name}</span>
                   </button>
-                  <button onClick={() => onSetDefault(p.id)} title="Set as default" className={`opacity-0 group-hover:opacity-100 shrink-0 ${activeId === p.id ? 'text-emerald-400' : 'text-slate-500 hover:text-emerald-400'}`}>★</button>
-                  <button onClick={() => onDuplicate(p)} title="Duplicate" className="opacity-0 group-hover:opacity-100 shrink-0 text-slate-500 hover:text-slate-200"><Copy size={12} /></button>
-                  <button onClick={() => onDelete(p.id)} title="Delete" className="opacity-0 group-hover:opacity-100 shrink-0 text-red-400 hover:text-red-300"><Trash2 size={12} /></button>
+                  <button onClick={() => onSetDefault(p.id)} title={t('savedProfiles.setDefaultTitle')} className={`opacity-0 group-hover:opacity-100 shrink-0 ${activeId === p.id ? 'text-emerald-400' : 'text-slate-500 hover:text-emerald-400'}`}>★</button>
+                  <button onClick={() => onDuplicate(p)} title={t('savedProfiles.duplicateTitle')} className="opacity-0 group-hover:opacity-100 shrink-0 text-slate-500 hover:text-slate-200"><Copy size={12} /></button>
+                  <button onClick={() => onDelete(p.id)} title={t('savedProfiles.deleteTitle')} className="opacity-0 group-hover:opacity-100 shrink-0 text-red-400 hover:text-red-300"><Trash2 size={12} /></button>
                 </div>
               ))}
             </div>
@@ -305,7 +308,7 @@ export default function BarcodePrintSettings({
           {profiles.length > 0 && (
             <div className="md:hidden border-b border-slate-800 bg-slate-800/10 shrink-0 overflow-x-auto">
               <div className="flex gap-1 p-2 min-w-max">
-                <span className="text-[10px] font-bold text-slate-500 uppercase self-center px-2">Profiles:</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase self-center px-2">{t('savedProfiles.mobilePrefix')}</span>
                 {profiles.map(p => (
                   <div key={p.id} className={`px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5 shrink-0 ${p.id === profile.id ? 'bg-slate-700 text-slate-100' : 'bg-slate-800 text-slate-400'}`}>
                     <button onClick={() => setProfile(normalizeProfile({ ...p }))} className="max-w-[120px] truncate">{activeId === p.id ? '★ ' : ''}{p.name}</button>
@@ -324,26 +327,26 @@ export default function BarcodePrintSettings({
             {/* Name + Reset row — visible in every section */}
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Profile name</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('profileName.label')}</label>
                 <input
                   type="text"
                   value={profile.name}
                   onChange={e => patch({ name: e.target.value })}
-                  placeholder="e.g. Rahul Footwear Barcode Printer"
+                  placeholder={t('profileName.placeholder')}
                   className="w-full h-9 px-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
               <button onClick={onResetToRecommended} className="h-9 px-3 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:border-emerald-500 flex items-center gap-1.5">
-                <RotateCcw size={13} /> Reset
+                <RotateCcw size={13} /> {t('reset')}
               </button>
             </div>
 
-            {section === 'paper' && <PaperSection profile={profile} patch={patch} onPickPreset={onPickPreset} onPickPrintType={onPickPrintType} patchSheet={patchSheet} onPickSheetPreset={onPickSheetPreset} />}
-            {section === 'barcode' && <BarcodeSection profile={profile} patch={patch} validation={validation} />}
-            {section === 'text' && <TextSection profile={profile} patch={patch} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />}
-            {section === 'qr' && <QRSection profile={profile} patch={patch} />}
-            {section === 'position' && <PositionSection profile={profile} patch={patch} />}
-            {section === 'calibration' && <CalibrationSection profile={profile} patch={patch} onPrintRuler={() => printCalibrationSheet(profile)} />}
+            {section === 'paper' && <PaperSection t={t} profile={profile} patch={patch} onPickPreset={onPickPreset} onPickPrintType={onPickPrintType} patchSheet={patchSheet} onPickSheetPreset={onPickSheetPreset} />}
+            {section === 'barcode' && <BarcodeSection t={t} profile={profile} patch={patch} validation={validation} />}
+            {section === 'text' && <TextSection t={t} profile={profile} patch={patch} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />}
+            {section === 'qr' && <QRSection t={t} profile={profile} patch={patch} />}
+            {section === 'position' && <PositionSection t={t} profile={profile} patch={patch} />}
+            {section === 'calibration' && <CalibrationSection t={t} profile={profile} patch={patch} onPrintRuler={() => printCalibrationSheet(profile)} />}
           </div>
 
           {/* Right — live preview + validation + actions. On mobile, this
@@ -352,20 +355,20 @@ export default function BarcodePrintSettings({
               scrolling the whole modal. On desktop it's the right column. */}
           <div className="[grid-row:3] md:[grid-row:auto] border-t md:border-t-0 md:border-l border-slate-800 bg-slate-950/30 overflow-y-auto p-3 sm:p-4 space-y-3 md:max-h-none">
             <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Live preview</p>
-              <LabelPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('livePreview')}</p>
+              <LabelPreview t={t} profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />
               {(profile.printType === 'a4-sheet' || profile.printType === 'a4-plain') ? (
                 <p className="text-[10px] text-slate-500 mt-1.5 text-center">
-                  Page: <b className="text-slate-300">A4 {(profile.sheet ?? DEFAULT_SHEET).orientation}</b>
+                  {t('pageInfo.page')} <b className="text-slate-300">A4 {(profile.sheet ?? DEFAULT_SHEET).orientation === 'portrait' ? t('common.portrait') : t('common.landscape')}</b>
                   {' · '}<b className="text-slate-300">{(profile.sheet ?? DEFAULT_SHEET).columns} × {(profile.sheet ?? DEFAULT_SHEET).rows}</b>
-                  <br />Label: <b className="text-slate-300">{(profile.sheet ?? DEFAULT_SHEET).labelWidthMm} × {(profile.sheet ?? DEFAULT_SHEET).labelHeightMm} mm</b>
-                  {' · '}{computeSheetGeometry(profile.sheet ?? DEFAULT_SHEET).perPage}/page
+                  <br />{t('pageInfo.label')} <b className="text-slate-300">{(profile.sheet ?? DEFAULT_SHEET).labelWidthMm} × {(profile.sheet ?? DEFAULT_SHEET).labelHeightMm} mm</b>
+                  {' · '}{t('pageInfo.perPage', { count: computeSheetGeometry(profile.sheet ?? DEFAULT_SHEET).perPage })}
                 </p>
               ) : (
                 <p className="text-[10px] text-slate-500 mt-1.5 text-center">
-                  Label: <b className="text-slate-300">{profile.labelWidthMm} × {profile.labelHeightMm > 0 ? profile.labelHeightMm : 'auto'} mm</b>
+                  {t('pageInfo.label')} <b className="text-slate-300">{profile.labelWidthMm} × {profile.labelHeightMm > 0 ? profile.labelHeightMm : 'auto'} mm</b>
                   {(profile.rotation ?? 0) !== 0 && <> · <b className="text-slate-300">{profile.rotation}°</b></>}
-                  <br />Barcode:
+                  <br />{t('pageInfo.barcode')}
                   {' '}<b className="text-slate-300">
                     {(profile.autoFit ? autoFitBarcode(profile, sampleBarcode || '123456789012').widthMm : profile.barcodeWidthMm).toFixed(1)}
                     {' × '}
@@ -388,19 +391,19 @@ export default function BarcodePrintSettings({
                     onClick={() => patch({ autoFit: true })}
                     className="mt-1 text-[11px] font-bold text-emerald-400 hover:text-emerald-300"
                   >
-                    → Turn on Auto-Fit
+                    → {t('barcodeSection.autoFitTitle')}
                   </button>
                 )}
               </div>
             )}
 
             <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-2.5 space-y-1.5">
-              <p className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">Print Scale: 100%</p>
+              <p className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">{t('printScale.title')}</p>
               <p className="text-[11px] text-blue-200 leading-snug">
-                In the browser print dialog: <b>Destination = your label printer</b>, <b>Paper size = same as this label</b>, <b>Scale = 100% / Actual Size</b>. Do NOT use "Fit to Page".
+                {t('printScale.body1')}
               </p>
               <p className="text-[11px] text-blue-200 leading-snug">
-                ⚠ Testing with <b>Save as PDF / Microsoft Print to PDF</b>? Change that PDF printer's paper size to match this label — otherwise Chrome will rotate/scale to A4 and it will look wrong even though the real label printer will print correctly.
+                {t('printScale.body2')}
               </p>
             </div>
 
@@ -409,14 +412,14 @@ export default function BarcodePrintSettings({
                 onClick={() => printTestLabel(profile)}
                 className="w-full h-9 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 hover:border-emerald-500"
               >
-                <Printer size={13} /> Print Test Label
+                <Printer size={13} /> {t('printTestLabel')}
               </button>
               <button
                 onClick={onSave}
                 disabled={validation.errors.length > 0}
                 className="w-full h-10 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-black flex items-center justify-center gap-1.5"
               >
-                <Save size={14} /> Save & Use This Profile
+                <Save size={14} /> {t('saveAndUse')}
               </button>
             </div>
           </div>
@@ -428,7 +431,8 @@ export default function BarcodePrintSettings({
 
 // ─── Section components ────────────────────────────────────────────────────
 
-function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchSheet, onPickSheetPreset }: {
+function PaperSection({ t, profile, patch, onPickPreset, onPickPrintType, patchSheet, onPickSheetPreset }: {
+  t: T;
   profile: PrinterProfile;
   patch: (u: Partial<PrinterProfile>) => void;
   onPickPreset: (k: LabelSizePresetKey) => void;
@@ -440,10 +444,10 @@ function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchShee
   const isSheet = printType === 'a4-sheet' || printType === 'a4-plain';
 
   const PRINT_TYPES: Array<{ key: PrintType; label: string; hint: string; icon: string }> = [
-    { key: 'a4-sheet',        label: 'A4 Label Sheet',       hint: 'Many labels on pre-cut A4 sheets', icon: '▦' },
-    { key: 'a4-plain',        label: 'A4 Plain Paper',       hint: 'Grid on plain A4 with cut guides',  icon: '▤' },
-    { key: 'thermal-sticker', label: 'Thermal Sticker',      hint: 'One die-cut sticker per label',     icon: '🏷' },
-    { key: 'thermal-roll',    label: 'Thermal Continuous',   hint: 'Continuous roll, auto height',      icon: '🧾' },
+    { key: 'a4-sheet',        label: t('printType.a4Sheet.label'),        hint: t('printType.a4Sheet.hint'),        icon: '▦' },
+    { key: 'a4-plain',        label: t('printType.a4Plain.label'),        hint: t('printType.a4Plain.hint'),        icon: '▤' },
+    { key: 'thermal-sticker', label: t('printType.thermalSticker.label'), hint: t('printType.thermalSticker.hint'), icon: '🏷' },
+    { key: 'thermal-roll',    label: t('printType.thermalRoll.label'),    hint: t('printType.thermalRoll.hint'),    icon: '🧾' },
   ];
 
   // Size-preset picker for the thermal modes (label rolls / receipt rolls).
@@ -473,7 +477,7 @@ function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchShee
       {/* Print Type — the primary decision (spec section 1A). Decides which
           physical renderer runs. */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Print type</p>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('printType.title')}</p>
         <div className="grid grid-cols-2 gap-1.5">
           {PRINT_TYPES.map(pt => (
             <button
@@ -492,17 +496,17 @@ function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchShee
         <div className="space-y-3">
           {/* Orientation */}
           <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Page orientation</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('paper.pageOrientation')}</p>
             <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
               {(['portrait', 'landscape'] as const).map(o => (
-                <button key={o} onClick={() => patchSheet({ orientation: o }, true)} className={`flex-1 py-1.5 rounded-md text-xs font-bold capitalize ${sheet.orientation === o ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>A4 {o}</button>
+                <button key={o} onClick={() => patchSheet({ orientation: o }, true)} className={`flex-1 py-1.5 rounded-md text-xs font-bold ${sheet.orientation === o ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>A4 {o === 'portrait' ? t('common.portrait') : t('common.landscape')}</button>
               ))}
             </div>
           </div>
 
           {/* Grid presets */}
           <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Layout preset</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('paper.layoutPreset')}</p>
             <div className="grid grid-cols-2 gap-1.5">
               {A4_SHEET_PRESETS.map(p => {
                 const active = sheet.columns === p.columns && sheet.rows === p.rows;
@@ -518,52 +522,52 @@ function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchShee
 
           {/* Columns / rows */}
           <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grid (labels auto-fit the page)</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('paper.gridTitle')}</p>
             <div className="grid grid-cols-2 gap-2">
-              <NumberInput label="Columns" value={sheet.columns} onChange={v => patchSheet({ columns: Math.max(1, Math.round(v)) }, true)} min={1} max={8} step={1} />
-              <NumberInput label="Rows" value={sheet.rows} onChange={v => patchSheet({ rows: Math.max(1, Math.round(v)) }, true)} min={1} max={20} step={1} />
+              <NumberInput label={t('paper.columns')} value={sheet.columns} onChange={v => patchSheet({ columns: Math.max(1, Math.round(v)) }, true)} min={1} max={8} step={1} />
+              <NumberInput label={t('paper.rows')} value={sheet.rows} onChange={v => patchSheet({ rows: Math.max(1, Math.round(v)) }, true)} min={1} max={20} step={1} />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <NumberInput label="Label width" value={sheet.labelWidthMm} onChange={v => patchSheet({ labelWidthMm: v })} min={10} max={210} step={0.5} suffix="mm" />
-              <NumberInput label="Label height" value={sheet.labelHeightMm} onChange={v => patchSheet({ labelHeightMm: v })} min={8} max={297} step={0.5} suffix="mm" />
+              <NumberInput label={t('paper.labelWidth')} value={sheet.labelWidthMm} onChange={v => patchSheet({ labelWidthMm: v })} min={10} max={210} step={0.5} suffix="mm" />
+              <NumberInput label={t('paper.labelHeight')} value={sheet.labelHeightMm} onChange={v => patchSheet({ labelHeightMm: v })} min={8} max={297} step={0.5} suffix="mm" />
             </div>
-            <button onClick={() => patchSheet({}, true)} className="w-full h-8 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-[11px] font-bold hover:border-emerald-500">Auto-fit label size to grid</button>
+            <button onClick={() => patchSheet({}, true)} className="w-full h-8 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-[11px] font-bold hover:border-emerald-500">{t('paper.autoFitGrid')}</button>
           </div>
 
           {/* Gaps + page margins */}
           <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gaps between labels (mm)</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('paper.gapsTitle')}</p>
             <div className="grid grid-cols-2 gap-2">
-              <NumberInput label="Horizontal gap" value={sheet.gapXMm} onChange={v => patchSheet({ gapXMm: v }, true)} min={0} max={30} step={0.5} suffix="mm" />
-              <NumberInput label="Vertical gap" value={sheet.gapYMm} onChange={v => patchSheet({ gapYMm: v }, true)} min={0} max={30} step={0.5} suffix="mm" />
+              <NumberInput label={t('paper.horizontalGap')} value={sheet.gapXMm} onChange={v => patchSheet({ gapXMm: v }, true)} min={0} max={30} step={0.5} suffix="mm" />
+              <NumberInput label={t('paper.verticalGap')} value={sheet.gapYMm} onChange={v => patchSheet({ gapYMm: v }, true)} min={0} max={30} step={0.5} suffix="mm" />
             </div>
           </div>
           <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Page margins (mm)</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('paper.pageMarginsTitle')}</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <NumberInput label="Top" value={sheet.marginTopMm} onChange={v => patchSheet({ marginTopMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
-              <NumberInput label="Bottom" value={sheet.marginBottomMm} onChange={v => patchSheet({ marginBottomMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
-              <NumberInput label="Left" value={sheet.marginLeftMm} onChange={v => patchSheet({ marginLeftMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
-              <NumberInput label="Right" value={sheet.marginRightMm} onChange={v => patchSheet({ marginRightMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label={t('common.top')} value={sheet.marginTopMm} onChange={v => patchSheet({ marginTopMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label={t('common.bottom')} value={sheet.marginBottomMm} onChange={v => patchSheet({ marginBottomMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label={t('common.left')} value={sheet.marginLeftMm} onChange={v => patchSheet({ marginLeftMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
+              <NumberInput label={t('common.right')} value={sheet.marginRightMm} onChange={v => patchSheet({ marginRightMm: v }, true)} min={0} max={40} step={0.5} suffix="mm" />
             </div>
           </div>
 
           <p className="text-[11px] text-slate-400 bg-slate-800/40 rounded-lg px-3 py-2 border border-slate-700/50">
-            <b className="text-emerald-300">{geo.perPage}</b> labels per A4 page · cell <b className="text-slate-200">{sheet.labelWidthMm} × {sheet.labelHeightMm} mm</b>. The barcode is sized to the cell — never stretched across the page.
+            {t('paper.perPageSummary', { count: geo.perPage, width: sheet.labelWidthMm, height: sheet.labelHeightMm })}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {printType === 'thermal-sticker' && presetGroup('label', 'Die-cut sticker sizes')}
-          {printType === 'thermal-roll' && presetGroup('thermal', 'Continuous roll widths')}
-          {presetGroup('custom', 'Custom size')}
+          {printType === 'thermal-sticker' && presetGroup('label', t('paper.dieCutSizes'))}
+          {printType === 'thermal-roll' && presetGroup('thermal', t('paper.continuousRollWidths'))}
+          {presetGroup('custom', t('paper.customSize'))}
 
           {profile.preset === 'custom' && (
             <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom size (mm)</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('paper.customWidthHeight')}</p>
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Width" value={profile.labelWidthMm} onChange={v => patch({ labelWidthMm: v })} min={10} max={500} step={1} suffix="mm" />
-                <NumberInput label="Height (0 = roll paper)" value={profile.labelHeightMm} onChange={v => patch({ labelHeightMm: v })} min={0} max={500} step={1} suffix="mm" />
+                <NumberInput label={t('paper.customWidth')} value={profile.labelWidthMm} onChange={v => patch({ labelWidthMm: v })} min={10} max={500} step={1} suffix="mm" />
+                <NumberInput label={t('paper.customHeight')} value={profile.labelHeightMm} onChange={v => patch({ labelHeightMm: v })} min={0} max={500} step={1} suffix="mm" />
               </div>
             </div>
           )}
@@ -571,57 +575,57 @@ function PaperSection({ profile, patch, onPickPreset, onPickPrintType, patchShee
       )}
 
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Printer resolution</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{t('resolution.title')}</p>
         <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-          {([[0, 'Auto'], [203, '203 DPI'], [300, '300 DPI'], [600, '600 DPI']] as const).map(([v, l]) => (
+          {([[0, t('common.auto')], [203, '203 DPI'], [300, '300 DPI'], [600, '600 DPI']] as const).map(([v, l]) => (
             <button key={v} onClick={() => patch({ dpi: v as any })} className={`flex-1 py-1.5 rounded-md text-xs font-bold ${profile.dpi === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{l}</button>
           ))}
         </div>
-        <p className="text-[10px] text-slate-500">Most thermal-label printers are <b>203 DPI</b>. Office laser/inkjet = 600. Leave on Auto if unsure.</p>
+        <p className="text-[10px] text-slate-500">{t('resolution.hint')}</p>
       </div>
     </div>
   );
 }
 
-function BarcodeSection({ profile, patch, validation }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; validation: ReturnType<typeof validateBarcode> }) {
+function BarcodeSection({ t, profile, patch, validation }: { t: T; profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; validation: ReturnType<typeof validateBarcode> }) {
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Barcode type</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('barcodeSection.typeTitle')}</p>
         <div className="grid grid-cols-3 gap-1">
-          {(['auto', 'CODE128', 'EAN13', 'EAN8', 'UPC', 'CODE39'] as const).map(t => (
-            <button key={t} onClick={() => patch({ barcodeType: t })} className={`py-1.5 rounded-md text-xs font-bold ${profile.barcodeType === t ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'}`}>{t === 'auto' ? 'Auto' : t}</button>
+          {(['auto', 'CODE128', 'EAN13', 'EAN8', 'UPC', 'CODE39'] as const).map(bt => (
+            <button key={bt} onClick={() => patch({ barcodeType: bt })} className={`py-1.5 rounded-md text-xs font-bold ${profile.barcodeType === bt ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'}`}>{bt === 'auto' ? t('common.auto') : bt}</button>
           ))}
         </div>
         <p className="text-[10px] text-slate-500">
-          Auto picks the right symbology from the barcode value.
-          {validation.resolvedFormat && ` Currently: ${validation.resolvedFormat}.`}
+          {t('barcodeSection.autoHint')}
+          {validation.resolvedFormat && t('barcodeSection.autoHintFormat', { format: validation.resolvedFormat })}
         </p>
       </div>
 
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Auto-Fit Size</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('barcodeSection.autoFitTitle')}</p>
           <button onClick={() => patch({ autoFit: !profile.autoFit })} className={`w-9 h-5 rounded-full relative ${profile.autoFit ? 'bg-emerald-500' : 'bg-slate-700'}`}>
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${profile.autoFit ? 'translate-x-4' : ''}`} />
           </button>
         </div>
-        <p className="text-[10px] text-slate-500">Vyapar calculates the biggest barcode that fits inside the label with a safe quiet zone.</p>
+        <p className="text-[10px] text-slate-500">{t('barcodeSection.autoFitHint')}</p>
       </div>
 
       {!profile.autoFit && (
         <div className="grid grid-cols-2 gap-2">
-          <NumberInput label="Barcode width" value={profile.barcodeWidthMm} onChange={v => patch({ barcodeWidthMm: v })} min={6} max={200} step={0.5} suffix="mm" />
-          <NumberInput label="Barcode height" value={profile.barcodeHeightMm} onChange={v => patch({ barcodeHeightMm: v })} min={4} max={100} step={0.5} suffix="mm" />
+          <NumberInput label={t('barcodeSection.barcodeWidth')} value={profile.barcodeWidthMm} onChange={v => patch({ barcodeWidthMm: v })} min={6} max={200} step={0.5} suffix="mm" />
+          <NumberInput label={t('barcodeSection.barcodeHeight')} value={profile.barcodeHeightMm} onChange={v => patch({ barcodeHeightMm: v })} min={4} max={100} step={0.5} suffix="mm" />
         </div>
       )}
 
-      <NumberInput label="Quiet zone (silent margin)" value={profile.quietZoneMm} onChange={v => patch({ quietZoneMm: v })} min={0} max={10} step={0.5} suffix="mm" hint="Required white space around the barcode. 2 mm safe for Code128; 3+ mm for EAN/UPC." />
+      <NumberInput label={t('barcodeSection.quietZone')} value={profile.quietZoneMm} onChange={v => patch({ quietZoneMm: v })} min={0} max={10} step={0.5} suffix="mm" hint={t('barcodeSection.quietZoneHint')} />
     </div>
   );
 }
 
-function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; sampleSku?: string; sampleOtherCode?: string }) {
+function TextSection({ t, profile, patch, sampleSku, sampleOtherCode }: { t: T; profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; sampleSku?: string; sampleOtherCode?: string }) {
   const fieldToggle = (k: keyof PrinterProfile['fields'], label: string) => (
     <button key={k} onClick={() => patch({ fields: { ...profile.fields, [k]: !profile.fields[k] } })}
       className={`px-2 py-1.5 rounded-md text-[11px] font-bold border ${profile.fields[k] ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
@@ -631,55 +635,70 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-slate-700 p-3 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Show on label</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{t('text.showOnLabel')}</p>
         {/* 2-col on phones so the "Product Name" / "Barcode #" chips
             don't wrap onto two ugly lines each; 3-col from sm+. */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-          {fieldToggle('shopName', 'Shop Name')}
-          {fieldToggle('productName', 'Product Name')}
-          {fieldToggle('sku', 'SKU')}
-          {fieldToggle('otherCode', 'Other Code')}
-          {fieldToggle('barcodeNumber', 'Barcode #')}
-          {fieldToggle('sellingPrice', 'Sell Price')}
-          {fieldToggle('mrp', 'MRP')}
-          {fieldToggle('variant', 'Variant')}
-          {fieldToggle('size', 'Size')}
-          {fieldToggle('colour', 'Colour')}
-          {fieldToggle('customText', 'Custom Text')}
+          {fieldToggle('shopName', t('text.field.shopName'))}
+          {fieldToggle('productName', t('text.field.productName'))}
+          {fieldToggle('sku', t('text.field.sku'))}
+          {fieldToggle('otherCode', t('text.field.otherCode'))}
+          {fieldToggle('barcodeNumber', t('text.field.barcodeNumber'))}
+          {fieldToggle('sellingPrice', t('text.field.sellPrice'))}
+          {fieldToggle('mrp', t('text.field.mrp'))}
+          {fieldToggle('variant', t('text.field.variant'))}
+          {fieldToggle('size', t('text.field.size'))}
+          {fieldToggle('colour', t('text.field.colour'))}
+          {fieldToggle('customText', t('text.field.customText'))}
         </div>
         {profile.fields.sellingPrice && (
-          <div className="mt-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Selling-price caption</label>
-            <input
-              type="text"
-              value={profile.sellingPriceLabel ?? ''}
-              onChange={e => patch({ sellingPriceLabel: e.target.value })}
-              placeholder="e.g. Offer, Rate, Price"
-              maxLength={12}
-              className="w-full h-9 px-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <p className="text-[10px] text-slate-500 mt-1">Word shown before the selling price (e.g. <b>Offer 499</b>). MRP prints separately above it.</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.sellingCaptionBefore')}</label>
+              <input
+                type="text"
+                value={profile.sellingPriceLabel ?? ''}
+                onChange={e => patch({ sellingPriceLabel: e.target.value })}
+                placeholder={t('text.sellingCaptionPlaceholder')}
+                maxLength={12}
+                className="w-full h-9 px-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.sellingSuffixAfter')}</label>
+              <input
+                type="text"
+                value={profile.sellingPriceSuffix ?? ''}
+                onChange={e => patch({ sellingPriceSuffix: e.target.value })}
+                placeholder={t('text.sellingSuffixPlaceholder')}
+                maxLength={12}
+                className="w-full h-9 px-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <p className="col-span-2 text-[10px] text-slate-500 -mt-0.5">
+              {t('text.sellingHint')}
+            </p>
           </div>
         )}
         <div className="mt-2">
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Currency symbol on price</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.currencySymbol')}</label>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-            {([['', 'None'], ['Rs.', 'Rs.'], ['₹', '₹']] as const).map(([v, lbl]) => (
+            {([['', t('common.none')], ['Rs.', 'Rs.'], ['₹', '₹']] as const).map(([v, lbl]) => (
               <button key={lbl} onClick={() => patch({ currencyPrefix: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.currencyPrefix ?? '') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{lbl}</button>
             ))}
           </div>
-          <p className="text-[10px] text-slate-500 mt-1">Printed PDF can't render ₹ cleanly on all printers — "None" prints just the number (e.g. <b>MRP 1,300</b>).</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('text.currencyHint')}</p>
         </div>
         <div className="mt-2">
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Number format</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.numberFormat')}</label>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-            {([['comma', 'Comma', '3,899'], ['plain', 'Plain', '3899'], ['decimal', 'Decimal', '3899.00']] as const).map(([v, lbl, ex]) => (
+            {([['comma', t('text.numberFormatComma'), '3,899'], ['plain', t('text.numberFormatPlain'), '3899'], ['decimal', t('text.numberFormatDecimal'), '3899.00']] as const).map(([v, lbl, ex]) => (
               <button key={v} onClick={() => patch({ priceNumberFormat: v })} className={`flex-1 py-1.5 rounded-md text-[11px] font-bold ${(profile.priceNumberFormat ?? 'comma') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
                 {lbl}<span className="block text-[9px] font-medium opacity-80">{ex}</span>
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-slate-500 mt-1">Applies to both MRP and Selling/Offer price — write the number however reads best on your label.</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('text.numberFormatHint')}</p>
         </div>
       </div>
 
@@ -687,21 +706,21 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
       {profile.fields.mrp && (
         <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MRP</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('text.mrpTitle')}</p>
             <button
               type="button"
               onClick={() => patch({ mrpStrikethrough: !(profile.mrpStrikethrough ?? true) })}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold border ${(profile.mrpStrikethrough ?? true) ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}
             >
-              <span className={(profile.mrpStrikethrough ?? true) ? 'line-through' : ''}>Cut-price line</span>
+              <span className={(profile.mrpStrikethrough ?? true) ? 'line-through' : ''}>{t('text.cutPriceLine')}</span>
               <span className={`w-7 h-4 rounded-full relative shrink-0 ${(profile.mrpStrikethrough ?? true) ? 'bg-emerald-500' : 'bg-slate-700'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${(profile.mrpStrikethrough ?? true) ? 'translate-x-3' : ''}`} />
               </span>
             </button>
           </div>
-          <p className="text-[10px] text-slate-500 -mt-1">On: MRP prints with a line through it (e.g. ₹1,300). Off: MRP prints as a plain number.</p>
+          <p className="text-[10px] text-slate-500 -mt-1">{t('text.cutPriceHint')}</p>
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">MRP text size</label>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.mrpTextSize')}</label>
             <select value={profile.mrpFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ mrpFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
               {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18].map(n => <option key={n} value={n}>{n}pt</option>)}
             </select>
@@ -713,19 +732,19 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           place it above or below the barcode. */}
       {profile.fields.sellingPrice && (
         <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Offer / selling price</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('text.offerPriceTitle')}</p>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Price size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.priceSize')}</label>
               <select value={profile.priceFontSizePt ?? (profile.fontSizePt + 2)} onChange={e => patch({ priceFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[7, 8, 9, 10, 11, 12, 14, 16, 18, 20].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Price position</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.pricePosition')}</label>
               <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
                 {(['above', 'below'] as const).map(v => (
-                  <button key={v} onClick={() => patch({ pricePosition: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.pricePosition ?? 'below') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v} barcode</button>
+                  <button key={v} onClick={() => patch({ pricePosition: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.pricePosition ?? 'below') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v === 'above' ? t('text.aboveBarcode') : t('text.belowBarcode')}</button>
                 ))}
               </div>
             </div>
@@ -735,11 +754,11 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
 
       {/* Per-row text sizes — Shop name / Product name / Variant / Barcode # */}
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Other row sizes</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('text.otherRowSizes')}</p>
         <div className="grid grid-cols-2 gap-2">
           {profile.fields.shopName && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Shop name size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.shopNameSize')}</label>
               <select value={profile.headerFontSizePt ?? (profile.fontSizePt + 1)} onChange={e => patch({ headerFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
@@ -747,7 +766,7 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           )}
           {profile.fields.productName && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Product name size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.productNameSize')}</label>
               <select value={profile.productNameFontSizePt ?? profile.fontSizePt} onChange={e => patch({ productNameFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
@@ -755,7 +774,7 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           )}
           {(profile.fields.variant || profile.fields.size || profile.fields.colour) && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Variant/Size/Colour size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.variantSize')}</label>
               <select value={profile.variantFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ variantFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
@@ -763,7 +782,7 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           )}
           {profile.fields.barcodeNumber && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Barcode # size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.barcodeNumberSize')}</label>
               <select value={profile.barcodeNumberFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ barcodeNumberFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
@@ -771,7 +790,7 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           )}
           {profile.fields.sku && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">SKU size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.skuSize')}</label>
               <select value={profile.skuFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ skuFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
@@ -779,7 +798,7 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           )}
           {profile.fields.otherCode && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Other Code size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.otherCodeSize')}</label>
               <select value={profile.otherCodeFontSizePt ?? Math.max(6, profile.fontSizePt - 1)} onChange={e => patch({ otherCodeFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
@@ -787,45 +806,45 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
           )}
         </div>
         {profile.fields.sku && !sampleSku?.trim() && (
-          <p className="text-[10px] text-amber-400/90 flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 shrink-0" />This product has no SKU set — add one in Edit Product, or the SKU line won't print.</p>
+          <p className="text-[10px] text-amber-400/90 flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 shrink-0" />{t('text.skuMissingWarning')}</p>
         )}
         {profile.fields.otherCode && !sampleOtherCode?.trim() && (
-          <p className="text-[10px] text-amber-400/90 flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 shrink-0" />This product has no Other Code set — add one in Edit Product, or the line won't print.</p>
+          <p className="text-[10px] text-amber-400/90 flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 shrink-0" />{t('text.otherCodeMissingWarning')}</p>
         )}
       </div>
 
       {/* Custom text — independent size / bold / alignment / position. */}
       {profile.fields.customText && (
         <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom text</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('text.customTextTitle')}</p>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Text size</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.customTextSize')}</label>
               <select value={profile.customTextFontSizePt ?? profile.fontSizePt} onChange={e => patch({ customTextFontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
                 {[6, 7, 8, 9, 10, 11, 12, 14, 16].map(n => <option key={n} value={n}>{n}pt</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Thickness</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.thickness')}</label>
               <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-                {([['normal', false], ['bold', true]] as const).map(([lbl, v]) => (
-                  <button key={lbl} onClick={() => patch({ customTextBold: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${!!profile.customTextBold === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{lbl}</button>
+                {([[t('common.normal'), false], [t('common.bold'), true]] as const).map(([lbl, v]) => (
+                  <button key={String(v)} onClick={() => patch({ customTextBold: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${!!profile.customTextBold === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{lbl}</button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alignment</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.alignment')}</label>
               <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
                 {(['left', 'center', 'right'] as const).map(v => (
-                  <button key={v} onClick={() => patch({ customTextAlign: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.customTextAlign ?? 'center') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v}</button>
+                  <button key={v} onClick={() => patch({ customTextAlign: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.customTextAlign ?? 'center') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t(`common.${v}`)}</button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Position</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.position')}</label>
               <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
                 {(['above', 'below'] as const).map(v => (
-                  <button key={v} onClick={() => patch({ customTextPosition: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.customTextPosition ?? 'below') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v} barcode</button>
+                  <button key={v} onClick={() => patch({ customTextPosition: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${(profile.customTextPosition ?? 'below') === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v === 'above' ? t('text.aboveBarcode') : t('text.belowBarcode')}</button>
                 ))}
               </div>
             </div>
@@ -835,32 +854,32 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Font size</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.fontSize')}</label>
           <select value={profile.fontSizePt} onChange={e => patch({ fontSizePt: Number(e.target.value) })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
             {[6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n}>{n}pt</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Font weight</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.fontWeight')}</label>
           <select value={profile.fontWeight} onChange={e => patch({ fontWeight: e.target.value as any })} className="w-full h-9 px-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200">
-            <option value="normal">Normal</option>
-            <option value="medium">Medium</option>
-            <option value="bold">Bold</option>
+            <option value="normal">{t('common.normal')}</option>
+            <option value="medium">{t('common.medium')}</option>
+            <option value="bold">{t('common.bold')}</option>
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alignment</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.alignment')}</label>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             {(['left', 'center', 'right'] as const).map(v => (
-              <button key={v} onClick={() => patch({ textAlign: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.textAlign === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v}</button>
+              <button key={v} onClick={() => patch({ textAlign: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.textAlign === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t(`common.${v}`)}</button>
             ))}
           </div>
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Text position</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('text.textPosition')}</label>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             {(['above', 'below'] as const).map(v => (
-              <button key={v} onClick={() => patch({ textPosition: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.textPosition === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v} barcode</button>
+              <button key={v} onClick={() => patch({ textPosition: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.textPosition === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v === 'above' ? t('text.aboveBarcode') : t('text.belowBarcode')}</button>
             ))}
           </div>
         </div>
@@ -869,104 +888,103 @@ function TextSection({ profile, patch, sampleSku, sampleOtherCode }: { profile: 
   );
 }
 
-function QRSection({ profile, patch }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void }) {
+function QRSection({ t, profile, patch }: { t: T; profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void }) {
   return (
     <div className="space-y-3">
-      <NumberInput label="QR size (always square)" value={profile.qrSizeMm} onChange={v => patch({ qrSizeMm: v })} min={8} max={100} step={0.5} suffix="mm" />
+      <NumberInput label={t('qr.size')} value={profile.qrSizeMm} onChange={v => patch({ qrSizeMm: v })} min={8} max={100} step={0.5} suffix="mm" />
       <div>
-        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Error correction</label>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('qr.errorCorrection')}</label>
         <div className="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-lg">
           {(['L', 'M', 'Q', 'H'] as const).map(v => (
             <button key={v} onClick={() => patch({ qrErrorLevel: v })} className={`py-1.5 rounded-md text-[11px] font-bold ${profile.qrErrorLevel === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-              {v === 'L' ? 'Low' : v === 'M' ? 'Medium' : v === 'Q' ? 'Quartile' : 'High'}
+              {v === 'L' ? t('common.low') : v === 'M' ? t('common.medium') : v === 'Q' ? t('common.quartile') : t('common.high')}
             </button>
           ))}
         </div>
-        <p className="text-[10px] text-slate-500 mt-1">Higher = more damage-tolerant but larger QR pattern. Medium is a safe default.</p>
+        <p className="text-[10px] text-slate-500 mt-1">{t('qr.hint')}</p>
       </div>
     </div>
   );
 }
 
-function PositionSection({ profile, patch }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void }) {
+function PositionSection({ t, profile, patch }: { t: T; profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Horizontal</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('position.horizontal')}</label>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             {(['left', 'center', 'right'] as const).map(v => (
-              <button key={v} onClick={() => patch({ positionH: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.positionH === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v}</button>
+              <button key={v} onClick={() => patch({ positionH: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.positionH === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t(`common.${v}`)}</button>
             ))}
           </div>
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Vertical</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('position.vertical')}</label>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             {(['top', 'center', 'bottom'] as const).map(v => (
-              <button key={v} onClick={() => patch({ positionV: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.positionV === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{v}</button>
+              <button key={v} onClick={() => patch({ positionV: v })} className={`flex-1 py-1 rounded-md text-[11px] font-bold ${profile.positionV === v ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t(`common.${v}`)}</button>
             ))}
           </div>
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margins (mm)</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('position.margins')}</p>
         {/* Four ~30px number inputs across a 320px phone screen leave zero
             room for the "mm" suffix and get comically thin — 2×2 grid on
             mobile stays readable, 4-across on sm+. */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <NumberInput label="Top" value={profile.margins.top} onChange={v => patch({ margins: { ...profile.margins, top: v } })} min={0} max={20} step={0.5} suffix="mm" />
-          <NumberInput label="Right" value={profile.margins.right} onChange={v => patch({ margins: { ...profile.margins, right: v } })} min={0} max={20} step={0.5} suffix="mm" />
-          <NumberInput label="Bottom" value={profile.margins.bottom} onChange={v => patch({ margins: { ...profile.margins, bottom: v } })} min={0} max={20} step={0.5} suffix="mm" />
-          <NumberInput label="Left" value={profile.margins.left} onChange={v => patch({ margins: { ...profile.margins, left: v } })} min={0} max={20} step={0.5} suffix="mm" />
+          <NumberInput label={t('common.top')} value={profile.margins.top} onChange={v => patch({ margins: { ...profile.margins, top: v } })} min={0} max={20} step={0.5} suffix="mm" />
+          <NumberInput label={t('common.right')} value={profile.margins.right} onChange={v => patch({ margins: { ...profile.margins, right: v } })} min={0} max={20} step={0.5} suffix="mm" />
+          <NumberInput label={t('common.bottom')} value={profile.margins.bottom} onChange={v => patch({ margins: { ...profile.margins, bottom: v } })} min={0} max={20} step={0.5} suffix="mm" />
+          <NumberInput label={t('common.left')} value={profile.margins.left} onChange={v => patch({ margins: { ...profile.margins, left: v } })} min={0} max={20} step={0.5} suffix="mm" />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <NumberInput label="Text-to-barcode gap" value={profile.spacingMm} onChange={v => patch({ spacingMm: v })} min={0} max={10} step={0.5} suffix="mm" />
+        <NumberInput label={t('position.textToBarcodeGap')} value={profile.spacingMm} onChange={v => patch({ spacingMm: v })} min={0} max={10} step={0.5} suffix="mm" />
       </div>
 
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rotation</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('position.rotationTitle')}</p>
         <div className="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-lg">
           {([0, 90, 180, 270] as const).map(r => (
             <button key={r} onClick={() => patch({ rotation: r as Rotation })} className={`py-1.5 rounded-md text-[11px] font-bold ${(profile.rotation ?? 0) === r ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{r}°</button>
           ))}
         </div>
-        <p className="text-[10px] text-slate-500">90° / 270° print the label sideways — useful when a horizontal barcode won't fit a narrow roll. The page size rotates with it. (Not applied to A4 sheets.)</p>
+        <p className="text-[10px] text-slate-500">{t('position.rotationHint')}</p>
       </div>
     </div>
   );
 }
 
-function CalibrationSection({ profile, patch, onPrintRuler }: { profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; onPrintRuler: () => void }) {
+function CalibrationSection({ t, profile, patch, onPrintRuler }: { t: T; profile: PrinterProfile; patch: (u: Partial<PrinterProfile>) => void; onPrintRuler: () => void }) {
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-slate-700 p-3 bg-slate-800/30 text-[11px] text-slate-300 leading-relaxed">
-        Print a calibration ruler, measure with a real ruler, then adjust below.
-        Example: if the printed 100 mm mark measures 98 mm on your ruler, set Horizontal to <b>102%</b>.
+        {t('calibration.intro')}
       </div>
 
       <button onClick={onPrintRuler} className="w-full h-10 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm font-bold flex items-center justify-center gap-2 hover:border-emerald-500">
-        <Ruler size={14} /> Print Calibration Ruler
+        <Ruler size={14} /> {t('calibration.printRuler')}
       </button>
 
       <div className="grid grid-cols-2 gap-2">
-        <NumberInput label="Horizontal scale" value={profile.scaleH} onChange={v => patch({ scaleH: v })} min={90} max={110} step={0.5} suffix="%" />
-        <NumberInput label="Vertical scale" value={profile.scaleV} onChange={v => patch({ scaleV: v })} min={90} max={110} step={0.5} suffix="%" />
+        <NumberInput label={t('calibration.horizontalScale')} value={profile.scaleH} onChange={v => patch({ scaleH: v })} min={90} max={110} step={0.5} suffix="%" />
+        <NumberInput label={t('calibration.verticalScale')} value={profile.scaleV} onChange={v => patch({ scaleV: v })} min={90} max={110} step={0.5} suffix="%" />
       </div>
 
       <div className="rounded-xl border border-slate-700 p-3 space-y-2 bg-slate-800/30">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Print offset (nudge the whole label)</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('calibration.printOffsetTitle')}</p>
         <div className="grid grid-cols-2 gap-2">
-          <NumberInput label="Horizontal offset" value={profile.offsetXMm} onChange={v => patch({ offsetXMm: v })} min={-20} max={20} step={0.1} suffix="mm" />
-          <NumberInput label="Vertical offset (feed)" value={profile.offsetYMm} onChange={v => patch({ offsetYMm: v })} min={-20} max={20} step={0.1} suffix="mm" />
+          <NumberInput label={t('calibration.horizontalOffset')} value={profile.offsetXMm} onChange={v => patch({ offsetXMm: v })} min={-20} max={20} step={0.1} suffix="mm" />
+          <NumberInput label={t('calibration.verticalOffset')} value={profile.offsetYMm} onChange={v => patch({ offsetYMm: v })} min={-20} max={20} step={0.1} suffix="mm" />
         </div>
-        <p className="text-[10px] text-slate-500">Shifts the content on the sticker if your printer prints too far left/up. Vertical = feed offset. Example: +1.0 / −0.5 mm.</p>
+        <p className="text-[10px] text-slate-500">{t('calibration.offsetHint')}</p>
       </div>
 
-      <p className="text-[10px] text-slate-500">Applied only to barcode labels — invoices and other prints are never touched. <b>Print density &amp; feed gap</b> are set in your printer's own driver/utility, not from the browser.</p>
+      <p className="text-[10px] text-slate-500">{t('calibration.footerNote')}</p>
     </div>
   );
 }
@@ -999,10 +1017,10 @@ function NumberInput({ label, value, onChange, min, max, step, suffix, hint }: {
  * fit the preview area. Not a raster, just a DOM box the same shape/rules
  * the print engine uses, so what the shopkeeper sees IS what prints.
  */
-function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string }) {
+function LabelPreview({ t, profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode }: { t: T; profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string }) {
   const isSheet = profile.printType === 'a4-sheet' || profile.printType === 'a4-plain';
   if (isSheet) {
-    return <SheetPreview profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />;
+    return <SheetPreview t={t} profile={profile} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />;
   }
 
   const targetPreviewWidth = 260; // px — width of the right-column preview
@@ -1018,7 +1036,7 @@ function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
   return (
     <div className="bg-white rounded-md mx-auto shadow-lg flex items-center justify-center" style={{ width: footW * s, height: footH * s }}>
       <div style={{ transform: `rotate(${rotation}deg)` }}>
-        <SingleLabelBox profile={profile} widthMm={profile.labelWidthMm} heightMm={heightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />
+        <SingleLabelBox t={t} profile={profile} widthMm={profile.labelWidthMm} heightMm={heightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} />
       </div>
     </div>
   );
@@ -1026,7 +1044,7 @@ function LabelPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
 
 /** The A4 page + tiled label grid preview. Positions come straight from
  *  computeSheetGeometry — exactly the same math the PDF renderer uses. */
-function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode }: { profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string }) {
+function SheetPreview({ t, profile, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode }: { t: T; profile: PrinterProfile; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string }) {
   const sheet = profile.sheet ?? DEFAULT_SHEET;
   const { page, cells } = computeSheetGeometry(sheet);
   const targetW = 260, targetH = 320;
@@ -1035,7 +1053,7 @@ function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
     <div className="bg-white rounded-md mx-auto shadow-lg relative overflow-hidden" style={{ width: page.widthMm * s, height: page.heightMm * s }}>
       {cells.map((cell, i) => (
         <div key={i} style={{ position: 'absolute', left: cell.x * s, top: cell.y * s, width: sheet.labelWidthMm * s, height: sheet.labelHeightMm * s, outline: profile.printType === 'a4-plain' ? '0.5px solid #cbd5e1' : 'none', overflow: 'hidden' }}>
-          <SingleLabelBox profile={{ ...profile, labelWidthMm: sheet.labelWidthMm, labelHeightMm: sheet.labelHeightMm, rotation: 0 }} widthMm={sheet.labelWidthMm} heightMm={sheet.labelHeightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} compact />
+          <SingleLabelBox t={t} profile={{ ...profile, labelWidthMm: sheet.labelWidthMm, labelHeightMm: sheet.labelHeightMm, rotation: 0 }} widthMm={sheet.labelWidthMm} heightMm={sheet.labelHeightMm} scale={s} sampleName={sampleName} sampleVariant={sampleVariant} sampleBarcode={sampleBarcode} samplePrice={samplePrice} sampleMrp={sampleMrp} sampleSku={sampleSku} sampleOtherCode={sampleOtherCode} compact />
         </div>
       ))}
     </div>
@@ -1058,21 +1076,21 @@ function SheetPreview({ profile, sampleName, sampleVariant, sampleBarcode, sampl
  * layout function makes that class of preview/print mismatch structurally
  * impossible: whatever the PDF will draw, the preview shows.
  */
-function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode, compact }: { profile: PrinterProfile; widthMm: number; heightMm: number; scale: number; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string; compact?: boolean }) {
+function SingleLabelBox({ t, profile, widthMm, heightMm, scale, sampleName, sampleVariant, sampleBarcode, samplePrice, sampleMrp, sampleSku, sampleOtherCode, compact }: { t: T; profile: PrinterProfile; widthMm: number; heightMm: number; scale: number; sampleName?: string; sampleVariant?: string; sampleBarcode?: string; samplePrice?: number; sampleMrp?: number; sampleSku?: string; sampleOtherCode?: string; compact?: boolean }) {
   const subProfile = { ...profile, labelWidthMm: widthMm, labelHeightMm: heightMm };
   const barcode = sampleBarcode || '123456789012';
-  const name = sampleName || 'Sample Product';
-  const variant = sampleVariant || 'Black / M';
+  const name = sampleName || t('sample.productName');
+  const variant = sampleVariant || t('sample.variant');
   const sellVal = samplePrice && samplePrice > 0 ? samplePrice : 0;
   // MRP sample: use the real MRP if given; else show a plausible MRP above the
   // selling price so the "both prices" layout is visible in the preview.
   const mrpVal = sampleMrp && sampleMrp > 0 ? sampleMrp : (sellVal > 0 ? Math.round(sellVal * 1.2) : 0);
   // SKU sample: real SKU if the product has one; else a placeholder so the
   // "SKU" toggle actually shows something when previewing, not a blank row.
-  const skuVal = sampleSku?.trim() || 'ABC-123';
+  const skuVal = sampleSku?.trim() || t('sample.sku');
   // Other Code sample: real value if the product has one; else a placeholder
   // so the toggle actually shows something when previewing, not a blank row.
-  const otherCodeVal = sampleOtherCode?.trim() || 'REF-001';
+  const otherCodeVal = sampleOtherCode?.trim() || t('sample.otherCode');
 
   // A4 grid cells skip the shop-name header (compact) to avoid repeating it
   // on every single cell of a sheet — same placeholder text the header would
@@ -1082,8 +1100,8 @@ function SingleLabelBox({ profile, widthMm, heightMm, scale, sampleName, sampleV
     subProfile,
     { name, variantKey: variant, barcode, sellingPrice: sellVal, mrp: mrpVal, sku: skuVal, otherCode: otherCodeVal },
     {
-      labelLine1: profile.fields.shopName && !compact ? 'Shop Name' : undefined,
-      labelText: profile.fields.customText ? 'Custom text' : undefined,
+      labelLine1: profile.fields.shopName && !compact ? t('sample.shopName') : undefined,
+      labelText: profile.fields.customText ? t('sample.customText') : undefined,
     },
   );
 

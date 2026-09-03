@@ -213,6 +213,10 @@ export default function SuppliersPage() {
           <ExportButton
             filename="suppliers"
             title="Supplier List"
+            // 10 columns (incl. Address/Email, both long free text) crush to
+            // an unreadable, letter-wrapping mess in portrait's ~180mm body
+            // width — landscape's ~267mm gives them room to breathe.
+            orientation="landscape"
             dateRange={range.from && range.to ? `${range.from} – ${range.to}` : undefined}
             summary={[
               { label: t('totalPurchase'), value: rupee(summary.totalPurchased) },
@@ -1573,6 +1577,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             <ExportButton
               filename={`supplier-${(s?.name || 'history').toString().trim().replace(/\s+/g, '-').toLowerCase()}`}
               title={`${s?.name || t('supplierFallback')} — ${t('paymentHistoryTitle')}`}
+              orientation="landscape"
               summary={[
                 { label: t('purchasedHeader'), value: rupee(totals.totalPurchased) },
                 { label: t('paidHeader'), value: rupee(totals.totalPaid), tone: 'positive' },
@@ -1583,6 +1588,11 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                 { key: 'type', label: 'Type' },
                 { key: 'billNumber', label: 'Bill Number' },
                 { key: 'amount', label: 'Amount', type: 'currency' },
+                { key: 'paymentMethod', label: 'Payment Method' },
+                { key: 'billTotalAmount', label: 'Bill Total', type: 'currency' },
+                { key: 'billPaid', label: 'Bill Paid', type: 'currency' },
+                { key: 'billRemaining', label: 'Bill Remaining', type: 'currency' },
+                { key: 'billStatus', label: 'Status' },
                 { key: 'note', label: 'Note' },
               ]}
               // Oldest-first for the exported document only — see LedgerView.tsx
@@ -1593,6 +1603,15 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                 type: tr.type === 'payment' ? t('paymentType') : t('purchaseType'),
                 billNumber: tr.billNumber || '',
                 amount: tr.amount,
+                // Payment method only applies to an actual payment event — a
+                // purchase row isn't itself a payment, so it stays blank.
+                // `null` (not '') so exportToPDF's currency branch doesn't
+                // coerce a missing value into a misleading "Rs 0".
+                paymentMethod: tr.paymentMethod || null,
+                billTotalAmount: tr.billTotalAmount ?? null,
+                billPaid: tr.billPaid ?? null,
+                billRemaining: tr.billRemaining ?? null,
+                billStatus: tr.billStatus || null,
                 note: tr.note || '',
               }))}
             />
@@ -2057,6 +2076,7 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
   const [date, setDate] = useState(toInputDate(new Date()));
   const [billNumber, setBillNumber] = useState('');
   const [note, setNote] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -2106,6 +2126,7 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
         type: mode,
         amount: amountNum,
         ...(mode === 'purchase' ? { paidAmount: paidNum } : {}),
+        ...(mode === 'payment' || paidNum > 0 ? { paymentMethod } : {}),
         date,
         billNumber,
         note,
@@ -2221,6 +2242,27 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
           <input required value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className={inputCls} placeholder={t('billNoPlaceholder')} />
         </Field>
       </div>
+
+      {(mode === 'payment' || paidNum > 0) && (
+        <Field label={t('paymentMethodLabel') || 'Payment Method'}>
+          <div className="flex gap-1.5 flex-wrap">
+            {(['Cash', 'UPI', 'Card'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setPaymentMethod(m)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                  paymentMethod === m
+                    ? 'bg-emerald-600 border-emerald-600 text-white'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {m === 'Cash' ? (t('paymentMethodCash') || 'Cash') : m === 'UPI' ? (t('paymentMethodUpi') || 'UPI') : (t('paymentMethodCard') || 'Card')}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
 
       <Field label={t('descriptionLabel')} required>
         <input

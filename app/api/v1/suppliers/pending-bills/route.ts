@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
+import { isSupplierCredit } from '@/lib/server/ledgerClassification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,7 +68,7 @@ export const GET = handle(async (req) => {
     const openPurchases: { id: string; billNumber: string; date: Date | null; originalAmount: number; remaining: number }[] = [];
     for (const t of txns) {
       const amount = Number(t.amount) || 0;
-      if (t.type === 'payment') {
+      if (isSupplierCredit(t.type)) {
         let toApply = amount;
         for (const p of openPurchases) {
           if (toApply <= 0) break;

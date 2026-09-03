@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
+import { isSupplierCredit } from '@/lib/server/ledgerClassification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,7 +68,8 @@ export const GET = handle(async (req) => {
     const amount = row._sum.amount || 0;
     // 'credit' is the legacy type used for opening balances — it means
     // "amount owed to the supplier", same direction as a purchase.
-    if (row.type === 'payment') entry.paid += amount;
+    // 'purchase_return' reduces what's owed, same direction as a payment.
+    if (isSupplierCredit(row.type)) entry.paid += amount;
     else entry.purchased += amount;
     entry.txnCount += row._count.id;
   }

@@ -5,19 +5,23 @@ import dynamic from 'next/dynamic';
 import {
   TrendingUp, IndianRupee, Percent, Package, Users, ShoppingCart,
   FileText, Download, Loader2, BarChart3, PieChart, Receipt,
-  Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Box, Scale
+  Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Box, Scale,
+  FileSpreadsheet, ClipboardCheck, ExternalLink
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import { ExportButton, ReportPeriodProvider } from '@/lib/hooks/useExport';
+import FinancialYearPicker, { type DateRangeValue } from '@/components/reports/FinancialYearPicker';
+import CAReportPackModal, { getReportsForPackage } from '@/components/reports/CAReportPackModal';
+import { currentFinancialYear, toIsoDateIST } from '@/lib/financialYear';
 
 const ReportFilterBar = dynamic(() => import('@/components/reports/ReportFilterBar'), { ssr: false });
 const DrillDownChart = dynamic(() => import('@/components/reports/DrillDownChart'), { ssr: false });
 const ReportTable = dynamic(() => import('@/components/reports/ReportTable'), { ssr: false });
 
-type Tab = 'sales' | 'purchases' | 'stock' | 'financials' | 'expenses' | 'crm' | 'staff';
+type Tab = 'sales' | 'purchases' | 'stock' | 'financials' | 'expenses' | 'crm' | 'staff' | 'ca';
 
 const TAB_META: { id: Tab; icon: any; plans?: string[] }[] = [
   { id: 'sales', icon: TrendingUp },
@@ -27,6 +31,7 @@ const TAB_META: { id: Tab; icon: any; plans?: string[] }[] = [
   { id: 'crm', icon: Users },
   { id: 'purchases', icon: ShoppingCart, plans: ['wholesale'] },
   { id: 'staff', icon: FileText },
+  { id: 'ca', icon: ClipboardCheck },
 ];
 
 function KPICard({ label, value, sub, icon: Icon, color = 'emerald', trend }: any) {
@@ -863,6 +868,149 @@ function PurchasesTab({ filters }: { filters: any }) {
   );
 }
 
+// ── CA REPORTS TAB ────────────────────────────────────────────────────────
+// The CA/Accountant reporting layer — Sales/Purchase Registers, GST Summary
+// + Monthly, Non-GST report, Data Quality checklist, Trading Account, P&L,
+// Stock Summary, Ageing and Cash & Bank Summary (Mill reports added for
+// businessType === 'millprocessing'), all backed by app/api/v1/reports/
+// engine's `module=ca` branch. Every column here mirrors buildCaReports()
+// (shared with CAReportPackModal.tsx) so the on-screen table and the bulk
+// "CA Report Pack" export never drift apart. All labels/values route
+// through next-intl (Reports.ca.*) since the server intentionally returns
+// only structured data, never pre-baked English sentences.
+function CATab() {
+  const t = useTranslations('Reports.ca');
+  const { profile } = useBusinessStore();
+  const caReports = getReportsForPackage(profile.packageType, t);
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
+    const fy = currentFinancialYear();
+    return { from: toIsoDateIST(fy.from), to: toIsoDateIST(fy.to), label: fy.label };
+  });
+  const [subTab, setSubTab] = useState(caReports[0].key);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [showPack, setShowPack] = useState(false);
+
+  const activeDef = caReports.find((r) => r.key === subTab) || caReports[0];
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/reports/engine?module=ca&report_type=${subTab}&start_date=${dateRange.from}&end_date=${dateRange.to}`);
+      setData(res.data);
+    } catch (e) { console.error(e); setData(null); }
+    finally { setLoading(false); }
+  }, [subTab, dateRange]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const rows = data ? activeDef.rowsFrom(data) : [];
+  const summaryItems = data ? activeDef.summary?.(data) : undefined;
+  const isGstSummary = activeDef.key === 'gst_summary';
+  const isDataQuality = activeDef.key === 'data_quality';
+
+  // The server never sends a pre-baked English `note` — build the honesty
+  // disclaimer for whichever report is active, translated, here instead.
+  let note: string | null = null;
+  if (data) {
+    if (activeDef.key === 'profit_loss') note = t('notes.pnl');
+    else if (activeDef.key === 'trading_account') {
+      const uncosted = data.uncostedProducts || 0;
+      const adjCount = data.manualAdjustments?.count || 0;
+      const adjQty = data.manualAdjustments?.quantityTotal || 0;
+      note = t('notes.tradingAccountBasis')
+        + (uncosted > 0 ? ' ' + t('notes.tradingAccountUncosted', { count: uncosted }) : '')
+        + ' ' + (adjCount > 0 ? t('notes.tradingAccountAdjustments', { count: adjCount, qty: adjQty }) : t('notes.tradingAccountNoAdjustments'));
+    }
+    else if (activeDef.key === 'stock_summary') note = t('notes.stockSummary');
+    else if (activeDef.key === 'cash_bank_summary') note = t('notes.cashBank');
+  }
+
+  return (
+    <div className="space-y-6">
+      <FinancialYearPicker value={dateRange} onChange={setDateRange} />
+
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          {caReports.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => setSubTab(r.key)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                subTab === r.key ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setShowPack(true)}
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold hover:opacity-90 transition-opacity shrink-0"
+        >
+          <FileSpreadsheet size={14} /> {t('generatePack')}
+        </button>
+      </div>
+
+      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+        {t('disclaimer')}
+      </p>
+
+      {loading ? (
+        <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>
+      ) : (
+        <ReportPeriodProvider startDate={dateRange.from} endDate={dateRange.to}>
+          {summaryItems && summaryItems.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              {summaryItems.map((s) => (
+                <KPICard key={s.label} label={s.label} value={s.value} icon={isGstSummary ? Percent : IndianRupee} color="emerald" />
+              ))}
+            </div>
+          )}
+
+          {isGstSummary && (
+            <SectionCard title={t('inputGstSection')}>
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                {t('notes.gstInput')}
+              </p>
+              <p className="text-xs text-slate-500 mt-1 break-words">₹{Math.round(data?.input?.taxable || 0).toLocaleString('en-IN')} &middot; ₹{Math.round(data?.input?.gst || 0).toLocaleString('en-IN')}</p>
+            </SectionCard>
+          )}
+
+          {/* Trading Account / P&L / Stock Summary / Cash & Bank each carry
+              their own honesty disclaimer about how the figures were derived
+              — built above from structured data, translated. */}
+          {note && (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 px-4 py-3">
+              <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{note}</p>
+            </div>
+          )}
+
+          <SectionCard
+            title={activeDef.label}
+            actions={<ExportButton columns={activeDef.columns} data={rows} filename={activeDef.key} title={activeDef.label} orientation={activeDef.orientation} summary={summaryItems} />}
+          >
+            {isDataQuality && rows.length > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 flex items-center gap-1.5"><AlertTriangle size={13} /> {t('clickWarningHint')}</p>
+            )}
+            <div className="overflow-x-auto">
+              <ReportTable
+                columns={activeDef.columns.map((c) => ({ ...c, sortable: true, align: c.type === 'currency' || c.type === 'number' ? 'right' as const : 'left' as const }))}
+                rows={rows}
+                onRowClick={isDataQuality ? (row: any) => { if (row.link) window.location.href = row.link; } : undefined}
+                maxHeight="480px"
+              />
+            </div>
+          </SectionCard>
+        </ReportPeriodProvider>
+      )}
+
+      {showPack && <CAReportPackModal dateRange={dateRange} onClose={() => setShowPack(false)} />}
+    </div>
+  );
+}
+
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const { profile } = useBusinessStore();
@@ -923,6 +1071,9 @@ export default function ReportsPage() {
         {activeTab === 'staff' && <StaffTab filters={filters} />}
         {activeTab === 'purchases' && <PurchasesTab filters={filters} />}
       </ReportPeriodProvider>
+      {/* CA Reports manages its own Financial-Year period (not the calendar
+          date range above) and its own ReportPeriodProvider internally. */}
+      {activeTab === 'ca' && <CATab />}
     </div>
   );
 }

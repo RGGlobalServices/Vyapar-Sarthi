@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { isSupplierCredit } from '@/lib/server/ledgerClassification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,9 +109,10 @@ export const PATCH = handle(async (req, ctx: any) => {
   if (!isFinite(newAmount) || newAmount <= 0) throw new ApiError(400, 'A positive amount is required');
 
   const oldAmount = Number(txn.amount) || 0;
-  // Purchase adds to what's owed (+), payment reduces it (−). Adjust the
-  // balance by the signed change so Remaining reflects the corrected amount.
-  const sign = txn.type === 'payment' ? -1 : 1;
+  // Purchase adds to what's owed (+), payment/purchase_return reduces it
+  // (−) — see lib/server/ledgerClassification.ts. Adjust the balance by the
+  // signed change so Remaining reflects the corrected amount.
+  const sign = isSupplierCredit(txn.type) ? -1 : 1;
   const balanceDelta = sign * (newAmount - oldAmount);
   const nextBillNumber = body.billNumber !== undefined ? (String(body.billNumber).trim() || null) : txn.billNumber;
 

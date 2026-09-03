@@ -162,7 +162,7 @@
     "allRightsReserved": "सर्व हक्क राखीव."
   },
   "Returns": {
-    "title": "परतावा आणि परतावा",
+    "title": "परतावा आणि रिफंड्स",
     "subtitle": "उत्पादन परतावा प्रक्रिया करा आणि परतावा व्यवस्थापित करा",
     "findInvoice": "इनव्हॉइस शोधा",
     "enterInvoiceId": "परतावा सुरू करण्यासाठी इनव्हॉइस आयडी प्रविष्ट करा",
@@ -195,7 +195,70 @@
     "itemName": "आयटमचे नाव",
     "qty": "प्रमाण",
     "value": "मूल्य (₹)",
-    "noReturns": "यासाठी कोणताही परतावा नोंदवला नाही:"
+    "noReturns": "यासाठी कोणताही परतावा नोंदवला नाही:",
+    "action": "क्रिया",
+    "details": "तपशील",
+    "returnDetails": "परतावा तपशील",
+    "close": "बंद करा",
+    "downloadPdf": "PDF डाउनलोड करा",
+    "originalBillingDetails": "मूळ बिलिंग तपशील",
+    "invoiceNumber": "इनव्हॉइस क्रमांक",
+    "customerName": "ग्राहकाचे नाव",
+    "paymentType": "पेमेंट प्रकार",
+    "saleDate": "विक्री तारीख",
+    "notAvailable": "उपलब्ध नाही",
+    "billingDetailsUnavailable": "या परताव्यासाठी बिलिंग तपशील उपलब्ध नाहीत.",
+    "returnedQty": "परत केलेले प्रमाण",
+    "refundAmount": "परतावा रक्कम",
+    "reasons": {
+      "customerReturn": "ग्राहक परतावा",
+      "damage": "नुकसान / तुटणे",
+      "defect": "उत्पादन दोष",
+      "wrongItem": "चुकीचा आयटम डिलिव्हर झाला",
+      "expired": "एक्सपायर",
+      "other": "इतर समस्या"
+    },
+    "exchangeToggle": "🔁 दुसऱ्या आयटमसाठी एक्सचेंज करा",
+    "exchangeItems": "एक्सचेंज आयटम",
+    "exchangeItemsSubtitle": "ग्राहक परताव्याऐवजी काय घेऊन जाईल ते निवडा",
+    "addExchangeItem": "आयटम जोडा",
+    "searchProductPlaceholder": "उत्पादनाचे नाव शोधा...",
+    "noProductsFound": "कोणतेही उत्पादन सापडले नाही",
+    "selectVariant": "व्हेरियंट निवडा",
+    "exchangeQty": "प्रमाण",
+    "exchangePrice": "किंमत",
+    "remove": "काढा",
+    "noExchangeItemsYet": "अजून कोणताही एक्सचेंज आयटम जोडलेला नाही.",
+    "returnValueLabel": "परतावा मूल्य",
+    "exchangeValueLabel": "एक्सचेंज मूल्य",
+    "differenceLabel": "फरक",
+    "customerPaysMore": "ग्राहकाला फरकाची रक्कम द्यावी लागेल",
+    "shopRefundsDifference": "हे एक्सचेंज",
+    "clearFromUdhar": "↓ पार्टीच्या उधारीतून वजा होईल",
+    "refundCashOut": "💵 ग्राहकाला परतावा (रोख बाहेर)",
+    "noDifference": "समान एक्सचेंज — कोणतेही पैसे बदलणार नाहीत.",
+    "settleVia": "फरकाची रक्कम याद्वारे भरा",
+    "settleCash": "रोख",
+    "settleUpi": "UPI",
+    "settleCard": "कार्ड",
+    "settleUdhar": "उधारीत जोडा",
+    "settleUdharNoCustomer": "उधारीत जोडा (ग्राहक लिंक असणे आवश्यक आहे)",
+    "completeExchange": "एक्सचेंज पूर्ण करा",
+    "exchangeWarning": "एक्सचेंज प्रक्रिया केल्यास परत केलेल्या आयटमचा साठा परत जमा होईल, बदली आयटमचा साठा कमी होईल, आणि तुमच्या लेजरमध्ये फक्त किंमतीतील फरक नोंदवला जाईल.",
+    "exchangedBadge": "🔁 एक्सचेंज झाले",
+    "exchangedForLabel": "याच्या बदल्यात दिले",
+    "exchangeInvoiceLabel": "एक्सचेंज इनव्हॉइस",
+    "insufficientStock": "{name} साठी पुरेसा साठा नाही",
+    "pickAtLeastOneExchangeItem": "एक्सचेंजसाठी किमान एक आयटम जोडा",
+    "exchangeProcessed": "एक्सचेंज यशस्वीरित्या प्रक्रिया झाले!",
+    "failedToProcessExchange": "एक्सचेंज प्रक्रिया करण्यात अयशस्वी",
+    "billTotal": "एकूण बिल",
+    "howBillWasPaid": "हे बिल कसे भरले गेले",
+    "cashPaidLabel": "रोख भरणा",
+    "upiOnlineLabel": "UPI / ऑनलाइन",
+    "udharUnpaidLabel": "उधार (न भरलेले)",
+    "noPaymentDetailsRecorded": "कोणतेही पेमेंट तपशील नोंदवलेले नाहीत.",
+    "thisReturnWillLabel": "हा परतावा"
   },
   "Dashboard": {
     "title": "डॅशबोर्ड",
@@ -867,7 +930,8 @@
       "expenses": "खर्च",
       "crm": "ग्राहक",
       "purchases": "खरेदी",
-      "staff": "कर्मचारी"
+      "staff": "कर्मचारी",
+      "ca": "CA अहवाल"
     },
     "subTabs": {
       "overview": "आढावा",
@@ -1022,6 +1086,156 @@
       "noGstInvoicesRegister": "या कालावधीत कोणतीही जीएसटी बिले नाहीत.",
       "noDeadStock": "मृत साठा सापडला नाही — निवडलेल्या कालावधीत सर्व उत्पादने विकली गेली.",
       "gstNote": "समान-राज्य विक्रीसाठी CGST/SGST दाखवला आहे. आंतर-राज्य (IGST) बिले एकूण जीएसटीमध्ये योगदान देतात परंतु बिलावर IGST म्हणून विभागली जातात."
+    },
+    "ca": {
+      "fyPicker": {
+        "label": "आर्थिक वर्ष",
+        "financialYear": "आर्थिक वर्ष",
+        "customRange": "सानुकूल कालावधी",
+        "from": "पासून",
+        "to": "पर्यंत"
+      },
+      "disclaimer": "CA/अकाउंटंटसाठी तयार डेटा पॅक — आकडेवारी थेट नोंदवलेल्या व्यवहारांमधून घेतली आहे; ही स्वतः अधिकृत जीएसटी/आयकर फायलिंग नाही आणि वापरण्यापूर्वी आपल्या CA/अकाउंटंटने त्याचे पुनरावलोकन करावे.",
+      "generatePack": "CA रिपोर्ट पॅक तयार करा",
+      "clickWarningHint": "रेकॉर्ड पाहण्यासाठी खालील कोणत्याही इशाऱ्यावर क्लिक करा.",
+      "inputGstSection": "इनपुट जीएसटी",
+      "common": {
+        "walkIn": "वॉक-इन",
+        "unknownItem": "अज्ञात वस्तू",
+        "unknownSupplier": "अज्ञात पुरवठादार",
+        "unknown": "अज्ञात",
+        "salaryRow": "पगार (स्टाफ पेरोल)",
+        "gst": "जीएसटी",
+        "nonGst": "बिगर-जीएसटी",
+        "gstInfoMissing": "जीएसटी माहिती उपलब्ध नाही"
+      },
+      "paymentStatus": { "paid": "भरणा झाला", "partial": "अंशतः", "unpaid": "थकीत" },
+      "cashDirection": { "in": "इन", "out": "आउट" },
+      "ageBuckets": { "0-30": "0-30 दिवस", "31-60": "31-60 दिवस", "61-90": "61-90 दिवस", "91-180": "91-180 दिवस", "180+": "180+ दिवस" },
+      "dataQuality": {
+        "types": {
+          "product_missing_hsn": "HSN कोड गहाळ",
+          "product_missing_gst_rate": "जीएसटी दर गहाळ",
+          "gst_sale_missing_rate": "जीएसटी विक्रीत दर गहाळ",
+          "negative_stock": "उणे साठा",
+          "expense_missing_category": "खर्च श्रेणी गहाळ",
+          "purchase_missing_gst": "खरेदीत जीएसटी गहाळ"
+        },
+        "warnings": {
+          "product_missing_hsn": "\"{name}\" ला जीएसटी दर आहे पण HSN कोड नाही",
+          "product_missing_gst_rate": "\"{name}\" ला HSN कोड आहे पण जीएसटी दर नाही",
+          "gst_sale_missing_rate": "बिल {invoice} जीएसटी म्हणून तयार आहे पण \"{name}\" साठी जीएसटी दर सेट केलेला नाही",
+          "negative_stock": "\"{name}\" चा साठा उणे आहे ({stock})",
+          "expense_missing_category": "खर्च \"{description}\" (₹{amount}) ला कोणतीही श्रेणी नाही",
+          "purchase_missing_gst": "खरेदी {invoice} — \"{name}\" साठी जीएसटी रक्कम नोंदवलेली नाही"
+        }
+      },
+      "reportNames": {
+        "sales_register": "विक्री नोंदवही",
+        "purchase_register": "खरेदी नोंदवही",
+        "gst_summary": "जीएसटी सारांश",
+        "gst_monthly": "मासिक जीएसटी",
+        "non_gst": "बिगर-जीएसटी / सूट व्यवहार",
+        "data_quality": "डेटा गुणवत्ता / CA चेकलिस्ट",
+        "profit_loss": "नफा व तोटा",
+        "trading_account": "ट्रेडिंग खाते",
+        "stock_summary": "साठा सारांश",
+        "receivables_ageing": "येणी (एजिंग)",
+        "payables_ageing": "देणी (एजिंग)",
+        "cash_bank_summary": "रोख व बँक सारांश",
+        "mill_raw_material": "कच्चा माल खरेदी",
+        "mill_production": "उत्पादन सारांश",
+        "mill_byproducts": "उप-उत्पादने"
+      },
+      "reports": {
+        "sales_register": {
+          "columns": { "date": "तारीख", "invoiceNumber": "बिल क्र.", "customerName": "ग्राहक", "customerGstin": "GSTIN", "product": "उत्पादन", "hsn": "HSN", "quantity": "प्रमाण", "unit": "एकक", "taxableValue": "करपात्र मूल्य", "gstRate": "जीएसटी दर", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "invoiceTotal": "बिल एकूण", "paymentStatus": "पेमेंट स्थिती", "paymentMode": "पेमेंट पद्धत" },
+          "summary": { "lines": "ओळी", "invoiceTotal": "बिल एकूण" }
+        },
+        "purchase_register": {
+          "columns": { "date": "तारीख", "billNumber": "बिल क्र.", "supplierName": "पुरवठादार", "supplierGstin": "GSTIN", "product": "उत्पादन", "hsn": "HSN", "quantity": "प्रमाण", "taxableValue": "करपात्र मूल्य", "gstAmount": "जीएसटी रक्कम", "total": "एकूण", "gstClass": "जीएसटी / बिगर-जीएसटी" },
+          "summary": { "lines": "ओळी", "total": "एकूण" }
+        },
+        "gst_summary": {
+          "columns": { "rate": "दर %", "taxable": "करपात्र", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "total": "एकूण जीएसटी" },
+          "summary": { "outputGst": "आउटपुट जीएसटी", "inputGst": "इनपुट जीएसटी (नोंदवल्याप्रमाणे)", "netGst": "निव्वळ जीएसटी फरक" }
+        },
+        "gst_monthly": {
+          "columns": { "label": "महिना", "outputTaxable": "आउटपुट करपात्र", "outputGst": "आउटपुट जीएसटी", "inputTaxable": "इनपुट करपात्र", "inputGst": "इनपुट जीएसटी", "netGst": "निव्वळ जीएसटी" }
+        },
+        "non_gst": {
+          "columns": { "date": "तारीख", "docNumber": "बिल/इनव्हॉइस क्र.", "party": "पार्टी", "product": "उत्पादन", "hsn": "HSN", "amount": "रक्कम", "classification": "वर्गीकरण" },
+          "summary": { "transactions": "व्यवहार", "total": "एकूण" }
+        },
+        "data_quality": {
+          "columns": { "type": "प्रकार", "message": "इशारा" },
+          "summary": { "warnings": "इशारे" }
+        },
+        "profit_loss": {
+          "columns": { "category": "श्रेणी", "amount": "रक्कम" },
+          "summary": { "revenue": "महसूल", "grossProfit": "एकूण नफा", "netProfit": "निव्वळ नफा / तोटा" }
+        },
+        "trading_account": {
+          "columns": { "lineItem": "तपशील", "amount": "रक्कम" },
+          "summary": { "grossProfitLoss": "एकूण नफा / तोटा" },
+          "lineItems": {
+            "openingStock": "सुरुवातीचा साठा",
+            "purchases": "(+) खरेदी",
+            "purchaseReturns": "(-) खरेदी परतावा",
+            "closingStock": "(-) अंतिम साठा",
+            "cogs": "= विकलेल्या मालाची किंमत",
+            "grossSales": "एकूण विक्री",
+            "salesReturns": "(-) विक्री परतावा",
+            "netSales": "= निव्वळ विक्री",
+            "grossProfitOrLoss": "एकूण नफा / (तोटा)"
+          }
+        },
+        "stock_summary": {
+          "columns": { "product": "उत्पादन", "category": "श्रेणी", "openingQty": "सुरुवातीचे प्रमाण", "purchasedQty": "खरेदी केलेले", "soldQty": "विकलेले", "purchaseReturnQty": "खरेदी परतावा", "salesReturnQty": "विक्री परतावा", "closingQty": "अंतिम प्रमाण", "closingValue": "अंतिम मूल्य" },
+          "summary": { "closingStockValue": "अंतिम साठा मूल्य" }
+        },
+        "receivables_ageing": {
+          "columns": { "party": "पार्टी", "billNumber": "बिल क्र.", "date": "बिल तारीख", "originalAmount": "मूळ रक्कम", "remaining": "थकीत", "ageBucket": "वयोगट" }
+        },
+        "payables_ageing": {
+          "columns": { "party": "पुरवठादार", "billNumber": "बिल क्र.", "date": "बिल तारीख", "originalAmount": "मूळ रक्कम", "remaining": "थकीत", "ageBucket": "वयोगट" }
+        },
+        "cash_bank_summary": {
+          "columns": { "type": "प्रकार", "direction": "इन / आउट", "amount": "रक्कम" },
+          "summary": { "cashIn": "रोख इन", "cashOut": "रोख आउट", "netCashFlow": "निव्वळ रोख प्रवाह" }
+        },
+        "mill_raw_material": {
+          "columns": { "lotNumber": "लॉट क्र.", "farmerName": "शेतकरी / विक्रेता", "purchaseDate": "तारीख", "weightKg": "वजन (किलो)", "moisturePct": "ओलावा %", "ratePerKg": "दर / किलो", "totalAmount": "एकूण रक्कम", "remainingKg": "शिल्लक (किलो)" },
+          "summary": { "totalWeight": "एकूण वजन", "totalAmount": "एकूण रक्कम" }
+        },
+        "mill_production": {
+          "columns": { "batchNumber": "बॅच क्र.", "startedAt": "सुरुवात", "status": "स्थिती", "currentStage": "टप्पा", "inputKg": "इनपुट (किलो)", "outputKg": "आउटपुट (किलो)", "wastageKg": "वाया गेलेले (किलो)", "brokenKg": "तुटलेले (किलो)", "branKg": "कोंडा (किलो)", "huskKg": "भुसा (किलो)", "recoveryPct": "रिकव्हरी %" },
+          "summary": { "batches": "बॅचेस", "avgRecovery": "सरासरी रिकव्हरी %" }
+        },
+        "mill_byproducts": {
+          "columns": { "name": "उप-उत्पादन", "quantityKg": "उत्पादित (किलो)", "soldKg": "विकलेले (किलो)", "remainingKg": "शिल्लक (किलो)", "ratePerKg": "दर / किलो", "soldValue": "विक्री मूल्य" },
+          "summary": { "totalSoldValue": "एकूण विक्री मूल्य" }
+        }
+      },
+      "pack": {
+        "title": "CA रिपोर्ट पॅक तयार करा",
+        "pdfButton": "PDF रिपोर्ट पॅक",
+        "excelButton": "Excel वर्कबुक",
+        "pickAtLeastOne": "किमान एक रिपोर्ट निवडा.",
+        "genericError": "रिपोर्ट पॅक तयार करण्यात अयशस्वी.",
+        "comingSoon": "लवकरच येत आहे",
+        "comingSoonHamali": "हमाली / दलाल / भाडे (हे अ‍ॅप सध्या ट्रॅक करत नाही)"
+      },
+      "notes": {
+        "pnl": "एकूण नफा बिलिंगच्या वेळी नोंदवलेल्या प्रत्येक विक्रीच्या किंमत आधारावर मोजला आहे. वरील \"बुक / सॉफ्टवेअर नफा\" हा करपात्र उत्पन्नासारखा नाही — अंतिम कर उपचार आपल्या CA/अकाउंटंटने ठरवायचा आहे.",
+        "gstInput": "Vyapar Sarthi मध्ये नोंदवलेला इनपुट जीएसटी — पात्रतेचे पुनरावलोकन आपल्या CA/अकाउंटंटने करावे.",
+        "tradingAccountBasis": "सुरुवातीच्या साठ्याचा अंदाज या कालावधीच्या सुरुवातीपासून नोंदवलेली खरेदी, खरेदी परतावा, विक्री आणि विक्री परतावा सध्याच्या साठ्याविरुद्ध पुन्हा चालवून काढला आहे, ज्याचे मूल्यांकन प्रत्येक उत्पादनाच्या नोंदवलेल्या किंमतीवर केले आहे (खरेदीसारखाच आधार, जेणेकरून सुरुवातीचा + खरेदी − अंतिम मधून खरा COGS मिळेल) — ही तारीख-अचूक ऐतिहासिक मूल्यांकन नाही.",
+        "tradingAccountUncosted": "साठा असलेल्या {count} उत्पादनांची कोणतीही नोंदवलेली किंमत नाही आणि त्यांना या मूल्यांकनातून पूर्णपणे वगळण्यात आले आहे.",
+        "tradingAccountAdjustments": "या कालावधीत {count} मॅन्युअल साठा समायोजने झाली, एकूण {qty} युनिट्सची, जी समाविष्ट करता आली नाहीत (त्यांची दिशा नोंदवलेली नाही) — कृपया आपल्या इन्व्हेंटरी रेकॉर्डशी पडताळणी करा.",
+        "tradingAccountNoAdjustments": "या कालावधीत कोणतेही मॅन्युअल साठा समायोजन नोंदवले गेले नाही.",
+        "stockSummary": "व्हेरियंट-स्तरीय प्रमाण आधीच प्रत्येक उत्पादनाच्या एकाच सध्याच्या साठा एकूणामध्ये समाविष्ट आहे (दुहेरी मोजणी नाही) — त्या एकूणाच्या रंग/आकार तपशीलासाठी उत्पादने पहा. साठ्याचे मूल्यांकन नोंदवलेल्या विक्री किंमतीवर केले आहे.",
+        "cashBank": "हे अ‍ॅप कॅश बुक (प्रत्यक्ष रोख हालचाली — विक्री, खरेदी, खर्च, परतावा आणि रोखीने दिलेली/मिळालेली रक्कम) आणि प्रत्येक विक्रीची नोंदवलेली पेमेंट पद्धत ट्रॅक करते; ते वेगळे बँक-खाते लेजर किंवा बँक जुळवणी ठेवत नाही. खालील UPI/कार्ड/इतर पद्धतींची आकडेवारी त्या पद्धतीविरुद्ध नोंदवलेले संकलन आहे, बँक स्टेटमेंट नाही."
+      }
     }
   },
   "Dukandar": {
@@ -1451,6 +1665,204 @@
     "cartonBarcodeMissing": "या उत्पादनाला अजून कार्टन बारकोड नाही. Edit Product → Carton Barcode मध्ये एक जोडा, नंतर कार्टन लेबल प्रिंट करण्यासाठी हे पुन्हा उघडा.",
     "perCarton": "प्रति कार्टन"
   },
+  "BarcodePrintSettings": {
+    "title": "बारकोड आणि QR प्रिंट सेटिंग्स",
+    "subtitle": "आपला लेबल आकार आणि प्रिंटर एकदा सेट करा — बाकी सर्व Vyapar Sarthi सांभाळेल.",
+    "close": "बंद करा",
+    "section": {
+      "paper": "प्रिंटर आणि पेपर",
+      "barcode": "बारकोड",
+      "text": "मजकूर",
+      "qr": "QR",
+      "position": "पोझिशन",
+      "calibration": "कॅलिब्रेशन"
+    },
+    "profileName": {
+      "label": "प्रोफाइलचे नाव",
+      "placeholder": "उदा. Rahul Footwear Barcode Printer"
+    },
+    "reset": "रीसेट",
+    "savedProfiles": {
+      "title": "जतन केलेल्या प्रोफाइल्स",
+      "empty": "अजून कोणतीही प्रोफाइल जतन केलेली नाही.",
+      "mobilePrefix": "प्रोफाइल्स:",
+      "defaultTitle": "डीफॉल्ट प्रिंटर",
+      "setDefaultTitle": "डीफॉल्ट प्रिंटर म्हणून सेट करा",
+      "duplicateTitle": "डुप्लिकेट करा",
+      "deleteTitle": "हटवा"
+    },
+    "toast": {
+      "noShopSelected": "कोणतेही दुकान निवडलेले नाही",
+      "giveProfileName": "या प्रोफाइलला एक नाव द्या",
+      "profileSaved": "प्रिंट प्रोफाइल जतन झाली",
+      "profileDuplicated": "प्रोफाइल डुप्लिकेट झाली",
+      "setAsDefault": "डीफॉल्ट प्रिंटर म्हणून सेट केले",
+      "resetToRecommended": "{preset} साठी शिफारस केलेल्या सेटिंग्सवर रीसेट केले",
+      "confirmDeleteProfile": "ही प्रिंटर प्रोफाइल हटवायची?"
+    },
+    "common": {
+      "top": "वर",
+      "bottom": "खाली",
+      "left": "डावीकडे",
+      "right": "उजवीकडे",
+      "center": "मध्य",
+      "portrait": "पोर्ट्रेट",
+      "landscape": "लँडस्केप",
+      "above": "वर",
+      "below": "खाली",
+      "normal": "सामान्य",
+      "medium": "मध्यम",
+      "bold": "बोल्ड",
+      "none": "काहीही नाही",
+      "auto": "ऑटो",
+      "low": "कमी",
+      "quartile": "क्वार्टाइल",
+      "high": "उच्च"
+    },
+    "printType": {
+      "title": "प्रिंट प्रकार",
+      "a4Sheet": { "label": "A4 लेबल शीट", "hint": "आधीच कापलेल्या A4 शीटवर अनेक लेबल्स" },
+      "a4Plain": { "label": "A4 प्लेन पेपर", "hint": "कट-गाइडसह प्लेन A4 वर ग्रिड" },
+      "thermalSticker": { "label": "थर्मल स्टिकर", "hint": "प्रति लेबल एक डाय-कट स्टिकर" },
+      "thermalRoll": { "label": "थर्मल कंटिन्युअस", "hint": "सलग रोल, ऑटो उंची" }
+    },
+    "paper": {
+      "pageOrientation": "पेज ओरिएंटेशन",
+      "layoutPreset": "लेआउट प्रीसेट",
+      "gridTitle": "ग्रिड (लेबल्स पेजमध्ये ऑटो-फिट होतील)",
+      "columns": "कॉलम",
+      "rows": "रो",
+      "labelWidth": "लेबल रुंदी",
+      "labelHeight": "लेबल उंची",
+      "autoFitGrid": "लेबल आकार ग्रिडमध्ये ऑटो-फिट करा",
+      "gapsTitle": "लेबल्समधील अंतर (mm)",
+      "horizontalGap": "आडवे अंतर",
+      "verticalGap": "उभे अंतर",
+      "pageMarginsTitle": "पेज मार्जिन (mm)",
+      "perPageSummary": "प्रति A4 पेज {count} लेबल्स · सेल {width} × {height} mm. बारकोड सेलनुसार आकाराचा असतो — पेजवर कधीही ताणला जात नाही.",
+      "dieCutSizes": "डाय-कट स्टिकर आकार",
+      "continuousRollWidths": "सलग रोल रुंदी",
+      "customSize": "सानुकूल आकार",
+      "customWidthHeight": "सानुकूल आकार (mm)",
+      "customWidth": "रुंदी",
+      "customHeight": "उंची (0 = रोल पेपर)"
+    },
+    "resolution": {
+      "title": "प्रिंटर रिझोल्यूशन",
+      "hint": "बहुतेक थर्मल-लेबल प्रिंटर 203 DPI असतात. ऑफिस लेझर/इंकजेट = 600. खात्री नसल्यास ऑटोवर ठेवा."
+    },
+    "barcodeSection": {
+      "typeTitle": "बारकोड प्रकार",
+      "autoHint": "ऑटो बारकोड व्हॅल्यूवरून योग्य सिम्बॉलॉजी निवडतो.",
+      "autoHintFormat": " सध्या: {format}.",
+      "autoFitTitle": "ऑटो-फिट आकार",
+      "autoFitHint": "Vyapar सुरक्षित क्वाएट झोनसह लेबलमध्ये बसणारा सर्वात मोठा बारकोड मोजतो.",
+      "barcodeWidth": "बारकोड रुंदी",
+      "barcodeHeight": "बारकोड उंची",
+      "quietZone": "क्वाएट झोन (रिकामी सीमा)",
+      "quietZoneHint": "बारकोडभोवती आवश्यक रिकामी जागा. Code128 साठी 2mm सुरक्षित; EAN/UPC साठी 3+ mm."
+    },
+    "text": {
+      "showOnLabel": "लेबलवर दाखवा",
+      "field": {
+        "shopName": "दुकानाचे नाव",
+        "productName": "उत्पादनाचे नाव",
+        "sku": "SKU",
+        "otherCode": "इतर कोड",
+        "barcodeNumber": "बारकोड #",
+        "sellPrice": "विक्री किंमत",
+        "mrp": "MRP",
+        "variant": "व्हेरियंट",
+        "size": "आकार",
+        "colour": "रंग",
+        "customText": "सानुकूल मजकूर"
+      },
+      "sellingCaptionBefore": "विक्री-किंमत कॅप्शन (आधी)",
+      "sellingCaptionPlaceholder": "उदा. Offer, Rate, Price",
+      "sellingSuffixAfter": "विक्री-किंमत सफिक्स (नंतर)",
+      "sellingSuffixPlaceholder": "उदा. /-, each, /kg",
+      "sellingHint": "पूर्णपणे संपादनयोग्य, तुम्ही टाइप कराल तसेच प्रिंट होईल — उदा. Offer 499/-. सफिक्सआधी आपोआप कोणतेही अंतर जोडले जात नाही; अंतर हवे असल्यास स्वतः आधी स्पेस टाइप करा (उदा. \" /-\"). MRP त्याच्या वर स्वतंत्रपणे प्रिंट होते.",
+      "currencySymbol": "किंमतीवर चलन चिन्ह",
+      "currencyHint": "प्रिंटेड PDF सर्व प्रिंटरवर ₹ नीट दाखवू शकत नाही — \"काहीही नाही\" निवडल्यास फक्त आकडा प्रिंट होतो (उदा. MRP 1,300).",
+      "numberFormat": "नंबर फॉरमॅट",
+      "numberFormatComma": "स्वल्पविराम",
+      "numberFormatPlain": "साधा",
+      "numberFormatDecimal": "दशांश",
+      "numberFormatHint": "हे MRP आणि विक्री/ऑफर किंमत दोन्हीला लागू होते — तुमच्या लेबलवर जे उत्तम वाटेल ते फॉरमॅट निवडा.",
+      "mrpTitle": "MRP",
+      "cutPriceLine": "कट-प्राइस लाइन",
+      "cutPriceHint": "चालू: MRP वर एक रेघ मारून प्रिंट होते (उदा. ₹1,300). बंद: MRP साध्या आकड्यात प्रिंट होते.",
+      "mrpTextSize": "MRP मजकूर आकार",
+      "offerPriceTitle": "ऑफर / विक्री किंमत",
+      "priceSize": "किंमत आकार",
+      "pricePosition": "किंमत पोझिशन",
+      "aboveBarcode": "बारकोडच्या वर",
+      "belowBarcode": "बारकोडच्या खाली",
+      "otherRowSizes": "इतर ओळींचा आकार",
+      "shopNameSize": "दुकान नाव आकार",
+      "productNameSize": "उत्पादन नाव आकार",
+      "variantSize": "व्हेरियंट/आकार/रंग आकार",
+      "barcodeNumberSize": "बारकोड # आकार",
+      "skuSize": "SKU आकार",
+      "otherCodeSize": "इतर कोड आकार",
+      "skuMissingWarning": "या उत्पादनाला SKU सेट केलेला नाही — Edit Product मध्ये एक जोडा, नाहीतर SKU ओळ प्रिंट होणार नाही.",
+      "otherCodeMissingWarning": "या उत्पादनाला इतर कोड सेट केलेला नाही — Edit Product मध्ये एक जोडा, नाहीतर ही ओळ प्रिंट होणार नाही.",
+      "customTextTitle": "सानुकूल मजकूर",
+      "customTextSize": "मजकूर आकार",
+      "thickness": "जाडी",
+      "alignment": "अलाइनमेंट",
+      "position": "पोझिशन",
+      "fontSize": "फॉन्ट आकार",
+      "fontWeight": "फॉन्ट वेट",
+      "textPosition": "मजकूर पोझिशन"
+    },
+    "qr": {
+      "size": "QR आकार (नेहमी चौरस)",
+      "errorCorrection": "एरर करेक्शन",
+      "hint": "जास्त = जास्त डॅमेज-टॉलरंट पण मोठा QR पॅटर्न. मध्यम हा सुरक्षित डीफॉल्ट आहे."
+    },
+    "position": {
+      "horizontal": "आडवे",
+      "vertical": "उभे",
+      "margins": "मार्जिन (mm)",
+      "textToBarcodeGap": "मजकूर-ते-बारकोड अंतर",
+      "rotationTitle": "रोटेशन",
+      "rotationHint": "90° / 270° लेबल आडवे प्रिंट करते — आडवा बारकोड अरुंद रोलमध्ये बसत नसेल तेव्हा उपयुक्त. पेज आकारही त्यासोबत फिरतो. (A4 शीटला लागू होत नाही.)"
+    },
+    "calibration": {
+      "intro": "एक कॅलिब्रेशन रूलर प्रिंट करा, खऱ्या रूलरने मोजा, नंतर खाली अ‍ॅडजस्ट करा. उदाहरण: प्रिंटेड 100mm खूण तुमच्या रूलरवर 98mm मोजल्यास, आडवे 102% वर सेट करा.",
+      "printRuler": "कॅलिब्रेशन रूलर प्रिंट करा",
+      "horizontalScale": "आडवे स्केल",
+      "verticalScale": "उभे स्केल",
+      "printOffsetTitle": "प्रिंट ऑफसेट (संपूर्ण लेबल सरकवा)",
+      "horizontalOffset": "आडवे ऑफसेट",
+      "verticalOffset": "उभे ऑफसेट (फीड)",
+      "offsetHint": "तुमचा प्रिंटर खूप डावीकडे/वर प्रिंट करत असल्यास स्टिकरवरील मजकूर सरकवते. उभे = फीड ऑफसेट. उदाहरण: +1.0 / −0.5 mm.",
+      "footerNote": "हे फक्त बारकोड लेबल्सना लागू होते — इनव्हॉइस आणि इतर प्रिंट्सना कधीही धक्का लागत नाही. प्रिंट डेन्सिटी आणि फीड गॅप तुमच्या प्रिंटरच्या स्वतःच्या ड्रायव्हर/युटिलिटीमध्ये सेट होतात, ब्राउझरमधून नाही."
+    },
+    "livePreview": "लाइव्ह प्रीव्ह्यू",
+    "pageInfo": {
+      "page": "पेज:",
+      "label": "लेबल:",
+      "barcode": "बारकोड:",
+      "perPage": "{count}/पेज"
+    },
+    "printScale": {
+      "title": "प्रिंट स्केल: 100%",
+      "body1": "ब्राउझर प्रिंट डायलॉगमध्ये: Destination = तुमचा लेबल प्रिंटर, Paper size = या लेबलसारखाच, Scale = 100% / Actual Size. \"Fit to Page\" वापरू नका.",
+      "body2": "⚠ Save as PDF / Microsoft Print to PDF ने टेस्ट करत आहात? त्या PDF प्रिंटरचा पेपर आकार या लेबलशी जुळवा — नाहीतर Chrome A4 वर रोटेट/स्केल करेल आणि खरा लेबल प्रिंटर बरोबर प्रिंट करत असूनही हे चुकीचे दिसेल."
+    },
+    "printTestLabel": "टेस्ट लेबल प्रिंट करा",
+    "saveAndUse": "ही प्रोफाइल जतन करा आणि वापरा",
+    "sample": {
+      "productName": "सॅम्पल उत्पादन",
+      "variant": "काळा / M",
+      "shopName": "दुकानाचे नाव",
+      "customText": "सानुकूल मजकूर",
+      "sku": "ABC-123",
+      "otherCode": "REF-001"
+    }
+  },
   "UdharSlip": {
     "paymentReceipt": "पेमेंट पावती",
     "udharGiven": "उधार दिले",
@@ -1600,7 +2012,11 @@
     "descriptionPurchasePlaceholder": "उदा. तांदळाच्या पिशव्या, स्वयंपाकाचे तेल",
     "descriptionPaymentPlaceholder": "उदा. जुलैच्या थकबाकीसाठी रोख पेमेंट",
     "billNumberRequiredError": "बिल क्रमांक आवश्यक आहे.",
-    "descriptionRequiredError": "वर्णन आवश्यक आहे."
+    "descriptionRequiredError": "वर्णन आवश्यक आहे.",
+    "paymentMethodLabel": "पेमेंट पद्धत",
+    "paymentMethodCash": "रोख",
+    "paymentMethodUpi": "UPI",
+    "paymentMethodCard": "कार्ड"
   },
   "DocumentViewerModal": {
     "downloadTitle": "डाउनलोड करा",

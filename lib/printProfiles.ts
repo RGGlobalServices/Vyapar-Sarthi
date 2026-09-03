@@ -145,6 +145,12 @@ export interface PrinterProfile {
    *  the selling line as an offer. Optional for backward-compat. MRP always
    *  prints with the fixed "MRP" caption. */
   sellingPriceLabel?: string;
+  /** Text printed immediately after the selling price on the label (e.g.
+   *  "/-"). Appended exactly as typed — no space is auto-inserted, so the
+   *  shopkeeper controls whether there's a gap before it (type " /-" for a
+   *  space, "/-" for none). Empty → nothing after the amount. Optional for
+   *  backward-compat. */
+  sellingPriceSuffix?: string;
   /** Font size (pt) for the SELLING / offer price line specifically — bigger
    *  than the body so the offer rate stands out. Undefined → fontSizePt + 2. */
   priceFontSizePt?: number;
@@ -312,6 +318,7 @@ export const DEFAULT_PROFILE: PrinterProfile = {
     customText: false,
   },
   sellingPriceLabel: 'Rate',
+  sellingPriceSuffix: '/-',
   priceFontSizePt: 10,
   pricePosition: 'below',
   mrpFontSizePt: 8,
@@ -490,6 +497,7 @@ export function normalizeProfile(p: PrinterProfile): PrinterProfile {
     rotation: p.rotation ?? 0,
     sheet: p.sheet ?? { ...DEFAULT_SHEET },
     sellingPriceLabel: p.sellingPriceLabel ?? 'Rate',
+    sellingPriceSuffix: p.sellingPriceSuffix ?? '/-',
   };
 }
 

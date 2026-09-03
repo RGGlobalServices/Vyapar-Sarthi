@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { isSupplierCredit } from '@/lib/server/ledgerClassification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,7 +52,7 @@ export const GET = handle(async (req, ctx: any) => {
   // don't have a due date. When creditDays is 0, no due date is set.
   const creditDays = Number((supplier as any).creditDays) || 0;
   const computeDueDate = (created: Date | null | undefined, type: string | null | undefined): Date | null => {
-    if (!created || type === 'payment' || creditDays <= 0) return null;
+    if (!created || isSupplierCredit(type) || creditDays <= 0) return null;
     return new Date(new Date(created).getTime() + creditDays * 86400000);
   };
 
@@ -64,7 +65,7 @@ export const GET = handle(async (req, ctx: any) => {
     if (!monthMap.has(key)) monthMap.set(key, { month: key, purchased: 0, paid: 0, items: [] });
     const bucket = monthMap.get(key)!;
     const amount = Number(t.amount) || 0;
-    if (t.type === 'payment') bucket.paid += amount;
+    if (isSupplierCredit(t.type)) bucket.paid += amount;
     else bucket.purchased += amount;
     bucket.items.push({
       id: t.id,
@@ -80,10 +81,10 @@ export const GET = handle(async (req, ctx: any) => {
   const months = [...monthMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
   const totalPurchased = transactions
-    .filter((t) => t.type !== 'payment')
+    .filter((t) => !isSupplierCredit(t.type))
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const totalPaid = transactions
-    .filter((t) => t.type === 'payment')
+    .filter((t) => isSupplierCredit(t.type))
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
   // Due Invoices / Overdue Amount: the ledger only tracks an aggregate
@@ -98,27 +99,33 @@ export const GET = handle(async (req, ctx: any) => {
     const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return at - bt || a.sequence - b.sequence;
   });
-  const openPurchases: {
+  // allPurchases is append-only (unlike a shift()-ing queue) so a fully
+  // settled bill is still available afterward for the per-bill Total/Paid/
+  // Remaining/Status breakdown below — only the FIFO application below skips
+  // already-settled entries via cursor, it never removes them.
+  const allPurchases: {
     id: string; billNumber: string; date: Date | null; originalAmount: number;
     remaining: number; dueDate: Date | null;
   }[] = [];
+  let fifoCursor = 0;
   for (const t of chronological) {
     const amount = Number(t.amount) || 0;
-    if (t.type === 'payment') {
+    if (isSupplierCredit(t.type)) {
       let toApply = amount;
-      for (const p of openPurchases) {
-        if (toApply <= 0) break;
+      while (toApply > 1e-6 && fifoCursor < allPurchases.length) {
+        const p = allPurchases[fifoCursor];
         const take = Math.min(p.remaining, toApply);
         p.remaining -= take;
         toApply -= take;
+        if (p.remaining <= 1e-6) fifoCursor++;
+        else break;
       }
-      while (openPurchases.length && openPurchases[0].remaining <= 1e-6) openPurchases.shift();
     } else if (amount > 1e-6) {
       // Skip zero/negligible-amount purchase rows entirely — pushing one
       // with nothing owed would sit in the queue forever counted as "open"
       // unless a later payment happens to trigger the front-of-queue sweep
       // above.
-      openPurchases.push({
+      allPurchases.push({
         id: t.id,
         billNumber: t.billNumber || '',
         date: t.createdAt,
@@ -129,7 +136,18 @@ export const GET = handle(async (req, ctx: any) => {
     }
   }
   const openNow = new Date();
-  const stillOpen = openPurchases.filter((p) => p.remaining > 1e-6);
+  const stillOpen = allPurchases.filter((p) => p.remaining > 1e-6);
+
+  // Per-bill Total/Paid/Remaining/Status lookup, keyed by bill number, for
+  // the exported statement — covers every bill (settled or not), unlike
+  // stillOpen/dueBills above which only track what's currently outstanding.
+  const billBreakdownByNumber = new Map<string, { totalAmount: number; paid: number; remaining: number; status: 'paid' | 'partial' | 'unpaid' }>();
+  for (const p of allPurchases) {
+    if (!p.billNumber) continue;
+    const paid = Math.max(0, p.originalAmount - p.remaining);
+    const status: 'paid' | 'partial' | 'unpaid' = p.remaining <= 1e-6 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+    billBreakdownByNumber.set(p.billNumber, { totalAmount: p.originalAmount, paid, remaining: Math.max(0, p.remaining), status });
+  }
   const dueInvoicesCount = stillOpen.length;
   const overdueAmount = stillOpen.reduce(
     (sum, p) => sum + (p.dueDate && p.dueDate < openNow ? p.remaining : 0),
@@ -172,15 +190,26 @@ export const GET = handle(async (req, ctx: any) => {
     },
     months,
     dueBills,
-    transactions: transactions.map((t) => ({
-      id: t.id,
-      type: t.type,
-      amount: Number(t.amount) || 0,
-      note: t.note || '',
-      billNumber: t.billNumber || '',
-      date: t.createdAt,
-      dueDate: computeDueDate(t.createdAt, t.type),
-    })),
+    transactions: transactions.map((t) => {
+      const bill = t.billNumber ? billBreakdownByNumber.get(t.billNumber) : undefined;
+      return {
+        id: t.id,
+        type: t.type,
+        amount: Number(t.amount) || 0,
+        note: t.note || '',
+        billNumber: t.billNumber || '',
+        date: t.createdAt,
+        dueDate: computeDueDate(t.createdAt, t.type),
+        paymentMethod: (t as any).paymentMethod || null,
+        // Bill-level context (total/paid/remaining/status) attached from the
+        // FIFO breakdown above — only present when the row carries a bill
+        // number that matches a purchase; blank for freehand entries.
+        billTotalAmount: bill?.totalAmount ?? null,
+        billPaid: bill?.paid ?? null,
+        billRemaining: bill?.remaining ?? null,
+        billStatus: bill?.status ?? null,
+      };
+    }),
   });
 });
 
@@ -206,6 +235,7 @@ export const POST = handle(async (req, ctx: any) => {
     date?: string;
     note?: string;
     billNumber?: string;
+    paymentMethod?: string;
   }>(req);
 
   const type = body.type === 'payment' ? 'payment' : 'purchase';
@@ -217,6 +247,12 @@ export const POST = handle(async (req, ctx: any) => {
   if (hasPartPayment && paidAmount > amount) {
     throw new ApiError(400, 'Paid amount cannot be greater than the purchase amount');
   }
+
+  // Only meaningful for an actual payment event (standalone payment, or the
+  // part-payment leg of a purchase) — a plain purchase row isn't a payment.
+  const paymentMethod = ['Cash', 'UPI', 'Card'].includes(String(body.paymentMethod))
+    ? String(body.paymentMethod)
+    : 'Cash';
 
   // Backdate when a valid date is given, else record as now.
   let when: Date | undefined;
@@ -244,10 +280,15 @@ export const POST = handle(async (req, ctx: any) => {
         amount,
         note,
         billNumber,
+        ...(type === 'payment' ? { paymentMethod } : {}),
         ...(when ? { createdAt: when } : {}),
       },
     });
 
+    // Only a Cash payment moves the physical drawer, so only Cash writes a
+    // CashBook row — same convention Billing already uses (UPI/Card sales
+    // never touch CashBook either). The Expense record itself is still
+    // created for every method since the money left the business either way.
     const recordPaymentExpense = async (paidNow: number) => {
       const expense = await tx.expense.create({
         data: {
@@ -255,20 +296,22 @@ export const POST = handle(async (req, ctx: any) => {
           category: 'Supplier Payment',
           amount: paidNow,
           description: `Paid to ${supplier.name}${billNumber ? ` (${billNumber})` : ''}`,
-          paymentMode: 'Cash',
+          paymentMode: paymentMethod,
           ...(when ? { date: when } : {}),
         },
       });
-      await tx.cashBook.create({
-        data: {
-          shopId: shop.id,
-          type: 'expense',
-          amount: paidNow,
-          referenceId: expense.id,
-          description: expense.description!,
-          date: expense.date,
-        },
-      });
+      if (paymentMethod === 'Cash') {
+        await tx.cashBook.create({
+          data: {
+            shopId: shop.id,
+            type: 'expense',
+            amount: paidNow,
+            referenceId: expense.id,
+            description: expense.description!,
+            date: expense.date,
+          },
+        });
+      }
     };
 
     if (type === 'payment' && trackAsExpense) {
@@ -283,6 +326,7 @@ export const POST = handle(async (req, ctx: any) => {
           amount: paidAmount,
           note: `Paid against ${billNumber || 'purchase'}`,
           billNumber,
+          paymentMethod,
           ...(when ? { createdAt: when } : {}),
         },
       });

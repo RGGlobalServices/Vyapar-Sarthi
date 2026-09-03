@@ -84,6 +84,12 @@ export function getImportTemplate(importType: string, businessType?: string): Im
         { label: 'Quantity', aliases: ['qty', 'stock', 'nos', 'pcs', 'units'], numeric: true, profile: 'quantity' },
         { label: 'Unit Cost', aliases: ['cost', 'wholesalecost', 'price', 'rate', 'unitcost', 'priceperunit', 'unitprice', 'purchaserate'], numeric: true, profile: 'price' },
         { label: 'MRP', aliases: ['mrp'], numeric: true, profile: 'price' },
+        // Deliberately narrower aliases than productColumns()'s Selling Price —
+        // on a purchase bill an unqualified "Price"/"Rate" column means the
+        // COST the supplier charged, not the retail price, so those generic
+        // words stay claimed by Unit Cost above; only explicit selling-price
+        // spellings map here.
+        { label: 'Selling Price', aliases: ['sellingprice', 'sellprice', 'saleprice', 'retailprice'], numeric: true, profile: 'price' },
         { label: 'HSN Code', aliases: ['hsn', 'sac', 'hsncode', 'hsnsac'], profile: 'hsn' },
         { label: 'GST %', aliases: ['gstpercent', 'gstpercentage', 'gstrate', 'taxrate', 'gstpct', 'taxpercent', 'gst'], numeric: true, profile: 'gstRate' },
         { label: 'Supplier', aliases: ['vendor', 'vendorname', 'suppliername'], profile: 'name' },

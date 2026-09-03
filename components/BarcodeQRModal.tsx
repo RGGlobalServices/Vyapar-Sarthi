@@ -1051,9 +1051,15 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
           <p className="text-[11px] text-slate-500 leading-snug shrink-0">
             {tv('variantBarcodesTitle')} — <span className="text-slate-400">{variantRows.length}</span>
           </p>
-          {/* Variant list eats ALL remaining space and scrolls inside — no
-              longer capped at 50vh, so the shopkeeper can browse 13+ rows
-              without the header/footer eating the visible area. */}
+          {/* Everything browsable/editable (the variant list, Other Code,
+              and the Line 1/2/Custom Text options) lives in ONE scroll
+              region now — only the printer-profile picker + Print button
+              stay pinned below. Splitting the list into its own tiny
+              scroller starved it down to a sliver on short/embedded
+              viewports (the footer's fixed height ate almost everything),
+              which read as "can't scroll" even though it technically could.
+              A single larger scroll area fixes that on any viewport height
+              while Print stays reachable without hunting for it. */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 flex flex-col gap-2">
             {variantRows.map(row => (
               <div key={row.key} className="bg-slate-800/70 rounded-lg px-3 py-2.5 border border-slate-700/60 space-y-2">
@@ -1061,6 +1067,40 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
                   <p className="text-[11px] font-black text-slate-100 truncate">{row.key}</p>
                   <p className="text-[10px] font-bold text-emerald-400 shrink-0">₹{row.sellingPrice.toLocaleString('en-IN')}</p>
                 </div>
+
+                {/* Real scannable-looking barcode graphic — previously this
+                    row only showed the raw text/number, which shopkeepers
+                    couldn't visually confirm as an actual barcode. Keyed on
+                    the value so editing the text field below re-renders it.
+                    This is a cosmetic thumbnail only — the actual print/PDF
+                    output already runs through autoFitBarcode()'s real
+                    mm-accurate sizing (lib/printProfiles.ts), completely
+                    unaffected by these thumbnail proportions. Thin module
+                    width (1px) + fixed row height keeps every row's bars
+                    looking like a standard barcode instead of a few thick
+                    bars, and stops long alphanumeric codes (which need many
+                    more modules than a short numeric EAN) from ballooning
+                    this row taller/wider than its neighbours. */}
+                {row.barcode && (
+                  <div className="bg-white rounded-md h-9 px-2 flex items-center justify-center overflow-hidden">
+                    <svg
+                      key={row.barcode}
+                      ref={el => {
+                        if (!el || !row.barcode) return;
+                        import('jsbarcode').then(({ default: JsBarcode }) => {
+                          try {
+                            JsBarcode(el, row.barcode, {
+                              format: detectBarcodeFormat(row.barcode), width: 1, height: 28,
+                              displayValue: false, margin: 2,
+                              background: '#ffffff', lineColor: '#0f172a',
+                            });
+                          } catch { /* value mid-edit / unrenderable — text input below still shows it */ }
+                        });
+                      }}
+                      className="max-w-full max-h-full"
+                    />
+                  </div>
+                )}
 
                 {/* editable — real-world variants often carry a distinct manufacturer barcode */}
                 <div className="flex items-center gap-1.5">
@@ -1106,19 +1146,12 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
                 </div>
               </div>
             ))}
-          </div>
 
-          {/* Footer group — grouped into ONE shrink-0 block so nothing here
-              can squeeze the variant list above it. Line 1/2 + Custom label
-              are collapsed by default; only A4/Thermal + Print are visible
-              on first open (the two controls a shopkeeper actually uses on
-              nearly every print job). */}
-          <div className="shrink-0 space-y-2 pt-2 border-t border-slate-800/60">
             {/* Other Code — product-level (same value on every variant row
-                above), so it lives here rather than per-row. Always visible,
-                not tucked behind the collapsible section below, since
-                unlike Line 1/2/Custom Text this is saved to the product. */}
-            <div className="w-full">
+                above), so it lives here rather than per-row. Scrolls with
+                the list now (was a fixed footer item squeezing the list
+                above it on short viewports). */}
+            <div className="w-full pt-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Other Code</label>
               <input
                 type="text"
@@ -1177,7 +1210,11 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
                 </div>
               </div>
             )}
+          </div>
 
+          {/* Pinned footer — printer profile picker + Print button only, so
+              the primary action is always reachable without scrolling. */}
+          <div className="shrink-0 space-y-2 pt-2 border-t border-slate-800/60">
             {activeProfile ? (
               <button type="button" onClick={() => setShowPrintSettings(true)}
                 className="w-full flex items-center justify-between gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs hover:border-emerald-500 transition-colors">

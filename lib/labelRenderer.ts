@@ -173,9 +173,13 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   const sellingPrice = row.sellingPrice || 0;
   const mrp = row.mrp || 0;
   const sellCaption = (profile.sellingPriceLabel ?? 'Rate').trim();
+  // Suffix (e.g. "/-") is appended exactly as saved — no space is inserted
+  // automatically, so the shopkeeper's own typed spacing (or lack of it)
+  // is preserved verbatim.
+  const sellSuffix = profile.sellingPriceSuffix ?? '';
   const mrpTextLine = profile.fields.mrp && mrp > 0 ? `MRP ${money(mrp)}` : '';
   const sellTextLine = profile.fields.sellingPrice && sellingPrice > 0
-    ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}`
+    ? `${sellCaption ? sellCaption + ' ' : ''}${money(sellingPrice)}${sellSuffix}`
     : '';
   const barcodeNumberLine = profile.fields.barcodeNumber && row.barcode ? row.barcode : '';
   // SKU only prints when BOTH the toggle is on AND this product actually

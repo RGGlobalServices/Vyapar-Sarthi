@@ -67,6 +67,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     gst_details: sale.gstDetails,
     is_manual: sale.isManual,
     bill_image_url: sale.billImageUrl,
+    customer_id: sale.customerId || null,
     customer_name: sale.customer?.name || null,
     created_at: sale.createdAt,
     items: sale.items.map((item) => {
