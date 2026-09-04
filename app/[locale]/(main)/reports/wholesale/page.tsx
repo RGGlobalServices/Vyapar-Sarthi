@@ -48,7 +48,9 @@ export default function WholesaleReportsPage() {
     if (activeTab === 'valuation') {
       csv = 'Product,SKU,Quantity,Unit Cost,Total Value\n';
       data.valuation.forEach((v: any) => {
-        csv += `${v.name},${v.sku || ''},${v.current_stock},${v.wholesale_cost},${v.current_stock * v.wholesale_cost}\n`;
+        const unitCost = Number(v.costPrice) || Number(v.wholesaleCost) || 0;
+        const stock = Number(v.currentStock) || 0;
+        csv += `${v.name},${v.barcode || ''},${stock},${unitCost},${stock * unitCost}\n`;
       });
     } else if (activeTab === 'expiry') {
       csv = 'Product,Batch,Quantity,Expiry Date\n';
@@ -151,15 +153,22 @@ export default function WholesaleReportsPage() {
                   )}
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {activeTab === 'valuation' && data.valuation.map((v: any) => (
-                    <tr key={v.id} className="hover:bg-slate-800/30">
-                      <td className="px-5 py-4 font-bold text-white">{v.name}</td>
-                      <td className="px-5 py-4 font-mono text-xs">{v.sku || '-'}</td>
-                      <td className="px-5 py-4 text-right">{v.current_stock}</td>
-                      <td className="px-5 py-4 text-right">₹{v.wholesale_cost || 0}</td>
-                      <td className="px-5 py-4 text-right font-black text-emerald-400">₹{(v.current_stock * (v.wholesale_cost || 0)).toLocaleString('en-IN')}</td>
-                    </tr>
-                  ))}
+                  {activeTab === 'valuation' && data.valuation.map((v: any) => {
+                    // costPrice is the real per-unit cost on wholesale-tier
+                    // shops; wholesaleCost is a legacy fallback only (see
+                    // route.ts comment — it's repurposed as selling price).
+                    const unitCost = Number(v.costPrice) || Number(v.wholesaleCost) || 0;
+                    const stock = Number(v.currentStock) || 0;
+                    return (
+                      <tr key={v.id} className="hover:bg-slate-800/30">
+                        <td className="px-5 py-4 font-bold text-white">{v.name}</td>
+                        <td className="px-5 py-4 font-mono text-xs">{v.barcode || '-'}</td>
+                        <td className="px-5 py-4 text-right">{stock}</td>
+                        <td className="px-5 py-4 text-right">₹{unitCost.toLocaleString('en-IN')}</td>
+                        <td className="px-5 py-4 text-right font-black text-emerald-400">₹{(stock * unitCost).toLocaleString('en-IN')}</td>
+                      </tr>
+                    );
+                  })}
                   
                   {activeTab === 'expiry' && data.expiry.map((e: any) => {
                     const daysLeft = Math.ceil((new Date(e.expiryDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));

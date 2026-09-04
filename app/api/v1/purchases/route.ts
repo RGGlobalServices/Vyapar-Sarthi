@@ -93,6 +93,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
     }
 
+    // Duplicate-submission guard. The "Record Purchase" button is disabled
+    // while saving, but a slow/flaky connection to this app's remote DB (a
+    // known recurring issue) can make the client believe a request failed —
+    // timing out or erroring locally — even though it actually landed and
+    // committed server-side. The shopkeeper then retries, and each retry was
+    // creating a genuine extra PurchaseInvoice (reported as "1 purchase
+    // becomes 4"). If an invoice for this shop+supplier+total was created in
+    // the last 30s with the same item count, treat this as a resubmission of
+    // that same request and hand back the existing invoice instead of
+    // creating a new one, rather than trying to guess intent from a body diff.
+    {
+      const dupWindowStart = new Date(Date.now() - 30000);
+      let dupTotalCost = 0;
+      for (const item of items) dupTotalCost += Number(item.quantity) * Number(item.cost);
+      const recentDuplicate = await prisma.purchaseInvoice.findFirst({
+        where: {
+          shopId: auth.shop.id,
+          supplierId,
+          totalCost: dupTotalCost,
+          createdAt: { gte: dupWindowStart },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { purchaseItems: { select: { id: true } } },
+      });
+      if (recentDuplicate && recentDuplicate.purchaseItems.length === items.length) {
+        return NextResponse.json({ success: true, invoice: recentDuplicate, deduped: true });
+      }
+    }
+
     // Auto-generate a professional invoice number when the shopkeeper leaves
     // it blank — same convention Sale.invoice_number already uses (see
     // app/api/v1/billing/route.ts) so purchase and sale documents read

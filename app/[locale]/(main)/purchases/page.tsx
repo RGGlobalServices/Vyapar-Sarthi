@@ -103,6 +103,8 @@ export default function PurchasesPage() {
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteReverseStock, setDeleteReverseStock] = useState(true);
   const [showReturnModal, setShowReturnModal] = useState(false);
 
   // List search / filter
@@ -322,12 +324,23 @@ export default function PurchasesPage() {
     }
   };
 
-  const handleDelete = async (inv: any) => {
-    if (!confirm(`Delete purchase invoice "${inv.invoiceNumber || inv.id}" from ${inv.supplier?.name || 'this supplier'}?\n\nThis will reverse the stock and supplier balance it added. This cannot be undone.`)) return;
+  // Opens the confirm modal instead of deleting directly — the shopkeeper
+  // needs to choose whether stock should be reversed too (see
+  // confirmDelete below for why: reversing can be blocked if that stock has
+  // already been sold, which used to leave a wrong/duplicate invoice stuck
+  // forever with no way to remove it).
+  const handleDelete = (inv: any) => {
+    setDeleteReverseStock(true);
+    setDeleteTarget(inv);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await api.delete(`/purchases/${inv.id}`);
+      await api.delete(`/purchases/${deleteTarget.id}`, { data: { reverseStock: deleteReverseStock } });
       setSelectedInvoice(null);
+      setDeleteTarget(null);
       mutateInvoices();
     } catch (err: any) {
       alert(err?.response?.data?.error || err.message || 'Failed to delete purchase.');
@@ -1035,6 +1048,61 @@ export default function PurchasesPage() {
           onClose={() => setShowReturnModal(false)}
           onSaved={() => refreshSelectedInvoice(selectedInvoice.id)}
         />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 flex items-center gap-2">
+              <Trash2 size={18} className="text-red-600 dark:text-red-400" />
+              <h3 className="font-bold text-red-700 dark:text-red-400">
+                {t('deletePurchase') || 'Delete Purchase Invoice'}
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                {t('deletePurchaseConfirm', { invoice: deleteTarget.invoiceNumber || deleteTarget.id, supplier: deleteTarget.supplier?.name || '' })
+                  || `Delete purchase invoice "${deleteTarget.invoiceNumber || deleteTarget.id}" from ${deleteTarget.supplier?.name || 'this supplier'}? This cannot be undone.`}
+              </p>
+
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteReverseStock}
+                  onChange={(e) => setDeleteReverseStock(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-red-600"
+                />
+                <span className="text-sm">
+                  <span className="block font-bold text-slate-900 dark:text-white">
+                    {t('reverseStockLabel') || 'Also reverse the stock this purchase added'}
+                  </span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {deleteReverseStock
+                      ? (t('reverseStockOnHint') || 'Stock added by this purchase will be subtracted back out. Blocked if that stock has already been sold — uncheck below to still delete the invoice.')
+                      : (t('reverseStockOffHint') || 'Stock stays exactly as it is now — only the invoice and its supplier balance/ledger entry are removed.')}
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+              >
+                {t('cancel') || 'Cancel'}
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold shadow-sm hover:bg-red-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {t('delete') || 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

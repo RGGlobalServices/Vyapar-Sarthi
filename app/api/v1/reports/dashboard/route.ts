@@ -531,8 +531,14 @@ export const GET = handle(async (req) => {
   // Add ERP / Wholesale specific stats
   if (isWholesaleTierPackage(shop.subscriptionPlan)) {
     const [inventoryValueResult, expiringBatches, recentFeeds] = await Promise.all([
+      // cost_price is the real per-unit cost on wholesale-tier shops —
+      // wholesale_cost is repurposed there as the wholesale SELLING price
+      // (see memory: udyog-three-tier-pricing; same convention billing's
+      // cost-basis resolution and the Wholesale Reports valuation follow).
+      // Falls back to wholesale_cost only for older products saved before
+      // the 3-tier pricing split, where cost_price may still be null.
       prisma.$queryRaw<{ total_value: number }[]>`
-        SELECT COALESCE(SUM(current_stock * wholesale_cost), 0)::float as total_value
+        SELECT COALESCE(SUM(current_stock * COALESCE(NULLIF(cost_price, 0), wholesale_cost, 0)), 0)::float as total_value
         FROM products
         WHERE shop_id = ANY(${shopIds}::uuid[]) AND current_stock > 0
       `,

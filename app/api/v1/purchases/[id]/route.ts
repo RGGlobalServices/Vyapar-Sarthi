@@ -216,14 +216,25 @@ export async function DELETE(req: Request, { params }: Ctx) {
     const { id } = await params;
     const auth = await requireShop(req);
 
+    // Shopkeeper's explicit choice, surfaced by the delete confirmation
+    // modal: reverse the stock this purchase added, or leave stock as-is
+    // and only remove the invoice + its financial (supplier balance/ledger)
+    // effects. Defaults to reversing — matches the previous, only behavior —
+    // when the request has no body (e.g. an older client).
+    let reverseStock = true;
+    try {
+      const body = await req.json();
+      if (typeof body?.reverseStock === 'boolean') reverseStock = body.reverseStock;
+    } catch { /* no body sent — keep the default */ }
+
     const invoice = await prisma.$transaction(async (tx) => {
-      const inv = await reversePurchaseInvoiceEffects(tx, auth.shop.id, id);
+      const inv = await reversePurchaseInvoiceEffects(tx, auth.shop.id, id, { reverseStock });
       await tx.activityLog.create({
         data: {
           shopId: auth.shop.id,
           action: 'purchase_deleted',
           entityId: id,
-          details: { invoice: inv.invoiceNumber || id, total: inv.totalCost },
+          details: { invoice: inv.invoiceNumber || id, total: inv.totalCost, stockReversed: reverseStock },
         },
       });
       await tx.purchaseInvoice.delete({ where: { id } }); // cascades to purchaseItems
@@ -231,17 +242,19 @@ export async function DELETE(req: Request, { params }: Ctx) {
     }, { timeout: 15000, maxWait: 10000 });
 
     try {
-      await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, invoice);
+      await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, invoice, { deleteBatches: reverseStock });
     } catch (e) { console.error('Purchase ledger/batch cleanup failed:', e); }
 
-    try {
-      const reverseDeltas: VariantStockDelta[] = invoice.purchaseItems
-        .filter((item) => item.variantKey)
-        .map((item) => ({ productId: item.productId, variantKey: item.variantKey, delta: -item.quantity }));
-      await applyVariantStockDeltas(prisma, reverseDeltas);
-    } catch (e) { console.error('Variant stock update failed:', e); }
+    if (reverseStock) {
+      try {
+        const reverseDeltas: VariantStockDelta[] = invoice.purchaseItems
+          .filter((item) => item.variantKey)
+          .map((item) => ({ productId: item.productId, variantKey: item.variantKey, delta: -item.quantity }));
+        await applyVariantStockDeltas(prisma, reverseDeltas);
+      } catch (e) { console.error('Variant stock update failed:', e); }
+    }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, stockReversed: reverseStock });
   } catch (error: any) {
     if (error instanceof PurchaseReversalBlockedError) {
       return NextResponse.json({ error: error.message, code: 'REVERSAL_BLOCKED' }, { status: 409 });
