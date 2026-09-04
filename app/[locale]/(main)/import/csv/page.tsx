@@ -5,6 +5,7 @@ import { Upload, FileSpreadsheet, CheckCircle, Loader2, AlertTriangle, ArrowRigh
 import { Card, CardContent } from '@/components/ui/card';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export default function BulkCSVImport() {
   const { profile } = useBusinessStore();
@@ -13,7 +14,7 @@ export default function BulkCSVImport() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
-  if (profile.subscriptionPlan !== 'wholesale') {
+  if (!isWholesaleTierPackage(profile.subscriptionPlan)) {
     return <div className="p-10 text-center">Udyog Plan Required for Bulk ERP Imports</div>;
   }
 

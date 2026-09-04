@@ -5,6 +5,7 @@ import { getDateRange, formatDate, startOfDay, endOfDay } from '@/lib/server/dat
 import { normalizeAttendanceStatus, summarizeAttendance } from '@/lib/attendance';
 import { classifySaleLine, classifyPurchaseLine } from '@/lib/gstClassification';
 import { isSupplierCredit, isCustomerCredit } from '@/lib/server/ledgerClassification';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -304,7 +305,7 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
 
 // ─── PURCHASES ──────────────────────────────────────────────────────────────
 async function handlePurchases(shop: any, startDate: Date, endDate: Date, q: Record<string, string>) {
-  if (shop.subscriptionPlan !== 'wholesale') {
+  if (!isWholesaleTierPackage(shop.subscriptionPlan)) {
     return json({ error: 'Purchase reports require Wholesale plan' }, 403);
   }
 
@@ -426,7 +427,7 @@ async function handleStock(shop: any, startDate: Date, endDate: Date, q: Record<
   }
 
   if (reportType === 'near_expiry') {
-    if (shop.subscriptionPlan !== 'wholesale') return json({ error: 'Requires Wholesale plan' }, 403);
+    if (!isWholesaleTierPackage(shop.subscriptionPlan)) return json({ error: 'Requires Wholesale plan' }, 403);
     const days = parseInt(q.days || '30');
     const cutoff = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const rows = await prisma.batch.findMany({
@@ -435,6 +436,73 @@ async function handleStock(shop: any, startDate: Date, endDate: Date, q: Record<
       orderBy: { expiryDate: 'asc' }
     });
     return json({ rows });
+  }
+
+  if (reportType === 'batch_profit') {
+    // Real per-batch profit, not the store-wide average: each SaleItemBatch
+    // row already carries the exact cost that lot was bought at
+    // (costAtSale, frozen at sale time — see billing/route.ts's FIFO walk),
+    // and its parent SaleItem carries the price it was actually sold at
+    // (uniform across every batch a single cart line drew from), so
+    // revenue/profit per batch is exact, not derived from Product.costPrice.
+    const { shopIds, allShopAccess, ownedShops } = scope;
+    const shopNameById = new Map(ownedShops.map((s: any) => [s.id, s.name]));
+    const draws = await prisma.saleItemBatch.findMany({
+      where: {
+        batch: { shopId: { in: shopIds } },
+        saleItem: { sale: { createdAt: { gte: startDate, lte: endDate } } },
+      },
+      include: {
+        batch: { select: { id: true, batchNumber: true, barcode: true, quantity: true, purchaseDate: true, productId: true, product: { select: { id: true, name: true, category: true, shopId: true } } } },
+        saleItem: { select: { pricePerUnit: true } },
+      },
+    });
+
+    const byBatch = new Map<string, any>();
+    for (const d of draws) {
+      const qty = Number(d.quantity) || 0;
+      const cost = Number(d.costAtSale) || 0;
+      const unitPrice = Number(d.saleItem?.pricePerUnit) || 0;
+      const revenue = qty * unitPrice;
+      const profit = revenue - qty * cost;
+      const acc = byBatch.get(d.batchId) || {
+        batchId: d.batchId,
+        batchNumber: d.batch.batchNumber,
+        barcode: d.batch.barcode,
+        productId: d.batch.productId,
+        productName: d.batch.product?.name || 'Unknown',
+        category: d.batch.product?.category || null,
+        purchaseDate: d.batch.purchaseDate,
+        remainingQty: Number(d.batch.quantity) || 0,
+        unitsSold: 0,
+        revenue: 0,
+        profit: 0,
+        ...(allShopAccess ? { shopName: shopNameById.get(d.batch.product?.shopId) } : {}),
+      };
+      acc.unitsSold += qty;
+      acc.revenue += revenue;
+      acc.profit += profit;
+      byBatch.set(d.batchId, acc);
+    }
+
+    const rows = Array.from(byBatch.values())
+      .map(b => ({
+        ...b,
+        revenue: Math.round(b.revenue * 100) / 100,
+        profit: Math.round(b.profit * 100) / 100,
+        avgCostPerUnit: b.unitsSold > 0 ? Math.round(((b.revenue - b.profit) / b.unitsSold) * 100) / 100 : 0,
+        avgSellPrice: b.unitsSold > 0 ? Math.round((b.revenue / b.unitsSold) * 100) / 100 : 0,
+        marginPercent: b.revenue > 0 ? Math.round((b.profit / b.revenue) * 100 * 100) / 100 : 0,
+      }))
+      .sort((a, b) => b.profit - a.profit);
+
+    const summary = {
+      batchCount: rows.length,
+      totalUnitsSold: rows.reduce((a, r) => a + r.unitsSold, 0),
+      totalRevenue: Math.round(rows.reduce((a, r) => a + r.revenue, 0) * 100) / 100,
+      totalProfit: Math.round(rows.reduce((a, r) => a + r.profit, 0) * 100) / 100,
+    };
+    return json({ rows, summary });
   }
 
   if (reportType === 'dead_stock') {
@@ -918,7 +986,7 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
   }
 
   if (reportType === 'data_quality') {
-    const isWholesale = shop.subscriptionPlan === 'wholesale';
+    const isWholesale = isWholesaleTierPackage(shop.subscriptionPlan);
     const [gstProductsMissingHsn, hsnProductsMissingGst, gstSalesMissingRate, negativeStockProducts, emptyCategoryExpenses, purchasesMissingGst] = await Promise.all([
       prisma.product.findMany({
         where: { shopId: shop.id, gstPercent: { gt: 0 }, OR: [{ hsnCode: null }, { hsnCode: '' }] },

@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { requireShop } from '@/lib/server/auth';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,6 +62,10 @@ export const POST = handle(async (req) => {
 
     return expense;
   });
+
+  // Fresh expense → drop the shop's dashboard cache so the KPI reflects it
+  // on the very next dashboard fetch, not up to 15s later.
+  invalidateDashboardCacheForShop(shop.id);
 
   return json(result, 201);
 });

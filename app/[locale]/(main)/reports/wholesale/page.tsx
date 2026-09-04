@@ -7,6 +7,7 @@ import { Box, ShoppingCart, TrendingUp, DollarSign, PackageOpen, AlertOctagon, D
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { exportReportPDF } from '@/lib/pdfExport';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export default function WholesaleReportsPage() {
   const { profile } = useBusinessStore();
@@ -28,7 +29,7 @@ export default function WholesaleReportsPage() {
     fetchData();
   }, []);
 
-  if (profile.subscriptionPlan !== 'wholesale') {
+  if (!isWholesaleTierPackage(profile.subscriptionPlan)) {
     return <div className="p-10 text-center">Udyog Plan Required</div>;
   }
 

@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { ExportButton, ReportPeriodProvider } from '@/lib/hooks/useExport';
 import FinancialYearPicker, { type DateRangeValue } from '@/components/reports/FinancialYearPicker';
 import CAReportPackModal, { getReportsForPackage } from '@/components/reports/CAReportPackModal';
@@ -486,21 +487,24 @@ function StockTab({ filters }: { filters: any }) {
   const [data, setData] = useState<any>(null);
   const [valuation, setValuation] = useState<any>(null);
   const [deadStock, setDeadStock] = useState<any>(null);
+  const [batchProfit, setBatchProfit] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<'current' | 'valuation' | 'dead' | 'movement'>('current');
+  const [subTab, setSubTab] = useState<'current' | 'valuation' | 'dead' | 'movement' | 'batches'>('current');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
-      const [curr, val, dead] = await Promise.all([
+      const [curr, val, dead, batches] = await Promise.all([
         api.get(`/reports/engine?module=stock&report_type=current&${qs}`),
         api.get(`/reports/engine?module=stock&report_type=valuation&${qs}`),
         api.get(`/reports/engine?module=stock&report_type=dead_stock&${qs}`),
+        api.get(`/reports/engine?module=stock&report_type=batch_profit&${qs}`),
       ]);
       setData(curr.data);
       setValuation(val.data);
       setDeadStock(dead.data);
+      setBatchProfit(batches.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [filters, activeShopId]);
@@ -515,7 +519,7 @@ function StockTab({ filters }: { filters: any }) {
   return (
     <div className="space-y-6">
       <div className="flex gap-2 flex-wrap">
-        {[{ id: 'current', label: t('subTabs.current') }, { id: 'valuation', label: t('subTabs.valuation') }, { id: 'dead', label: t('subTabs.dead') }].map(tab => (
+        {[{ id: 'current', label: t('subTabs.current') }, { id: 'valuation', label: t('subTabs.valuation') }, { id: 'dead', label: t('subTabs.dead') }, { id: 'batches', label: t('subTabs.batches') }].map(tab => (
           <button key={tab.id} onClick={() => setSubTab(tab.id as any)}
             className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === tab.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
             {tab.label}
@@ -591,6 +595,53 @@ function StockTab({ filters }: { filters: any }) {
             rows={deadStock.rows} maxHeight="480px"
             emptyMessage={t('empty.noDeadStock')} />
         </SectionCard>
+      )}
+
+      {subTab === 'batches' && batchProfit?.rows && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard label={t('kpi.batchCount')} value={(batchProfit.summary?.batchCount || 0).toLocaleString()} icon={Package} color="indigo" />
+            <KPICard label={t('kpi.unitsSold')} value={(batchProfit.summary?.totalUnitsSold || 0).toLocaleString()} icon={ShoppingCart} color="blue" />
+            <KPICard label={t('kpi.batchRevenue')} value={fmt(batchProfit.summary?.totalRevenue || 0)} icon={IndianRupee} color="emerald" />
+            <KPICard label={t('kpi.batchProfit')} value={fmt(batchProfit.summary?.totalProfit || 0)} icon={TrendingUp} color="emerald" />
+          </div>
+          <SectionCard title={t('section.batchProfit')}
+            actions={<ExportButton
+              columns={[
+                { key: 'productName', label: 'Product' },
+                { key: 'batchNumber', label: 'Batch #' },
+                { key: 'barcode', label: 'Barcode' },
+                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []),
+                { key: 'unitsSold', label: 'Units Sold', type: 'number' as const },
+                { key: 'avgCostPerUnit', label: 'Cost/Unit', type: 'currency' as const },
+                { key: 'avgSellPrice', label: 'Sold At', type: 'currency' as const },
+                { key: 'revenue', label: 'Revenue', type: 'currency' as const },
+                { key: 'profit', label: 'Profit', type: 'currency' as const },
+                { key: 'marginPercent', label: 'Margin %', type: 'number' as const },
+                { key: 'remainingQty', label: 'Remaining Stock', type: 'number' as const },
+              ]}
+              data={batchProfit.rows}
+              filename="batch_profit"
+              title="Batch-wise Profit"
+            />}
+          >
+            <ReportTable
+              columns={[
+                { key: 'productName', label: 'Product', sortable: true },
+                { key: 'batchNumber', label: 'Batch #', sortable: true },
+                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
+                { key: 'unitsSold', label: 'Units Sold', type: 'number', sortable: true, align: 'right' },
+                { key: 'avgCostPerUnit', label: 'Cost/Unit', type: 'currency', sortable: true, align: 'right' },
+                { key: 'avgSellPrice', label: 'Sold At', type: 'currency', sortable: true, align: 'right' },
+                { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
+                { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
+                { key: 'marginPercent', label: 'Margin %', type: 'percent', sortable: true, align: 'right' },
+                { key: 'remainingQty', label: 'Remaining Stock', type: 'number', sortable: true, align: 'right' },
+              ]}
+              rows={batchProfit.rows} maxHeight="480px"
+              emptyMessage={t('empty.noBatchSales')} />
+          </SectionCard>
+        </>
       )}
     </div>
   );
@@ -675,7 +726,7 @@ function CRMTab({ filters }: { filters: any }) {
   const { activeShopId, allShopAccess } = useBusinessStore();
   const t = useTranslations('Reports');
   const { profile } = useBusinessStore();
-  const isUdyog = profile?.subscriptionPlan === 'wholesale';
+  const isUdyog = isWholesaleTierPackage(profile?.subscriptionPlan);
   const [outstanding, setOutstanding] = useState<any>(null);
   const [suppliers, setSuppliers] = useState<any>(null);
   const [loading, setLoading] = useState(true);

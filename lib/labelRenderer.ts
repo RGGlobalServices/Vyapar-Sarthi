@@ -138,14 +138,16 @@ export function computeLabelLayout(profile: PrinterProfile, row: LabelRow, opts:
   // now the number prints alone unless they opt into a prefix. Number
   // FORMAT (comma / plain / decimal) is separately shopkeeper-editable —
   // see PrinterProfile.priceNumberFormat.
-  // The Settings UI still offers "₹" as a currency choice (and it renders
-  // fine in that live HTML preview), but jsPDF's Helvetica/WinAnsiEncoding
-  // has no glyph for U+20B9 — passed through as-is it silently truncates to
-  // byte 0xB9 (prints as a stray superscript "1") AND corrupts the spacing
-  // of the entire surrounding line. Swap it for the always-safe "Rs." only
-  // at this final PDF-text boundary, so the real printed label can never
-  // come out garbled no matter what a shopkeeper picks.
-  const currency = (profile.currencyPrefix ?? '').trim().replace(/₹/g, 'Rs.');
+  // Deliberately kept RAW here (no ₹→Rs. substitution) — this layout is
+  // shared with the on-screen HTML preview (SingleLabelBox in
+  // BarcodePrintSettings.tsx), which renders `line.text` straight into a
+  // <div> and has no trouble with U+20B9. jsPDF's Helvetica/WinAnsiEncoding
+  // is what actually can't draw it (see generateLabelPdf below, where the
+  // swap happens right at the PDF-text boundary) — substituting it THIS
+  // early used to make the ₹ choice look broken in the preview too, since
+  // by the time SingleLabelBox rendered `line.text` it had already been
+  // silently downgraded to "Rs." for everyone, PDF or not.
+  const currency = (profile.currencyPrefix ?? '').trim();
   const money = (n: number) => {
     const formatted = formatPriceNumber(n, profile.priceNumberFormat);
     return currency ? `${currency} ${formatted}` : formatted;
@@ -610,25 +612,51 @@ async function drawLabel(doc: any, profile: PrinterProfile, layout: LabelLayout,
     } catch { /* skip un-renderable rows rather than aborting the batch */ }
   }
 
+  // Embed the ₹-capable font ONCE per document, only if some line on THIS
+  // label actually needs it — most labels (currencyPrefix 'None'/'Rs.')
+  // never touch this at all. Failure (offline, blocked fetch) is swallowed:
+  // __rupeeFontEmbedded stays false and the loop below falls back to the
+  // always-safe Helvetica+"Rs." substitution, so a font-load hiccup can
+  // never break a print run.
+  if (layout.lines.some(l => l.text.includes('₹')) && !anyDoc.__rupeeFontEmbedded) {
+    try {
+      await embedRupeeFont(doc);
+      anyDoc.__rupeeFontEmbedded = true;
+    } catch { /* fall back to Rs. substitution below */ }
+  }
+
   // Text lines — mm coordinates, mm-based font sizing.
   for (const line of layout.lines) {
     const [r, g, b] = hexToRgb(line.color);
     doc.setTextColor(r, g, b);
     doc.setFontSize(line.fontSizePt);
-    doc.setFont('helvetica', line.fontWeight === 'bold' ? 'bold' : line.fontWeight === 'medium' ? 'bold' : 'normal');
+    const isBold = line.fontWeight === 'bold' || line.fontWeight === 'medium';
+    // A line carrying ₹ (U+20B9) gets the embedded RupeeSans subset instead
+    // of core Helvetica, which has no glyph for it — WinAnsiEncoding would
+    // otherwise truncate it to a stray byte and corrupt the line's spacing.
+    // Every OTHER line keeps plain Helvetica exactly as before; only price
+    // lines with the ₹ prefix ever take this branch.
+    const useRupeeFont = line.text.includes('₹') && anyDoc.__rupeeFontEmbedded;
+    if (useRupeeFont) doc.setFont('RupeeSans', isBold ? 'bold' : 'normal');
+    else doc.setFont('helvetica', isBold ? 'bold' : 'normal');
     const baselineY = oy + line.y + ptToMm(line.fontSizePt) * 0.85;
     const anchor: 'left' | 'center' | 'right' = line.align;
     const x = ox + (anchor === 'left' ? profile.margins.left
             : anchor === 'right' ? layout.widthMm - profile.margins.right
             : layout.widthMm / 2);
-    doc.text(line.text, x, baselineY, { align: anchor, maxWidth: layout.widthMm - profile.margins.left - profile.margins.right });
+    // Real ₹ when the embedded font is available for this line; otherwise
+    // the always-safe "Rs." swap (see comment above) so the print can never
+    // come out garbled no matter what a shopkeeper picks or whether the
+    // font fetch succeeded.
+    const pdfText = useRupeeFont ? line.text : line.text.replace(/₹/g, 'Rs.');
+    doc.text(pdfText, x, baselineY, { align: anchor, maxWidth: layout.widthMm - profile.margins.left - profile.margins.right });
 
     // MRP prints with a strikethrough when the shopkeeper has it turned on
     // (profile.mrpStrikethrough, default true) — jsPDF has no built-in
     // strikethrough option, so draw the line manually through the text's
     // own measured width.
     if (line.strikethrough) {
-      const textWidth = doc.getTextWidth(line.text);
+      const textWidth = doc.getTextWidth(pdfText);
       const strikeY = baselineY - ptToMm(line.fontSizePt) * 0.30;
       const [x1, x2] = anchor === 'left' ? [x, x + textWidth]
         : anchor === 'right' ? [x - textWidth, x]
@@ -643,6 +671,60 @@ async function drawLabel(doc: any, profile: PrinterProfile, layout: LabelLayout,
 }
 
 // ─── Small helpers ─────────────────────────────────────────────────────────
+
+/** Base64-encode an ArrayBuffer without spreading the whole thing through
+ *  String.fromCharCode at once — fine for these ~25 KB font subsets, but
+ *  chunked so it stays fine if a future font swap makes them bigger. */
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
+  }
+  return btoa(binary);
+}
+
+// Fetched once per page load, then reused for every subsequent print/label —
+// the ₹ glyph never changes, so there's no reason to re-fetch per PDF.
+let rupeeFontsPromise: Promise<{ regular: string; bold: string }> | null = null;
+
+/** A ~25 KB subset of Noto Sans (regular + bold), containing only printable
+ *  ASCII + ₹ (U+20B9) — just enough to draw a shop/product name, a caption,
+ *  and a price with a real Rupee sign. Static assets at public/fonts/ (see
+ *  the subsetting note in that directory) — NOT the app's full UI font, and
+ *  not used for anything but this one glyph jsPDF's core Helvetica can't
+ *  draw. Regenerating them is a one-off `subset-font` run against upstream
+ *  Noto Sans, not a build step this app carries. */
+function loadRupeeFontsBase64(): Promise<{ regular: string; bold: string }> {
+  if (!rupeeFontsPromise) {
+    rupeeFontsPromise = (async () => {
+      const [regRes, boldRes] = await Promise.all([
+        fetch('/fonts/rupee-regular.ttf'),
+        fetch('/fonts/rupee-bold.ttf'),
+      ]);
+      if (!regRes.ok || !boldRes.ok) throw new Error('Rupee font fetch failed');
+      const [regBuf, boldBuf] = await Promise.all([regRes.arrayBuffer(), boldRes.arrayBuffer()]);
+      return { regular: arrayBufferToBase64(regBuf), bold: arrayBufferToBase64(boldBuf) };
+    })();
+    // A failed fetch shouldn't poison every later print in the session —
+    // let the next call retry instead of replaying the same rejection.
+    rupeeFontsPromise.catch(() => { rupeeFontsPromise = null; });
+  }
+  return rupeeFontsPromise;
+}
+
+/** Registers the RupeeSans font (regular + bold) on ONE jsPDF document
+ *  instance — fonts are per-document in jsPDF, so this must run per `doc`,
+ *  but the underlying base64 fetch (loadRupeeFontsBase64) only happens once
+ *  per page load regardless of how many documents/labels get printed. */
+async function embedRupeeFont(doc: any): Promise<void> {
+  const { regular, bold } = await loadRupeeFontsBase64();
+  doc.addFileToVFS('RupeeSans-Regular.ttf', regular);
+  doc.addFont('RupeeSans-Regular.ttf', 'RupeeSans', 'normal');
+  doc.addFileToVFS('RupeeSans-Bold.ttf', bold);
+  doc.addFont('RupeeSans-Bold.ttf', 'RupeeSans', 'bold');
+}
 
 /** Draw an SVG element into a canvas at the requested px dimensions,
  *  return a PNG data URL. Both preview and PDF paths need this to feed

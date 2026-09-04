@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export async function GET(req: NextRequest) {
   try {
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
       });
       
       // ERP Feature: Restock to Batch & Stock Movement Logging
-      if (shop.subscriptionPlan === 'wholesale') {
+      if (isWholesaleTierPackage(shop.subscriptionPlan)) {
         const latestBatch = await prisma.batch.findFirst({
           where: { productId: data.productId, shopId: shop.id },
           orderBy: { createdAt: 'desc' }

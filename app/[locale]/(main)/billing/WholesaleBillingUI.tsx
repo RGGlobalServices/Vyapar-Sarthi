@@ -38,9 +38,15 @@ function variantRowKey(v: any): string {
 
 // Resolve a product's sellable stock from whatever shape it arrives in.
 // Returns { known } = whether stock could be determined at all, and { qty } =
-// the amount. A sale is only blocked as "out of stock" when known && qty <= 0 —
-// a product with no stock field present is treated as unknown (allowed), so we
-// never falsely flag items that simply came from an incomplete source.
+// the amount. A sale is only blocked as "out of stock" when known && qty <= 0.
+// Order matters: size_variants (Vyapar/Dukan per-size) → variants[] (Udyog
+// per-colour/size) → currentStock. A real product ALWAYS has one of these
+// tracked, and Rahul-style live data shows currentStock can arrive as `null`
+// (never set — same shape the search dropdown displays as "Stock: 0") — so we
+// treat null/undefined/'' at the aggregate level as a *known* 0, not unknown.
+// Otherwise a null-stock product bypasses the client's OOS check and lands in
+// the cart, and only the server-side stock guard catches it at checkout —
+// which is exactly the "billing failed" popup a shopkeeper complained about.
 function resolveStock(p: any): { known: boolean; qty: number } {
   if (!p) return { known: false, qty: 0 };
   let sv: any = p.size_variants ?? p.sizeVariants;
@@ -49,8 +55,12 @@ function resolveStock(p: any): { known: boolean; qty: number } {
     const sum = Object.values(sv).reduce((t: number, v: any) => t + (Number(v) || 0), 0);
     return { known: true, qty: sum };
   }
+  if (Array.isArray(p.variants) && p.variants.length > 0) {
+    const sum = p.variants.reduce((t: number, v: any) => t + (Number(v?.stock) || 0), 0);
+    return { known: true, qty: sum };
+  }
   const raw = p.currentStock ?? p.current_stock ?? p.stock;
-  if (raw === undefined || raw === null || raw === '') return { known: false, qty: 0 };
+  if (raw === undefined || raw === null || raw === '') return { known: true, qty: 0 };
   const n = Number(raw);
   return { known: true, qty: isFinite(n) ? n : 0 };
 }
@@ -612,6 +622,30 @@ export default function WholesaleBillingUI() {
       return;
     }
 
+    // Per-variant stock guard — the aggregate resolveStock() check above sums
+    // every colour/size, so a product with plenty overall but ZERO of the
+    // picked variant would still pass it. Verify the specific variant here
+    // before it lands in the cart, and reuse the same OOS + recommendations
+    // modal the search path shows so the UX is identical.
+    if (variant && !forceAdd) {
+      const line = resolveStockForItem({ id: product.id, variant } as any, products);
+      if (line.known && line.qty <= 0) {
+        setOutOfStockItem(product);
+        let recs = products.filter(p => { const r = resolveStock(p); return p.id !== product.id && (!r.known || r.qty > 0); });
+        if (product.category) {
+          const sameCat = recs.filter(p => p.category === product.category);
+          if (sameCat.length > 0) recs = sameCat;
+        }
+        const targetSize = splitVariantKey(variant).size;
+        if (targetSize) {
+          const sameSize = recs.filter(p => p.metadata?.size === targetSize || p.size === targetSize);
+          if (sameSize.length > 0) recs = sameSize;
+        }
+        setRecommendedProducts(recs.slice(0, 4));
+        return;
+      }
+    }
+
     const existingItem = items.find(i => i.id === product.id && i.variant === variant);
     if (existingItem) {
       const lineStock = resolveStockForItem(existingItem, products);
@@ -1083,9 +1117,44 @@ export default function WholesaleBillingUI() {
         autoSendAfterBill(billData, phone, email);
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to generate bill', err);
-      alert(t('failedToGenerateBillShort'));
+      // Server-side stock guard fired (someone raced us, or a variant slipped
+      // past the client's own resolveStock). Turn the raw 400 into the same
+      // "Out of Stock + recommendations" modal the search path already uses,
+      // so the shopkeeper sees why the bill was rejected instead of a bare
+      // "Failed to generate bill" alert.
+      const detail: string = err?.response?.data?.detail || err?.message || '';
+      const isStockError = /insufficient stock/i.test(detail);
+      if (isStockError) {
+        // The message lists every shortage: "Insufficient stock: NAME: only …; NAME2: only …"
+        // Pull the first name and match it to a cart item to seed the modal.
+        const namePart = detail.replace(/^insufficient stock:\s*/i, '').split(':')[0].trim();
+        const bareName = namePart.replace(/\s*\([^)]*\)\s*$/, '').trim(); // strip trailing "(colour / size)"
+        const cartHit = items.find(it => it.name?.trim() === bareName) || items[0];
+        const productHit = cartHit ? products.find(p => p.id === cartHit.id) : null;
+        setShowCheckout(false);
+        // Drop the offending line from the cart — leaving it there just lets
+        // the shopkeeper click Confirm again and hit the same 400.
+        if (cartHit) removeItem(cartHit.id, cartHit.variant);
+        // Refresh product catalogue so the newly-known 0/low stock is reflected
+        // if this was a race with another billing tab.
+        fetchProducts();
+        setOutOfStockItem(productHit || { id: cartHit?.id, name: bareName || (cartHit?.name || 'Item') });
+        // Recompute recommendations for the OOS modal (same criteria as the
+        // search-path branch of addToCart).
+        let recs = products.filter(p => {
+          const r = resolveStock(p);
+          return p.id !== productHit?.id && (!r.known || r.qty > 0);
+        });
+        if (productHit?.category) {
+          const sameCat = recs.filter(p => p.category === productHit.category);
+          if (sameCat.length > 0) recs = sameCat;
+        }
+        setRecommendedProducts(recs.slice(0, 4));
+      } else {
+        alert(t('failedToGenerateBillShort'));
+      }
     } finally {
       setIsGenerating(false);
     }

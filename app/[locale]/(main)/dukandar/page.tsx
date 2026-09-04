@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { useLocale } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export default function DukandarPage() {
   const t = useTranslations('Dukandar');
@@ -39,7 +40,7 @@ export default function DukandarPage() {
   const [submittingQuotation, setSubmittingQuotation] = useState(false);
 
   useEffect(() => {
-    if (profile.subscriptionPlan === 'wholesale') {
+    if (isWholesaleTierPackage(profile.subscriptionPlan)) {
       loadDukandar();
     } else {
       loadMyAccessCode();
@@ -219,7 +220,7 @@ export default function DukandarPage() {
     );
   }
 
-  if (profile.subscriptionPlan !== 'wholesale') {
+  if (!isWholesaleTierPackage(profile.subscriptionPlan)) {
     return (
       <div className="space-y-4 sm:space-y-6 p-2 sm:p-0">
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{t('title')}</h1>

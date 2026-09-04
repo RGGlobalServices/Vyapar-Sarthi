@@ -1,6 +1,7 @@
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
 import { handle, json } from '@/lib/server/http';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,7 +44,7 @@ export const GET = handle(async (req) => {
     }),
 
     // Suppliers — Udyog plan only
-    shop.subscriptionPlan === 'wholesale'
+    isWholesaleTierPackage(shop.subscriptionPlan)
       ? prisma.supplier.findMany({
           where: { shopId: shop.id, OR: supplierOr },
           take: 5,

@@ -237,11 +237,48 @@ function DashboardInner() {
 
   const { start_date, end_date } = getDates();
   const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
+  // Auto-poll the dashboard so a sale/expense/payment made in another tab or
+  // section shows up without the shopkeeper hitting refresh. The backend has
+  // a small in-memory cache (dashboardCache.ts) that write routes invalidate
+  // on POST, so this polling is cheap most ticks — a cache-hit round-trip —
+  // and returns fresh KPIs on the very first tick after any write. Focus /
+  // reconnect revalidation still fires on top of this for the tab-switch case.
   const { data: dashboardPayload, mutate: mutateDashboard } = useSWR(
     activeShopId ? [`/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, activeShopId] : null,
     fetcher,
-    { revalidateOnFocus: true, keepPreviousData: true }
+    {
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      revalidateOnMount: true,
+      keepPreviousData: true,
+      refreshInterval: 8000,
+      refreshWhenHidden: false,
+      // SWR's default 2s dedupe is enough — the earlier 4000ms swallowed the
+      // very common case of "make a bill in another tab, immediately open
+      // Dashboard": the mount-time revalidate got deduped against the polling
+      // fetch that fired seconds before, so the shopkeeper saw stale numbers
+      // until they hit browser refresh.
+      dedupingInterval: 2000,
+    }
   );
+
+  // Belt-and-braces: force a fresh fetch every time this page mounts or the
+  // active shop switches — bypasses SWR's dedupe window so the "back to the
+  // dashboard right after making a bill/expense" case always shows the new
+  // numbers, not cached-since-a-moment-ago ones. Also forces the *server*
+  // cache to refresh in case a write from another process/tab that didn't
+  // hit our invalidation hook has left the cached payload stale.
+  useEffect(() => {
+    if (!activeShopId) return;
+    mutateDashboard(
+      async () => {
+        const res = await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}&refresh=true`);
+        return res.data;
+      },
+      { revalidate: false }
+    ).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeShopId]);
 
   useEffect(() => {
     if (dashboardPayload) {

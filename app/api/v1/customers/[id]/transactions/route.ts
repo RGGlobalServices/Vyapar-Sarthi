@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
     }
   });
 
+  invalidateDashboardCacheForShop(shop.id);
   return json({
     id: tx.id,
     type: tx.type,

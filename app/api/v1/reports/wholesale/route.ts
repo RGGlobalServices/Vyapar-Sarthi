@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,7 +10,7 @@ export async function GET(req: Request) {
   try {
     const { shop } = await requireShop(req);
 
-    if (shop.subscriptionPlan !== 'wholesale') {
+    if (!isWholesaleTierPackage(shop.subscriptionPlan)) {
       return NextResponse.json({ error: 'Udyog Plan Required' }, { status: 403 });
     }
 

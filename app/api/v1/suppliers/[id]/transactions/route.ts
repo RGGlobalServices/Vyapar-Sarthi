@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isSupplierCredit } from '@/lib/server/ledgerClassification';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -265,9 +266,9 @@ export const POST = handle(async (req, ctx: any) => {
   const billNumber = body.billNumber?.trim() || null;
 
   // Dukan/Vyapar shops track cash paid to suppliers as an Expense so it shows
-  // up in the dashboard's Today's/Month's Expenses. Wholesale shops run their
-  // own Party/Ledger system and are excluded.
-  const trackAsExpense = shop.subscriptionPlan !== 'wholesale';
+  // up in the dashboard's Today's/Month's Expenses. Wholesale-tier shops
+  // (Udyog + Bada Udyog) run their own Party/Ledger system and are excluded.
+  const trackAsExpense = !isWholesaleTierPackage(shop.subscriptionPlan);
 
   const result = await prisma.$transaction(async (tx) => {
     // balance = what is still owed. A purchase adds to it, a payment reduces it.

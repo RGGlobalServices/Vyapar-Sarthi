@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 function parseDateParam(raw: string | null): Date {
   const s = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date().toISOString().slice(0, 10);
@@ -103,7 +104,7 @@ export async function GET(req: Request) {
     // plan) today. Kept per-timestamp, the same way Sale already is, so Stock
     // In bumps Receive (and Close) and Stock Out pulls Close down — live, even
     // after the day's row has already been saved once.
-    const stockAdjLogs = shop.subscriptionPlan === 'wholesale'
+    const stockAdjLogs = isWholesaleTierPackage(shop.subscriptionPlan)
       ? []
       : await prisma.stockLog.findMany({
           where: { shopId: shop.id, type: { in: ['in', 'out'] }, createdAt: { gte: date, lt: dayEnd } },
@@ -119,7 +120,7 @@ export async function GET(req: Request) {
 
     // Suggested "received today" — best-effort, editable by the user.
     const receivedSuggestions = new Map<string, number>();
-    if (shop.subscriptionPlan === 'wholesale') {
+    if (isWholesaleTierPackage(shop.subscriptionPlan)) {
       const rows = await prisma.stockMovement.groupBy({
         by: ['productId'],
         where: { shopId: shop.id, type: 'purchase', createdAt: { gte: date, lt: dayEnd } },
@@ -259,7 +260,7 @@ export async function POST(req: Request) {
     const newProductIds = productIds.filter(id => !existingByProduct.has(id));
     const alreadyKnownByProduct = new Map<string, number>();
     if (newProductIds.length > 0) {
-      if (shop.subscriptionPlan === 'wholesale') {
+      if (isWholesaleTierPackage(shop.subscriptionPlan)) {
         const rows = await prisma.stockMovement.groupBy({
           by: ['productId'],
           where: { shopId: shop.id, type: 'purchase', productId: { in: newProductIds }, createdAt: { gte: date, lt: dayEnd } },

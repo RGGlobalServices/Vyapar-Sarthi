@@ -22,6 +22,7 @@ import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
 import DailyStockRegister from './DailyStockRegister';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import api from '@/lib/api';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
@@ -98,7 +99,7 @@ export default function LegacyStockUI() {
 
   const { profile, allShops, activeShopId, switchShop, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
-  const isWholesale = profile.subscriptionPlan === 'wholesale';
+  const isWholesale = isWholesaleTierPackage(profile.subscriptionPlan);
 
   const [search, setSearch]   = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');

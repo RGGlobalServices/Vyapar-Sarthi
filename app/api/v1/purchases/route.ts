@@ -6,6 +6,7 @@ import { ensureGodownTables } from '@/lib/server/godowns';
 import { randomUUID } from 'crypto';
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export async function GET(req: Request) {
   try {
@@ -46,7 +47,10 @@ export async function GET(req: Request) {
         include: {
           supplier: true,
           purchaseItems: {
-            include: { product: true }
+            // `batch` rides along so the Purchase Details modal can print
+            // that lot's own barcode stickers (PROD101-B1) without a second
+            // round-trip — the FK was added alongside batch costing.
+            include: { product: true, batch: true }
           },
           // Lets the Purchase Details modal / Return button compute
           // per-item "remaining" returnable quantity and a live "Net
@@ -121,6 +125,32 @@ export async function POST(req: Request) {
       if (item.gst) totalGst += item.gst;
     }
 
+    // Pre-generate a Batch id + batch-specific scan code per line, BEFORE the
+    // transaction, so the sibling purchaseItem.createMany/batch.createMany
+    // calls below can cross-reference each other despite neither being able
+    // to read the other's generated id back mid-array-transaction. The scan
+    // code format (`<product code>-B<n>`) mirrors the spec example
+    // ("PROD101-B1") and is purely additive — it never replaces or touches
+    // Product.barcode/ProductVariant.barcode, so stickers already printed
+    // keep scanning exactly as before.
+    const purchaseProductIds = [...new Set(processedItems.map((i: any) => i.productId))] as string[];
+    const [purchaseProductsInfo, existingBatchCounts] = await Promise.all([
+      prisma.product.findMany({ where: { id: { in: purchaseProductIds } }, select: { id: true, barcode: true, sku: true } }),
+      prisma.batch.groupBy({ by: ['productId'], where: { productId: { in: purchaseProductIds } }, _count: { _all: true } }),
+    ]);
+    const purchaseProductById = new Map(purchaseProductsInfo.map((p) => [p.id, p]));
+    const nextBatchSeq = new Map<string, number>(
+      existingBatchCounts.map((r) => [r.productId, r._count._all])
+    );
+    const purchaseDate = date ? new Date(date) : new Date();
+    const batchPlan = processedItems.map((item: any) => {
+      const seq = (nextBatchSeq.get(item.productId) || 0) + 1;
+      nextBatchSeq.set(item.productId, seq);
+      const p = purchaseProductById.get(item.productId);
+      const codeBase = p?.barcode || p?.sku || item.productId.slice(0, 8);
+      return { id: randomUUID(), barcode: `${codeBase}-B${seq}` };
+    });
+
     const transactionOps = [
       // 2. Create Invoice
       prisma.purchaseInvoice.create({
@@ -135,9 +165,31 @@ export async function POST(req: Request) {
         },
       }),
 
-      // 3. Bulk Insert Items, Batches, and Movements
+      // 3. Bulk Insert Batches, Items, and Movements — Batch MUST be created
+      // before PurchaseItem, since PurchaseItem.batchId is a real FK to it
+      // and this array-transaction executes each op sequentially (a
+      // referencing row can't insert before the row it references exists,
+      // even within the same transaction).
+      prisma.batch.createMany({
+        data: processedItems.map((item: any, i: number) => ({
+          id: batchPlan[i].id,
+          shopId: auth.shop.id,
+          productId: item.productId,
+          variantId: item.variantId || null,
+          batchNumber: item.batchNumber || null,
+          mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
+          expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+          quantity: item.baseQuantity,
+          initialQuantity: item.baseQuantity,
+          costPrice: item.baseCost,
+          sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
+          purchaseDate,
+          barcode: batchPlan[i].barcode,
+        }))
+      }),
+
       prisma.purchaseItem.createMany({
-        data: processedItems.map((item: any) => ({
+        data: processedItems.map((item: any, i: number) => ({
           purchaseInvoiceId: invoiceId,
           productId: item.productId,
           variantId: item.variantId || null,
@@ -150,18 +202,7 @@ export async function POST(req: Request) {
           // this line was entered in Manual cost mode.
           mrp: item.mrp != null ? Number(item.mrp) : null,
           discountPercent: item.discountPercent != null ? Number(item.discountPercent) : null,
-        }))
-      }),
-
-      prisma.batch.createMany({
-        data: processedItems.map((item: any) => ({
-          shopId: auth.shop.id,
-          productId: item.productId,
-          variantId: item.variantId || null,
-          batchNumber: item.batchNumber || null,
-          mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
-          expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-          quantity: item.baseQuantity,
+          batchId: batchPlan[i].id,
         }))
       }),
 
@@ -263,6 +304,7 @@ export async function POST(req: Request) {
       });
     } catch(e) { console.error('Notification failed', e); }
 
+    invalidateDashboardCacheForShop(auth.shop.id);
     return NextResponse.json({ success: true, invoice });
   } catch (error: any) {
     console.error('[API] Error processing purchase:', error);

@@ -10,6 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export default function DukandarCreditPage() {
   const router = useRouter();
@@ -25,7 +26,7 @@ export default function DukandarCreditPage() {
   const [addForm, setAddForm] = useState({ retailerId: '', amount: '', description: '', items: '', dueDate: '' });
   const [sending, setSending] = useState(false);
 
-  const isWholesale = profile.subscriptionPlan === 'wholesale';
+  const isWholesale = isWholesaleTierPackage(profile.subscriptionPlan);
 
   useEffect(() => { loadData(); }, [isWholesale]);
 

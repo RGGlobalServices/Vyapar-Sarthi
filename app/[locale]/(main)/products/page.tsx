@@ -22,6 +22,7 @@ import ColorSizeVariantGrid, { ColorPicker, colorsFromVariants, sizesFromVariant
 import { CategoryPicker } from '@/components/CategoryPicker';
 import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { getBusinessConfig, getCategoryVariantSpec, resolveClothingSizeChart, FootwearSizeSystem } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
@@ -180,7 +181,7 @@ function shopIdHeader(shopId?: string | null) {
 
 export default function ProductsPage() {
   const { profile } = useBusinessStore();
-  const isWholesale = profile.subscriptionPlan === 'wholesale';
+  const isWholesale = isWholesaleTierPackage(profile.subscriptionPlan);
   // Render immediately based on the initial (trial-default) profile. If the
   // profile later hydrates as wholesale we swap the UI — cheaper than a blank
   // white flash on every sidebar click.
@@ -196,7 +197,7 @@ function LegacyProductsUI() {
   const locale = useLocale();
   const { profile, allShops, activeShopId, switchShop, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
-  const isWholesale = profile.subscriptionPlan === 'wholesale';
+  const isWholesale = isWholesaleTierPackage(profile.subscriptionPlan);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {

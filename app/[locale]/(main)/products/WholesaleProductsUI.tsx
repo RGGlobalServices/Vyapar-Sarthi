@@ -1073,9 +1073,15 @@ export default function WholesaleProductsUI() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {group.items.map((p: any) => {
-                    const rawStock = (p.godownProducts && p.godownProducts.length > 0)
-                      ? p.godownProducts.reduce((sum: number, gp: any) => sum + gp.quantity, 0)
-                      : (p.currentStock || 0);
+                    // currentStock is what every stock-affecting path (purchases,
+                    // batch-aware billing, returns, transfers, adjustments,
+                    // imports) actually keeps in sync — summing godownProducts
+                    // instead undercounts any product with stock that was never
+                    // assigned to a warehouse (purchases can skip warehouseId),
+                    // which used to make this column disagree with Stock and
+                    // with the product's own detail sheet. See the matching fix
+                    // + comment in stock/WholesaleStockUI.tsx.
+                    const rawStock = p.currentStock || 0;
                     const stock = Math.max(0, rawStock);
                     const minStock = p.minStock || 5;
                     const isOutOfStock = rawStock <= 0;

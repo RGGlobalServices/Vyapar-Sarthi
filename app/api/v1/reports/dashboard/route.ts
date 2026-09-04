@@ -2,19 +2,11 @@ import prisma from '@/lib/server/prisma';
 import { requireShopScope } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
 import { getDateRange, startOfDay, endOfDay, formatDate } from '@/lib/server/dates';
+import { getDashboardCache, setDashboardCache } from '@/lib/server/dashboardCache';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-// Simple in-memory cache for dashboard data. Bounded LRU so the map cannot
-// grow unbounded across shops/date-ranges over the lifetime of the process.
-interface CacheEntry {
-  data: any;
-  timestamp: number;
-}
-const dashboardCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 15000; // 15 seconds — dashboard numbers don't need second-level freshness
-const CACHE_MAX_ENTRIES = 500;
 
 export const GET = handle(async (req) => {
   const { shop, shopIds, allShopAccess, ownedShops } = await requireShopScope(req);
@@ -29,10 +21,10 @@ export const GET = handle(async (req) => {
   const cacheKey = `${scopeKey}_${startDate.getTime()}_${endDate.getTime()}`;
 
   if (!forceRefresh) {
-    const cached = dashboardCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    const cached = getDashboardCache(cacheKey);
+    if (cached) {
       console.log(`[API] Dashboard Cache HIT for shop ${shop.id}`);
-      return json(cached.data);
+      return json(cached);
     }
   }
 
@@ -119,9 +111,13 @@ export const GET = handle(async (req) => {
     // customer_transactions — /crm/payments records it in the note as
     // "Payment via UPI - ...", so the mode is recovered from there and falls
     // back to Cash (the overwhelmingly common case) when absent.
-    // customer_type != 'party' (NULL included) — Party is a separate credit
-    // pool (Udyog's B2B wholesale AR) reported on its own below, not mixed
-    // into the retail Udhar figures.
+    // Includes BOTH retail Udhar (customer/NULL customer_type) AND B2B Party
+    // credit collections (customer_type='party'): the dashboard's Total
+    // Collection and today's Udhar Collection cards need to reflect every
+    // rupee actually received against outstanding credit — whichever pool it
+    // came from. Party collections are still reported on their own in the
+    // WholesaleWidgets partyCreditCollectionTotal/Today counters below;
+    // this is additive, not double-counting.
     prisma.$queryRaw<{ amount: number; note: string | null; type: string }[]>`
       SELECT t.amount::float AS amount, t.note, t.type
       FROM customer_transactions t
@@ -130,7 +126,6 @@ export const GET = handle(async (req) => {
         AND t.type IN ('payment', 'advance')
         AND t.created_at >= ${startDate}
         AND t.created_at <= ${endDate}
-        AND (c.customer_type IS NULL OR c.customer_type != 'party')
     `,
 
     prisma.customer.aggregate({
@@ -534,7 +529,7 @@ export const GET = handle(async (req) => {
   };
 
   // Add ERP / Wholesale specific stats
-  if (shop.subscriptionPlan === 'wholesale') {
+  if (isWholesaleTierPackage(shop.subscriptionPlan)) {
     const [inventoryValueResult, expiringBatches, recentFeeds] = await Promise.all([
       prisma.$queryRaw<{ total_value: number }[]>`
         SELECT COALESCE(SUM(current_stock * wholesale_cost), 0)::float as total_value
@@ -575,15 +570,7 @@ export const GET = handle(async (req) => {
     };
   }
 
-  // Cache result with bounded size (LRU: oldest key drops when full).
-  if (dashboardCache.size >= CACHE_MAX_ENTRIES) {
-    const oldest = dashboardCache.keys().next().value;
-    if (oldest !== undefined) dashboardCache.delete(oldest);
-  }
-  dashboardCache.set(cacheKey, {
-    data: payload,
-    timestamp: Date.now()
-  });
+  setDashboardCache(cacheKey, payload);
 
   return json(payload);
 });

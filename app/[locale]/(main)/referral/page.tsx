@@ -209,6 +209,7 @@ ${referralLink}`;
                         <span className={cn(
                           "px-2 py-1 rounded text-xs font-bold",
                           member.package === 'wholesale' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300' :
+                          member.package === 'badaudyog' ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300' :
                           member.package === 'shop' ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300' :
                           'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                         )}>

@@ -16,6 +16,7 @@ import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
+import { cssColor } from '@/components/ColorSizeVariantGrid';
 
 // Products can be viewed via a pooled cross-shop list (All Shop Access) where
 // a row belongs to a shop other than whichever one is currently "active" —
@@ -33,6 +34,7 @@ const fetcher = (url: string | string[]) => {
   return api.get(target, shopIdHeader(shopIdForHeader)).then(res => res.data);
 };
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export default function ProductDetailsSheet({
   productId,
@@ -205,7 +207,7 @@ export default function ProductDetailsSheet({
                   seeing "Wholesale Rate: ₹559" alongside "Cost Price: ₹0" was
                   confusing them. */}
               {(() => {
-                const isUdyog = profile.subscriptionPlan === 'wholesale';
+                const isUdyog = isWholesaleTierPackage(profile.subscriptionPlan);
                 const cost = Number(data.product.costPrice) || Number(data.product.wholesaleCost) || 0;
                 const sp = Number(data.product.sellingPrice) || 0;
                 const mrp = Number(data.product.mrp) || 0;
@@ -267,38 +269,114 @@ export default function ProductDetailsSheet({
                 );
               })()}
 
-              {/* Batches / Warehouse / Movements are Udyog wholesale concepts —
-                  Vyapar/Dukan shops don't track batches, don't have warehouses,
-                  and don't consume the stock_movements feed. Hiding them keeps
-                  the details sheet focused on what those shopkeepers actually
-                  use. */}
-              {profile.subscriptionPlan === 'wholesale' && <>
-              {/* ── Active Batches ── */}
+              {/* ── Variant-wise Stock ──
+                  The stat cards above show the product's TOTAL stock but not
+                  which colour/size it's made of. Product.variants[] already
+                  carries per-variant stock (written by Purchases, Add/Edit
+                  Product, and bulk import); this surfaces it here instead of
+                  only inside the Add/Edit form. Same section as Stock →
+                  product Overview (WholesaleStockUI.tsx) — kept in sync so
+                  Products and Stock never show different variant detail. */}
+              {Array.isArray(data.product.variants) && data.product.variants.length > 0 && (() => {
+                const variants = data.product.variants as any[];
+                const colourCount = new Set(variants.map((v: any) => v.color).filter(Boolean)).size;
+                const sizeCount = new Set(variants.map((v: any) => v.size).filter(Boolean)).size;
+                const variantTotal = variants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0);
+                return (
+                  <Section
+                    icon={<Hash size={14} className="text-indigo-500 dark:text-indigo-400" />}
+                    title={
+                      <>
+                        {t("variantWiseStock") || "Variant-wise Stock"}
+                        <span className="ml-2 text-[11px] font-semibold normal-case text-slate-500 dark:text-slate-400">
+                          {colourCount > 0 && `${colourCount} ${colourCount > 1 ? (t('coloursLabel') || 'colours') : (t('colourLabel') || 'colour')}`}
+                          {colourCount > 0 && sizeCount > 0 && ' · '}
+                          {sizeCount > 0 && `${sizeCount} ${sizeCount > 1 ? (t('sizesLabel') || 'sizes') : (t('sizeLabel') || 'size')}`}
+                        </span>
+                      </>
+                    }
+                  >
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                      <table className="w-full text-sm text-left min-w-[420px]">
+                        <thead>
+                          <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 sticky top-0">
+                            <th className="px-4 py-2.5 font-semibold">{t("colourLabel") || 'Colour'}</th>
+                            <th className="px-4 py-2.5 font-semibold">{t("sizeLabel") || 'Size'}</th>
+                            <th className="px-4 py-2.5 font-semibold text-right">{t("qty")}</th>
+                            <th className="px-4 py-2.5 font-semibold text-right">{t("sellingPrice")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {variants.map((v: any, i: number) => {
+                            const stock = Number(v.stock) || 0;
+                            return (
+                              <tr key={i} className={cn("hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors", stock <= 0 && 'opacity-50')}>
+                                <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                                  {v.color ? (
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(v.color) }} />
+                                      {v.color}
+                                    </span>
+                                  ) : <span className="text-slate-400">—</span>}
+                                </td>
+                                <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{v.size || '—'}</td>
+                                <td className={cn("px-4 py-3 text-right font-mono font-bold", stock <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400')}>{stock}</td>
+                                <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-400">{v.sellingPrice ? `₹${Number(v.sellingPrice).toLocaleString('en-IN')}` : '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex justify-between items-center px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs">
+                      <span className="text-slate-500">{t("sumOfVariants") || "Sum of variants"}</span>
+                      <span className={cn("font-mono font-bold", variantTotal !== data.totalStock ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300')}>
+                        {variantTotal}{variantTotal !== data.totalStock ? ` (${t('totalShownAbove') || 'total shown above'}: ${data.totalStock})` : ''}
+                      </span>
+                    </div>
+                  </Section>
+                );
+              })()}
+
+              {/* ── Active Batches ──
+                  Every tier can carry live Batch rows now (Purchases stamps
+                  cost/selling price/barcode on every purchase line, not just
+                  Udyog's — see purchases/route.ts), so this is no longer
+                  gated to profile.subscriptionPlan === 'wholesale'. It just
+                  renders nothing extra for a product that has never been
+                  purchased through a batch-generating flow. */}
+              {data.batches.length > 0 && (
               <Section
                 icon={<CheckCircle size={14} className="text-emerald-500 dark:text-emerald-400" />}
                 title={t("activeBatches")}
               >
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left min-w-[420px]">
+                  <table className="w-full text-sm text-left min-w-[620px]">
                     <thead>
                       <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50">
                         <th className="px-4 py-2.5 font-semibold">{t("batchNo")}</th>
+                        <th className="px-4 py-2.5 font-semibold text-right">{t("costPrice")}</th>
+                        <th className="px-4 py-2.5 font-semibold text-right">{t("sellingPrice")}</th>
+                        <th className="px-4 py-2.5 font-semibold text-right">{t("initialQty") || 'Initial'}</th>
                         <th className="px-4 py-2.5 font-semibold text-right">{t("qty")}</th>
                         <th className="px-4 py-2.5 font-semibold">{t("expiry")}</th>
-                        <th className="px-4 py-2.5 font-semibold">{t("added")}</th>
+                        <th className="px-4 py-2.5 font-semibold">{t("purchaseDateCol") || 'Purchased'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {data.batches.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="px-4 py-6 text-center text-slate-500 dark:text-slate-500 text-sm">
-                            {t("noActiveBatches")}
-                          </td>
-                        </tr>
-                      ) : data.batches.map((b: any) => (
+                      {data.batches.map((b: any) => (
                         <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="px-4 py-3 font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {b.batchNumber || '—'}
+                            {b.batchNumber || b.barcode || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-xs text-slate-600 dark:text-slate-400">
+                            {b.costPrice != null ? `₹${Number(b.costPrice).toLocaleString('en-IN')}` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                            {b.sellingPrice != null ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-xs text-slate-500 dark:text-slate-500">
+                            {b.initialQuantity ?? '—'}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 px-2 py-0.5 rounded">
@@ -309,7 +387,7 @@ export default function ProductDetailsSheet({
                             {b.expiryDate ? new Date(b.expiryDate).toLocaleDateString('en-IN') : '—'}
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500">
-                            {new Date(b.createdAt).toLocaleDateString('en-IN')}
+                            {new Date(b.purchaseDate || b.createdAt).toLocaleDateString('en-IN')}
                           </td>
                         </tr>
                       ))}
@@ -317,7 +395,15 @@ export default function ProductDetailsSheet({
                   </table>
                 </div>
               </Section>
+              )}
 
+              {/* Warehouse / Movements are Udyog wholesale concepts — Vyapar/
+                  Dukan shops don't have godowns and don't get StockMovement
+                  rows written for their purchases (see purchases/route.ts),
+                  so these sections would just render permanently empty for
+                  them. Hiding them keeps the sheet focused on what those
+                  shopkeepers actually use. */}
+              {isWholesaleTierPackage(profile.subscriptionPlan) && <>
               {/* ── Stock by Warehouse ── */}
               <Section
                 icon={<Warehouse size={14} className="text-blue-500 dark:text-blue-400" />}
@@ -465,7 +551,7 @@ function Section({
   icon, title, children
 }: {
   icon: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (

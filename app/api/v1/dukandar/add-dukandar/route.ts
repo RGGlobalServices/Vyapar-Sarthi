@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireUser } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,7 @@ export const POST = handle(async (req) => {
     prisma.user.findUnique({ where: { email: retailerEmail } }),
   ]);
 
-  if (!shop || shop.subscriptionPlan !== 'wholesale') {
+  if (!shop || !isWholesaleTierPackage(shop.subscriptionPlan)) {
     throw new ApiError(403, 'Business plan required to add dukandar');
   }
   if (!retailer) throw new ApiError(404, 'Retailer not found');

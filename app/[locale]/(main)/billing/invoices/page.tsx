@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { Link, useRouter } from '@/i18n/routing';
 import { useAuthStore, useCartStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { cn } from '@/lib/utils';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
@@ -273,7 +274,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
     invoiceFooter: profile?.invoiceFooter || undefined,
     // Scan-to-pay QR is wholesale-A4-only — reprints follow the same rule so a
     // retail / thermal reprint never surfaces it. See WholesaleBillingUI.
-    upiId: ((profile?.subscriptionPlan === 'wholesale' || profile?.packageType === 'wholesale')
+    upiId: ((isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType))
       && (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale'))
       ? (profile?.upiId || undefined)
       : undefined,

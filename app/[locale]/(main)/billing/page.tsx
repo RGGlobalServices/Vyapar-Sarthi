@@ -5,6 +5,7 @@ import WholesaleBillingUI from './WholesaleBillingUI';
 import {useTranslations, useLocale} from 'next-intl';
 import {useCartStore, useUdharStore, useAuthStore} from '@/lib/store';
 import {useBusinessStore} from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import {useBillingEngine, type PaymentMethod, type CollectedMethod} from '@/lib/hooks/useBillingEngine';
 import {translateData} from '@/lib/translateData';
 import {getBusinessConfig} from '@/lib/businessConfig';
@@ -225,7 +226,10 @@ function StandardBillingUI() {
   // Brief on-screen confirmation of the last scan — the cashier is usually
   // looking at the customer, so the beep alone isn't enough to review.
   const [scanFeedback, setScanFeedback] = useState<
-    { status: 'ok' | 'error' | 'pending'; text: string } | null
+    // 'nudge' = the scan succeeded (item added) but a non-blocking hint is
+    // shown alongside it — currently only "an older batch exists, sell that
+    // first if possible."
+    { status: 'ok' | 'error' | 'pending' | 'nudge'; text: string } | null
   >(null);
   // Guards against a slow server lookup for an earlier scan overwriting the
   // result of a later one when codes are scanned back-to-back.
@@ -416,7 +420,7 @@ function StandardBillingUI() {
     }
   };
 
-  const addToCart = useCallback((product: any, variant?: string, forceAdd = false) => {
+  const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null) => {
     // 1. Check Out of Stock first.
     // Resolve stock robustly: variant products track stock per size in
     // size_variants; simple products in currentStock. Field names may arrive in
@@ -496,6 +500,16 @@ function StandardBillingUI() {
         if (vc > 0) cost = vc;
       }
     }
+    // A batch-barcode scan's COST wins over every other cost source above —
+    // it's the real cost of the physical stock actually being sold, and the
+    // backend gives it the same priority when the sale is saved (see
+    // billing/route.ts), so the on-screen profit preview matches what
+    // actually gets charged. The batch's own selling price is deliberately
+    // NOT applied here — v1 keeps quoting the shop's normal shelf price
+    // regardless of which lot a scan happened to hit, so two physically
+    // identical-looking items never ring up at different prices at the
+    // counter. (Batch.sellingPrice still exists for reporting.)
+    if (batchInfo && Number(batchInfo.costPrice) > 0) cost = Number(batchInfo.costPrice);
     // `variant` is the raw stock key — a plain size ("M") or, for colour/size
     // products, a composite "Colour / Size" key (see ColorSizeVariantGrid). Split
     // it here so the cart row and the printed invoice can show Colour and Size
@@ -515,6 +529,12 @@ function StandardBillingUI() {
       profit: (price || 0) - cost,
       total: Math.round((price || 0) * defaultQty),
       is_loose: !!product.is_loose,
+      // Which physical lot this line is pinned to (from a batch-barcode
+      // scan) — sent to the backend as batch_id so it draws stock/cost from
+      // THIS batch instead of auto-FIFO-picking one. Absent for every
+      // ordinary scan/search add, which keeps working exactly as before.
+      batchId: batchInfo?.id,
+      batchNumber: batchInfo?.batchNumber || undefined,
       // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
       gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
       hsnCode: product.hsnCode ?? product.hsn_code ?? '',
@@ -527,6 +547,24 @@ function StandardBillingUI() {
     setSearchResults([]);
     setVariantSelectionProduct(null);
   }, [addItem, bizConfig.hasSizes]);
+
+  // FIFO nudge for a manually-added item (search tap / variant tile) — the
+  // scan path above already nudges by comparing the SCANNED batch to the
+  // oldest one; a manual add has no scanned batch to compare, so this just
+  // checks whether the product has more than one live batch and, if so,
+  // names the oldest. Fired after the item is already in the cart (never
+  // blocks the add) and fails silently — it's an informational hint, not a
+  // step the sale depends on.
+  const checkFifoHintOnAdd = useCallback(async (product: any) => {
+    if (!product?.id) return;
+    try {
+      const res = await api.get(`/products/${product.id}/batch-hint`);
+      const oldest = res.data?.oldestBatch;
+      if (oldest) {
+        setScanFeedback({ status: 'nudge', text: t('fifoNudge', { name: product.name, batch: oldest.batchNumber || '' }) || `Older stock of ${product.name} is available — sell that lot first if possible.` });
+      }
+    } catch { /* best-effort hint only */ }
+  }, [t]);
 
   const handleScan = useCallback(async (barcode: string) => {
     const raw = String(barcode).trim();
@@ -557,20 +595,13 @@ function StandardBillingUI() {
       return;
     }
 
-    // `GET /products` returns at most 2000 rows. A NON-EMPTY list below that cap
-    // is the WHOLE catalogue, so a local miss is genuinely "not found" — answer
-    // instantly and never pay for a network round-trip (the DB is far away and
-    // slow). An EMPTY list means it is still loading, so fall through to the
-    // (bounded) server lookup rather than falsely reporting not-found.
-    if (products.length > 0 && products.length < 2000) {
-      playScanBeep(false);
-      setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
-      setUnknownBarcode(raw);
-      return;
-    }
-
-    // Large catalogue: look it up, but cap the wait so the counter is never
-    // left staring at a spinner if the DB is slow or unreachable.
+    // A local miss below the 2000-row list cap used to be treated as final —
+    // the loaded list WAS the whole catalogue. That's no longer true: a
+    // batch-specific scan code (e.g. "PROD101-B1", printed per purchased
+    // lot) never appears in `GET /products` regardless of catalogue size, so
+    // it would always look like a local miss. Every miss now falls through
+    // to this server lookup, which also checks Batch codes — capped at 4s so
+    // a slow/unreachable DB still can't hang the counter.
     setScanFeedback({ status: 'pending', text: `Looking up ${raw}…` });
     try {
       const ac = new AbortController();
@@ -582,10 +613,18 @@ function StandardBillingUI() {
       if (found?.id) {
         // Server tells us which variant matched (matched_variant) when the
         // scan hit a per-variant code — pre-select it in the cart so the
-        // shopkeeper doesn't have to pick the colour/size again.
-        addToCart(found, found.matched_variant || undefined);
+        // shopkeeper doesn't have to pick the colour/size again. A matched
+        // batch (matched_batch) pins this line to that exact purchased lot.
+        addToCart(found, found.matched_variant || undefined, false, found.matched_batch || undefined);
         playScanBeep(true);
-        setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });
+        if (found.matched_batch && found.matched_batch.isOldest === false) {
+          // Non-blocking nudge only — the shopkeeper can still complete the
+          // sale with the batch they scanned, this just flags that an older
+          // lot exists so it isn't left to expire/go stale on the shelf.
+          setScanFeedback({ status: 'nudge', text: t('fifoNudge', { name: found.name, batch: found.matched_batch.batchNumber || '' }) || `Older stock of ${found.name} is available — sell that lot first if possible.` });
+        } else {
+          setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });
+        }
         return;
       }
       throw new Error('not found');
@@ -745,6 +784,10 @@ function StandardBillingUI() {
         quantity: item.quantity,
         price_per_unit: item.price,
         purchase_price: item.cost || 0,
+        // Present only when this line came from a batch-barcode scan — the
+        // billing route draws stock/cost from THIS exact batch instead of
+        // auto-FIFO-picking one when it's set.
+        batch_id: item.batchId || undefined,
       }));
 
       const salePayload = {
@@ -973,7 +1016,7 @@ function StandardBillingUI() {
                 {searchResults.map((product) => (
                   <button
                     key={product.id}
-                    onClick={() => addToCart(product)}
+                    onClick={() => { addToCart(product); checkFifoHintOnAdd(product); }}
                     className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 last:border-0"
                   >
                     <div>
@@ -1164,11 +1207,15 @@ function StandardBillingUI() {
             'fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-5 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 pointer-events-none',
             scanFeedback.status === 'ok' ? 'bg-emerald-600 border-emerald-500 text-white'
               : scanFeedback.status === 'error' ? 'bg-red-600 border-red-500 text-white'
+              // Advisory only — the item was already added, this is just a
+              // heads-up, so it reads as a warning rather than an error.
+              : scanFeedback.status === 'nudge' ? 'bg-amber-500 border-amber-400 text-white'
               : 'bg-slate-800 border-slate-700 text-white',
           )}
         >
           {scanFeedback.status === 'ok' ? <CheckCircle size={20} />
             : scanFeedback.status === 'error' ? <AlertCircle size={20} />
+            : scanFeedback.status === 'nudge' ? <Layers size={20} />
             : <Loader2 size={20} className="animate-spin" />}
           <span className="font-bold text-sm max-w-[60vw] truncate">{scanFeedback.text}</span>
         </div>
@@ -1887,6 +1934,7 @@ function StandardBillingUI() {
                         key={key}
                         onClick={() => {
                           addToCart(variantSelectionProduct, key);
+                          checkFifoHintOnAdd(variantSelectionProduct);
                           setVariantSelectionProduct(null);
                         }}
                         className={cn(
@@ -1914,6 +1962,7 @@ function StandardBillingUI() {
                   const val = new FormData(e.currentTarget).get('custom_size') as string;
                   if (val && val.trim()) {
                     addToCart(variantSelectionProduct, val.trim());
+                    checkFifoHintOnAdd(variantSelectionProduct);
                     setVariantSelectionProduct(null);
                   }
                 }} className="flex gap-2">
@@ -2381,7 +2430,7 @@ export default function BillingPage() {
   // a full-screen spinner on every navigation. Previously this component gated
   // ALL rendering behind a `mounted` flag, which made every sidebar click look
   // like a full page refresh even though it was already client-side navigation.
-  if (profile.subscriptionPlan === 'wholesale') {
+  if (isWholesaleTierPackage(profile.subscriptionPlan)) {
     return <WholesaleBillingUI />;
   }
   return <StandardBillingUI />;

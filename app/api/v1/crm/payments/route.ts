@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { applyCustomerPayment } from '@/lib/server/customerPayment';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,6 +77,11 @@ export const POST = handle(async (req) => {
       throw new ApiError(400, 'Invalid entityType');
     }
   }, { timeout: 15000, maxWait: 10000 });
+
+  // A collected payment shifts Total Collection / Udhar Collection / Net In
+  // Hand on the dashboard — invalidate so the shopkeeper doesn't see the old
+  // numbers up to 15s after recording money.
+  invalidateDashboardCacheForShop(shop.id);
 
   return json(result);
 });

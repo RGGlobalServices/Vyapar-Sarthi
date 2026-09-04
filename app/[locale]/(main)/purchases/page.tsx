@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw } from 'lucide-react';
+import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -12,12 +12,14 @@ import { ExportButton } from '@/lib/hooks/useExport';
 import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
 import { canUseGodowns } from '@/lib/planGates';
 import PurchaseReturnModal from '@/components/purchases/PurchaseReturnModal';
+import { printLabelSheet } from '@/lib/printLabels';
+import { resolveActiveProfile } from '@/lib/printProfiles';
 
 const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
 const emptyItem = () => ({
-  productId: '', quantity: 1, cost: 0, batchNumber: '', unitId: '', conversionFactor: 1,
+  productId: '', quantity: 1, cost: 0, batchNumber: '', sellingPrice: '', unitId: '', conversionFactor: 1,
   // One qty per colour/size, keyed the same way as everywhere else — only
   // used when the selected product has variant rows; `quantity` above is
   // still what's used for a plain (non-variant) product.
@@ -270,6 +272,11 @@ export default function PurchasesPage() {
     const cost = effectiveItemCost(item);
     const mrp = item.costMode === 'mrp_based' && item.mrp !== '' ? Number(item.mrp) : null;
     const discountPercent = item.costMode === 'mrp_based' && item.discountPercent !== '' ? Number(item.discountPercent) : null;
+    // Optional — this lot's real selling price, distinct from the product's
+    // shelf price, so profit/reporting can eventually reflect what THIS
+    // batch actually cost vs. sold for. Blank just means "use the product's
+    // normal price," same as leaving MRP/discount blank does today.
+    const sellingPrice = item.sellingPrice !== '' && item.sellingPrice != null ? Number(item.sellingPrice) : null;
     if (productVariants.length > 0) {
       return Object.entries(item.variantQty || {})
         .filter(([, qty]) => Number(qty) > 0)
@@ -277,13 +284,13 @@ export default function PurchasesPage() {
           productId: item.productId,
           variant: variantKey,
           quantity: Number(qty),
-          cost, mrp, discountPercent,
+          cost, mrp, discountPercent, sellingPrice,
           batchNumber: item.batchNumber,
           unitId: item.unitId,
           conversionFactor: item.conversionFactor,
         }));
     }
-    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent }] : [];
+    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice }] : [];
   });
 
   const handleSave = async (e: React.FormEvent) => {
@@ -327,6 +334,34 @@ export default function PurchasesPage() {
     } finally {
       setDeleting(false);
     }
+  };
+
+  // Prints one sticker per unit of stock this purchase actually brought in —
+  // each line's own batch barcode (e.g. "PROD101-B1"), not the product's
+  // shared barcode, so a scan at billing time lands on the exact lot and its
+  // real cost/profit (see the batch-aware FIFO logic in billing/route.ts).
+  const printBatchLabels = async (inv: any) => {
+    const rows = (inv.purchaseItems || [])
+      .filter((item: any) => item.batch?.barcode)
+      .map((item: any) => ({
+        name: item.product?.name || '',
+        variantKey: item.batch.batchNumber ? `Batch ${item.batch.batchNumber}` : undefined,
+        barcode: item.batch.barcode,
+        sellingPrice: item.batch.sellingPrice ?? item.product?.sellingPrice ?? undefined,
+        mrp: item.mrp ?? item.product?.mrp ?? undefined,
+        copies: Math.max(1, Math.round(item.batch.initialQuantity ?? item.quantity ?? 1)),
+        sku: item.product?.sku,
+      }));
+    if (!rows.length) {
+      alert(t('noBatchesToPrint') || 'No batch barcodes were generated for this purchase.');
+      return;
+    }
+    const shopId = typeof window !== 'undefined' ? (localStorage.getItem('ks_active_shop_id') || '') : '';
+    const activeProfile = shopId ? resolveActiveProfile(shopId) : null;
+    await printLabelSheet(rows, {
+      profile: activeProfile || undefined,
+      title: `${inv.invoiceNumber || inv.id} — Batch Labels`,
+    });
   };
 
   // After a purchase return saves, `selectedInvoice` (a snapshot captured
@@ -598,6 +633,14 @@ export default function PurchasesPage() {
                         newItems[index].batchNumber = e.target.value;
                         setItems(newItems);
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="LOT-001" />
+                    </div>
+                    <div className="w-32">
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('sellingPriceOptional') || 'Sell Price (Opt)'}</label>
+                      <input type="number" step="0.01" min="0" value={item.sellingPrice} onChange={e => {
+                        const newItems = [...items];
+                        newItems[index].sellingPrice = e.target.value;
+                        setItems(newItems);
+                      }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="0" />
                     </div>
                     <button type="button" onClick={() => setItems(items.filter((_, i) => i !== index))}
                       className="w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
@@ -968,6 +1011,10 @@ export default function PurchasesPage() {
                 <button onClick={() => setShowReturnModal(true)}
                   className="px-4 py-2.5 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-colors flex items-center gap-2 text-orange-600 dark:text-orange-400">
                   <RotateCcw size={14} /> Return
+                </button>
+                <button onClick={() => printBatchLabels(selectedInvoice)}
+                  className="px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                  <Printer size={14} /> {t('printBatchLabels') || 'Print Batch Labels'}
                 </button>
                 <button onClick={() => handleDelete(selectedInvoice)} disabled={deleting}
                   className="px-4 py-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center gap-2 text-red-600 dark:text-red-400 disabled:opacity-50">

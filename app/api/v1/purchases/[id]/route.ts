@@ -15,7 +15,7 @@ export async function GET(req: Request, { params }: Ctx) {
       where: { id, shopId: auth.shop.id },
       include: {
         supplier: true,
-        purchaseItems: { include: { product: true } },
+        purchaseItems: { include: { product: true, batch: true } },
         // Lets the Purchase Details modal compute per-item "remaining"
         // returnable quantity and a live "Net Payable" (totalCost minus the
         // sum of these) without ever rewriting the invoice's own totals.

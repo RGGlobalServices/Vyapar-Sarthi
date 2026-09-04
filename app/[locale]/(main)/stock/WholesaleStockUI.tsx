@@ -289,30 +289,42 @@ export default function WholesaleStockUI() {
     let categories = new Set<string>();
 
     const items = (products || []).map((p: any) => {
-      // 1. Dynamically compute true global stock from warehouses first
+      // Stock shown here MUST agree with what Products (WholesaleProductsUI)
+      // and the product's own detail sheet (erp-details) show — all three
+      // used to compute "stock" differently (this file preferred a
+      // warehouse-inventory sum, then a Batch-quantity sum, then finally
+      // product.currentStock), and each of those sums is only ever a
+      // PARTIAL slice: not every purchase gets a warehouse assigned (see
+      // purchases/route.ts — warehouseId is optional), and a manual stock
+      // adjustment (stock/adjust/route.ts) updates currentStock + the one
+      // godown it targets but never touches Batch. So a product with any
+      // purchase that skipped a warehouse, or any Batch predating a manual
+      // adjustment, silently showed a smaller number here than its real
+      // stock — while Products/erp-details, which read currentStock
+      // directly, showed the correct total. currentStock is the one field
+      // every stock-affecting path (purchases, batch-aware billing/sales,
+      // returns, transfers, adjustments, imports) keeps in sync, so it's
+      // the only number safe to treat as "the" stock total.
+      //
+      // The per-warehouse sum stays meaningful ONLY when the shopkeeper has
+      // deliberately filtered to one specific warehouse — that's a genuine
+      // "what's physically in warehouse X" question, not a stand-in for the
+      // product's total stock.
       let warehouseQty = 0;
       let hasWarehouseData = false;
-      if (godowns && godowns.length > 0) {
-        godowns.forEach((g: any) => {
-          // If a specific warehouse is selected, ONLY count its inventory
-          if (warehouseFilter !== 'all' && g.id !== warehouseFilter) {
-            return;
-          }
-          if (g.inventory) {
-            const item = g.inventory.find((i: any) => i.productId === p.id);
-            if (item && typeof item.quantity === 'number') {
-              warehouseQty += item.quantity;
-              hasWarehouseData = true;
-            }
-          }
-        });
+      if (warehouseFilter !== 'all' && godowns && godowns.length > 0) {
+        const g = godowns.find((g: any) => g.id === warehouseFilter);
+        const item = g?.inventory?.find((i: any) => i.productId === p.id);
+        if (item && typeof item.quantity === 'number') {
+          warehouseQty = item.quantity;
+          hasWarehouseData = true;
+        }
       }
 
-      // 2. Fallbacks
       const productBatches = (batches || []).filter((b: any) => b.productId === p.id);
-      const rawQty = hasWarehouseData 
-        ? warehouseQty 
-        : (productBatches.length > 0 ? productBatches.reduce((sum: number, b: any) => sum + (b.quantity || b.currentStock || 0), 0) : (p.currentStock || 0));
+      const rawQty = warehouseFilter !== 'all'
+        ? (hasWarehouseData ? warehouseQty : 0)
+        : (p.currentStock || 0);
 
       const qty = Math.max(0, rawQty); // Cap at 0 for display
       const isOutOfStock = rawQty <= 0;
@@ -880,6 +892,72 @@ export default function WholesaleStockUI() {
                   </div>
                 </div>
 
+                {/* Per-variant (colour × size) stock — the aggregate "Current"
+                    card above tells you the total but not which specific
+                    colour/size it's made of. Product.variants[] already
+                    carries this (written by Purchases, Add/Edit Product, and
+                    bulk import — see mergeVariantIntoArray in
+                    wholesale-import/execute/route.ts); this just surfaces it
+                    here instead of only inside the Add/Edit form. */}
+                {Array.isArray(selectedProduct.variants) && selectedProduct.variants.length > 0 && (() => {
+                  const variants = selectedProduct.variants as any[];
+                  const colourCount = new Set(variants.map(v => v.color).filter(Boolean)).size;
+                  const sizeCount = new Set(variants.map(v => v.size).filter(Boolean)).size;
+                  const variantTotal = variants.reduce((s, v) => s + (Number(v.stock) || 0), 0);
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Variant-wise Stock</h4>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                          {colourCount > 0 && `${colourCount} colour${colourCount > 1 ? 's' : ''}`}
+                          {colourCount > 0 && sizeCount > 0 && ' · '}
+                          {sizeCount > 0 && `${sizeCount} size${sizeCount > 1 ? 's' : ''}`}
+                        </span>
+                      </div>
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                        <div className="max-h-64 overflow-y-auto">
+                          <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50 sticky top-0">
+                              <tr>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400">Colour</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400">Size</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">Stock</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">Sell Price</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {variants.map((v, i) => {
+                                const stock = Number(v.stock) || 0;
+                                return (
+                                  <tr key={i} className={cn(stock <= 0 && 'opacity-50')}>
+                                    <td className="px-3 py-2">
+                                      {v.color ? (
+                                        <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                                          <span className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(v.color) }} />
+                                          {v.color}
+                                        </span>
+                                      ) : <span className="text-slate-400">—</span>}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{v.size || '—'}</td>
+                                    <td className={cn("px-3 py-2 text-right font-mono font-bold", stock <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400')}>{stock}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-slate-600 dark:text-slate-400">{v.sellingPrice ? `₹${Number(v.sellingPrice).toLocaleString('en-IN')}` : '—'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="flex justify-between items-center px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs">
+                          <span className="text-slate-500">Sum of variants</span>
+                          <span className={cn("font-mono font-bold", variantTotal !== selectedProduct.computedStock ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300')}>
+                            {variantTotal}{variantTotal !== selectedProduct.computedStock ? ` (total shown above: ${selectedProduct.computedStock})` : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="space-y-3">
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Pricing Info</h4>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 grid grid-cols-2 gap-3 text-sm">
@@ -922,12 +1000,24 @@ export default function WholesaleStockUI() {
                 <div className="space-y-3">
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Stock by Warehouse</h4>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 space-y-2">
-                    {data.warehouses && data.warehouses.some((w: any) => (w.inventory || []).some((i: any) => i.productId === selectedProduct.id && i.quantity > 0)) ? (
-                      data.warehouses.map((w: any) => {
-                        const item = (w.inventory || []).find((i: any) => i.productId === selectedProduct.id);
-                        if (!item || item.quantity <= 0) return null;
-                        const val = item.quantity * (selectedProduct.costPrice || selectedProduct.wholesaleCost || selectedProduct.sellingPrice || 0);
-                        return (
+                    {(() => {
+                      const warehouseRows = (data.warehouses || [])
+                        .map((w: any) => ({ w, item: (w.inventory || []).find((i: any) => i.productId === selectedProduct.id) }))
+                        .filter(({ item }: any) => item && item.quantity > 0);
+                      const warehouseSum = warehouseRows.reduce((s: number, { item }: any) => s + item.quantity, 0);
+                      // Purchases don't require a warehouse (see purchases/route.ts),
+                      // so a product's tracked warehouse rows can legitimately fall
+                      // short of its real total (computedStock, now = currentStock —
+                      // see the comment above where computedStock is derived). Show
+                      // the gap explicitly instead of letting this list silently
+                      // under-represent the stock the header stat cards show.
+                      const unassigned = Math.max(0, (selectedProduct.computedStock || 0) - warehouseSum);
+                      const costRef = selectedProduct.costPrice || selectedProduct.wholesaleCost || selectedProduct.sellingPrice || 0;
+                      if (warehouseRows.length === 0 && unassigned <= 0) {
+                        return <p className="text-sm text-slate-500 text-center py-2">No stock available</p>;
+                      }
+                      return <>
+                        {warehouseRows.map(({ w, item }: any) => (
                           <div key={w.id} className="flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-800 pb-2 last:pb-0 last:border-0">
                             <div>
                               <p className="font-bold text-slate-800 dark:text-slate-200">{w.name}</p>
@@ -935,24 +1025,24 @@ export default function WholesaleStockUI() {
                             </div>
                             <div className="text-right">
                               <p className="font-mono font-bold text-emerald-600">{item.quantity} {selectedProduct.baseUnit || 'Unit'}</p>
-                              <p className="text-xs text-slate-500 font-mono">₹{val.toLocaleString('en-IN')}</p>
+                              <p className="text-xs text-slate-500 font-mono">₹{(item.quantity * costRef).toLocaleString('en-IN')}</p>
                             </div>
                           </div>
-                        );
-                      })
-                    ) : (
-                      selectedProduct.computedStock > 0 ? (
-                        <div className="flex justify-between items-center text-sm">
-                          <p className="font-bold text-slate-800 dark:text-slate-200">Main Store</p>
-                          <div className="text-right">
-                            <p className="font-mono font-bold text-emerald-600">{selectedProduct.computedStock} {selectedProduct.baseUnit || 'Unit'}</p>
-                            <p className="text-xs text-slate-500 font-mono">₹{selectedProduct.computedValue?.toLocaleString('en-IN')}</p>
+                        ))}
+                        {unassigned > 0 && (
+                          <div className="flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-800 pb-2 last:pb-0 last:border-0">
+                            <div>
+                              <p className="font-bold text-slate-800 dark:text-slate-200">Not assigned to a warehouse</p>
+                              <p className="text-xs text-slate-500">Stock received without picking a warehouse</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono font-bold text-amber-600">{unassigned} {selectedProduct.baseUnit || 'Unit'}</p>
+                              <p className="text-xs text-slate-500 font-mono">₹{(unassigned * costRef).toLocaleString('en-IN')}</p>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-slate-500 text-center py-2">No stock available</p>
-                      )
-                    )}
+                        )}
+                      </>;
+                    })()}
                   </div>
                 </div>
 
@@ -1009,10 +1099,24 @@ export default function WholesaleStockUI() {
                     <div key={b.id} className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <p className="font-bold text-sm text-slate-900 dark:text-white">Batch #{b.batchNumber || 'N/A'}</p>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white">Batch #{b.batchNumber || b.barcode || 'N/A'}</p>
                           <p className="text-xs text-slate-500">Exp: {b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : 'N/A'}</p>
                         </div>
-                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">Qty: {b.quantity}</span>
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">Qty: {b.quantity}{b.initialQuantity != null ? ` / ${b.initialQuantity}` : ''}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
+                        <div>
+                          <p className="text-slate-500">Cost</p>
+                          <p className="font-mono font-bold text-slate-700 dark:text-slate-300">{b.costPrice != null ? `₹${Number(b.costPrice).toLocaleString('en-IN')}` : '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Sell</p>
+                          <p className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{b.sellingPrice != null ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Purchased</p>
+                          <p className="font-mono text-slate-600 dark:text-slate-400">{(b.purchaseDate || b.createdAt) ? new Date(b.purchaseDate || b.createdAt).toLocaleDateString('en-IN') : '—'}</p>
+                        </div>
                       </div>
                     </div>
                   )) : (

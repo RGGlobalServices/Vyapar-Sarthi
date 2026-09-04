@@ -3,6 +3,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { parseFlexibleDate } from '@/lib/server/dates';
 import { parseSizeRange } from '@/lib/sizeRange';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 /**
  * Build the "<Colour> / <Size>" composite key used everywhere else in the
@@ -156,6 +157,10 @@ export async function POST(req: NextRequest) {
       // Extra scannable identifiers used by the desktop barcode billing flow.
       const sku = getVal(row, ['sku', 'skucode', 'stockcode', 'articleno', 'articlecode']);
       if (sku) extras.sku = String(sku).trim();
+      // Printable reference field — same "write once, reuse on labels" concept
+      // as SKU (see Products form's Other Code field), just a separate slot.
+      const otherCode = getVal(row, ['othercode', 'refcode', 'referencecode', 'altcode', 'alternatecode']);
+      if (otherCode) extras.otherCode = String(otherCode).trim();
       const cartonBc = getVal(row, ['cartonbarcode', 'cartoncode', 'boxbarcode', 'outerbarcode', 'casebarcode']);
       if (cartonBc) extras.cartonBarcode = String(cartonBc).trim();
       const gstPct = getVal(row, ['gstpercent', 'gstrate', 'gstpercentage', 'taxrate', 'gst%']);
@@ -1217,7 +1222,7 @@ export async function POST(req: NextRequest) {
             const mobile = getVal(row, ['mobile', 'phone']);
 
             if (partyType === 'supplier') {
-              if (auth.shop.subscriptionPlan !== 'wholesale') {
+              if (!isWholesaleTierPackage(auth.shop.subscriptionPlan)) {
                 skipped++;
                 rowErrors.push(`Row ${i + 1}: Supplier ledger entries are only available on the Udyog plan.`);
                 continue;

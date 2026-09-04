@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -167,7 +168,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     invoiceFooter: profile?.invoiceFooter || undefined,
     // Scan-to-pay QR is wholesale-A4-only — reprints follow the same rule so a
     // retail / thermal reprint never surfaces it. See WholesaleBillingUI.
-    upiId: ((profile?.subscriptionPlan === 'wholesale' || profile?.packageType === 'wholesale')
+    upiId: ((isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType))
       && (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale'))
       ? (profile?.upiId || undefined)
       : undefined,

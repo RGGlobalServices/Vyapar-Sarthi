@@ -90,6 +90,39 @@ export const GET = handle(async (req, ctx: any) => {
     }
   }
 
+  // Batch-specific scan code (e.g. "PROD101-B1", printed per-lot from the
+  // Purchases flow) — tried only after every product/variant-level code has
+  // missed, so it never shadows the far more common plain product barcode.
+  // Purely additive: a matched batch is returned as `matched_batch` and the
+  // billing page adds it to the cart's line as `batch_id`, which the billing
+  // route then draws stock/cost from directly instead of auto-FIFO-picking.
+  let matchedBatch: { id: string; batchNumber: string | null; quantity: number; costPrice: number | null; sellingPrice: number | null; expiryDate: Date | null; isOldest: boolean } | null = null;
+  if (!product) {
+    const batch = await prisma.batch.findFirst({
+      where: { shopId: shop.id, barcode: { equals: barcode, mode: 'insensitive' }, quantity: { gt: 0 } },
+      include: { product: { include } },
+    });
+    if (batch && batch.product && (!batch.product.archived)) {
+      product = batch.product as any;
+      // Whether this is the oldest live batch for the product — lets the
+      // billing UI show a gentle "sell the older lot first" nudge without a
+      // second round-trip when the shopkeeper scanned a newer one instead.
+      const oldestBatch = await prisma.batch.findFirst({
+        where: { shopId: shop.id, productId: batch.productId, quantity: { gt: 0 } },
+        orderBy: { createdAt: 'asc' },
+      });
+      matchedBatch = {
+        id: batch.id,
+        batchNumber: batch.batchNumber,
+        quantity: batch.quantity,
+        costPrice: batch.costPrice,
+        sellingPrice: batch.sellingPrice,
+        expiryDate: batch.expiryDate,
+        isOldest: !oldestBatch || oldestBatch.id === batch.id,
+      };
+    }
+  }
+
   if (!product) return json({ error: 'Product not found', barcode }, 404);
 
   // Same "+N newly added" figure the list endpoint attaches, so the two
@@ -112,5 +145,7 @@ export const GET = handle(async (req, ctx: any) => {
 
   // matched_variant tells the billing UI which colour/size to pre-select
   // (client requirement: "scan variant barcode → that variant lands on bill").
-  return json({ ...product, recentlyAdded: Number(recent?._sum?.quantity) || 0, matched_variant: matchedVariant });
+  // matched_batch (when present) tells it which specific lot to bill from
+  // instead of letting the server auto-FIFO-pick one.
+  return json({ ...product, recentlyAdded: Number(recent?._sum?.quantity) || 0, matched_variant: matchedVariant, matched_batch: matchedBatch });
 });

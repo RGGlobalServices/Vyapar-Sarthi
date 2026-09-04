@@ -60,6 +60,13 @@ export function matchProductByCode<T extends {
   const hsnMatches = products.filter(p => eq(p.hsnCode));
   if (hsnMatches.length === 1) return hsnMatches[0];
 
+  // A batch-specific scan code is always `<product code>-B<n>` (see
+  // purchases/route.ts) — that reserved shape must NOT be caught by the
+  // "code extends a known barcode" fallback below, or a batch scan silently
+  // resolves to the bare product (auto-FIFO) instead of falling through to
+  // the server lookup that can actually find and target the batch.
+  const looksLikeBatchSuffix = (base: string) => base.length >= 4 && new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-b\\d+$`).test(code);
+
   // Lenient fallback — real-world barcodes often round-trip through the
   // catalogue with an added prefix ("BAR-8909106067240") or padding, so strict
   // equality misses a scan that visibly matches an existing product. Only
@@ -72,9 +79,9 @@ export function matchProductByCode<T extends {
       (norm(p.barcode).includes(code)) ||
       (norm(p.sku).includes(code)) ||
       (norm(p.cartonBarcode).includes(code)) ||
-      (code.includes(norm(p.barcode)) && norm(p.barcode).length >= 4) ||
-      (code.includes(norm(p.sku)) && norm(p.sku).length >= 4) ||
-      (code.includes(norm(p.cartonBarcode)) && norm(p.cartonBarcode).length >= 4)
+      (code.includes(norm(p.barcode)) && norm(p.barcode).length >= 4 && !looksLikeBatchSuffix(norm(p.barcode))) ||
+      (code.includes(norm(p.sku)) && norm(p.sku).length >= 4 && !looksLikeBatchSuffix(norm(p.sku))) ||
+      (code.includes(norm(p.cartonBarcode)) && norm(p.cartonBarcode).length >= 4 && !looksLikeBatchSuffix(norm(p.cartonBarcode)))
     );
     if (substringMatches.length === 1) return substringMatches[0];
   }

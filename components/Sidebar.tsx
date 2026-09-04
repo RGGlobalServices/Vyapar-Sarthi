@@ -18,7 +18,7 @@ import api from '@/lib/api';
 import { useAuthStore, useStockStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, getBusinessTypesForPackage } from '@/lib/businessConfig';
-import { getPackageConfig } from '@/lib/config/packageConfig';
+import { getPackageConfig, isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { preload } from 'swr';
 import { fetchJson, fetchProductsMapped } from '@/lib/fetchers';
 import { isSubscriptionEnded, isAllowedWhenEnded } from '@/lib/subscriptionAccess';
@@ -391,10 +391,10 @@ export default function Sidebar({
           <div className="w-full mt-2 flex items-center justify-between bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-2 group transition-all hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:border-emerald-200 dark:hover:border-emerald-500/30">
             <div className="flex items-center gap-2 truncate">
               <span className="text-sm">
-                {mounted && profile.subscriptionPlan === 'wholesale' ? '📦' : '🏪'}
+                {mounted && isWholesaleTierPackage(profile.subscriptionPlan) ? '📦' : '🏪'}
               </span>
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 truncate">
-                {profile.shopName || (mounted && profile.subscriptionPlan === 'wholesale' ? 'Main Warehouse' : 'Main Store')}
+                {profile.shopName || (mounted && isWholesaleTierPackage(profile.subscriptionPlan) ? 'Main Warehouse' : 'Main Store')}
               </span>
             </div>
             {canSwitchShops && (

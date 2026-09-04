@@ -32,6 +32,7 @@ function productColumns(businessType?: string): ImportColumn[] {
     { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname', 'itemname', 'particulars', 'goods'], profile: 'name' },
     { label: 'Barcode', aliases: ['companybarcode', 'itembarcode', 'ean', 'upc'], profile: 'barcode' },
     { label: 'SKU', aliases: ['skucode', 'itemcode', 'stockcode', 'code', 'articleno', 'articlecode'], profile: 'text' },
+    { label: 'Other Code', aliases: ['othercode', 'refcode', 'referencecode', 'altcode', 'alternatecode'], profile: 'text' },
     { label: 'Carton Barcode', aliases: ['cartoncode', 'cartonbarcode', 'boxbarcode', 'outerbarcode', 'casebarcode'], profile: 'barcode' },
     { label: 'Category', aliases: ['group', 'type'], profile: 'text' },
     { label: 'Unit', aliases: ['uom', 'packing'], profile: 'unit' },

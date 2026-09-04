@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, query } from '@/lib/server/http';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
   const q = query(req);
   const shopId = shop.id;
-  const isWholesale = shop.subscriptionPlan === 'wholesale';
+  const isWholesale = isWholesaleTierPackage(shop.subscriptionPlan);
 
   const since30 = new Date();
   since30.setDate(since30.getDate() - 30);

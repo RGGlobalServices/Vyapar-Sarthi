@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { useUdharStore, UdharCustomer, UdharTransaction } from '@/lib/store';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 import { UdharSlip, generateUdharWhatsAppText } from '@/components/UdharSlip';
 import { canAddUdharCustomer, udharLimitDisplay } from '@/lib/planGates';
@@ -129,7 +130,7 @@ export default function UdharPage() {
   const locale = useLocale();
   const { profile, allShopAccess } = useBusinessStore();
   const { customers, loading, fetchCustomers, addCustomer, updateCustomer, deleteCustomer, addTransaction, deleteTransaction } = useUdharStore();
-  const isWholesale = profile.subscriptionPlan === 'wholesale';
+  const isWholesale = isWholesaleTierPackage(profile.subscriptionPlan);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);

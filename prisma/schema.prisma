@@ -496,6 +496,7 @@ model SaleItem {
   itemName      String?  @map("item_name") @db.VarChar
   product       Product? @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sale          Sale?    @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  batches       SaleItemBatch[]
 
   @@index([saleId], map: "ix_sale_items_sale_id")
   @@index([productId], map: "ix_sale_items_product_id")
@@ -1015,14 +1016,44 @@ model PurchaseItem {
   // paid. Null when this line was entered in Manual cost mode.
   mrp               Float?
   discountPercent   Float?  @map("discount_percent")
+  // The exact Batch row this purchase line created — set at insert time (the
+  // id is pre-generated in JS so both rows can reference each other despite
+  // being created via sibling createMany calls in the same transaction).
+  // Nullable because historical rows predate this link.
+  batchId           String? @map("batch_id") @db.Uuid
 
   purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
   product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  batch           Batch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
 
   @@index([purchaseInvoiceId])
   @@index([productId])
   @@map("purchase_items")
+}
+
+/** Records which Batch(es) a Sale line's quantity was actually drawn from,
+ *  and the batch's real cost at that moment — a join table rather than a
+ *  single FK on SaleItem because a FIFO walk can split one cart line across
+ *  two batches with two different costs (e.g. 5 units from a ₹100 lot + 3
+ *  from a ₹120 lot on one bill line). This is what makes real per-batch
+ *  profit possible instead of always using Product.costPrice. */
+model SaleItemBatch {
+  id         String    @id @default(uuid()) @db.Uuid
+  saleItemId String    @map("sale_item_id") @db.Uuid
+  batchId    String    @map("batch_id") @db.Uuid
+  quantity   Float
+  // Batch.costPrice captured at the moment of sale — stays correct even if
+  // the batch's own cost is edited/corrected afterward.
+  costAtSale Float     @map("cost_at_sale")
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  saleItem SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  batch    Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([saleItemId])
+  @@index([batchId])
+  @@map("sale_item_batches")
 }
 
 /** Goods sent back to a supplier from a specific purchase (damaged, wrong
@@ -1085,12 +1116,28 @@ model Batch {
   batchNumber String?   @map("batch_number") @db.VarChar
   mfgDate     DateTime? @map("mfg_date") @db.Timestamptz(6)
   expiryDate  DateTime? @map("expiry_date") @db.Timestamptz(6)
+  // Current available stock in this lot — decremented in place as sales draw
+  // from it. `initialQuantity` below preserves what it started at, since this
+  // field alone can't answer "how much of this lot did we ever have" once
+  // sales start eating into it.
   quantity    Float     @default(0)
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop    Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  // --- Real per-lot commercial data (added for batch-wise costing/profit) ---
+  initialQuantity Float?    @map("initial_quantity")
+  costPrice       Float?    @map("cost_price")
+  sellingPrice    Float?    @map("selling_price")
+  purchaseDate    DateTime? @map("purchase_date") @db.Timestamptz(6)
+  // Batch-specific scan code (e.g. "PROD101-B1") — additive alongside
+  // Product.barcode/ProductVariant.barcode, never replacing them. Nullable
+  // because historical rows predate this column.
+  barcode         String?   @unique @db.VarChar
+
+  shop          Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  purchaseItems PurchaseItem[]
+  saleItemBatches SaleItemBatch[]
 
   @@index([shopId])
   @@index([productId])

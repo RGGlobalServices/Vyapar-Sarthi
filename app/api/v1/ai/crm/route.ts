@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json } from '@/lib/server/http';
+import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,7 +53,7 @@ export const GET = handle(async (req) => {
     `,
 
     // Supplier/party outstanding (wholesale)
-    shop.subscriptionPlan === 'wholesale'
+    isWholesaleTierPackage(shop.subscriptionPlan)
       ? prisma.supplier.findMany({
           where: { shopId, balance: { gt: 0 } },
           select: { id: true, name: true, mobile: true, balance: true },
