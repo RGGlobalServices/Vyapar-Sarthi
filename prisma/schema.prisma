@@ -106,6 +106,14 @@ model Shop {
   gst                     String?              @db.VarChar
   pan                     String?              @db.VarChar
   invoiceFormat           String?              @default("thermal80") @map("invoice_format") @db.VarChar
+  // Visual design of the printed/PDF bill — 'standard' (current plain black
+  // layout), 'modern' (colored header band), 'stylish' (bold accent-colored
+  // side panel), 'advanced_gst' (standard + prominent HSN/SAC summary table).
+  // Independent of invoiceFormat, which picks the paper size (thermal/A4).
+  invoiceTheme            String?              @default("standard") @map("invoice_theme") @db.VarChar
+  // Accent hex color for the invoice theme's header/borders/highlights —
+  // '' or null means no color (the original plain black-on-white look).
+  invoiceColor            String?              @map("invoice_color") @db.VarChar
   invoiceFooter           String?              @map("invoice_footer")
   showQrCode              Boolean?             @default(false) @map("show_qr_code")
   // When true, the product-catalog profit preview (Add/Edit modal, product

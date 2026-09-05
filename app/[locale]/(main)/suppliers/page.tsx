@@ -1863,6 +1863,38 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
     }
   }
 
+  // Delete a whole purchase bill (invoice) from the supplier's Payment History.
+  // Shopkeeper picks whether stock added by this bill is also reversed, then
+  // the DELETE hits /purchases/{id} (same endpoint the Purchases page uses),
+  // which snapshots the invoice to the Recycle Bin. If a shopkeeper later
+  // restores it from Recycle Bin, stock is put back only if it was reversed
+  // here — mirror of the delete direction.
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteReverseStock, setDeleteReverseStock] = useState(true);
+  const [deletingBill, setDeletingBill] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  async function confirmDeleteBill() {
+    const invoiceId = detail?.invoice?.id;
+    if (!invoiceId) return;
+    setDeletingBill(true);
+    setDeleteError('');
+    try {
+      await api.delete(`/purchases/${invoiceId}`, { data: { reverseStock: deleteReverseStock } });
+      setShowDeleteConfirm(false);
+      onSaved?.();
+      onClose();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      if (body?.code === 'REVERSAL_BLOCKED') {
+        setDeleteError(body.error || 'Some stock from this bill has already been sold — untick the reverse-stock option to still delete the invoice.');
+      } else {
+        setDeleteError(body?.error || e?.message || (t('failedToDelete') || 'Failed to delete'));
+      }
+    } finally {
+      setDeletingBill(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -2051,17 +2083,90 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0 flex gap-2">
           <button
             onClick={handleDownload}
             disabled={downloading || loading}
-            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
+            className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
           >
             {downloading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
             {t('downloadBillPdfBtn') || 'Download PDF'}
           </button>
+          {!isPayment && detail?.invoice?.id && (
+            <button
+              onClick={() => { setDeleteReverseStock(true); setDeleteError(''); setShowDeleteConfirm(true); }}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-700 dark:text-red-400 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
+              title={t('deleteBillBtn') || 'Delete Bill'}
+            >
+              <Trash2 size={16} />
+              {t('deleteBillBtn') || 'Delete Bill'}
+            </button>
+          )}
         </div>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center text-red-600 dark:text-red-400">
+                <AlertTriangle size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('deleteBillTitle') || 'Delete this bill?'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t('deleteBillSubtitle') || 'The invoice and its supplier ledger entry will be removed. You can restore it from the Recycle Bin.'}
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteReverseStock}
+                  onChange={(e) => setDeleteReverseStock(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-red-600"
+                />
+                <div className="text-sm">
+                  <div className="font-semibold text-slate-900 dark:text-white">
+                    {t('reverseStockLabel') || 'Also reverse the stock this purchase added'}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    {deleteReverseStock
+                      ? (t('reverseStockOnHint') || 'Stock added by this purchase will be subtracted back out. Blocked if that stock has already been sold — uncheck to still delete the invoice.')
+                      : (t('reverseStockOffHint') || 'Stock stays exactly as it is now — only the invoice and its supplier balance/ledger entry are removed.')}
+                  </div>
+                </div>
+              </label>
+              {deleteError && (
+                <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-3">
+                  {deleteError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex gap-2 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deletingBill}
+                className="px-4 py-2 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-60"
+              >
+                {t('cancelBtn') || 'Cancel'}
+              </button>
+              <button
+                onClick={confirmDeleteBill}
+                disabled={deletingBill}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-red-600 hover:bg-red-700 text-white disabled:opacity-60"
+              >
+                {deletingBill ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {t('deleteBtn') || 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

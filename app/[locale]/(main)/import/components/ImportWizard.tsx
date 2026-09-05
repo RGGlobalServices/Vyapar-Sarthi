@@ -618,6 +618,44 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         if (Array.isArray(s.rowErrors)) allErrors.push(...s.rowErrors);
         if (Array.isArray(s.productIds)) allProductIds.push(...s.productIds);
 
+        // Auto-attach the scanned bill photo(s) to the supplier's Payment
+        // History row that this import just created — otherwise the shopkeeper
+        // has to re-upload the same file they already scanned. Only fires on
+        // the first batch of a purchase import (that's the only batch that
+        // creates the SupplierTransaction, and where server returns supplier
+        // ids). Best-effort: any failure here just leaves the import as-is;
+        // the products/stock changes are already committed.
+        if (importType === 'purchase' && s.supplierId && s.supplierTransactionId && files.length > 0) {
+          try {
+            // /suppliers/[id] has no GET; use the transactions endpoint which
+            // returns supplier.documents alongside the ledger — that's what
+            // the Suppliers page itself reads to hydrate the Bill Photos strip.
+            const supplierRes = await api.get(`/suppliers/${s.supplierId}/transactions`);
+            const existingDocs: any[] = supplierRes.data?.supplier?.documents || [];
+            const newDocs: any[] = [];
+            for (const file of files) {
+              const fd = new FormData();
+              fd.append('file', file);
+              fd.append('folder', 'supplier-docs');
+              const up = await api.post('/upload', fd);
+              if (up.data?.url) {
+                newDocs.push({
+                  id: crypto.randomUUID(),
+                  url: up.data.url,
+                  uploadedAt: new Date().toISOString(),
+                  name: file.name || undefined,
+                  transactionId: s.supplierTransactionId,
+                });
+              }
+            }
+            if (newDocs.length > 0) {
+              await api.patch(`/suppliers/${s.supplierId}`, { documents: [...existingDocs, ...newDocs] });
+            }
+          } catch (billPhotoErr) {
+            console.warn('Auto-attach scanned bill to supplier failed:', billPhotoErr);
+          }
+        }
+
         offset = Math.min(offset + DB_BATCH_SIZE, total);
         const elapsed = (Date.now() - t0) / 1000;
         const doneThisRun = offset - startOffset;
@@ -693,7 +731,15 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-24">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+        <button onClick={() => {
+          if (step === 'preview' && previewData.length > 0) {
+            const ok = window.confirm(
+              `Are you sure you want to leave?\n\nThe scanned data (${previewData.length} rows) will be lost and you'll need to scan the file again.`
+            );
+            if (!ok) return;
+          }
+          onBack();
+        }} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
           <ArrowLeft size={20} /> Back to Import Types
         </button>
         <h2 className="text-xl font-bold capitalize text-slate-900 dark:text-white">
@@ -796,7 +842,15 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     ))}
                   </select>
                 )}
-                <button onClick={() => setStep('upload')} disabled={isProcessing} className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
+                <button onClick={() => {
+                  if (previewData.length > 0) {
+                    const ok = window.confirm(
+                      `Are you sure you want to cancel?\n\nThe scanned data (${previewData.length} rows) will be lost and you'll need to scan the file again.`
+                    );
+                    if (!ok) return;
+                  }
+                  setStep('upload');
+                }} disabled={isProcessing} className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
                   Cancel
                 </button>
                 {resumeState ? (

@@ -79,6 +79,11 @@ export function getImportTemplate(importType: string, businessType?: string): Im
         { label: 'Product Name', aliases: ['name', 'description', 'item', 'productname', 'itemname', 'particulars', 'goods'], profile: 'name' },
         { label: 'Barcode', aliases: ['companybarcode', 'itembarcode', 'ean', 'upc'], profile: 'barcode' },
         { label: 'SKU', aliases: ['skucode', 'itemcode', 'stockcode', 'code', 'articleno', 'articlecode'], profile: 'text' },
+        // Same printable-reference slot as the Products form's Other Code field
+        // — the purchase review needs its own column so a supplier bill can carry
+        // this identifier through to Products (previously only the product/stock
+        // template exposed it, so purchase-invoice imports silently dropped it).
+        { label: 'Other Code', aliases: ['othercode', 'refcode', 'referencecode', 'altcode', 'alternatecode'], profile: 'text' },
         { label: 'Carton Barcode', aliases: ['cartoncode', 'cartonbarcode', 'boxbarcode', 'outerbarcode', 'casebarcode'], profile: 'barcode' },
         { label: 'Category', aliases: ['group', 'type'], profile: 'text' },
         { label: 'Unit', aliases: ['uom', 'packing'], profile: 'unit' },

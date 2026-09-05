@@ -1,6 +1,6 @@
 import prisma from '@/lib/server/prisma';
 
-export type TrashEntityType = 'product' | 'customer' | 'customer_transaction' | 'supplier' | 'staff' | 'sale';
+export type TrashEntityType = 'product' | 'customer' | 'customer_transaction' | 'supplier' | 'staff' | 'sale' | 'purchase_invoice';
 
 /**
  * Snapshots a record right before a real delete destroys it, so an admin can

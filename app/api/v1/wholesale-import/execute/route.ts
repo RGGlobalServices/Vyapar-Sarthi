@@ -57,7 +57,10 @@ function mergeVariantIntoArray(
       stock: qty,
       costPrice: costPrice > 0 ? costPrice : undefined,
       wholesalePrice: costPrice > 0 ? costPrice : undefined,
-      sellingPrice: sellingPrice > 0 ? sellingPrice : (costPrice > 0 ? Math.round(costPrice * 1.2) : undefined),
+      // No blind markup guess — a row with no selling price leaves it unset
+      // so the shopkeeper sets it their own way (review table or Edit
+      // Product), instead of the import silently inventing a 20% margin.
+      sellingPrice: sellingPrice > 0 ? sellingPrice : undefined,
       mrp: mrp > 0 ? mrp : undefined,
     });
   }
@@ -100,6 +103,12 @@ export async function POST(req: NextRequest) {
     let updated = 0;
     let skipped = 0;
     const rowErrors: string[] = [];
+    // Purchase-import only: capture the resolved supplier + newly-created
+    // "Imported purchase invoice" SupplierTransaction id so the client can
+    // attach the scanned bill photo to Suppliers → Payment History for the
+    // matching row (instead of the user having to manually re-upload it).
+    let purchaseSupplierId: string | null = null;
+    let purchaseSupplierTxnId: string | null = null;
     // Products actually touched this batch — 'purchase' and 'stock' only,
     // the two import types that create/update real Product rows. Lets the
     // wizard offer "Print Barcode Labels" for exactly what was just
@@ -697,12 +706,12 @@ export async function POST(req: NextRequest) {
             const name = getVal(row, ['productname', 'name', 'description', 'item']);
             const quantity = parseFloat(getVal(row, ['quantity', 'qty', 'stock']) || 0);
             const unitCost = parseFloat(getVal(row, ['unitcost', 'wholesalecost', 'cost', 'price', 'rate']) || 0);
-            // Prefer the MRP actually printed on the invoice when the AI
-            // extracted one; only fall back to a guessed markup when it didn't.
+            // MRP actually printed on the invoice, if the AI extracted one —
+            // left unset (not guessed) when it didn't, so the shopkeeper sets
+            // it their own way instead of the import inventing a margin.
             const extractedMrp = parseFloat(getVal(row, ['mrp']) || 0);
-            // Same for selling price — a shopkeeper who typed/edited it in the
-            // review table means it, so it must win over the 20%-over-cost
-            // guess used only when nothing was provided.
+            // Same for selling price — only what the row/review table itself
+            // actually carries; never a guessed markup over cost.
             const rowSellingPrice = parseFloat(getVal(row, ['sellingprice', 'sellprice', 'saleprice', 'retailprice']) || 0);
 
             if (!name) { skipped++; rowErrors.push(`Row ${i + 1}: Skipped - Missing product name`); continue; }
@@ -730,8 +739,10 @@ export async function POST(req: NextRequest) {
                     stock: quantity,
                     costPrice: unitCost > 0 ? unitCost : undefined,
                     wholesalePrice: unitCost > 0 ? unitCost : undefined,
-                    sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : (unitCost > 0 ? Math.round(unitCost * 1.2) : undefined),
-                    mrp: extractedMrp > 0 ? extractedMrp : (unitCost > 0 ? Math.round(unitCost * 1.25) : undefined),
+                    // No blind markup guess — see the sellingPrice/mrp comment
+                    // on the plain-product branch below.
+                    sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : undefined,
+                    mrp: extractedMrp > 0 ? extractedMrp : undefined,
                   }]
                 : [];
 
@@ -742,11 +753,16 @@ export async function POST(req: NextRequest) {
                   barcode: barcodeStr ?? undefined,
                   baseUnit: getVal(row, ['unit']) || 'pcs',
                   // Derive selling/MRP only from a real cost — a 0 cost the AI
-                  // couldn't read should leave these unset, not store 0.
+                  // couldn't read should leave these unset, not store 0. And
+                  // when a real cost WAS read but no selling price/MRP was in
+                  // the source (e.g. a Purchase Invoice import, which never
+                  // carries a resale price), leave those unset too rather than
+                  // silently inventing a 20%/25% markup — the shopkeeper sets
+                  // their own margin via the review table or Edit Product.
                   wholesaleCost: unitCost > 0 ? unitCost : undefined,
                   costPrice: unitCost > 0 ? unitCost : undefined,
-                  sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : (unitCost > 0 ? unitCost * 1.2 : undefined),
-                  mrp: extractedMrp > 0 ? extractedMrp : (unitCost > 0 ? unitCost * 1.25 : undefined),
+                  sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : undefined,
+                  mrp: extractedMrp > 0 ? extractedMrp : undefined,
                   category: getVal(row, ['category']) || 'General',
                   currentStock: quantity,
                   variants: newVariants.length ? (newVariants as any) : undefined,
@@ -778,6 +794,16 @@ export async function POST(req: NextRequest) {
               // one this import — an existing product's price is never
               // guessed/overwritten just because it got restocked.
               if (rowSellingPrice > 0) { updateData.sellingPrice = rowSellingPrice; }
+              // Reference codes carried by this row (SKU / Other Code / HSN /
+              // GST%) update the existing product too — but only when the row
+              // actually has a value, so a blank bill row never wipes a code
+              // the product already has. Matches the truthy-only guard used
+              // by getProductExtras above.
+              const extras = getProductExtras(row);
+              if (extras.sku) updateData.sku = extras.sku;
+              if (extras.otherCode) updateData.otherCode = extras.otherCode;
+              if (extras.hsnCode) updateData.hsnCode = extras.hsnCode;
+              if (extras.gstPercent !== undefined) updateData.gstPercent = extras.gstPercent;
               if (rowVariantKey) {
                 const mergedVariants = mergeVariantIntoArray(
                   variantsIndex.get(matchId) ?? [],
@@ -879,7 +905,7 @@ export async function POST(req: NextRequest) {
             where: { id: dbSupplier.id },
             data: { balance: { increment: owed } },
           });
-          await prisma.supplierTransaction.create({
+          const purchaseTxn = await prisma.supplierTransaction.create({
             data: {
               supplierId: dbSupplier.id,
               type: 'purchase',
@@ -889,6 +915,8 @@ export async function POST(req: NextRequest) {
               ...(billDate ? { createdAt: billDate } : {}),
             },
           });
+          purchaseSupplierId = dbSupplier.id;
+          purchaseSupplierTxnId = purchaseTxn.id;
           if (paidAtImport > 0) {
             await prisma.supplierTransaction.create({
               data: {
@@ -1354,6 +1382,8 @@ export async function POST(req: NextRequest) {
         rowsPerSecond: processingMs > 0 ? Math.round((data.length / processingMs) * 1000) : null,
         importLogId,
         productIds: affectedProductIds.size > 0 ? Array.from(affectedProductIds) : undefined,
+        supplierId: purchaseSupplierId,
+        supplierTransactionId: purchaseSupplierTxnId,
       }
     });
 

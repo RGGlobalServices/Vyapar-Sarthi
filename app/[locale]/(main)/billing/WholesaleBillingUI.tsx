@@ -1085,6 +1085,8 @@ export default function WholesaleBillingUI() {
         // thermal80 default (which is what happened before this field was
         // forwarded at all — only the separate Manual Bill Upload path set it).
         invoiceFormat: billInvoiceFormat,
+        invoiceTheme: profile.invoiceTheme || 'standard',
+        invoiceColor: profile.invoiceColor || null,
         businessType: profile.businessType || 'kirana',
         showQrCode: profile.showQrCode || false,
         invoiceFooter: profile.invoiceFooter || undefined,
@@ -1498,6 +1500,8 @@ export default function WholesaleBillingUI() {
             const fullBillData = {
               ...billData,
               invoiceFormat: profile.invoiceFormat || 'thermal80',
+              invoiceTheme: profile.invoiceTheme || 'standard',
+              invoiceColor: profile.invoiceColor || null,
               businessType: profile.businessType || 'kirana',
               showQrCode: profile.showQrCode || false,
               invoiceFooter: profile.invoiceFooter || undefined,

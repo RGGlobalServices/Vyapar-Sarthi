@@ -20,6 +20,18 @@ export interface GstRateGroup {
   igst: number;
 }
 
+// HSN/SAC-wise summary — a real GST tax invoice groups by HSN/SAC code (each
+// code has its own row even if two codes share a rate), not just by rate.
+// Used by the "Advanced GST" invoice theme's HSN/SAC Summary table.
+export interface GstHsnGroup {
+  hsnCode: string;      // '-' when a line had none
+  rate: number;         // that HSN's rate — real invoices use one rate per HSN
+  taxable: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
 export interface GstBreakdown {
   interState: boolean;
   taxable: number;      // total taxable value across all items
@@ -29,6 +41,7 @@ export interface GstBreakdown {
   totalGst: number;     // cgst + sgst + igst
   grandTotal: number;   // taxable + totalGst  (== the bill total)
   groups: GstRateGroup[]; // rate-wise summary for the tax table
+  hsnGroups: GstHsnGroup[]; // HSN/SAC-wise summary — see GstHsnGroup
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -67,6 +80,7 @@ export function computeGst(
   const scale = subtotal > 0 ? Math.max(0, subtotal - discountNum) / subtotal : 0;
 
   const byRate = new Map<number, { taxable: number; gst: number }>();
+  const byHsn = new Map<string, { rate: number; taxable: number; gst: number }>();
   let taxable = 0;
   let totalGst = 0;
 
@@ -83,6 +97,12 @@ export function computeGst(
     g.taxable += lineTaxable;
     g.gst += lineGst;
     byRate.set(rate, g);
+
+    const hsnKey = (item.hsnCode || '-').trim() || '-';
+    const h = byHsn.get(hsnKey) || { rate, taxable: 0, gst: 0 };
+    h.taxable += lineTaxable;
+    h.gst += lineGst;
+    byHsn.set(hsnKey, h);
   }
 
   const groups: GstRateGroup[] = [...byRate.entries()]
@@ -93,6 +113,17 @@ export function computeGst(
       cgst: interState ? 0 : round2(g.gst / 2),
       sgst: interState ? 0 : round2(g.gst / 2),
       igst: interState ? round2(g.gst) : 0,
+    }));
+
+  const hsnGroups: GstHsnGroup[] = [...byHsn.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([hsnCode, h]) => ({
+      hsnCode,
+      rate: h.rate,
+      taxable: round2(h.taxable),
+      cgst: interState ? 0 : round2(h.gst / 2),
+      sgst: interState ? 0 : round2(h.gst / 2),
+      igst: interState ? round2(h.gst) : 0,
     }));
 
   const cgst = interState ? 0 : round2(totalGst / 2);
@@ -108,5 +139,6 @@ export function computeGst(
     totalGst: round2(totalGst),
     grandTotal: round2(taxable + totalGst),
     groups,
+    hsnGroups,
   };
 }

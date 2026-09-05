@@ -269,6 +269,8 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
       ? (typeof invoice.payment_details === 'string' ? JSON.parse(invoice.payment_details) : invoice.payment_details)
       : undefined,
     invoiceFormat: profile?.invoiceFormat || 'thermal80',
+    invoiceTheme: profile?.invoiceTheme || 'standard',
+    invoiceColor: profile?.invoiceColor || null,
     businessType: profile?.businessType || 'kirana',
     showQrCode: profile?.showQrCode || false,
     invoiceFooter: profile?.invoiceFooter || undefined,

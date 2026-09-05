@@ -42,6 +42,11 @@ interface BusinessProfile {
   gst: string | null;
   pan: string | null;
   invoiceFormat: 'thermal58' | 'thermal80' | 'a4' | 'wholesale';
+  // Visual design of the printed/PDF bill — independent of invoiceFormat
+  // (which picks paper size). '' / null on invoiceColor means no accent —
+  // the original plain black-on-white look.
+  invoiceTheme: 'standard' | 'modern' | 'stylish' | 'advanced_gst';
+  invoiceColor: string | null;
   invoiceFooter: string | null;
   showQrCode: boolean;
   // Product-catalog profit preview only (not billing's tax-liability profit,
@@ -115,6 +120,8 @@ const DEFAULT_PROFILE: BusinessProfile = {
   gst: null,
   pan: null,
   invoiceFormat: 'thermal80',
+  invoiceTheme: 'standard',
+  invoiceColor: null,
   invoiceFooter: null,
   showQrCode: false,
   gstInclusiveProfit: false,
@@ -186,6 +193,8 @@ function mapShopToProfile(data: any): BusinessProfile {
     gst: data.gst ?? null,
     pan: data.pan ?? null,
     invoiceFormat: (data.invoiceFormat ?? data.invoice_format ?? 'thermal80') as 'thermal58' | 'thermal80' | 'a4' | 'wholesale',
+    invoiceTheme: (data.invoiceTheme ?? data.invoice_theme ?? 'standard') as 'standard' | 'modern' | 'stylish' | 'advanced_gst',
+    invoiceColor: data.invoiceColor ?? data.invoice_color ?? null,
     invoiceFooter: data.invoiceFooter ?? data.invoice_footer ?? null,
     showQrCode: data.showQrCode ?? data.show_qr_code ?? false,
     gstInclusiveProfit: data.gstInclusiveProfit ?? data.gst_inclusive_profit ?? false,
@@ -440,6 +449,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.subscriptionPlan !== undefined) apiUpdates.subscriptionPlan = updates.subscriptionPlan;
       if (updates.gstInclusiveProfit !== undefined) apiUpdates.gstInclusiveProfit = updates.gstInclusiveProfit;
       if (updates.invoiceFormat !== undefined) apiUpdates.invoiceFormat = updates.invoiceFormat;
+      if (updates.invoiceTheme !== undefined) apiUpdates.invoiceTheme = updates.invoiceTheme;
+      if (updates.invoiceColor !== undefined) apiUpdates.invoiceColor = updates.invoiceColor;
       if (updates.invoiceFooter !== undefined) apiUpdates.invoiceFooter = updates.invoiceFooter;
       if (updates.showQrCode !== undefined) apiUpdates.showQrCode = updates.showQrCode;
       if (updates.upiId !== undefined) apiUpdates.upiId = updates.upiId;

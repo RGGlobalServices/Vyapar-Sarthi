@@ -57,6 +57,12 @@ export interface BaseInvoiceProps {
   splitPayments?: { cash?: number; upi?: number; card?: number; udhar?: number };
   businessType?: BusinessType | string;
   invoiceFormat?: 'thermal58' | 'thermal80' | 'a4' | 'wholesale';
+  // Visual design (A4 only — thermal is too narrow for the modern/stylish
+  // layouts, so ThermalInvoice ignores this) + accent color for the theme's
+  // header/borders/highlights. '' / null / undefined color means no accent —
+  // the original plain black-on-white look.
+  invoiceTheme?: 'standard' | 'modern' | 'stylish' | 'advanced_gst';
+  invoiceColor?: string | null;
   invoiceFooter?: string | null;
   showQrCode?: boolean;
   // GST invoice: billType 'gst' shows tax breakdown + HSN; gstBreakdown carries the numbers.

@@ -255,6 +255,103 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
       break;
     }
 
+    case 'purchase_invoice': {
+      // Mirror of DELETE /purchases/[id]: re-create the PurchaseInvoice + its
+      // items, re-create the linked SupplierTransaction rows, and if the
+      // original delete also reversed stock (`reverseStock: true` in the
+      // snapshot) put that stock back on Products so the restore is
+      // symmetric. If the delete kept stock as-is (`reverseStock: false`),
+      // restore only re-creates the invoice and the supplier ledger — stock
+      // stays untouched, matching the "only remove the invoice, keep stock"
+      // branch of the delete confirmation modal.
+      const { invoice, supplierTransactions, reverseStock } = data || {};
+      if (!invoice) throw new ApiError(400, 'Purchase invoice snapshot is empty.');
+      const existing = await prisma.purchaseInvoice.findUnique({ where: { id: record.entityId } });
+      if (existing) throw new ApiError(409, 'A purchase invoice with this ID already exists — it may have been restored already.');
+
+      const supplier = await prisma.supplier.findFirst({ where: { id: invoice.supplierId, shopId } });
+      if (!supplier) {
+        throw new ApiError(404, 'The supplier this purchase belonged to no longer exists — restore the supplier first.');
+      }
+
+      const { purchaseItems, ...invoiceFields } = invoice;
+      await prisma.purchaseInvoice.create({ data: invoiceFields });
+      for (const item of purchaseItems || []) {
+        try { await prisma.purchaseItem.create({ data: item }); }
+        catch { skipped.push(`purchase item on invoice ${invoice.invoiceNumber || invoice.id} (product may no longer exist)`); }
+      }
+
+      // Restore the supplier balance + payment-history rows the delete
+      // reversed. Silently skip any transaction whose id already exists (e.g.
+      // partial restore from a previous attempt) rather than aborting.
+      const owed = Math.max(0, Number(invoice.totalCost || 0));
+      if (owed > 0) {
+        try {
+          await prisma.supplier.update({
+            where: { id: supplier.id },
+            data: { balance: { increment: owed } },
+          });
+        } catch (e) { skipped.push('supplier balance not re-incremented'); }
+      }
+      for (const t of supplierTransactions || []) {
+        try { await prisma.supplierTransaction.create({ data: t }); }
+        catch { skipped.push(`supplier transaction ${t.id}`); }
+      }
+
+      // Re-add stock ONLY if the delete had reversed it — otherwise the
+      // stock never left, so touching it here would double-count. Sums by
+      // (productId, variantKey) so a purchase with multiple lines for the
+      // same variant restores as one increment. Best-effort per product.
+      if (reverseStock === true) {
+        const forwardDeltasByProduct = new Map<string, { total: number; byVariant: Map<string, number> }>();
+        for (const item of purchaseItems || []) {
+          if (!item.productId) continue;
+          const qty = Number(item.quantity) || 0;
+          if (qty <= 0) continue;
+          let bucket = forwardDeltasByProduct.get(item.productId);
+          if (!bucket) { bucket = { total: 0, byVariant: new Map() }; forwardDeltasByProduct.set(item.productId, bucket); }
+          bucket.total += qty;
+          if (item.variantKey) {
+            bucket.byVariant.set(item.variantKey, (bucket.byVariant.get(item.variantKey) || 0) + qty);
+          }
+        }
+        for (const [productId, bucket] of forwardDeltasByProduct.entries()) {
+          try {
+            const product = await prisma.product.findFirst({ where: { id: productId, shopId } });
+            if (!product) { skipped.push('Product no longer exists — stock not restored for one line.'); continue; }
+
+            let newSizeVariants: any = product.size_variants;
+            const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
+            let variantsChanged = false;
+
+            for (const [variantKey, qty] of bucket.byVariant.entries()) {
+              if (newSizeVariants) {
+                try {
+                  const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
+                  parsed[variantKey] = (Number(parsed[variantKey]) || 0) + qty;
+                  newSizeVariants = JSON.stringify(parsed);
+                } catch {}
+              }
+              if (newVariants) {
+                const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === variantKey);
+                if (row) { row.stock = (Number(row.stock) || 0) + qty; variantsChanged = true; }
+              }
+            }
+
+            await prisma.product.update({
+              where: { id: product.id },
+              data: {
+                ...(product.currentStock !== null ? { currentStock: { increment: bucket.total } } : {}),
+                size_variants: newSizeVariants,
+                ...(variantsChanged ? { variants: newVariants as any } : {}),
+              },
+            });
+          } catch (e) { skipped.push('Stock not restored for one product line.'); }
+        }
+      }
+      break;
+    }
+
     default:
       throw new ApiError(400, `Unknown entity type: ${record.entityType}`);
   }

@@ -62,7 +62,7 @@ export const PATCH = handle(async (req) => {
   const allowedFields = [
     'name', 'address', 'mobile', 'businessType', 'businessSubtype', 'businessProducts',
     'packageType', 'logoUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit',
-    'invoiceFormat', 'invoiceFooter', 'showQrCode',
+    'invoiceFormat', 'invoiceTheme', 'invoiceColor', 'invoiceFooter', 'showQrCode',
     'upiId', 'bankName', 'bankAccountName', 'bankAccountNumber', 'bankIfsc',
   ];
   const data: Record<string, unknown> = {};

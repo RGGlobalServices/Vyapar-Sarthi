@@ -46,10 +46,20 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   bankAccountName,
   bankAccountNumber,
   bankIfsc,
+  invoiceTheme = 'standard',
+  invoiceColor,
 }, ref) => {
   const t = useTranslations('BillSlip');
   const isGstBill = billType === 'gst';
   const columns = getInvoiceColumns(businessType);
+  // '#0f172a' is literally slate-900's hex — picking no color renders
+  // byte-identical to the original plain black-on-white design, so every
+  // existing bill (before this feature existed) looks exactly the same.
+  const accent = (invoiceColor && invoiceColor.trim()) || '#0f172a';
+  const theme = invoiceTheme || 'standard';
+  const isModern = theme === 'modern';
+  const isStylish = theme === 'stylish';
+  const isAdvancedGst = theme === 'advanced_gst';
 
   // Transport/Loading/Packing/Other charges ride in the same items array (so
   // they persist with the sale for reprints) but aren't goods — pulling them
@@ -81,42 +91,57 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   return (
     <div
       ref={ref}
-      style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Calibri, sans-serif' }}
-      className="w-full max-w-[800px] mx-auto text-sm leading-snug min-h-[1056px] flex flex-col border-2 border-slate-900"
+      style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Calibri, sans-serif', borderColor: isModern ? accent : '#0f172a' }}
+      className="w-full max-w-[800px] mx-auto text-sm leading-snug min-h-[1056px] flex flex-col border-2"
     >
       <div className="p-8 flex flex-col flex-1">
-        {/* Letterhead */}
-        <div className="flex justify-between items-start gap-6 pb-5 mb-6 border-b-2 border-slate-900">
+        {/* Letterhead — 'modern' fills the whole band with the accent color
+            (white text); 'stylish' adds a bold accent side-bar instead; both
+            'standard' and 'advanced_gst' keep the original plain layout,
+            just with the accent color standing in for black on the border/
+            badge/barcode area when one is chosen. */}
+        <div
+          style={{
+            borderBottomColor: isModern ? 'transparent' : accent,
+            backgroundColor: isModern ? accent : undefined,
+            color: isModern ? '#ffffff' : undefined,
+            borderLeft: isStylish ? `10px solid ${accent}` : undefined,
+          }}
+          className={`flex justify-between items-start gap-6 pb-5 mb-6 ${isModern ? 'rounded-xl p-5 border-b-0' : 'border-b-2'} ${isStylish ? 'pl-5' : ''}`}
+        >
           <div className="flex gap-4">
             {logoUrl && <img src={logoUrl} alt="Logo" className="max-h-20 object-contain" />}
             <div>
-              <h1 className="text-3xl font-black uppercase tracking-tight">{storeName || t('storeNameFallback')}</h1>
-              <div className="text-slate-600 mt-1.5 space-y-0.5 text-xs">
+              <h1 className={`font-black uppercase tracking-tight ${isStylish ? 'text-4xl' : 'text-3xl'}`}>{storeName || t('storeNameFallback')}</h1>
+              <div className={`mt-1.5 space-y-0.5 text-xs ${isModern ? 'opacity-90' : 'text-slate-600'}`}>
                 {storeAddress && <p>{storeAddress}</p>}
                 <p>
                   {storeMobile && <span>{t('mob')} {storeMobile}</span>}
-                  {gst && <span className="ml-3 font-bold text-slate-800">{t('gstin')}: {gst}</span>}
-                  {pan && <span className="ml-3 font-bold text-slate-800">{t('pan')}: {pan}</span>}
+                  {gst && <span className={`ml-3 font-bold ${isModern ? '' : 'text-slate-800'}`}>{t('gstin')}: {gst}</span>}
+                  {pan && <span className={`ml-3 font-bold ${isModern ? '' : 'text-slate-800'}`}>{t('pan')}: {pan}</span>}
                 </p>
               </div>
             </div>
           </div>
 
           <div className="text-right shrink-0">
-            <h2 className="text-2xl font-black uppercase tracking-wide border-2 border-slate-900 px-3 py-1 inline-block mb-2">
+            <h2
+              style={{ borderColor: isModern ? '#ffffff' : accent, color: isModern ? '#ffffff' : accent }}
+              className="text-2xl font-black uppercase tracking-wide border-2 px-3 py-1 inline-block mb-2"
+            >
               {isGstBill ? (t('gstInvoice') || 'Tax Invoice') : (t('invoiceLabel') || 'Invoice')}
             </h2>
-            <div className="flex flex-col items-end gap-1 text-xs">
+            <div className={`flex flex-col items-end gap-1 text-xs ${isModern ? '' : ''}`}>
               <Barcode value={billNumber} height={26} displayValue={false} />
-              <p><span className="text-slate-500 mr-2">{t('bill')}:</span><strong className="text-sm">{billNumber}</strong></p>
-              <p><span className="text-slate-500 mr-2">Date:</span><strong>{date}</strong></p>
+              <p><span className={isModern ? 'opacity-90 mr-2' : 'text-slate-500 mr-2'}>{t('bill')}:</span><strong className="text-sm">{billNumber}</strong></p>
+              <p><span className={isModern ? 'opacity-90 mr-2' : 'text-slate-500 mr-2'}>Date:</span><strong>{date}</strong></p>
             </div>
           </div>
         </div>
 
         {/* Bill To / Payment meta */}
-        <div className="grid grid-cols-2 border border-slate-900 mb-6">
-          <div className="p-3 border-r border-slate-900">
+        <div style={{ borderColor: accent }} className="grid grid-cols-2 border mb-6">
+          <div style={{ borderColor: accent }} className="p-3 border-r">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">Bill To</h3>
             <p className="font-bold text-base">{customerName || 'Cash Customer'}</p>
             {customerMobile && <p className="text-slate-600 mt-0.5 text-xs">{customerMobile}</p>}
@@ -148,9 +173,9 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
 
         {/* Items table */}
         <div className="flex-1">
-          <table className="w-full border border-slate-900 mb-6">
+          <table style={{ borderColor: accent }} className="w-full border mb-6">
             <thead>
-              <tr className="bg-slate-900 text-white text-[11px] uppercase tracking-wide">
+              <tr style={{ backgroundColor: accent }} className="text-white text-[11px] uppercase tracking-wide">
                 <th className="py-2 px-3 text-left font-bold w-8">#</th>
                 {columns.map((col) => (
                   <th key={col.id} className={`py-2 px-3 text-${col.align} font-bold`}>{t(col.labelKey) || col.labelKey}</th>
@@ -173,12 +198,69 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
             </tbody>
           </table>
 
-          {/* GST Tax Summary — standalone rate-wise breakdown, separate from
-              the totals box below (goods only; charges are additive, see the
-              Additional Charges line in the totals box). */}
-          {isGstBill && gstBreakdown && gstBreakdown.groups.length > 0 && (
-            <table className="w-full border border-slate-900 mb-6">
-              <caption className="bg-slate-900 text-white text-[11px] font-bold uppercase tracking-wide px-3 py-2 text-left caption-top">
+          {/* GST Tax Summary — standalone breakdown, separate from the totals
+              box below (goods only; charges are additive, see the Additional
+              Charges line in the totals box). The "Advanced GST" theme shows
+              a proper HSN/SAC-wise summary (what a CA actually wants on a tax
+              invoice — each HSN code gets its own row); every other theme
+              keeps the simpler rate-wise summary. */}
+          {isGstBill && gstBreakdown && isAdvancedGst && gstBreakdown.hsnGroups.length > 0 && (
+            <table style={{ borderColor: accent }} className="w-full border mb-6">
+              <caption style={{ backgroundColor: accent }} className="text-white text-[11px] font-bold uppercase tracking-wide px-3 py-2 text-left caption-top">
+                {t('hsnSummary') || 'HSN/SAC Summary'}
+              </caption>
+              <thead>
+                <tr className="bg-slate-100 text-[11px] uppercase text-slate-600">
+                  <th className="py-2 px-3 text-left font-bold border-t border-slate-300">HSN/SAC</th>
+                  <th className="py-2 px-3 text-right font-bold border-t border-slate-300">Taxable Value</th>
+                  {gstBreakdown.interState ? (
+                    <th className="py-2 px-3 text-right font-bold border-t border-slate-300">IGST</th>
+                  ) : (
+                    <>
+                      <th className="py-2 px-3 text-right font-bold border-t border-slate-300">CGST</th>
+                      <th className="py-2 px-3 text-right font-bold border-t border-slate-300">SGST</th>
+                    </>
+                  )}
+                  <th className="py-2 px-3 text-right font-bold border-t border-slate-300">Total Tax</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gstBreakdown.hsnGroups.map((h) => (
+                  <tr key={h.hsnCode} className="border-t border-slate-200">
+                    <td className="py-1.5 px-3 text-left">{h.hsnCode}</td>
+                    <td className="py-1.5 px-3 text-right">₹{h.taxable.toLocaleString('en-IN')}</td>
+                    {gstBreakdown.interState ? (
+                      <td className="py-1.5 px-3 text-right">₹{h.igst.toLocaleString('en-IN')}</td>
+                    ) : (
+                      <>
+                        <td className="py-1.5 px-3 text-right">₹{h.cgst.toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right">₹{h.sgst.toLocaleString('en-IN')}</td>
+                      </>
+                    )}
+                    <td className="py-1.5 px-3 text-right font-semibold">₹{(h.cgst + h.sgst + h.igst).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-bold border-t-2" style={{ borderTopColor: accent }}>
+                  <td className="py-1.5 px-3 text-left">Total</td>
+                  <td className="py-1.5 px-3 text-right">₹{gstBreakdown.taxable.toLocaleString('en-IN')}</td>
+                  {gstBreakdown.interState ? (
+                    <td className="py-1.5 px-3 text-right">₹{gstBreakdown.igst.toLocaleString('en-IN')}</td>
+                  ) : (
+                    <>
+                      <td className="py-1.5 px-3 text-right">₹{gstBreakdown.cgst.toLocaleString('en-IN')}</td>
+                      <td className="py-1.5 px-3 text-right">₹{gstBreakdown.sgst.toLocaleString('en-IN')}</td>
+                    </>
+                  )}
+                  <td className="py-1.5 px-3 text-right">₹{gstBreakdown.totalGst.toLocaleString('en-IN')}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          {isGstBill && gstBreakdown && !isAdvancedGst && gstBreakdown.groups.length > 0 && (
+            <table style={{ borderColor: accent }} className="w-full border mb-6">
+              <caption style={{ backgroundColor: accent }} className="text-white text-[11px] font-bold uppercase tracking-wide px-3 py-2 text-left caption-top">
                 {t('gstSummary') || 'GST Tax Summary'}
               </caption>
               <thead>
@@ -214,7 +296,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-slate-100 font-bold border-t-2 border-slate-900">
+                <tr className="bg-slate-100 font-bold border-t-2" style={{ borderTopColor: accent }}>
                   <td className="py-1.5 px-3 text-left">Total</td>
                   <td className="py-1.5 px-3 text-right">₹{gstBreakdown.taxable.toLocaleString('en-IN')}</td>
                   {gstBreakdown.interState ? (
@@ -272,7 +354,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
           </div>
 
           <div className="w-1/2 max-w-[340px]">
-            <div className="border border-slate-900">
+            <div style={{ borderColor: accent }} className="border">
               <div className="p-4 space-y-1.5 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500">{t('subtotal')}</span>
@@ -326,7 +408,10 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                 )}
               </div>
 
-              <div className="flex justify-between items-center px-4 py-3 border-t-2 border-slate-900 bg-slate-50">
+              <div
+                style={{ borderTopColor: accent, backgroundColor: isModern || isStylish ? accent : undefined, color: isModern || isStylish ? '#ffffff' : undefined }}
+                className={`flex justify-between items-center px-4 py-3 border-t-2 ${isModern || isStylish ? '' : 'bg-slate-50'}`}
+              >
                 <span className="text-base font-black uppercase">{t('total')}</span>
                 <span className="text-xl font-black">₹{total.toLocaleString('en-IN')}</span>
               </div>
@@ -409,7 +494,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
               ) : (
                 <div className="h-14 mb-2" />
               )}
-              <div className="w-44 mx-auto border-t border-slate-900 pt-1.5 text-xs">
+              <div style={{ borderColor: accent }} className="w-44 mx-auto border-t pt-1.5 text-xs">
                 Authorized Signatory
               </div>
             </div>
@@ -418,7 +503,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
       </div>
 
       {/* Brand Footer */}
-      <div className="px-8 py-3 border-t-2 border-slate-900 text-center text-slate-400 text-[10px]">
+      <div style={{ borderColor: accent }} className="px-8 py-3 border-t-2 text-center text-slate-400 text-[10px]">
         <p>Generated by <strong>Vyapar Sarthi</strong> — The Smart Retail Management System</p>
       </div>
     </div>

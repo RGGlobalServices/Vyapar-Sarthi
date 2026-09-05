@@ -846,6 +846,8 @@ function StandardBillingUI() {
         gstBreakdown: isGstBill ? gst : undefined,
         // New features
         invoiceFormat: profile.invoiceFormat || 'thermal80',
+        invoiceTheme: profile.invoiceTheme || 'standard',
+        invoiceColor: profile.invoiceColor || null,
         businessType: profile.businessType || 'kirana',
         showQrCode: profile.showQrCode || false,
         invoiceFooter: profile.invoiceFooter || undefined,
@@ -1807,6 +1809,8 @@ function StandardBillingUI() {
             const fullBillData = {
               ...billData,
               invoiceFormat: profile.invoiceFormat || 'thermal80',
+              invoiceTheme: profile.invoiceTheme || 'standard',
+              invoiceColor: profile.invoiceColor || null,
               businessType: profile.businessType || 'kirana',
               showQrCode: profile.showQrCode || false,
               invoiceFooter: profile.invoiceFooter || undefined,

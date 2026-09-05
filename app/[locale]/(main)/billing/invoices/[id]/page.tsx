@@ -163,6 +163,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     gst: profile?.gst || undefined,
     pan: profile?.pan || undefined,
     invoiceFormat: profile?.invoiceFormat || 'thermal80',
+    invoiceTheme: profile?.invoiceTheme || 'standard',
+    invoiceColor: profile?.invoiceColor || null,
     businessType: profile?.businessType || 'kirana',
     showQrCode: profile?.showQrCode || false,
     invoiceFooter: profile?.invoiceFooter || undefined,

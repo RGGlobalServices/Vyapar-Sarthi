@@ -7,7 +7,7 @@ import {
   User, Building, Mail, Phone, MapPin, Camera,
   Save, Loader2, CheckCircle, Store, Briefcase,
   ArrowLeft, Lock, Eye, EyeOff, TrendingUp, ShieldCheck,
-  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark,
+  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark, Palette, Check,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
@@ -143,6 +143,8 @@ export default function ProfilePage() {
         gst: profile.gst || '',
         pan: profile.pan || '',
         invoice_format: profile.invoiceFormat || 'thermal80',
+        invoice_theme: profile.invoiceTheme || 'standard',
+        invoice_color: profile.invoiceColor || '',
         upi_id: profile.upiId || '',
         bank_name: profile.bankName || '',
         bank_account_name: profile.bankAccountName || '',
@@ -176,6 +178,8 @@ export default function ProfilePage() {
         packageType: shop.package_type,
         gst: shop.gst, pan: shop.pan,
         invoiceFormat: shop.invoice_format,
+        invoiceTheme: shop.invoice_theme || 'standard',
+        invoiceColor: shop.invoice_color || null,
         upiId: shop.upi_id?.trim() || null,
         bankName: shop.bank_name?.trim() || null,
         bankAccountName: shop.bank_account_name?.trim() || null,
@@ -725,6 +729,86 @@ export default function ProfilePage() {
                   value={shop?.bank_ifsc || ''} onChange={e => setShop({ ...shop, bank_ifsc: e.target.value.toUpperCase() })} />
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Bill Theme — visual design + accent color for the printed/PDF bill.
+          Independent of Invoice Print Format above (paper size); this only
+          changes how the bill looks. 'Standard' with no color is byte-for-
+          byte the original design (see A4Invoice.tsx's `accent` fallback). */}
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+            <Palette size={20} className="text-purple-500" /> Bill Theme
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Template</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {([
+                { id: 'standard', label: 'Standard', desc: 'Clean, classic layout' },
+                { id: 'modern', label: 'Modern', desc: 'Colored header band' },
+                { id: 'stylish', label: 'Stylish', desc: 'Bold accent side-bar' },
+                { id: 'advanced_gst', label: 'Advanced GST', desc: 'HSN/SAC tax summary' },
+              ] as const).map((theme) => {
+                const selected = (shop?.invoice_theme || 'standard') === theme.id;
+                return (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => setShop({ ...shop, invoice_theme: theme.id })}
+                    className={cn(
+                      'text-left p-3 rounded-xl border-2 transition-colors',
+                      selected
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-700'
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">{theme.label}</span>
+                      {selected && <Check size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{theme.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">Applies to A4 / Professional Tax Invoices. Thermal receipts stay simple (too narrow for these layouts).</p>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Accent Color</label>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { value: '', label: 'No Color', swatch: '#0f172a' },
+                { value: '#059669', label: 'Green', swatch: '#059669' },
+                { value: '#2563eb', label: 'Blue', swatch: '#2563eb' },
+                { value: '#9333ea', label: 'Purple', swatch: '#9333ea' },
+                { value: '#dc2626', label: 'Red', swatch: '#dc2626' },
+                { value: '#4f46e5', label: 'Indigo', swatch: '#4f46e5' },
+                { value: '#ca8a04', label: 'Gold', swatch: '#ca8a04' },
+              ].map((c) => {
+                const selected = (shop?.invoice_color || '') === c.value;
+                return (
+                  <button
+                    key={c.label}
+                    type="button"
+                    title={c.label}
+                    onClick={() => setShop({ ...shop, invoice_color: c.value })}
+                    style={{ backgroundColor: c.swatch }}
+                    className={cn(
+                      'w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-transform',
+                      selected ? 'ring-2 ring-offset-2 ring-emerald-500 dark:ring-offset-slate-900 scale-105' : 'hover:scale-105'
+                    )}
+                  >
+                    {selected && <Check size={16} className="text-white" />}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">"No Color" keeps the original plain black-on-white look.</p>
           </div>
         </CardContent>
       </Card>

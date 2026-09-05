@@ -4,6 +4,7 @@ import prisma from '@/lib/server/prisma';
 import { reversePurchaseInvoiceEffects, cleanupPurchaseLedgerAndBatches, PurchaseReversalBlockedError } from '@/lib/server/purchases';
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
 import { applyVariantStockDeltas, type VariantStockDelta } from '@/lib/server/variantStock';
+import { recordDeletion } from '@/lib/server/trash';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -226,6 +227,42 @@ export async function DELETE(req: Request, { params }: Ctx) {
       const body = await req.json();
       if (typeof body?.reverseStock === 'boolean') reverseStock = body.reverseStock;
     } catch { /* no body sent — keep the default */ }
+
+    // Snapshot the invoice + its items + linked SupplierTransaction rows
+    // BEFORE the delete so an admin can restore it from the Recycle Bin.
+    // Snapshot the `reverseStock` choice too so restore knows whether to
+    // undo the stock-side of this delete (mirror of the delete direction).
+    // Best-effort — never let a snapshot failure block the delete itself.
+    try {
+      const snapshotInvoice = await prisma.purchaseInvoice.findFirst({
+        where: { id, shopId: auth.shop.id },
+        include: { purchaseItems: true },
+      });
+      if (snapshotInvoice) {
+        const linkedSupplierTxns = await prisma.supplierTransaction.findMany({
+          where: {
+            supplierId: snapshotInvoice.supplierId,
+            OR: [
+              { note: `Purchase Invoice: ${id}` },
+              { note: `Purchase Invoice: ${snapshotInvoice.invoiceNumber || ''}` },
+              { note: 'Imported purchase invoice', billNumber: snapshotInvoice.invoiceNumber || undefined },
+            ],
+          },
+        });
+        await recordDeletion({
+          shopId: auth.shop.id,
+          entityType: 'purchase_invoice',
+          entityId: id,
+          label: snapshotInvoice.invoiceNumber || id,
+          data: {
+            invoice: snapshotInvoice,
+            supplierTransactions: linkedSupplierTxns,
+            reverseStock,
+          },
+          deletedBy: (auth as any)?.user?.uuid || null,
+        });
+      }
+    } catch (e) { console.error('Purchase snapshot for trash failed:', e); }
 
     const invoice = await prisma.$transaction(async (tx) => {
       const inv = await reversePurchaseInvoiceEffects(tx, auth.shop.id, id, { reverseStock });

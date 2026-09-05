@@ -50,6 +50,7 @@ export const GET = handle(async (req, ctx: any) => {
     });
     if (found) {
       invoice = {
+        id: found.id,
         invoiceNumber: found.invoiceNumber,
         date: found.date,
         totalCost: found.totalCost,

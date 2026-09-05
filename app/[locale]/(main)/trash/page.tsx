@@ -11,7 +11,7 @@ import { useRowSelection } from '@/lib/hooks/useRowSelection';
 
 type DeletedRecord = {
   id: string;
-  entityType: 'product' | 'customer' | 'customer_transaction' | 'supplier' | 'staff' | 'sale';
+  entityType: 'product' | 'customer' | 'customer_transaction' | 'supplier' | 'staff' | 'sale' | 'purchase_invoice';
   entityId: string;
   label: string | null;
   deletedBy: string | null;
@@ -27,6 +27,7 @@ const ENTITY_META: Record<string, { label: string; icon: any; accent: string }> 
   supplier: { label: 'Supplier', icon: Truck, accent: 'text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' },
   staff: { label: 'Staff', icon: UserRound, accent: 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20' },
   sale: { label: 'Bill', icon: Receipt, accent: 'text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20' },
+  purchase_invoice: { label: 'Purchase Bill', icon: Receipt, accent: 'text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20' },
 };
 
 const RETENTION_DAYS = 30;
