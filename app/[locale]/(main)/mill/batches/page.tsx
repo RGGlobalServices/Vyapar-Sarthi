@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import useSWR from 'swr';
 import {
-  Plus, X, Loader2, ArrowRight, CheckCircle2, Factory, Wheat, Package, Percent, Clock,
+  Plus, X, Loader2, ArrowRight, CheckCircle2, Factory, Wheat, Package, Percent, Clock, Layers,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -27,18 +27,22 @@ type Batch = {
   currentStage: string; startedAt: string; closedAt: string | null;
   inputKg: number | null; outputKg: number | null; wastageKg: number | null;
   brokenKg: number | null; branKg: number | null; huskKg: number | null; recoveryPct: number | null;
-  notes: string | null;
+  notes: string | null; outputProductId: string | null;
   rawLot?: { id: string; lotNumber: string | null; farmerName: string | null; weightKg: number | null;
     product?: { name: string } | null; supplier?: { name: string } | null };
   stages: Stage[];
-  byProducts?: any[];
+  byProducts?: ByProductRow[];
 };
+
+type ByProductRow = { id: string; name: string; quantityKg: number | null; soldKg: number | null; ratePerKg: number | null; product?: { id: string; name: string } | null };
 
 type RawLot = {
   id: string; lotNumber: string | null; farmerName: string | null;
   weightKg: number | null; remainingKg: number | null;
   product?: { name: string } | null;
 };
+
+type ProductOption = { id: string; name: string; millCategory?: string | null };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 
@@ -60,6 +64,14 @@ export default function MillBatchesPage() {
     activeShopId ? ['/mill/raw-lots?status=available', activeShopId] : null,
     ([u]) => fetcher(u),
   );
+  const { data: products = [] } = useSWR<ProductOption[]>(
+    activeShopId ? ['/products', activeShopId] : null,
+    ([u]) => fetcher(u),
+  );
+  // Finished-goods pickers only offer products the shopkeeper has explicitly
+  // classified that way (Product.millCategory) — same list the Add/Edit
+  // Product form already lets them set, so nothing new to configure here.
+  const finishedGoodsProducts = products.filter(p => p.millCategory === 'finished_goods');
 
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -121,6 +133,7 @@ export default function MillBatchesPage() {
       {creating && (
         <CreateBatchModal
           lots={lots}
+          products={finishedGoodsProducts}
           onClose={() => setCreating(false)}
           onCreated={(id) => { setCreating(false); refetch(); setSelectedId(id); }}
         />
@@ -128,6 +141,7 @@ export default function MillBatchesPage() {
       {openBatch && (
         <BatchDetail
           batch={openBatch}
+          products={products}
           onClose={() => setSelectedId(null)}
           onChanged={refetch}
         />
@@ -189,11 +203,11 @@ function BatchRow({ batch, onOpen }: { batch: Batch; onOpen: () => void }) {
   );
 }
 
-function CreateBatchModal({ lots, onClose, onCreated }: {
-  lots: RawLot[]; onClose: () => void; onCreated: (id: string) => void;
+function CreateBatchModal({ lots, products, onClose, onCreated }: {
+  lots: RawLot[]; products: ProductOption[]; onClose: () => void; onCreated: (id: string) => void;
 }) {
   const t = useTranslations('Mill');
-  const [form, setForm] = useState({ rawLotId: lots[0]?.id || '', inputKg: '', notes: '' });
+  const [form, setForm] = useState({ rawLotId: lots[0]?.id || '', inputKg: '', outputProductId: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const lot = lots.find(l => l.id === form.rawLotId);
@@ -206,6 +220,7 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
       const res = await api.post('/mill/batches', {
         rawLotId: form.rawLotId || null,
         inputKg: Number(form.inputKg),
+        outputProductId: form.outputProductId || null,
         notes: form.notes,
       });
       onCreated(res.data.id);
@@ -253,6 +268,20 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
             />
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
+              {t('outputProductOptional')}
+            </label>
+            <select
+              value={form.outputProductId}
+              onChange={e => setForm({ ...form, outputProductId: e.target.value })}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
+            >
+              <option value="">{t('noOutputProduct')}</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <p className="text-[10px] text-slate-400 mt-1">{t('outputProductHint')}</p>
+          </div>
+          <div>
             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('notesOptional')}</label>
             <input
               value={form.notes}
@@ -276,15 +305,18 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
   );
 }
 
-function BatchDetail({ batch, onClose, onChanged }: { batch: Batch; onClose: () => void; onChanged: () => void }) {
+function BatchDetail({ batch, products, onClose, onChanged }: { batch: Batch; products: ProductOption[]; onClose: () => void; onChanged: () => void }) {
   const t = useTranslations('Mill');
   const [saving, setSaving] = useState<string | null>(null);
   const [close, setClose] = useState({
     outputKg: String(batch.outputKg ?? ''), brokenKg: String(batch.brokenKg ?? ''),
     branKg: String(batch.branKg ?? ''), huskKg: String(batch.huskKg ?? ''),
     wastageKg: String(batch.wastageKg ?? ''),
+    outputProductId: batch.outputProductId || '',
   });
   const [closing, setClosing] = useState(false);
+  const [addingByProduct, setAddingByProduct] = useState(false);
+  const outputProductName = products.find(p => p.id === close.outputProductId)?.name;
 
   const patchStage = async (stage: Stage, patch: any) => {
     setSaving(stage.id);
@@ -310,6 +342,7 @@ function BatchDetail({ batch, onClose, onChanged }: { batch: Batch; onClose: () 
         branKg: Number(close.branKg) || null,
         huskKg: Number(close.huskKg) || null,
         wastageKg: Number(close.wastageKg) || null,
+        outputProductId: close.outputProductId || null,
       });
       onChanged();
     } catch (err: any) {
@@ -371,9 +404,25 @@ function BatchDetail({ batch, onClose, onChanged }: { batch: Batch; onClose: () 
                 <NumInput label={t('huskKg')} value={close.huskKg} onChange={v => setClose(c => ({ ...c, huskKg: v }))} />
                 <NumInput label={t('wastageKg')} value={close.wastageKg} onChange={v => setClose(c => ({ ...c, wastageKg: v }))} />
               </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">{t('outputProductOptional')}</label>
+                <select
+                  value={close.outputProductId}
+                  onChange={e => setClose(c => ({ ...c, outputProductId: e.target.value }))}
+                  className="w-full h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-white dark:bg-slate-950 text-sm"
+                >
+                  <option value="">{t('noOutputProduct')}</option>
+                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
               {projectedRecovery != null && (
                 <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
                   {t('projectedRecovery')}: <strong>{projectedRecovery}%</strong>
+                </p>
+              )}
+              {close.outputProductId && close.outputKg && (
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                  <Layers size={12} /> {t('stockCreditHint', { qty: close.outputKg, product: outputProductName || '' })}
                 </p>
               )}
               <button
@@ -404,9 +453,109 @@ function BatchDetail({ batch, onClose, onChanged }: { batch: Batch; onClose: () 
               </div>
             </div>
           )}
+
+          {batch.status === 'closed' && (
+            <ByProductsSection
+              batchId={batch.id}
+              byProducts={batch.byProducts || []}
+              products={products}
+              adding={addingByProduct}
+              onToggleAdd={() => setAddingByProduct(v => !v)}
+              onAdded={() => { setAddingByProduct(false); onChanged(); }}
+            />
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function ByProductsSection({ batchId, byProducts, products, adding, onToggleAdd, onAdded }: {
+  batchId: string; byProducts: ByProductRow[]; products: ProductOption[];
+  adding: boolean; onToggleAdd: () => void; onAdded: () => void;
+}) {
+  const t = useTranslations('Mill');
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <Layers size={15} className="text-purple-600" /> {t('byProducts')}
+        </span>
+        <button onClick={onToggleAdd} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 flex items-center gap-1">
+          <Plus size={13} /> {t('addByProduct')}
+        </button>
+      </div>
+      {byProducts.length === 0 ? (
+        <p className="text-xs text-slate-500">{t('noByProducts')}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {byProducts.map(bp => (
+            <li key={bp.id} className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
+              <span className="font-semibold">{bp.name}{bp.product?.name && ` → ${bp.product.name}`}</span>
+              <span>{bp.quantityKg ?? '—'} Kg{bp.ratePerKg ? ` · ₹${bp.ratePerKg}/Kg` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding && (
+        <AddByProductForm batchId={batchId} products={products} onAdded={onAdded} onCancel={onToggleAdd} />
+      )}
+    </div>
+  );
+}
+
+function AddByProductForm({ batchId, products, onAdded, onCancel }: {
+  batchId: string; products: ProductOption[]; onAdded: () => void; onCancel: () => void;
+}) {
+  const t = useTranslations('Mill');
+  const [form, setForm] = useState({ name: '', quantityKg: '', ratePerKg: '', productId: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try {
+      await api.post('/mill/by-products', {
+        batchId,
+        name: form.name,
+        quantityKg: form.quantityKg || null,
+        ratePerKg: form.ratePerKg || null,
+        productId: form.productId || null,
+      });
+      onAdded();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || t('failedToAddByProduct'));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div className="grid grid-cols-2 gap-2">
+        <TextInput label={t('byProductName')} value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} />
+        <NumInput label={t('quantityKg')} value={form.quantityKg} onChange={v => setForm(f => ({ ...f, quantityKg: v }))} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumInput label={t('ratePerKgOptional')} value={form.ratePerKg} onChange={v => setForm(f => ({ ...f, ratePerKg: v }))} />
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">{t('linkToProductOptional')}</span>
+          <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
+            className="w-full h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-white dark:bg-slate-950 text-sm">
+            <option value="">{t('noProductLink')}</option>
+            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+          {t('cancelBtn') || 'Cancel'}
+        </button>
+        <button type="submit" disabled={saving || !form.name} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-1 disabled:opacity-50">
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} {t('addBtn') || 'Add'}
+        </button>
+      </div>
+    </form>
   );
 }
 

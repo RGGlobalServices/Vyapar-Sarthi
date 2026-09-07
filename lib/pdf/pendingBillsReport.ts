@@ -1,4 +1,4 @@
-import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, fmtInr, type ShopHeader } from './professionalTemplate';
+import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, fmtInr, embedDevanagariFont, setSmartFont, type ShopHeader } from './professionalTemplate';
 
 export interface DueBillRow {
   billNumber: string;
@@ -51,6 +51,7 @@ export async function generatePendingBillsPDF({
   ]);
 
   const doc = new jsPDF({ orientation: 'portrait' }) as any;
+  await embedDevanagariFont(doc);
   const today = new Date();
   const asOnLabel = fmtDate(today);
 
@@ -64,11 +65,11 @@ export async function generatePendingBillsPDF({
   const R = doc.internal.pageSize.getWidth() - PDF_LAYOUT.marginX;
   doc.setFillColor(...PDF_LAYOUT.accentSoft);
   doc.rect(L, y, R - L, 14, 'F');
-  doc.setFont('helvetica', 'bold');
+  const partyName = party.name || 'Party';
+  setSmartFont(doc, partyName, 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...PDF_LAYOUT.ink);
-  doc.text(party.name || 'Party', L + 3, y + 6);
-  doc.setFont('helvetica', 'normal');
+  doc.text(partyName, L + 3, y + 6);
   doc.setFontSize(8);
   doc.setTextColor(...PDF_LAYOUT.muted);
   const contactLine = [
@@ -76,7 +77,7 @@ export async function generatePendingBillsPDF({
     party.mobile ? `Mob: ${party.mobile}` : null,
     party.gst ? `GSTIN: ${party.gst}` : null,
   ].filter(Boolean).join('   |   ');
-  if (contactLine) doc.text(contactLine, L + 3, y + 11);
+  if (contactLine) { setSmartFont(doc, contactLine, 'normal'); doc.text(contactLine, L + 3, y + 11); }
   y += 18;
 
   const rows: any[] = [];
@@ -134,7 +135,7 @@ export async function generatePendingBillsPDF({
       head: [['Bill Date', 'Bill No', 'Type', 'Due Days', 'Bill Amount', 'Adj./Adv. Amount', 'Pending Amount', 'Balance Amt. (Cumulative)']],
       body: rows,
       theme: 'grid',
-      styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
+      styles: { font: 'NotoDevanagari', fontSize: 8, cellPadding: 2, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
       headStyles: { fillColor: PDF_LAYOUT.accent as any, textColor: [255, 255, 255] as any, fontStyle: 'bold', fontSize: 8 },
       margin: { left: PDF_LAYOUT.marginX, right: PDF_LAYOUT.marginX },
       rowPageBreak: 'avoid',

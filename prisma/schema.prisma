@@ -159,6 +159,15 @@ model Shop {
   rawMaterialLots         RawMaterialLot[]
   productionBatches       ProductionBatch[]
   byProducts              ByProduct[]
+  gateEntries             GateEntry[]
+  weighbridgeEntries      WeighbridgeEntry[]
+  freightEntries          FreightEntry[]
+  dispatchEntries         DispatchEntry[]
+  commissionEntries       CommissionEntry[]
+  machines                Machine[]
+  maintenanceEntries      MaintenanceEntry[]
+  spareParts              SparePart[]
+  sparePartMovements      SparePartMovement[]
   deletedRecords          DeletedRecord[]
   collectionSheets        CollectionSheet[]
 
@@ -377,6 +386,29 @@ model Product {
   // ('250' + 'GM'). Stored separately so the label reads "30 Kg Bag" not
   // just "30" and the multiplier is unambiguous during billing.
   packUnit         String?          @map("pack_unit") @db.VarChar
+  // Generic Food-Mill Product Master fields — free text on purpose (same
+  // pattern as brand/shade below), so any mill type can type its own values
+  // instead of picking from a hard-coded list. Kept separate from `category`
+  // (Rice/Wheat/Dal/…) since Grade+Variety describe a QUALITY tier within a
+  // category (Category=Rice, Grade=Premium, Variety=Basmati), not the item
+  // itself.
+  grade            String?          @db.VarChar
+  variety          String?          @db.VarChar
+  subcategory      String?          @db.VarChar
+  // Distinct from minStock: minStock is "don't let stock go below this"
+  // (existing field, used across every business type); reorderLevel is
+  // "tell me to reorder at this level" — a mill often wants a heads-up
+  // buffer above the hard minimum. Null falls back to minStock in status
+  // calculations, so shops that never set it keep today's exact behavior.
+  reorderLevel     Float?           @map("reorder_level")
+  // Per-product override of the shop-wide bizConfig.hasBatch/hasExpiry
+  // flags — null means "inherit the shop's default" (today's behavior,
+  // unchanged for every existing product/business type). Only meaningfully
+  // settable where the shop-wide flag is already true; lets one mill batch-
+  // track its Rice but skip it for a Packaging Material line, without
+  // affecting any other business type's Add/Edit form.
+  trackBatch       Boolean?         @map("track_batch")
+  trackExpiry      Boolean?         @map("track_expiry")
   gstPercent       Float?           @map("gst_percent")
   // When the product was first added. Backfilled for pre-existing rows from the
   // earliest stock activity, so it reflects real history, not the migration date.
@@ -410,6 +442,10 @@ model Product {
   masterSaleUnit        Unit?            @relation("ProductSaleUnit", fields: [defaultSaleUnitId], references: [id], onDelete: NoAction)
   masterPurchaseUnit    Unit?            @relation("ProductPurchaseUnit", fields: [defaultPurchaseUnitId], references: [id], onDelete: NoAction)
   rawMaterialLots       RawMaterialLot[]
+  weighbridgeEntries    WeighbridgeEntry[]
+  producedByBatches     ProductionBatch[] @relation("ProductionBatchOutput")
+  byProducts            ByProduct[]
+  dispatchEntries       DispatchEntry[]
 
   @@index([category], map: "ix_products_category")
   @@index([name], map: "ix_products_name")
@@ -452,6 +488,10 @@ model Customer {
   sales                 Sale[]
   orders                Order[]
   collectionEntries     CollectionEntry[]
+  gateEntriesAsParty    GateEntry[]             @relation("GateEntryParty")
+  freightEntries        FreightEntry[]
+  dispatchEntries       DispatchEntry[]
+  commissionEntries     CommissionEntry[]
 
   @@index([mobile], map: "ix_customers_mobile")
   @@index([name], map: "ix_customers_name")
@@ -980,6 +1020,8 @@ model Supplier {
   supplierTransactions SupplierTransaction[]
   rawMaterialLots      RawMaterialLot[]
   orders               Order[]
+  gateEntries          GateEntry[]
+  weighbridgeEntries   WeighbridgeEntry[]
 
   @@index([shopId])
   @@map("suppliers")
@@ -1387,10 +1429,11 @@ model RawMaterialLot {
   notes         String?   @db.VarChar
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop     Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  product  Product?          @relation(fields: [productId], references: [id], onDelete: NoAction)
-  supplier Supplier?         @relation(fields: [supplierId], references: [id], onDelete: NoAction)
-  batches  ProductionBatch[]
+  shop       Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product    Product?           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  supplier   Supplier?          @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  batches    ProductionBatch[]
+  weighbridgeEntries WeighbridgeEntry[]
 
   @@index([shopId])
   @@index([supplierId])
@@ -1403,6 +1446,11 @@ model ProductionBatch {
   shopId         String    @map("shop_id") @db.Uuid
   batchNumber    String    @map("batch_number") @db.VarChar
   rawLotId       String?   @map("raw_lot_id") @db.Uuid   // source lot; null if consumed multiple
+  // The finished-good Product this batch produces (e.g. "Rice" from a
+  // "Paddy" raw lot). Optional so existing batches created before this field
+  // keep working unchanged — closing a batch only credits Product stock when
+  // this is set.
+  outputProductId String? @map("output_product_id") @db.Uuid
   inputKg        Float?    @map("input_kg")
   outputKg       Float?    @map("output_kg")             // final finished-good weight
   wastageKg      Float?    @map("wastage_kg")
@@ -1417,10 +1465,11 @@ model ProductionBatch {
   notes          String?   @db.VarChar
   createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop       Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  rawLot     RawMaterialLot? @relation(fields: [rawLotId], references: [id], onDelete: NoAction)
-  stages     BatchStage[]
-  byProducts ByProduct[]
+  shop         Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  rawLot       RawMaterialLot? @relation(fields: [rawLotId], references: [id], onDelete: NoAction)
+  outputProduct Product?       @relation("ProductionBatchOutput", fields: [outputProductId], references: [id], onDelete: NoAction)
+  stages       BatchStage[]
+  byProducts   ByProduct[]
 
   @@unique([shopId, batchNumber])
   @@index([shopId])
@@ -1453,6 +1502,10 @@ model ByProduct {
   id           String    @id @default(uuid()) @db.Uuid
   shopId       String    @map("shop_id") @db.Uuid
   batchId      String?   @map("batch_id") @db.Uuid       // originating batch; null for manual additions
+  // Optional link to a real sellable Product row — when set, recording this
+  // by-product credits that product's stock, same as a finished-good batch
+  // output. Left null for a by-product the shop doesn't track as inventory.
+  productId    String?   @map("product_id") @db.Uuid
   name         String    @db.VarChar                     // Bran | Husk | Chuni | Polish | Dust | Broken Rice
   quantityKg   Float?    @map("quantity_kg")
   soldKg       Float?    @default(0) @map("sold_kg")
@@ -1460,10 +1513,244 @@ model ByProduct {
   notes        String?   @db.VarChar
   createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop  Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  batch ProductionBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  shop    Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  batch   ProductionBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  product Product?         @relation(fields: [productId], references: [id], onDelete: NoAction)
 
   @@index([shopId])
   @@index([batchId])
   @@map("by_products")
+}
+
+// ─── Gate Entry + Weighbridge ────────────────────────────────────────────
+// The real mill-floor flow feeding RawMaterialLot above: a truck arrives
+// (GateEntry) → weighed loaded, unloaded, then weighed empty for the net
+// weight (WeighbridgeEntry, two-weigh workflow) → once weighing is done the
+// net weight becomes a RawMaterialLot (via /mill/weighbridge/[id]/convert-to-lot),
+// which then feeds a ProductionBatch exactly like a manually-entered lot does.
+
+model GateEntry {
+  id                  String    @id @default(uuid()) @db.Uuid
+  shopId              String    @map("shop_id") @db.Uuid
+  entryNumber         String    @map("entry_number") @db.VarChar
+  direction           String    @default("inward") @db.VarChar // inward | outward
+  vehicleNumber       String    @map("vehicle_number") @db.VarChar
+  driverName          String?   @map("driver_name") @db.VarChar
+  driverMobile        String?   @map("driver_mobile") @db.VarChar
+  supplierId          String?   @map("supplier_id") @db.Uuid
+  // Destination Customer/Party for an outward (dispatch) trip — mirrors
+  // supplierId's role for inward trips, just the other direction. Nullable
+  // since not every outward trip has (or needs) a registered party.
+  partyId             String?   @map("party_id") @db.Uuid
+  materialDescription String?   @map("material_description") @db.VarChar
+  status              String    @default("at_gate") @db.VarChar // at_gate | weighed | exited
+  enteredAt           DateTime  @default(now()) @map("entered_at") @db.Timestamptz(6)
+  exitedAt            DateTime? @map("exited_at") @db.Timestamptz(6)
+  notes               String?   @db.VarChar
+  createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  supplier           Supplier?          @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  party              Customer?          @relation("GateEntryParty", fields: [partyId], references: [id], onDelete: NoAction)
+  weighbridgeEntries WeighbridgeEntry[]
+  freightEntries     FreightEntry[]
+  dispatchEntries    DispatchEntry[]
+
+  @@unique([shopId, entryNumber])
+  @@index([shopId])
+  @@index([status])
+  @@map("gate_entries")
+}
+
+model WeighbridgeEntry {
+  id                  String    @id @default(uuid()) @db.Uuid
+  shopId              String    @map("shop_id") @db.Uuid
+  slipNumber          String    @map("slip_number") @db.VarChar
+  gateEntryId         String?   @map("gate_entry_id") @db.Uuid
+  vehicleNumber       String    @map("vehicle_number") @db.VarChar
+  materialDescription String?   @map("material_description") @db.VarChar
+  productId           String?   @map("product_id") @db.Uuid
+  supplierId          String?   @map("supplier_id") @db.Uuid
+  grossWeightKg       Float?    @map("gross_weight_kg")
+  tareWeightKg        Float?    @map("tare_weight_kg")
+  netWeightKg         Float?    @map("net_weight_kg")
+  moisturePct         Float?    @map("moisture_pct")
+  ratePerKg           Float?    @map("rate_per_kg")
+  firstWeighedAt      DateTime? @map("first_weighed_at") @db.Timestamptz(6)
+  secondWeighedAt     DateTime? @map("second_weighed_at") @db.Timestamptz(6)
+  status              String    @default("first_weighed") @db.VarChar // first_weighed | completed | converted
+  rawLotId            String?   @map("raw_lot_id") @db.Uuid
+  notes               String?   @db.VarChar
+  createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop      Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  gateEntry GateEntry?      @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+  product   Product?        @relation(fields: [productId], references: [id], onDelete: NoAction)
+  supplier  Supplier?       @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  rawLot    RawMaterialLot? @relation(fields: [rawLotId], references: [id], onDelete: SetNull)
+
+  @@unique([shopId, slipNumber])
+  @@index([shopId])
+  @@index([gateEntryId])
+  @@index([status])
+  @@map("weighbridge_entries")
+}
+
+// ─── Logistics: freight ledger + dispatch ──────────────────────────────────
+// A mill runs a running account with each Transporter (Customer row with
+// customerType='transporter') — freight charged per trip, paid off later in
+// lump sums — the reverse direction of a normal Party's udhar (here the MILL
+// owes the transporter, not the other way round), so this is its own simple
+// running-balance ledger rather than reusing customer_transactions/totalDue.
+
+model FreightEntry {
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
+  transporterId String    @map("transporter_id") @db.Uuid // Customer.id, customerType='transporter'
+  type          String    @db.VarChar // charge | payment
+  amount        Float
+  vehicleNumber String?   @map("vehicle_number") @db.VarChar
+  gateEntryId   String?   @map("gate_entry_id") @db.Uuid
+  paymentMethod String?   @map("payment_method") @db.VarChar
+  note          String?   @db.VarChar
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop        Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  transporter Customer   @relation(fields: [transporterId], references: [id], onDelete: Cascade)
+  gateEntry   GateEntry? @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([transporterId])
+  @@map("freight_entries")
+}
+
+// A dispatch is what's actually leaving the mill (product + qty), distinct
+// from GateEntry which just logs the truck's physical movement — a gate
+// entry has no structured line item, only a free-text materialDescription.
+model DispatchEntry {
+  id             String    @id @default(uuid()) @db.Uuid
+  shopId         String    @map("shop_id") @db.Uuid
+  dispatchNumber String    @map("dispatch_number") @db.VarChar
+  partyId        String?   @map("party_id") @db.Uuid
+  vehicleNumber  String?   @map("vehicle_number") @db.VarChar
+  gateEntryId    String?   @map("gate_entry_id") @db.Uuid
+  productId      String?   @map("product_id") @db.Uuid
+  quantity       Float?
+  unit           String?   @db.VarChar
+  notes          String?   @db.VarChar
+  dispatchedAt   DateTime  @default(now()) @map("dispatched_at") @db.Timestamptz(6)
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop      Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  party     Customer?  @relation(fields: [partyId], references: [id], onDelete: NoAction)
+  gateEntry GateEntry? @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+  product   Product?   @relation(fields: [productId], references: [id], onDelete: NoAction)
+
+  @@unique([shopId, dispatchNumber])
+  @@index([shopId])
+  @@index([partyId])
+  @@map("dispatch_entries")
+}
+
+// ─── Management: broker commission + machines/maintenance/spare parts ─────
+// Same running-ledger shape as FreightEntry, just pointed at Customer rows
+// with customerType='broker' — a broker earns commission per deal closed
+// through them (the mill owes them), settled later, same direction as
+// freight, so it deliberately doesn't reuse customer_transactions/totalDue
+// (that model's direction is the customer owing the shop, the opposite way).
+
+model CommissionEntry {
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
+  brokerId      String    @map("broker_id") @db.Uuid // Customer.id, customerType='broker'
+  type          String    @db.VarChar // charge | payment
+  amount        Float
+  billNumber    String?   @map("bill_number") @db.VarChar
+  paymentMethod String?   @map("payment_method") @db.VarChar
+  note          String?   @db.VarChar
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop   Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  broker Customer @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([brokerId])
+  @@map("commission_entries")
+}
+
+// A mill's physical equipment (huller, polisher, dryer, weighbridge unit…)
+// with a maintenance history and the spare parts kept on hand for it.
+model Machine {
+  id           String    @id @default(uuid()) @db.Uuid
+  shopId       String    @map("shop_id") @db.Uuid
+  name         String    @db.VarChar
+  machineType  String?   @map("machine_type") @db.VarChar
+  purchaseDate DateTime? @map("purchase_date") @db.Timestamptz(6)
+  cost         Float?
+  status       String    @default("working") @db.VarChar // working | under_maintenance | retired
+  notes        String?   @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  maintenanceEntries MaintenanceEntry[]
+  spareParts         SparePart[]
+
+  @@index([shopId])
+  @@map("machines")
+}
+
+model MaintenanceEntry {
+  id           String    @id @default(uuid()) @db.Uuid
+  shopId       String    @map("shop_id") @db.Uuid
+  machineId    String    @map("machine_id") @db.Uuid
+  description  String    @db.VarChar
+  cost         Float?
+  performedBy  String?   @map("performed_by") @db.VarChar
+  serviceDate  DateTime  @default(now()) @map("service_date") @db.Timestamptz(6)
+  nextDueDate  DateTime? @map("next_due_date") @db.Timestamptz(6)
+  notes        String?   @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([machineId])
+  @@map("maintenance_entries")
+}
+
+model SparePart {
+  id        String    @id @default(uuid()) @db.Uuid
+  shopId    String    @map("shop_id") @db.Uuid
+  name      String    @db.VarChar
+  machineId String?   @map("machine_id") @db.Uuid // optional — which machine this part is for
+  quantity  Float     @default(0)
+  minStock  Float?    @map("min_stock")
+  unitCost  Float?    @map("unit_cost")
+  notes     String?   @db.VarChar
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop      Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  machine   Machine?            @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  movements SparePartMovement[]
+
+  @@index([shopId])
+  @@map("spare_parts")
+}
+
+model SparePartMovement {
+  id          String    @id @default(uuid()) @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  sparePartId String    @map("spare_part_id") @db.Uuid
+  type        String    @db.VarChar // in | out
+  quantity    Float
+  note        String?   @db.VarChar
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop      Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sparePart SparePart @relation(fields: [sparePartId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([sparePartId])
+  @@map("spare_part_movements")
 }

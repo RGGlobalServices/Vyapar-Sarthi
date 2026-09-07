@@ -129,7 +129,7 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const { user, loadFromStorage, logout, role, setRole } = useAuthStore();
-  const { profile, fetchProfile, allShops, activeShopId, fetchAllShops, switchShop, createShop, loading, deleteShop, shopLimit } = useBusinessStore();
+  const { profile, fetchProfile, allShops, allShopsError, activeShopId, fetchAllShops, switchShop, createShop, loading, deleteShop, shopLimit } = useBusinessStore();
   const t = useTranslations('Nav');
   const ended = isSubscriptionEnded(profile);
   const [showShopMenu, setShowShopMenu] = useState(false);
@@ -309,6 +309,17 @@ export default function Sidebar({
   
   const currentPackageConfig = getPackageConfig(profile.packageType);
   const currentBusinessConfig = getBusinessConfig(profile.businessType);
+  // True only once a real fetchProfile() response has landed (profile.id is
+  // set from the server, never from DEFAULT_PROFILE/hydrateFromCache). Until
+  // then profile.packageType may still be sitting on the DEFAULT_PROFILE
+  // fallback ('dukan') on a browser that has no localStorage cache yet (a
+  // fresh login) — if the account's real package is Udyog/Bada Udyog, the
+  // Add-Shop business-type dropdown would silently offer the wrong (Dukan)
+  // category list instead of the account's actual categories (e.g. showing
+  // Kirana/Medical/Boutique instead of Mills & Grain Processing for a Bada
+  // Udyog mill account). Gating on this stops that wrong list from ever being
+  // shown, rather than trying to guess the right default before we know it.
+  const profileConfirmed = !!profile.id;
 
   // Single-shop plans (Dukan) with exactly one shop have nothing to switch
   // between — accounts grandfathered in with several shops already keep the
@@ -450,8 +461,18 @@ export default function Sidebar({
             {/* Add new shop — opens the full details modal. Hidden once the
                 admin-set or plan shop limit is reached. */}
             {shopLimit.canAdd ? (
-              <button onClick={() => { setShopForm(getEmptyShopForm()); setShowNewShop(true); setShowShopMenu(false); }}
-                className="w-full flex items-center gap-2 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-800 text-xs font-semibold">
+              <button
+                onClick={() => {
+                  // Refuse to open with a business-type list we can't yet
+                  // trust — see profileConfirmed's comment above.
+                  if (!profileConfirmed) {
+                    alert(t('profileStillLoading') || 'Still loading your account — please wait a moment and try again.');
+                    return;
+                  }
+                  setShopForm(getEmptyShopForm()); setShowNewShop(true); setShowShopMenu(false);
+                }}
+                className="w-full flex items-center gap-2 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-800 text-xs font-semibold disabled:opacity-50"
+              >
                 <Plus size={13} /> {t('addNewShop')}
               </button>
             ) : (
@@ -485,7 +506,15 @@ export default function Sidebar({
           </div>
         )}
 
-        {allShops.length === 0 && !loading && (
+        {allShops.length === 0 && !loading && allShopsError && (
+          <div className="py-8 px-4 text-center bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800/50 my-4 mx-2">
+            <Store className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+            <p className="text-sm font-bold text-amber-800 dark:text-amber-400">{t('shopsLoadFailed') || "Couldn't load your shops"}</p>
+            <p className="text-xs text-amber-600 dark:text-amber-500/80 mt-1">{t('shopsLoadFailedHint') || 'Check your connection and try refreshing the page.'}</p>
+          </div>
+        )}
+
+        {allShops.length === 0 && !loading && !allShopsError && (
           <div className="py-8 px-4 text-center bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800/50 my-4 mx-2">
             <Store className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
             <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400">{t('createFirstShop')}</p>

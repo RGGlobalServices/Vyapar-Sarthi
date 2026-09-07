@@ -1,4 +1,4 @@
-import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, renderSectionTitle, renderSummaryBox, renderSignatureBlock, ensureRoom, fmtInr, PROFESSIONAL_TABLE_STYLES, type ShopHeader, type SummaryItem } from './professionalTemplate';
+import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, renderSectionTitle, renderSummaryBox, renderSignatureBlock, ensureRoom, fmtInr, embedDevanagariFont, getProfessionalTableStyles, PROFESSIONAL_TABLE_STYLES, type ShopHeader, type SummaryItem } from './professionalTemplate';
 
 export interface CAPackColumn {
   key: string;
@@ -42,10 +42,13 @@ export async function generateCAReportPackPdf({
   const disclaimer = 'Prepared from recorded business transactions. Subject to review and finalization by the business’s CA/Accountant.';
 
   let doc: any = null;
-  sections.forEach((section, i) => {
+  let fontEmbedded = false;
+  for (const [i, section] of sections.entries()) {
     const orientation = section.orientation || 'portrait';
     if (i === 0) {
       doc = new jsPDF({ orientation });
+      await embedDevanagariFont(doc);
+      fontEmbedded = true;
     } else {
       doc.addPage(undefined, orientation);
     }
@@ -82,12 +85,12 @@ export async function generateCAReportPackPdf({
         startY: y,
         head: [section.columns.map((c) => c.label)],
         body,
-        ...PROFESSIONAL_TABLE_STYLES,
+        ...getProfessionalTableStyles(true),
       });
     }
-  });
+  }
 
-  if (!doc) doc = new jsPDF();
+  if (!doc) { doc = new jsPDF(); await embedDevanagariFont(doc); }
 
   // Signature + disclaimer on the LAST page only — the pack is one document.
   const lastY = (doc.lastAutoTable?.finalY ?? PDF_LAYOUT.headerBottomY) + 12;

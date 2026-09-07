@@ -967,11 +967,28 @@ function LegacyProductsUI() {
     // case (stockQty === 0) and a partial distribution that still leaves some
     // of the aggregate unaccounted for (0 < stockQty < priorStock).
     const priorStock = Number((editProduct as any).stock ?? (editProduct as any).currentStock ?? 0);
-    if (editVariantActive && stockQty < priorStock && priorStock > 0) {
+    // Deliberately removing a colour via the picker (handleEditColorsChange)
+    // already prunes that colour's stock out of editForm.size_variants — that
+    // drop is intentional, not the "boxes left un-filled" case this guard
+    // exists to catch. Comparing against raw priorStock treated BOTH the same
+    // way: a shopkeeper who removed a colour on purpose got the same "will be
+    // dropped, Cancel to go back" warning as someone who forgot to fill in
+    // sizes, and clicking Cancel (the natural reaction to "did you mean to
+    // distribute first?") just aborted the save with no visible error — read
+    // exactly as "the Save button doesn't work". Only warn when stock is
+    // missing from colours/sizes that are STILL selected — i.e. genuinely
+    // un-distributed stock, not stock that left along with a removed colour.
+    const explainedStock = editVariantActive
+      ? Object.entries(editBaseVariants).reduce((s, [k, v]) => {
+          const { color } = splitVariantKey(k);
+          return (!color || editColors.includes(color)) ? s + (Number(v) || 0) : s;
+        }, 0)
+      : priorStock;
+    if (editVariantActive && stockQty < explainedStock && explainedStock > 0) {
       const ok = window.confirm(
         stockQty === 0
-          ? `Warning: this will set stock to 0.\n\nCurrent stock: ${priorStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${priorStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
-          : `Warning: this will reduce total stock from ${priorStock} to ${stockQty}.\n\n${priorStock - stockQty} unit(s) aren't reflected in any size box and will be dropped.\n\nClick Cancel to go back and account for them, or OK to save as ${stockQty}.`
+          ? `Warning: this will set stock to 0.\n\nCurrent stock: ${explainedStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${explainedStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
+          : `Warning: this will reduce total stock from ${explainedStock} to ${stockQty}.\n\n${explainedStock - stockQty} unit(s) aren't reflected in any size box and will be dropped.\n\nClick Cancel to go back and account for them, or OK to save as ${stockQty}.`
       );
       if (!ok) return;
     }

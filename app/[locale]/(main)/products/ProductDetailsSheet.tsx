@@ -16,7 +16,8 @@ import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
-import { cssColor } from '@/components/ColorSizeVariantGrid';
+import { cssColor, splitVariantKey } from '@/components/ColorSizeVariantGrid';
+import { parseSizeVariants, parseSizePrices } from '@/components/SizeVariantGrid';
 
 // Products can be viewed via a pooled cross-shop list (All Shop Access) where
 // a row belongs to a shop other than whichever one is currently "active" —
@@ -35,6 +36,8 @@ const fetcher = (url: string | string[]) => {
 };
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { MILL_CATEGORIES, getBusinessConfig } from '@/lib/businessConfig';
+import { formatMillStock } from '@/lib/millStock';
 
 export default function ProductDetailsSheet({
   productId,
@@ -75,8 +78,23 @@ export default function ProductDetailsSheet({
     try {
       const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
       setData(res.data);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      // A transient DB-pool blip (connection limit momentarily hit) surfaces
+      // as a 500 here even for a perfectly real, already-saved product — one
+      // quick retry clears it in practice without making a genuine 404 (bad
+      // productId) wait around pointlessly.
+      const status = err?.response?.status;
+      if (status && status >= 500) {
+        await new Promise(r => setTimeout(r, 1200));
+        try {
+          const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
+          setData(res.data);
+        } catch (err2) {
+          console.error(err2);
+        }
+      } else {
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -116,6 +134,14 @@ export default function ProductDetailsSheet({
                 {data?.product?.category && (
                   <span className="ml-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
                     {data.product.category}
+                  </span>
+                )}
+                {/* Unit the shopkeeper picked when adding this product (Kg/Gm/Piece/Bag/…
+                    per the business category's own unit list) — only shown when one was
+                    actually set, never a placeholder for products saved before units existed. */}
+                {data?.product?.baseUnit && (
+                  <span className="ml-1.5 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] px-2 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
+                    {t('unit') || 'Unit'}: {data.product.baseUnit}
                   </span>
                 )}
               </p>
@@ -208,9 +234,15 @@ export default function ProductDetailsSheet({
                   confusing them. */}
               {(() => {
                 const isUdyog = isWholesaleTierPackage(profile.subscriptionPlan);
+                const isMill = profile.businessType === 'millprocessing';
                 const cost = Number(data.product.costPrice) || Number(data.product.wholesaleCost) || 0;
                 const sp = Number(data.product.sellingPrice) || 0;
                 const mrp = Number(data.product.mrp) || 0;
+                // Mills often leave price unset until a Purchase/Sale rate is
+                // agreed — showing "Not Set" instead of ₹0 avoids reading as a
+                // real (and misleading) free/zero price. Scoped to mills only
+                // so every other business type's card keeps today's ₹0 look.
+                const priceOrNotSet = (v: number) => (isMill && v <= 0 ? 'Not Set' : `₹${v.toLocaleString('en-IN')}`);
                 const profitRes = cost > 0 && sp > 0
                   ? calculateProductProfit(sp, cost, data.product.gstPercent || 0, !!profile.gstInclusiveProfit)
                   : null;
@@ -234,20 +266,20 @@ export default function ProductDetailsSheet({
                     <StatCard
                       icon={<IndianRupee size={14} className="text-slate-500 dark:text-slate-400" />}
                       label={t("costPrice")}
-                      value={`₹${cost.toLocaleString('en-IN')}`}
+                      value={priceOrNotSet(cost)}
                       valueClass="text-slate-900 dark:text-white"
                     />
                     <StatCard
                       icon={<TrendingUp size={14} className="text-emerald-500 dark:text-emerald-400" />}
                       label={t("sellingPrice")}
-                      value={`₹${sp.toLocaleString('en-IN')}`}
+                      value={priceOrNotSet(sp)}
                       valueClass="text-emerald-600 dark:text-emerald-400"
                     />
                     {isUdyog && (
                       <StatCard
                         icon={<TrendingDown size={14} className="text-slate-500 dark:text-slate-400" />}
                         label={t("wholesaleRate") || "Wholesale Rate"}
-                        value={`₹${(Number(data.product.wholesaleCost) || 0).toLocaleString('en-IN')}`}
+                        value={priceOrNotSet(Number(data.product.wholesaleCost) || 0)}
                         valueClass="text-slate-900 dark:text-white"
                       />
                     )}
@@ -269,6 +301,36 @@ export default function ProductDetailsSheet({
                 );
               })()}
 
+              {/* ── Mill Product Master details ──
+                  Generic across every mill type — reads only whatever the
+                  shopkeeper configured on this product (Product Type,
+                  Grade, Variety, Subcategory, Pack Size/Unit, Batch/Expiry
+                  overrides); never branches on mill name. */}
+              {profile.businessType === 'millprocessing' && (() => {
+                const mc = MILL_CATEGORIES.find(m => m.key === data.product.millCategory);
+                const millStock = formatMillStock(data.product);
+                const bizConfig = getBusinessConfig(profile.businessType);
+                const batchOn = data.product.trackBatch ?? bizConfig.hasBatch;
+                const expiryOn = data.product.trackExpiry ?? bizConfig.hasExpiry;
+                return (
+                  <Section
+                    icon={<Package size={14} className="text-amber-500 dark:text-amber-400" />}
+                    title="Mill Product Details"
+                  >
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 text-sm">
+                      <DetailField label="Product Type" value={mc ? `${mc.emoji} ${mc.label}` : '-'} />
+                      <DetailField label="Subcategory" value={data.product.subcategory || '-'} />
+                      <DetailField label="Grade" value={data.product.grade || '-'} />
+                      <DetailField label="Variety" value={data.product.variety || '-'} />
+                      <DetailField label="Pack Size" value={data.product.packSize && data.product.packUnit ? `${data.product.packSize} ${data.product.packUnit} / Bag` : '-'} />
+                      <DetailField label="Stock" value={[millStock.primary, millStock.secondary, millStock.tertiary].filter(Boolean).join(' · ')} />
+                      <DetailField label="Batch Tracking" value={batchOn ? 'On' : 'Off'} />
+                      <DetailField label="Expiry Tracking" value={expiryOn ? 'On' : 'Off'} />
+                    </div>
+                  </Section>
+                );
+              })()}
+
               {/* ── Variant-wise Stock ──
                   The stat cards above show the product's TOTAL stock but not
                   which colour/size it's made of. Product.variants[] already
@@ -277,8 +339,26 @@ export default function ProductDetailsSheet({
                   only inside the Add/Edit form. Same section as Stock →
                   product Overview (WholesaleStockUI.tsx) — kept in sync so
                   Products and Stock never show different variant detail. */}
-              {Array.isArray(data.product.variants) && data.product.variants.length > 0 && (() => {
-                const variants = data.product.variants as any[];
+              {(() => {
+                // Product.variants[] is the Udyog (Bada Udyog/Wholesale) schema.
+                // Vyapar/Dukan's Add/Edit Product form writes the older composite
+                // "Colour / Size" string-keyed `size_variants` map instead (+
+                // per-variant selling price in metadata.size_prices) — a colour/
+                // size product added from that page always had variants.length
+                // === 0 here, so this whole section silently never rendered for
+                // it even though the stock really is split by colour/size.
+                // Fall back to parsing size_variants into the same
+                // {color, size, stock, sellingPrice} shape so both schemas
+                // render through the one table below.
+                const nativeVariants = Array.isArray(data.product.variants) ? data.product.variants : [];
+                const legacyMap = nativeVariants.length === 0 ? parseSizeVariants(data.product.size_variants) : {};
+                const legacyPrices = nativeVariants.length === 0 ? parseSizePrices(data.product.metadata) : {};
+                const legacyVariants = Object.entries(legacyMap).map(([key, qty]) => {
+                  const { color, size } = splitVariantKey(key);
+                  return { color, size, stock: Number(qty) || 0, sellingPrice: legacyPrices[key]?.sellingPrice };
+                });
+                const variants = nativeVariants.length > 0 ? nativeVariants : legacyVariants;
+                if (variants.length === 0) return null;
                 const colourCount = new Set(variants.map((v: any) => v.color).filter(Boolean)).size;
                 const sizeCount = new Set(variants.map((v: any) => v.size).filter(Boolean)).size;
                 const variantTotal = variants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0);
@@ -543,6 +623,15 @@ function StatCard({
       <p className={cn('text-xl font-bold leading-tight truncate', valueClass)}>
         {value}
       </p>
+    </div>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-500 font-semibold">{label}</p>
+      <p className="text-slate-800 dark:text-slate-200 font-medium mt-0.5">{value}</p>
     </div>
   );
 }

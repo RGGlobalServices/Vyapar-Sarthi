@@ -393,22 +393,106 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     });
   }, [tab, product, barcodeValue]);
 
+  // Downloads the SAME label content Print produces (shop name, product
+  // name, barcode, custom text, price) rasterized as one PNG — mirrors
+  // downloadOneVariant() below. Previously this just serialized the bare
+  // barcode SVG to PNG, so a non-variant product's downloaded label was
+  // missing everything (shop name, product name, MRP/rate, custom text)
+  // that the variant download and the physical Print already included.
   function downloadBarcode() {
     if (!barcodeRef.current) return;
     const svg = barcodeRef.current;
     const data = new XMLSerializer().serializeToString(svg);
     const blob = new Blob([data], { type: 'image/svg+xml' });
-    // Convert SVG → canvas → PNG
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
+      const scale = 2;
+      const pad = 16 * scale;
+      const note = labelText.trim();
+      const header1 = labelLine1.trim();
+      const header2 = labelLine2.trim();
+      const sellingPrice = product.sellingPrice || 0;
+      const mrp = product.mrp || 0;
+      const price = sellingPrice > 0 ? `₹${sellingPrice.toLocaleString('en-IN')}` : (mrp > 0 ? `MRP ₹${mrp.toLocaleString('en-IN')}` : '');
+
+      const header1Font = `800 ${11 * scale}px Arial, sans-serif`;
+      const header2Font = `600 ${9 * scale}px Arial, sans-serif`;
+      const nameFont = `800 ${16 * scale}px Arial, sans-serif`;
+      const noteFont = `600 ${12 * scale}px Arial, sans-serif`;
+      const priceFont = `700 ${15 * scale}px Arial, sans-serif`;
+
+      const header1LineH = header1 ? 14 * scale : 0;
+      const header2LineH = header2 ? 12 * scale : 0;
+      const nameLineH = 22 * scale;
+      const noteLineH = note ? 16 * scale : 0;
+      const priceLineH = price ? 20 * scale : 0;
+      const gap = 4 * scale;
+      const hasHeader = !!(header1 || header2);
+      const contentW = Math.max(img.width, 220 * scale);
+
       const canvas = document.createElement('canvas');
-      canvas.width = img.width * 2;
-      canvas.height = img.height * 2;
+      canvas.width = contentW + pad * 2;
+      canvas.height = pad * 2 + nameLineH + img.height + gap
+        + (hasHeader ? header1LineH + header2LineH + gap : 0)
+        + (note ? noteLineH + gap : 0) + (price ? priceLineH + gap : 0);
       const ctx = canvas.getContext('2d')!;
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const cx = canvas.width / 2;
+      let y = pad;
+
+      if (header1) {
+        y += header1LineH / 2;
+        ctx.fillStyle = '#0f172a';
+        ctx.font = header1Font;
+        ctx.fillText(header1.toUpperCase(), cx, y, contentW);
+        y += header1LineH / 2;
+      }
+      if (header2) {
+        y += header2LineH / 2;
+        ctx.fillStyle = '#475569';
+        ctx.font = header2Font;
+        ctx.fillText(header2, cx, y, contentW);
+        y += header2LineH / 2;
+      }
+      if (hasHeader) {
+        y += gap;
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = scale;
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(canvas.width - pad, y);
+        ctx.stroke();
+      }
+
+      y += nameLineH / 2;
+      ctx.fillStyle = '#0f172a';
+      ctx.font = nameFont;
+      ctx.fillText(product.name, cx, y, contentW);
+      y += nameLineH / 2;
+
+      y += gap + img.height / 2;
+      ctx.drawImage(img, (canvas.width - img.width) / 2, y - img.height / 2, img.width, img.height);
+      y += img.height / 2;
+
+      if (note) {
+        y += gap + noteLineH / 2;
+        ctx.fillStyle = '#334155';
+        ctx.font = noteFont;
+        ctx.fillText(note, cx, y, contentW);
+        y += noteLineH / 2;
+      }
+
+      if (price) {
+        y += gap + priceLineH / 2;
+        ctx.fillStyle = '#0f172a';
+        ctx.font = priceFont;
+        ctx.fillText(price, cx, y, contentW);
+      }
+
       const a = document.createElement('a');
       a.href = canvas.toDataURL('image/png');
       a.download = `barcode-${safeSlug(product.name)}.png`;

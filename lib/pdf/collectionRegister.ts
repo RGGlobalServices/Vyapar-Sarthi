@@ -3,6 +3,7 @@ import {
   renderProfessionalHeader,
   renderProfessionalFooter,
   fmtInr,
+  embedDevanagariFont,
   type ShopHeader,
 } from './professionalTemplate';
 
@@ -62,6 +63,7 @@ export async function generateCollectionRegisterPDF({
   const outstanding = parties.filter(p => (Number(p.totalDue) || 0) > 0);
 
   const doc = new jsPDF({ orientation: 'portrait' }) as any;
+  await embedDevanagariFont(doc);
   const today = new Date();
   const dateLabel = today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const dayLabel = today.toLocaleDateString('en-IN', { weekday: 'long' }).toUpperCase();
@@ -121,7 +123,7 @@ export async function generateCollectionRegisterPDF({
       head: [['Party', 'Amt (Due)', 'Cash', 'Chq', 'Dis']],
       body: rows,
       theme: 'grid',
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.5, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
+      styles: { font: 'NotoDevanagari', fontSize: 9, cellPadding: 2.5, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
       headStyles: { fillColor: PDF_LAYOUT.accent as any, textColor: [255, 255, 255] as any, fontStyle: 'bold', fontSize: 9 },
       columnStyles: {
         0: { cellWidth: 66 },

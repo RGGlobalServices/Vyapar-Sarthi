@@ -67,17 +67,53 @@ export function getAuthPayloadFromToken(req: Request): { sub: string; sessionId?
   }
 }
 
-export async function requireUser(req: Request) {
-  const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
+// One browser page load fires many parallel API calls (products, master-data,
+// notifications, calendar, shop/profile, …) and every single one independently
+// re-ran the same 2-3 auth queries (user + session + owned shops) for the
+// exact same request-token, multiplying real DB round trips ~N-fold for one
+// page and materially contributing to the "too many database connections"
+// errors seen under load. Since this data is effectively immutable within a
+// few seconds (a user doesn't get renamed or lose a shop mid-page-load), a
+// short in-memory TTL cache keyed by (userId, sessionId) collapses that whole
+// burst into a single DB round trip. Safe in both a persistent Node process
+// (this cache does its job) and a serverless/per-request environment (the
+// module-level Map just starts empty each time — pure no-op, same as before).
+const AUTH_CACHE_TTL_MS = 4000;
+const authContextCache = new Map<string, { data: Promise<{ user: any; session: any; shops: any[] }>; expires: number }>();
 
-  // The user and session lookups are independent, so they go out together:
-  // against a remote database one round trip costs far more than the queries.
-  const [user, session] = await Promise.all([
+function loadAuthContext(userId: string, sessionId?: string) {
+  const key = `${userId}:${sessionId || ''}`;
+  const cached = authContextCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  // Cache the in-flight Promise itself (not just the resolved value) so
+  // concurrent requests racing in during the same burst share one query
+  // instead of each starting their own before the first resolves.
+  const promise = Promise.all([
     prisma.user.findUnique({ where: { uuid: userId } }),
     sessionId
       ? prisma.userSession.findUnique({ where: { id: sessionId } })
       : Promise.resolve(null),
-  ]);
+    prisma.shop.findMany({ where: { ownerId: userId } }),
+  ]).then(([user, session, shops]) => ({ user, session, shops }));
+
+  authContextCache.set(key, { data: promise, expires: Date.now() + AUTH_CACHE_TTL_MS });
+  // A failed lookup shouldn't stay cached and keep failing for the TTL window.
+  promise.catch(() => authContextCache.delete(key));
+
+  // Opportunistic cleanup so a long-lived dev/prod process doesn't accumulate
+  // one entry per (user, session) forever.
+  if (authContextCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of authContextCache) if (v.expires <= now) authContextCache.delete(k);
+  }
+  return promise;
+}
+
+export async function requireUser(req: Request) {
+  const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
+
+  const { user, session } = await loadAuthContext(userId, sessionId);
 
   if (!user) throw new ApiError(401, 'User not found');
   if (sessionId && !session) {
@@ -100,18 +136,11 @@ export async function requireShop(
   const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
   const requestedShopId = req.headers.get('x-shop-id');
 
-  // The token's `sub` is the user's uuid, which is also the shop's ownerId, so
-  // none of these lookups depend on each other — one round trip instead of three.
-  // Fetching every owned shop (a shopkeeper has a handful) lets us resolve the
-  // x-shop-id header in memory rather than paying a second query for the
-  // fallback. Filtering on ownerId is what enforces ownership, as before.
-  const [user, session, shops] = await Promise.all([
-    prisma.user.findUnique({ where: { uuid: userId } }),
-    sessionId
-      ? prisma.userSession.findUnique({ where: { id: sessionId } })
-      : Promise.resolve(null),
-    prisma.shop.findMany({ where: { ownerId: userId } }),
-  ]);
+  // Shared, short-TTL cache — see loadAuthContext above. Fetching every owned
+  // shop (a shopkeeper has a handful) lets us resolve the x-shop-id header in
+  // memory rather than paying a second query for the fallback. Filtering on
+  // ownerId is what enforces ownership, as before.
+  const { user, session, shops } = await loadAuthContext(userId, sessionId);
 
   // Check order matches the previous sequential flow so callers see the same errors.
   if (!user) throw new ApiError(401, 'User not found');
@@ -169,13 +198,10 @@ export async function requireShopScope(
   const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
   const requestedShopId = req.headers.get('x-shop-id');
 
-  const [user, session, shops] = await Promise.all([
-    prisma.user.findUnique({ where: { uuid: userId } }),
-    sessionId
-      ? prisma.userSession.findUnique({ where: { id: sessionId } })
-      : Promise.resolve(null),
-    prisma.shop.findMany({ where: { ownerId: userId } }),
-  ]);
+  // Same shared, short-TTL cache as requireShop() — see loadAuthContext above.
+  // Only the query-fetching is shared; the resolution/enforcement logic below
+  // stays fully duplicated per the note above.
+  const { user, session, shops } = await loadAuthContext(userId, sessionId);
 
   if (!user) throw new ApiError(401, 'User not found');
   if (sessionId && !session) {

@@ -9,7 +9,8 @@ import {
   renderSignatureBlock,
   ensureRoom,
   fmtInr,
-  PROFESSIONAL_TABLE_STYLES,
+  embedDevanagariFont,
+  getProfessionalTableStyles,
   type ShopHeader,
   type SummaryItem,
 } from './professionalTemplate';
@@ -30,6 +31,7 @@ export async function exportUdharPDF(
   dateRangeLabel: string,
 ) {
   const doc = new jsPDF() as any;
+  await embedDevanagariFont(doc);
   const shop: ShopHeader = typeof shopOrName === 'string'
     ? { name: shopOrName }
     : shopOrName;
@@ -128,8 +130,8 @@ export async function exportUdharPDF(
       startY: y,
       head: [['Date', 'Customer', 'Type', 'Credit (Dr)', 'Payment (Cr)', 'Balance', 'Note']],
       body: rows,
-      ...PROFESSIONAL_TABLE_STYLES,
-      styles: { ...PROFESSIONAL_TABLE_STYLES.styles, fontSize: 8 },
+      ...getProfessionalTableStyles(true),
+      styles: { ...getProfessionalTableStyles(true).styles, fontSize: 8 },
       columnStyles: {
         0: { cellWidth: 22 },
         3: { cellWidth: 22, halign: 'right' },

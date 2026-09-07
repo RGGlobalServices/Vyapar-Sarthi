@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -19,9 +20,12 @@ import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVariantGrid';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { useCategories } from '@/lib/useCategories';
+import { CategoryPicker } from '@/components/CategoryPicker';
 import { calculateProductProfit, profitColorClass, sellingPriceForMargin } from '@/lib/profitCalc';
+import { formatMillStock, computeStockStatus, STOCK_STATUS_LABELS } from '@/lib/millStock';
 import CostMarkupControl from '@/components/CostMarkupControl';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
 
@@ -84,6 +88,16 @@ type WholesaleProduct = {
   millCategory?: string;
   packSize?: number;
   packUnit?: string;
+  // Generic Food-Mill fields — free text so any mill type (Rice/Wheat/Dal/
+  // Millet/Oil/…) can describe its own catalogue without code changes.
+  grade?: string;
+  variety?: string;
+  subcategory?: string;
+  reorderLevel?: number;
+  // Per-product override of bizConfig.hasBatch/hasExpiry. undefined/null =
+  // inherit the shop's default (today's behavior for every existing row).
+  trackBatch?: boolean | null;
+  trackExpiry?: boolean | null;
   // Master data relations
   categoryId?: string;
   brandId?: string;
@@ -114,6 +128,18 @@ function effectiveCostPrice(f: { costPrice?: number; mrp?: number; costPriceMode
     return Math.max(0, mrp * (1 - pct / 100));
   }
   return Number(f.costPrice) || 0;
+}
+
+// A price that was never configured is a different fact than a price the
+// shopkeeper deliberately entered as ₹0 — showing "₹0" for the former
+// misleads a shopkeeper into thinking they're giving stock away free.
+// null/undefined AND a stored 0 both mean "never configured" here — this
+// matches the Profit% column's own existing convention just below (its
+// "set cost" link already only appears when costPrice/sellingPrice are
+// falsy), so this isn't a new semantic, just applying the same one visibly.
+function priceLabel(v: number | null | undefined): string {
+  if (!v || v <= 0) return 'Not Set';
+  return `₹${v}`;
 }
 
 function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
@@ -150,6 +176,12 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     millCategory: undefined,
     packSize: undefined,
     packUnit: undefined,
+    grade: undefined,
+    variety: undefined,
+    subcategory: undefined,
+    reorderLevel: undefined,
+    trackBatch: undefined,
+    trackExpiry: undefined,
   };
 }
 
@@ -172,9 +204,34 @@ export default function WholesaleProductsUI() {
         .filter(u => !bizConfig.defaultUnits.some(du => du.toLowerCase() === u.toLowerCase()))];
 
   const emptyProduct = buildEmptyProduct(profile.businessType);
-  
+
+  // The Raw Material / Finished Goods / By-Products sidebar links redirect
+  // here with ?view=<millCategory key> — a named entry point onto this same
+  // catalogue rather than a separate page, so there's one source of truth
+  // for products. Cleared via the chip's × so a normal Products visit isn't
+  // permanently filtered by a stale query string.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const viewFilter = searchParams.get('view'); // 'raw-material' | 'finished-goods' | 'by-products'
+  const viewToMillCategory: Record<string, string> = {
+    'raw-material': 'raw_material', 'finished-goods': 'finished_goods', 'by-products': 'by_product',
+  };
+  const activeMillCategory = viewFilter ? viewToMillCategory[viewFilter] : null;
+  const clearViewFilter = () => router.replace(pathname);
+
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Mill-only filter bar (Food Mill Product Master) — every filter reads
+  // fields the shopkeeper configured on the product, never the mill's name.
+  const [millTypeFilter, setMillTypeFilter] = useState('');
+  const [millCategoryFilter, setMillCategoryFilter] = useState('');
+  const [millGradeFilter, setMillGradeFilter] = useState('');
+  const [millVarietyFilter, setMillVarietyFilter] = useState('');
+  const [millWarehouseFilter, setMillWarehouseFilter] = useState('');
+  const [millStockStatusFilter, setMillStockStatusFilter] = useState('');
+  const [millBatchFilter, setMillBatchFilter] = useState('');
+  const [millExpiryFilter, setMillExpiryFilter] = useState('');
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(handler);
@@ -198,7 +255,7 @@ export default function WholesaleProductsUI() {
   // suggestion list just because they share an account.
   const activeShopProducts = useMemo(() => (products || []).filter((p: any) => p.shopId === activeShopId), [products, activeShopId]);
   const usedCategories = useMemo(() => Array.from(new Set(activeShopProducts.map((p: any) => p.category).filter(Boolean))), [activeShopProducts]);
-  const { suggestions: categorySuggestions, saveCategory } = useCategories(profile.businessType, usedCategories);
+  const { suggestions: categorySuggestions, groups: categoryGroups, saveCategory } = useCategories(profile.businessType, usedCategories);
   const brandSuggestions = useMemo(() => {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -257,6 +314,17 @@ export default function WholesaleProductsUI() {
   });
 
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  // A just-created row is shown optimistically with a synthetic 'temp-<ts>'
+  // id (see handleSave) until the server's real id lands a moment later.
+  // Opening the details sheet against that temp id 404s server-side
+  // ("Failed to load product details.") — trivially reproducible by
+  // clicking the new row right after Create Product. Route every open
+  // through here so no cell (there are ~20 clickable cells per row) can
+  // trigger that race.
+  const openProductDetails = (p: any) => {
+    if (String(p?.id ?? '').startsWith('temp-')) return;
+    setSelectedProduct(p);
+  };
 
   // Variant Builder State
   const [variants, setVariants] = useState<any[]>([]);
@@ -409,6 +477,15 @@ export default function WholesaleProductsUI() {
       millCategory: p.millCategory || undefined,
       packSize: p.packSize || undefined,
       packUnit: p.packUnit || undefined,
+      grade: p.grade || undefined,
+      variety: p.variety || undefined,
+      subcategory: p.subcategory || undefined,
+      reorderLevel: p.reorderLevel || undefined,
+      // Nullish (not ||) — false is a real, deliberate override and must
+      // survive the round trip, unlike the other mill fields above where
+      // 0/'' really do mean "not set".
+      trackBatch: p.trackBatch ?? undefined,
+      trackExpiry: p.trackExpiry ?? undefined,
     });
     // Older variant rows stored the bulk/wholesale price under the key
     // `costPrice` (the field was mislabeled "Wholesale" in the UI but never
@@ -534,6 +611,7 @@ export default function WholesaleProductsUI() {
       mutateProducts(); // Rollback
     } finally {
       mutateProducts(); // Sync
+      invalidateProductCaches();
       setSaving(false);
     }
   };
@@ -555,6 +633,7 @@ export default function WholesaleProductsUI() {
       mutateProducts(); // Rollback
     } finally {
       mutateProducts(); // Sync
+      invalidateProductCaches();
       setSaving(false);
     }
   };
@@ -648,6 +727,14 @@ export default function WholesaleProductsUI() {
         millCategory: form.millCategory || null,
         packSize: form.packSize && Number(form.packSize) > 0 ? Number(form.packSize) : null,
         packUnit: form.packUnit || null,
+        grade: form.grade || null,
+        variety: form.variety || null,
+        subcategory: form.subcategory || null,
+        reorderLevel: form.reorderLevel && Number(form.reorderLevel) > 0 ? Number(form.reorderLevel) : null,
+        // Nullish here too — a deliberate "Off" override is `false`, not
+        // "no value", and must not collapse to null before it reaches the API.
+        trackBatch: form.trackBatch ?? null,
+        trackExpiry: form.trackExpiry ?? null,
         // remove virtual fields from payload
         color: undefined,
         colors: undefined,
@@ -687,6 +774,12 @@ export default function WholesaleProductsUI() {
         mutateProducts((prev: any[] = []) => prev.map(p => p.id === optimisticProduct.id ? updatedProd : p), false);
       }
       mutateProducts();
+      // The Stock page (and anywhere else reading products) keys its SWR
+      // cache differently — a tuple, not this page's plain string — so the
+      // local mutateProducts() above never reaches it. Without this, an edit
+      // that removes a colour/size variant here still shows the removed
+      // variant on the Stock table until that page's own refetch happens.
+      invalidateProductCaches();
 
       // Remember a typed category/brand so it's offered next time — same
       // free-text + autocomplete pattern as Vyapar/Dukan. Best-effort: the
@@ -708,10 +801,36 @@ export default function WholesaleProductsUI() {
     }
   };
 
-  let filteredProducts = products.filter((p: any) => 
-    p.name?.toLowerCase().includes(search.toLowerCase()) || 
-    p.barcode?.toLowerCase().includes(search.toLowerCase())
-  );
+  const isMillShop = profile.businessType === 'millprocessing';
+  let filteredProducts = products.filter((p: any) => {
+    const matchesSearch = p.name?.toLowerCase().includes(search.toLowerCase()) ||
+      p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
+      p.sku?.toLowerCase().includes(search.toLowerCase());
+    if (!matchesSearch) return false;
+    if (activeMillCategory && p.millCategory !== activeMillCategory) return false;
+    if (!isMillShop) return true;
+    if (millTypeFilter && p.millCategory !== millTypeFilter) return false;
+    if (millCategoryFilter && p.category !== millCategoryFilter) return false;
+    if (millGradeFilter && p.grade !== millGradeFilter) return false;
+    if (millVarietyFilter && p.variety !== millVarietyFilter) return false;
+    if (millWarehouseFilter) {
+      const warehouseCount = p._count?.godownProducts || 0;
+      if (millWarehouseFilter === 'assigned' && warehouseCount === 0) return false;
+      if (millWarehouseFilter === 'unassigned' && warehouseCount > 0) return false;
+    }
+    if (millStockStatusFilter && computeStockStatus(p) !== millStockStatusFilter) return false;
+    if (millBatchFilter) {
+      const on = p.trackBatch ?? bizConfig.hasBatch;
+      if (millBatchFilter === 'on' && !on) return false;
+      if (millBatchFilter === 'off' && on) return false;
+    }
+    if (millExpiryFilter) {
+      const on = p.trackExpiry ?? bizConfig.hasExpiry;
+      if (millExpiryFilter === 'on' && !on) return false;
+      if (millExpiryFilter === 'off' && on) return false;
+    }
+    return true;
+  });
 
   if (sortConfig) {
     filteredProducts.sort((a: any, b: any) => {
@@ -805,6 +924,7 @@ export default function WholesaleProductsUI() {
           <ExportButton
             filename="products"
             title="Product List"
+            orientation={isMillShop ? 'landscape' : 'portrait'}
             summary={[
               { label: 'Products', value: String(filteredProducts.length) },
             ]}
@@ -821,8 +941,21 @@ export default function WholesaleProductsUI() {
               { key: 'purchaseDiscountPercent', label: 'Purchase %', type: 'number' },
               { key: 'currentStock', label: 'Stock', type: 'number' },
               { key: 'baseUnit', label: 'Unit' },
+              ...(isMillShop ? [
+                { key: 'millCategoryLabel', label: 'Product Type' },
+                { key: 'grade', label: 'Grade' },
+                { key: 'variety', label: 'Variety' },
+                { key: 'subcategory', label: 'Subcategory' },
+                { key: 'packSize', label: 'Pack Size', type: 'number' as const },
+                { key: 'packUnit', label: 'Pack Unit' },
+                { key: 'sku', label: 'SKU' },
+                { key: 'barcode', label: 'Barcode' },
+                { key: 'reorderLevel', label: 'Reorder Level', type: 'number' as const },
+              ] : []),
             ]}
-            data={filteredProducts}
+            data={isMillShop
+              ? filteredProducts.map((p: any) => ({ ...p, millCategoryLabel: MILL_CATEGORIES.find(mc => mc.key === p.millCategory)?.label || '' }))
+              : filteredProducts}
           />
           <button
             onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setWholesaleMode('manual'); setWholesaleDiscountPercent(''); setShowAddModal(true); }}
@@ -871,6 +1004,82 @@ export default function WholesaleProductsUI() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Mill Product Master filter bar — driven entirely by data already on
+          the products (category/grade/variety/etc), never by mill name, so
+          the same bar works for a Rice Mill, Dal Mill, Oil Mill, etc. */}
+      {isMillShop && (
+        <Card className="border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
+          <CardContent className="p-4 flex flex-wrap gap-3 items-center">
+            <select value={millTypeFilter} onChange={(e) => setMillTypeFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+              <option value="">Product Type: All</option>
+              {MILL_CATEGORIES.map(mc => <option key={mc.key} value={mc.key}>{mc.emoji} {mc.label}</option>)}
+            </select>
+            <select value={millCategoryFilter} onChange={(e) => setMillCategoryFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+              <option value="">Category: All</option>
+              {Array.from(new Set(products.map((p: any) => p.category).filter(Boolean))).sort().map((c: any) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={millGradeFilter} onChange={(e) => setMillGradeFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+              <option value="">Grade: All</option>
+              {Array.from(new Set(products.map((p: any) => p.grade).filter(Boolean))).sort().map((g: any) => <option key={g} value={g}>{g}</option>)}
+            </select>
+            <select value={millVarietyFilter} onChange={(e) => setMillVarietyFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+              <option value="">Variety: All</option>
+              {Array.from(new Set(products.map((p: any) => p.variety).filter(Boolean))).sort().map((v: any) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <select value={millWarehouseFilter} onChange={(e) => setMillWarehouseFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+              <option value="">Warehouse: All</option>
+              <option value="assigned">In a Warehouse</option>
+              <option value="unassigned">Not Assigned</option>
+            </select>
+            <select value={millStockStatusFilter} onChange={(e) => setMillStockStatusFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+              <option value="">Stock Status: All</option>
+              {Object.entries(STOCK_STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+            {bizConfig.hasBatch && (
+              <select value={millBatchFilter} onChange={(e) => setMillBatchFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+                <option value="">Batch Tracking: All</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            )}
+            {bizConfig.hasExpiry && (
+              <select value={millExpiryFilter} onChange={(e) => setMillExpiryFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
+                <option value="">Expiry Tracking: All</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            )}
+            {(millTypeFilter || millCategoryFilter || millGradeFilter || millVarietyFilter || millWarehouseFilter || millStockStatusFilter || millBatchFilter || millExpiryFilter) && (
+              <button
+                onClick={() => { setMillTypeFilter(''); setMillCategoryFilter(''); setMillGradeFilter(''); setMillVarietyFilter(''); setMillWarehouseFilter(''); setMillStockStatusFilter(''); setMillBatchFilter(''); setMillExpiryFilter(''); }}
+                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+              >
+                <X size={13} /> Clear Filters
+              </button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeMillCategory && (
+        <div className="flex items-center gap-2 text-xs font-semibold">
+          <span className="px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-400 flex items-center gap-2">
+            {MILL_CATEGORIES.find(mc => mc.key === activeMillCategory)?.label || activeMillCategory}
+            <button onClick={clearViewFilter} className="hover:text-amber-950 dark:hover:text-amber-200" title={t('clearFilter') || 'Clear filter'}>
+              <X size={13} />
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Product List */}
       {loading ? (
@@ -926,7 +1135,7 @@ export default function WholesaleProductsUI() {
             {group.items.map((p: any) => {
               const expiryStatus = getExpiryStatus(p.expiryDate);
               return (
-                <Card key={p.id} onClick={() => setSelectedProduct(p)} className="cursor-pointer border-slate-200 dark:border-slate-800 shadow-sm hover:border-emerald-500/50 hover:shadow-md transition-all group bg-white dark:bg-slate-900">
+                <Card key={p.id} onClick={() => openProductDetails(p)} className="cursor-pointer border-slate-200 dark:border-slate-800 shadow-sm hover:border-emerald-500/50 hover:shadow-md transition-all group bg-white dark:bg-slate-900">
                   <CardContent className="p-5">
                     <div className="flex justify-between items-start mb-3">
                       <div className="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-lg">
@@ -1004,6 +1213,12 @@ export default function WholesaleProductsUI() {
                     <th className="p-4 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('category')}>
                       <div className="flex items-center gap-1">{t('colCategory') || 'Category'} {sortConfig?.key === 'category' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
+                    {profile.businessType === 'millprocessing' && (
+                      <>
+                        <th className="p-4 font-semibold">Product Type</th>
+                        <th className="p-4 font-semibold">Grade / Variety</th>
+                      </>
+                    )}
                     <th className="p-4 font-semibold">
                       <div className="flex items-center gap-1"><MapPin size={13}/> {t('productLocation') || 'Location'}</div>
                     </th>
@@ -1063,7 +1278,14 @@ export default function WholesaleProductsUI() {
                     <th className="p-4 font-semibold text-right">
                       <div className="flex items-center justify-end gap-1">{t('colProfit') || 'Profit %'}</div>
                     </th>
-                    <th className="p-4 font-semibold text-right" title="Party discount: (MRP − Wholesale Selling) ÷ MRP">Party Disc %</th>
+                    {/* Party Disc % is a retail-shopkeeper concept (comparing
+                        MRP vs wholesale selling) — a mill's rates aren't
+                        framed that way, so this column is mill-hidden per
+                        the Food-Mill Product Master spec; every other
+                        business type keeps it exactly as before. */}
+                    {profile.businessType !== 'millprocessing' && (
+                      <th className="p-4 font-semibold text-right" title="Party discount: (MRP − Wholesale Selling) ÷ MRP">Party Disc %</th>
+                    )}
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('currentStock')}>
                       <div className="flex items-center justify-end gap-1">{t('colStock') || 'Stock'} {sortConfig?.key === 'currentStock' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>
                     </th>
@@ -1112,7 +1334,7 @@ export default function WholesaleProductsUI() {
                             className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                           />
                         </td>
-                        <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                        <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-sm shrink-0">
                               {p.name.charAt(0).toUpperCase()}
@@ -1125,13 +1347,31 @@ export default function WholesaleProductsUI() {
                             </div>
                           </div>
                         </td>
-                        <td className="p-4 text-slate-600 dark:text-slate-300 font-mono text-xs cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.barcode || '-'}</td>
-                        <td className="p-4 text-slate-900 dark:text-white font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.brand || '-'}</td>
-                        <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.category || '-'}</td>
-                        <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.location || '-'}</td>
+                        <td className="p-4 text-slate-600 dark:text-slate-300 font-mono text-xs cursor-pointer" onClick={() => openProductDetails(p)}>{p.barcode || '-'}</td>
+                        <td className="p-4 text-slate-900 dark:text-white font-medium cursor-pointer" onClick={() => openProductDetails(p)}>{p.brand || '-'}</td>
+                        <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => openProductDetails(p)}>{p.category || '-'}</td>
+                        {profile.businessType === 'millprocessing' && (
+                          <>
+                            <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
+                              {(() => {
+                                const mc = MILL_CATEGORIES.find(m => m.key === p.millCategory);
+                                if (!mc) return <span className="text-slate-400 text-sm">-</span>;
+                                return (
+                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                    {mc.emoji} {mc.label}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => openProductDetails(p)}>
+                              {p.grade || p.variety ? `${p.grade || '-'} / ${p.variety || '-'}` : '-'}
+                            </td>
+                          </>
+                        )}
+                        <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => openProductDetails(p)}>{p.location || '-'}</td>
                         {/* Business-type specific data cells */}
                         {groupBizConfig.hasExpiry && (
-                          <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                          <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
                             {p.expiryDate ? (
                               <span className={cn(
                                 'text-xs font-semibold px-2 py-0.5 rounded-full',
@@ -1146,13 +1386,13 @@ export default function WholesaleProductsUI() {
                           </td>
                         )}
                         {groupBizConfig.hasBatch && (
-                          <td className="p-4 font-mono text-xs text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.batch_number || '—'}</td>
+                          <td className="p-4 font-mono text-xs text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => openProductDetails(p)}>{p.batch_number || '—'}</td>
                         )}
                         {groupBizConfig.hasModel && (
-                          <td className="p-4 font-mono text-xs text-slate-600 dark:text-slate-300 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.model_number || '—'}</td>
+                          <td className="p-4 font-mono text-xs text-slate-600 dark:text-slate-300 cursor-pointer" onClick={() => openProductDetails(p)}>{p.model_number || '—'}</td>
                         )}
                         {groupBizConfig.hasWarranty && (
-                          <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                          <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
                             {p.warranty_months ? (
                               <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400 text-xs font-semibold">
                                 <ShieldCheck size={12}/>{p.warranty_months}m
@@ -1161,10 +1401,10 @@ export default function WholesaleProductsUI() {
                           </td>
                         )}
                         {groupBizConfig.hasGender && (
-                          <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-semibold cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.gender || '—'}</td>
+                          <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-semibold cursor-pointer" onClick={() => openProductDetails(p)}>{p.gender || '—'}</td>
                         )}
                         {groupBizConfig.hasShades && (
-                          <td className="p-4 text-xs text-pink-500 dark:text-pink-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.shade || '—'}</td>
+                          <td className="p-4 text-xs text-pink-500 dark:text-pink-400 cursor-pointer" onClick={() => openProductDetails(p)}>{p.shade || '—'}</td>
                         )}
                         {groupBizConfig.hasColors && (() => {
                           // Array.isArray(p.metadata?.colors) is the current shape; a bare
@@ -1174,7 +1414,7 @@ export default function WholesaleProductsUI() {
                             ? p.metadata.colors
                             : (p.metadata?.color ? [p.metadata.color] : []);
                           return (
-                            <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                            <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
                               {productColors.length > 0 ? (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                   {productColors.map((c) => (
@@ -1189,14 +1429,20 @@ export default function WholesaleProductsUI() {
                           );
                         })()}
                         {groupBizConfig.hasFabric && (
-                          <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.metadata?.fabric || '—'}</td>
+                          <td className="p-4 text-xs text-violet-600 dark:text-violet-400 font-medium cursor-pointer" onClick={() => openProductDetails(p)}>{p.metadata?.fabric || '—'}</td>
                         )}
                         {groupBizConfig.hasSoleMaterial && (
-                          <td className="p-4 text-xs text-amber-600 dark:text-amber-400 font-medium cursor-pointer" onClick={() => setSelectedProduct(p)}>{p.metadata?.sole_material || '—'}</td>
+                          <td className="p-4 text-xs text-amber-600 dark:text-amber-400 font-medium cursor-pointer" onClick={() => openProductDetails(p)}>{p.metadata?.sole_material || '—'}</td>
                         )}
-                        <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.costPrice || 0}</td>
-                        <td className="p-4 text-right text-slate-900 dark:text-white cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.wholesaleCost || 0}</td>
-                        <td className="p-4 text-right font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>₹{p.sellingPrice || 0}</td>
+                        <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => openProductDetails(p)}>
+                          <span className={!p.costPrice || p.costPrice <= 0 ? 'text-slate-400 italic text-xs' : ''}>{priceLabel(p.costPrice)}</span>
+                        </td>
+                        <td className="p-4 text-right text-slate-900 dark:text-white cursor-pointer" onClick={() => openProductDetails(p)}>
+                          <span className={!p.wholesaleCost || p.wholesaleCost <= 0 ? 'text-slate-400 italic text-xs font-normal' : ''}>{priceLabel(p.wholesaleCost)}</span>
+                        </td>
+                        <td className="p-4 text-right font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer" onClick={() => openProductDetails(p)}>
+                          <span className={!p.sellingPrice || p.sellingPrice <= 0 ? 'text-slate-400 italic text-xs font-normal' : ''}>{priceLabel(p.sellingPrice)}</span>
+                        </td>
                         <td className="p-4 text-right">
                           {profit !== null ? (
                             <span className={cn('font-bold', profitColorClass(profitStatus))}>{profit}%</span>
@@ -1206,30 +1452,51 @@ export default function WholesaleProductsUI() {
                             </button>
                           )}
                         </td>
-                        <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => setSelectedProduct(p)}>
-                          {(() => {
-                            const mrp = Number(p.mrp) || 0;
-                            const wp = Number(p.wholesaleCost) || 0;
-                            if (mrp <= 0 || wp <= 0 || wp > mrp) return '—';
-                            const pct = ((mrp - wp) / mrp) * 100;
-                            if (pct <= 0) return <span className="text-slate-400">0%</span>;
-                            return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − Wholesale ₹${wp}`}>{pct.toFixed(1)}%</span>;
-                          })()}
+                        {profile.businessType !== 'millprocessing' && (
+                          <td className="p-4 text-right text-slate-500 dark:text-slate-400 cursor-pointer" onClick={() => openProductDetails(p)}>
+                            {(() => {
+                              const mrp = Number(p.mrp) || 0;
+                              const wp = Number(p.wholesaleCost) || 0;
+                              if (mrp <= 0 || wp <= 0 || wp > mrp) return '—';
+                              const pct = ((mrp - wp) / mrp) * 100;
+                              if (pct <= 0) return <span className="text-slate-400">0%</span>;
+                              return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − Wholesale ₹${wp}`}>{pct.toFixed(1)}%</span>;
+                            })()}
+                          </td>
+                        )}
+                        <td className="p-4 text-right cursor-pointer" onClick={() => openProductDetails(p)}>
+                          {profile.businessType === 'millprocessing' ? (() => {
+                            const millStock = formatMillStock(p);
+                            return (
+                              <span className={cn("font-medium block", isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-slate-900 dark:text-white")}>
+                                {millStock.primary}
+                                {millStock.secondary && <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">{millStock.secondary}</span>}
+                                {millStock.tertiary && <span className="block text-[10px] font-normal text-slate-400">{millStock.tertiary}</span>}
+                              </span>
+                            );
+                          })() : (
+                            <span className={cn("font-medium", isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-slate-900 dark:text-white")}>
+                              {stock} {p.baseUnit}
+                            </span>
+                          )}
                         </td>
-                        <td className="p-4 text-right cursor-pointer" onClick={() => setSelectedProduct(p)}>
-                          <span className={cn("font-medium", isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-slate-900 dark:text-white")}>
-                            {stock} {p.baseUnit}
-                          </span>
-                        </td>
-                        <td className="p-4 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                        <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
                           <div className="flex justify-center">
                             <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md text-xs font-medium text-slate-600 dark:text-slate-300">
                               <Warehouse size={12} /> {warehouseCount}
                             </div>
                           </div>
                         </td>
-                        <td className="p-4 text-center cursor-pointer" onClick={() => setSelectedProduct(p)}>
-                          {isOutOfStock ? (
+                        <td className="p-4 text-center cursor-pointer" onClick={() => openProductDetails(p)}>
+                          {profile.businessType === 'millprocessing' ? (() => {
+                            const status = computeStockStatus(p);
+                            const tone = status === 'OUT_OF_STOCK' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                              : status === 'LOW_STOCK' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              : status === 'OVER_STOCK' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : status === 'INACTIVE' ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+                            return <span className={cn('inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider', tone)}>{STOCK_STATUS_LABELS[status]}</span>;
+                          })() : isOutOfStock ? (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 uppercase tracking-wider">{t('statusOutOfStock') || 'Out of Stock'}</span>
                           ) : isLowStock ? (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 uppercase tracking-wider">{t('statusLowStock') || 'Low Stock'}</span>
@@ -1322,13 +1589,14 @@ export default function WholesaleProductsUI() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('category') || 'Category'}</label>
-                      <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                      <CategoryPicker
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
                         placeholder={`${bizConfig.defaultCategories[0]} — or type a new one`}
-                        value={form.category || ''} onChange={e => setForm({...form, category: e.target.value, categoryId: ''})}
-                        list="wholesale-category-suggestions" />
-                      <datalist id="wholesale-category-suggestions">
-                        {categorySuggestions.map(c => <option key={c} value={c} />)}
-                      </datalist>
+                        value={form.category || ''}
+                        onChange={v => setForm({...form, category: v, categoryId: ''})}
+                        suggestions={categorySuggestions}
+                        groups={categoryGroups}
+                      />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Base Unit</label>
@@ -1406,7 +1674,7 @@ export default function WholesaleProductsUI() {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                            Product Type
+                            Mill Product Type
                           </label>
                           <select
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
@@ -1423,43 +1691,149 @@ export default function WholesaleProductsUI() {
                           <p className="text-[10px] text-slate-400 mt-1">
                             {form.millCategory
                               ? (MILL_CATEGORIES.find(mc => mc.key === form.millCategory)?.description || '')
-                              : 'Raw / Finished / By-Product / Waste — powers Dashboard splits.'}
+                              : 'What role this plays in the mill — Raw Material / Finished Goods / By-Product / Waste / Packaging / Consumable / Other.'}
                           </p>
+                        </div>
+                        {form.productType !== 'loose' && (
+                          <>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                Pack Size <span className="font-normal normal-case text-slate-400">(optional)</span>
+                              </label>
+                              <input
+                                type="number" min="0" step="0.01"
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                                placeholder="e.g. 1, 5, 10, 25, 30, 50"
+                                value={form.packSize ?? ''}
+                                onChange={e => setForm({ ...form, packSize: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">One bag/pack = this many pack-units.</p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                Pack Unit
+                              </label>
+                              <select
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                                value={form.packUnit || ''}
+                                onChange={e => setForm({ ...form, packUnit: e.target.value || undefined })}
+                              >
+                                <option value="">— None —</option>
+                                <option value="Kg">Kg</option>
+                                <option value="GM">Gram</option>
+                                <option value="Ltr">Litre</option>
+                                <option value="ML">ML</option>
+                                <option value="Ton">Ton</option>
+                                <option value="Quintal">Quintal</option>
+                              </select>
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                {form.packSize && form.packUnit ? `1 Bag/Pack = ${form.packSize} ${form.packUnit}` : 'Powers Bag × Weight in billing.'}
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      {form.productType === 'loose' && (
+                        <p className="text-[10px] text-slate-400 mt-2">
+                          Loose / Bulk products are tracked directly in their Base Unit (Kg, Quintal, Ton, Litre, …) — Pack Size/Unit is hidden since there's no fixed bag/pack for this format.
+                        </p>
+                      )}
+
+                      {/* Grade / Variety / Subcategory — free text on purpose so
+                          Rice Mill, Flour Mill, Dal Mill, Millet Mill, etc. can
+                          each type their own values; nothing here is a fixed
+                          dropdown of mill-specific names. */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Subcategory <span className="font-normal normal-case text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            placeholder="e.g. Basmati Rice, Wheat Flour, Toor Dal"
+                            value={form.subcategory || ''}
+                            onChange={e => setForm({ ...form, subcategory: e.target.value })}
+                          />
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                            Pack Size <span className="font-normal normal-case text-slate-400">(optional)</span>
+                            Grade <span className="font-normal normal-case text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            placeholder="e.g. Premium, Grade A, Standard"
+                            value={form.grade || ''}
+                            onChange={e => setForm({ ...form, grade: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Variety <span className="font-normal normal-case text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            placeholder="e.g. Basmati, Lokwan, Barnyard"
+                            value={form.variety || ''}
+                            onChange={e => setForm({ ...form, variety: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Reorder Level — distinct from Min Stock below; a
+                          heads-up buffer above the hard minimum. */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Reorder Level <span className="font-normal normal-case text-slate-400">(optional)</span>
                           </label>
                           <input
                             type="number" min="0" step="0.01"
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            placeholder="e.g. 30"
-                            value={form.packSize ?? ''}
-                            onChange={e => setForm({ ...form, packSize: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                            placeholder="e.g. 500"
+                            value={form.reorderLevel ?? ''}
+                            onChange={e => setForm({ ...form, reorderLevel: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                           />
-                          <p className="text-[10px] text-slate-400 mt-1">One bag = this many pack-units.</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Falls back to Min Stock if left blank.</p>
                         </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                            Pack Unit
-                          </label>
-                          <select
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            value={form.packUnit || ''}
-                            onChange={e => setForm({ ...form, packUnit: e.target.value || undefined })}
-                          >
-                            <option value="">— None —</option>
-                            <option value="Kg">Kg</option>
-                            <option value="GM">Gram</option>
-                            <option value="Ltr">Litre</option>
-                            <option value="ML">ML</option>
-                            <option value="Ton">Ton</option>
-                            <option value="Quintal">Quintal</option>
-                          </select>
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            {form.packSize && form.packUnit ? `1 Bag = ${form.packSize} ${form.packUnit}` : 'Powers Bag × Weight in billing.'}
-                          </p>
-                        </div>
+
+                        {/* Per-product Batch/Expiry override — only meaningful
+                            (and only shown) where the shop's own default is
+                            already ON, so a mill that batch-tracks Rice but
+                            not a Packaging Material line can turn it off for
+                            just that product without touching every other
+                            shop's Add/Edit form. */}
+                        {bizConfig.hasBatch && (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                              Batch Tracking
+                            </label>
+                            <select
+                              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                              value={form.trackBatch === undefined ? 'default' : form.trackBatch ? 'on' : 'off'}
+                              onChange={e => setForm({ ...form, trackBatch: e.target.value === 'default' ? undefined : e.target.value === 'on' })}
+                            >
+                              <option value="default">Shop Default (On)</option>
+                              <option value="on">On</option>
+                              <option value="off">Off</option>
+                            </select>
+                          </div>
+                        )}
+                        {bizConfig.hasExpiry && (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                              Expiry Tracking
+                            </label>
+                            <select
+                              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                              value={form.trackExpiry === undefined ? 'default' : form.trackExpiry ? 'on' : 'off'}
+                              onChange={e => setForm({ ...form, trackExpiry: e.target.value === 'default' ? undefined : e.target.value === 'on' })}
+                            >
+                              <option value="default">Shop Default (On)</option>
+                              <option value="on">On</option>
+                              <option value="off">Off</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1474,8 +1848,11 @@ export default function WholesaleProductsUI() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
                       
-                      {/* Expiry Date — Medical, Kirana, Boutique */}
-                      {bizConfig.hasExpiry && (
+                      {/* Expiry Date — Medical, Kirana, Boutique, and Mills
+                          where this product's own override says so (falls
+                          back to the shop default when unset — identical to
+                          today's behavior for every non-mill product). */}
+                      {(form.trackExpiry ?? bizConfig.hasExpiry) && (
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                             <Calendar size={11} className="text-orange-500" />
@@ -1488,21 +1865,32 @@ export default function WholesaleProductsUI() {
                             value={form.expiryDate ? form.expiryDate.split('T')[0] : ''}
                             onChange={e => setForm({...form, expiryDate: e.target.value})}
                           />
+                          {isMillShop && (
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Default for this product's opening stock. Each Purchase creates its own batch with its own expiry — see Active Batches on the product detail page.
+                            </p>
+                          )}
                         </div>
                       )}
 
-                      {/* Batch Number — Medical */}
-                      {bizConfig.hasBatch && (
+                      {/* Batch Number — Medical, and Mills where this
+                          product's own override says so. */}
+                      {(form.trackBatch ?? bizConfig.hasBatch) && (
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                             <FlaskConical size={11} className="text-blue-500" />
                             Batch Number
                           </label>
-                          <input 
+                          <input
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm font-mono"
                             placeholder="e.g. BT-2024-01"
                             value={form.batch_number || ''} onChange={e => setForm({...form, batch_number: e.target.value})}
                           />
+                          {isMillShop && (
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Default for this product's opening stock. Every Purchase records its own batch number — this field doesn't limit how many batches the product can have.
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -1646,18 +2034,29 @@ export default function WholesaleProductsUI() {
                   </section>
                 )}
 
-                {/* Product Type */}
+                {/* Product Type — for mills this is renamed "Product Format":
+                    a mill's real question here is HOW the product is handled/
+                    sold (packaged / variants / bulk), not "what kind of
+                    product" — that's the separate Mill Product Type field
+                    below. Every other business type keeps today's exact
+                    "Product Type" wording and copy, unchanged. */}
                 <section className="space-y-4">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-1 h-4 rounded bg-emerald-500" />
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('productType') || 'Product Type'}</p>
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                      {isMillShop ? 'Product Format' : (t('productType') || 'Product Type')}
+                    </p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {[
+                    {(isMillShop ? [
+                      { id: 'single', title: 'Standard / Packaged', desc: 'One standard packaged product sold as a fixed pack/unit.' },
+                      { id: 'variant', title: 'Variants', desc: 'Same product with different pack sizes, grades, varieties or configurations.' },
+                      { id: 'loose', title: 'Loose / Bulk', desc: 'Product handled or sold by weight, volume or bulk quantity.' },
+                    ] : [
                       { id: 'single', title: t('singleProduct') || 'Single Product', desc: t('singleProductDesc') || 'Standard item with one fixed size/price' },
                       { id: 'variant', title: t('productVariants') || 'Product with Variants', desc: t('productVariantsDesc') || 'Multiple sizes/colors (e.g., 250g, 500g)' },
                       { id: 'loose', title: t('looseBulk') || 'Loose / Bulk', desc: t('looseBulkDesc') || 'Sold by weight or custom units' }
-                    ].map(type => (
+                    ]).map(type => (
                       <div 
                         key={type.id}
                         onClick={() => setForm({

@@ -16,11 +16,22 @@ export const GET = handle(async (req) => {
     const end = new Date(start);
     end.setUTCHours(23, 59, 59, 999);
     whereClause.date = { gte: start, lte: end };
+  } else if (q.from || q.to) {
+    // Ledger page range view — a wider window than the single-day form the
+    // Daily Closing screen already used this endpoint for.
+    const range: any = {};
+    if (q.from) { const s = new Date(q.from); s.setUTCHours(0, 0, 0, 0); range.gte = s; }
+    if (q.to) { const e = new Date(q.to); e.setUTCHours(23, 59, 59, 999); range.lte = e; }
+    whereClause.date = range;
   }
+  if (q.type) whereClause.type = q.type;
+
+  const limit = Math.min(1000, Math.max(1, parseInt(q.limit || '300') || 300));
 
   const entries = await prisma.cashBook.findMany({
     where: whereClause,
-    orderBy: { date: 'desc' }
+    orderBy: { date: 'desc' },
+    take: limit,
   });
 
   return json(entries);

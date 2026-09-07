@@ -27,6 +27,12 @@ interface ReturnLine {
   nameText: string;
   qtyText: string;
   rateText: string;
+  /** Whether this line is actually going back to the supplier. Starts
+   *  unchecked for every line — a return is usually one or two items out of
+   *  a whole invoice, not "everything unless you zero it out"; requiring an
+   *  explicit pick avoids a shopkeeper accidentally returning items they
+   *  never touched just because they forgot to zero out that row. */
+  selected: boolean;
 }
 
 export default function PurchaseReturnModal({
@@ -74,11 +80,13 @@ export default function PurchaseReturnModal({
         unit: o.unit,
         remaining,
         nameText: o.name + (o.variantKey ? ` (${o.variantKey})` : ''),
-        // Defaults to the full remaining quantity — most returns are for
-        // everything still outstanding on a line; the shopkeeper edits down
-        // for a partial return rather than typing a full quantity from zero.
+        // Pre-filled with the full remaining quantity so ticking the
+        // checkbox on is a one-tap "return all of this" — but the line
+        // itself starts unselected (see `selected` below), so nothing is
+        // actually included in the return until the shopkeeper picks it.
         qtyText: String(remaining),
         rateText: String(o.rate),
+        selected: false,
       };
     });
   }, [invoice]);
@@ -94,11 +102,15 @@ export default function PurchaseReturnModal({
     setLines(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)));
   }
 
-  const total = lines.reduce((sum, l) => sum + Math.max(0, num(l.qtyText)) * num(l.rateText), 0);
-  const activeLines = lines.filter(l => num(l.qtyText) > 0);
+  function toggleSelected(key: string) {
+    setLines(prev => prev.map(l => (l.key === key ? { ...l, selected: !l.selected } : l)));
+  }
+
+  const activeLines = lines.filter(l => l.selected && num(l.qtyText) > 0);
+  const total = activeLines.reduce((sum, l) => sum + Math.max(0, num(l.qtyText)) * num(l.rateText), 0);
 
   async function handleSave() {
-    if (!activeLines.length) { setError('Set a quantity greater than 0 for at least one item.'); return; }
+    if (!activeLines.length) { setError('Select at least one item to return.'); return; }
     for (const l of activeLines) {
       if (num(l.qtyText) > l.remaining) {
         setError(`"${l.nameText}" — only ${l.remaining} left to return.`);
@@ -236,9 +248,23 @@ export default function PurchaseReturnModal({
         ) : (
           <>
             <div className="p-6 overflow-y-auto space-y-3">
-              <p className="text-xs text-slate-500">
-                Pick what's going back to <b>{invoice.supplier?.name}</b> from Invoice {invoice.invoiceNumber || invoice.id}. Set a quantity to 0 to leave an item out.
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-slate-500">
+                  Tick what's going back to <b>{invoice.supplier?.name}</b> from Invoice {invoice.invoiceNumber || invoice.id}. Everything starts unselected — only ticked items are returned.
+                </p>
+                {lines.some(l => l.remaining > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allSelected = lines.filter(l => l.remaining > 0).every(l => l.selected);
+                      setLines(prev => prev.map(l => (l.remaining > 0 ? { ...l, selected: !allSelected } : l)));
+                    }}
+                    className="shrink-0 text-[11px] font-bold text-orange-600 dark:text-orange-400 hover:underline whitespace-nowrap"
+                  >
+                    {lines.filter(l => l.remaining > 0).every(l => l.selected) ? 'Clear all' : 'Select all'}
+                  </button>
+                )}
+              </div>
               {lines.length === 0 && (
                 <p className="text-sm text-slate-500 text-center py-6">This invoice has no items to return.</p>
               )}
@@ -246,16 +272,35 @@ export default function PurchaseReturnModal({
                 const qty = num(l.qtyText);
                 const over = qty > l.remaining;
                 const amount = Math.max(0, qty) * num(l.rateText);
+                const disabled = l.remaining <= 0 || !l.selected;
                 return (
-                  <div key={l.key} className={`rounded-xl border p-3 space-y-2 ${l.remaining <= 0 ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 opacity-60' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40'}`}>
-                    <input
-                      type="text"
-                      value={l.nameText}
-                      onChange={(e) => updateLine(l.key, { nameText: e.target.value })}
-                      className="w-full bg-transparent text-sm font-bold outline-none border-b border-dashed border-slate-300 dark:border-slate-700 pb-1"
-                    />
-                    <p className="text-[10px] text-slate-500">Purchased qty remaining to return: <b>{l.remaining}</b>{l.unit ? ` ${l.unit}` : ''}</p>
-                    <div className="grid grid-cols-3 gap-2">
+                  <div
+                    key={l.key}
+                    className={`rounded-xl border p-3 space-y-2 transition-colors ${
+                      l.remaining <= 0
+                        ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 opacity-60'
+                        : l.selected
+                          ? 'border-orange-300 dark:border-orange-500/40 bg-orange-50/40 dark:bg-orange-500/5'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={l.selected}
+                        disabled={l.remaining <= 0}
+                        onChange={() => toggleSelected(l.key)}
+                        className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 disabled:cursor-not-allowed shrink-0"
+                      />
+                      <input
+                        type="text"
+                        value={l.nameText}
+                        onChange={(e) => updateLine(l.key, { nameText: e.target.value })}
+                        className="flex-1 min-w-0 bg-transparent text-sm font-bold outline-none border-b border-dashed border-slate-300 dark:border-slate-700 pb-1"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 pl-6">Purchased qty remaining to return: <b>{l.remaining}</b>{l.unit ? ` ${l.unit}` : ''}</p>
+                    <div className="grid grid-cols-3 gap-2 pl-6">
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Return Qty</label>
                         <input
@@ -263,8 +308,8 @@ export default function PurchaseReturnModal({
                           inputMode="decimal"
                           value={l.qtyText}
                           onChange={(e) => updateLine(l.key, { qtyText: e.target.value })}
-                          disabled={l.remaining <= 0}
-                          className={`w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border outline-none focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed ${over ? 'border-red-400 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'}`}
+                          disabled={disabled}
+                          className={`w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border outline-none focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50 ${over ? 'border-red-400 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'}`}
                         />
                       </div>
                       <div>
@@ -274,18 +319,19 @@ export default function PurchaseReturnModal({
                           inputMode="decimal"
                           value={l.rateText}
                           onChange={(e) => updateLine(l.key, { rateText: e.target.value })}
-                          className="w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500"
+                          disabled={disabled}
+                          className="w-full h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </div>
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Amount</label>
-                        <div className="w-full h-9 px-2 rounded-lg text-sm font-bold flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200">
-                          ₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        <div className={`w-full h-9 px-2 rounded-lg text-sm font-bold flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200 ${disabled ? 'opacity-50' : ''}`}>
+                          ₹{(l.selected ? amount : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                         </div>
                       </div>
                     </div>
-                    {over && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1">
+                    {l.selected && over && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 pl-6">
                         <AlertTriangle size={12} /> Only {l.remaining} left to return.
                       </p>
                     )}

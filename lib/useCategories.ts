@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import api from './api';
-import { getBusinessConfig, BusinessType, isGenderOnlyLabel } from './businessConfig';
+import { getBusinessConfig, BusinessType, isGenderOnlyLabel, CategoryGroup } from './businessConfig';
 
 /**
  * Category suggestions for the Add/Edit product forms, plus persistence for
@@ -59,6 +59,24 @@ export function useCategories(businessType?: string, _usedCategories: string[] =
     return out;
   }, [saved, businessType]);
 
+  // Grouped view (only present for business types that define one, e.g.
+  // millprocessing's Grains/Pulses/Oil Seeds/… taxonomy) with the shop's own
+  // saved categories appended as a trailing "Your Categories" group so a
+  // custom category the shopkeeper already typed once isn't lost from the
+  // picker just because it isn't part of the curated groups.
+  const groups = useMemo<CategoryGroup[] | undefined>(() => {
+    const base = getBusinessConfig((businessType || 'general') as BusinessType).categoryGroups;
+    if (!base) return undefined;
+    const grouped = new Set(base.flatMap(g => g.options).map(o => o.toLowerCase()));
+    const extra = saved
+      .map(c => String(c.name ?? '').trim())
+      .filter(name => name && !isGenderOnlyLabel(name) && !grouped.has(name.toLowerCase()));
+    const dedupedExtra = Array.from(new Set(extra.map(n => n)));
+    return dedupedExtra.length > 0
+      ? [...base, { label: 'Your Categories', options: dedupedExtra }]
+      : base;
+  }, [saved, businessType]);
+
   /**
    * Persist a typed-in category so it is offered next time. No-ops for blanks,
    * for a bare gender/age word (that belongs in the Gender field, not here —
@@ -82,5 +100,5 @@ export function useCategories(businessType?: string, _usedCategories: string[] =
     [saved, mutate],
   );
 
-  return { suggestions, saveCategory, savedCategories: saved };
+  return { suggestions, groups, saveCategory, savedCategories: saved };
 }

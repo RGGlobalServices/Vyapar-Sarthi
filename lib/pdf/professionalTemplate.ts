@@ -21,6 +21,44 @@ import type jsPDF from 'jspdf';
  * so callers can chain positions without manual math.
  */
 
+// ─── DEVANAGARI FONT SUPPORT ──────────────────────────────────────────────
+// jsPDF's built-in Helvetica only covers Latin. Shop names, party names, and
+// product names are often in Marathi/Hindi (Devanagari script). We embed
+// Noto Sans Devanagari (Google Fonts, OFL license) which covers both Latin
+// and Devanagari, so mixed text like "राधेशाम भगर Mill" renders correctly.
+
+const DEVANAGARI_RE = /[ऀ-ॿ]/;
+
+/** Returns true if the string contains any Devanagari character. */
+export function hasDevanagari(s: string | null | undefined): boolean {
+  return !!s && DEVANAGARI_RE.test(s);
+}
+
+/** Register Noto Sans Devanagari on a jsPDF doc instance. Call once per doc
+ *  before any text drawing. After this, use `setFont('NotoDevanagari', …)`
+ *  for any text that may contain Devanagari characters, or use the helper
+ *  `setSmartFont()` which auto-detects. */
+export async function embedDevanagariFont(doc: any): Promise<void> {
+  const path = './devanagariFont';
+  const fontMod = await import(/* webpackChunkName: "devanagari-font" */ path);
+  doc.addFileToVFS('NotoSansDevanagari-Regular.ttf', fontMod.NOTO_DEVANAGARI_REGULAR);
+  doc.addFont('NotoSansDevanagari-Regular.ttf', 'NotoDevanagari', 'normal');
+  doc.addFileToVFS('NotoSansDevanagari-Bold.ttf', fontMod.NOTO_DEVANAGARI_BOLD);
+  doc.addFont('NotoSansDevanagari-Bold.ttf', 'NotoDevanagari', 'bold');
+}
+
+/** Pick the right font for a text string: NotoDevanagari if it contains
+ *  Devanagari script, otherwise helvetica. Assumes embedDevanagariFont()
+ *  has been called on this doc. */
+export function smartFont(text: string | null | undefined): string {
+  return hasDevanagari(text) ? 'NotoDevanagari' : 'helvetica';
+}
+
+/** Convenience: set font on doc based on text content + style. */
+export function setSmartFont(doc: jsPDF, text: string | null | undefined, style: 'normal' | 'bold' = 'normal'): void {
+  doc.setFont(smartFont(text), style);
+}
+
 export interface ShopHeader {
   name: string;
   address?: string | null;
@@ -59,26 +97,26 @@ export function renderProfessionalHeader(
   const R = (doc as any).internal.pageSize.getWidth() - PDF_LAYOUT.marginX;
 
   // Shop name (large, left)
-  doc.setFont('helvetica', 'bold');
+  const shopName = shop.name || labels.businessNameFallback || 'Business Name';
+  setSmartFont(doc, shopName, 'bold');
   doc.setFontSize(16);
   doc.setTextColor(...PDF_LAYOUT.ink);
-  doc.text(shop.name || labels.businessNameFallback || 'Business Name', L, 15);
+  doc.text(shopName, L, 15);
 
   // Shop meta lines under the name — address / mobile / email / GSTIN / PAN.
   // Each line only rendered when the value exists so shops without a GSTIN
   // don't get an awkward "GSTIN: -" placeholder.
-  doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...PDF_LAYOUT.muted);
   let y = 20;
-  if (shop.address) { doc.text(shop.address, L, y); y += 4; }
+  if (shop.address) { setSmartFont(doc, shop.address, 'normal'); doc.text(shop.address, L, y); y += 4; }
   const line2 = [shop.mobile ? `Mob: ${shop.mobile}` : null, shop.email || null].filter(Boolean).join('   |   ');
   if (line2) { doc.text(line2, L, y); y += 4; }
   const line3 = [shop.gst ? `GSTIN: ${shop.gst}` : null, shop.pan ? `PAN: ${shop.pan}` : null].filter(Boolean).join('   |   ');
   if (line3) { doc.text(line3, L, y); y += 4; }
 
   // Report title + date range block (right-aligned)
-  doc.setFont('helvetica', 'bold');
+  setSmartFont(doc, reportTitle, 'bold');
   doc.setFontSize(13);
   doc.setTextColor(...PDF_LAYOUT.accent);
   doc.text(reportTitle.toUpperCase(), R, 15, { align: 'right' });
@@ -121,7 +159,7 @@ export function renderSectionTitle(doc: jsPDF, y: number, title: string): number
   const L = PDF_LAYOUT.marginX;
   doc.setFillColor(...PDF_LAYOUT.accent);
   doc.rect(L, y, 3, 6, 'F');
-  doc.setFont('helvetica', 'bold');
+  setSmartFont(doc, title, 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...PDF_LAYOUT.ink);
   doc.text(title.toUpperCase(), L + 6, y + 4.5);
@@ -202,26 +240,34 @@ export const fmtInr = (n: number | null | undefined): string => {
   return `Rs ${Math.round(v).toLocaleString('en-IN')}`;
 };
 
-/** Standard autoTable styling — pass to the `styles` prop for consistency. */
-export const PROFESSIONAL_TABLE_STYLES = {
-  theme: 'grid' as const,
-  styles: {
-    font: 'helvetica',
-    fontSize: 9,
-    cellPadding: 2.5,
-    textColor: PDF_LAYOUT.ink as any,
-    lineColor: PDF_LAYOUT.divider as any,
-    lineWidth: 0.15,
-  },
-  headStyles: {
-    fillColor: PDF_LAYOUT.accent as any,
-    textColor: [255, 255, 255] as any,
-    fontStyle: 'bold' as const,
-    fontSize: 9,
-  },
-  alternateRowStyles: { fillColor: [249, 250, 251] as any },
-  margin: { left: PDF_LAYOUT.marginX, right: PDF_LAYOUT.marginX },
-};
+/** Standard autoTable styling — pass to the `styles` prop for consistency.
+ *  Uses NotoDevanagari when embedDevanagariFont() has been called on the doc
+ *  (covers both Latin and Devanagari); falls back to helvetica otherwise. */
+export function getProfessionalTableStyles(useDevanagari = false) {
+  const font = useDevanagari ? 'NotoDevanagari' : 'helvetica';
+  return {
+    theme: 'grid' as const,
+    styles: {
+      font,
+      fontSize: 9,
+      cellPadding: 2.5,
+      textColor: PDF_LAYOUT.ink as any,
+      lineColor: PDF_LAYOUT.divider as any,
+      lineWidth: 0.15,
+    },
+    headStyles: {
+      fillColor: PDF_LAYOUT.accent as any,
+      textColor: [255, 255, 255] as any,
+      fontStyle: 'bold' as const,
+      fontSize: 9,
+    },
+    alternateRowStyles: { fillColor: [249, 250, 251] as any },
+    margin: { left: PDF_LAYOUT.marginX, right: PDF_LAYOUT.marginX },
+  };
+}
+
+/** @deprecated Use getProfessionalTableStyles() instead */
+export const PROFESSIONAL_TABLE_STYLES = getProfessionalTableStyles(false);
 
 /** Ensure there's at least `neededMm` free space below `y` on the current
  *  page; if not, add a fresh page and return the new starting Y. */

@@ -75,7 +75,8 @@ export function generateWhatsAppText(bill: {
   
   parts.push('\n*Items:*');
   items.forEach(item => {
-    parts.push(`${item.name} x ${item.quantity} = ₹${item.total}`);
+    const u = item.unit && item.unit !== 'Unit' ? ` ${item.unit}` : '';
+    parts.push(`${item.name} x ${item.quantity}${u} = ₹${item.total}`);
   });
   
   if ((discount ?? 0) > 0) {

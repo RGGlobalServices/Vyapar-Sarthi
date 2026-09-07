@@ -1247,6 +1247,7 @@ export default function WholesaleBillingUI() {
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
                 {bizConfig.hasGender && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('gender') || 'Gender'}</th>}
                 {bizConfig.hasBatch && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
+                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('unitCol') || 'Unit'}</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-center">{t('qty') || 'Qty'}</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-right">{t('price') || 'Price'}</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-right">{t('totalUpper') || 'Total'}</th>
@@ -1256,7 +1257,7 @@ export default function WholesaleBillingUI() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={6 + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={7 + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
                     <Scan size={48} className="mx-auto mb-4 opacity-20" />
                     <p className="text-lg font-medium">{t('cartEmpty')}</p>
                     <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
@@ -1307,6 +1308,7 @@ export default function WholesaleBillingUI() {
                       />
                     </td>
                   )}
+                  <td className="px-4 py-3 text-sm text-slate-400">{item.unit || '-'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => {

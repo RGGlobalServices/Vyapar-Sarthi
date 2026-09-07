@@ -13,26 +13,37 @@ const fetcher = (url: string | string[]) => {
   return api.get(target).then(res => res.data);
 };
 
-export default function ReceiveDrawer({ 
-  product, 
-  godowns, 
+export default function ReceiveDrawer({
+  product,
+  products,
+  godowns,
   onClose,
   onSuccess
-}: { 
-  product: any, 
-  godowns: any[], 
+}: {
+  // Optional now — the top-level "Receive Stock" button used to require a
+  // product to already be selected in the table first (a confusing "nothing
+  // happens" dead end for anyone who clicked it cold), so this drawer can now
+  // open with no product and let the shopkeeper search for one right here.
+  // Callers that already have a product (a row's own "Receive" action, or the
+  // Product Details sheet) keep working exactly as before.
+  product?: any,
+  // Only needed when `product` is omitted — the list to search/pick from.
+  products?: any[],
+  godowns: any[],
   onClose: () => void,
   onSuccess: (data?: any) => void
 }) {
   const t = useTranslations('Stock');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+  const [pickedProduct, setPickedProduct] = useState<any>(product || null);
+  const [productSearch, setProductSearch] = useState('');
+
   const { activeShopId, profile } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
   const { data: suppliersData = [], mutate: mutateSuppliers, isLoading: sLoad } = useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
-  
+
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
@@ -53,13 +64,13 @@ export default function ReceiveDrawer({
     }
   };
   
-  const productVariants: any[] = Array.isArray(product.variants) ? product.variants : [];
+  const productVariants: any[] = Array.isArray(pickedProduct?.variants) ? pickedProduct.variants : [];
   // Single Product (no variant rows) but still tagged with one colour —
   // nothing to split quantity across, but the shopkeeper should still see
   // which colour this stock is going toward instead of no colour info at all.
-  const singleColour: string = Array.isArray(product.metadata?.colors)
-    ? product.metadata.colors[0]
-    : (product.metadata?.color || '');
+  const singleColour: string = Array.isArray(pickedProduct?.metadata?.colors)
+    ? pickedProduct.metadata.colors[0]
+    : (pickedProduct?.metadata?.color || '');
   const [form, setForm] = useState({
     warehouseId: '',
     supplierId: '',
@@ -70,13 +81,28 @@ export default function ReceiveDrawer({
     // everywhere else) — lets a single submission cover as many variants as
     // were actually delivered instead of one drawer-open per variant.
     variantQty: {} as Record<string, string>,
-    cost: product.wholesaleCost || '',
+    cost: pickedProduct?.wholesaleCost || '',
     batchNumber: '',
     expiryDate: ''
   });
 
+  // No pre-picked product — the internal search list to choose from.
+  const productList: any[] = Array.isArray(products) ? products : [];
+  const filteredProducts = productSearch.trim()
+    ? productList.filter((p: any) =>
+        p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
+        p.barcode?.toLowerCase().includes(productSearch.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(productSearch.toLowerCase()))
+    : productList;
+
+  const selectProduct = (p: any) => {
+    setPickedProduct(p);
+    setForm(f => ({ ...f, cost: p.wholesaleCost || f.cost }));
+  };
+
   const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!pickedProduct) { setError(t('selectProductFirst') || 'Select a product first.'); return; }
     const hasVariants = productVariants.length > 0;
     const variantEntries = Object.entries(form.variantQty).filter(([, q]) => Number(q) > 0);
 
@@ -97,7 +123,7 @@ export default function ReceiveDrawer({
     try {
       const items = hasVariants
         ? variantEntries.map(([variantKey, qty]) => ({
-            productId: product.id,
+            productId: pickedProduct.id,
             variant: variantKey,
             quantity: Number(qty),
             cost: Number(form.cost),
@@ -105,7 +131,7 @@ export default function ReceiveDrawer({
             expiryDate: form.expiryDate || undefined,
           }))
         : [{
-            productId: product.id,
+            productId: pickedProduct.id,
             variant: undefined,
             quantity: Number(form.quantity),
             cost: Number(form.cost),
@@ -124,7 +150,7 @@ export default function ReceiveDrawer({
 
       onSuccess({
         type: 'receive',
-        productId: product.id,
+        productId: pickedProduct.id,
         quantity: totalQty,
         warehouseId: form.warehouseId
       });
@@ -149,10 +175,52 @@ export default function ReceiveDrawer({
       </div>
 
       <div className="p-5 flex-1 overflow-y-auto">
-        <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-          <p className="text-sm font-bold text-slate-900 dark:text-white">{product.name}</p>
-          <p className="text-xs text-slate-500 mt-1">{t('barcode') || 'Barcode'}: {product.barcode || product.sku}</p>
-        </div>
+        {pickedProduct ? (
+          <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-slate-900 dark:text-white">{pickedProduct.name}</p>
+              <p className="text-xs text-slate-500 mt-1">{t('barcode') || 'Barcode'}: {pickedProduct.barcode || pickedProduct.sku || '-'}</p>
+            </div>
+            {/* Only offer to change the product when it was picked here, not
+                when the caller already committed to one (row/detail-sheet
+                actions) — keeps that entry point's behavior unchanged. */}
+            {!product && (
+              <button type="button" onClick={() => setPickedProduct(null)}
+                className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline shrink-0">
+                {t('change') || 'Change'}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="mb-6">
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              {t('product') || 'Product'} *
+            </label>
+            <input
+              autoFocus
+              type="text"
+              value={productSearch}
+              onChange={e => setProductSearch(e.target.value)}
+              placeholder={t('searchProductPlaceholder') || 'Search by name, barcode or SKU...'}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+            />
+            <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredProducts.length === 0 ? (
+                <p className="p-3 text-sm text-slate-400 text-center">{t('noProductsFound') || 'No products found.'}</p>
+              ) : filteredProducts.slice(0, 50).map((p: any) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => selectProduct(p)}
+                  className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-between gap-2"
+                >
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{p.name}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0">{p.barcode || p.sku || ''}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg border border-red-200 flex items-center gap-2 text-sm">
@@ -160,6 +228,7 @@ export default function ReceiveDrawer({
           </div>
         )}
 
+        {pickedProduct && (
         <form id="receive-form" onSubmit={handleReceive} className="space-y-4">
           {productVariants.length > 0 && (
             <div>
@@ -281,7 +350,7 @@ export default function ReceiveDrawer({
                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500"
                     placeholder={t('quantityPlaceholder')}
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{product.baseUnit}</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{pickedProduct.baseUnit}</span>
                 </div>
               </div>
             )}
@@ -342,13 +411,14 @@ export default function ReceiveDrawer({
             </div>
           </div>
         </form>
+        )}
       </div>
 
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
-        <button 
+        <button
           form="receive-form"
-          type="submit" 
-          disabled={loading}
+          type="submit"
+          disabled={loading || !pickedProduct}
           className="w-full py-2.5 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors text-sm shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} 

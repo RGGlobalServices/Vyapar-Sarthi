@@ -84,6 +84,16 @@ export const POST = handle(async (req) => {
 
   const startedAt = body.startedAt ? new Date(body.startedAt) : new Date();
 
+  // Optional up-front pick of which finished-good Product this batch will
+  // produce (e.g. "Rice" from a "Paddy" lot) — closing the batch later
+  // credits this product's stock automatically. Left null, closing the
+  // batch just records weights/recovery% same as before this field existed.
+  let outputProductId: string | null = body.outputProductId || null;
+  if (outputProductId) {
+    const product = await prisma.product.findFirst({ where: { id: outputProductId, shopId: shop.id } });
+    if (!product) throw new ApiError(400, 'Output product not found for this shop');
+  }
+
   // Two writes in a transaction so we never charge a lot without a batch or
   // create a batch that references an unchanged lot.
   const result = await prisma.$transaction(async (tx) => {
@@ -92,6 +102,7 @@ export const POST = handle(async (req) => {
         shopId: shop.id,
         batchNumber,
         rawLotId,
+        outputProductId,
         inputKg,
         status: 'open',
         currentStage: 'cleaning',
@@ -119,7 +130,7 @@ export const POST = handle(async (req) => {
     }
 
     return created;
-  });
+  }, { timeout: 15000, maxWait: 10000 });
 
   // Return with the seeded stages so the caller can render the progress bar
   // immediately without another round-trip.

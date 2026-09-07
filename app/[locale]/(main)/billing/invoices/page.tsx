@@ -34,6 +34,12 @@ interface Invoice {
   customer_email: string | null;
   created_at: string;
   items?: InvoiceItem[];
+  // Lightweight name-only summary the list endpoint sends for every row
+  // (full `items` with price/qty is only fetched lazily per-invoice) — used
+  // to show what was actually sold under the invoice number instead of the
+  // item count.
+  item_count?: number;
+  item_names?: string[];
   bill_type?: string | null;
   gst_amount?: number | null;
   gst_details?: any;
@@ -794,7 +800,15 @@ export default function InvoiceHistoryPage() {
                                 <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[8px] font-black uppercase tracking-wider border border-amber-500/20">Manual</span>
                               )}
                             </p>
-                            <p className="text-[10px] text-slate-400">{(inv.items?.length ?? '?')} items</p>
+                            <p className="text-[10px] text-slate-400 truncate max-w-[220px]" title={(inv.item_names || []).join(', ')}>
+                              {inv.item_names && inv.item_names.length > 0 ? (
+                                inv.item_names.length > 2
+                                  ? `${inv.item_names.slice(0, 2).join(', ')} +${inv.item_names.length - 2} more`
+                                  : inv.item_names.join(', ')
+                              ) : (
+                                `${inv.item_count ?? inv.items?.length ?? 0} items`
+                              )}
+                            </p>
                           </div>
                         </div>
                       </td>

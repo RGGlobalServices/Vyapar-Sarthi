@@ -1,4 +1,4 @@
-import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, fmtInr, type ShopHeader } from './professionalTemplate';
+import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, fmtInr, embedDevanagariFont, setSmartFont, type ShopHeader } from './professionalTemplate';
 
 export interface PurchaseReturnItemRow {
   name: string;
@@ -41,6 +41,7 @@ export async function generatePurchaseReturnPdfBlob({
   ]);
 
   const doc = new jsPDF({ orientation: 'portrait' }) as any;
+  await embedDevanagariFont(doc);
   const title = 'Purchase Return / Debit Note';
 
   let y = renderProfessionalHeader(doc, shop, title, fmtDate(date), { periodLabel: 'Return Date' });
@@ -50,12 +51,13 @@ export async function generatePurchaseReturnPdfBlob({
 
   doc.setFillColor(...PDF_LAYOUT.accentSoft);
   doc.rect(L, y, R - L, 26, 'F');
-  doc.setFont('helvetica', 'bold');
+  const sName = supplierName || 'Supplier';
+  setSmartFont(doc, sName, 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...PDF_LAYOUT.ink);
-  doc.text(supplierName || 'Supplier', L + 3, y + 6);
+  doc.text(sName, L + 3, y + 6);
 
-  doc.setFont('helvetica', 'normal');
+  setSmartFont(doc, null, 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...PDF_LAYOUT.muted);
   const line1 = [
@@ -82,7 +84,7 @@ export async function generatePurchaseReturnPdfBlob({
     head: [['Product', 'Qty', 'Rate', 'Amount']],
     body: rows,
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.5, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
+    styles: { font: 'NotoDevanagari', fontSize: 9, cellPadding: 2.5, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
     headStyles: { fillColor: PDF_LAYOUT.accent as any, textColor: [255, 255, 255] as any, fontStyle: 'bold', fontSize: 9 },
     margin: { left: PDF_LAYOUT.marginX, right: PDF_LAYOUT.marginX },
     rowPageBreak: 'avoid',

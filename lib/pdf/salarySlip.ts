@@ -1,4 +1,5 @@
 import { saveOrShareBlob } from '@/lib/nativeSave';
+import { embedDevanagariFont, smartFont } from './professionalTemplate';
 
 export async function exportSalarySlipPDF({
   shopInfo,
@@ -15,8 +16,10 @@ export async function exportSalarySlipPDF({
   const { default: autoTable } = await import('jspdf-autotable');
 
   const doc = new jsPDF() as any;
+  await embedDevanagariFont(doc);
 
   // Header
+  doc.setFont(smartFont(shopInfo.name), 'bold');
   doc.setFontSize(22);
   doc.setTextColor(16, 185, 129); // emerald-500
   doc.text(shopInfo.name || 'Store Name', 14, 22);

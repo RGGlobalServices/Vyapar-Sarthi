@@ -261,6 +261,11 @@ export interface BusinessConfig {
   hasSoleMaterial: boolean; // Shoes
   hasLiquorSpecs?: boolean;  // Liquor — brand, volume, alcohol %, bottle type + case⇄bottle conversion
   defaultCategories: string[];
+  // Optional grouped view of the same suggestions, for a nicer picker UI
+  // (section headers instead of one flat list). When present, the picker
+  // renders groups; `defaultCategories` still carries the flattened union
+  // for any consumer that only wants a plain list (search matching, etc).
+  categoryGroups?: CategoryGroup[];
   defaultUnits: string[];
   productPlaceholder: string;
   productPlaceholderHi?: string;
@@ -274,6 +279,29 @@ export interface BusinessConfig {
   hasSpecs?: boolean;
   defaultPackage?: PackageType;
 }
+
+// A curated, professional starting taxonomy for the Product "Category"
+// field — organized by what the item IS in a mill's ledger (raw grain vs.
+// pulse vs. oil seed vs. finished product vs. by-product vs. waste vs.
+// packaging), not by any specific mill's name. Every group carries an
+// "Other …" entry so a shopkeeper can still type past this list for a mill
+// type not explicitly covered; this only changes the SUGGESTION list shown
+// while typing — Category itself stays a free-text field, so nothing here
+// restricts what can actually be saved.
+export interface CategoryGroup {
+  label: string;
+  options: string[];
+}
+
+export const MILL_CATEGORY_GROUPS: CategoryGroup[] = [
+  { label: 'Grains', options: ['Paddy', 'Wheat', 'Maize', 'Jowar', 'Bajra', 'Ragi', 'Barnyard Millet', 'Other Millet', 'Other Grain'] },
+  { label: 'Pulses / Dal Raw Materials', options: ['Tur', 'Chana', 'Moong', 'Urad', 'Masoor', 'Other Pulses'] },
+  { label: 'Oil Seeds', options: ['Groundnut', 'Mustard Seed', 'Sesame', 'Sunflower Seed', 'Other Oil Seeds'] },
+  { label: 'Processed Products', options: ['Rice', 'Flour', 'Atta', 'Maida', 'Suji / Rava', 'Dal', 'Millet Products', 'Other Finished Food Products'] },
+  { label: 'By-Products', options: ['Bran', 'Husk', 'Broken Grain', 'Broken Rice', 'Broken Dal', 'Oil Cake', 'Other By-Product'] },
+  { label: 'Waste / Rejection', options: ['Dust', 'Rejected Grain', 'Foreign Material', 'Processing Waste', 'Other Waste'] },
+  { label: 'Packaging', options: ['PP Bag', 'Gunny Bag', 'Pouch', 'Label', 'Carton', 'Other Packaging'] },
+];
 
 export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
   kirana: {
@@ -1210,29 +1238,19 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     hasWireSpecs: false,
     hasVoltWatt: false,
     hasSoleMaterial: false,
-    // Union of every real mill's category list — Products/Categories can be
-    // refined per-shop through the normal Category mgmt UI after signup.
-    defaultCategories: [
-      // Raw materials
-      'Paddy', 'Wheat', 'Bajra', 'Jowar', 'Maize', 'Ragi',
-      'Turad', 'Chana', 'Moong', 'Udad', 'Masoor',
-      'Groundnut', 'Mustard Seed', 'Sesame', 'Sunflower Seed', 'Coconut',
-      // Finished — rice/dal
-      'Rice', 'Steam Rice', 'Premium Rice', 'Broken Rice',
-      'Tur Dal', 'Chana Dal', 'Moong Dal', 'Masoor Dal', 'Udad Dal',
-      // Finished — flour
-      'Wheat Flour', 'Multi-grain Flour', 'Jowar Flour', 'Bajra Flour', 'Besan',
-      // Finished — oil
-      'Groundnut Oil', 'Mustard Oil', 'Sesame Oil', 'Sunflower Oil', 'Coconut Oil',
-      // Finished — other
-      'Bhagar', 'Poha', 'Rava', 'Masala',
-      // By-products
-      'Bran', 'Husk', 'Chuni', 'Polish', 'Dust', 'Oil Cake', 'Chokar',
-    ],
+    // Flattened union of MILL_CATEGORY_GROUPS below — kept in sync by
+    // deriving it, so any plain-list consumer (search, export, etc.) sees
+    // the exact same set the grouped picker offers. Products/Categories can
+    // still be refined per-shop through the normal Category mgmt UI.
+    defaultCategories: MILL_CATEGORY_GROUPS.flatMap(g => g.options),
+    categoryGroups: MILL_CATEGORY_GROUPS,
     defaultUnits: ['Kg', 'Quintal', 'Bag', 'Ton', '1 Kg', '5 Kg', '10 Kg', '25 Kg', '50 Kg', 'Litre', 'ML', 'Tin'],
-    productPlaceholder: 'e.g. Basmati Rice 25 Kg / Bhagar 10 Kg',
-    productPlaceholderHi: 'जैसे बासमती चावल 25 किलो / भगर 10 किलो',
-    productPlaceholderMr: 'उदा. बासमती तांदूळ 25 किलो / भगर 10 किलो',
+    // Generic across every mill type (Rice/Flour/Dal/Millet/Oil/…) — never
+    // just one mill's product, so the form doesn't read as built for a
+    // single commodity.
+    productPlaceholder: 'e.g. Rice, Wheat Flour, Toor Dal, Groundnut Oil',
+    productPlaceholderHi: 'जैसे चावल, गेहूं का आटा, तूर दाल, मूंगफली तेल',
+    productPlaceholderMr: 'उदा. तांदूळ, गहू पीठ, तूर डाळ, भुईमूग तेल',
     defaultPackage: 'badaudyog',
   },
   fmcgdistributor: {
@@ -1939,28 +1957,34 @@ export interface MillProductOption {
 }
 
 // ─── Mill Product classification (Product.millCategory) ────────────────
-// Every product in a mill catalogue is one of four kinds. Powers the
-// Products form dropdown, Dashboard's Raw/Finished split, and the
+// Every product in a mill catalogue is one of seven generic kinds — none of
+// them named after any specific mill (Rice/Wheat/Dal/Bhagar/…), so the same
+// 7-way split works whether the shop is a Rice Mill, Flour Mill, Dal Mill,
+// Millet Mill, Oil Mill, or any future mill type. Powers the Products form
+// dropdown, the Product Type filter, Dashboard's Raw/Finished split, and the
 // Sidebar shortcuts to /raw-material / /finished-goods / /by-products.
 // The key here is EXACTLY the value stored in Product.millCategory (see
 // prisma/schema.prisma) — the API and DB agree on the same slug.
 export interface MillCategoryOption {
-  key: 'raw_material' | 'finished_goods' | 'by_product' | 'waste';
+  key: 'raw_material' | 'finished_goods' | 'by_product' | 'waste' | 'packaging_material' | 'consumable' | 'other';
   label: string;
   labelHi: string;
   labelMr: string;
   emoji: string;
   // Tailwind color used on chips/pills — same palette as the sidebar
   // accents so the visual language stays consistent.
-  accent: 'amber' | 'emerald' | 'blue' | 'slate';
+  accent: 'amber' | 'emerald' | 'blue' | 'slate' | 'purple' | 'rose';
   description: string;
 }
 
 export const MILL_CATEGORIES: MillCategoryOption[] = [
-  { key: 'raw_material',   label: 'Raw Material',   labelHi: 'कच्चा माल',    labelMr: 'कच्चा माल',   emoji: '🌾', accent: 'amber',   description: 'Paddy, Wheat, Bajra, Jowar, Oil-seeds — inputs that go into production.' },
-  { key: 'finished_goods', label: 'Finished Goods', labelHi: 'तैयार माल',     labelMr: 'तयार माल',   emoji: '📦', accent: 'emerald', description: 'Rice, Flour, Oil, Bhagar — sellable output from the mill.' },
-  { key: 'by_product',     label: 'By-Product',     labelHi: 'सह-उत्पाद',     labelMr: 'उप-उत्पादन', emoji: '🌾', accent: 'blue',    description: 'Bran, Husk, Chuni, Oil Cake — secondary output that is also sold.' },
-  { key: 'waste',          label: 'Waste / Reject', labelHi: 'अपशिष्ट',       labelMr: 'कचरा / नकार', emoji: '♻️', accent: 'slate',   description: 'Damaged stock, process waste, rejected material — tracked for loss %.' },
+  { key: 'raw_material',       label: 'Raw Material',       labelHi: 'कच्चा माल',     labelMr: 'कच्चा माल',     emoji: '🌾', accent: 'amber',   description: 'Paddy, Wheat, Bajra, Jowar, Oil-seeds — inputs that go into production.' },
+  { key: 'finished_goods',     label: 'Finished Goods',     labelHi: 'तैयार माल',      labelMr: 'तयार माल',      emoji: '📦', accent: 'emerald', description: 'Rice, Flour, Oil, Bhagar — sellable output from the mill.' },
+  { key: 'by_product',         label: 'By-Product',         labelHi: 'सह-उत्पाद',      labelMr: 'उप-उत्पादन',    emoji: '🌾', accent: 'blue',    description: 'Bran, Husk, Chuni, Oil Cake — secondary output that is also sold.' },
+  { key: 'waste',              label: 'Waste / Rejection',  labelHi: 'अपशिष्ट',        labelMr: 'कचरा / नकार',   emoji: '♻️', accent: 'slate',   description: 'Damaged stock, process waste, rejected material — tracked for loss %.' },
+  { key: 'packaging_material', label: 'Packaging Material', labelHi: 'पैकेजिंग सामग्री', labelMr: 'पॅकेजिंग साहित्य', emoji: '🎁', accent: 'purple',  description: 'PP Bags, Pouches, Boxes, Labels — used to pack the finished goods.' },
+  { key: 'consumable',         label: 'Consumable',         labelHi: 'उपभोज्य',        labelMr: 'उपभोग्य',       emoji: '🧴', accent: 'rose',    description: 'Machine oil, stitching thread, cleaning supplies — used up in operations, not sold.' },
+  { key: 'other',              label: 'Other',               labelHi: 'अन्य',           labelMr: 'इतर',           emoji: '📋', accent: 'slate',   description: 'Anything that doesn’t fit the categories above.' },
 ];
 
 // ─── Party Types (Customer.customerType) ────────────────────────────────

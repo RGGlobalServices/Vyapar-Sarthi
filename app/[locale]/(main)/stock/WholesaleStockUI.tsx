@@ -22,11 +22,12 @@ import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { cssColor } from '@/components/ColorSizeVariantGrid';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import { getStockTableConfig, type StockColumn } from '@/lib/stockTableConfig';
 import dynamic from 'next/dynamic';
 
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
 
-function ProfitabilityTab({ product }: { product: any }) {
+function ProfitabilityTab({ product, t }: { product: any; t: (key: string, values?: Record<string, any>) => string }) {
   const [period, setPeriod] = useState(30);
 
   const stats = useMemo(() => {
@@ -77,33 +78,33 @@ function ProfitabilityTab({ product }: { product: any }) {
   return (
     <div className="animate-in fade-in duration-200 space-y-6 pt-2">
       <div className="flex justify-between items-center">
-        <h3 className="font-bold text-slate-900 dark:text-white">Profit Analytics</h3>
-        <select 
+        <h3 className="font-bold text-slate-900 dark:text-white">{t('profitAnalytics')}</h3>
+        <select
           value={period}
           onChange={(e) => setPeriod(Number(e.target.value))}
           className="text-xs bg-slate-100 dark:bg-slate-800 border-none rounded-lg px-2 py-1 outline-none text-slate-600 dark:text-slate-300 font-bold"
         >
-          <option value={7}>Last 7 Days</option>
-          <option value={30}>Last 30 Days</option>
-          <option value={90}>Last 90 Days</option>
+          <option value={7}>{t('last7Days')}</option>
+          <option value={30}>{t('last30Days')}</option>
+          <option value={90}>{t('last90Days')}</option>
         </select>
       </div>
       
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 p-3 rounded-xl shadow-sm">
-          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-wider mb-1">Gross Profit</p>
+          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-wider mb-1">{t('grossProfit')}</p>
           <p className="text-xl font-black text-emerald-700 dark:text-emerald-300">₹{stats.grossProfit.toLocaleString('en-IN')}</p>
-          <p className="text-[10px] text-emerald-600/80 mt-1 font-bold">{stats.margin.toFixed(1)}% Margin</p>
+          <p className="text-[10px] text-emerald-600/80 mt-1 font-bold">{t('margin', { pct: stats.margin.toFixed(1) })}</p>
         </div>
         <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 p-3 rounded-xl shadow-sm">
-          <p className="text-[10px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-wider mb-1">Revenue</p>
+          <p className="text-[10px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-wider mb-1">{t('revenue')}</p>
           <p className="text-xl font-black text-blue-700 dark:text-blue-300">₹{stats.totalRevenue.toLocaleString('en-IN')}</p>
-          <p className="text-[10px] text-blue-600/80 mt-1 font-bold">{stats.totalUnitsSold} units sold</p>
+          <p className="text-[10px] text-blue-600/80 mt-1 font-bold">{t('unitsSold', { count: stats.totalUnitsSold })}</p>
         </div>
       </div>
       
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-        <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-4">Sales Trend</p>
+        <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-4">{t('salesTrend')}</p>
         {stats.chartData.length > 0 ? (
           <div className="h-48 w-full -ml-3">
             <ResponsiveContainer width="100%" height="100%">
@@ -122,7 +123,7 @@ function ProfitabilityTab({ product }: { product: any }) {
           </div>
         ) : (
            <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
-             No sales data for this period
+             {t('noSalesData')}
            </div>
         )}
       </div>
@@ -130,10 +131,13 @@ function ProfitabilityTab({ product }: { product: any }) {
       <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg p-3 flex gap-3 shadow-sm">
         <TrendingUp className="text-amber-500 shrink-0 mt-0.5" size={18} />
         <div>
-          <p className="text-sm text-amber-900 dark:text-amber-100 font-bold">Velocity Insight</p>
+          <p className="text-sm text-amber-900 dark:text-amber-100 font-bold">{t('velocityInsight')}</p>
           <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 leading-relaxed">
-            Selling <span className="font-bold">{stats.totalUnitsSold > 0 ? (stats.totalUnitsSold / period).toFixed(1) : 0} units/day</span> on average. 
-            At this rate, current stock ({product.computedStock}) will last approx <span className="font-bold">{stats.totalUnitsSold > 0 ? Math.ceil(product.computedStock / (stats.totalUnitsSold / period)) : '∞'} days</span>.
+            {t('velocityDesc', {
+              rate: stats.totalUnitsSold > 0 ? (stats.totalUnitsSold / period).toFixed(1) : '0',
+              stock: product.computedStock,
+              days: stats.totalUnitsSold > 0 ? Math.ceil(product.computedStock / (stats.totalUnitsSold / period)) : '∞'
+            })}
           </p>
         </div>
       </div>
@@ -166,6 +170,9 @@ export default function WholesaleStockUI() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [warehouseFilter, setWarehouseFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [millCategoryFilter, setMillCategoryFilter] = useState('all');
+  const [gradeFilter, setGradeFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
   
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -197,7 +204,8 @@ export default function WholesaleStockUI() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
-  const { activeShopId, allShopAccess } = useBusinessStore();
+  const { activeShopId, allShopAccess, profile } = useBusinessStore();
+  const stockConfig = useMemo(() => getStockTableConfig(profile?.businessType || 'general'), [profile?.businessType]);
   const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher);
   const { data: batches = [], isLoading: bLoad, isValidating: bValid, mutate: mutateBatches } = useSWR(activeShopId ? ['/stock/batches', activeShopId] : null, safeFetcher);
   const { data: godowns = [], isLoading: gLoad, isValidating: gValid, mutate: mutateGodowns } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, godownsFetcher);
@@ -287,6 +295,9 @@ export default function WholesaleStockUI() {
     let expiredCount = 0;
     let deadStockCount = 0;
     let categories = new Set<string>();
+    let brands = new Set<string>();
+    let grades = new Set<string>();
+    let millCategories = new Set<string>();
 
     const items = (products || []).map((p: any) => {
       // Stock shown here MUST agree with what Products (WholesaleProductsUI)
@@ -339,6 +350,9 @@ export default function WholesaleStockUI() {
       
       if (qty > 0 && qty <= (p.minStock || 0)) lowStockCount++;
       if (p.category) categories.add(p.category);
+      if (p.brand) brands.add(p.brand);
+      if (p.grade) grades.add(p.grade);
+      if (p.millCategory) millCategories.add(p.millCategory);
       
       // Heuristic Dead Stock (0 movements in 30 days)
       const productMovements = (movements || []).filter((m:any) => m.product_id === p.id);
@@ -361,6 +375,9 @@ export default function WholesaleStockUI() {
       items, totalValue, totalUnits, lowStockCount, 
       expiredCount, deadStockCount, 
       categories: Array.from(categories),
+      brands: Array.from(brands),
+      grades: Array.from(grades),
+      millCategories: Array.from(millCategories),
       warehouses: godowns || []
     };
   }, [products, batches, godowns, movements, adjustments, warehouseFilter]);
@@ -381,17 +398,19 @@ export default function WholesaleStockUI() {
 
 
   const filteredItems = (data?.items || []).filter((i: any) => {
-    const matchesSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(search.toLowerCase()));
+    const matchesSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(search.toLowerCase())) || (i.barcode && i.barcode.toLowerCase().includes(search.toLowerCase()));
     const matchesCategory = categoryFilter === 'all' || i.category === categoryFilter;
-    // If a specific warehouse is filtered, only show products that have stock > 0 in that warehouse
     const matchesWarehouse = warehouseFilter === 'all' || i.computedStock > 0;
-    
+    const matchesBrand = brandFilter === 'all' || i.brand === brandFilter;
+    const matchesMillCategory = millCategoryFilter === 'all' || i.millCategory === millCategoryFilter;
+    const matchesGrade = gradeFilter === 'all' || i.grade === gradeFilter;
+
     let matchesStatus = true;
     if (statusFilter === 'low') matchesStatus = i.computedStock > 0 && i.computedStock <= (i.minStock || 0);
     if (statusFilter === 'out') matchesStatus = i.computedStock <= 0;
     if (statusFilter === 'ok') matchesStatus = i.computedStock > (i.minStock || 0);
-    
-    return matchesSearch && matchesCategory && matchesWarehouse && matchesStatus;
+
+    return matchesSearch && matchesCategory && matchesWarehouse && matchesStatus && matchesBrand && matchesMillCategory && matchesGrade;
   });
 
   // When All Shop Access is on, group the table into one section per shop
@@ -463,29 +482,26 @@ export default function WholesaleStockUI() {
       return;
     }
 
-    const headers = ['Product Name', 'Category', 'Barcode', 'Current Stock', 'Unit', 'Purchase Price (INR)', 'Stock Value (INR)', 'Status'];
-    
-    const rows = filteredItems.map((item: any) => {
-      let status = 'In Stock';
-      if (item.computedStock <= 0) status = 'Out of Stock';
-      else if (item.computedStock <= (item.minStock || 0)) status = 'Low Stock';
+    const exportCols = [...stockConfig.columns, { key: '_status', labelKey: 'colStatus', getValue: (i: any) => {
+      if (i.computedStock <= 0) return 'Out of Stock';
+      if (i.computedStock <= (i.minStock || 0)) return 'Low Stock';
+      return 'In Stock';
+    }, type: 'text' as const }];
+    const headers = exportCols.map(c => t(c.labelKey));
 
-      return [
-        `"${(item.name || '').replace(/"/g, '""')}"`,
-        `"${(item.category || '').replace(/"/g, '""')}"`,
-        `"${(item.barcode || item.sku || '').replace(/"/g, '""')}"`,
-        item.computedStock,
-        `"${(item.baseUnit || '').replace(/"/g, '""')}"`,
-        item.costPrice || item.wholesaleCost || 0,
-        item.computedValue || 0,
-        `"${status}"`
-      ].join(',');
-    });
+    const rows = filteredItems.map((item: any) =>
+      exportCols.map(col => {
+        const raw = col.getValue(item);
+        const val = col.exportFormat ? col.exportFormat(raw, item) : (col.format ? col.format(raw, item) : raw);
+        if (typeof val === 'string') return `"${val.replace(/"/g, '""')}"`;
+        return val ?? '';
+      }).join(',')
+    );
 
     const csvString = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
+
     const link = document.createElement("a");
     link.setAttribute("href", url);
     link.setAttribute("download", `Inventory_Export_${new Date().toISOString().split('T')[0]}.csv`);
@@ -514,10 +530,13 @@ export default function WholesaleStockUI() {
                 showDailyRegister ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
               <CalendarDays size={16} /> {t('dailyRegister')}
             </button>
-            <button onClick={() => {
-              if (!selectedProduct) { alert(t('selectProductFirst')); return; }
-              setActionModal('receive');
-            }} className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-sm">
+            {/* Unlike Transfer/Adjust (which move or correct stock a product
+                already has, so picking that product from the table first
+                makes sense), Receiving is how NEW stock gets added — forcing
+                a table selection first was a dead end: clicking this cold
+                did nothing but show a barely-noticeable alert. The drawer
+                now has its own product search, so this opens directly. */}
+            <button onClick={() => setActionModal('receive')} className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-sm">
               <Plus size={16} /> {t('receiveStock')}
             </button>
             <button onClick={() => {
@@ -539,10 +558,10 @@ export default function WholesaleStockUI() {
           <DailyStockRegister />
         ) : (<>
         {/* Analytics Widgets */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <div className={cn("grid grid-cols-2 gap-4 mb-6", stockConfig.kpis.length <= 5 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-3 lg:grid-cols-6")}>
           {loading && (!data || data.items.length === 0) ? (
-            Array(5).fill(0).map((_, i) => (
-              <Card key={i} className={`bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm ${i === 4 ? 'col-span-2 md:col-span-1' : ''}`}>
+            Array(stockConfig.kpis.length).fill(0).map((_, i) => (
+              <Card key={i} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
                 <CardContent className="p-4">
                   <div className="h-3 w-16 bg-slate-200 dark:bg-slate-800 rounded mb-3 animate-pulse" />
                   <div className="h-6 w-24 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
@@ -550,43 +569,29 @@ export default function WholesaleStockUI() {
               </Card>
             ))
           ) : (
-            <>
-              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><CheckCircle size={14}/> {t('available')}</p>
-                  <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">{data?.totalUnits?.toLocaleString('en-IN')}</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><AlertTriangle size={14}/> {t('lowStock')}</p>
-                  <p className="text-xl sm:text-2xl font-bold text-amber-500 dark:text-amber-400">{data?.lowStockCount}</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><AlertOctagon size={14}/> {t('outOfStock')}</p>
-                  <p className="text-xl sm:text-2xl font-bold text-rose-600 dark:text-rose-400">{filteredItems.filter((i:any) => i.computedStock <= 0).length}</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><Archive size={14}/> {t('deadStock')}</p>
-                  <p className="text-xl sm:text-2xl font-bold text-slate-600 dark:text-slate-400">{data?.deadStockCount}</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm col-span-2 md:col-span-1">
-                <CardContent className="p-4">
-                  <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><TrendingUp size={14}/> {t('stockValue')}</p>
-                  <p 
-                    className="text-lg xl:text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tracking-tighter truncate"
-                    title={`₹${(data?.totalValue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
-                  >
-                    ₹{(data?.totalValue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                  </p>
-                </CardContent>
-              </Card>
-            </>
+            stockConfig.kpis.map((kpi) => {
+              const kpiColorMap: Record<string, string> = {
+                emerald: 'text-emerald-600 dark:text-emerald-400',
+                amber: 'text-amber-500 dark:text-amber-400',
+                rose: 'text-rose-600 dark:text-rose-400',
+                blue: 'text-blue-600 dark:text-blue-400',
+                purple: 'text-purple-600 dark:text-purple-400',
+                indigo: 'text-indigo-600 dark:text-indigo-400',
+                orange: 'text-orange-600 dark:text-orange-400',
+                slate: 'text-slate-600 dark:text-slate-400',
+              };
+              const val = kpi.getValue(data?.items || [], data);
+              return (
+                <Card key={kpi.key} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+                  <CardContent className="p-4">
+                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2">{t(kpi.labelKey)}</p>
+                    <p className={cn("text-xl sm:text-2xl font-bold font-mono tracking-tighter truncate", kpiColorMap[kpi.color] || kpiColorMap.slate)}>
+                      {typeof val === 'number' ? val.toLocaleString('en-IN') : val}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </div>
 
@@ -612,7 +617,7 @@ export default function WholesaleStockUI() {
                 />
                 <button
                   type="button"
-                  title="Scan Barcode to Find"
+                  title={t('scanBarcode')}
                   onClick={() => setShowScanner(true)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-500 transition-colors"
                 >
@@ -620,10 +625,28 @@ export default function WholesaleStockUI() {
                 </button>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar">
+                {stockConfig.filterKeys.includes('millCategory') && (data?.millCategories?.length ?? 0) > 0 && (
+                  <select value={millCategoryFilter} onChange={e => setMillCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                    <option value="all">{t('allMillCategories')}</option>
+                    {data.millCategories.map((c:string) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
                 <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
                   <option value="all">{t('allCategories')}</option>
                   {data?.categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
                 </select>
+                {stockConfig.filterKeys.includes('brand') && (data?.brands?.length ?? 0) > 0 && (
+                  <select value={brandFilter} onChange={e => setBrandFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                    <option value="all">{t('allBrands')}</option>
+                    {data.brands.map((b:string) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                )}
+                {stockConfig.filterKeys.includes('grade') && (data?.grades?.length ?? 0) > 0 && (
+                  <select value={gradeFilter} onChange={e => setGradeFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                    <option value="all">{t('allGrades')}</option>
+                    {data.grades.map((g:string) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                )}
                 <select value={warehouseFilter} onChange={e => setWarehouseFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
                   <option value="all">{t('allWarehouses')}</option>
                   {data?.warehouses.map((w:any) => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -635,7 +658,7 @@ export default function WholesaleStockUI() {
                   <option value="out">{t('outOfStock')}</option>
                 </select>
                 <button onClick={exportExcel} className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap text-sm border border-slate-200 dark:border-slate-700">
-                  <Download size={14} /> Export
+                  <Download size={14} /> {t('export')}
                 </button>
               </div>
             </div>
@@ -670,14 +693,11 @@ export default function WholesaleStockUI() {
                       className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                     />
                   </th>
-                  <th className="px-4 py-3">{t('colProduct')}</th>
-                  <th className="px-4 py-3">{t('barcode')}</th>
-                  <th className="px-4 py-3">{t('productLocation') || 'Location'}</th>
-                  <th className="px-4 py-3">{t('colVariants') || 'Colour / Size'}</th>
-                  <th className="px-4 py-3 text-right">{t('colCurrentStock')}</th>
-                  <th className="px-4 py-3 text-right">{t('purchasePrice')}</th>
-                  <th className="px-4 py-3 text-right" title="Party discount: (MRP − Wholesale Selling) ÷ MRP">Party Disc %</th>
-                  <th className="px-4 py-3 text-right">{t('stockValue')}</th>
+                  {stockConfig.columns.map(col => (
+                    <th key={col.key} className={cn("px-4 py-3", col.align === 'right' && 'text-right', col.align === 'center' && 'text-center')}>
+                      {t(col.labelKey)}
+                    </th>
+                  ))}
                   <th className="px-4 py-3 text-center">{t('colStatus')}</th>
                   <th className="px-4 py-3 text-right">{t('colActions')}</th>
                 </tr>
@@ -687,29 +707,21 @@ export default function WholesaleStockUI() {
                   Array(5).fill(0).map((_, i) => (
                     <tr key={i} className="animate-pulse">
                       <td className="px-4 py-4"><div className="h-4 w-4 bg-slate-200 dark:bg-slate-800 rounded" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
+                      {stockConfig.columns.map(col => (
+                        <td key={col.key} className="px-4 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                      ))}
                       <td className="px-4 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-800 rounded mx-auto" /></td>
                       <td className="px-4 py-4"><div className="h-4 w-8 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
                     </tr>
                   ))
                 ) : group.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-5 py-12 text-center text-slate-500">
+                    <td colSpan={stockConfig.columns.length + 3} className="px-5 py-12 text-center text-slate-500">
                       {t('noItems')}
                     </td>
                   </tr>
                 ) : (
-                  group.items.map((item: any) => {
-                    const itemVariants: any[] = Array.isArray(item.variants) ? item.variants : [];
-                    const variantColors = Array.from(new Set(itemVariants.map((v: any) => v.color).filter(Boolean))) as string[];
-                    const variantSizes = Array.from(new Set(itemVariants.map((v: any) => v.size).filter(Boolean))) as string[];
-                    return (
+                  group.items.map((item: any) => (
                     <tr
                       key={item.id}
                       onClick={() => setSelectedProduct(item)}
@@ -726,58 +738,66 @@ export default function WholesaleStockUI() {
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                         />
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
-                        {item.name}
-                        <div className="text-xs text-slate-500 font-normal">{item.category || '-'}</div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 font-mono text-xs">{item.barcode || item.sku || '-'}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{item.location || '-'}</td>
-                      <td className="px-4 py-3">
-                        {itemVariants.length > 0 ? (
-                          <div className="max-w-[170px]">
-                            <div className="flex flex-wrap items-center gap-1">
-                              {variantColors.slice(0, 3).map((c: string) => (
-                                <span key={c} className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full whitespace-nowrap">
-                                  <span className="w-2 h-2 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(c) }} />
-                                  {c}
-                                </span>
-                              ))}
-                              {variantColors.length > 3 && (
-                                <span className="text-[10px] text-slate-400 font-semibold">+{variantColors.length - 3}</span>
+                      {stockConfig.columns.map(col => {
+                        const raw = col.getValue(item);
+                        const display = col.format ? col.format(raw, item) : (raw ?? '—');
+                        if (col.key === 'name') {
+                          return (
+                            <td key={col.key} className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                              {item.name}
+                              <div className="text-xs text-slate-500 font-normal">{item.category || '-'}</div>
+                            </td>
+                          );
+                        }
+                        if (col.key === 'colourSize') {
+                          const itemVariants: any[] = Array.isArray(item.variants) ? item.variants : [];
+                          const variantColors = Array.from(new Set(itemVariants.map((v: any) => v.color).filter(Boolean))) as string[];
+                          const variantSizes = Array.from(new Set(itemVariants.map((v: any) => v.size).filter(Boolean))) as string[];
+                          return (
+                            <td key={col.key} className="px-4 py-3">
+                              {itemVariants.length > 0 ? (
+                                <div className="max-w-[170px]">
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    {variantColors.slice(0, 3).map((c: string) => (
+                                      <span key={c} className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                        <span className="w-2 h-2 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(c) }} />
+                                        {c}
+                                      </span>
+                                    ))}
+                                    {variantColors.length > 3 && (
+                                      <span className="text-[10px] text-slate-400 font-semibold">+{variantColors.length - 3}</span>
+                                    )}
+                                  </div>
+                                  {variantSizes.length > 0 && (
+                                    <div className="text-[10px] text-slate-400 mt-1">{variantSizes.length} {variantSizes.length === 1 ? (t('size') || 'size') : (t('sizes') || 'sizes')}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 text-xs">—</span>
                               )}
-                            </div>
-                            {variantSizes.length > 0 && (
-                              <div className="text-[10px] text-slate-400 mt-1">{variantSizes.length} {variantSizes.length === 1 ? (t('size') || 'size') : (t('sizes') || 'sizes')}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        {item.computedStock} <span className="text-xs text-slate-500 font-normal ml-1">{item.baseUnit}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono whitespace-nowrap">₹{(item.costPrice || item.wholesaleCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {(() => {
-                          const mrp = Number(item.mrp) || 0;
-                          const wp = Number(item.wholesaleCost) || 0;
-                          if (mrp <= 0 || wp <= 0 || wp > mrp) return <span className="text-slate-400">—</span>;
-                          const pct = ((mrp - wp) / mrp) * 100;
-                          if (pct <= 0) return <span className="text-slate-400">0%</span>;
-                          return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − Wholesale ₹${wp}`}>{pct.toFixed(1)}%</span>;
-                        })()}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                        ₹{(item.computedValue || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      </td>
+                            </td>
+                          );
+                        }
+                        if (col.type === 'currency') {
+                          return (
+                            <td key={col.key} className="px-4 py-3 text-right font-mono whitespace-nowrap">
+                              {typeof display === 'string' ? display : `₹${(raw || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+                            </td>
+                          );
+                        }
+                        return (
+                          <td key={col.key} className={cn("px-4 py-3 whitespace-nowrap", col.align === 'right' ? 'text-right font-bold text-slate-700 dark:text-slate-300' : 'text-slate-500 text-xs')}>
+                            {display || '—'}
+                          </td>
+                        );
+                      })}
                       <td className="px-4 py-3 text-center">
                         {item.computedStock <= 0 ? (
-                          <span className="inline-flex px-1.5 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-bold rounded uppercase border border-red-200 dark:border-red-500/30">Out</span>
+                          <span className="inline-flex px-1.5 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-bold rounded uppercase border border-red-200 dark:border-red-500/30">{t('statusOut')}</span>
                         ) : item.computedStock <= (item.minStock || 0) ? (
-                          <span className="inline-flex px-1.5 py-0.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded uppercase border border-amber-200 dark:border-amber-500/30">Low</span>
+                          <span className="inline-flex px-1.5 py-0.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded uppercase border border-amber-200 dark:border-amber-500/30">{t('statusLow')}</span>
                         ) : (
-                          <span className="inline-flex px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded uppercase border border-emerald-200 dark:border-emerald-500/30">OK</span>
+                          <span className="inline-flex px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded uppercase border border-emerald-200 dark:border-emerald-500/30">{t('statusOk')}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -795,8 +815,7 @@ export default function WholesaleStockUI() {
                         </div>
                       </td>
                     </tr>
-                    );
-                  })
+                  ))
                 )}
               </tbody>
             </table>
@@ -819,7 +838,7 @@ export default function WholesaleStockUI() {
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{selectedProduct.name}</h2>
               <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded">{selectedProduct.category || 'Uncategorized'}</span>
+                <span className="bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded">{selectedProduct.category || t('uncategorized')}</span>
                 <span>{selectedProduct.barcode || selectedProduct.sku}</span>
               </div>
             </div>
@@ -830,10 +849,10 @@ export default function WholesaleStockUI() {
 
           <div className="flex border-b border-slate-200 dark:border-slate-800 px-2 pt-2 bg-slate-50/50 dark:bg-slate-900">
             {[
-              { id: 'overview', label: 'Overview', icon: Info },
-              { id: 'ledger', label: 'Ledger', icon: ArrowRightLeft },
-              { id: 'batches', label: 'Batches', icon: Package },
-              { id: 'profit', label: 'Profitability', icon: BarChart3 }
+              { id: 'overview', label: t('tabOverview'), icon: Info },
+              { id: 'ledger', label: t('tabLedger'), icon: ArrowRightLeft },
+              { id: 'batches', label: t('tabBatches'), icon: Package },
+              { id: 'profit', label: t('tabProfitability'), icon: BarChart3 }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -858,35 +877,35 @@ export default function WholesaleStockUI() {
                 <div className="grid grid-cols-3 gap-2">
                   <button onClick={() => setActionModal('receive')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors border border-emerald-200 dark:border-emerald-500/30">
                     <Plus size={18} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">Receive</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{t('receive')}</span>
                   </button>
                   <button onClick={() => setActionModal('transfer')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors border border-blue-200 dark:border-blue-500/30">
                     <ArrowRightLeft size={18} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">Transfer</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{t('transferStock')}</span>
                   </button>
                   <button onClick={() => setActionModal('adjust')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700">
                     <Edit size={18} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">Adjust</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{t('adjustStock')}</span>
                   </button>
                 </div>
 
                 <div className="space-y-3">
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Unified Stock Ledger</h4>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">{t('unifiedStockLedger')}</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <div className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-center shadow-sm">
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold mb-1">Current</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold mb-1">{t('current')}</p>
                       <p className="text-xl font-bold text-slate-900 dark:text-white">{selectedProduct.computedStock}</p>
                     </div>
                     <div className="bg-emerald-50 dark:bg-emerald-500/10 p-3 rounded-lg border border-emerald-200 dark:border-emerald-500/30 text-center shadow-sm">
-                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold mb-1">Available</p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold mb-1">{t('available')}</p>
                       <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">{selectedProduct.computedStock}</p>
                     </div>
                     <div className="bg-amber-50 dark:bg-amber-500/10 p-3 rounded-lg border border-amber-200 dark:border-amber-500/30 text-center shadow-sm">
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wider font-bold mb-1">Reserved</p>
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wider font-bold mb-1">{t('reserved')}</p>
                       <p className="text-xl font-bold text-amber-700 dark:text-amber-300">0</p>
                     </div>
                     <div className="bg-rose-50 dark:bg-rose-500/10 p-3 rounded-lg border border-rose-200 dark:border-rose-500/30 text-center shadow-sm">
-                      <p className="text-[10px] text-rose-600 dark:text-rose-400 uppercase tracking-wider font-bold mb-1">Damaged/Exp</p>
+                      <p className="text-[10px] text-rose-600 dark:text-rose-400 uppercase tracking-wider font-bold mb-1">{t('damagedExp')}</p>
                       <p className="text-xl font-bold text-rose-700 dark:text-rose-300">{selectedProduct.damagedQty || 0}</p>
                     </div>
                   </div>
@@ -907,11 +926,11 @@ export default function WholesaleStockUI() {
                   return (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Variant-wise Stock</h4>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">{t('variantWiseStock')}</h4>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                          {colourCount > 0 && `${colourCount} colour${colourCount > 1 ? 's' : ''}`}
+                          {colourCount > 0 && `${colourCount} ${t('colourLabel')}${colourCount > 1 ? 's' : ''}`}
                           {colourCount > 0 && sizeCount > 0 && ' · '}
-                          {sizeCount > 0 && `${sizeCount} size${sizeCount > 1 ? 's' : ''}`}
+                          {sizeCount > 0 && `${sizeCount} ${t('sizeLabel')}${sizeCount > 1 ? 's' : ''}`}
                         </span>
                       </div>
                       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
@@ -919,10 +938,10 @@ export default function WholesaleStockUI() {
                           <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 dark:bg-slate-800/50 sticky top-0">
                               <tr>
-                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400">Colour</th>
-                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400">Size</th>
-                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">Stock</th>
-                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">Sell Price</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400">{t('colourLabel')}</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400">{t('sizeLabel')}</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">{t('stockLabel')}</th>
+                                <th className="px-3 py-2 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">{t('sellPriceLabel')}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -948,9 +967,9 @@ export default function WholesaleStockUI() {
                           </table>
                         </div>
                         <div className="flex justify-between items-center px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs">
-                          <span className="text-slate-500">Sum of variants</span>
+                          <span className="text-slate-500">{t('sumOfVariants')}</span>
                           <span className={cn("font-mono font-bold", variantTotal !== selectedProduct.computedStock ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300')}>
-                            {variantTotal}{variantTotal !== selectedProduct.computedStock ? ` (total shown above: ${selectedProduct.computedStock})` : ''}
+                            {variantTotal}{variantTotal !== selectedProduct.computedStock ? ` (${t('totalShownAbove', { count: selectedProduct.computedStock })})` : ''}
                           </span>
                         </div>
                       </div>
@@ -959,18 +978,18 @@ export default function WholesaleStockUI() {
                 })()}
 
                 <div className="space-y-3">
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Pricing Info</h4>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">{t('pricingInfo')}</h4>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-slate-500 mb-1">Cost Price</p>
+                      <p className="text-slate-500 mb-1">{t('costPriceLabel')}</p>
                       <p className="font-bold font-mono text-slate-500">₹{selectedProduct.costPrice || 0}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-1">Wholesale Price</p>
+                      <p className="text-slate-500 mb-1">{t('wholesalePrice')}</p>
                       <p className="font-bold font-mono">₹{selectedProduct.wholesaleCost || 0}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-1">Retail Price</p>
+                      <p className="text-slate-500 mb-1">{t('retailPrice')}</p>
                       <p className="font-bold font-mono text-emerald-600">₹{selectedProduct.sellingPrice || 0}</p>
                     </div>
                     <div>
@@ -978,14 +997,14 @@ export default function WholesaleStockUI() {
                       <p className="font-bold font-mono line-through text-slate-400">₹{selectedProduct.mrp || 0}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-1">Purchase %</p>
+                      <p className="text-slate-500 mb-1">{t('purchasePercent')}</p>
                       <p className="font-bold font-mono text-amber-500">
                         {selectedProduct.costPriceMode === 'mrp_based' && selectedProduct.purchaseDiscountPercent != null
                           ? `${selectedProduct.purchaseDiscountPercent}%` : '—'}
                       </p>
                     </div>
                     <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <p className="text-slate-500 mb-1">Margin (Retail vs Cost)</p>
+                      <p className="text-slate-500 mb-1">{t('marginRetailVsCost')}</p>
                       <p className="font-bold font-mono text-blue-500">
                         {(() => {
                           const cost = selectedProduct.costPrice || selectedProduct.wholesaleCost || 0;
@@ -998,7 +1017,7 @@ export default function WholesaleStockUI() {
                 </div>
 
                 <div className="space-y-3">
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">Stock by Warehouse</h4>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">{t('stockByWarehouse')}</h4>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 space-y-2">
                     {(() => {
                       const warehouseRows = (data.warehouses || [])
@@ -1014,7 +1033,7 @@ export default function WholesaleStockUI() {
                       const unassigned = Math.max(0, (selectedProduct.computedStock || 0) - warehouseSum);
                       const costRef = selectedProduct.costPrice || selectedProduct.wholesaleCost || selectedProduct.sellingPrice || 0;
                       if (warehouseRows.length === 0 && unassigned <= 0) {
-                        return <p className="text-sm text-slate-500 text-center py-2">No stock available</p>;
+                        return <p className="text-sm text-slate-500 text-center py-2">{t('noStockAvailable')}</p>;
                       }
                       return <>
                         {warehouseRows.map(({ w, item }: any) => (
@@ -1032,8 +1051,8 @@ export default function WholesaleStockUI() {
                         {unassigned > 0 && (
                           <div className="flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-800 pb-2 last:pb-0 last:border-0">
                             <div>
-                              <p className="font-bold text-slate-800 dark:text-slate-200">Not assigned to a warehouse</p>
-                              <p className="text-xs text-slate-500">Stock received without picking a warehouse</p>
+                              <p className="font-bold text-slate-800 dark:text-slate-200">{t('notAssignedWarehouse')}</p>
+                              <p className="text-xs text-slate-500">{t('stockWithoutWarehouse')}</p>
                             </div>
                             <div className="text-right">
                               <p className="font-mono font-bold text-amber-600">{unassigned} {selectedProduct.baseUnit || 'Unit'}</p>
@@ -1047,15 +1066,15 @@ export default function WholesaleStockUI() {
                 </div>
 
                 <div className="space-y-3">
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">AI Insight</h4>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">{t('aiInsight')}</h4>
                   <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg p-4 flex gap-3">
                     <Info className="text-blue-500 shrink-0 mt-0.5" size={18} />
                     <div>
-                      <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">Purchase Suggestion</p>
+                      <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">{t('purchaseSuggestion')}</p>
                       <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                        {selectedProduct.computedStock <= (selectedProduct.minStock||0) 
-                          ? `Stock is critically low. Consider ordering ${Math.max(50, (selectedProduct.minStock||10)*3)} ${selectedProduct.baseUnit} from Supplier to avoid stockout.`
-                          : 'Stock levels are healthy. No immediate purchase required.'}
+                        {selectedProduct.computedStock <= (selectedProduct.minStock||0)
+                          ? t('stockCriticallyLow', { qty: Math.max(50, (selectedProduct.minStock||10)*3), unit: selectedProduct.baseUnit })
+                          : t('stockHealthy')}
                       </p>
                     </div>
                   </div>
@@ -1086,7 +1105,7 @@ export default function WholesaleStockUI() {
                       </div>
                     </div>
                   )) : (
-                    <p className="text-center text-sm text-slate-500 py-10">No recent transactions found.</p>
+                    <p className="text-center text-sm text-slate-500 py-10">{t('noRecentTransactions')}</p>
                   )}
                 </div>
               </div>
@@ -1099,35 +1118,35 @@ export default function WholesaleStockUI() {
                     <div key={b.id} className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <p className="font-bold text-sm text-slate-900 dark:text-white">Batch #{b.batchNumber || b.barcode || 'N/A'}</p>
-                          <p className="text-xs text-slate-500">Exp: {b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : 'N/A'}</p>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white">{t('batchLabel', { number: b.batchNumber || b.barcode || 'N/A' })}</p>
+                          <p className="text-xs text-slate-500">{t('expLabel', { date: b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : 'N/A' })}</p>
                         </div>
-                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">Qty: {b.quantity}{b.initialQuantity != null ? ` / ${b.initialQuantity}` : ''}</span>
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">{t('qtyLabel', { qty: `${b.quantity}${b.initialQuantity != null ? ` / ${b.initialQuantity}` : ''}` })}</span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
                         <div>
-                          <p className="text-slate-500">Cost</p>
+                          <p className="text-slate-500">{t('costLabel')}</p>
                           <p className="font-mono font-bold text-slate-700 dark:text-slate-300">{b.costPrice != null ? `₹${Number(b.costPrice).toLocaleString('en-IN')}` : '—'}</p>
                         </div>
                         <div>
-                          <p className="text-slate-500">Sell</p>
+                          <p className="text-slate-500">{t('sellLabel')}</p>
                           <p className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{b.sellingPrice != null ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : '—'}</p>
                         </div>
                         <div>
-                          <p className="text-slate-500">Purchased</p>
+                          <p className="text-slate-500">{t('purchasedLabel')}</p>
                           <p className="font-mono text-slate-600 dark:text-slate-400">{(b.purchaseDate || b.createdAt) ? new Date(b.purchaseDate || b.createdAt).toLocaleDateString('en-IN') : '—'}</p>
                         </div>
                       </div>
                     </div>
                   )) : (
-                    <p className="text-center text-sm text-slate-500 py-10">No active batches for this product.</p>
+                    <p className="text-center text-sm text-slate-500 py-10">{t('noActiveBatches')}</p>
                   )}
                 </div>
               </div>
             )}
 
             {activeTab === 'profit' && (
-               <ProfitabilityTab product={selectedProduct} />
+               <ProfitabilityTab product={selectedProduct} t={t} />
             )}
           </div>
           
@@ -1141,12 +1160,13 @@ export default function WholesaleStockUI() {
       )}
 
       {/* Slide-over Action Modals overlay */}
-      {actionModal === 'receive' && selectedProduct && (
-        <ReceiveDrawer 
-          product={selectedProduct} 
-          godowns={data.warehouses} 
-          onClose={() => setActionModal(null)} 
-          onSuccess={() => { handleDataRefresh(); setActionModal(null); }} 
+      {actionModal === 'receive' && (
+        <ReceiveDrawer
+          product={selectedProduct}
+          products={products}
+          godowns={data.warehouses}
+          onClose={() => setActionModal(null)}
+          onSuccess={() => { handleDataRefresh(); setActionModal(null); }}
         />
       )}
       {actionModal === 'transfer' && selectedProduct && (

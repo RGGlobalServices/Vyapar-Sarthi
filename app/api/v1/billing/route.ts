@@ -565,7 +565,22 @@ export const GET = handle(async (req) => {
   const sales = await prisma.sale.findMany({
     where: { shopId: shop.id },
     orderBy: { createdAt: 'desc' },
-    include: { customer: { select: { name: true, mobile: true, email: true } } },
+    include: {
+      customer: { select: { name: true, mobile: true, email: true } },
+      // Item NAMES only (not price/qty/etc) — just enough for the invoice
+      // list row to show what was actually sold ("Rice, Sugar +2 more")
+      // instead of the placeholder "? items" it fell back to before, since
+      // this list endpoint never carried `items` at all and the list row's
+      // `items?.length` was always undefined. Keeping this to name-only
+      // avoids bloating a query that already returns every sale for the shop.
+      //
+      // SaleItem.itemName is ONLY populated for manual/free-text items (see
+      // POST above — `itemName: pid ? null : ...`); a normal product-linked
+      // line has it null and its real name lives on the linked Product
+      // instead, so that has to be selected too or every ordinary sale shows
+      // "N items" instead of the product name.
+      items: { select: { itemName: true, product: { select: { name: true } } } },
+    },
   });
   return json(
     sales.map((s) => ({
@@ -584,6 +599,8 @@ export const GET = handle(async (req) => {
       customer_mobile: s.customer?.mobile || null,
       customer_email: s.customer?.email || null,
       created_at: s.createdAt,
+      item_count: s.items.length,
+      item_names: s.items.map((i) => i.itemName || i.product?.name).filter(Boolean),
     })),
   );
 });

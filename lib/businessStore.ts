@@ -76,6 +76,12 @@ interface BusinessStore {
   loading: boolean;
   // Multi-shop
   allShops: ShopSummary[];
+  // True when the most recent fetchAllShops() call failed (network/DB error)
+  // rather than genuinely returning zero shops — lets the UI tell "you have
+  // no shops yet" apart from "we couldn't check", so it never shows the
+  // first-time-setup prompt to an existing shop owner just because a request
+  // errored (see the "Create your first Shop" banner in Sidebar.tsx).
+  allShopsError: boolean;
   activeShopId: string | null;
   shopLimit: ShopLimit;
   // Owner-level preference: pool read-only data (Products, Stock, Dashboard,
@@ -226,6 +232,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   profile: { ...DEFAULT_PROFILE },
   loading: false,
   allShops: [],
+  allShopsError: false,
   activeShopId: null, // loaded from localStorage inside fetchAllShops (client-only) to avoid SSR hydration mismatch
   shopLimit: DEFAULT_SHOP_LIMIT,
   allShopAccess: false,
@@ -295,8 +302,21 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
       
       const selectedShopIds = Array.isArray(res.data?.selectedShopIds) ? res.data.selectedShopIds : [];
-      set({ allShops: shops, activeShopId: autoId, shopLimit, allShopAccess: res.data?.allShopAccess === true, selectedShopIds });
-    } catch {}
+      set({ allShops: shops, allShopsError: false, activeShopId: autoId, shopLimit, allShopAccess: res.data?.allShopAccess === true, selectedShopIds });
+    } catch {
+      // Leave any previously-loaded `allShops` as-is (stale-but-real data
+      // beats blanking it out), just flag that this attempt failed so the UI
+      // can distinguish "genuinely zero shops" from "couldn't check right now".
+      // Also fall back to the last-known activeShopId from localStorage when
+      // this is the first call this session (activeShopId still null) —
+      // otherwise every shop-scoped page's `useSWR(activeShopId ? [...] :
+      // null, ...)` guard stays blocked forever on a single transient
+      // failure, even though the shop id itself hasn't actually changed.
+      set((state) => ({
+        allShopsError: true,
+        activeShopId: state.activeShopId ?? (typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null),
+      }));
+    }
   },
 
   switchShop: async (shopId: string, preventReload = false) => {

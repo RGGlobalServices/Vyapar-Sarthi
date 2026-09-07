@@ -26,13 +26,17 @@ export async function exportDailyStockRegisterPDF(
   // Dynamically import to avoid Webpack 5 client-bundle chunking issues.
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
+  const { embedDevanagariFont, smartFont } = await import('./professionalTemplate');
 
   const doc = new jsPDF() as any;
+  await embedDevanagariFont(doc);
 
+  doc.setFont(smartFont(shopName), 'bold');
   doc.setFontSize(16);
   doc.setTextColor(16, 185, 129);
   doc.text('Daily Stock Register', 14, 20);
 
+  doc.setFont(smartFont(shopName), 'normal');
   doc.setFontSize(10);
   doc.setTextColor(100);
   doc.text(`Shop: ${shopName || 'Vyapar Sarthi'}`, 14, 28);
@@ -55,7 +59,7 @@ export async function exportDailyStockRegisterPDF(
     head: [['Product', 'Category', 'Rate (Rs)', 'Opening', 'Receive', 'Total', 'Close', 'Sale']],
     body,
     theme: 'grid',
-    styles: { fontSize: 8 },
+    styles: { fontSize: 8, font: 'NotoDevanagari' },
     headStyles: { fillColor: [16, 185, 129] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });

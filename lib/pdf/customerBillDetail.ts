@@ -1,4 +1,4 @@
-import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, fmtInr, type ShopHeader } from './professionalTemplate';
+import { PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, fmtInr, embedDevanagariFont, setSmartFont, type ShopHeader } from './professionalTemplate';
 
 export interface CustomerBillItem {
   name: string;
@@ -49,6 +49,7 @@ export async function generateCustomerBillPDF({
   ]);
 
   const doc = new jsPDF({ orientation: 'portrait' }) as any;
+  await embedDevanagariFont(doc);
   const isPayment = bill.type === 'payment';
   const title = isPayment ? 'Payment Detail' : 'Bill Detail';
 
@@ -59,10 +60,11 @@ export async function generateCustomerBillPDF({
 
   doc.setFillColor(...PDF_LAYOUT.accentSoft);
   doc.rect(L, y, R - L, 26, 'F');
-  doc.setFont('helvetica', 'bold');
+  const eName = entityName || 'Account';
+  setSmartFont(doc, eName, 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...PDF_LAYOUT.ink);
-  doc.text(entityName || 'Account', L + 3, y + 6);
+  doc.text(eName, L + 3, y + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);

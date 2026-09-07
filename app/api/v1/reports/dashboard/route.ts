@@ -4,6 +4,7 @@ import { handle, json, query } from '@/lib/server/http';
 import { getDateRange, startOfDay, endOfDay, formatDate } from '@/lib/server/dates';
 import { getDashboardCache, setDashboardCache } from '@/lib/server/dashboardCache';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { runBatched } from '@/lib/server/runBatched';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,11 +40,16 @@ export const GET = handle(async (req) => {
   const monthStart = startOfDay(`${todayYear}-${todayMonth}-01`);
 
   // None of these queries depend on each other's results, so they run
-  // concurrently instead of one round-trip at a time. Prisma's own client
-  // still caps actual concurrent DB connections at connection_limit (see
-  // DATABASE_URL), so this can't reopen the connection-exhaustion issue —
-  // it just lets independent queries queue/execute together instead of the
-  // request blocking on each one serially.
+  // concurrently rather than one round-trip at a time — but a plain
+  // Promise.all here previously fired all ~28 of them in the same instant,
+  // since a Prisma call starts its query the moment it's invoked, not when
+  // awaited. That alone can exceed DATABASE_URL's connection_limit before
+  // Promise.all ever starts waiting, and was a real contributor to this
+  // app's recurring "Too many database connections" errors — every
+  // dashboard load, including cache-miss refreshes, opened up to ~28
+  // connections at once, starving whatever else was running concurrently
+  // (sidebar profile fetch, notifications, calendar, …). runBatched defers
+  // each query behind a thunk and runs them a handful at a time instead.
   const [
     salesAndProfit,
     expensesAgg,
@@ -73,27 +79,27 @@ export const GET = handle(async (req) => {
     monthPurchasesAgg,
     allTimePurchasesAgg,
     supplierPayableAgg,
-  ] = await Promise.all([
-    prisma.sale.aggregate({
+  ] = await runBatched([
+    () => prisma.sale.aggregate({
       where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
       // amountPaid is what actually came into the drawer; totalAmount includes
       // the udhar portion that has not been paid yet.
       _sum: { totalAmount: true, totalProfit: true, amountPaid: true },
     }),
 
-    prisma.expense.aggregate({
+    () => prisma.expense.aggregate({
       where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
       _count: { id: true },
     }),
 
-    prisma.expense.aggregate({
+    () => prisma.expense.aggregate({
       where: { shopId: { in: shopIds }, date: { gte: todayStart, lte: todayEnd } },
       _sum: { amount: true },
       _count: { id: true },
     }),
 
-    prisma.expense.aggregate({
+    () => prisma.expense.aggregate({
       where: { shopId: { in: shopIds }, date: { gte: monthStart, lte: todayEnd } },
       _sum: { amount: true },
       _count: { id: true },
@@ -102,7 +108,7 @@ export const GET = handle(async (req) => {
     // Per-bill payment split, so collection can be reported by mode. A 'Split'
     // bill carries the breakdown in paymentDetails; anything else put its whole
     // paid amount through one mode.
-    prisma.sale.findMany({
+    () => prisma.sale.findMany({
       where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
       select: { paymentType: true, paymentDetails: true, amountPaid: true },
     }),
@@ -118,7 +124,7 @@ export const GET = handle(async (req) => {
     // came from. Party collections are still reported on their own in the
     // WholesaleWidgets partyCreditCollectionTotal/Today counters below;
     // this is additive, not double-counting.
-    prisma.$queryRaw<{ amount: number; note: string | null; type: string }[]>`
+    () => prisma.$queryRaw<{ amount: number; note: string | null; type: string }[]>`
       SELECT t.amount::float AS amount, t.note, t.type
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
@@ -128,14 +134,14 @@ export const GET = handle(async (req) => {
         AND t.created_at <= ${endDate}
     `,
 
-    prisma.customer.aggregate({
+    () => prisma.customer.aggregate({
       where: { shopId: { in: shopIds }, OR: [{ customerType: null }, { customerType: { not: 'party' } }] },
       _sum: { totalDue: true }
     }),
 
     // Low-stock count must match the low-stock list criteria below so the
     // dashboard badge and list agree.
-    prisma.$queryRaw<{ count: number }[]>`
+    () => prisma.$queryRaw<{ count: number }[]>`
       SELECT COUNT(*)::int as count
       FROM products
       WHERE shop_id = ANY(${shopIds}::uuid[])
@@ -148,7 +154,7 @@ export const GET = handle(async (req) => {
     // returns are marked settled:true in their note JSON so we don't
     // double-subtract them here. Legacy rows (no marker) are still summed
     // the old way so pre-existing dashboards keep the number they had.
-    prisma.$queryRaw<{ total: number; cnt: number }[]>`
+    () => prisma.$queryRaw<{ total: number; cnt: number }[]>`
       SELECT COALESCE(SUM(amount), 0)::float as total, COUNT(*)::int as cnt
       FROM material_returns
       WHERE shop_id = ANY(${shopIds}::uuid[])
@@ -159,7 +165,7 @@ export const GET = handle(async (req) => {
     // Grouped by reason — kept unfiltered so the "returns breakdown" card
     // still shows the full picture (legacy + new). It's display-only, doesn't
     // participate in the math.
-    prisma.materialReturn.groupBy({
+    () => prisma.materialReturn.groupBy({
       by: ['reason'],
       where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
@@ -172,7 +178,7 @@ export const GET = handle(async (req) => {
     // marginPerUnit at return time), so those are read straight out below
     // and NOT recomputed here. This was the source of the "profit minus"
     // bug: the old query used product's current selling_price which drifts.
-    prisma.$queryRaw<{ profit_lost: number }[]>`
+    () => prisma.$queryRaw<{ profit_lost: number }[]>`
       SELECT SUM(
         r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.cost_price, p.wholesale_cost, 0))
       )::float as profit_lost
@@ -183,7 +189,7 @@ export const GET = handle(async (req) => {
         AND (r.note IS NULL OR r.note NOT LIKE '%"settled":true%')
     `,
 
-    prisma.$queryRaw<{ realized_sales_profit: number }[]>`
+    () => prisma.$queryRaw<{ realized_sales_profit: number }[]>`
       SELECT SUM(
         CASE
           WHEN total_amount > 0 THEN (amount_paid / total_amount) * total_profit
@@ -194,7 +200,7 @@ export const GET = handle(async (req) => {
       WHERE shop_id = ANY(${shopIds}::uuid[]) AND created_at >= ${startDate} AND created_at <= ${endDate}
     `,
 
-    prisma.$queryRaw<{ total_udhar_paid: number }[]>`
+    () => prisma.$queryRaw<{ total_udhar_paid: number }[]>`
       SELECT SUM(t.amount)::float as total_udhar_paid
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
@@ -205,13 +211,13 @@ export const GET = handle(async (req) => {
         AND (c.customer_type IS NULL OR c.customer_type != 'party')
     `,
 
-    prisma.$queryRaw<{ total_profit: number, total_amount: number }[]>`
+    () => prisma.$queryRaw<{ total_profit: number, total_amount: number }[]>`
       SELECT SUM(total_profit)::float as total_profit, SUM(total_amount)::float as total_amount
       FROM sales
       WHERE shop_id = ANY(${shopIds}::uuid[])
     `,
 
-    prisma.$queryRaw<{ total_udhar_given: number }[]>`
+    () => prisma.$queryRaw<{ total_udhar_given: number }[]>`
       SELECT SUM(t.amount)::float as total_udhar_given
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
@@ -225,7 +231,7 @@ export const GET = handle(async (req) => {
     // Party credit (Udyog B2B wholesale AR) — current outstanding balance,
     // reported separately from retail Udhar above. Same Customer table,
     // customerType='party' is what the /party page already keys off.
-    prisma.customer.aggregate({
+    () => prisma.customer.aggregate({
       where: { shopId: { in: shopIds }, customerType: 'party' },
       _sum: { totalDue: true }
     }),
@@ -233,7 +239,7 @@ export const GET = handle(async (req) => {
     // All-time party-credit collections — deliberately NOT scoped to the
     // dashboard's startDate/endDate filter, same "total vs today" split the
     // expenses KPIs above already use.
-    prisma.$queryRaw<{ total: number }[]>`
+    () => prisma.$queryRaw<{ total: number }[]>`
       SELECT SUM(t.amount)::float as total
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
@@ -242,7 +248,7 @@ export const GET = handle(async (req) => {
         AND c.customer_type = 'party'
     `,
 
-    prisma.$queryRaw<{ total: number }[]>`
+    () => prisma.$queryRaw<{ total: number }[]>`
       SELECT SUM(t.amount)::float as total
       FROM customer_transactions t
       JOIN customers c ON t.customer_id = c.id
@@ -254,7 +260,7 @@ export const GET = handle(async (req) => {
     `,
 
     // Low stock
-    prisma.$queryRaw<any[]>`
+    () => prisma.$queryRaw<any[]>`
       SELECT id, name, category, current_stock, min_stock, shop_id
       FROM products
       WHERE shop_id = ANY(${shopIds}::uuid[])
@@ -265,7 +271,7 @@ export const GET = handle(async (req) => {
     `,
 
     // Recent bills
-    prisma.sale.findMany({
+    () => prisma.sale.findMany({
       where: { shopId: { in: shopIds } },
       orderBy: { createdAt: 'desc' },
       take: 5,
@@ -273,7 +279,7 @@ export const GET = handle(async (req) => {
     }),
 
     // Top Products by Value (Optimized)
-    prisma.$queryRaw<any[]>`
+    () => prisma.$queryRaw<any[]>`
       SELECT p.id, p.name, p.category, p.shop_id, s_agg.value, s_agg.qty
       FROM (
         SELECT si.product_id, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
@@ -288,7 +294,7 @@ export const GET = handle(async (req) => {
     `,
 
     // Fast moving by Qty (Optimized)
-    prisma.$queryRaw<any[]>`
+    () => prisma.$queryRaw<any[]>`
       SELECT p.id, p.name, p.category, p.shop_id, s_agg.qty, s_agg.value
       FROM (
         SELECT si.product_id, SUM(si.quantity) as qty, SUM(si.price_per_unit * si.quantity) as value
@@ -303,7 +309,7 @@ export const GET = handle(async (req) => {
     `,
 
     // Slow moving (Products with high stock and low/zero sales)
-    prisma.$queryRaw<any[]>`
+    () => prisma.$queryRaw<any[]>`
       SELECT p.id, p.name, p.category, p.shop_id, COALESCE(s_agg.qty, 0)::float as qty, p.current_stock
       FROM products p
       LEFT JOIN (
@@ -323,31 +329,31 @@ export const GET = handle(async (req) => {
     //    Aggregated on the purchase `date` (what the shopkeeper picks when
     //    recording the bill), same field the Purchases page keys off. ──
     // Period (respects the dashboard's timeframe filter, like today_sales).
-    prisma.purchaseInvoice.aggregate({
+    () => prisma.purchaseInvoice.aggregate({
       where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
       _sum: { totalCost: true }, _count: { id: true },
     }),
     // Fixed "today" (ignores the filter, like today_expenses).
-    prisma.purchaseInvoice.aggregate({
+    () => prisma.purchaseInvoice.aggregate({
       where: { shopId: { in: shopIds }, date: { gte: todayStart, lte: todayEnd } },
       _sum: { totalCost: true }, _count: { id: true },
     }),
     // Fixed "this month".
-    prisma.purchaseInvoice.aggregate({
+    () => prisma.purchaseInvoice.aggregate({
       where: { shopId: { in: shopIds }, date: { gte: monthStart, lte: todayEnd } },
       _sum: { totalCost: true }, _count: { id: true },
     }),
     // All-time total purchases (parallel to all-time sales).
-    prisma.purchaseInvoice.aggregate({
+    () => prisma.purchaseInvoice.aggregate({
       where: { shopId: { in: shopIds } },
       _sum: { totalCost: true }, _count: { id: true },
     }),
     // Total outstanding payable to suppliers (parallel to total_udhar owed to us).
-    prisma.supplier.aggregate({
+    () => prisma.supplier.aggregate({
       where: { shopId: { in: shopIds } },
       _sum: { balance: true },
     }),
-  ]);
+  ], 6);
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
@@ -480,8 +486,8 @@ export const GET = handle(async (req) => {
     },
     returnsByReason: returnsByReason.map(r => ({
       reason: r.reason,
-      amount: r._sum.amount || 0,
-      count: r._count.id || 0,
+      amount: r._sum?.amount || 0,
+      count: Number((r._count as any)?.id) || 0,
     })),
     lowStock: lowStock.map((p) => ({
       id: p.id,

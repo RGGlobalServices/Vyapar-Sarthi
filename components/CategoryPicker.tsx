@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
  * measurably slows typing; see feedback_memoize_derived_values_in_large_forms).
  */
 export function CategoryPicker({
-  value, onChange, suggestions, placeholder, className, required, autoFocus, renderLabel,
+  value, onChange, suggestions, placeholder, className, required, autoFocus, renderLabel, groups,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -32,6 +32,12 @@ export function CategoryPicker({
    *  changes what's shown in the dropdown row. */
   renderLabel?: (value: string) => string;
   autoFocus?: boolean;
+  /** Optional sectioned view of the same suggestion pool (e.g. a mill's
+   *  Grains / Pulses / Oil Seeds / By-Products taxonomy) — renders as a
+   *  labelled, professional-looking grouped list instead of one flat list.
+   *  Falls back to the plain `suggestions` list when omitted, so every
+   *  other caller of this component is unaffected. */
+  groups?: { label: string; options: string[] }[];
 }) {
   const [local, setLocal] = useState(value);
   const [open, setOpen] = useState(false);
@@ -57,6 +63,23 @@ export function CategoryPicker({
     return list.slice(0, 50); // keep the panel itself cheap even if a shop has hundreds of saved categories
   }, [local, suggestions]);
 
+  // Grouped view: filter within each group, drop groups left empty by the
+  // search, and flatten into one ordered index list so ArrowUp/ArrowDown/
+  // Enter keep working exactly as in the flat mode.
+  const filteredGroups = useMemo(() => {
+    if (!groups) return null;
+    const q = local.trim().toLowerCase();
+    return groups
+      .map(g => ({ label: g.label, options: q ? g.options.filter(o => o.toLowerCase().includes(q)) : g.options }))
+      .filter(g => g.options.length > 0);
+  }, [local, groups]);
+
+  const flatFromGroups = useMemo(
+    () => (filteredGroups ? filteredGroups.flatMap(g => g.options) : null),
+    [filteredGroups],
+  );
+  const navList = flatFromGroups ?? filtered;
+
   function commit(v: string) {
     const clean = v;
     setLocal(clean);
@@ -78,13 +101,48 @@ export function CategoryPicker({
         onFocus={() => setOpen(true)}
         onBlur={() => { if (local !== value) onChange(local); }}
         onKeyDown={e => {
-          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHighlight(h => Math.min(h + 1, filtered.length - 1)); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHighlight(h => Math.min(h + 1, navList.length - 1)); }
           else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
-          else if (e.key === 'Enter') { e.preventDefault(); commit(open && filtered[highlight] ? filtered[highlight] : local); inputRef.current?.blur(); }
+          else if (e.key === 'Enter') { e.preventDefault(); commit(open && navList[highlight] ? navList[highlight] : local); inputRef.current?.blur(); }
           else if (e.key === 'Escape') { setOpen(false); }
         }}
       />
-      {open && filtered.length > 0 && (
+      {open && filteredGroups && filteredGroups.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl py-1">
+          {(() => {
+            let idx = -1;
+            return filteredGroups.map(g => (
+              <div key={g.label}>
+                <div className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-slate-50 dark:bg-slate-900/40 sticky top-0">
+                  {g.label}
+                </div>
+                {g.options.map(s => {
+                  idx += 1;
+                  const i = idx;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onMouseEnter={() => setHighlight(i)}
+                      onClick={() => commit(s)}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-sm transition-colors',
+                        i === highlight
+                          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                      )}
+                    >
+                      {renderLabel ? (renderLabel(s) || s) : s}
+                    </button>
+                  );
+                })}
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+      {open && !filteredGroups && filtered.length > 0 && (
         <div className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl py-1">
           {filtered.map((s, i) => (
             <button

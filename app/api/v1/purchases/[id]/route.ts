@@ -233,6 +233,14 @@ export async function DELETE(req: Request, { params }: Ctx) {
     // Snapshot the `reverseStock` choice too so restore knows whether to
     // undo the stock-side of this delete (mirror of the delete direction).
     // Best-effort — never let a snapshot failure block the delete itself.
+    //
+    // The matched IDs are also reused below (see linkedSupplierTxnIds) to
+    // actually delete those ledger rows once the invoice itself is gone —
+    // this OR match (covers the normal "Purchase Invoice: <number>" note AND
+    // an imported invoice's "Imported purchase invoice" note) is the one
+    // source of truth for "which SupplierTransaction rows belong to this
+    // invoice", since there's no real FK between them.
+    let linkedSupplierTxnIds: string[] = [];
     try {
       const snapshotInvoice = await prisma.purchaseInvoice.findFirst({
         where: { id, shopId: auth.shop.id },
@@ -249,6 +257,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
             ],
           },
         });
+        linkedSupplierTxnIds = linkedSupplierTxns.map((t) => t.id);
         await recordDeletion({
           shopId: auth.shop.id,
           entityType: 'purchase_invoice',
@@ -281,6 +290,24 @@ export async function DELETE(req: Request, { params }: Ctx) {
     try {
       await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, invoice, { deleteBatches: reverseStock });
     } catch (e) { console.error('Purchase ledger/batch cleanup failed:', e); }
+
+    // Deterministic follow-up to the note-based match inside
+    // cleanupPurchaseLedgerAndBatches above: that helper only recognises the
+    // "Purchase Invoice: <number>" note pattern and requires amount to match
+    // exactly, so it silently leaves the SupplierTransaction row behind for
+    // an imported invoice (whose note is "Imported purchase invoice" instead)
+    // — the invoice disappears from the Purchases list and supplier.balance
+    // is still correctly decremented (that part never depended on this
+    // match), but the FIFO "Due Bills" / per-supplier ledger breakdown reads
+    // straight off SupplierTransaction rows, so that ghost row kept showing
+    // this deleted purchase as still outstanding. linkedSupplierTxnIds was
+    // matched with the broader OR above (same one used for the trash
+    // snapshot), so delete those exact rows by id instead of re-guessing.
+    if (linkedSupplierTxnIds.length) {
+      try {
+        await prisma.supplierTransaction.deleteMany({ where: { id: { in: linkedSupplierTxnIds } } });
+      } catch (e) { console.error('Supplier transaction cleanup failed:', e); }
+    }
 
     if (reverseStock) {
       try {

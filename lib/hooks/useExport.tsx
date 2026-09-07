@@ -308,6 +308,7 @@ export function useExport() {
     ]);
 
     const doc = new jsPDF({ orientation }) as any;
+    await tpl.embedDevanagariFont(doc);
     const shop = {
       name: profile.shopName || 'Vyapar Sarthi',
       address: profile.address || null,
@@ -354,11 +355,22 @@ export function useExport() {
         })
       );
 
+      // A fixed 9pt font leaves almost no room per column once a report has
+      // 15-20+ columns (e.g. the Food-Mill Product Master export) — autoTable
+      // then has to wrap every word letter-by-letter to fit, which reads as
+      // broken. Scale font/padding down as columns grow so wide reports stay
+      // readable; narrow reports (the vast majority) get the original 9pt.
+      const colCount = columns.length;
+      const fontSize = colCount > 16 ? 6 : colCount > 11 ? 7.5 : 9;
+      const cellPadding = colCount > 16 ? 1.5 : colCount > 11 ? 2 : 2.5;
+
       autoTable(doc, {
         startY: y,
         head: [columns.map(c => c.label)],
         body,
-        ...tpl.PROFESSIONAL_TABLE_STYLES,
+        ...tpl.getProfessionalTableStyles(true),
+        styles: { ...tpl.getProfessionalTableStyles(true).styles, fontSize, cellPadding },
+        headStyles: { ...tpl.getProfessionalTableStyles(true).headStyles, fontSize },
       });
       y = (doc.lastAutoTable?.finalY ?? y) + 12;
     }

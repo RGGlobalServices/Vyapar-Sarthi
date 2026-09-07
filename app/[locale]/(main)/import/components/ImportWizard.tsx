@@ -542,6 +542,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     const acc = { created: 0, updated: 0, skipped: 0, failed: 0 };
     const allProductIds: string[] = [];
     const allErrors: string[] = [];
+    let billPhotoAttachFailed = false;
     // Plain local var, NOT the `progress` state — this whole function runs as
     // one long-lived async closure, so reading React state mid-function only
     // ever sees the value from when the function was first called (state
@@ -625,6 +626,16 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         // creates the SupplierTransaction, and where server returns supplier
         // ids). Best-effort: any failure here just leaves the import as-is;
         // the products/stock changes are already committed.
+        //
+        // Retries each upload once — this step runs immediately after the
+        // main import's own DB writes, right when the connection pool is
+        // still under the most load, so a single transient "too many
+        // connections" blip here (observed live) silently dropped the photo
+        // even though the invoice/supplier/products all saved fine. A short
+        // pause + one retry rides out that same transient window instead of
+        // giving up on the first hiccup; `billPhotoAttachFailed` still
+        // surfaces on the done screen if it fails twice, so the shopkeeper
+        // knows to attach it manually rather than assuming it's there.
         if (importType === 'purchase' && s.supplierId && s.supplierTransactionId && files.length > 0) {
           try {
             // /suppliers/[id] has no GET; use the transactions endpoint which
@@ -634,11 +645,19 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             const existingDocs: any[] = supplierRes.data?.supplier?.documents || [];
             const newDocs: any[] = [];
             for (const file of files) {
-              const fd = new FormData();
-              fd.append('file', file);
-              fd.append('folder', 'supplier-docs');
-              const up = await api.post('/upload', fd);
-              if (up.data?.url) {
+              let up: any = null;
+              for (let attempt = 0; attempt < 2 && !up; attempt++) {
+                try {
+                  const fd = new FormData();
+                  fd.append('file', file);
+                  fd.append('folder', 'supplier-docs');
+                  up = await api.post('/upload', fd);
+                } catch (uploadErr) {
+                  if (attempt === 1) throw uploadErr;
+                  await new Promise(r => setTimeout(r, 1500));
+                }
+              }
+              if (up?.data?.url) {
                 newDocs.push({
                   id: crypto.randomUUID(),
                   url: up.data.url,
@@ -651,8 +670,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             if (newDocs.length > 0) {
               await api.patch(`/suppliers/${s.supplierId}`, { documents: [...existingDocs, ...newDocs] });
             }
+            if (newDocs.length < files.length) billPhotoAttachFailed = true;
           } catch (billPhotoErr) {
             console.warn('Auto-attach scanned bill to supplier failed:', billPhotoErr);
+            billPhotoAttachFailed = true;
           }
         }
 
@@ -670,7 +691,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
       localStorage.removeItem(RESUME_KEY);
       try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
-      setSummary({ totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds });
+      setSummary({ totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed });
       setStep('done');
       import('swr').then(({ mutate }) => {
         mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
@@ -1304,6 +1325,17 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 <ul className="list-disc pl-6 text-sm text-slate-600 dark:text-slate-400 max-h-48 overflow-y-auto space-y-1">
                   {summary.rowErrors.map((e: string, i: number) => <li key={i}>{e}</li>)}
                 </ul>
+              </div>
+            )}
+
+            {summary.billPhotoAttachFailed && (
+              <div className="mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-amber-500/30 rounded-xl">
+                <h4 className="font-bold flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-2">
+                  <AlertCircle size={16} /> Bill photo not attached
+                </h4>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  The purchase, supplier and stock all saved correctly, but the scanned bill photo couldn't be attached to the supplier (a temporary connection issue). Open the supplier's page and upload it there.
+                </p>
               </div>
             )}
 

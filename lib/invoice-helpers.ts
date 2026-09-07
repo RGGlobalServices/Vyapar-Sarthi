@@ -97,7 +97,10 @@ export function getInvoiceColumns(businessType: BusinessType | string): InvoiceC
       labelKey: 'qty',
       align: 'center',
       width: 'w-8',
-      render: (item) => item.quantity
+      render: (item) => {
+        const u = item.unit && item.unit !== 'Unit' ? ` ${item.unit}` : '';
+        return `${item.quantity}${u}`;
+      }
     },
     {
       id: 'rate',

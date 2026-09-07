@@ -7,7 +7,8 @@ import {
   renderSignatureBlock,
   ensureRoom,
   fmtInr,
-  PROFESSIONAL_TABLE_STYLES,
+  embedDevanagariFont,
+  getProfessionalTableStyles,
   PDF_LAYOUT,
   type ShopHeader,
   type SummaryItem,
@@ -51,6 +52,7 @@ export async function exportReportPDF({
   const { default: autoTable } = await import('jspdf-autotable');
 
   const doc = new jsPDF() as any;
+  await embedDevanagariFont(doc);
   const shopHeader: ShopHeader = shop || { name: shopName || 'Vyapar Sarthi' };
 
   // 1. Header
@@ -83,7 +85,7 @@ export async function exportReportPDF({
         { content: fmtInr(d.sales ?? d.revenue), styles: { halign: 'right' } },
         { content: fmtInr(d.profit), styles: { halign: 'right' } },
       ]),
-      ...PROFESSIONAL_TABLE_STYLES,
+      ...getProfessionalTableStyles(true),
     });
     y = (doc.lastAutoTable?.finalY ?? y) + 8;
   }
@@ -102,7 +104,7 @@ export async function exportReportPDF({
         { content: fmtInr(p.value ?? p.revenue), styles: { halign: 'right' } },
         { content: String(p.qty ?? 0), styles: { halign: 'right' } },
       ]),
-      ...PROFESSIONAL_TABLE_STYLES,
+      ...getProfessionalTableStyles(true),
     });
     y = (doc.lastAutoTable?.finalY ?? y) + 8;
   }
@@ -120,7 +122,7 @@ export async function exportReportPDF({
         { content: String(c.qty ?? 0), styles: { halign: 'right' } },
         { content: `${c.percentage ?? 0}%`, styles: { halign: 'right' } },
       ]),
-      ...PROFESSIONAL_TABLE_STYLES,
+      ...getProfessionalTableStyles(true),
     });
     y = (doc.lastAutoTable?.finalY ?? y) + 12;
   }
