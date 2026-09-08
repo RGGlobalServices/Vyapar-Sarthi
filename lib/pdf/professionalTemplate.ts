@@ -38,20 +38,40 @@ export function hasDevanagari(s: string | null | undefined): boolean {
  *  before any text drawing. After this, use `setFont('NotoDevanagari', …)`
  *  for any text that may contain Devanagari characters, or use the helper
  *  `setSmartFont()` which auto-detects. */
+// Whether the Devanagari font chunk has successfully loaded this session —
+// null until the first embedDevanagariFont() call resolves. Tracked at
+// module scope (not per-doc) so every caller of smartFont()/setSmartFont()
+// can fall back to helvetica without needing a doc reference, and so one
+// failed load doesn't retry (and potentially fail again) on every single
+// PDF export in the session.
+let devanagariAvailable: boolean | null = null;
+
 export async function embedDevanagariFont(doc: any): Promise<void> {
-  const path = './devanagariFont';
-  const fontMod = await import(/* webpackChunkName: "devanagari-font" */ path);
-  doc.addFileToVFS('NotoSansDevanagari-Regular.ttf', fontMod.NOTO_DEVANAGARI_REGULAR);
-  doc.addFont('NotoSansDevanagari-Regular.ttf', 'NotoDevanagari', 'normal');
-  doc.addFileToVFS('NotoSansDevanagari-Bold.ttf', fontMod.NOTO_DEVANAGARI_BOLD);
-  doc.addFont('NotoSansDevanagari-Bold.ttf', 'NotoDevanagari', 'bold');
+  try {
+    // Literal path, not a variable — webpack needs this to statically
+    // resolve and code-split the module.
+    const fontMod = await import('./devanagariFont');
+    doc.addFileToVFS('NotoSansDevanagari-Regular.ttf', fontMod.NOTO_DEVANAGARI_REGULAR);
+    doc.addFont('NotoSansDevanagari-Regular.ttf', 'NotoDevanagari', 'normal');
+    doc.addFileToVFS('NotoSansDevanagari-Bold.ttf', fontMod.NOTO_DEVANAGARI_BOLD);
+    doc.addFont('NotoSansDevanagari-Bold.ttf', 'NotoDevanagari', 'bold');
+    devanagariAvailable = true;
+  } catch (err) {
+    // Best-effort: a shopkeeper's PDF/Excel/CSV export must still work even
+    // if this optional font chunk fails to load (observed in dev: a
+    // ChunkLoadError on this lazy chunk) — Devanagari text just falls back
+    // to helvetica (renders as boxes) instead of the whole export silently
+    // erroring out with nothing downloaded.
+    console.warn('Devanagari font failed to load — PDF will fall back to Latin-only text.', err);
+    devanagariAvailable = false;
+  }
 }
 
 /** Pick the right font for a text string: NotoDevanagari if it contains
- *  Devanagari script, otherwise helvetica. Assumes embedDevanagariFont()
- *  has been called on this doc. */
+ *  Devanagari script AND the font successfully embedded this session,
+ *  otherwise helvetica. Assumes embedDevanagariFont() has been called. */
 export function smartFont(text: string | null | undefined): string {
-  return hasDevanagari(text) ? 'NotoDevanagari' : 'helvetica';
+  return hasDevanagari(text) && devanagariAvailable !== false ? 'NotoDevanagari' : 'helvetica';
 }
 
 /** Convenience: set font on doc based on text content + style. */
@@ -244,7 +264,10 @@ export const fmtInr = (n: number | null | undefined): string => {
  *  Uses NotoDevanagari when embedDevanagariFont() has been called on the doc
  *  (covers both Latin and Devanagari); falls back to helvetica otherwise. */
 export function getProfessionalTableStyles(useDevanagari = false) {
-  const font = useDevanagari ? 'NotoDevanagari' : 'helvetica';
+  // Never hand jsPDF-autotable a font name that wasn't actually registered —
+  // if embedDevanagariFont() failed this session, every row would throw
+  // trying to use it, not just ones with Devanagari text.
+  const font = useDevanagari && devanagariAvailable !== false ? 'NotoDevanagari' : 'helvetica';
   return {
     theme: 'grid' as const,
     styles: {

@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, Scale, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Plus, X, Loader2, Scale, CheckCircle2, ArrowRight, Search, LogOut } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
+import { ExportButton } from '@/lib/hooks/useExport';
 
 type WeighbridgeEntry = {
   id: string; slipNumber: string; vehicleNumber: string; materialDescription: string | null;
@@ -15,7 +16,7 @@ type WeighbridgeEntry = {
   moisturePct: number | null; ratePerKg: number | null;
   status: 'first_weighed' | 'completed' | 'converted';
   gateEntryId: string | null; createdAt: string;
-  gateEntry?: { id: string; entryNumber: string } | null;
+  gateEntry?: { id: string; entryNumber: string; status?: string } | null;
   product?: { id: string; name: string } | null;
   supplier?: { id: string; name: string } | null;
 };
@@ -31,6 +32,26 @@ const statusTone = (s: string) => s === 'converted'
     ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
     : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300';
 
+type DateFilter = 'today' | 'yesterday' | '7d' | '30d' | 'all' | 'custom';
+
+function isoDate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Same date-filter → from/to resolver as Gate Entry, kept local to avoid a
+ *  cross-page import just for this one small helper. */
+function resolveRange(filter: DateFilter, customFrom: string, customTo: string): { from: string | null; to: string | null } {
+  const now = new Date();
+  switch (filter) {
+    case 'today': return { from: isoDate(now), to: isoDate(now) };
+    case 'yesterday': { const d = new Date(now); d.setDate(d.getDate() - 1); return { from: isoDate(d), to: isoDate(d) }; }
+    case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: isoDate(d), to: isoDate(now) }; }
+    case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: isoDate(d), to: isoDate(now) }; }
+    case 'custom': return { from: customFrom || null, to: customTo || null };
+    case 'all': default: return { from: null, to: null };
+  }
+}
+
 export default function WeighbridgePage() {
   const t = useTranslations('Weighbridge');
   const router = useRouter();
@@ -39,9 +60,27 @@ export default function WeighbridgePage() {
   const prefilledGateEntryId = searchParams.get('gateEntryId');
   const activeShopId = useBusinessStore(s => s.activeShopId);
 
+  const [dateFilter, setDateFilter] = useState<DateFilter>('30d');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'' | 'first_weighed' | 'completed' | 'converted'>('');
+
+  const { from, to } = useMemo(() => resolveRange(dateFilter, customFrom, customTo), [dateFilter, customFrom, customTo]);
+
+  const queryString = useMemo(() => {
+    const p = new URLSearchParams();
+    if (from) p.set('from', from);
+    if (to) p.set('to', to);
+    if (search.trim()) p.set('search', search.trim());
+    if (statusFilter) p.set('status', statusFilter);
+    const qs = p.toString();
+    return qs ? `?${qs}` : '';
+  }, [from, to, search, statusFilter]);
+
   const { data: entries = [], mutate: refetch, isLoading } = useSWR<WeighbridgeEntry[]>(
-    activeShopId ? ['/mill/weighbridge', activeShopId] : null,
-    ([u]) => fetcher(u),
+    activeShopId ? ['/mill/weighbridge', activeShopId, queryString] : null,
+    ([u, , qs]) => fetcher(`${u}${qs}`),
     { revalidateOnFocus: true }
   );
   const { data: products = [] } = useSWR<Product[]>(
@@ -64,8 +103,28 @@ export default function WeighbridgePage() {
     converted: entries.filter(e => e.status === 'converted').length,
   };
 
+  const exportRows = useMemo(() => entries.map(e => ({
+    slipNumber: e.slipNumber,
+    date: e.createdAt,
+    vehicleNumber: e.vehicleNumber,
+    productMaterial: e.product?.name || e.materialDescription || '',
+    supplier: e.supplier?.name || '',
+    gross: e.grossWeightKg ?? '',
+    tare: e.tareWeightKg ?? '',
+    net: e.netWeightKg ?? '',
+    moisture: e.moisturePct ?? '',
+    rate: e.ratePerKg ?? '',
+    status: t(e.status),
+  })), [entries, t]);
+
+  const dateRangeLabel = dateFilter === 'all'
+    ? t('dateAllTime')
+    : from && to
+      ? (from === to ? new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : `${new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`)
+      : undefined;
+
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -73,12 +132,42 @@ export default function WeighbridgePage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">{t('subtitle')}</p>
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
-        >
-          <Plus size={18} /> {t('newWeighment')}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <ExportButton
+            filename="weighbridge_register"
+            title={t('registerTitle')}
+            dateRange={dateRangeLabel}
+            summary={[
+              { label: t('statTotalEntries'), value: String(entries.length) },
+              { label: t('statCompleted'), value: String(stats.completed + stats.converted) },
+              { label: t('statConverted'), value: String(stats.converted) },
+            ]}
+            columns={[
+              { key: 'slipNumber', label: t('colSlipNo') },
+              { key: 'date', label: t('colDate'), type: 'date' },
+              { key: 'vehicleNumber', label: t('vehicleNumber') },
+              { key: 'productMaterial', label: t('colProductMaterial') },
+              { key: 'supplier', label: t('colSupplier') },
+              { key: 'gross', label: t('colGross'), type: 'number' },
+              { key: 'tare', label: t('colTare'), type: 'number' },
+              { key: 'net', label: t('colNet'), type: 'number' },
+              { key: 'moisture', label: t('colMoisture'), type: 'number' },
+              { key: 'rate', label: t('colRate'), type: 'currency' },
+              { key: 'status', label: t('colStatus') },
+            ]}
+            data={exportRows}
+            // 11 columns — same "too wide for A4 portrait" fix as the Gate
+            // Entry register (see that page's ExportButton for the full
+            // reasoning).
+            orientation="landscape"
+          />
+          <button
+            onClick={() => setCreating(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
+          >
+            <Plus size={18} /> {t('newWeighment')}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -87,6 +176,58 @@ export default function WeighbridgePage() {
         <StatCard label={t('statConverted')} value={stats.converted} tone="emerald" />
       </div>
 
+      {/* ── Filters: date range, search, status — everything the register
+          table + export below reads from. */}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 sm:p-4 space-y-3">
+        <div className="flex flex-wrap gap-1.5">
+          {(['today', 'yesterday', '7d', '30d', 'all', 'custom'] as DateFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setDateFilter(f)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                dateFilter === f
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              )}
+            >
+              {t(`date${f === '7d' ? '7Days' : f === '30d' ? '30Days' : f.charAt(0).toUpperCase() + f.slice(1)}`)}
+            </button>
+          ))}
+        </div>
+
+        {dateFilter === 'custom' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+            <span className="text-xs text-slate-400">{t('to')}</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={t('searchPlaceholder')}
+              className="w-full h-9 pl-9 pr-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
+            />
+          </div>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
+            className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
+            <option value="">{t('filterAllStatuses')}</option>
+            <option value="first_weighed">{t('first_weighed')}</option>
+            <option value="completed">{t('completed')}</option>
+            <option value="converted">{t('converted')}</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ── Register table — a diary-style row per weighment, newest first,
+          same data the export buttons above turn into PDF/Excel/CSV/Print. */}
       {isLoading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
       ) : entries.length === 0 ? (
@@ -95,29 +236,45 @@ export default function WeighbridgePage() {
           <p className="mt-3 text-sm text-slate-500">{t('noEntries')}</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
-          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-            {entries.map(e => (
-              <li key={e.id} onClick={() => setSelectedId(e.id)} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-black text-slate-900 dark:text-white">{e.slipNumber}</span>
-                      <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full', statusTone(e.status))}>{t(e.status)}</span>
-                      <span className="text-xs font-semibold text-slate-500">{e.vehicleNumber}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {e.supplier?.name ? `${e.supplier.name} · ` : ''}
-                      {e.product?.name ? `${e.product.name} · ` : (e.materialDescription ? `${e.materialDescription} · ` : '')}
-                      {t('gross')} {e.grossWeightKg ?? '—'} Kg
-                      {e.tareWeightKg != null && ` · ${t('tare')} ${e.tareWeightKg} Kg`}
-                      {e.netWeightKg != null && ` · ${t('net')} ${e.netWeightKg} Kg`}
-                    </p>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-[10px] uppercase tracking-wider text-slate-500">
+                <th className="text-left px-4 py-2.5 font-bold">{t('colSlipNo')}</th>
+                <th className="text-left px-3 py-2.5 font-bold">{t('colDate')}</th>
+                <th className="text-left px-3 py-2.5 font-bold">{t('vehicleNumber')}</th>
+                <th className="text-left px-3 py-2.5 font-bold">{t('colProductMaterial')}</th>
+                <th className="text-left px-3 py-2.5 font-bold">{t('colSupplier')}</th>
+                <th className="text-right px-3 py-2.5 font-bold">{t('colGross')}</th>
+                <th className="text-right px-3 py-2.5 font-bold">{t('colTare')}</th>
+                <th className="text-right px-3 py-2.5 font-bold">{t('colNet')}</th>
+                <th className="text-right px-3 py-2.5 font-bold">{t('colRate')}</th>
+                <th className="text-left px-4 py-2.5 font-bold">{t('colStatus')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {entries.map(e => (
+                <tr key={e.id} onClick={() => setSelectedId(e.id)} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors">
+                  <td className="px-4 py-2.5 font-black text-slate-900 dark:text-white whitespace-nowrap">{e.slipNumber}</td>
+                  <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                    {new Date(e.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </td>
+                  <td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">{e.vehicleNumber}</td>
+                  <td className="px-3 py-2.5 text-slate-500">{e.product?.name || e.materialDescription || '—'}</td>
+                  <td className="px-3 py-2.5 text-slate-500">{e.supplier?.name || '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-600 dark:text-slate-300 whitespace-nowrap">{e.grossWeightKg ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-600 dark:text-slate-300 whitespace-nowrap">{e.tareWeightKg ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">{e.netWeightKg ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-500 whitespace-nowrap">{e.ratePerKg != null ? `₹${e.ratePerKg}` : '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap', statusTone(e.status))}>
+                      {t(e.status)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -163,6 +320,33 @@ function CreateWeighmentModal({ products, suppliers, prefilledGateEntryId, onClo
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [prefillLoading, setPrefillLoading] = useState(!!prefilledGateEntryId);
+
+  // The "vehicle and supplier will carry over" note below promises this, but
+  // the server only fills them in from the gate entry when the form fields
+  // are left blank — the form itself never actually pre-filled them, so
+  // Vehicle Number stayed empty and (being `required`) blocked the Record
+  // button until the shopkeeper retyped a number they'd already entered once
+  // at the gate. Fetch that gate entry's own data here so the field shows
+  // what's actually about to be submitted.
+  useEffect(() => {
+    if (!prefilledGateEntryId) return;
+    let cancelled = false;
+    api.get(`/mill/gate-entries/${prefilledGateEntryId}`)
+      .then(res => {
+        if (cancelled) return;
+        const gate = res.data;
+        setForm(f => ({
+          ...f,
+          vehicleNumber: gate.vehicleNumber || f.vehicleNumber,
+          supplierId: gate.supplierId || f.supplierId,
+          materialDescription: gate.materialDescription || f.materialDescription,
+        }));
+      })
+      .catch(() => { /* best-effort — shopkeeper can still type the vehicle number manually */ })
+      .finally(() => { if (!cancelled) setPrefillLoading(false); });
+    return () => { cancelled = true; };
+  }, [prefilledGateEntryId]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,11 +378,15 @@ function CreateWeighmentModal({ products, suppliers, prefilledGateEntryId, onClo
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
           {prefilledGateEntryId && (
-            <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 rounded-lg px-3 py-2">{t('linkedFromGateEntry')}</p>
+            <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 rounded-lg px-3 py-2 flex items-center gap-2">
+              {prefillLoading && <Loader2 size={12} className="animate-spin shrink-0" />}
+              {t('linkedFromGateEntry')}
+            </p>
           )}
           <Field label={t('vehicleNumber')} required>
             <input autoFocus value={form.vehicleNumber} onChange={e => setForm(f => ({ ...f, vehicleNumber: e.target.value.toUpperCase() }))}
-              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" placeholder="MH12AB1234" required />
+              disabled={prefillLoading}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm disabled:opacity-60" placeholder="MH12AB1234" required />
           </Field>
           <Field label={t('materialProduct')}>
             <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
@@ -260,6 +448,28 @@ function WeighmentDetailModal({ entry, onClose, onChanged }: {
   const [converting, setConverting] = useState(false);
   const [convertResult, setConvertResult] = useState<any | null>(null);
 
+  // Converting to a Raw Material Lot already marks the linked gate entry
+  // exited server-side (see convert-to-lot/route.ts) — but not every
+  // weighment ends in a lot (outward trucks, by-products, or a shopkeeper who
+  // just wants the vehicle logged out without starting a Production lot
+  // right now). Without this, the only way to close out the gate entry was
+  // to leave this screen and find it again on the Gate Entry page.
+  const [exiting, setExiting] = useState(false);
+  const [exitedNow, setExitedNow] = useState(false);
+  const alreadyExited = entry.gateEntry?.status === 'exited' || exitedNow;
+
+  const markVehicleExited = async () => {
+    if (!entry.gateEntryId) return;
+    setExiting(true); setError('');
+    try {
+      await api.patch(`/mill/gate-entries/${entry.gateEntryId}`, { markExited: true });
+      setExitedNow(true);
+      onChanged();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || t('failedToMarkExited'));
+    } finally { setExiting(false); }
+  };
+
   const recordTare = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true); setError('');
@@ -303,6 +513,24 @@ function WeighmentDetailModal({ entry, onClose, onChanged }: {
             <StatMini label={t('tare')} v={entry.tareWeightKg} />
             <StatMini label={t('net')} v={entry.netWeightKg} bold />
           </div>
+
+          {entry.gateEntryId && (
+            alreadyExited ? (
+              <p className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                {t('vehicleExitedNote', { entryNumber: entry.gateEntry?.entryNumber || '' })}
+              </p>
+            ) : (
+              <button
+                onClick={markVehicleExited}
+                disabled={exiting}
+                className="w-full h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {exiting ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />}
+                {t('markVehicleExited', { entryNumber: entry.gateEntry?.entryNumber || '' })}
+              </button>
+            )
+          )}
 
           {entry.status === 'first_weighed' && (
             <form onSubmit={recordTare} className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 space-y-3">

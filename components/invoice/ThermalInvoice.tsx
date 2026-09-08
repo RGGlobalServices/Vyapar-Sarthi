@@ -61,7 +61,7 @@ export interface BaseInvoiceProps {
   // layouts, so ThermalInvoice ignores this) + accent color for the theme's
   // header/borders/highlights. '' / null / undefined color means no accent —
   // the original plain black-on-white look.
-  invoiceTheme?: 'standard' | 'modern' | 'stylish' | 'advanced_gst';
+  invoiceTheme?: 'standard' | 'modern' | 'stylish' | 'advanced_gst' | 'minimal';
   invoiceColor?: string | null;
   invoiceFooter?: string | null;
   showQrCode?: boolean;

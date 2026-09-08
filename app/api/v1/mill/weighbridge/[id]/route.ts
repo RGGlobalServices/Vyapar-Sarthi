@@ -30,7 +30,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   const entry = await (prisma as any).weighbridgeEntry.findFirst({
     where: { id, shopId: shop.id },
     include: {
-      gateEntry: { select: { id: true, entryNumber: true, driverName: true, driverMobile: true } },
+      gateEntry: { select: { id: true, entryNumber: true, driverName: true, driverMobile: true, status: true } },
       product: { select: { id: true, name: true, baseUnit: true } },
       supplier: { select: { id: true, name: true, mobile: true } },
       rawLot: { select: { id: true, lotNumber: true } },

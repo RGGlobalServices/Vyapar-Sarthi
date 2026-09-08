@@ -60,6 +60,14 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   const isModern = theme === 'modern';
   const isStylish = theme === 'stylish';
   const isAdvancedGst = theme === 'advanced_gst';
+  // 'minimal' — thin light-grey rules everywhere instead of a bold black/
+  // accent border, no filled color bands anywhere (table header included);
+  // the accent (when chosen) only tints text/thin lines. Reads clean with
+  // "No Color" too — the deliberately understated look modern invoicing
+  // tools (Zoho, QuickBooks, Stripe) default to, next to the other three
+  // themes' bolder, more traditional Indian-tax-invoice look.
+  const isMinimal = theme === 'minimal';
+  const hairline = '#e2e8f0';
 
   // Transport/Loading/Packing/Other charges ride in the same items array (so
   // they persist with the sale for reprints) but aren't goods — pulling them
@@ -91,8 +99,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   return (
     <div
       ref={ref}
-      style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Calibri, sans-serif', borderColor: isModern ? accent : '#0f172a' }}
-      className="w-full max-w-[800px] mx-auto text-sm leading-snug min-h-[1056px] flex flex-col border-2"
+      style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Calibri, sans-serif', borderColor: isMinimal ? hairline : (isModern ? accent : '#0f172a') }}
+      className={`w-full max-w-[800px] mx-auto text-sm leading-snug min-h-[1056px] flex flex-col ${isMinimal ? 'border' : 'border-2'}`}
     >
       <div className="p-8 flex flex-col flex-1">
         {/* Letterhead — 'modern' fills the whole band with the accent color
@@ -102,17 +110,17 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
             badge/barcode area when one is chosen. */}
         <div
           style={{
-            borderBottomColor: isModern ? 'transparent' : accent,
+            borderBottomColor: isModern ? 'transparent' : (isMinimal ? hairline : accent),
             backgroundColor: isModern ? accent : undefined,
             color: isModern ? '#ffffff' : undefined,
             borderLeft: isStylish ? `10px solid ${accent}` : undefined,
           }}
-          className={`flex justify-between items-start gap-6 pb-5 mb-6 ${isModern ? 'rounded-xl p-5 border-b-0' : 'border-b-2'} ${isStylish ? 'pl-5' : ''}`}
+          className={`flex justify-between items-start gap-6 pb-5 mb-6 ${isModern ? 'rounded-xl p-5 border-b-0' : (isMinimal ? 'border-b' : 'border-b-2')} ${isStylish ? 'pl-5' : ''}`}
         >
           <div className="flex gap-4">
             {logoUrl && <img src={logoUrl} alt="Logo" className="max-h-20 object-contain" />}
             <div>
-              <h1 className={`font-black uppercase tracking-tight ${isStylish ? 'text-4xl' : 'text-3xl'}`}>{storeName || t('storeNameFallback')}</h1>
+              <h1 style={{ color: isMinimal && accent !== '#0f172a' ? accent : undefined }} className={`font-black uppercase tracking-tight ${isStylish ? 'text-4xl' : 'text-3xl'}`}>{storeName || t('storeNameFallback')}</h1>
               <div className={`mt-1.5 space-y-0.5 text-xs ${isModern ? 'opacity-90' : 'text-slate-600'}`}>
                 {storeAddress && <p>{storeAddress}</p>}
                 <p>
@@ -126,8 +134,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
 
           <div className="text-right shrink-0">
             <h2
-              style={{ borderColor: isModern ? '#ffffff' : accent, color: isModern ? '#ffffff' : accent }}
-              className="text-2xl font-black uppercase tracking-wide border-2 px-3 py-1 inline-block mb-2"
+              style={{ borderColor: isModern ? '#ffffff' : accent, color: isModern ? '#ffffff' : accent, borderWidth: isMinimal ? 1 : 2 }}
+              className="text-2xl font-black uppercase tracking-wide border px-3 py-1 inline-block mb-2"
             >
               {isGstBill ? (t('gstInvoice') || 'Tax Invoice') : (t('invoiceLabel') || 'Invoice')}
             </h2>
@@ -140,8 +148,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
         </div>
 
         {/* Bill To / Payment meta */}
-        <div style={{ borderColor: accent }} className="grid grid-cols-2 border mb-6">
-          <div style={{ borderColor: accent }} className="p-3 border-r">
+        <div style={{ borderColor: isMinimal ? hairline : accent }} className="grid grid-cols-2 border mb-6">
+          <div style={{ borderColor: isMinimal ? hairline : accent }} className="p-3 border-r">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">Bill To</h3>
             <p className="font-bold text-base">{customerName || 'Cash Customer'}</p>
             {customerMobile && <p className="text-slate-600 mt-0.5 text-xs">{customerMobile}</p>}
@@ -173,9 +181,12 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
 
         {/* Items table */}
         <div className="flex-1">
-          <table style={{ borderColor: accent }} className="w-full border mb-6">
+          <table style={{ borderColor: isMinimal ? hairline : accent }} className="w-full border mb-6">
             <thead>
-              <tr style={{ backgroundColor: accent }} className="text-white text-[11px] uppercase tracking-wide">
+              <tr
+                style={{ backgroundColor: isMinimal ? undefined : accent, color: isMinimal ? accent : '#ffffff', borderBottom: isMinimal ? `2px solid ${accent}` : undefined }}
+                className="text-[11px] uppercase tracking-wide"
+              >
                 <th className="py-2 px-3 text-left font-bold w-8">#</th>
                 {columns.map((col) => (
                   <th key={col.id} className={`py-2 px-3 text-${col.align} font-bold`}>{t(col.labelKey) || col.labelKey}</th>
@@ -259,8 +270,11 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
             </table>
           )}
           {isGstBill && gstBreakdown && !isAdvancedGst && gstBreakdown.groups.length > 0 && (
-            <table style={{ borderColor: accent }} className="w-full border mb-6">
-              <caption style={{ backgroundColor: accent }} className="text-white text-[11px] font-bold uppercase tracking-wide px-3 py-2 text-left caption-top">
+            <table style={{ borderColor: isMinimal ? hairline : accent }} className="w-full border mb-6">
+              <caption
+                style={{ backgroundColor: isMinimal ? undefined : accent, color: isMinimal ? accent : '#ffffff', borderBottom: isMinimal ? `2px solid ${accent}` : undefined }}
+                className="text-[11px] font-bold uppercase tracking-wide px-3 py-2 text-left caption-top"
+              >
                 {t('gstSummary') || 'GST Tax Summary'}
               </caption>
               <thead>
@@ -354,7 +368,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
           </div>
 
           <div className="w-1/2 max-w-[340px]">
-            <div style={{ borderColor: accent }} className="border">
+            <div style={{ borderColor: isMinimal ? hairline : accent }} className="border">
               <div className="p-4 space-y-1.5 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500">{t('subtotal')}</span>
@@ -409,8 +423,12 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
               </div>
 
               <div
-                style={{ borderTopColor: accent, backgroundColor: isModern || isStylish ? accent : undefined, color: isModern || isStylish ? '#ffffff' : undefined }}
-                className={`flex justify-between items-center px-4 py-3 border-t-2 ${isModern || isStylish ? '' : 'bg-slate-50'}`}
+                style={{
+                  borderTopColor: isMinimal ? hairline : accent,
+                  backgroundColor: isModern || isStylish ? accent : undefined,
+                  color: isModern || isStylish ? '#ffffff' : (isMinimal ? accent : undefined),
+                }}
+                className={`flex justify-between items-center px-4 py-3 border-t-2 ${isModern || isStylish ? '' : (isMinimal ? '' : 'bg-slate-50')}`}
               >
                 <span className="text-base font-black uppercase">{t('total')}</span>
                 <span className="text-xl font-black">₹{total.toLocaleString('en-IN')}</span>
@@ -494,7 +512,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
               ) : (
                 <div className="h-14 mb-2" />
               )}
-              <div style={{ borderColor: accent }} className="w-44 mx-auto border-t pt-1.5 text-xs">
+              <div style={{ borderColor: isMinimal ? hairline : accent }} className="w-44 mx-auto border-t pt-1.5 text-xs">
                 Authorized Signatory
               </div>
             </div>
@@ -503,7 +521,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
       </div>
 
       {/* Brand Footer */}
-      <div style={{ borderColor: accent }} className="px-8 py-3 border-t-2 text-center text-slate-400 text-[10px]">
+      <div style={{ borderColor: isMinimal ? hairline : accent }} className={`px-8 py-3 ${isMinimal ? 'border-t' : 'border-t-2'} text-center text-slate-400 text-[10px]`}>
         <p>Generated by <strong>Vyapar Sarthi</strong> — The Smart Retail Management System</p>
       </div>
     </div>

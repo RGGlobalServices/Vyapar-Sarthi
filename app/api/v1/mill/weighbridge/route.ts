@@ -30,20 +30,39 @@ export const GET = handle(async (req) => {
   const url = new URL(req.url);
   const status = url.searchParams.get('status'); // 'first_weighed' | 'completed' | 'converted'
   const gateEntryId = url.searchParams.get('gateEntryId');
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  const search = url.searchParams.get('search')?.trim();
 
   const where: any = { shopId: shop.id };
   if (status) where.status = status;
   if (gateEntryId) where.gateEntryId = gateEntryId;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from);
+    if (to) { const end = new Date(to); end.setHours(23, 59, 59, 999); where.createdAt.lte = end; }
+  }
+  if (search) {
+    where.OR = [
+      { vehicleNumber: { contains: search, mode: 'insensitive' } },
+      { slipNumber: { contains: search, mode: 'insensitive' } },
+      { materialDescription: { contains: search, mode: 'insensitive' } },
+      { product: { name: { contains: search, mode: 'insensitive' } } },
+      { supplier: { name: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
 
+  // Same reasoning as gate-entries: a date-scoped register/export shouldn't
+  // silently truncate a busy mill's monthly weighment history at 200 rows.
   const rows = await (prisma as any).weighbridgeEntry.findMany({
     where,
     include: {
-      gateEntry: { select: { id: true, entryNumber: true, driverName: true } },
+      gateEntry: { select: { id: true, entryNumber: true, driverName: true, status: true } },
       product: { select: { id: true, name: true } },
       supplier: { select: { id: true, name: true, mobile: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 200,
+    take: (from || to) ? 5000 : 200,
   });
 
   return json(rows);

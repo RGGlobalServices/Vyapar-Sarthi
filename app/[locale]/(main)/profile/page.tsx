@@ -7,7 +7,7 @@ import {
   User, Building, Mail, Phone, MapPin, Camera,
   Save, Loader2, CheckCircle, Store, Briefcase,
   ArrowLeft, Lock, Eye, EyeOff, TrendingUp, ShieldCheck,
-  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark, Palette, Check,
+  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark, Palette, Check, X, Maximize2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
@@ -17,6 +17,8 @@ import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 import { getBusinessTypesForPackage, isBusinessTypeAllowedForPackage, getBusinessConfig, MILL_TYPES, MILL_PRODUCT_TYPES } from '@/lib/businessConfig';
+import { A4Invoice } from '@/components/invoice/A4Invoice';
+import { computeGst } from '@/lib/gst';
 
 
 export default function ProfilePage() {
@@ -32,6 +34,7 @@ export default function ProfilePage() {
   const [shop, setShop]         = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showFullPreview, setShowFullPreview] = useState(false);
 
   // Edit Email
   const [emailOpen, setEmailOpen]       = useState(false);
@@ -746,12 +749,13 @@ export default function ProfilePage() {
         <CardContent className="space-y-5">
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Template</label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               {([
                 { id: 'standard', label: 'Standard', desc: 'Clean, classic layout' },
                 { id: 'modern', label: 'Modern', desc: 'Colored header band' },
                 { id: 'stylish', label: 'Stylish', desc: 'Bold accent side-bar' },
                 { id: 'advanced_gst', label: 'Advanced GST', desc: 'HSN/SAC tax summary' },
+                { id: 'minimal', label: 'Minimal', desc: 'Thin lines, no fills' },
               ] as const).map((theme) => {
                 const selected = (shop?.invoice_theme || 'standard') === theme.id;
                 return (
@@ -810,8 +814,35 @@ export default function ProfilePage() {
             </div>
             <p className="text-[11px] text-slate-500 mt-2">"No Color" keeps the original plain black-on-white look.</p>
           </div>
+
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-xs font-bold text-slate-500 uppercase block">Preview</label>
+              <button
+                type="button"
+                onClick={() => setShowFullPreview(true)}
+                className="flex items-center gap-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+              >
+                <Maximize2 size={13} /> Full A4 Preview
+              </button>
+            </div>
+            <BillThemePreview
+              theme={shop?.invoice_theme || 'standard'}
+              accent={shop?.invoice_color || ''}
+              shopName={shop?.name || 'Your Shop Name'}
+            />
+          </div>
         </CardContent>
       </Card>
+
+      {showFullPreview && (
+        <FullBillPreviewModal
+          theme={shop?.invoice_theme || 'standard'}
+          accent={shop?.invoice_color || ''}
+          shop={shop}
+          onClose={() => setShowFullPreview(false)}
+        />
+      )}
 
       {/* Change Password */}
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
@@ -956,6 +987,147 @@ export default function ProfilePage() {
       </Card>
 
 
+    </div>
+  );
+}
+
+/** Opens the REAL A4Invoice component (the one actually used to print/PDF a
+ *  live GST bill) full-size in a scrollable modal, fed with realistic sample
+ *  data — so "what will my bills actually look like" gets a byte-accurate
+ *  answer instead of a hand-drawn mockup. Uses the shop's real name/address/
+ *  GSTIN/bank details already on this page (even unsaved edits, since `shop`
+ *  is the same live form state) so the preview matches what will really
+ *  print once saved. */
+function FullBillPreviewModal({ theme, accent, shop, onClose }: { theme: string; accent: string; shop: any; onClose: () => void }) {
+  const sampleItems = [
+    { id: 1, name: 'Basmati Rice 5kg', unit: 'Bag', quantity: 2, price: 450, profit: 60, total: 900, gstPercent: 5, hsnCode: '1006' },
+    { id: 2, name: 'Refined Sunflower Oil 1L', unit: 'Bottle', quantity: 3, price: 180, profit: 20, total: 540, gstPercent: 5, hsnCode: '1512' },
+    { id: 3, name: 'Toor Dal 1kg', unit: 'Kg', quantity: 4, price: 140, profit: 15, total: 560, gstPercent: 5, hsnCode: '0713' },
+  ];
+  const total = sampleItems.reduce((s, i) => s + i.total, 0);
+  const discount = 50;
+  const gstBreakdown = computeGst(sampleItems, discount, false);
+
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8">
+      <div className="w-full max-w-[860px] my-4">
+        <div className="flex items-center justify-between mb-3 sticky top-0">
+          <p className="text-white text-sm font-bold bg-black/40 rounded-lg px-3 py-1.5">Full Preview — sample data, not a real bill</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="bg-white text-slate-900 rounded-full p-2 hover:bg-slate-100 transition-colors shadow-lg"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <A4Invoice
+          items={sampleItems as any}
+          total={total - discount}
+          discount={discount}
+          amountPaid={total - discount}
+          remainingAmount={0}
+          customerName="Rahul Sharma"
+          customerMobile="98765 43210"
+          paymentMethod="Cash"
+          billNumber="PREVIEW-0001"
+          date={new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+          storeName={shop?.name || 'Your Shop Name'}
+          storeAddress={shop?.address || '123 Market Road, Your City'}
+          storeMobile={shop?.mobile || '98765 43210'}
+          logoUrl={shop?.logo_url || undefined}
+          gst={shop?.gst || '27AAAAA0000A1Z5'}
+          pan={shop?.pan || undefined}
+          businessType={shop?.business_type || 'kirana'}
+          invoiceTheme={theme as any}
+          invoiceColor={accent || null}
+          invoiceFooter={shop?.invoice_footer || undefined}
+          billType="gst"
+          gstBreakdown={gstBreakdown}
+          bankName={shop?.bank_name || undefined}
+          bankAccountName={shop?.bank_account_name || undefined}
+          bankAccountNumber={shop?.bank_account_number || undefined}
+          bankIfsc={shop?.bank_ifsc || undefined}
+          upiId={shop?.upi_id || undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** A miniature mock of the printed A4 bill so a shopkeeper can see what a
+ *  Template + Accent Color combination actually looks like before saving —
+ *  mirrors the exact same styling rules A4Invoice.tsx applies for each theme
+ *  (modern = accent-filled header band; stylish = accent left side-bar;
+ *  standard/advanced_gst = plain layout with accent-colored borders/table
+ *  header only), just scaled down and with placeholder data instead of a
+ *  real bill. Not the real invoice component itself — that needs actual
+ *  sale data and is expensive to render live on every color click. */
+function BillThemePreview({ theme, accent, shopName }: { theme: string; accent: string; shopName: string }) {
+  const color = (accent && accent.trim()) || '#0f172a';
+  const isModern = theme === 'modern';
+  const isStylish = theme === 'stylish';
+  const isAdvancedGst = theme === 'advanced_gst';
+
+  return (
+    <div
+      className="rounded-lg border overflow-hidden shadow-sm bg-white mx-auto"
+      style={{ maxWidth: 340, borderColor: isModern ? color : '#0f172a', borderLeft: isStylish ? `6px solid ${color}` : undefined }}
+    >
+      {/* Letterhead */}
+      <div
+        className="px-3 py-2 flex items-center justify-between border-b"
+        style={{ backgroundColor: isModern ? color : undefined, borderBottomColor: isModern ? 'transparent' : color }}
+      >
+        <div>
+          <p className="text-[11px] font-black leading-tight" style={{ color: isModern ? '#ffffff' : '#0f172a' }}>{shopName}</p>
+          <p className="text-[8px] leading-tight" style={{ color: isModern ? '#ffffffcc' : '#64748b' }}>123 Market Road, City</p>
+        </div>
+        <span
+          className="text-[8px] font-bold uppercase border rounded px-1.5 py-0.5"
+          style={{ borderColor: isModern ? '#ffffff' : color, color: isModern ? '#ffffff' : color }}
+        >
+          Tax Invoice
+        </span>
+      </div>
+
+      {/* Item table */}
+      <table className="w-full text-[8px]">
+        <thead>
+          <tr style={{ backgroundColor: color }}>
+            <th className="text-left font-bold uppercase px-2 py-1" style={{ color: '#ffffff' }}>Item</th>
+            <th className="text-right font-bold uppercase px-2 py-1" style={{ color: '#ffffff' }}>Qty</th>
+            <th className="text-right font-bold uppercase px-2 py-1" style={{ color: '#ffffff' }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody className="text-slate-700">
+          <tr className="border-b" style={{ borderColor: '#e2e8f0' }}>
+            <td className="px-2 py-1">Rice 5kg</td>
+            <td className="text-right px-2 py-1">2</td>
+            <td className="text-right px-2 py-1">₹500</td>
+          </tr>
+          <tr className="border-b" style={{ borderColor: '#e2e8f0' }}>
+            <td className="px-2 py-1">Sugar 1kg</td>
+            <td className="text-right px-2 py-1">1</td>
+            <td className="text-right px-2 py-1">₹60</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {isAdvancedGst && (
+        <div className="px-2 py-1 text-[7px] text-slate-500 border-t border-b bg-slate-50" style={{ borderColor: '#e2e8f0' }}>
+          HSN 1006 · CGST 2.5% · SGST 2.5%
+        </div>
+      )}
+
+      {/* Total */}
+      <div
+        className="px-2 py-1.5 flex justify-between items-center text-[9px] font-bold border-t-2"
+        style={{ borderTopColor: color, backgroundColor: isModern || isStylish ? color : undefined, color: isModern || isStylish ? '#ffffff' : '#0f172a' }}
+      >
+        <span>Total</span>
+        <span>₹560</span>
+      </div>
     </div>
   );
 }

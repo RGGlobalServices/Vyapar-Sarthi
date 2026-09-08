@@ -27,10 +27,34 @@ export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
   const url = new URL(req.url);
   const status = url.searchParams.get('status'); // 'at_gate' | 'weighed' | 'exited'
+  const direction = url.searchParams.get('direction'); // 'inward' | 'outward'
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  const search = url.searchParams.get('search')?.trim();
 
   const where: any = { shopId: shop.id };
   if (status) where.status = status;
+  if (direction) where.direction = direction;
+  if (from || to) {
+    where.enteredAt = {};
+    if (from) where.enteredAt.gte = new Date(from);
+    if (to) { const end = new Date(to); end.setHours(23, 59, 59, 999); where.enteredAt.lte = end; }
+  }
+  if (search) {
+    where.OR = [
+      { vehicleNumber: { contains: search, mode: 'insensitive' } },
+      { driverName: { contains: search, mode: 'insensitive' } },
+      { materialDescription: { contains: search, mode: 'insensitive' } },
+      { entryNumber: { contains: search, mode: 'insensitive' } },
+      { supplier: { name: { contains: search, mode: 'insensitive' } } },
+      { party: { name: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
 
+  // The register/export view needs every entry in the selected range, not
+  // just the most recent — a plain 200-row cap silently truncated a busy
+  // mill's monthly export. Only cap when no date range was given (the
+  // default dashboard load), so that stays cheap.
   const rows = await (prisma as any).gateEntry.findMany({
     where,
     include: {
@@ -39,7 +63,7 @@ export const GET = handle(async (req) => {
       weighbridgeEntries: { select: { id: true, slipNumber: true, status: true, netWeightKg: true } },
     },
     orderBy: { enteredAt: 'desc' },
-    take: 200,
+    take: (from || to) ? 5000 : 200,
   });
 
   return json(rows);
