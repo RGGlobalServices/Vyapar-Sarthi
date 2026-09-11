@@ -243,11 +243,19 @@ function StandardBillingUI() {
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
   const [sendStatus, setSendStatus] = useState<{ email: boolean | null } | null>(null);
   const [waUrl, setWaUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string | number>>(new Set());
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
+  // Lot/batch picker — shown only when a manually-added product (search tap,
+  // not a batch-barcode scan) actually has more than one live lot to choose
+  // between. A single lot (or none tracked) needs no extra step — addToCart
+  // just proceeds with automatic FIFO like it always has.
+  const [batchSelectionProduct, setBatchSelectionProduct] = useState<any>(null);
+  const [batchSelectionVariant, setBatchSelectionVariant] = useState<string | undefined>(undefined);
+  const [batchSelectionOptions, setBatchSelectionOptions] = useState<any[]>([]);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [outOfStockItem, setOutOfStockItem] = useState<any>(null);
   const [recommendedProducts, setRecommendedProducts] = useState<any[]>([]);
@@ -472,6 +480,50 @@ function StandardBillingUI() {
     const productHasVariants = Object.values(productVariants).some((v: any) => Number(v) > 0);
     if (productHasVariants && !variant) {
       setVariantSelectionProduct(product);
+      return;
+    }
+
+    // Lot/batch picker — only for a genuine manual add (no batchInfo yet, so
+    // not already pinned via barcode scan or a prior picker choice, and not
+    // a forced re-add from that same picker). Fetches this product's live
+    // lots; with 2+ available it pauses here and lets the shopkeeper pick
+    // (oldest pre-highlighted as the FIFO recommendation), otherwise it
+    // proceeds immediately exactly as before — zero extra steps for the
+    // common single-lot case.
+    if (!batchInfo && !forceAdd && product?.id) {
+      // Cap the wait at 3.5s: under a slow/exhausted DB connection pool this
+      // lookup can hang for the full request timeout (~30s), during which the
+      // item visibly never gets added — a shopkeeper reading that as "search
+      // select isn't working" and clicking again/elsewhere. `settled` also
+      // guards against the ORIGINAL request finally resolving after the
+      // timeout already added the item plain — without it, that late .then()
+      // would silently re-add (or wrongly batch-prompt for) a line the
+      // shopkeeper may have since deleted, looking like "delete doesn't work".
+      let settled = false;
+      const fallbackTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        addToCart(product, variant, true, null);
+      }, 3500);
+      api.get(`/products/${product.id}/batches`).then(res => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(fallbackTimer);
+        const batches = Array.isArray(res.data) ? res.data : [];
+        if (batches.length > 1) {
+          setBatchSelectionProduct(product);
+          setBatchSelectionVariant(variant);
+          setBatchSelectionOptions(batches);
+        } else {
+          const only = batches[0];
+          addToCart(product, variant, true, only ? { id: only.id, batchNumber: only.batchNumber, costPrice: only.costPrice, sellingPrice: only.sellingPrice } : null);
+        }
+      }).catch(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(fallbackTimer);
+        addToCart(product, variant, true, null); // never block a sale on this lookup
+      });
       return;
     }
 
@@ -761,6 +813,7 @@ function StandardBillingUI() {
     setCustomerName('');
     setCustomerMobile('');
     setCustomerEmail('');
+    setCustomerAddress('');
     setSendStatus(null);
     setShowCustomerModal(true);
   };
@@ -797,6 +850,7 @@ function StandardBillingUI() {
         customer_name: customerName.trim() || null,
         customer_mobile: customerMobile.trim() || null,
         customer_email: customerEmail.trim() || null,
+        customer_address: customerAddress.trim() || null,
         items: saleItems,
         discount: discount,
         total_amount: total,
@@ -829,7 +883,7 @@ function StandardBillingUI() {
         customerName: customerName.trim() || undefined,
         customerMobile: customerMobile.trim() || undefined,
         customerEmail: customerEmail.trim() || undefined,
-        ownerSignature: user?.name || undefined,
+        ownerSignature: profile.signatureUrl || undefined,
         items: [...items],
         total,
         discount,
@@ -1293,6 +1347,7 @@ function StandardBillingUI() {
                   </th>
                   <th className="px-2 py-3">{t('itemCol') || 'ITEM'}</th>
                   {bizConfig.hasSizes && <th className="px-4 py-3 whitespace-nowrap">{t('sizeColor') || 'SIZE / COLOR'}</th>}
+                  {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 whitespace-nowrap">{t('ml') || 'ML'}</th>}
                   {bizConfig.hasGender && <th className="px-4 py-3 whitespace-nowrap">{t('gender') || 'GENDER'}</th>}
                   {bizConfig.hasBatch && <th className="px-4 py-3 whitespace-nowrap">{t('batch') || 'BATCH'}</th>}
                   {bizConfig.hasExpiry && <th className="px-4 py-3 whitespace-nowrap">{t('expiry') || 'EXPIRY'}</th>}
@@ -1326,9 +1381,14 @@ function StandardBillingUI() {
                     </td>
                     <td className="px-2 py-4 font-medium min-w-[200px]">
                       {item.name}
-                      {item.variant && !bizConfig.hasSizes && (
+                      {item.variant && !bizConfig.hasSizes && !bizConfig.hasLiquorSpecs && (
                         <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
                           {item.variant}
+                        </span>
+                      )}
+                      {item.variant && bizConfig.hasLiquorSpecs && item.size && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
+                          {item.size}
                         </span>
                       )}
                       {(() => {
@@ -1356,6 +1416,11 @@ function StandardBillingUI() {
                             <span>{item.size || item.variant}</span>
                           </span>
                         ) : (item.size || item.variant || '-')}
+                      </td>
+                    )}
+                    {bizConfig.hasLiquorSpecs && (
+                      <td className="px-4 py-4 text-sm font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                        {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
                       </td>
                     )}
                     {bizConfig.hasGender && (
@@ -1814,6 +1879,7 @@ function StandardBillingUI() {
               businessType: profile.businessType || 'kirana',
               showQrCode: profile.showQrCode || false,
               invoiceFooter: profile.invoiceFooter || undefined,
+              ownerSignature: profile.signatureUrl || undefined,
             };
             setLastBill(fullBillData);
             setShowManualBillUpload(false);
@@ -1986,6 +2052,51 @@ function StandardBillingUI() {
         </div>
       )}
 
+      {/* Lot / Batch Picker — same size/colour lots have different real
+          purchase costs; picking here decides which lot's stock/cost this
+          line draws from (sent as batch_id). */}
+      {batchSelectionProduct && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl flex flex-col max-h-[calc(100vh-2rem)]">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
+              <div>
+                <CardTitle className="text-slate-900 dark:text-slate-200">Which lot?</CardTitle>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mt-1">{batchSelectionProduct.name}</p>
+              </div>
+              <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200">
+                <X size={24} />
+              </button>
+            </CardHeader>
+            <CardContent className="p-4 overflow-y-auto space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit.</p>
+              {batchSelectionOptions.map((b, idx) => (
+                <button
+                  key={b.id}
+                  onClick={() => {
+                    const chosen = batchSelectionProduct; const chosenVariant = batchSelectionVariant;
+                    setBatchSelectionProduct(null); setBatchSelectionOptions([]);
+                    addToCart(chosen, chosenVariant, true, { id: b.id, batchNumber: b.batchNumber, costPrice: b.costPrice, sellingPrice: b.sellingPrice });
+                  }}
+                  className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      {b.batchNumber || `Lot ${idx + 1}`}
+                      {idx === 0 && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">Recommended</span>}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {b.quantity} in stock
+                      {b.purchaseDate && ` · bought ${new Date(b.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                    </p>
+                  </div>
+                  <span className="text-sm font-black text-slate-900 dark:text-white shrink-0">₹{Number(b.costPrice || 0).toLocaleString('en-IN')}/unit</span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Customer Name Modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -2131,6 +2242,18 @@ function StandardBillingUI() {
                       onChange={e => setCustomerMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
+                    {t('cityAddressLabel') || 'City / Address'} <span className="text-slate-400 normal-case font-normal">({t('optional') || 'optional'})</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t('cityAddressPlaceholder') || 'e.g. Pune, or full address'}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm transition-colors"
+                    value={customerAddress}
+                    onChange={e => setCustomerAddress(e.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">

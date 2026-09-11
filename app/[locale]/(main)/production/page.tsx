@@ -1,23 +1,25 @@
 'use client';
-import ComingInV2 from '@/components/mill/ComingInV2';
 
-export default function ProductionPage() {
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useLocale } from 'next-intl';
+import { Loader2 } from 'lucide-react';
+
+// Production — the sidebar's "Production" link used to land on a "Coming in
+// V2" placeholder describing a workflow (stage tracking, input/output/
+// wastage, recovery %, by-product capture, planned-vs-actual) that the real
+// /mill/batches page already builds and has for a while. Redirect straight
+// there instead of showing a stale "coming soon" card for a feature that
+// already shipped — same pattern as raw-material/finished-goods/by-products.
+export default function ProductionRedirect() {
+  const router = useRouter();
+  const locale = useLocale();
+  useEffect(() => {
+    router.replace(`/${locale}/mill/batches`);
+  }, [router, locale]);
   return (
-    <ComingInV2
-      title="Production"
-      emoji="⚙️"
-      accent="amber"
-      tagline="Turn a raw material lot into finished stock — full milling workflow with yield %, wastage, and by-product accounting."
-      features={[
-        'Start a production run from a specific Raw Material lot',
-        'Stage tracking: Cleaning → Drying → Shelling → Polishing → Packing',
-        'Input Kg vs. Output Kg vs. Wastage Kg — auto recovery % per stage',
-        'By-product capture (Bran, Husk, Chuni, Polish, Oil Cake) into their own stock',
-        'Multi-size packing output — 5 / 10 / 25 / 50 Kg SKUs per run',
-        'Operator + shift log for accountability',
-        'Batches page already shows an early build of this workflow — link below',
-      ]}
-      relatedLink={{ href: '/mill/batches', label: 'Batches (early)' }}
-    />
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+    </div>
   );
 }

@@ -334,12 +334,24 @@ export default function WholesaleBillingUI() {
   const [partySearch, setPartySearch] = useState('');
   const [showPartyDropdown, setShowPartyDropdown] = useState(false);
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
+  // Credit-limit/period status for the selected party — fetched fresh on
+  // every selection (never trusted from the cached `parties` list, since
+  // that snapshot can be stale mid-session) so the shopkeeper sees Available
+  // Credit / Overdue before they finish billing, not after the server
+  // rejects the sale (billing/route.ts already hard-blocks over-limit sales).
+  const [partyCreditHealth, setPartyCreditHealth] = useState<{
+    creditLimit: number; creditDays: number; outstanding: number;
+    availableCredit: number | null; overLimitBy: number;
+    dueInvoicesCount: number; overdueInvoicesCount: number; overdueAmount: number; oldestOverdueDays: number;
+  } | null>(null);
+  const [loadingPartyCredit, setLoadingPartyCredit] = useState(false);
   // Retail pricing mode (isWholesale === false): a wholesaler selling counter
   // sales to a walk-in residential customer shouldn't need a formal Party/CRM
   // record — just a plain name, same as Dukan/Vyapar retail billing.
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
 
   const fetchParties = useCallback(async () => {
     if (!profile?.id) return;
@@ -360,6 +372,12 @@ export default function WholesaleBillingUI() {
     if (p.creditDays && p.creditDays > 0) setCreditDays(p.creditDays);
     setPartySearch('');
     setShowPartyDropdown(false);
+    setPartyCreditHealth(null);
+    setLoadingPartyCredit(true);
+    api.get(`/party/${p.id}/credit-health`)
+      .then(res => setPartyCreditHealth(res.data))
+      .catch(() => setPartyCreditHealth(null))
+      .finally(() => setLoadingPartyCredit(false));
   };
 
   // ─── Retail-mode Udhar customer lookup (Udyog only) ─────────────────────
@@ -369,7 +387,7 @@ export default function WholesaleBillingUI() {
   // showing what they already owe so the cashier isn't flying blind. Mirrors
   // the Party picker above; separate list since it's a different customerType.
   type UdharCustomerRow = {
-    id: string; name: string; mobile?: string; email?: string;
+    id: string; name: string; mobile?: string; email?: string; address?: string;
     totalDue?: number; creditDays?: number;
     customer_transactions?: { created_at: string }[];
   };
@@ -390,6 +408,7 @@ export default function WholesaleBillingUI() {
     setCustomerName(c.name);
     if (c.mobile) setCustomerMobile(c.mobile);
     if (c.email) setCustomerEmail(c.email);
+    if (c.address) setCustomerAddress(c.address);
     if (c.creditDays && c.creditDays > 0) setCreditDays(c.creditDays);
     setShowUdharDropdown(false);
   };
@@ -464,9 +483,20 @@ export default function WholesaleBillingUI() {
   // Udyog variant products (colour/size) have no single price/stock — this
   // holds the product while the cashier picks which row they're selling.
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
+  // Lot/batch picker — see addToCart's comment for when this fires.
+  const [batchSelectionProduct, setBatchSelectionProduct] = useState<any>(null);
+  const [batchSelectionVariant, setBatchSelectionVariant] = useState<string | undefined>(undefined);
+  const [batchSelectionOptions, setBatchSelectionOptions] = useState<any[]>([]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const componentRef = useRef<HTMLDivElement>(null);
+
+  // Set when arriving here via a Delivery Challan's "Convert to Invoice"
+  // button (app/[locale]/(main)/challans/page.tsx) — after the sale is
+  // actually created below, the challan gets PATCHed to 'invoiced' so it
+  // stops showing as still-open. Cleared on submit or unmount so a stray
+  // browser-back doesn't silently reattach a later, unrelated sale to it.
+  const [pendingChallanId, setPendingChallanId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -475,6 +505,32 @@ export default function WholesaleBillingUI() {
     // Auto-focus search on load
     setTimeout(() => searchInputRef.current?.focus(), 100);
   }, [profile?.id, fetchParties, fetchUdharCustomers]);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('pendingChallanInvoice');
+    if (!raw) return;
+    sessionStorage.removeItem('pendingChallanInvoice');
+    try {
+      const challan = JSON.parse(raw);
+      setIsWholesale(true);
+      setPendingChallanId(challan.id);
+      if (challan.customerId) {
+        setSelectedParty({
+          id: challan.customerId, name: challan.customerName || '', mobile: challan.customerMobile || '',
+        });
+        setCustomerMobile(challan.customerMobile || '');
+      }
+      for (const it of challan.items || []) {
+        addItem({
+          id: it.productId, name: it.name, unit: it.unit, quantity: it.quantity,
+          price: it.price, profit: it.price, total: it.quantity * it.price,
+          variant: it.variantKey || undefined, fromChallan: true,
+        } as any);
+      }
+    } catch (e) { console.error('Failed to load challan for invoicing:', e); }
+    // Runs once on mount only — addItem/setSelectedParty are stable setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Drives useBillingEngine's split state from the chosen single payment
   // method, keeping it live-synced to the running total (so it behaves like
@@ -587,7 +643,7 @@ export default function WholesaleBillingUI() {
     }
   }, [isWholesale, products, getPrice, items, updatePrice]);
 
-  const addToCart = useCallback((product: any, variant?: string, forceAdd = false) => {
+  const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null) => {
     // 1. Check Out of Stock first
     const { known, qty: stock } = resolveStock(product);
     if (known && stock <= 0 && !forceAdd) {
@@ -655,13 +711,58 @@ export default function WholesaleBillingUI() {
       }
       updateQuantity(existingItem.id, existingItem.quantity + 1, variant);
     } else {
+      // Lot/batch picker — only for a genuine new line (no batchInfo yet, so
+      // not already pinned via a prior picker choice, and not a forced
+      // re-add from that same picker). Fetches this product's live lots;
+      // with 2+ available it pauses here and lets the shopkeeper pick
+      // (oldest pre-highlighted as the FIFO recommendation), otherwise it
+      // proceeds immediately exactly as before.
+      if (!batchInfo && !forceAdd && product?.id) {
+        // Cap the wait at 3.5s: under a slow/exhausted DB connection pool this
+        // lookup can hang for the full request timeout (~30s), which reads as
+        // "search select isn't working". `settled` also guards against the
+        // ORIGINAL request finally resolving after the timeout already added
+        // the item plain — without it, that late .then() would silently
+        // re-add a line the shopkeeper may have since deleted.
+        let settled = false;
+        const fallbackTimer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          addToCart(product, variant, true, null);
+        }, 3500);
+        api.get(`/products/${product.id}/batches`).then(res => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(fallbackTimer);
+          const batches = Array.isArray(res.data) ? res.data : [];
+          if (batches.length > 1) {
+            setBatchSelectionProduct(product);
+            setBatchSelectionVariant(variant);
+            setBatchSelectionOptions(batches);
+          } else {
+            const only = batches[0];
+            addToCart(product, variant, true, only ? { id: only.id, batchNumber: only.batchNumber, costPrice: only.costPrice, sellingPrice: only.sellingPrice } : null);
+          }
+        }).catch(() => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(fallbackTimer);
+          addToCart(product, variant, true, null);
+        });
+        return;
+      }
+
       const defaultQty = product.is_loose ? 0.5 : 1;
       const price = getPrice(product, variant);
       // `cost` here is the shop's actual purchase cost — used both for the
       // cart's live profit display AND sent to the backend as
       // `purchase_price`. Must NOT be the wholesale-selling-price (that's
       // the customer-facing rate and lives in `price` above via getPrice).
-      const cost = getShopCost(product, variant);
+      let cost = getShopCost(product, variant);
+      // A picked lot's real cost wins over every other cost source, same
+      // priority the retail billing UI + backend give it — see
+      // billing/route.ts's batch-aware FIFO costing pass.
+      if (batchInfo && Number(batchInfo.costPrice) > 0) cost = Number(batchInfo.costPrice);
       const { color, size } = variant ? splitVariantKey(variant) : { color: '', size: '' };
 
       addItem({
@@ -678,6 +779,12 @@ export default function WholesaleBillingUI() {
         profit: (price / (1 + (Number(product.gstPercent ?? product.gst_percent ?? 0) || 0) / 100)) - cost,
         total: Math.round(price * defaultQty),
         is_loose: !!product.is_loose,
+        // Which physical lot this line is pinned to — sent to the backend as
+        // batch_id so it draws stock/cost from THIS lot instead of
+        // auto-FIFO-picking one. Absent when the product had only one (or
+        // zero) live lots, which keeps working exactly as before.
+        batchId: batchInfo?.id,
+        batchNumber: batchInfo?.batchNumber || undefined,
         // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
         gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
         hsnCode: product.hsnCode ?? product.hsn_code ?? '',
@@ -962,6 +1069,19 @@ export default function WholesaleBillingUI() {
       alert(t('partyRequiredToSave') || 'Please select a party before saving the invoice.');
       return;
     }
+    // Overdue-bill soft warning — creditDays has no server-side enforcement
+    // (unlike creditLimit, which billing/route.ts already hard-rejects), so
+    // this is the only gate for it. Confirmable rather than blocking, same
+    // as every other credit-health signal in this app (see Supplier credit
+    // health) — a shopkeeper may have a good reason to keep billing a
+    // regular party who's slow to pay this month.
+    if (isWholesale && selectedParty && partyCreditHealth && partyCreditHealth.overdueAmount > 0) {
+      const proceed = window.confirm(
+        `${selectedParty.name} has ${partyCreditHealth.overdueInvoicesCount} overdue bill${partyCreditHealth.overdueInvoicesCount > 1 ? 's' : ''} `
+        + `(₹${partyCreditHealth.overdueAmount.toLocaleString()}, oldest ${partyCreditHealth.oldestOverdueDays} days past due).\n\nContinue billing anyway?`
+      );
+      if (!proceed) return;
+    }
     if (!isWholesale && grandRemaining > 0 && !customerName.trim()) {
       alert(t('nameRequiredForUdhar') || 'Please enter a customer name — this sale has an outstanding balance to track.');
       return;
@@ -988,7 +1108,14 @@ export default function WholesaleBillingUI() {
 
       const saleItems = [
         ...items.map(item => ({
-          product_id: typeof item.id === 'string' && !item.id.includes('.') ? item.id : null,
+          // A line pulled in from "Convert to Invoice" already had its stock
+          // decremented once, at challan-dispatch time (see challans/route.ts)
+          // — forcing product_id null here makes this Sale line behave like a
+          // freeform charge (Transport/Loading/etc, same convention just
+          // above): it still bills/GST/ledgers normally, but billing/route.ts's
+          // stock-decrement loop groups purely by product_id and silently
+          // skips any item without one, so it can never be double-deducted.
+          product_id: (item as any).fromChallan ? null : (typeof item.id === 'string' && !item.id.includes('.') ? item.id : null),
           name: item.name,
           unit: item.unit,
           variant: item.variant || null,
@@ -1001,6 +1128,10 @@ export default function WholesaleBillingUI() {
           // shop's own recorded Sale.gstAmount.
           gst_percent: item.gstPercent,
           hsn_code: item.hsnCode,
+          // Which physical lot this line was pinned to (see addToCart's lot
+          // picker) — absent for lines added before a product ever had more
+          // than one live lot, which keeps drawing stock via automatic FIFO.
+          batch_id: (item as any).batchId || undefined,
         })),
         ...chargeItems,
       ];
@@ -1028,6 +1159,7 @@ export default function WholesaleBillingUI() {
         customer_name: isWholesale ? selectedParty!.name : (customerName.trim() || null),
         customer_mobile: customerMobile.trim() || null,
         customer_email: customerEmail.trim() || null,
+        customer_address: customerAddress.trim() || null,
         items: saleItems,
         discount: discount,
         total_amount: grandTotal,
@@ -1042,6 +1174,15 @@ export default function WholesaleBillingUI() {
       const res = await api.post('/billing/', payload);
       const dbSale = res.data;
       const billNumber = `INV-${dbSale.id.substring(0, 8).toUpperCase()}`;
+
+      // Sale is real and committed at this point — safe to mark the source
+      // challan invoiced. Best-effort: a failure here just leaves the
+      // challan showing "open" a little longer, never blocks the bill that
+      // already succeeded.
+      if (pendingChallanId) {
+        api.patch(`/challans/${pendingChallanId}`, { action: 'invoice', saleId: dbSale.id }).catch((e) => console.error('Failed to mark challan invoiced:', e));
+        setPendingChallanId(null);
+      }
 
       // The scan-to-pay QR is shown ONLY on the A4 (professional tax-invoice)
       // format — not on thermal slips, and never on the retail billing screen.
@@ -1090,6 +1231,7 @@ export default function WholesaleBillingUI() {
         businessType: profile.businessType || 'kirana',
         showQrCode: profile.showQrCode || false,
         invoiceFooter: profile.invoiceFooter || undefined,
+        ownerSignature: profile.signatureUrl || undefined,
         qrSvg,
         // Only carry a upiId onto the bill when the QR is actually shown
         // (A4 format) — the invoice components gate the whole scan-to-pay
@@ -1102,6 +1244,7 @@ export default function WholesaleBillingUI() {
       // Local Udyog-only state the shared engine's clearCart() doesn't know about.
       setSelectedParty(null);
       setCustomerName('');
+      setCustomerAddress('');
       setPaymentMethod('cash');
       setUpiApp(''); setUpiTxnId('');
       setBankName(''); setBankRefNo('');
@@ -1154,6 +1297,13 @@ export default function WholesaleBillingUI() {
           if (sameCat.length > 0) recs = sameCat;
         }
         setRecommendedProducts(recs.slice(0, 4));
+      } else if (/credit limit/i.test(detail)) {
+        // billing/route.ts hard-rejects a sale that would push a party's
+        // outstanding past creditLimit — surface that real reason instead of
+        // the generic failure alert, since the shopkeeper needs to know it's
+        // a credit block (fixable via a payment or raising the limit), not a
+        // random error.
+        alert(detail);
       } else {
         alert(t('failedToGenerateBillShort'));
       }
@@ -1245,6 +1395,7 @@ export default function WholesaleBillingUI() {
               <tr>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">#</th>
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
+                {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('ml') || 'ML'}</th>}
                 {bizConfig.hasGender && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('gender') || 'Gender'}</th>}
                 {bizConfig.hasBatch && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
                 <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('unitCol') || 'Unit'}</th>
@@ -1257,7 +1408,7 @@ export default function WholesaleBillingUI() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7 + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={7 + (bizConfig.hasLiquorSpecs ? 1 : 0) + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
                     <Scan size={48} className="mx-auto mb-4 opacity-20" />
                     <p className="text-lg font-medium">{t('cartEmpty')}</p>
                     <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
@@ -1287,11 +1438,17 @@ export default function WholesaleBillingUI() {
                         );
                       })()}
                     </p>
-                    {item.variant && <p className="text-xs text-slate-500">{item.variant}</p>}
+                    {item.variant && !bizConfig.hasLiquorSpecs && <p className="text-xs text-slate-500">{item.variant}</p>}
+                    {item.variant && bizConfig.hasLiquorSpecs && item.size && <p className="text-xs text-slate-500">{item.size}</p>}
                     {atMax && (
                       <p className="text-[10px] text-amber-500 font-semibold">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
                     )}
                   </td>
+                  {bizConfig.hasLiquorSpecs && (
+                    <td className="px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400">
+                      {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
+                    </td>
+                  )}
                   {bizConfig.hasGender && (
                     <td className="px-4 py-3 text-xs font-semibold text-violet-600 dark:text-violet-400">
                       {item.gender || '-'}
@@ -1507,6 +1664,7 @@ export default function WholesaleBillingUI() {
               businessType: profile.businessType || 'kirana',
               showQrCode: profile.showQrCode || false,
               invoiceFooter: profile.invoiceFooter || undefined,
+              ownerSignature: profile.signatureUrl || undefined,
             };
             setLastBill(fullBillData);
             setShowManualBillUpload(false);
@@ -1703,6 +1861,18 @@ export default function WholesaleBillingUI() {
                         : (t('newUdharCustomer', { amount: grandRemaining.toLocaleString() }) || `New customer will be created with ₹${grandRemaining.toLocaleString()} due.`)}
                     </p>
                   )}
+                  <div className="mt-3">
+                    <label className="text-xs font-bold text-slate-500 mb-1 block">
+                      {t('cityAddressLabel') || 'City / Address'} <span className="text-slate-400 normal-case font-normal">({t('optional') || 'optional'})</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
+                      value={customerAddress}
+                      onChange={e => setCustomerAddress(e.target.value)}
+                      placeholder={t('cityAddressPlaceholder') || 'e.g. Pune, or full address'}
+                    />
+                  </div>
                 </div>
               ) : (
               <div className="relative">
@@ -1720,12 +1890,43 @@ export default function WholesaleBillingUI() {
                         </div>
                         {selectedParty.gst && <div className="text-[11px] text-slate-500 mt-0.5">GSTIN: {selectedParty.gst}</div>}
                       </div>
-                      <button type="button" onClick={() => setSelectedParty(null)} className="text-slate-400 hover:text-red-500 shrink-0"><X size={16} /></button>
+                      <button type="button" onClick={() => { setSelectedParty(null); setPartyCreditHealth(null); }} className="text-slate-400 hover:text-red-500 shrink-0"><X size={16} /></button>
                     </div>
-                    <div className="flex items-center gap-4 mt-2 text-xs">
+                    <div className="flex items-center gap-4 mt-2 text-xs flex-wrap">
                       <span className="text-orange-600 dark:text-orange-400 font-semibold">{t('outstanding') || 'Outstanding'}: ₹{(selectedParty.totalDue || 0).toLocaleString()}</span>
                       {!!selectedParty.creditLimit && <span className="text-slate-500">{t('creditLimit') || 'Credit Limit'}: ₹{selectedParty.creditLimit.toLocaleString()}</span>}
                     </div>
+                    {/* Credit-health badge — soft warning, never blocks the UI
+                        by itself (matches the existing Supplier credit-health
+                        pattern); the server still hard-rejects a sale that
+                        would push outstanding past creditLimit
+                        (billing/route.ts), so this is purely "know before you
+                        bill" visibility, plus the new creditDays/overdue
+                        signal that had no equivalent anywhere before. */}
+                    {loadingPartyCredit && (
+                      <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Checking credit status…</div>
+                    )}
+                    {!loadingPartyCredit && partyCreditHealth && (partyCreditHealth.overLimitBy > 0 || partyCreditHealth.overdueAmount > 0) && (
+                      <div className="mt-2 space-y-1">
+                        {partyCreditHealth.overLimitBy > 0 && (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg px-2 py-1.5">
+                            <AlertCircle size={12} className="shrink-0" />
+                            Credit limit exceeded by ₹{partyCreditHealth.overLimitBy.toLocaleString()} — new bill will be blocked unless within limit
+                          </div>
+                        )}
+                        {partyCreditHealth.overdueAmount > 0 && (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-2 py-1.5">
+                            <AlertCircle size={12} className="shrink-0" />
+                            {partyCreditHealth.overdueInvoicesCount} bill{partyCreditHealth.overdueInvoicesCount > 1 ? 's' : ''} overdue (₹{partyCreditHealth.overdueAmount.toLocaleString()}, oldest {partyCreditHealth.oldestOverdueDays}d past due)
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!loadingPartyCredit && partyCreditHealth && partyCreditHealth.availableCredit !== null && partyCreditHealth.overLimitBy === 0 && (
+                      <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                        Available credit: ₹{partyCreditHealth.availableCredit.toLocaleString()}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -2187,6 +2388,53 @@ export default function WholesaleBillingUI() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lot / Batch Picker — same product/variant can have lots bought at
+          different real costs; picking here decides which lot's stock/cost
+          this line draws from (sent as batch_id). */}
+      {batchSelectionProduct && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} />
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white block">Which lot?</span>
+                <span className="text-xs text-slate-500">{batchSelectionProduct.name}</span>
+              </div>
+              <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <X size={22} />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Oldest lot is recommended — sell it first so older stock doesn't sit.</p>
+              {batchSelectionOptions.map((b, idx) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => {
+                    const chosen = batchSelectionProduct; const chosenVariant = batchSelectionVariant;
+                    setBatchSelectionProduct(null); setBatchSelectionOptions([]);
+                    addToCart(chosen, chosenVariant, true, { id: b.id, batchNumber: b.batchNumber, costPrice: b.costPrice, sellingPrice: b.sellingPrice });
+                  }}
+                  className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      {b.batchNumber || `Lot ${idx + 1}`}
+                      {idx === 0 && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">Recommended</span>}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {b.quantity} in stock
+                      {b.purchaseDate && ` · bought ${new Date(b.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                    </p>
+                  </div>
+                  <span className="text-sm font-black text-slate-900 dark:text-white shrink-0">₹{Number(b.costPrice || 0).toLocaleString('en-IN')}/unit</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>

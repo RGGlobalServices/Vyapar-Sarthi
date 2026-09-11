@@ -94,6 +94,9 @@ export const POST = handle(async (req) => {
     if (!product) throw new ApiError(400, 'Output product not found for this shop');
   }
 
+  const plannedOutputKg = body.plannedOutputKg !== undefined && body.plannedOutputKg !== ''
+    ? Number(body.plannedOutputKg) : null;
+
   // Two writes in a transaction so we never charge a lot without a batch or
   // create a batch that references an unchanged lot.
   const result = await prisma.$transaction(async (tx) => {
@@ -103,6 +106,7 @@ export const POST = handle(async (req) => {
         batchNumber,
         rawLotId,
         outputProductId,
+        plannedOutputKg,
         inputKg,
         status: 'open',
         currentStage: 'cleaning',

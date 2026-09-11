@@ -62,6 +62,25 @@ function productColumns(businessType?: string): ImportColumn[] {
   return cols;
 }
 
+// Extra Product-catalogue fields that exist on the real Product record but
+// aren't part of the default review columns above (they'd clutter every
+// import for shops that never use them). Offered instead via the review
+// table's "+ Column" picker, so a shopkeeper whose sheet actually needs
+// Brand / Location / mill grading / etc. can add just that column.
+export function getAddableColumns(importType: string): ImportColumn[] {
+  if (!['product', 'stock', 'purchase'].includes(importType)) return [];
+  return [
+    { label: 'Brand', aliases: ['brand', 'make'], profile: 'text' },
+    { label: 'Location', aliases: ['location', 'rack', 'shelf', 'bin'], profile: 'text' },
+    { label: 'Grade', aliases: ['grade'], profile: 'text' },
+    { label: 'Variety', aliases: ['variety'], profile: 'text' },
+    { label: 'Subcategory', aliases: ['subcategory', 'subcat'], profile: 'text' },
+    { label: 'Pack Size', aliases: ['packsize'], numeric: true, profile: 'quantity' },
+    { label: 'Pack Unit', aliases: ['packunit'], profile: 'unit' },
+    { label: 'Reorder Level', aliases: ['reorderlevel'], numeric: true, profile: 'quantity' },
+  ];
+}
+
 export function getImportTemplate(importType: string, businessType?: string): ImportColumn[] {
   switch (importType) {
     case 'product':

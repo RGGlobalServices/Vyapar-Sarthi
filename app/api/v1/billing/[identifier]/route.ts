@@ -1,8 +1,9 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
-import { handle, json, ApiError } from '@/lib/server/http';
+import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { recordDeletion } from '@/lib/server/trash';
-import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches } from '@/lib/server/sales';
+import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, createSaleEffects, restoreBatchQuantities } from '@/lib/server/sales';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,6 +86,85 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       };
     }),
   });
+});
+
+/**
+ * Edit a posted bill — customer, payment method/amount, and/or items. The
+ * real-world need: a shopkeeper rings up a sale as Cash when the customer
+ * actually paid UPI (or vice versa), and by end of day their cash count is
+ * off. Rather than a narrow "just change the payment field" patch (which
+ * would leave stock/customer-ledger/cashbook stuck on the OLD numbers if
+ * items or amount also changed), this fully reverses the original bill's
+ * effects and re-creates it with the edited data in one transaction —
+ * exactly the reverse-then-recreate pattern purchases/[id]/route.ts already
+ * uses for its own PATCH, via the same reverseSaleEffects() the recycle-bin
+ * delete flow relies on. The invoice number, id, and original date are kept
+ * so the bill the customer already has (WhatsApp text, printed slip) still
+ * matches after the fix.
+ */
+export const PATCH = handle<Ctx>(async (req, { params }) => {
+  const { identifier } = await params;
+  const { shop } = await requireShop(req);
+  const body = await readBody<any>(req);
+
+  const cleanId = identifier.replace(/^INV[-_]?/i, '').replace(/[^a-zA-Z0-9]/g, '');
+  const invVariants = [`INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+
+  const existing = await prisma.sale.findFirst({
+    where: {
+      OR: [
+        ...(isUUID ? [{ id: identifier }] : []),
+        ...invVariants.map((inv) => ({ invoice_number: inv })),
+      ],
+      shopId: shop.id,
+    },
+  });
+  if (!existing) throw new ApiError(404, 'Invoice not found');
+
+  // A bill with a return/exchange already recorded against it can't be
+  // cleanly reversed — MaterialReturn's note references the OLD SaleItem
+  // ids, which reverseSaleEffects/re-creation would orphan. Block rather
+  // than silently corrupt that link; this is a real but narrow edge case
+  // (editing a bill that's ALSO been partially returned) worth a follow-up,
+  // not something to guess at now.
+  const returnedQuantities = await getReturnedQuantitiesForSale(prisma, shop.id, existing.id);
+  if (Object.values(returnedQuantities).some((q) => q > 0)) {
+    throw new ApiError(409, 'This bill has a return/exchange recorded against it and can’t be edited yet. Contact support if this needs fixing.');
+  }
+
+  let result;
+  let netQuantitiesByProduct = new Map<string, number>();
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const reversed = await reverseSaleEffects(tx, shop.id, existing.id);
+      netQuantitiesByProduct = reversed.netQuantitiesByProduct;
+      // Delete the OLD wholesale-tier stock movement rows before re-creating
+      // the sale under the same id — createSaleEffects below inserts fresh
+      // ones with that same referenceId, so this must happen first or the
+      // ledger would show two "sale" movements for one bill.
+      await tx.stockMovement.deleteMany({ where: { shopId: shop.id, referenceId: existing.id, type: 'sale' } });
+      return createSaleEffects(tx, shop, body, {
+        id: existing.id,
+        invoiceNumber: existing.invoice_number || undefined,
+        createdAt: existing.createdAt,
+      });
+    }, { timeout: 20000, maxWait: 10000 });
+  } catch (err: any) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(400, err?.message || 'Failed to update bill');
+  }
+
+  // NOT cleanupSaleBatches — that also deletes StockMovement rows by
+  // referenceId, which would wipe out the brand-new ones createSaleEffects
+  // just inserted above. Only restore batch quantities from the reversal.
+  try {
+    await restoreBatchQuantities(prisma, shop.id, shop.packageType, netQuantitiesByProduct);
+  } catch (e) { console.error('Batch quantity restore after edit failed:', e); }
+
+  invalidateDashboardCacheForShop(shop.id);
+
+  return json({ success: true, sale: result.sale });
 });
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {

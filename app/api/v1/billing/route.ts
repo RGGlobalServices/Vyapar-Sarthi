@@ -176,12 +176,13 @@ export const POST = handle(async (req) => {
         
         if (existing) {
           finalCustomerId = existing.id;
-          if ((body.customer_mobile && !existing.mobile) || (body.customer_email && !existing.email)) {
+          if ((body.customer_mobile && !existing.mobile) || (body.customer_email && !existing.email) || (body.customer_address && !existing.address)) {
             await tx.customer.update({
               where: { id: existing.id },
               data: {
                 ...(body.customer_mobile && !existing.mobile ? { mobile: body.customer_mobile } : {}),
-                ...(body.customer_email && !existing.email ? { email: body.customer_email } : {})
+                ...(body.customer_email && !existing.email ? { email: body.customer_email } : {}),
+                ...(body.customer_address && !existing.address ? { address: body.customer_address } : {})
               }
             });
           }
@@ -192,6 +193,7 @@ export const POST = handle(async (req) => {
               name: body.customer_name,
               mobile: body.customer_mobile || null,
               email: body.customer_email || null,
+              address: body.customer_address || null,
               totalDue: 0
             }
           });

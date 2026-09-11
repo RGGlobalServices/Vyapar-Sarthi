@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
+import { ApiError } from '@/lib/server/http';
 
 export type ReversedSale = Prisma.SaleGetPayload<{ include: { items: true } }>;
 
@@ -162,6 +164,280 @@ export async function reverseSaleEffects(
 }
 
 /**
+ * Creates a sale + its stock/customer/cashbook effects — used by both
+ * POST /billing (a fresh invoice_number/id, auto-generated) and
+ * PATCH /billing/[identifier] (editing an existing bill: reverseSaleEffects()
+ * runs first in the SAME transaction, then this re-creates with the edited
+ * customer/payment/items, reusing the ORIGINAL id/invoice_number/createdAt
+ * via `overrides` so the invoice the customer already has in hand — WhatsApp
+ * message, printed slip — still matches after the shopkeeper fixes a mistake).
+ *
+ * Deliberately simpler than POST's own inline transaction body: it skips the
+ * FIFO batch-aware costing pass (lib/server/sales.ts's caller for POST keeps
+ * that separately) — batch-level cost attribution is an internal profit-
+ * tracking refinement, not something an edited bill needs to reproduce
+ * exactly. The customer-facing total, GST, stock movement and payment
+ * bookkeeping are all still fully correct; only the per-batch profit split
+ * falls back to the product's plain cost price on an edited line.
+ */
+export async function createSaleEffects(
+  tx: Prisma.TransactionClient,
+  shop: { id: string; packageType: string | null | undefined },
+  body: any,
+  overrides?: { id?: string; invoiceNumber?: string; createdAt?: Date | null }
+) {
+  const shopId = shop.id;
+  const customerId = (body.customer_id && body.customer_id !== '') ? body.customer_id : null;
+  const items = body.items;
+
+  if (!items || !items.length) throw new ApiError(400, 'No items in bill');
+  for (const item of items) {
+    if (item.quantity <= 0) throw new ApiError(400, `Invalid quantity for item ${item.product_id || item.productId}`);
+    const price = item.price_per_unit ?? item.pricePerUnit;
+    if (price < 0) throw new ApiError(400, `Invalid price for item ${item.product_id || item.productId}`);
+  }
+
+  const productIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId).filter(Boolean))) as string[];
+  const products = productIds.length > 0 ? await tx.product.findMany({ where: { id: { in: productIds } } }) : [];
+  const productMap = new Map(products.map(p => [p.id, p]));
+
+  // Same per-line stock guard as POST — a shortage here must reject the
+  // whole edit rather than leave stock negative, exactly as a fresh sale would.
+  const variantKeyOf = (raw: any): string => {
+    if (!raw) return '';
+    if (typeof raw === 'string') return raw;
+    const color = raw.color || raw.colour || '';
+    const size = raw.size || '';
+    return color ? `${color} / ${size}` : size;
+  };
+  const perLineDemand = new Map<string, number>();
+  for (const it of items) {
+    const pid = it.product_id || it.productId;
+    if (!pid) continue;
+    const key = `${pid}|${variantKeyOf(it.variant)}`;
+    perLineDemand.set(key, (perLineDemand.get(key) || 0) + Number(it.quantity || 0));
+  }
+  const shortages: string[] = [];
+  for (const [key, wanted] of perLineDemand.entries()) {
+    const [pid, vKey] = key.split('|');
+    const dbP: any = productMap.get(pid);
+    if (!dbP) { shortages.push(`Unknown product ${pid}`); continue; }
+    let available: number | null = null;
+    if (vKey) {
+      const sv: any = typeof dbP.size_variants === 'string'
+        ? (() => { try { return JSON.parse(dbP.size_variants); } catch { return null; } })()
+        : dbP.size_variants;
+      if (sv && Object.prototype.hasOwnProperty.call(sv, vKey)) {
+        available = Number(sv[vKey]) || 0;
+      } else if (Array.isArray(dbP.variants) && dbP.variants.length > 0) {
+        const row = dbP.variants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === vKey);
+        if (row) available = Number(row.stock) || 0;
+      }
+    }
+    if (available === null) available = Number(dbP.currentStock ?? 0);
+    if (available < wanted) {
+      const label = vKey ? `${dbP.name} (${vKey})` : dbP.name;
+      shortages.push(`${label}: only ${available} in stock, bill needs ${wanted}`);
+    }
+  }
+  if (shortages.length > 0) throw new ApiError(400, `Insufficient stock: ${shortages.join('; ')}`);
+
+  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+  const inputLineItems: InputLineItem[] = items.map((i: any) => {
+    const pid = i.product_id || i.productId;
+    const dbProduct: any = pid ? productMap.get(pid) : null;
+    const sp = Number(i.price_per_unit ?? i.pricePerUnit ?? i.price) || 0;
+    let cp = Number(i.purchase_price) || Number(i.purchasePrice) || Number(i.cost) || 0;
+    if (!cp && dbProduct) {
+      const variantKey = i.variant || null;
+      if (variantKey && Array.isArray(dbProduct.variants)) {
+        for (const v of dbProduct.variants as any[]) {
+          const key = v.color ? `${v.color} / ${v.size || ''}` : (v.size || '');
+          if (key === variantKey) { cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0; break; }
+        }
+      }
+      if (!cp) cp = Number(dbProduct.costPrice) || Number(dbProduct.wholesaleCost) || 0;
+    }
+    const gstRate = Number(i.gst_percent ?? i.gstPercent ?? dbProduct?.gstPercent) || 0;
+    return {
+      productId: pid || null,
+      unit: i.unit || dbProduct?.baseUnit || null,
+      variant: i.variant || null,
+      quantity: Number(i.quantity) || 0,
+      sellingPrice: sp,
+      purchasePrice: cp,
+      gstPercent: gstRate,
+      hsnCode: i.hsn_code || i.hsnCode || dbProduct?.hsnCode || null,
+    };
+  });
+
+  const billType: BillType = body.bill_type === 'gst' ? 'gst' : 'non_gst';
+  const discountInput: DiscountInput = typeof body.discount === 'object' && body.discount !== null
+    ? { type: body.discount.type, value: Number(body.discount.value) || 0 }
+    : { type: 'fixed', value: Number(body.discount) || 0 };
+
+  const calcResult = calculateInvoice(inputLineItems, discountInput, billType);
+  const totalAmount = calcResult.discountedSubtotal;
+  const totalProfit = calcResult.totalProfit;
+  const gstAmount = billType === 'gst' ? calcResult.totalGst : null;
+
+  const paymentType = body.payment_type || 'Cash';
+  const amountPaid = typeof body.amount_paid !== 'undefined' ? Number(body.amount_paid) : (paymentType === 'Udhar' ? 0 : totalAmount);
+  const paymentDetails = body.payment_details || {};
+  const outstandingAmount = Math.max(0, totalAmount - amountPaid);
+
+  if (outstandingAmount > 0 && (!customerId && !body.customer_name)) {
+    throw new ApiError(400, 'Customer is required for Udhar / Outstanding amounts');
+  }
+
+  const invoice_number = overrides?.invoiceNumber || `INV-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+
+  let finalCustomerId = customerId;
+  if (!finalCustomerId && body.customer_name) {
+    const existing = await tx.customer.findFirst({ where: { shopId, name: body.customer_name } });
+    if (existing) {
+      finalCustomerId = existing.id;
+      if ((body.customer_mobile && !existing.mobile) || (body.customer_email && !existing.email)) {
+        await tx.customer.update({
+          where: { id: existing.id },
+          data: {
+            ...(body.customer_mobile && !existing.mobile ? { mobile: body.customer_mobile } : {}),
+            ...(body.customer_email && !existing.email ? { email: body.customer_email } : {}),
+          },
+        });
+      }
+    } else {
+      const newCust = await tx.customer.create({
+        data: { shopId, name: body.customer_name, mobile: body.customer_mobile || null, email: body.customer_email || null, totalDue: 0 },
+      });
+      finalCustomerId = newCust.id;
+    }
+  }
+
+  const created = await tx.sale.create({
+    data: {
+      ...(overrides?.id ? { id: overrides.id } : {}),
+      shopId,
+      customerId: finalCustomerId,
+      totalAmount,
+      totalProfit,
+      paymentType,
+      amountPaid,
+      paymentDetails,
+      invoice_number,
+      billType,
+      gstAmount,
+      gstDetails: body.gst_details ?? undefined,
+      billImageUrl: body.bill_image_url || null,
+      isManual: body.is_manual === true,
+      createdAt: overrides?.createdAt ?? (body.created_at ? new Date(body.created_at) : undefined),
+      items: {
+        create: items.map((rawItem: any) => {
+          const pid = rawItem.product_id || rawItem.productId;
+          const dbProduct: any = pid ? productMap.get(pid) : null;
+          const sp = Number(rawItem.price_per_unit ?? rawItem.pricePerUnit ?? rawItem.price) || 0;
+          const qty = Number(rawItem.quantity) || 0;
+          const calcLine = calcResult.items.find((c: any, idx: number) => idx === items.indexOf(rawItem));
+          const marginPerUnit = calcLine && qty > 0 ? round2(calcLine.netProfit / qty) : 0;
+          const rawName = rawItem.name || rawItem.product_name || rawItem.title || rawItem.itemName;
+          return {
+            productId: pid || null,
+            unit: rawItem.unit || dbProduct?.baseUnit || null,
+            variant: rawItem.variant || null,
+            itemName: pid ? null : (rawName || null),
+            quantity: qty,
+            pricePerUnit: sp,
+            marginPerUnit,
+          };
+        }),
+      },
+    },
+    include: { items: true },
+  });
+
+  // Stock decrement — product-level + variant rows, same COALESCE-first
+  // pattern as POST (currentStock is nullable with no DB default).
+  const itemGroups = items.reduce((acc: any, item: any) => {
+    const pid = item.product_id || item.productId;
+    if (!pid) return acc;
+    if (!acc[pid]) acc[pid] = [];
+    acc[pid].push(item);
+    return acc;
+  }, {});
+  const groupProductIds = Object.keys(itemGroups);
+  if (groupProductIds.length > 0) {
+    const promises: any[] = [];
+    for (const product of products) {
+      const productItems = itemGroups[product.id];
+      if (!productItems) continue;
+      let totalQty = 0;
+      let newSizeVariants = product.size_variants;
+      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v: any) => ({ ...v })) : null;
+      let variantsChanged = false;
+
+      for (const item of productItems) {
+        totalQty += item.quantity;
+        if (item.variant && newSizeVariants) {
+          try {
+            const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
+            if (parsed[item.variant] !== undefined) {
+              parsed[item.variant] = Math.max(0, (parsed[item.variant] || 0) - item.quantity);
+              newSizeVariants = JSON.stringify(parsed);
+            }
+          } catch {}
+        }
+        if (item.variant && newVariants) {
+          const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
+          if (row) { row.stock = Math.max(0, (Number(row.stock) || 0) - item.quantity); variantsChanged = true; }
+        }
+      }
+
+      promises.push(tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${product.id}::uuid`);
+      promises.push(tx.product.update({
+        where: { id: product.id },
+        data: { size_variants: newSizeVariants, ...(variantsChanged ? { variants: newVariants as any } : {}) },
+      }));
+
+      if (isWholesaleTierPackage(shop.packageType)) {
+        promises.push(tx.stockMovement.create({
+          data: { shopId, productId: product.id, type: 'sale', quantity: totalQty, referenceId: created.id },
+        }));
+      }
+    }
+    await Promise.all(promises);
+  }
+
+  if (outstandingAmount > 0 && finalCustomerId) {
+    const custData = await tx.customer.findUnique({ where: { id: finalCustomerId } });
+    if (custData && (custData.creditLimit ?? 0) > 0) {
+      const currentDue = custData.totalDue || 0;
+      if (currentDue + outstandingAmount > custData.creditLimit!) {
+        throw new Error(`Credit Limit of ₹${custData.creditLimit} exceeded by ₹${(currentDue + outstandingAmount) - custData.creditLimit!}`);
+      }
+    }
+    await Promise.all([
+      tx.customer.update({ where: { id: finalCustomerId }, data: { totalDue: { increment: outstandingAmount } } }),
+      tx.customer_transactions.create({
+        data: { customer_id: finalCustomerId, type: 'udhar', amount: outstandingAmount, note: `Bill: ${invoice_number}`, bill_number: invoice_number, created_at: new Date() },
+      }),
+    ]);
+  }
+
+  const cashAmount = paymentType === 'Split' ? Number(paymentDetails?.cash || 0) : (paymentType === 'Cash' ? amountPaid : 0);
+  if (cashAmount > 0) {
+    await tx.cashBook.create({
+      data: {
+        shopId, type: 'sale', amount: cashAmount, referenceId: created.id,
+        description: paymentType === 'Split' ? `Split Sale (Cash portion): ${invoice_number}` : `Cash Sale: ${invoice_number}`,
+      },
+    });
+  }
+
+  return { sale: created, totalAmount, invoice_number };
+}
+
+/**
  * Best-effort companion to reverseSaleEffects — deletes the aggregate
  * StockMovement row the sale created, and (wholesale tier only) restores the
  * decremented quantity to each product's most-recently-created batch. Sale
@@ -193,6 +469,33 @@ export async function cleanupSaleBatches(
       where: { productId, shopId },
       orderBy: { createdAt: 'desc' },
     });
+    if (latestBatch) {
+      await prisma.batch.update({ where: { id: latestBatch.id }, data: { quantity: { increment: qty } } });
+    }
+  }
+}
+
+/**
+ * Just the batch-quantity-restore half of cleanupSaleBatches, WITHOUT the
+ * StockMovement delete — for the edit flow (PATCH /billing/[identifier]),
+ * which reverses the old sale and re-creates it (via createSaleEffects)
+ * under the SAME id in one transaction. createSaleEffects already inserts
+ * fresh StockMovement rows for the edited items using that same id, so
+ * running the combined cleanupSaleBatches afterward would wipe out those
+ * brand-new rows along with the old ones. The edit route deletes the OLD
+ * movement rows itself, inside the transaction, before re-creating — this
+ * only needs to do the wholesale-tier batch-quantity restore afterward.
+ */
+export async function restoreBatchQuantities(
+  prisma: PrismaClient,
+  shopId: string,
+  packageType: string | null | undefined,
+  netQuantitiesByProduct: Map<string, number>
+) {
+  if (!isWholesaleTierPackage(packageType)) return;
+  for (const [productId, qty] of netQuantitiesByProduct.entries()) {
+    if (qty <= 0) continue;
+    const latestBatch = await prisma.batch.findFirst({ where: { productId, shopId }, orderBy: { createdAt: 'desc' } });
     if (latestBatch) {
       await prisma.batch.update({ where: { id: latestBatch.id }, data: { quantity: { increment: qty } } });
     }

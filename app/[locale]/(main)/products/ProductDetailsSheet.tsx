@@ -359,6 +359,11 @@ export default function ProductDetailsSheet({
                 });
                 const variants = nativeVariants.length > 0 ? nativeVariants : legacyVariants;
                 if (variants.length === 0) return null;
+                // Liquor's variant grid is Bottle Type × Volume(ML), not an actual
+                // colour swatch — same underlying {color, size} shape (see
+                // ThreeWayVariantGrid/LIQUOR_RULES), just relabelled here so the
+                // table reads "Type / ML" instead of a nonsensical colour dot.
+                const isLiquor = !!getBusinessConfig(profile.businessType).hasLiquorSpecs;
                 const colourCount = new Set(variants.map((v: any) => v.color).filter(Boolean)).size;
                 const sizeCount = new Set(variants.map((v: any) => v.size).filter(Boolean)).size;
                 const variantTotal = variants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0);
@@ -367,11 +372,11 @@ export default function ProductDetailsSheet({
                     icon={<Hash size={14} className="text-indigo-500 dark:text-indigo-400" />}
                     title={
                       <>
-                        {t("variantWiseStock") || "Variant-wise Stock"}
+                        {isLiquor ? (t("mlWiseStock") || "ML-wise Stock") : (t("variantWiseStock") || "Variant-wise Stock")}
                         <span className="ml-2 text-[11px] font-semibold normal-case text-slate-500 dark:text-slate-400">
-                          {colourCount > 0 && `${colourCount} ${colourCount > 1 ? (t('coloursLabel') || 'colours') : (t('colourLabel') || 'colour')}`}
+                          {colourCount > 0 && `${colourCount} ${isLiquor ? 'ML' : (colourCount > 1 ? (t('coloursLabel') || 'colours') : (t('colourLabel') || 'colour'))}`}
                           {colourCount > 0 && sizeCount > 0 && ' · '}
-                          {sizeCount > 0 && `${sizeCount} ${sizeCount > 1 ? (t('sizesLabel') || 'sizes') : (t('sizeLabel') || 'size')}`}
+                          {sizeCount > 0 && `${sizeCount} ${isLiquor ? (t('typeLabel') || 'type') + (sizeCount > 1 ? 's' : '') : (sizeCount > 1 ? (t('sizesLabel') || 'sizes') : (t('sizeLabel') || 'size'))}`}
                         </span>
                       </>
                     }
@@ -380,8 +385,8 @@ export default function ProductDetailsSheet({
                       <table className="w-full text-sm text-left min-w-[420px]">
                         <thead>
                           <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 sticky top-0">
-                            <th className="px-4 py-2.5 font-semibold">{t("colourLabel") || 'Colour'}</th>
-                            <th className="px-4 py-2.5 font-semibold">{t("sizeLabel") || 'Size'}</th>
+                            <th className="px-4 py-2.5 font-semibold">{isLiquor ? 'ML' : (t("colourLabel") || 'Colour')}</th>
+                            <th className="px-4 py-2.5 font-semibold">{isLiquor ? (t('typeLabel') || 'Type') : (t("sizeLabel") || 'Size')}</th>
                             <th className="px-4 py-2.5 font-semibold text-right">{t("qty")}</th>
                             <th className="px-4 py-2.5 font-semibold text-right">{t("sellingPrice")}</th>
                           </tr>
@@ -393,13 +398,15 @@ export default function ProductDetailsSheet({
                               <tr key={i} className={cn("hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors", stock <= 0 && 'opacity-50')}>
                                 <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                                   {v.color ? (
-                                    <span className="flex items-center gap-1.5">
-                                      <span className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(v.color) }} />
-                                      {v.color}
-                                    </span>
+                                    isLiquor ? v.color : (
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(v.color) }} />
+                                        {v.color}
+                                      </span>
+                                    )
                                   ) : <span className="text-slate-400">—</span>}
                                 </td>
-                                <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{v.size || '—'}</td>
+                                <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-semibold">{v.size || '—'}</td>
                                 <td className={cn("px-4 py-3 text-right font-mono font-bold", stock <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400')}>{stock}</td>
                                 <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-400">{v.sellingPrice ? `₹${Number(v.sellingPrice).toLocaleString('en-IN')}` : '—'}</td>
                               </tr>

@@ -18,7 +18,7 @@ import {
   User, Printer, Download, MessageCircle, Copy, RotateCcw, Trash2,
   X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock,
   Package, CreditCard, Banknote, Smartphone, FileText, Loader2,
-  SlidersHorizontal, ChevronDown, ClipboardList
+  SlidersHorizontal, ChevronDown, ClipboardList, Pencil, Plus, Minus, Save
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -280,6 +280,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
     businessType: profile?.businessType || 'kirana',
     showQrCode: profile?.showQrCode || false,
     invoiceFooter: profile?.invoiceFooter || undefined,
+    ownerSignature: profile?.signatureUrl || undefined,
     // Scan-to-pay QR is wholesale-A4-only — reprints follow the same rule so a
     // retail / thermal reprint never surfaces it. See WholesaleBillingUI.
     upiId: ((isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType))
@@ -407,6 +408,199 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
   );
 }
 
+// ─── Edit Invoice Modal ──────────────────────────────────────────────────────
+// The real-world need this exists for: a shopkeeper rings up a sale as Cash
+// when the customer actually paid UPI (or vice versa), and their end-of-day
+// cash count comes up wrong. Editable here: customer name/mobile, payment
+// method + amount, and each item's quantity/price. Backed by
+// PATCH /api/v1/billing/[identifier] (lib/server/sales.ts createSaleEffects)
+// which reverses the bill's old stock/ledger/cashbook effects and re-applies
+// the edited ones in one transaction — so stock, the customer's Udhar
+// balance, and the dashboard all stay correct after the edit, not just the
+// bill's own total. Adding/removing line items isn't supported here (only
+// quantity/price of existing lines) — that's a materially bigger change to
+// the same transaction and not what prompted this feature.
+interface EditItem { id: string; product_id: string | null; name: string; unit?: string; quantity: number; price_per_unit: number }
+const EDIT_PAYMENT_TYPES = ['Cash', 'UPI', 'Card', 'Udhar'] as const;
+
+function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onClose: () => void; onSaved: () => void }) {
+  const t = useTranslations('Invoices');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [customerName, setCustomerName] = useState(invoice.customer_name || '');
+  const [customerMobile, setCustomerMobile] = useState(invoice.customer_mobile || '');
+  const wasSplitOrEmi = invoice.payment_type === 'Split' || invoice.payment_type === 'EMI';
+  const [paymentType, setPaymentType] = useState<typeof EDIT_PAYMENT_TYPES[number]>(
+    (EDIT_PAYMENT_TYPES as readonly string[]).includes(invoice.payment_type) ? invoice.payment_type as any : 'Cash'
+  );
+  const [amountPaid, setAmountPaid] = useState('');
+  const [items, setItems] = useState<EditItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get(`/billing/${invoice.id}`).then(res => {
+      if (cancelled) return;
+      const loadedItems: EditItem[] = (res.data.items || []).map((i: any) => ({
+        id: i.id, product_id: i.product_id, name: i.name, unit: i.unit,
+        quantity: i.quantity, price_per_unit: i.price_per_unit,
+      }));
+      setItems(loadedItems);
+      const loadedTotal = loadedItems.reduce((s, i) => s + i.quantity * i.price_per_unit, 0);
+      setAmountPaid(String(invoice.amount_paid ?? loadedTotal));
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [invoice.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const total = items.reduce((s, i) => s + i.quantity * i.price_per_unit, 0);
+  const paidNum = Number(amountPaid) || 0;
+  const due = Math.max(0, total - paidNum);
+
+  const updateItem = (idx: number, patch: Partial<EditItem>) => {
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  };
+
+  const submit = async () => {
+    if (items.length === 0) { setError('At least one item is required.'); return; }
+    if (due > 0 && !customerName.trim()) { setError('A customer name is required when the bill isn\'t fully paid (Udhar).'); return; }
+    setSaving(true); setError('');
+    try {
+      await api.patch(`/billing/${invoice.id}`, {
+        customer_name: customerName.trim() || undefined,
+        customer_mobile: customerMobile.trim() || undefined,
+        items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity, price_per_unit: i.price_per_unit, unit: i.unit })),
+        payment_type: paymentType,
+        amount_paid: paidNum,
+        payment_details: {
+          cash: paymentType === 'Cash' ? paidNum : 0,
+          upi: paymentType === 'UPI' ? paidNum : 0,
+          card: paymentType === 'Card' ? paidNum : 0,
+          udhar: due,
+          method: paymentType.toLowerCase(),
+        },
+        bill_type: invoice.bill_type || 'non_gst',
+      });
+      onSaved();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to save changes.');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+              <Pencil size={16} className="text-indigo-500" />
+            </div>
+            <div>
+              <h2 className="font-black text-slate-900 dark:text-white">Edit Bill</h2>
+              <p className="text-xs text-slate-500">{invoice.invoice_number || `INV-${invoice.id.substring(0, 8).toUpperCase()}`}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"><X size={20} /></button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {loading ? (
+            <div className="flex justify-center py-8"><Loader2 className="animate-spin text-indigo-500" size={24} /></div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Customer Name</span>
+                  <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Walk-in"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Mobile</span>
+                  <input value={customerMobile} onChange={e => setCustomerMobile(e.target.value)} inputMode="numeric"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </label>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Items</span>
+                <div className="space-y-2">
+                  {items.map((item, idx) => (
+                    <div key={item.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl p-2.5">
+                      <span className="flex-1 text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button type="button" onClick={() => updateItem(idx, { quantity: Math.max(1, item.quantity - 1) })}
+                          className="w-6 h-6 bg-slate-200 dark:bg-slate-700 rounded flex items-center justify-center"><Minus size={11} /></button>
+                        <input type="number" min="1" step="1" value={item.quantity}
+                          onChange={e => updateItem(idx, { quantity: Math.max(0, Number(e.target.value) || 0) })}
+                          className="w-12 text-center text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-1 py-1" />
+                        <button type="button" onClick={() => updateItem(idx, { quantity: item.quantity + 1 })}
+                          className="w-6 h-6 bg-slate-200 dark:bg-slate-700 rounded flex items-center justify-center"><Plus size={11} /></button>
+                      </div>
+                      <span className="text-xs text-slate-400 shrink-0">×</span>
+                      <input type="number" min="0" step="0.01" value={item.price_per_unit}
+                        onChange={e => updateItem(idx, { price_per_unit: Math.max(0, Number(e.target.value) || 0) })}
+                        className="w-20 text-right text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 shrink-0" />
+                      <span className="text-sm font-bold text-slate-900 dark:text-white w-20 text-right shrink-0">
+                        ₹{(item.quantity * item.price_per_unit).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Payment Method</span>
+                <div className="flex gap-2 flex-wrap">
+                  {EDIT_PAYMENT_TYPES.map(pt => (
+                    <button key={pt} type="button" onClick={() => setPaymentType(pt)}
+                      className={cn('px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors',
+                        paymentType === pt ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700')}>
+                      {pt}
+                    </button>
+                  ))}
+                </div>
+                {wasSplitOrEmi && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1.5">This bill was originally {invoice.payment_type} — editing converts it to a single payment mode above.</p>
+                )}
+              </div>
+
+              <label className="block">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Amount Paid</span>
+                <input type="number" min="0" step="0.01" value={amountPaid} onChange={e => setAmountPaid(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </label>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 flex items-center justify-between text-sm">
+                <span className="text-slate-500 font-semibold">Bill Total</span>
+                <span className="font-black text-slate-900 dark:text-white">₹{total.toLocaleString('en-IN')}</span>
+              </div>
+              {due > 0 && (
+                <div className="bg-orange-50 dark:bg-orange-500/5 border border-orange-200 dark:border-orange-500/20 rounded-xl p-3 text-xs text-orange-700 dark:text-orange-400">
+                  ₹{due.toLocaleString('en-IN')} will remain as Udhar against {customerName.trim() || 'this customer'}.
+                </div>
+              )}
+              {error && <p className="text-sm text-red-500 font-semibold">{error}</p>}
+            </>
+          )}
+        </div>
+
+        <div className="p-5 border-t border-slate-200 dark:border-slate-800 flex gap-3 shrink-0">
+          <button onClick={onClose} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={saving || loading}
+            className="flex-[2] bg-indigo-500 text-white py-3 rounded-xl font-bold hover:bg-indigo-400 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InvoiceHistoryPage() {
   const t = useTranslations('Invoices');
@@ -434,6 +628,7 @@ export default function InvoiceHistoryPage() {
   // Modals
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [returnInvoice, setReturnInvoice] = useState<Invoice | null>(null);
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -879,6 +1074,13 @@ export default function InvoiceHistoryPage() {
                           >
                             <RotateCcw size={13} />
                           </button>
+                          <button
+                            onClick={() => setEditInvoice(inv)}
+                            title="Edit Bill"
+                            className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
+                          >
+                            <Pencil size={13} />
+                          </button>
                           {role === 'admin' && (
                             <button
                               onClick={() => handleDelete(inv.id)}
@@ -944,6 +1146,13 @@ export default function InvoiceHistoryPage() {
           invoice={returnInvoice}
           onClose={() => setReturnInvoice(null)}
           onDone={() => { setReturnInvoice(null); fetchInvoices(); }}
+        />
+      )}
+      {editInvoice && (
+        <EditInvoiceModal
+          invoice={editInvoice}
+          onClose={() => setEditInvoice(null)}
+          onSaved={() => { setEditInvoice(null); fetchInvoices(); }}
         />
       )}
       <ConfirmPasswordModal

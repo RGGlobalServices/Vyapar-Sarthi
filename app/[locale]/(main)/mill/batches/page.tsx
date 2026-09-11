@@ -27,6 +27,7 @@ type Batch = {
   currentStage: string; startedAt: string; closedAt: string | null;
   inputKg: number | null; outputKg: number | null; wastageKg: number | null;
   brokenKg: number | null; branKg: number | null; huskKg: number | null; recoveryPct: number | null;
+  plannedOutputKg: number | null;
   notes: string | null; outputProductId: string | null;
   rawLot?: { id: string; lotNumber: string | null; farmerName: string | null; weightKg: number | null;
     product?: { name: string } | null; supplier?: { name: string } | null };
@@ -186,8 +187,12 @@ function BatchRow({ batch, onOpen }: { batch: Batch; onOpen: () => void }) {
             {batch.rawLot?.farmerName ? `${batch.rawLot.farmerName} · ` : ''}
             {t('input')} {batch.inputKg || 0} Kg
             {batch.status === 'closed' && batch.outputKg != null && ` · ${t('output')} ${batch.outputKg} Kg`}
+            {batch.plannedOutputKg != null && ` · ${t('plannedOutput')} ${batch.plannedOutputKg} Kg`}
             {batch.recoveryPct != null && ` · ${t('recovery')} ${batch.recoveryPct}%`}
           </p>
+          {batch.status === 'closed' && batch.plannedOutputKg != null && batch.outputKg != null && (
+            <VarianceBadge planned={batch.plannedOutputKg} actual={batch.outputKg} t={t} />
+          )}
         </div>
         <div className="w-40 shrink-0">
           <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
@@ -203,11 +208,27 @@ function BatchRow({ batch, onOpen }: { batch: Batch; onOpen: () => void }) {
   );
 }
 
+function VarianceBadge({ planned, actual, t }: { planned: number; actual: number; t: any }) {
+  if (planned <= 0) return null;
+  const diffPct = Math.round(((actual - planned) / planned) * 1000) / 10;
+  const short = diffPct < -5; // more than 5% under plan
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full',
+      short ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
+        : diffPct > 0 ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+          : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+    )}>
+      {t('variance')}: {diffPct > 0 ? '+' : ''}{diffPct}%
+    </span>
+  );
+}
+
 function CreateBatchModal({ lots, products, onClose, onCreated }: {
   lots: RawLot[]; products: ProductOption[]; onClose: () => void; onCreated: (id: string) => void;
 }) {
   const t = useTranslations('Mill');
-  const [form, setForm] = useState({ rawLotId: lots[0]?.id || '', inputKg: '', outputProductId: '', notes: '' });
+  const [form, setForm] = useState({ rawLotId: lots[0]?.id || '', inputKg: '', outputProductId: '', plannedOutputKg: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const lot = lots.find(l => l.id === form.rawLotId);
@@ -221,6 +242,7 @@ function CreateBatchModal({ lots, products, onClose, onCreated }: {
         rawLotId: form.rawLotId || null,
         inputKg: Number(form.inputKg),
         outputProductId: form.outputProductId || null,
+        plannedOutputKg: form.plannedOutputKg || undefined,
         notes: form.notes,
       });
       onCreated(res.data.id);
@@ -280,6 +302,17 @@ function CreateBatchModal({ lots, products, onClose, onCreated }: {
               {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <p className="text-[10px] text-slate-400 mt-1">{t('outputProductHint')}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('plannedOutputKgOptional')}</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={form.plannedOutputKg}
+              onChange={e => setForm({ ...form, plannedOutputKg: e.target.value })}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
+              placeholder={t('plannedOutputPlaceholder')}
+            />
+            <p className="text-[10px] text-slate-400 mt-1">{t('plannedOutputHint')}</p>
           </div>
           <div>
             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('notesOptional')}</label>
@@ -415,6 +448,20 @@ function BatchDetail({ batch, products, onClose, onChanged }: { batch: Batch; pr
                   {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
+              {batch.plannedOutputKg != null && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                  {t('plannedOutput')}: <strong>{batch.plannedOutputKg} Kg</strong>
+                  {close.outputKg && ` · ${t('variance')}: `}
+                  {close.outputKg && (
+                    <strong>
+                      {(() => {
+                        const d = Math.round(((Number(close.outputKg) - batch.plannedOutputKg) / batch.plannedOutputKg) * 1000) / 10;
+                        return `${d > 0 ? '+' : ''}${d}%`;
+                      })()}
+                    </strong>
+                  )}
+                </p>
+              )}
               {projectedRecovery != null && (
                 <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
                   {t('projectedRecovery')}: <strong>{projectedRecovery}%</strong>
@@ -451,6 +498,12 @@ function BatchDetail({ batch, products, onClose, onChanged }: { batch: Batch; pr
                 <StatMini label={t('huskKg').replace(' Kg','')} v={batch.huskKg} unit="Kg" />
                 <StatMini label={t('recovery')} v={batch.recoveryPct} unit="%" bold />
               </div>
+              {batch.plannedOutputKg != null && batch.outputKg != null && (
+                <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-500/20">
+                  <VarianceBadge planned={batch.plannedOutputKg} actual={batch.outputKg} t={t} />
+                  <span className="text-[11px] text-slate-500 ml-2">{t('plannedOutput')} {batch.plannedOutputKg} Kg</span>
+                </div>
+              )}
             </div>
           )}
 

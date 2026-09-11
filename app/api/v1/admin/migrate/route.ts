@@ -69,6 +69,7 @@ export async function GET(req: Request) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(shop_id, batch_number)
     )`);
+    await exec(`ALTER TABLE production_batches ADD COLUMN IF NOT EXISTS planned_output_kg DOUBLE PRECISION`);
     await exec(`CREATE INDEX IF NOT EXISTS ix_prod_batches_shop ON production_batches(shop_id)`);
     await exec(`CREATE INDEX IF NOT EXISTS ix_prod_batches_raw_lot ON production_batches(raw_lot_id)`);
     await exec(`CREATE INDEX IF NOT EXISTS ix_prod_batches_status ON production_batches(status)`);
@@ -105,7 +106,45 @@ export async function GET(req: Request) {
     await exec(`CREATE INDEX IF NOT EXISTS ix_by_products_shop ON by_products(shop_id)`);
     await exec(`CREATE INDEX IF NOT EXISTS ix_by_products_batch ON by_products(batch_id)`);
 
-    return NextResponse.json({ success: true, tables: ['raw_material_lots', 'production_batches', 'batch_stages', 'by_products'] });
+    // quality_tests
+    await exec(`CREATE TABLE IF NOT EXISTS quality_tests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      raw_lot_id UUID REFERENCES raw_material_lots(id) ON DELETE SET NULL,
+      batch_id UUID REFERENCES production_batches(id) ON DELETE SET NULL,
+      test_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      tested_by VARCHAR,
+      moisture_pct DOUBLE PRECISION,
+      foreign_matter_pct DOUBLE PRECISION,
+      broken_pct DOUBLE PRECISION,
+      damaged_pct DOUBLE PRECISION,
+      doc_pct DOUBLE PRECISION,
+      flag VARCHAR,
+      decision VARCHAR NOT NULL DEFAULT 'pending',
+      certificate_url VARCHAR,
+      notes VARCHAR,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await exec(`CREATE INDEX IF NOT EXISTS ix_quality_tests_shop ON quality_tests(shop_id)`);
+    await exec(`CREATE INDEX IF NOT EXISTS ix_quality_tests_raw_lot ON quality_tests(raw_lot_id)`);
+    await exec(`CREATE INDEX IF NOT EXISTS ix_quality_tests_batch ON quality_tests(batch_id)`);
+
+    // machine_downtimes
+    await exec(`CREATE TABLE IF NOT EXISTS machine_downtimes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      machine_id UUID NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+      reason VARCHAR,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ended_at TIMESTAMPTZ,
+      maintenance_entry_id UUID,
+      notes VARCHAR,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await exec(`CREATE INDEX IF NOT EXISTS ix_machine_downtimes_shop ON machine_downtimes(shop_id)`);
+    await exec(`CREATE INDEX IF NOT EXISTS ix_machine_downtimes_machine ON machine_downtimes(machine_id)`);
+
+    return NextResponse.json({ success: true, tables: ['raw_material_lots', 'production_batches', 'batch_stages', 'by_products', 'quality_tests', 'machine_downtimes'] });
   } catch (err: any) {
     console.error('[mill migrate] failed:', err);
     return NextResponse.json({ error: err?.message || 'Migration failed' }, { status: err?.status || 500 });

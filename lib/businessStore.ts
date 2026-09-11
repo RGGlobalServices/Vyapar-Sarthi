@@ -32,6 +32,7 @@ interface BusinessProfile {
   address: string;
   mobile: string;
   logoUrl: string;
+  signatureUrl: string;
   setupComplete: boolean;
   subscriptionPlan: string;
   subscriptionStatus: string;
@@ -60,6 +61,10 @@ interface BusinessProfile {
   bankAccountName: string | null;
   bankAccountNumber: string | null;
   bankIfsc: string | null;
+  // Which IndustryCategory (Kirana/Garment/Pharmacy/…) this shop picked via
+  // Profile's "Change Business Category" wizard — purely additive alongside
+  // businessType, see schema.prisma's IndustryCategory model comment.
+  industryCategoryId: string | null;
 }
 
 export interface ShopLimit {
@@ -116,6 +121,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   address: '',
   mobile: '',
   logoUrl: '',
+  signatureUrl: '',
   setupComplete: false,
   subscriptionPlan: 'trial',
   subscriptionStatus: 'active',
@@ -136,6 +142,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   bankAccountName: null,
   bankAccountNumber: null,
   bankIfsc: null,
+  industryCategoryId: null,
 };
 
 function loadCachedType(): BusinessType {
@@ -189,6 +196,7 @@ function mapShopToProfile(data: any): BusinessProfile {
     address: data.address ?? '',
     mobile: data.mobile ?? '',
     logoUrl: data.logo_url ?? data.logoUrl ?? '',
+    signatureUrl: data.signature_url ?? data.signatureUrl ?? '',
     setupComplete: data.setup_complete ?? data.setupComplete ?? false,
     subscriptionPlan: ((data.subscription_plan ?? data.subscriptionPlan) || 'trial').toLowerCase(),
     subscriptionStatus: data.subscription_status ?? data.subscriptionStatus ?? 'active',
@@ -209,6 +217,7 @@ function mapShopToProfile(data: any): BusinessProfile {
     bankAccountName: data.bankAccountName ?? data.bank_account_name ?? null,
     bankAccountNumber: data.bankAccountNumber ?? data.bank_account_number ?? null,
     bankIfsc: data.bankIfsc ?? data.bank_ifsc ?? null,
+    industryCategoryId: data.industryCategoryId ?? data.industry_category_id ?? null,
   };
 }
 
@@ -460,6 +469,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.address !== undefined) apiUpdates.address = updates.address;
       if (updates.mobile !== undefined) apiUpdates.mobile = updates.mobile;
       if (updates.logoUrl !== undefined) apiUpdates.logoUrl = updates.logoUrl;
+      if (updates.signatureUrl !== undefined) apiUpdates.signatureUrl = updates.signatureUrl;
       if (updates.businessType !== undefined) apiUpdates.businessType = updates.businessType;
       if (updates.businessSubtype !== undefined) apiUpdates.businessSubtype = updates.businessSubtype;
       if (updates.businessProducts !== undefined) apiUpdates.businessProducts = updates.businessProducts;
@@ -478,6 +488,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.bankAccountName !== undefined) apiUpdates.bankAccountName = updates.bankAccountName;
       if (updates.bankAccountNumber !== undefined) apiUpdates.bankAccountNumber = updates.bankAccountNumber;
       if (updates.bankIfsc !== undefined) apiUpdates.bankIfsc = updates.bankIfsc;
+      if (updates.industryCategoryId !== undefined) apiUpdates.industryCategoryId = updates.industryCategoryId;
 
       await api.patch('/shop/profile', apiUpdates);
 

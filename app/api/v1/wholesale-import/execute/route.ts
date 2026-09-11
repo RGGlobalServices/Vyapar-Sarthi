@@ -195,6 +195,25 @@ export async function POST(req: NextRequest) {
         const n = parseFloat(reorder);
         if (!isNaN(n)) extras.minStock = n;
       }
+      // Extra catalogue fields offered via the review table's "+ Column"
+      // picker (lib/importTemplates.ts getAddableColumns) — real Product
+      // columns, just not part of the default template so they don't
+      // clutter every import.
+      const location = getVal(row, ['location', 'rack', 'shelf', 'bin']);
+      if (location) extras.location = String(location).trim();
+      const grade = getVal(row, ['grade']);
+      if (grade) extras.grade = String(grade).trim();
+      const variety = getVal(row, ['variety']);
+      if (variety) extras.variety = String(variety).trim();
+      const subcategory = getVal(row, ['subcategory', 'subcat']);
+      if (subcategory) extras.subcategory = String(subcategory).trim();
+      const packSize = getVal(row, ['packsize']);
+      if (packSize !== undefined && String(packSize).trim() !== '') {
+        const n = parseFloat(packSize);
+        if (!isNaN(n)) extras.packSize = n;
+      }
+      const packUnit = getVal(row, ['packunit']);
+      if (packUnit) extras.packUnit = String(packUnit).trim();
       if (Object.keys(liquorMeta).length > 0) extras.metadata = liquorMeta;
       // Unit conversion (e.g. 1 Case = 12 Bottles) → conversionFactor column.
       const conv = getVal(row, ['unitspercase', 'conversionfactor', 'unitspercarton', 'packqty', 'bottlespercase']);
@@ -804,6 +823,12 @@ export async function POST(req: NextRequest) {
               if (extras.otherCode) updateData.otherCode = extras.otherCode;
               if (extras.hsnCode) updateData.hsnCode = extras.hsnCode;
               if (extras.gstPercent !== undefined) updateData.gstPercent = extras.gstPercent;
+              if (extras.location) updateData.location = extras.location;
+              if (extras.grade) updateData.grade = extras.grade;
+              if (extras.variety) updateData.variety = extras.variety;
+              if (extras.subcategory) updateData.subcategory = extras.subcategory;
+              if (extras.packSize !== undefined) updateData.packSize = extras.packSize;
+              if (extras.packUnit) updateData.packUnit = extras.packUnit;
               if (rowVariantKey) {
                 const mergedVariants = mergeVariantIntoArray(
                   variantsIndex.get(matchId) ?? [],

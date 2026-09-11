@@ -2,12 +2,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer, Percent, Plus, Minus } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer, Percent, Plus, Minus, PencilLine, PlusCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useUdharStore } from '@/lib/store';
-import { getImportTemplate, applyTemplate } from '@/lib/importTemplates';
+import { getImportTemplate, applyTemplate, getAddableColumns } from '@/lib/importTemplates';
 import { printLabelSheet } from '@/lib/printLabels';
 
 type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' | 'sales' | 'ledger';
@@ -411,6 +411,48 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setPreviewData(prev => prev.filter((_, i) => i !== rowIndex));
     setRowMatches(prev => prev.filter((_, i) => i !== rowIndex));
     setRowDecisions(prev => prev.filter((_, i) => i !== rowIndex));
+  };
+
+  // "Enter Manually" — skips the file/AI step entirely and drops straight
+  // into the same review table a scan produces, pre-built with this import
+  // type's real column set (Name/Qty/Price/GST% etc., business-type aware)
+  // so the shopkeeper can type rows in by hand instead of scanning a bill.
+  const startManualEntry = () => {
+    const template = getImportTemplate(importType, profile?.businessType);
+    const templateHeaders = template.map(c => c.label);
+    const blankRow = () => templateHeaders.reduce((acc, h) => ({ ...acc, [h]: '' }), {} as any);
+    const initialRows = Array.from({ length: 5 }, blankRow);
+    setHeaders(templateHeaders);
+    setPreviewData(initialRows);
+    setSelectedRows([]);
+    setRowDecisions(new Array(initialRows.length).fill(undefined));
+    setRowMatches([]);
+    setErrors([]);
+    setFiles([]);
+    setCurrentPage(1);
+    setStep('preview');
+  };
+
+  // Adds one more blank, typeable row at the end of the review table — used
+  // both while typing a manual entry and to add an extra line to a scanned
+  // file's preview.
+  const handleAddRow = () => {
+    const blank = headers.reduce((acc, h) => ({ ...acc, [h]: '' }), {} as any);
+    setPreviewData(prev => [...prev, blank]);
+    setRowMatches(prev => [...prev, undefined as any]);
+    setRowDecisions(prev => [...prev, undefined]);
+    setCurrentPage(Math.max(1, Math.ceil((previewData.length + 1) / pageSize)));
+  };
+
+  // "+ Column" — real Product fields (Brand, Location, Grade, Variety, …)
+  // that aren't part of the default review columns, offered here instead of
+  // showing them in every import. Picking one adds it to every row (blank,
+  // fillable), same as a template column the file itself had.
+  const addableColumns = getAddableColumns(importType).filter(c => !headers.includes(c.label));
+  const handleAddColumn = (label: string) => {
+    if (!label || headers.includes(label)) return;
+    setHeaders(prev => [...prev, label]);
+    setPreviewData(prev => prev.map(row => ({ ...row, [label]: row[label] ?? '' })));
   };
 
   const setDecision = (rowIndex: number, decision: RowDecision) => {
@@ -833,6 +875,21 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       <Camera size={18} /> Take Photo
                     </button>
                   </div>
+
+                  <div className="flex items-center gap-3 w-full max-w-xs my-5">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                    <span className="text-[11px] font-bold uppercase text-slate-400">or</span>
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); startManualEntry(); }}
+                    className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-6 py-2.5 rounded-xl font-bold hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                  >
+                    <PencilLine size={18} /> Enter Manually
+                  </button>
+                  <p className="text-slate-400 text-xs mt-2">No file? Type the rows in yourself — same table you'd get from a scan.</p>
                 </>
               )}
             </div>
@@ -861,6 +918,27 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     {godowns.map(g => (
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  disabled={isProcessing}
+                  title="Add a blank row to type into"
+                  className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-50 text-sm font-bold"
+                >
+                  <PlusCircle size={15} /> Add Row
+                </button>
+                {addableColumns.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => handleAddColumn(e.target.value)}
+                    disabled={isProcessing}
+                    title="Add a product field as a new column"
+                    className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-50 text-sm font-bold bg-white dark:bg-slate-900 cursor-pointer outline-none"
+                  >
+                    <option value="">+ Column</option>
+                    {addableColumns.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
                   </select>
                 )}
                 <button onClick={() => {

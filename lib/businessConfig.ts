@@ -45,7 +45,33 @@ export type BusinessType =
   | 'wineliquordistributor'
   | 'wineliquorwholesale'
   | 'cosmeticsdistributor'
-  | 'beautywholesale';
+  | 'beautywholesale'
+  // Added for the Industry Category wizard (Profile → "Change Business
+  // Category") — see schema.prisma's IndustryCategory model comment. These
+  // give a real BusinessType (and so real units/fields) to categories that
+  // previously had no equivalent in this list at all.
+  | 'accountingca'
+  | 'interiordesign'
+  | 'salonspa'
+  | 'repairservices'
+  | 'restauranthotel'
+  | 'laundryservice'
+  | 'coachingtraining'
+  | 'rentingleasing'
+  | 'fitnesscenter'
+  | 'realestate'
+  | 'ngotrust'
+  | 'toursandtravel'
+  | 'autoparts'
+  | 'constructionmaterials'
+  | 'furniture'
+  | 'jewellery'
+  | 'hardware'
+  | 'paperproducts'
+  | 'sweetbakery'
+  | 'giftstoys'
+  | 'petrolstation'
+  | 'oilgas';
 
 // Top-level groups shown as sections wherever a shopkeeper picks a business
 // type (signup, profile, add-shop). Retail + Agro are everyday shop-counter
@@ -65,7 +91,10 @@ export type BusinessCategory =
   | 'electrical_wholesale'
   | 'electronics_wholesale'
   | 'liquor_wholesale'
-  | 'cosmetics_wholesale';
+  | 'cosmetics_wholesale'
+  // Service businesses (Salon, Coaching, Repairs, Real Estate, …) — added
+  // for the Industry Category wizard's 12 new service-type BusinessConfigs.
+  | 'service';
 
 export interface BusinessCategoryMeta {
   id: BusinessCategory;
@@ -169,6 +198,14 @@ export const BUSINESS_CATEGORIES: Record<BusinessCategory, BusinessCategoryMeta>
     emoji: '💄',
     suggestedPackageLabel: 'Udyog Package',
   },
+  service: {
+    id: 'service',
+    label: 'Service Businesses',
+    labelHi: 'सेवा व्यवसाय',
+    labelMr: 'सेवा व्यवसाय',
+    emoji: '🧰',
+    suggestedPackageLabel: 'Dukan / Vyapar Package',
+  },
 };
 
 const KNOWN_PACKAGES: PackageType[] = ['dukan', 'vyapar', 'wholesale', 'badaudyog'];
@@ -225,7 +262,7 @@ export function isBusinessTypeAllowedForPackage(type: string, packageType: Packa
 }
 
 export const BUSINESS_CATEGORY_ORDER: BusinessCategory[] = [
-  'retail', 'agro', 'manufacturing',
+  'retail', 'service', 'agro', 'manufacturing',
   'fmcg_grocery', 'textile_garments', 'footwear_wholesale', 'medical_pharma',
   'electrical_wholesale', 'electronics_wholesale', 'liquor_wholesale', 'cosmetics_wholesale',
 ];
@@ -1909,6 +1946,324 @@ export const BUSINESS_CONFIGS: Record<BusinessType, BusinessConfig> = {
     productPlaceholderMr: 'उदा. फेस वॉश 100ml × 48 केस',
     defaultPackage: 'wholesale',
   },
+
+  // ── Service businesses ──────────────────────────────────────────────
+  // Added for the Industry Category wizard (Profile → "Change Business
+  // Category") — categories like Salon, Coaching, Repairs previously had no
+  // matching BusinessType at all, so picking them saved the category label
+  // but never changed which units/fields a shop saw. Each of these gives a
+  // real, billable unit list (Session/Hour/Job/…) instead of leaving the
+  // shop on whatever generic units it had before.
+  accountingca: {
+    type: 'accountingca', category: 'service',
+    label: 'Accounting & CA', labelHi: 'अकाउंटिंग और सीए', labelMr: 'अकाउंटिंग आणि सीए',
+    emoji: '📊', color: 'slate', gradient: 'from-slate-600 to-gray-600',
+    description: 'Accounting, tax filing & CA practice services',
+    features: ['Service/hour based billing', 'Retainer packages', 'Client history'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Tax Filing', 'Bookkeeping', 'Audit', 'GST Return', 'Payroll', 'Consultation', 'General'],
+    defaultUnits: ['Service', 'Hour', 'Month', 'Package', 'Unit'],
+    productPlaceholder: 'e.g. GST Return Filing (Monthly)',
+    defaultPackage: 'dukan',
+  },
+  interiordesign: {
+    type: 'interiordesign', category: 'service',
+    label: 'Interior Designer', labelHi: 'इंटीरियर डिज़ाइनर', labelMr: 'इंटीरियर डिझायनर',
+    emoji: '🎨', color: 'violet', gradient: 'from-violet-600 to-purple-600',
+    description: 'Interior design & decor consultancy',
+    features: ['Project-based billing', 'Sq. ft. based pricing', 'Client/site history'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Consultation', 'Design Package', 'Furnishing', 'Site Visit', 'Material Sourcing', 'General'],
+    defaultUnits: ['Project', 'Sq Ft', 'Service', 'Unit'],
+    productPlaceholder: 'e.g. 2BHK Full Interior Package',
+    defaultPackage: 'dukan',
+  },
+  salonspa: {
+    type: 'salonspa', category: 'service',
+    label: 'Salon & Spa', labelHi: 'सैलून और स्पा', labelMr: 'सलून आणि स्पा',
+    emoji: '💇', color: 'pink', gradient: 'from-pink-600 to-rose-600',
+    description: 'Salon, spa & beauty parlour services',
+    features: ['Per-session billing', 'Membership packages', 'Customer service history'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Haircut', 'Hair Color', 'Facial', 'Massage/Spa', 'Manicure/Pedicure', 'Bridal Package', 'General'],
+    defaultUnits: ['Service', 'Session', 'Package', 'Unit'],
+    productPlaceholder: 'e.g. Haircut & Styling',
+    defaultPackage: 'dukan',
+  },
+  repairservices: {
+    type: 'repairservices', category: 'service',
+    label: 'Repairing / Plumbing / Electrician', labelHi: 'मरम्मत / प्लंबिंग / इलेक्ट्रीशियन', labelMr: 'दुरुस्ती / प्लंबिंग / इलेक्ट्रिशियन',
+    emoji: '🔧', color: 'amber', gradient: 'from-amber-600 to-orange-600',
+    description: 'Repair, plumbing & electrical service jobs',
+    features: ['Job/visit based billing', 'Parts + labour split', 'Service history'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: true, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Plumbing', 'Electrical', 'Appliance Repair', 'Labour Charge', 'Spare Part', 'General'],
+    defaultUnits: ['Job', 'Visit', 'Hour', 'Piece', 'Unit'],
+    productPlaceholder: 'e.g. Tap Repair Visit',
+    defaultPackage: 'dukan',
+  },
+  restauranthotel: {
+    type: 'restauranthotel', category: 'service',
+    label: 'Restaurant / Hotel', labelHi: 'रेस्टोरेंट / होटल', labelMr: 'रेस्टॉरंट / हॉटेल',
+    emoji: '🍽️', color: 'red', gradient: 'from-red-600 to-orange-600',
+    description: 'Restaurant, dhaba & hotel/lodging services',
+    features: ['Plate/portion billing', 'Room-night billing', 'Ingredient expiry tracking'],
+    hasExpiry: true, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Starters', 'Main Course', 'Beverages', 'Desserts', 'Room Booking', 'General'],
+    defaultUnits: ['Plate', 'Piece', 'Kg', 'Room Night', 'Unit'],
+    productPlaceholder: 'e.g. Paneer Butter Masala (Full)',
+    defaultPackage: 'dukan',
+  },
+  laundryservice: {
+    type: 'laundryservice', category: 'service',
+    label: 'Laundry / Washing / Dry Clean', labelHi: 'लॉन्ड्री / धुलाई / ड्राई क्लीन', labelMr: 'लॉन्ड्री / धुलाई / ड्राय क्लीन',
+    emoji: '🧺', color: 'sky', gradient: 'from-sky-600 to-blue-600',
+    description: 'Laundry, washing & dry-cleaning services',
+    features: ['Per-piece / per-kg billing', 'Pickup-drop tracking'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Wash & Fold', 'Dry Clean', 'Ironing', 'Stain Removal', 'General'],
+    defaultUnits: ['Piece', 'Kg', 'Service', 'Unit'],
+    productPlaceholder: 'e.g. Shirt Dry Clean',
+    defaultPackage: 'dukan',
+  },
+  coachingtraining: {
+    type: 'coachingtraining', category: 'service',
+    label: 'Coaching & Training', labelHi: 'कोचिंग और प्रशिक्षण', labelMr: 'कोचिंग आणि प्रशिक्षण',
+    emoji: '🎓', color: 'indigo', gradient: 'from-indigo-600 to-blue-600',
+    description: 'Coaching classes, tuition & training institutes',
+    features: ['Course/batch billing', 'Monthly fee tracking', 'Student history'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Course Fee', 'Admission Fee', 'Study Material', 'Test Series', 'General'],
+    defaultUnits: ['Course', 'Month', 'Session', 'Batch', 'Unit'],
+    productPlaceholder: 'e.g. 10th Grade Batch (Monthly)',
+    defaultPackage: 'dukan',
+  },
+  rentingleasing: {
+    type: 'rentingleasing', category: 'service',
+    label: 'Renting & Leasing', labelHi: 'किराया और लीजिंग', labelMr: 'भाडे आणि लीजिंग',
+    emoji: '📋', color: 'teal', gradient: 'from-teal-600 to-cyan-600',
+    description: 'Equipment, vehicle & property rental/leasing',
+    features: ['Day/month based billing', 'Security deposit tracking'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: true, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Equipment Rent', 'Vehicle Rent', 'Property Rent', 'Deposit', 'General'],
+    defaultUnits: ['Day', 'Month', 'Piece', 'Unit'],
+    productPlaceholder: 'e.g. Generator (Per Day)',
+    defaultPackage: 'dukan',
+  },
+  fitnesscenter: {
+    type: 'fitnesscenter', category: 'service',
+    label: 'Fitness Center', labelHi: 'फिटनेस सेंटर', labelMr: 'फिटनेस सेंटर',
+    emoji: '🏋️', color: 'lime', gradient: 'from-lime-600 to-green-600',
+    description: 'Gym, yoga & fitness training centers',
+    features: ['Membership billing', 'Session packages', 'Member history'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Membership', 'Personal Training', 'Diet Plan', 'Supplements', 'General'],
+    defaultUnits: ['Month', 'Session', 'Package', 'Unit'],
+    productPlaceholder: 'e.g. Gym Membership (Monthly)',
+    defaultPackage: 'dukan',
+  },
+  realestate: {
+    type: 'realestate', category: 'service',
+    label: 'Real Estate', labelHi: 'रियल एस्टेट', labelMr: 'रिअल इस्टेट',
+    emoji: '🏢', color: 'stone', gradient: 'from-stone-600 to-neutral-600',
+    description: 'Real estate brokerage & property services',
+    features: ['Sq. ft. / unit based listing', 'Brokerage tracking'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Property Sale', 'Property Rent', 'Brokerage', 'Documentation', 'General'],
+    defaultUnits: ['Sq Ft', 'Unit', 'Property'],
+    productPlaceholder: 'e.g. 2BHK Flat Sale',
+    defaultPackage: 'dukan',
+  },
+  ngotrust: {
+    type: 'ngotrust', category: 'service',
+    label: 'NGO & Charitable Trust', labelHi: 'एनजीओ और चैरिटेबल ट्रस्ट', labelMr: 'एनजीओ आणि धर्मादाय संस्था',
+    emoji: '🤝', color: 'emerald', gradient: 'from-emerald-600 to-green-600',
+    description: 'NGO, trust & charitable organisation operations',
+    features: ['Donation & kit tracking', 'Beneficiary records'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Donation Kit', 'Ration Kit', 'Medical Aid', 'Education Aid', 'General'],
+    defaultUnits: ['Unit', 'Piece', 'Kit'],
+    productPlaceholder: 'e.g. Ration Kit',
+    defaultPackage: 'dukan',
+  },
+  toursandtravel: {
+    type: 'toursandtravel', category: 'service',
+    label: 'Tours & Travels', labelHi: 'टूर्स और ट्रैवल्स', labelMr: 'टूर्स आणि ट्रॅव्हल्स',
+    emoji: '✈️', color: 'cyan', gradient: 'from-cyan-600 to-sky-600',
+    description: 'Travel agency, tour packages & ticketing',
+    features: ['Package/ticket billing', 'Per-person pricing'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Tour Package', 'Flight Ticket', 'Bus Ticket', 'Hotel Booking', 'Visa Service', 'General'],
+    defaultUnits: ['Package', 'Person', 'Day', 'Ticket'],
+    productPlaceholder: 'e.g. Goa Tour Package (3N/4D)',
+    defaultPackage: 'dukan',
+  },
+
+  // ── Retail businesses without a prior equivalent ────────────────────
+  autoparts: {
+    type: 'autoparts', category: 'retail',
+    label: 'Automobiles / Auto Parts', labelHi: 'ऑटोमोबाइल / ऑटो पार्ट्स', labelMr: 'ऑटोमोबाइल / ऑटो पार्ट्स',
+    emoji: '🚗', color: 'zinc', gradient: 'from-zinc-600 to-slate-600',
+    description: 'Automobile spare parts & accessories',
+    features: ['Model-wise parts', 'Warranty tracking'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: true, hasModel: true, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Engine Parts', 'Body Parts', 'Electricals', 'Tyres', 'Lubricants & Oils', 'Accessories', 'General'],
+    defaultUnits: ['Piece', 'Set', 'Litre', 'Unit'],
+    productPlaceholder: 'e.g. Brake Pad (Honda City)',
+    defaultPackage: 'dukan',
+  },
+  constructionmaterials: {
+    type: 'constructionmaterials', category: 'retail',
+    label: 'Construction Materials & Equipment', labelHi: 'निर्माण सामग्री और उपकरण', labelMr: 'बांधकाम साहित्य आणि उपकरणे',
+    emoji: '🏗️', color: 'orange', gradient: 'from-orange-600 to-amber-600',
+    description: 'Cement, sand, tiles & construction equipment',
+    features: ['Bag/Ton based units', 'Bulk quantity billing'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Cement', 'Sand & Aggregate', 'Steel & TMT', 'Tiles & Sanitary', 'Paints', 'Equipment', 'General'],
+    defaultUnits: ['Bag', 'Kg', 'Ton', 'Piece', 'Bundle', 'Cubic Ft'],
+    productPlaceholder: 'e.g. UltraTech Cement (50kg Bag)',
+    defaultPackage: 'dukan',
+  },
+  furniture: {
+    type: 'furniture', category: 'retail',
+    label: 'Furniture', labelHi: 'फर्नीचर', labelMr: 'फर्निचर',
+    emoji: '🪑', color: 'yellow', gradient: 'from-yellow-600 to-amber-600',
+    description: 'Home & office furniture',
+    features: ['Piece/set based billing'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: true, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Sofa', 'Bed', 'Dining Set', 'Wardrobe', 'Office Furniture', 'General'],
+    defaultUnits: ['Piece', 'Set'],
+    productPlaceholder: 'e.g. 3-Seater Sofa',
+    defaultPackage: 'dukan',
+  },
+  jewellery: {
+    type: 'jewellery', category: 'retail',
+    label: 'Jewellery & Gems', labelHi: 'आभूषण और रत्न', labelMr: 'दागिने आणि रत्ने',
+    emoji: '💎', color: 'yellow', gradient: 'from-yellow-500 to-amber-500',
+    description: 'Gold, silver, gems & jewellery',
+    features: ['Gram/carat based units'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Gold Jewellery', 'Silver Jewellery', 'Diamond', 'Gemstones', 'Artificial Jewellery', 'General'],
+    defaultUnits: ['Gram', 'Piece', 'Carat', 'Set'],
+    productPlaceholder: 'e.g. Gold Ring (22K)',
+    defaultPackage: 'dukan',
+  },
+  hardware: {
+    type: 'hardware', category: 'retail',
+    label: 'Hardware Store', labelHi: 'हार्डवेयर स्टोर', labelMr: 'हार्डवेअर स्टोअर',
+    emoji: '🔨', color: 'gray', gradient: 'from-gray-600 to-slate-600',
+    description: 'Hardware, tools & building fittings',
+    features: ['Piece/Kg/Box based units'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Hand Tools', 'Power Tools', 'Fasteners', 'Pipes & Fittings', 'Locks & Fittings', 'Paints', 'General'],
+    defaultUnits: ['Piece', 'Kg', 'Box', 'Set', 'Meter'],
+    productPlaceholder: 'e.g. Steel Hammer 500g',
+    defaultPackage: 'dukan',
+  },
+  paperproducts: {
+    type: 'paperproducts', category: 'retail',
+    label: 'Paper & Paper Products', labelHi: 'कागज और कागज उत्पाद', labelMr: 'कागद आणि कागद उत्पादने',
+    emoji: '📄', color: 'neutral', gradient: 'from-neutral-600 to-stone-600',
+    description: 'Paper, printing & packaging paper products',
+    features: ['Ream/Roll based units'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Printing Paper', 'Packaging Paper', 'Tissue & Disposables', 'Cardboard', 'General'],
+    defaultUnits: ['Ream', 'Kg', 'Piece', 'Roll', 'Box'],
+    productPlaceholder: 'e.g. A4 Paper (Ream)',
+    defaultPackage: 'dukan',
+  },
+  sweetbakery: {
+    type: 'sweetbakery', category: 'retail',
+    label: 'Sweet Shop / Bakery', labelHi: 'मिठाई की दुकान / बेकरी', labelMr: 'मिठाई दुकान / बेकरी',
+    emoji: '🍰', color: 'rose', gradient: 'from-rose-600 to-pink-600',
+    description: 'Sweets, snacks & bakery items',
+    features: ['Kg/piece based billing', 'Expiry tracking for perishables'],
+    hasExpiry: true, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Sweets', 'Namkeen', 'Cakes & Pastries', 'Bread & Buns', 'Cookies', 'General'],
+    defaultUnits: ['Kg', 'Piece', 'Box', 'Dozen'],
+    productPlaceholder: 'e.g. Kaju Katli (1kg)',
+    defaultPackage: 'dukan',
+  },
+  giftstoys: {
+    type: 'giftstoys', category: 'retail',
+    label: 'Gifts & Toys', labelHi: 'उपहार और खिलौने', labelMr: 'भेटवस्तू आणि खेळणी',
+    emoji: '🎁', color: 'fuchsia', gradient: 'from-fuchsia-600 to-purple-600',
+    description: 'Gift items & toys',
+    features: ['Piece/set based billing'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Toys', 'Gift Items', 'Greeting Cards', 'Party Supplies', 'General'],
+    defaultUnits: ['Piece', 'Set', 'Box'],
+    productPlaceholder: 'e.g. Remote Control Car',
+    defaultPackage: 'dukan',
+  },
+  petrolstation: {
+    type: 'petrolstation', category: 'retail',
+    label: 'Petroleum Bulk Stations / Petrol', labelHi: 'पेट्रोलियम स्टेशन / पेट्रोल', labelMr: 'पेट्रोलियम स्टेशन / पेट्रोल',
+    emoji: '⛽', color: 'red', gradient: 'from-red-600 to-yellow-600',
+    description: 'Petrol pump & bulk fuel stations',
+    features: ['Litre/KL based billing'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['Petrol', 'Diesel', 'CNG', 'Lubricants', 'General'],
+    defaultUnits: ['Litre', 'KL'],
+    productPlaceholder: 'e.g. Petrol (per Litre)',
+    defaultPackage: 'dukan',
+  },
+  oilgas: {
+    type: 'oilgas', category: 'retail',
+    label: 'Oil & Gas', labelHi: 'तेल और गैस', labelMr: 'तेल आणि गॅस',
+    emoji: '🛢️', color: 'orange', gradient: 'from-orange-600 to-red-600',
+    description: 'Cooking gas, industrial oil & gas cylinder trade',
+    features: ['Litre/Cylinder based billing'],
+    hasExpiry: false, hasExpiryRequired: false, hasBatch: false, hasDrugSchedule: false,
+    hasSizes: false, hasShades: false, hasWarranty: false, hasModel: false, hasGender: false,
+    hasFabric: false, hasWireSpecs: false, hasVoltWatt: false, hasSoleMaterial: false,
+    defaultCategories: ['LPG Cylinder', 'Industrial Gas', 'Lubricant Oil', 'General'],
+    defaultUnits: ['Litre', 'KL', 'Cylinder', 'Kg'],
+    productPlaceholder: 'e.g. LPG Cylinder (14.2kg)',
+    defaultPackage: 'dukan',
+  },
 };
 
 export function getBusinessConfig(type: BusinessType | string): BusinessConfig {
@@ -1986,6 +2341,41 @@ export const MILL_CATEGORIES: MillCategoryOption[] = [
   { key: 'consumable',         label: 'Consumable',         labelHi: 'उपभोज्य',        labelMr: 'उपभोग्य',       emoji: '🧴', accent: 'rose',    description: 'Machine oil, stitching thread, cleaning supplies — used up in operations, not sold.' },
   { key: 'other',              label: 'Other',               labelHi: 'अन्य',           labelMr: 'इतर',           emoji: '📋', accent: 'slate',   description: 'Anything that doesn’t fit the categories above.' },
 ];
+
+// ─── Quality / Lab grading thresholds (QualityTest) ─────────────────────
+// Generic grain-grading bands — deliberately one shared set rather than a
+// per-grain-type config table (paddy vs. wheat vs. dal each have their own
+// real trade thresholds, but that's a materially bigger feature than v1
+// needs). Good enough to flag an obviously bad lot; the shopkeeper's own
+// accept/reject `decision` on QualityTest always wins over this suggestion.
+export const QUALITY_FLAG_THRESHOLDS = {
+  moisturePct: { amber: 14, red: 16 },
+  foreignMatterPct: { amber: 1, red: 2 },
+  brokenPct: { amber: 3, red: 5 },
+  damagedPct: { amber: 1, red: 3 },
+} as const;
+
+export type QualityFlag = 'green' | 'amber' | 'red';
+
+export function computeQualityFlag(reading: {
+  moisturePct?: number | null; foreignMatterPct?: number | null;
+  brokenPct?: number | null; damagedPct?: number | null;
+}): QualityFlag {
+  const t = QUALITY_FLAG_THRESHOLDS;
+  const checks: [number | null | undefined, { amber: number; red: number }][] = [
+    [reading.moisturePct, t.moisturePct],
+    [reading.foreignMatterPct, t.foreignMatterPct],
+    [reading.brokenPct, t.brokenPct],
+    [reading.damagedPct, t.damagedPct],
+  ];
+  let worst: QualityFlag = 'green';
+  for (const [value, band] of checks) {
+    if (value == null || !isFinite(value)) continue;
+    if (value >= band.red) return 'red'; // worst possible, short-circuit
+    if (value >= band.amber) worst = 'amber';
+  }
+  return worst;
+}
 
 // ─── Party Types (Customer.customerType) ────────────────────────────────
 // A single Customer row can play any of four roles in a mill's ledger.

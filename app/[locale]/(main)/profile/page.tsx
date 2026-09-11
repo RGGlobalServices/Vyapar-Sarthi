@@ -7,7 +7,7 @@ import {
   User, Building, Mail, Phone, MapPin, Camera,
   Save, Loader2, CheckCircle, Store, Briefcase,
   ArrowLeft, Lock, Eye, EyeOff, TrendingUp, ShieldCheck,
-  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark, Palette, Check, X, Maximize2,
+  KeyRound, AlertCircle, QrCode, Smartphone, Printer, Landmark, Palette, Check, X, Maximize2, FileText, PenLine,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
@@ -19,6 +19,7 @@ import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 import { getBusinessTypesForPackage, isBusinessTypeAllowedForPackage, getBusinessConfig, MILL_TYPES, MILL_PRODUCT_TYPES } from '@/lib/businessConfig';
 import { A4Invoice } from '@/components/invoice/A4Invoice';
 import { computeGst } from '@/lib/gst';
+import IndustryOnboardingWizard from '@/components/profile/IndustryOnboardingWizard';
 
 
 export default function ProfilePage() {
@@ -33,8 +34,11 @@ export default function ProfilePage() {
   const [status, setStatus]     = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [shop, setShop]         = useState<any>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
   const [showFullPreview, setShowFullPreview] = useState(false);
+  const [showIndustryWizard, setShowIndustryWizard] = useState(false);
 
   // Edit Email
   const [emailOpen, setEmailOpen]       = useState(false);
@@ -133,6 +137,7 @@ export default function ProfilePage() {
         address: profile.address,
         mobile: profile.mobile,
         logo_url: profile.logoUrl,
+        signature_url: (profile as any).signatureUrl || '',
         business_type: bType,
         businessType: bType,
         // Mill sub-type + processed products — only meaningful for the unified
@@ -153,6 +158,8 @@ export default function ProfilePage() {
         bank_account_name: profile.bankAccountName || '',
         bank_account_number: profile.bankAccountNumber || '',
         bank_ifsc: profile.bankIfsc || '',
+        invoice_footer: profile.invoiceFooter || '',
+        industry_category_id: (profile as any).industryCategoryId || null,
       });
     }
   }, [profile]);
@@ -171,7 +178,7 @@ export default function ProfilePage() {
     try {
       await updateProfile({
         shopName: shop.name, address: shop.address,
-        mobile: shop.mobile, logoUrl: shop.logo_url, businessType: shop.business_type,
+        mobile: shop.mobile, logoUrl: shop.logo_url, signatureUrl: shop.signature_url, businessType: shop.business_type,
         // Only send mill sub-type / products when businessType is the
         // unified 'millprocessing' — otherwise force-null them so switching
         // AWAY from millprocessing wipes any stale mill data instead of
@@ -188,6 +195,8 @@ export default function ProfilePage() {
         bankAccountName: shop.bank_account_name?.trim() || null,
         bankAccountNumber: shop.bank_account_number?.trim() || null,
         bankIfsc: shop.bank_ifsc?.trim().toUpperCase() || null,
+        invoiceFooter: shop.invoice_footer?.trim() || null,
+        industryCategoryId: shop.industry_category_id || null,
       });
       fetchProfile(); // Force re-fetch to ensure all components receive updated states
       showStatus('success', t('updateSuccess'));
@@ -208,6 +217,26 @@ export default function ProfilePage() {
       }
     } catch { showStatus('error', t('uploadFailed')); }
     finally { setUploading(false); }
+  };
+
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingSignature(true);
+    try {
+      const fileName = `signature-${shop?.id || 'default'}-${Date.now()}.png`;
+      const publicUrl = await uploadInvoiceToSupabase(file, fileName, file.type);
+      if (publicUrl) {
+        setShop({ ...shop, signature_url: publicUrl });
+        await updateProfile({ signatureUrl: publicUrl });
+      }
+    } catch { showStatus('error', t('uploadFailed')); }
+    finally { setUploadingSignature(false); }
+  };
+
+  const handleRemoveSignature = async () => {
+    setShop({ ...shop, signature_url: '' });
+    try { await updateProfile({ signatureUrl: null as any }); } catch {}
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -333,6 +362,39 @@ export default function ProfilePage() {
             <div className="text-center">
               <p className="font-bold text-slate-900 dark:text-slate-200">{t('businessLogo')}</p>
             </div>
+
+            <div className="w-full pt-6 border-t border-slate-200 dark:border-slate-800 flex flex-col items-center gap-4">
+              <div className="relative group">
+                <div className="w-32 h-16 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-emerald-500/50">
+                  {shop?.signature_url ? (
+                    <img
+                      src={`${shop.signature_url}${shop.signature_url.includes('?') ? '&' : '?'}v=${Date.now()}`}
+                      alt="Signature" className="w-full h-full object-contain p-1" />
+                  ) : (
+                    <PenLine size={24} className="text-slate-400 dark:text-slate-600" />
+                  )}
+                  {uploadingSignature && (
+                    <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                      <Loader2 className="animate-spin text-emerald-500" size={16} />
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => !uploadingSignature && signatureInputRef.current?.click()} disabled={uploadingSignature}
+                  className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 text-slate-900 rounded-lg flex items-center justify-center shadow-xl hover:bg-emerald-400 transition-all active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Camera size={16} />
+                </button>
+                <input type="file" ref={signatureInputRef} onChange={handleSignatureUpload} disabled={uploadingSignature} accept="image/*" className="hidden" />
+              </div>
+              <div className="text-center">
+                <p className="font-bold text-slate-900 dark:text-slate-200">Authorized Signature</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Photo of your signature or shop stamp — prints on every bill</p>
+                {!!shop?.signature_url && (
+                  <button type="button" onClick={handleRemoveSignature} className="text-[11px] font-bold text-slate-400 hover:text-red-500 transition-colors mt-1">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -413,6 +475,13 @@ export default function ProfilePage() {
                       );
                     })()}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowIndustryWizard(true)}
+                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                  >
+                    Not sure? Use the guided Category Picker →
+                  </button>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase">Package Type</label>
@@ -835,12 +904,98 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Terms & Conditions — printed on every A4/thermal bill footer
+          (A4Invoice.tsx / ThermalInvoice.tsx already render invoiceFooter,
+          falling back to a hardcoded default when empty). Presets just
+          append a ready-made line into the same free-text field the
+          shopkeeper can otherwise fully customize by typing. */}
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+            <FileText size={20} className="text-amber-500" /> Terms & Conditions
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Quick Add</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                'Goods once sold will not be taken back.',
+                'Warranty applicable as per manufacturer terms.',
+                'Payment due within 7 days of invoice date.',
+                'Interest @18% p.a. will be charged on overdue payments.',
+                'Goods once sold will only be exchanged, not refunded.',
+                'Subject to local jurisdiction only.',
+                'E. & O.E. (Errors and Omissions Excepted).',
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => {
+                    const current = (shop?.invoice_footer || '').trim();
+                    if (current.split('\n').map((l: string) => l.trim()).includes(preset)) return;
+                    setShop({ ...shop, invoice_footer: current ? `${current}\n${preset}` : preset });
+                  }}
+                  className="text-xs font-medium px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-300 hover:border-amber-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                >
+                  + {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-500 uppercase block">Your Terms & Conditions (prints on every bill)</label>
+              {!!shop?.invoice_footer && (
+                <button
+                  type="button"
+                  onClick={() => setShop({ ...shop, invoice_footer: '' })}
+                  className="text-[11px] font-bold text-slate-400 hover:text-red-500 transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <textarea
+              rows={4}
+              placeholder={'1. Goods once sold will not be taken back.\n2. Warranty applicable as per manufacturer terms.'}
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors resize-none"
+              value={shop?.invoice_footer || ''}
+              onChange={e => setShop({ ...shop, invoice_footer: e.target.value })}
+            />
+            <p className="text-[11px] text-slate-500">Type your own lines directly, or tap a Quick Add chip above to insert a common one. Leave empty to use the default two-line terms shown as the placeholder.</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {showFullPreview && (
         <FullBillPreviewModal
           theme={shop?.invoice_theme || 'standard'}
           accent={shop?.invoice_color || ''}
           shop={shop}
           onClose={() => setShowFullPreview(false)}
+        />
+      )}
+
+      {showIndustryWizard && (
+        <IndustryOnboardingWizard
+          currentPackageType={shop?.package_type || 'dukan'}
+          onClose={() => setShowIndustryWizard(false)}
+          onConfirm={({ industryCategoryId, mappedBusinessType }) => {
+            // Local state only — same as every other Profile field, actually
+            // persisted when the shopkeeper hits the page's own Save button.
+            // Never overwrite businessType if the category had no confident
+            // mapping (mappedBusinessType null) — the wizard's summary step
+            // already explained that case before Confirm was clickable.
+            setShop((s: any) => ({
+              ...s,
+              industry_category_id: industryCategoryId,
+              ...(mappedBusinessType ? { business_type: mappedBusinessType, businessType: mappedBusinessType } : {}),
+            }));
+            setShowIndustryWizard(false);
+            showStatus('success', 'Category picked — click Save to apply.');
+          }}
         />
       )}
 
@@ -1042,6 +1197,7 @@ function FullBillPreviewModal({ theme, accent, shop, onClose }: { theme: string;
           invoiceTheme={theme as any}
           invoiceColor={accent || null}
           invoiceFooter={shop?.invoice_footer || undefined}
+          ownerSignature={shop?.signature_url || undefined}
           billType="gst"
           gstBreakdown={gstBreakdown}
           bankName={shop?.bank_name || undefined}

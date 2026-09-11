@@ -61,9 +61,13 @@ export const PATCH = handle(async (req) => {
 
   const allowedFields = [
     'name', 'address', 'mobile', 'businessType', 'businessSubtype', 'businessProducts',
-    'packageType', 'logoUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit',
+    'packageType', 'logoUrl', 'signatureUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit',
     'invoiceFormat', 'invoiceTheme', 'invoiceColor', 'invoiceFooter', 'showQrCode',
     'upiId', 'bankName', 'bankAccountName', 'bankAccountNumber', 'bankIfsc',
+    // Which IndustryCategory (Kirana/Garment/Pharmacy/…) this shop picked via
+    // Profile's "Change Business Category" wizard — see schema.prisma's
+    // IndustryCategory model comment. Purely additive alongside businessType.
+    'industryCategoryId',
   ];
   const data: Record<string, unknown> = {};
   for (const field of allowedFields) {

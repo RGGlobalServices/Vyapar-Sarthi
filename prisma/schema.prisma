@@ -85,6 +85,10 @@ model Shop {
   setupComplete           Boolean?             @default(false) @map("setup_complete")
   mobile                  String?
   logoUrl                 String?              @map("logo_url")
+  // Scanned/photographed owner signature or shop stamp, shown above
+  // "Authorized Signatory" on printed/PDF bills (A4 + thermal). Same
+  // upload-to-storage pattern as logoUrl.
+  signatureUrl            String?              @map("signature_url")
   shopCode                String?              @unique @map("shop_code") @db.VarChar
   packageType             String?              @default("dukan") @map("package_type") @db.VarChar
   subscriptionPlan        String?              @default("trial") @map("subscription_plan") @db.VarChar
@@ -131,6 +135,12 @@ model Shop {
   bankAccountName         String?              @map("bank_account_name") @db.VarChar
   bankAccountNumber       String?              @map("bank_account_number") @db.VarChar
   bankIfsc                String?              @map("bank_ifsc") @db.VarChar
+  // Which IndustryCategory (Kirana/Garment/Pharmacy/…) this shop picked via
+  // Profile's "Change Business Category" wizard. Plain scalar, not a Prisma
+  // relation — IndustryCategory is looked up separately by id where needed,
+  // to avoid growing this already-large model's relation list. Purely
+  // additive: never read by the businessType/packageType engine below.
+  industryCategoryId      String?              @map("industry_category_id") @db.Uuid
 
   customers               Customer[]
   products                Product[]
@@ -148,6 +158,8 @@ model Shop {
   batches                 Batch[]
   expenses                Expense[]
   orders                  Order[]
+  deliveryChallans        DeliveryChallan[]
+  stockTakeSessions       StockTakeSession[]
   categories              Category[]
   brands                  Brand[]
   units                   Unit[]
@@ -159,6 +171,7 @@ model Shop {
   rawMaterialLots         RawMaterialLot[]
   productionBatches       ProductionBatch[]
   byProducts              ByProduct[]
+  qualityTests            QualityTest[]
   gateEntries             GateEntry[]
   weighbridgeEntries      WeighbridgeEntry[]
   freightEntries          FreightEntry[]
@@ -166,6 +179,7 @@ model Shop {
   commissionEntries       CommissionEntry[]
   machines                Machine[]
   maintenanceEntries      MaintenanceEntry[]
+  machineDowntimes        MachineDowntime[]
   spareParts              SparePart[]
   sparePartMovements      SparePartMovement[]
   deletedRecords          DeletedRecord[]
@@ -262,6 +276,7 @@ model Order {
   customer Customer?   @relation(fields: [customerId], references: [id], onDelete: NoAction)
   supplier Supplier?   @relation(fields: [supplierId], references: [id], onDelete: NoAction)
   items    OrderItem[]
+  deliveryChallans DeliveryChallan[]
 
   @@index([shopId])
   @@index([customerId])
@@ -285,6 +300,65 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@map("order_items")
+}
+
+// A dispatch/delivery note — goods physically leave the shop against this
+// document (stock is decremented the moment it's created, mirroring a real
+// paper challan handed to the driver) BEFORE the formal GST invoice is
+// raised. Optionally linked to a Sales Order (partial fulfillment — one
+// order can spawn several challans over time) and later "converted" into a
+// real Sale via the normal billing flow, which is what actually books the
+// revenue/GST/party ledger — this model only tracks the physical movement +
+// prints the delivery note, deliberately kept OUT of anything financial so
+// it never risks double-counting revenue or drifting from billing/route.ts's
+// carefully-tuned sale-creation logic.
+model DeliveryChallan {
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
+  challanNumber String    @map("challan_number") @db.VarChar
+  orderId       String?   @map("order_id") @db.Uuid
+  customerId    String?   @map("customer_id") @db.Uuid
+  customerName  String?   @map("customer_name") @db.VarChar
+  customerMobile String?  @map("customer_mobile") @db.VarChar
+  customerAddress String? @map("customer_address")
+  // 'open' = dispatched, not yet invoiced; 'invoiced' = converted to a real
+  // Sale (see saleId); 'cancelled' = stock was restored, void document.
+  status        String    @default("open") @db.VarChar
+  saleId        String?   @map("sale_id") @db.Uuid
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  invoicedAt    DateTime? @map("invoiced_at") @db.Timestamptz(6)
+
+  shop     Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  order    Order?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  customer Customer?             @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  items    DeliveryChallanItem[]
+
+  @@index([shopId])
+  @@index([customerId])
+  @@index([orderId])
+  @@map("delivery_challans")
+}
+
+model DeliveryChallanItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  challanId  String  @map("challan_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
+  // Snapshot at dispatch time — a later product rename/price edit must not
+  // change what a printed challan says it sent, same reasoning as
+  // PurchaseItem/OrderItem's own snapshots.
+  name       String  @db.VarChar
+  unit       String  @db.VarChar
+  variantKey String? @map("variant_key") @db.VarChar
+  quantity   Float
+  price      Float
+
+  challan DeliveryChallan @relation(fields: [challanId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([challanId])
+  @@index([productId])
+  @@map("delivery_challan_items")
 }
 
 model PaymentTransaction {
@@ -424,6 +498,8 @@ model Product {
   purchaseItems    PurchaseItem[]
   purchaseReturnItems PurchaseReturnItem[]
   orderItems       OrderItem[]
+  deliveryChallanItems DeliveryChallanItem[]
+  stockTakeItems   StockTakeItem[]
   dailyStockEntries DailyStockEntry[]
   dailyRegisterLogs DailyRegisterLog[]
 
@@ -487,6 +563,7 @@ model Customer {
   shop                  Shop?                   @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sales                 Sale[]
   orders                Order[]
+  deliveryChallans      DeliveryChallan[]
   collectionEntries     CollectionEntry[]
   gateEntriesAsParty    GateEntry[]             @relation("GateEntryParty")
   freightEntries        FreightEntry[]
@@ -567,6 +644,51 @@ model StockLog {
   @@index([productId], map: "ix_stock_logs_product_id")
   @@index([shopId, type, createdAt(sort: Desc)], map: "ix_stock_logs_shop_type_created")
   @@map("stock_logs")
+}
+
+// A physical stock-take/audit session — "count every product against what
+// the system thinks you have, review the variance, commit once." Distinct
+// from the existing per-product AdjustDrawer/adjust endpoints (which stay
+// untouched and still work standalone): this is the bulk, session-based
+// workflow those don't cover. Deliberately reuses the same simple
+// `/products/[id]/adjust`-style stock mutation at commit time rather than a
+// new stock-mutation path, so committed variances show up in the same
+// StockLog history everything else already reads.
+model StockTakeSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  name        String?   @db.VarChar
+  status      String    @default("draft") @db.VarChar // draft | completed | cancelled
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  notes       String?
+
+  shop  Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  items StockTakeItem[]
+
+  @@index([shopId])
+  @@map("stock_take_sessions")
+}
+
+model StockTakeItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  // Snapshots at session-start time so a variance stays meaningful even if
+  // the product is renamed/sold-against mid-count — the same reasoning as
+  // every other line-item snapshot in this schema (PurchaseItem, OrderItem).
+  productName String   @map("product_name") @db.VarChar
+  unit        String?  @db.VarChar
+  systemQty   Float    @map("system_qty")
+  countedQty  Float?   @map("counted_qty")
+  countedAt   DateTime? @map("counted_at") @db.Timestamptz(6)
+
+  session StockTakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  product Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([productId])
+  @@map("stock_take_items")
 }
 
 model PushSubscription {
@@ -1210,6 +1332,40 @@ model StockMovement {
   @@map("stock_movements")
 }
 
+// Platform-wide "industry vertical" master data (Kirana, Garment, Pharmacy,
+// Bhagar/Rice Mill, …) — what a shop picks in Profile's "Change Business
+// Category" wizard. NOT the same thing as Category below, which is a
+// per-shop, free-text PRODUCT category ("Rice", "Cold Drinks") a shopkeeper
+// types in while adding products. This table has no shopId — it's global,
+// admin-managed master data shared by every shop on the platform.
+//
+// mappedBusinessType, when set, is the id of an existing BusinessType from
+// lib/businessConfig.ts (e.g. 'millprocessing') — picking this category can
+// set the shop's real businessType to that value, which is what actually
+// drives product-field gating (hasSizes/hasBatch/hasExpiry/etc). Left null
+// for categories with no equivalent in the current engine yet (e.g. Salon &
+// Spa, Accounting & CA) — those still save as the shop's chosen category,
+// just without changing which product fields show.
+model IndustryCategory {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String    @db.VarChar
+  nameHi             String?   @map("name_hi") @db.VarChar
+  nameMr             String?   @map("name_mr") @db.VarChar
+  emoji              String?   @db.VarChar
+  // 'retail' | 'wholesale' | 'distributor' | 'service' | 'manufacturing' | 'other'
+  businessTypeMeta   String    @map("business_type_meta") @db.VarChar
+  mappedBusinessType String?   @map("mapped_business_type") @db.VarChar
+  active             Boolean   @default(true)
+  sortOrder          Int       @default(0) @map("sort_order")
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([name])
+  @@index([businessTypeMeta])
+  @@index([active])
+  @@map("industry_categories")
+}
+
 model Category {
   id        String    @id @default(uuid()) @db.Uuid
   shopId    String    @map("shop_id") @db.Uuid
@@ -1434,6 +1590,7 @@ model RawMaterialLot {
   supplier   Supplier?          @relation(fields: [supplierId], references: [id], onDelete: NoAction)
   batches    ProductionBatch[]
   weighbridgeEntries WeighbridgeEntry[]
+  qualityTests QualityTest[]
 
   @@index([shopId])
   @@index([supplierId])
@@ -1451,6 +1608,12 @@ model ProductionBatch {
   // keep working unchanged — closing a batch only credits Product stock when
   // this is set.
   outputProductId String? @map("output_product_id") @db.Uuid
+  // The target output set when the batch is started (e.g. "expect ~650 Kg
+  // rice from 1000 Kg paddy at 65% recovery") — what turns this from a bare
+  // activity log into a real planned-vs-actual production order. Null for
+  // batches that don't bother planning ahead; outputKg (actual) is always
+  // what matters for stock/profit, this is purely a variance comparison.
+  plannedOutputKg Float?   @map("planned_output_kg")
   inputKg        Float?    @map("input_kg")
   outputKg       Float?    @map("output_kg")             // final finished-good weight
   wastageKg      Float?    @map("wastage_kg")
@@ -1470,6 +1633,7 @@ model ProductionBatch {
   outputProduct Product?       @relation("ProductionBatchOutput", fields: [outputProductId], references: [id], onDelete: NoAction)
   stages       BatchStage[]
   byProducts   ByProduct[]
+  qualityTests QualityTest[]
 
   @@unique([shopId, batchNumber])
   @@index([shopId])
@@ -1520,6 +1684,43 @@ model ByProduct {
   @@index([shopId])
   @@index([batchId])
   @@map("by_products")
+}
+
+// A lab reading against either an incoming raw-material lot (accept/reject
+// the farmer's delivery before it enters production) or a finished
+// production batch (certify the output before it's sold/dispatched) — never
+// both. moisture/foreignMatter/broken/damaged/doc % mirror the standard
+// grain-grading fields a mill buyer actually checks. `flag` is a computed
+// green/amber/red snapshot at save time (see QUALITY_FLAG_THRESHOLDS in
+// lib/businessConfig.ts) so a later threshold change doesn't rewrite
+// history; `decision` is the shopkeeper's own accept/reject call, which can
+// disagree with the flag (e.g. accept an amber lot at a lower rate).
+model QualityTest {
+  id               String    @id @default(uuid()) @db.Uuid
+  shopId           String    @map("shop_id") @db.Uuid
+  rawLotId         String?   @map("raw_lot_id") @db.Uuid
+  batchId          String?   @map("batch_id") @db.Uuid
+  testDate         DateTime  @default(now()) @map("test_date") @db.Timestamptz(6)
+  testedBy         String?   @map("tested_by") @db.VarChar
+  moisturePct      Float?    @map("moisture_pct")
+  foreignMatterPct Float?    @map("foreign_matter_pct")
+  brokenPct        Float?    @map("broken_pct")
+  damagedPct       Float?    @map("damaged_pct")
+  docPct           Float?    @map("doc_pct")          // protein / oil content, grain-dependent
+  flag             String?   @db.VarChar              // green | amber | red
+  decision         String    @default("pending") @db.VarChar // pending | accepted | rejected
+  certificateUrl   String?   @map("certificate_url") @db.VarChar
+  notes            String?   @db.VarChar
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop   Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  rawLot RawMaterialLot?  @relation(fields: [rawLotId], references: [id], onDelete: SetNull)
+  batch  ProductionBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([rawLotId])
+  @@index([batchId])
+  @@map("quality_tests")
 }
 
 // ─── Gate Entry + Weighbridge ────────────────────────────────────────────
@@ -1694,6 +1895,7 @@ model Machine {
   shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
   maintenanceEntries MaintenanceEntry[]
   spareParts         SparePart[]
+  downtimes          MachineDowntime[]
 
   @@index([shopId])
   @@map("machines")
@@ -1717,6 +1919,33 @@ model MaintenanceEntry {
   @@index([shopId])
   @@index([machineId])
   @@map("maintenance_entries")
+}
+
+// One stretch a machine was actually down — distinct from MaintenanceEntry
+// (a service log entry that may or may not involve downtime, e.g. a
+// scheduled oil change done while the machine kept running). endedAt null
+// means still down right now; ending it is what the Availability %
+// calculation (v1 of "OEE" — see MachineDowntime consumers) treats as the
+// close of one downtime window. Optionally links to the MaintenanceEntry
+// that fixed it, so "why was it down" and "what fixed it" stay connected
+// without forcing every downtime to go through a repair log.
+model MachineDowntime {
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
+  machineId     String    @map("machine_id") @db.Uuid
+  reason        String?   @db.VarChar
+  startedAt     DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt       DateTime? @map("ended_at") @db.Timestamptz(6)
+  maintenanceEntryId String? @map("maintenance_entry_id") @db.Uuid
+  notes         String?   @db.VarChar
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([machineId])
+  @@map("machine_downtimes")
 }
 
 model SparePart {

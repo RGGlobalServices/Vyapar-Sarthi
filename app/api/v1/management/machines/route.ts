@@ -20,6 +20,9 @@ export const GET = handle(async (req) => {
     include: {
       _count: { select: { maintenanceEntries: true, spareParts: true } },
       maintenanceEntries: { orderBy: { serviceDate: 'desc' }, take: 1, select: { serviceDate: true, nextDueDate: true } },
+      // The one currently-open downtime window (if any) — lets the card show
+      // "DOWN since X" without a second request per machine.
+      downtimes: { where: { endedAt: null }, orderBy: { startedAt: 'desc' }, take: 1 },
     },
     orderBy: { createdAt: 'desc' },
   });

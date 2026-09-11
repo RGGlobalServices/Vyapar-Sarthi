@@ -168,6 +168,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     businessType: profile?.businessType || 'kirana',
     showQrCode: profile?.showQrCode || false,
     invoiceFooter: profile?.invoiceFooter || undefined,
+    ownerSignature: profile?.signatureUrl || undefined,
     // Scan-to-pay QR is wholesale-A4-only — reprints follow the same rule so a
     // retail / thermal reprint never surfaces it. See WholesaleBillingUI.
     upiId: ((isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType))

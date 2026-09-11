@@ -52,7 +52,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const body = await readBody<any>(req);
 
   const patch: any = {};
-  const numKeys = ['inputKg', 'outputKg', 'wastageKg', 'brokenKg', 'branKg', 'huskKg'] as const;
+  const numKeys = ['inputKg', 'outputKg', 'wastageKg', 'brokenKg', 'branKg', 'huskKg', 'plannedOutputKg'] as const;
   for (const k of numKeys) {
     if (body[k] !== undefined) patch[k] = body[k] === null || body[k] === '' ? null : Number(body[k]);
   }
