@@ -68,6 +68,9 @@ export const PATCH = handle(async (req) => {
     // Profile's "Change Business Category" wizard — see schema.prisma's
     // IndustryCategory model comment. Purely additive alongside businessType.
     'industryCategoryId',
+    // Route segment to land on right after login instead of Dashboard —
+    // e.g. 'billing'; null/'' keeps the normal default. See Settings.
+    'defaultLandingPage',
   ];
   const data: Record<string, unknown> = {};
   for (const field of allowedFields) {

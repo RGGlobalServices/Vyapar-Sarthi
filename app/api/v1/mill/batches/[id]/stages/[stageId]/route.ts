@@ -38,8 +38,8 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (body.inputKg !== undefined)      patch.inputKg      = body.inputKg === null || body.inputKg === '' ? null : Number(body.inputKg);
   if (body.outputKg !== undefined)     patch.outputKg     = body.outputKg === null || body.outputKg === '' ? null : Number(body.outputKg);
   if (body.wastageKg !== undefined)    patch.wastageKg    = body.wastageKg === null || body.wastageKg === '' ? null : Number(body.wastageKg);
-  if (body.operatorName !== undefined) patch.operatorName = String(body.operatorName).trim() || null;
-  if (body.notes !== undefined)        patch.notes        = String(body.notes).trim() || null;
+  if (body.operatorName !== undefined) patch.operatorName = body.operatorName == null ? null : String(body.operatorName).trim() || null;
+  if (body.notes !== undefined)        patch.notes        = body.notes == null ? null : String(body.notes).trim() || null;
 
   const nowCompleting = body.completed === true && !stage.completedAt;
   const uncompleting  = body.completed === false && stage.completedAt;

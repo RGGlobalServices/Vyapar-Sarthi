@@ -218,7 +218,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   
   const body = await req.json();
   const updateData: any = {};
-  
+
   if (body.maxShops !== undefined) {
     updateData.maxShops = body.maxShops === null ? null : parseInt(body.maxShops, 10);
   }
@@ -227,14 +227,35 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     updateData.canAddShop = !!body.canAddShop;
   }
 
+  // Basic profile fields — the admin panel's User Information card was
+  // previously read-only with no way to fix a typo'd email/mobile or
+  // relabel a shop's business type without touching the DB directly.
+  if (body.name !== undefined) updateData.fullName = body.name || null;
+  if (body.email !== undefined) {
+    if (!body.email) throw new ApiError(400, 'Email cannot be empty');
+    updateData.email = body.email;
+  }
+  if (body.mobile !== undefined) updateData.mobile = body.mobile || null;
+  if (body.storeName !== undefined) updateData.storeName = body.storeName || null;
+  if (body.businessType !== undefined) updateData.businessType = body.businessType || null;
+
   if (Object.keys(updateData).length === 0) {
     throw new ApiError(400, 'No valid fields provided for update');
   }
 
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: updateData
-  });
+  let user;
+  try {
+    user = await prisma.user.update({
+      where: { id: userId },
+      data: updateData
+    });
+  } catch (err) {
+    const e = err as { code?: string; meta?: { target?: string[] } };
+    if (e?.code === 'P2002' && e.meta?.target?.includes('email')) {
+      throw new ApiError(409, 'Another account already uses this email');
+    }
+    throw err;
+  }
 
   return json(user);
 });

@@ -38,7 +38,10 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const updated = await (prisma as any).byProduct.update({
     where: { id },
     data: patch,
-    include: { product: { select: { id: true, name: true, baseUnit: true } } },
+    include: {
+      product: { select: { id: true, name: true, baseUnit: true } },
+      batch: { select: { id: true, batchNumber: true } },
+    },
   });
   return json(updated);
 });

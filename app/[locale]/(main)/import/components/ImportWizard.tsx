@@ -510,21 +510,34 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   };
 
   // Bulk path — every currently-ticked row's pctAdjustField, in one go.
+  // A %-based bump on a blank/zero cell can only ever stay zero (0 × 1.25 =
+  // 0), so those rows are skipped rather than silently "succeeding" with no
+  // visible change — matches RetailImport.tsx's applyMarkup() `bump()` guard.
   const applyPctAdjust = () => {
     const v = Number(pctAdjustValue);
     if (!pctAdjustField) { setPctAdjustNote('Pick a field first'); return; }
     if (!isFinite(v) || v === 0) { setPctAdjustNote('Enter a non-zero value first'); return; }
     if (selectedRows.length === 0) { setPctAdjustNote('Select at least one row first, or use the +/- next to a single row'); return; }
+    let touched = 0;
     setPreviewData(prev => {
       const next = [...prev];
       selectedRows.forEach(i => {
+        const oldVal = Number(next[i][pctAdjustField]) || 0;
+        if (pctAdjustMode === 'percent' && oldVal <= 0) return; // nothing to take a % of
         next[i] = { ...next[i], [pctAdjustField]: computeAdjustedCell(String(next[i][pctAdjustField] ?? ''), v, pctAdjustMode) };
+        touched++;
       });
       return next;
     });
     const label = v > 0 ? `+${v}` : `${v}`;
     const unit = pctAdjustMode === 'percent' ? '%' : '₹';
-    setPctAdjustNote(`Updated ${pctAdjustField} on ${selectedRows.length} row(s) by ${label}${unit}`);
+    if (touched === 0) {
+      setPctAdjustNote(`None of the selected rows have a ${pctAdjustField} value yet — a % increase needs an existing amount to work from. Set a starting ${pctAdjustField} first (type it in directly, or use "Fill Missing Only" below), or switch to ₹ to add a fixed amount instead.`);
+    } else if (touched < selectedRows.length) {
+      setPctAdjustNote(`Updated ${pctAdjustField} on ${touched} of ${selectedRows.length} row(s) by ${label}${unit} — ${selectedRows.length - touched} row(s) skipped (no existing ${pctAdjustField} value to adjust).`);
+    } else {
+      setPctAdjustNote(`Updated ${pctAdjustField} on ${touched} row(s) by ${label}${unit}`);
+    }
   };
 
   // Single-row path — the little +/- next to one price cell, independent of
@@ -1119,7 +1132,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     onChange={e => setPctAdjustField(e.target.value)}
                     className="text-sm bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
                   >
-                    <option value="">-- Select Field --</option>
+                    <option value="" disabled hidden>-- Select Field --</option>
                     {priceHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                   <input
@@ -1164,7 +1177,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     onChange={e => setBulkEditField(e.target.value)}
                     className="text-sm bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 dark:text-slate-200"
                   >
-                    <option value="">-- Select Field --</option>
+                    <option value="" disabled hidden>-- Select Field --</option>
                     {headers.map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                   <input 

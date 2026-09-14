@@ -9,7 +9,7 @@ import AIFloatingButton from '@/components/AIFloatingButton';
 import NotificationBell from '@/components/NotificationBell';
 import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAccess';
 import api from '@/lib/api';
-import { Menu, Clock, AlertTriangle } from 'lucide-react';
+import { Menu, Clock, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from '@/i18n/routing';
 import toast from 'react-hot-toast';
@@ -314,6 +314,27 @@ export default function MainLayoutClient({
     }
   }, [pathname, currentPackageConfig, profile.id, mounted, role, router]);
 
+  // Billing runs full-screen — the sidebar hides itself so the bill/cart gets
+  // the whole width (a counter-sale screen benefits from every inch), and the
+  // header's hamburger becomes a back arrow to Dashboard, which is also what
+  // brings the sidebar back (leaving /billing does it automatically).
+  const routeSegments = pathname.split('/').filter(Boolean);
+  const routeMainSegment = routeSegments.length > 0 && ['en', 'hi', 'mr'].includes(routeSegments[0]) ? routeSegments[1] : routeSegments[0];
+  const isBillingRoute = routeMainSegment === 'billing';
+
+  // "Startup Screen" (Settings) — land on the shopkeeper's chosen module
+  // instead of Dashboard, but only on the actual app-open (landing on the
+  // bare root), and only once per load — never hijacks a deliberate click
+  // back to Dashboard later in the same session.
+  const appliedLandingRedirect = useRef(false);
+  useEffect(() => {
+    if (!mounted || !profile.id || appliedLandingRedirect.current) return;
+    appliedLandingRedirect.current = true;
+    if (!routeMainSegment && profile.defaultLandingPage) {
+      router.replace(`/${profile.defaultLandingPage}`);
+    }
+  }, [mounted, profile.id, profile.defaultLandingPage, routeMainSegment, router]);
+
   return (
     <SWRProvider>
     <section className="flex min-h-screen">
@@ -328,15 +349,25 @@ export default function MainLayoutClient({
             ))}
           </div>
         </aside>
-      ) : (
+      ) : !isBillingRoute ? (
         <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
-      )}
+      ) : null}
 
       <div className="flex-1 flex flex-col overflow-y-auto">
         <header className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
+            {isBillingRoute && (
+              <button
+                onClick={() => router.push('/')}
+                title="Back to Dashboard"
+                className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800/50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            {!isBillingRoute && (
             <div className="md:hidden flex items-center gap-2">
-              <button 
+              <button
                 onClick={() => setIsMobileOpen(true)}
                 className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800/50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
               >
@@ -356,6 +387,7 @@ export default function MainLayoutClient({
                 )}
               </div>
             </div>
+            )}
             {/* Desktop global search */}
             <div className="hidden md:block w-72 lg:w-96">
               <GlobalSearch locale={locale} />

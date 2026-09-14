@@ -59,6 +59,15 @@ function productColumns(businessType?: string): ImportColumn[] {
   // shorthand like "6*8" — the processor expands it into per-size rows.
   if (cfg.hasColors) cols.push({ label: 'Colour', aliases: ['color', 'colour', 'shade'], profile: 'text' });
   if (cfg.hasSizes) cols.push({ label: 'Size', aliases: ['size', 'sz', 'sizes', 'sizerange', 'no', 'number'], profile: 'text' });
+  // Liquor's variant dimension — a wholesaler's bill carries Volume (90ml,
+  // 650ml, …) and Bottle Type (Bottle/Can/Pint) per line instead of
+  // Colour/Size. Without these template entries the AI-extracted volume/
+  // bottleType fields (see wholesale-import/analyze's liquor prompt) fall
+  // into "extra headers" in the review table — visible nowhere, and the
+  // execute route's resolveRowVariant() fallback then has nothing to show
+  // the shopkeeper before they confirm the import.
+  if (cfg.hasLiquorSpecs) cols.push({ label: 'Volume (ML)', aliases: ['volume', 'volumeml', 'ml'], profile: 'text' });
+  if (cfg.hasLiquorSpecs) cols.push({ label: 'Bottle Type', aliases: ['bottletype', 'packaging', 'container', 'pack'], profile: 'text' });
   return cols;
 }
 
@@ -123,6 +132,9 @@ export function getImportTemplate(importType: string, businessType?: string): Im
       ];
       if (cfg.hasColors) cols.push({ label: 'Colour', aliases: ['color', 'colour', 'shade'], profile: 'text' });
       if (cfg.hasSizes) cols.push({ label: 'Size', aliases: ['size', 'sz', 'sizes', 'sizerange', 'no', 'number'], profile: 'text' });
+      // Same liquor Volume × Bottle Type fallback as productColumns() above.
+      if (cfg.hasLiquorSpecs) cols.push({ label: 'Volume (ML)', aliases: ['volume', 'volumeml', 'ml'], profile: 'text' });
+      if (cfg.hasLiquorSpecs) cols.push({ label: 'Bottle Type', aliases: ['bottletype', 'packaging', 'container', 'pack'], profile: 'text' });
       return cols;
     }
     case 'customers':

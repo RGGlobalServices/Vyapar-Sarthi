@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Fragment, useEffect, useMemo, useState, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import SmartTranslator from '@/components/SmartTranslator';
@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useStockStore } from '@/lib/store';
-import { exportDailyStockRegisterPDF } from '@/lib/pdf/dailyStockRegister';
+import { exportDailyStockRegisterPDF, groupDailyStockRegisterRows } from '@/lib/pdf/dailyStockRegister';
+import { getBusinessConfig } from '@/lib/businessConfig';
 
 interface RegisterHistoryEntry {
   type: 'receive' | 'close';
@@ -89,6 +90,17 @@ export default function DailyStockRegister() {
     return rows.filter(r => (r.name || '').toLowerCase().includes(q) || (r.category || '').toLowerCase().includes(q));
   }, [rows, search]);
 
+  // Same Category(+pack-size) sectioning as the PDF/Excel exports, now also
+  // driving the on-screen table so it reads like the physical paper register
+  // (grouping only needs name/category — draft edits below still read live
+  // from openingDrafts/drafts/closingDrafts, not from these grouped rows).
+  const isLiquor = !!getBusinessConfig(profile.businessType as any)?.hasLiquorSpecs;
+  const itemLabel = isLiquor ? t('colBrand') : t('colProduct');
+  const groupedRows = useMemo(
+    () => groupDailyStockRegisterRows(filteredRows as any, isLiquor) as unknown as { label: string; rows: RegisterRow[] }[],
+    [filteredRows, isLiquor]
+  );
+
   function updateOpeningDraft(productId: string, value: string) {
     setOpeningDrafts(d => ({ ...d, [productId]: value }));
     setRowStatus(s => ({ ...s, [productId]: 'idle' }));
@@ -154,27 +166,39 @@ export default function DailyStockRegister() {
 
   function downloadCSV() {
     if (filteredRows.length === 0) return;
-    const headers = ['Product', 'Category', 'Rate', 'Opening', 'Receive', 'Total', 'Close', 'Sale', 'Updates (date-time wise)'];
-    const csvRows = filteredRows.map(row => {
+    const itemLabel = isLiquor ? 'Brand' : 'Product';
+    // Same Rate-first column order + Category(+pack-size) sections + Cash
+    // column as the printed PDF, so the two exports of the same register
+    // read consistently.
+    const draftRows = filteredRows.map(row => {
       const openingNum = Number(openingDrafts[row.productId]) || 0;
       const receivedNum = Number(drafts[row.productId]) || 0;
       const total = openingNum + receivedNum;
       const closingDraft = closingDrafts[row.productId];
-      const closingNum = closingDraft === undefined || closingDraft === '' ? '' : Number(closingDraft);
-      const updates = (row.history || []).map(historyLabel).join(' | ');
-      return [
-        `"${(row.name || '').replace(/"/g, '""')}"`,
-        `"${(row.category || '').replace(/"/g, '""')}"`,
-        row.rate != null ? row.rate.toFixed(2) : '',
-        openingNum,
-        receivedNum,
-        total,
-        closingNum,
-        row.sold ?? '',
-        `"${updates.replace(/"/g, '""')}"`,
-      ].join(',');
+      const closingNum = closingDraft === undefined || closingDraft === '' ? null : Number(closingDraft);
+      return { name: row.name, category: row.category, unit: row.unit, rate: row.rate, opening: openingNum, received: receivedNum, total, closing: closingNum, sold: row.sold, history: row.history || [] };
     });
-    const csvString = [headers.join(','), ...csvRows].join('\n');
+    const headers = ['Rate', itemLabel, 'Opening', 'Receive', 'Total', 'Close', 'Sale', 'Cash', 'Updates (date-time wise)'];
+    const csvLines = [headers.join(',')];
+    for (const group of groupDailyStockRegisterRows(draftRows, isLiquor)) {
+      csvLines.push(`"${group.label}"`);
+      for (const row of group.rows) {
+        const cash = (row.sold != null && row.rate != null) ? row.sold * row.rate : null;
+        const updates = (row.history || []).map(historyLabel).join(' | ');
+        csvLines.push([
+          row.rate != null ? row.rate.toFixed(2) : '',
+          `"${(row.name || '').replace(/"/g, '""')}"`,
+          row.opening,
+          row.received,
+          row.total,
+          row.closing ?? '',
+          row.sold ?? '',
+          cash != null ? cash.toFixed(2) : '',
+          `"${updates.replace(/"/g, '""')}"`,
+        ].join(','));
+      }
+    }
+    const csvString = csvLines.join('\n');
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -200,7 +224,7 @@ export default function DailyStockRegister() {
         history: row.history || [],
       };
     });
-    exportDailyStockRegisterPDF(pdfRows, profile.shopName, date);
+    exportDailyStockRegisterPDF(pdfRows, profile.shopName, date, profile.businessType);
   }
 
   return (
@@ -246,88 +270,102 @@ export default function DailyStockRegister() {
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-3">{t('colProduct')}</th>
-                  <th className="px-4 py-3 text-right">{t('colRate')}</th>
-                  <th className="px-4 py-3 text-right">{t('colOpening')}</th>
-                  <th className="px-4 py-3 text-right">{t('colReceived')}</th>
-                  <th className="px-4 py-3 text-right">{t('colTotal')}</th>
-                  <th className="px-4 py-3 text-right">{t('colClosing')}</th>
-                  <th className="px-4 py-3 text-right">{t('colSale')}</th>
-                  <th className="px-4 py-3 text-center">{t('colActions')}</th>
+            <table className="w-full text-left text-sm border-collapse">
+              <thead className="bg-emerald-600 dark:bg-emerald-700 text-white text-xs uppercase">
+                <tr className="divide-x divide-emerald-500/40 dark:divide-emerald-400/20">
+                  <th className="px-4 py-3 text-right font-bold">{t('colRate')}</th>
+                  <th className="px-4 py-3 font-bold">{itemLabel}</th>
+                  <th className="px-4 py-3 text-right font-bold">{t('colOpening')}</th>
+                  <th className="px-4 py-3 text-right font-bold">{t('colReceived')}</th>
+                  <th className="px-4 py-3 text-right font-bold">{t('colTotal')}</th>
+                  <th className="px-4 py-3 text-right font-bold">{t('colClosing')}</th>
+                  <th className="px-4 py-3 text-right font-bold">{t('colSale')}</th>
+                  <th className="px-4 py-3 text-right font-bold">{t('colCash')}</th>
+                  <th className="px-4 py-3 text-center font-bold">{t('colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                 {loading ? (
-                  <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /></td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /></td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-500">{t('noProductsForRegister')}</td></tr>
-                ) : filteredRows.map(row => {
-                  const openingDraft = openingDrafts[row.productId] ?? '0';
-                  const openingNum = Number(openingDraft) || 0;
-                  const receivedDraft = drafts[row.productId] ?? '0';
-                  const receivedNum = Number(receivedDraft) || 0;
-                  const total = openingNum + receivedNum;
-                  const closingDraft = closingDrafts[row.productId] ?? '';
-                  const sold = row.sold;
-                  const status = rowStatus[row.productId] || 'idle';
-                  return (
-                    <tr key={row.productId} className="text-slate-900 dark:text-slate-200">
-                      <td className="px-4 py-2.5">
-                        <div className="font-medium"><SmartTranslator text={row.name || ''} locale={locale} /></div>
-                        <div className="text-[11px] text-slate-500">
-                          <SmartTranslator text={row.category || ''} locale={locale} />
-                          {row.unit ? ` · ${row.unit}` : ''}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400">{row.rate != null ? `₹${row.rate.toFixed(2)}` : '—'}</td>
-                      <td className="px-4 py-2.5 text-right align-top">
-                        <input
-                          type="number"
-                          className="w-20 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          value={openingDraft}
-                          onChange={e => updateOpeningDraft(row.productId, e.target.value)}
-                        />
-                      </td>
-                      <td className="px-4 py-2.5 text-right align-top">
-                        <input
-                          type="number"
-                          className="w-20 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          value={receivedDraft}
-                          onChange={e => updateDraft(row.productId, e.target.value)}
-                        />
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-600 dark:text-slate-300">{total}</td>
-                      <td className="px-4 py-2.5 text-right align-top">
-                        <input
-                          type="number"
-                          placeholder={t('notCountedYet')}
-                          className="w-24 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-[10px]"
-                          value={closingDraft}
-                          onChange={e => updateClosingDraft(row.productId, e.target.value)}
-                        />
-                      </td>
-                      <td className={cn('px-4 py-2.5 text-right font-bold', sold == null ? 'text-slate-400' : sold > 0 ? 'text-emerald-500' : sold < 0 ? 'text-red-400' : 'text-slate-400')}>
-                        {sold == null ? '—' : sold}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <button
-                          onClick={() => saveRow(row)}
-                          disabled={status === 'saving'}
-                          className={cn('px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 mx-auto transition-colors',
-                            status === 'saved' ? 'bg-emerald-500/10 text-emerald-500' :
-                            status === 'error' ? 'bg-red-500/10 text-red-400' :
-                            'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-500')}
-                        >
-                          {status === 'saving' ? <Loader2 className="animate-spin" size={12} /> : status === 'saved' ? <Check size={12} /> : null}
-                          {status === 'saved' ? t('savedRow') : t('saveRow')}
-                        </button>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-slate-500">{t('noProductsForRegister')}</td></tr>
+                ) : groupedRows.map(group => (
+                  <Fragment key={group.label}>
+                    <tr>
+                      <td colSpan={9} className="bg-slate-900 dark:bg-black text-white font-black text-xs uppercase tracking-wide px-4 py-2">
+                        {group.label}
                       </td>
                     </tr>
-                  );
-                })}
+                    {group.rows.map(row => {
+                      const openingDraft = openingDrafts[row.productId] ?? '0';
+                      const openingNum = Number(openingDraft) || 0;
+                      const receivedDraft = drafts[row.productId] ?? '0';
+                      const receivedNum = Number(receivedDraft) || 0;
+                      const total = openingNum + receivedNum;
+                      const closingDraft = closingDrafts[row.productId] ?? '';
+                      const sold = row.sold;
+                      const cash = (sold != null && row.rate != null) ? sold * row.rate : null;
+                      const status = rowStatus[row.productId] || 'idle';
+                      return (
+                        <tr key={row.productId} className="text-slate-900 dark:text-slate-200 divide-x divide-slate-200 dark:divide-slate-800">
+                          <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400">{row.rate != null ? `₹${row.rate.toFixed(2)}` : '—'}</td>
+                          <td className="px-4 py-2.5">
+                            <div className="font-medium"><SmartTranslator text={row.name || ''} locale={locale} /></div>
+                            <div className="text-[11px] text-slate-500">
+                              <SmartTranslator text={row.category || ''} locale={locale} />
+                              {row.unit ? ` · ${row.unit}` : ''}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right align-top">
+                            <input
+                              type="number"
+                              className="w-20 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={openingDraft}
+                              onChange={e => updateOpeningDraft(row.productId, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 text-right align-top">
+                            <input
+                              type="number"
+                              className="w-20 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              value={receivedDraft}
+                              onChange={e => updateDraft(row.productId, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-semibold text-slate-600 dark:text-slate-300">{total}</td>
+                          <td className="px-4 py-2.5 text-right align-top">
+                            <input
+                              type="number"
+                              placeholder={t('notCountedYet')}
+                              className="w-24 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-[10px]"
+                              value={closingDraft}
+                              onChange={e => updateClosingDraft(row.productId, e.target.value)}
+                            />
+                          </td>
+                          <td className={cn('px-4 py-2.5 text-right font-bold', sold == null ? 'text-slate-400' : sold > 0 ? 'text-emerald-500' : sold < 0 ? 'text-red-400' : 'text-slate-400')}>
+                            {sold == null ? '—' : sold}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-semibold text-slate-600 dark:text-slate-300">
+                            {cash != null ? `₹${cash.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <button
+                              onClick={() => saveRow(row)}
+                              disabled={status === 'saving'}
+                              className={cn('px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 mx-auto transition-colors',
+                                status === 'saved' ? 'bg-emerald-500/10 text-emerald-500' :
+                                status === 'error' ? 'bg-red-500/10 text-red-400' :
+                                'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-500')}
+                            >
+                              {status === 'saving' ? <Loader2 className="animate-spin" size={12} /> : status === 'saved' ? <Check size={12} /> : null}
+                              {status === 'saved' ? t('savedRow') : t('saveRow')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>

@@ -115,14 +115,14 @@ export const PATCH = handle(async (req, ctx: any) => {
   // signed change so Remaining reflects the corrected amount.
   const sign = isSupplierCredit(txn.type) ? -1 : 1;
   const balanceDelta = sign * (newAmount - oldAmount);
-  const nextBillNumber = body.billNumber !== undefined ? (String(body.billNumber).trim() || null) : txn.billNumber;
+  const nextBillNumber = body.billNumber !== undefined ? (body.billNumber == null ? null : String(body.billNumber).trim() || null) : txn.billNumber;
 
   const result = await prisma.$transaction(async (tx) => {
     const updatedTxn = await tx.supplierTransaction.update({
       where: { id: transactionId },
       data: {
         amount: newAmount,
-        ...(body.note !== undefined ? { note: String(body.note).trim() || txn.note } : {}),
+        ...(body.note !== undefined ? { note: body.note == null ? null : String(body.note).trim() || txn.note } : {}),
         ...(body.billNumber !== undefined ? { billNumber: nextBillNumber } : {}),
       },
     });

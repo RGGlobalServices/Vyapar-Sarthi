@@ -50,7 +50,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   }
 
   const patch: any = {};
-  if (body.materialDescription !== undefined) patch.materialDescription = String(body.materialDescription).trim() || null;
+  if (body.materialDescription !== undefined) patch.materialDescription = body.materialDescription == null ? null : String(body.materialDescription).trim() || null;
   if (body.productId !== undefined) patch.productId = body.productId || null;
   if (body.supplierId !== undefined) patch.supplierId = body.supplierId || null;
   if (body.moisturePct !== undefined) {
@@ -58,7 +58,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       ? null : Math.max(0, Math.min(100, Number(body.moisturePct) || 0));
   }
   if (body.ratePerKg !== undefined) patch.ratePerKg = body.ratePerKg === null || body.ratePerKg === '' ? null : Number(body.ratePerKg);
-  if (body.notes !== undefined) patch.notes = String(body.notes).trim() || null;
+  if (body.notes !== undefined) patch.notes = body.notes == null ? null : String(body.notes).trim() || null;
 
   // Second weighment — tare weight — computes net and closes the two-weigh
   // workflow. Net is always the absolute difference so it doesn't matter

@@ -28,6 +28,8 @@ import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
 import { splitVariantKey, makeVariantKey } from '@/components/ColorSizeVariantGrid';
 import { toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
+import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
+import { extractMlToken } from '@/lib/liquorMatrix';
 
 // Same key a variant row is stored/matched under everywhere else (Products'
 // Variant Builder, the Purchases item picker, the server-side stock helper)
@@ -212,6 +214,22 @@ export default function WholesaleBillingUI() {
     splitPayments, setSplitPayments, collectedAmount, remainingAmount
   } = useBillingEngine(profile?.id);
   const bizConfig = getBusinessConfig(profile?.businessType);
+
+  // Cart lines that belong in the Brand x ML matrix vs. the plain table below
+  // it — same split as the retail billing page ([page.tsx]'s LiquorCartMatrix
+  // wiring): a sized liquor line (variant colour that's itself an ML value,
+  // or a flat per-size product name) goes in the matrix; anything else stays
+  // in the normal table so nothing in the bill goes missing.
+  const isLiquorCartLine = useCallback((item: any) => {
+    if (!bizConfig.hasLiquorSpecs) return false;
+    if (item.variant) {
+      const color = String(item.variant).split('/')[0]?.trim() || '';
+      return !!extractMlToken(color);
+    }
+    return !!extractMlToken(item.name);
+  }, [bizConfig.hasLiquorSpecs]);
+  const liquorCartLines = useMemo(() => bizConfig.hasLiquorSpecs ? items.filter(isLiquorCartLine) : [], [items, isLiquorCartLine, bizConfig.hasLiquorSpecs]);
+  const nonLiquorCartItems = useMemo(() => bizConfig.hasLiquorSpecs ? items.filter((i: any) => !isLiquorCartLine(i)) : items, [items, isLiquorCartLine, bizConfig.hasLiquorSpecs]);
 
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -1390,23 +1408,43 @@ export default function WholesaleBillingUI() {
 
         {/* Cart Table */}
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 shadow-sm z-10">
-              <tr>
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">#</th>
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
-                {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('ml') || 'ML'}</th>}
-                {bizConfig.hasGender && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('gender') || 'Gender'}</th>}
-                {bizConfig.hasBatch && <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider">{t('unitCol') || 'Unit'}</th>
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-center">{t('qty') || 'Qty'}</th>
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-right">{t('price') || 'Price'}</th>
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-right">{t('totalUpper') || 'Total'}</th>
-                <th className="px-4 py-3 font-semibold uppercase text-xs tracking-wider text-center">{t('act') || 'Act'}</th>
+          {liquorCartLines.length > 0 && (
+            <LiquorCartMatrix
+              catalogRows={products.map((p: any) => ({ id: p.id, name: p.name, stock: p.currentStock || 0, price: p.sellingPrice, variants: p.variants }))}
+              lines={liquorCartLines.map((i: any) => ({ id: i.id, name: i.name, variant: i.variant, quantity: i.quantity, price: i.price }))}
+              onAdd={(productId, variantKey) => {
+                // Same addToCart every other entry point uses — stock guard,
+                // batch lookup, price — a sibling size shown at qty 0 is a
+                // real product, so adding it goes through the real flow too.
+                const product = products.find((p: any) => p.id === productId);
+                if (product) addToCart(product, variantKey);
+              }}
+              onDecrement={(productId, variantKey, newQty) => {
+                if (newQty <= 0) removeItem(productId as any, variantKey);
+                else updateQuantity(productId as any, newQty, variantKey);
+              }}
+              onRemoveRow={(productId, variantKey) => removeItem(productId as any, variantKey)}
+            />
+          )}
+          {(nonLiquorCartItems.length > 0 || liquorCartLines.length === 0) && (
+          <div className="rounded-xl border-2 border-slate-300 dark:border-slate-700 overflow-hidden">
+          <table className="w-full text-left text-sm whitespace-nowrap border-collapse">
+            <thead className="sticky top-0 bg-slate-800 dark:bg-slate-900 text-white shadow-sm z-10">
+              <tr className="divide-x divide-slate-600">
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">#</th>
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
+                {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('ml') || 'ML'}</th>}
+                {bizConfig.hasGender && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('gender') || 'Gender'}</th>}
+                {bizConfig.hasBatch && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('unitCol') || 'Unit'}</th>
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center">{t('qty') || 'Qty'}</th>
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{t('price') || 'Price'}</th>
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{t('totalUpper') || 'Total'}</th>
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center">{t('act') || 'Act'}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {items.length === 0 ? (
+            <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
+              {nonLiquorCartItems.length === 0 ? (
                 <tr>
                   <td colSpan={7 + (bizConfig.hasLiquorSpecs ? 1 : 0) + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
                     <Scan size={48} className="mx-auto mb-4 opacity-20" />
@@ -1414,12 +1452,12 @@ export default function WholesaleBillingUI() {
                     <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
                   </td>
                 </tr>
-              ) : items.map((item, idx) => {
+              ) : nonLiquorCartItems.map((item: any, idx: number) => {
                 const lineStock = resolveStockForItem(item, products);
                 const maxQty = lineStock.known ? lineStock.qty : undefined;
                 const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
                 return (
-                <tr key={`${item.id}-${item.variant}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
+                <tr key={`${item.id}-${item.variant}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
                   <td className="px-4 py-3 text-slate-400">{idx + 1}</td>
                   <td className="px-4 py-3">
                     <p className="font-bold text-slate-900 dark:text-white">
@@ -1506,6 +1544,8 @@ export default function WholesaleBillingUI() {
               })}
             </tbody>
           </table>
+          </div>
+          )}
         </div>
       </div>
 

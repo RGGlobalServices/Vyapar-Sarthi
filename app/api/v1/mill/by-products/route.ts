@@ -31,7 +31,10 @@ export const GET = handle(async (req) => {
 
   const rows = await (prisma as any).byProduct.findMany({
     where,
-    include: { product: { select: { id: true, name: true, baseUnit: true } } },
+    include: {
+      product: { select: { id: true, name: true, baseUnit: true } },
+      batch: { select: { id: true, batchNumber: true } },
+    },
     orderBy: { createdAt: 'desc' },
     take: 200,
   });

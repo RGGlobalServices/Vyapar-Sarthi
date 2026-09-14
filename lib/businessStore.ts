@@ -65,6 +65,11 @@ interface BusinessProfile {
   // Profile's "Change Business Category" wizard — purely additive alongside
   // businessType, see schema.prisma's IndustryCategory model comment.
   industryCategoryId: string | null;
+  // Route segment (e.g. 'billing', 'stock') to redirect to right after
+  // login/app-load instead of Dashboard — null/'' keeps the normal default.
+  // Set from Settings; different shopkeepers live in different modules all
+  // day (a counter clerk wants Billing, not Dashboard, every time).
+  defaultLandingPage: string | null;
 }
 
 export interface ShopLimit {
@@ -143,6 +148,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   bankAccountNumber: null,
   bankIfsc: null,
   industryCategoryId: null,
+  defaultLandingPage: null,
 };
 
 function loadCachedType(): BusinessType {
@@ -218,6 +224,7 @@ function mapShopToProfile(data: any): BusinessProfile {
     bankAccountNumber: data.bankAccountNumber ?? data.bank_account_number ?? null,
     bankIfsc: data.bankIfsc ?? data.bank_ifsc ?? null,
     industryCategoryId: data.industryCategoryId ?? data.industry_category_id ?? null,
+    defaultLandingPage: data.defaultLandingPage ?? data.default_landing_page ?? null,
   };
 }
 
@@ -489,6 +496,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       if (updates.bankAccountNumber !== undefined) apiUpdates.bankAccountNumber = updates.bankAccountNumber;
       if (updates.bankIfsc !== undefined) apiUpdates.bankIfsc = updates.bankIfsc;
       if (updates.industryCategoryId !== undefined) apiUpdates.industryCategoryId = updates.industryCategoryId;
+      if (updates.defaultLandingPage !== undefined) apiUpdates.defaultLandingPage = updates.defaultLandingPage;
 
       await api.patch('/shop/profile', apiUpdates);
 

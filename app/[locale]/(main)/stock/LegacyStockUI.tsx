@@ -13,7 +13,7 @@ import {
   Search, ArrowDownLeft, ArrowUpRight, AlertTriangle,
   Plus, Trash2, X, Check, Package, Archive, ArchiveRestore,
   Pencil, ShieldCheck, Trash, Loader2, Warehouse, Store, MapPin, IndianRupee, CalendarDays,
-  Barcode as BarcodeIcon,
+  Barcode as BarcodeIcon, ListChecks, Wine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStockStore, StockItem } from '@/lib/store';
@@ -21,6 +21,8 @@ import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
 import DailyStockRegister from './DailyStockRegister';
+import StockTakePanel from './StockTakePanel';
+import LiquorMLMatrix from './LiquorMLMatrix';
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import api from '@/lib/api';
@@ -172,7 +174,7 @@ export default function LegacyStockUI() {
   const [newColors, setNewColors] = useState<string[]>([]);  // colour × size (clothes/shoes) for New Product
 
   // ── Godown / shop view ───────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState<'all' | 'godown' | 'shop' | 'daily'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'godown' | 'shop' | 'daily' | 'stocktake' | 'mlmatrix'>('all');
   const [godowns, setGodowns] = useState<any[]>([]);
   const [selectedGodownId, setSelectedGodownId] = useState('');
   const [godownData, setGodownData] = useState<any | null>(null);
@@ -712,6 +714,8 @@ export default function LegacyStockUI() {
           ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
           ...(allShops.length > 1 ? [{ key: 'shop', label: 'By Shop', icon: Store }] : []),
           { key: 'daily', label: t('dailyRegister'), icon: CalendarDays },
+          { key: 'stocktake', label: 'Stock Take', icon: ListChecks },
+          ...(bizConfig.hasLiquorSpecs ? [{ key: 'mlmatrix', label: 'ML Matrix', icon: Wine }] : []),
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
             className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
@@ -839,6 +843,40 @@ export default function LegacyStockUI() {
 
       {/* ── Daily Stock Register ── */}
       {viewMode === 'daily' && <DailyStockRegister />}
+
+      {/* ── Stock Take — moved here from its own sidebar item ── */}
+      {viewMode === 'stocktake' && <StockTakePanel />}
+
+      {/* ── Brand × ML Matrix (liquor shops only) ── */}
+      {viewMode === 'mlmatrix' && (
+        <LiquorMLMatrix
+          rows={items.map((i: StockItem) => ({ id: i.id, name: i.name, stock: i.current || 0, price: i.sellingPrice }))}
+          shopName={profile?.shopName}
+          onAdjustCell={(cell, delta) => {
+            // No variants array at this tier — each pack size is its own flat
+            // product, so the delta applies directly via the store's own
+            // (already-optimistic) adjustStock, same call "Stock In/Out" uses.
+            adjustStock(cell.productId, delta, delta > 0 ? 'ML Matrix: Stock In' : 'ML Matrix: Stock Out');
+          }}
+          onAddBrand={async (name, entries) => {
+            // One flat Product per filled size — "Real Wine" + 500/250 ML
+            // becomes two products, matching how this tier already stores
+            // liquor pack sizes (see buildLiquorMatrix's flat-tier branch).
+            for (const e of entries) {
+              await addItem({
+                name: `${name} ${e.column.replace(' ML', 'ml')}`,
+                category: '',
+                current: e.qty,
+                min: 0,
+                unit: bizConfig.defaultUnits[0] || 'Bottle',
+                mrp: e.price,
+                sellingPrice: e.price,
+                cost: 0,
+              });
+            }
+          }}
+        />
+      )}
 
       {/* ── All Stock view (existing) — only show when viewMode === 'all' ── */}
       {viewMode === 'all' && (<>

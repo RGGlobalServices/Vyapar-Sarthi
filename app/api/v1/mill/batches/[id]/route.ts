@@ -57,7 +57,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     if (body[k] !== undefined) patch[k] = body[k] === null || body[k] === '' ? null : Number(body[k]);
   }
   if (body.currentStage !== undefined) patch.currentStage = String(body.currentStage);
-  if (body.notes !== undefined) patch.notes = String(body.notes).trim() || null;
+  if (body.notes !== undefined) patch.notes = body.notes == null ? null : String(body.notes).trim() || null;
   if (body.status !== undefined) patch.status = String(body.status);
   if (body.outputProductId !== undefined) {
     if (body.outputProductId) {

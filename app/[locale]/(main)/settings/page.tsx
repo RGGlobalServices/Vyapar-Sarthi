@@ -29,6 +29,7 @@ function SettingsPageInner() {
   const [activatingPlan, setActivatingPlan] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [savingGstProfit, setSavingGstProfit] = useState(false);
+  const [savingDefaultLandingPage, setSavingDefaultLandingPage] = useState(false);
   const [savingAllShopAccess, setSavingAllShopAccess] = useState(false);
   const [allShopsSummary, setAllShopsSummary] = useState<{
     shops: { shopId: string; shopName: string; shopCode: string | null; salesTotal: number; profitTotal: number; stockValue: number; lowStockCount: number; productCount: number; udharOutstanding: number }[];
@@ -119,6 +120,19 @@ function SettingsPageInner() {
       setStatus({ type: 'error', message: 'Failed to save profit calculation preference.' });
     } finally {
       setSavingGstProfit(false);
+    }
+  };
+
+  const handleChangeDefaultLandingPage = async (value: string) => {
+    setSavingDefaultLandingPage(true);
+    try {
+      await updateProfile({ defaultLandingPage: value || null });
+      setStatus({ type: 'success', message: value ? `App will now open on ${value[0].toUpperCase()}${value.slice(1)} instead of Dashboard.` : 'App will open on Dashboard as usual.' });
+      setTimeout(() => setStatus(null), 3000);
+    } catch {
+      setStatus({ type: 'error', message: 'Failed to save startup screen preference.' });
+    } finally {
+      setSavingDefaultLandingPage(false);
     }
   };
 
@@ -517,6 +531,45 @@ function SettingsPageInner() {
                   profile.gstInclusiveProfit ? "left-7" : "left-1"
                 )} />
               </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Startup Screen — which page opens right after login, instead of
+            Dashboard. Different shopkeepers live in different modules all
+            day (a counter clerk wants Billing every time), so this is a
+            per-shop preference, off by default (normal Dashboard behaviour). */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
+          <CardHeader>
+            <div className="w-12 h-12 bg-sky-500/10 rounded-2xl flex items-center justify-center text-sky-500 dark:text-sky-400 mb-4">
+              <MonitorSmartphone size={24} />
+            </div>
+            <CardTitle className="text-slate-900 dark:text-white">Startup Screen</CardTitle>
+            <CardDescription className="text-slate-500">Choose which section opens automatically when the app loads — useful if your work always starts in the same place</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="space-y-1 pr-4">
+                <p className="font-bold text-slate-800 dark:text-slate-200">Open this page first</p>
+                <p className="text-xs text-slate-500">
+                  {profile.defaultLandingPage
+                    ? `App opens directly on ${profile.defaultLandingPage[0].toUpperCase()}${profile.defaultLandingPage.slice(1)}.`
+                    : 'Off (default) — app opens on Dashboard, same as always.'}
+                </p>
+              </div>
+              <select
+                value={profile.defaultLandingPage || ''}
+                onChange={e => handleChangeDefaultLandingPage(e.target.value)}
+                disabled={savingDefaultLandingPage}
+                className="shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+              >
+                <option value="">Off — Dashboard (default)</option>
+                <option value="billing">Billing</option>
+                <option value="stock">Stock</option>
+                <option value="products">Products</option>
+                <option value="purchases">Purchases</option>
+                <option value="reports">Reports</option>
+              </select>
             </div>
           </CardContent>
         </Card>

@@ -10,7 +10,7 @@ import {
   Warehouse, ChevronDown, ChevronRight, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle,
   // Bada Udyog / Mills icons
   Truck, Scale, Factory, FlaskConical, ClipboardCheck, Handshake, HardHat, Wrench, Cog, Cpu, FileText,
-  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3, ListChecks
+  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -45,7 +45,7 @@ interface SidebarSection {
 
 const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'main',        label: 'Main',              emoji: '🏭', alwaysExpanded: true, keys: ['dashboard'] },
-  { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'purchases', 'party', 'products', 'stock', 'stock-take', 'warehouses'] },
+  { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'purchases', 'party', 'products', 'stock', 'warehouses'] },
   { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['gate-entry', 'weighbridge', 'production', 'quality-lab', 'batches', 'raw-material', 'finished-goods', 'by-products'] },
   { id: 'logistics',   label: 'Logistics',         emoji: '🚚', keys: ['transport', 'dispatch', 'hamali'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'settlement', 'expenses'] },
@@ -267,7 +267,6 @@ export default function Sidebar({
     { key: 'suppliers', icon: Users,           href: '/suppliers' },
     { key: 'warehouses',icon: Warehouse,       href: '/godowns' },
     { key: 'stock',     icon: Box,             href: '/stock' },
-    { key: 'stock-take', icon: ListChecks,     href: '/stock-take' },
     { key: 'expiry',    icon: AlertTriangle,   href: '/expiry' },
     { key: 'expenses',  icon: Receipt,         href: '/expenses' },
     { key: 'staff',     icon: UsersThree,      href: '/staff' },

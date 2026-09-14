@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLocale } from 'next-intl';
 import { useParams } from 'next/navigation';
 import api from '@/lib/api';
-import { Shield, ArrowLeft, RefreshCw, Ban, CheckCircle, Trash2, Package, Users, Phone, Calendar, Store, Globe, Gift, Ticket, IndianRupee, Mail, Clock, AlertTriangle, X } from 'lucide-react';
+import { Shield, ArrowLeft, RefreshCw, Ban, CheckCircle, Trash2, Package, Users, Phone, Calendar, Store, Globe, Gift, Ticket, IndianRupee, Mail, Clock, AlertTriangle, X, Pencil, Save, User as UserIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -80,8 +80,12 @@ export default function AdminUserDetailPage() {
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
-  const [planForm, setPlanForm] = useState({ plan: '', status: '', expiryDays: '', trialAction: '', days: '', date: '' });
+  const [planForm, setPlanForm] = useState({ plan: '', status: '', expiryDays: '', expiryUnit: 'days' as 'days' | 'months', expiryDate: '', trialAction: '', days: '', date: '' });
   const [showPlanForm, setShowPlanForm] = useState(false);
+
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [infoForm, setInfoForm] = useState({ name: '', email: '', mobile: '', storeName: '', businessType: '' });
+  const [infoError, setInfoError] = useState('');
 
   useEffect(() => {
     const a = getAdminAuth();
@@ -148,19 +152,47 @@ export default function AdminUserDetailPage() {
     if (!user) return;
     setActionLoading('plan');
     try {
+      // "Extend Expiry" takes either a relative amount (days or months — a
+      // month is a flat 30 days, same convention as the Activate button's
+      // subscription-action route) or an exact date; the date wins if both
+      // are somehow set, same "OR" pattern as the Free Trial date field below.
+      const expiryDaysNum = planForm.expiryDays ? parseInt(planForm.expiryDays) : undefined;
       await api.patch(`/admin/users/${user.id}/plan`, {
         plan: planForm.plan || undefined,
         status: planForm.status || undefined,
-        expiryDays: planForm.expiryDays ? parseInt(planForm.expiryDays) : undefined,
+        expiryDays: !planForm.expiryDate && expiryDaysNum !== undefined
+          ? (planForm.expiryUnit === 'months' ? expiryDaysNum * 30 : expiryDaysNum)
+          : undefined,
+        expiryDate: planForm.expiryDate || undefined,
         trialAction: planForm.trialAction || undefined,
         days: planForm.days ? parseInt(planForm.days) : undefined,
         date: planForm.date || undefined,
       });
       setShowPlanForm(false);
-      setPlanForm({ plan: '', status: '', expiryDays: '', trialAction: '', days: '', date: '' });
+      setPlanForm({ plan: '', status: '', expiryDays: '', expiryUnit: 'days', expiryDate: '', trialAction: '', days: '', date: '' });
       fetchUser();
     } catch { alert('Failed to update plan'); }
     finally { setActionLoading(''); }
+  }
+
+  async function handleSaveInfo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setActionLoading('info');
+    setInfoError('');
+    try {
+      await api.patch(`/admin/users/${user.id}`, {
+        name: infoForm.name.trim(),
+        email: infoForm.email.trim(),
+        mobile: infoForm.mobile.trim() || null,
+        storeName: infoForm.storeName.trim() || null,
+        businessType: infoForm.businessType.trim() || null,
+      });
+      setEditingInfo(false);
+      fetchUser();
+    } catch (err: any) {
+      setInfoError(err.response?.data?.detail || err.message || 'Failed to save changes');
+    } finally { setActionLoading(''); }
   }
 
   if (loading) {
@@ -190,6 +222,20 @@ export default function AdminUserDetailPage() {
   }
 
   const shop = user.shop;
+
+  function startEditInfo() {
+    setInfoForm({
+      name: user!.name || '',
+      email: user!.email || '',
+      mobile: user!.mobile || '',
+      storeName: user!.storeName || '',
+      businessType: user!.businessType || '',
+    });
+    setInfoError('');
+    setEditingInfo(true);
+  }
+
+  const infoInputClass = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-slate-600";
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -226,59 +272,105 @@ export default function AdminUserDetailPage() {
 
         {/* User Info Card */}
         <Card className="bg-slate-900 border-slate-800 rounded-2xl">
-          <CardHeader className="border-b border-slate-800 py-4">
+          <CardHeader className="border-b border-slate-800 py-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
               <Users size={16} className="text-indigo-400" /> User Information
             </CardTitle>
+            {!editingInfo && (
+              <button onClick={startEditInfo}
+                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-indigo-500/10 transition-colors">
+                <Pencil size={13} /> Edit
+              </button>
+            )}
           </CardHeader>
-          <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Mail size={16} className="text-slate-600" />
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold">Email</p>
-                  <p className="text-sm font-bold text-slate-100">{user.email}</p>
+          {editingInfo ? (
+            <form onSubmit={handleSaveInfo} className="p-6 space-y-4">
+              {infoError && (
+                <p className="text-xs font-semibold text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{infoError}</p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><UserIcon size={12} /> Name</label>
+                  <input value={infoForm.name} onChange={e => setInfoForm(f => ({ ...f, name: e.target.value }))} className={infoInputClass} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Mail size={12} /> Email</label>
+                  <input type="email" value={infoForm.email} onChange={e => setInfoForm(f => ({ ...f, email: e.target.value }))} className={infoInputClass} required />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Phone size={12} /> Mobile</label>
+                  <input value={infoForm.mobile} onChange={e => setInfoForm(f => ({ ...f, mobile: e.target.value }))} className={infoInputClass} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Store size={12} /> Store Name</label>
+                  <input value={infoForm.storeName} onChange={e => setInfoForm(f => ({ ...f, storeName: e.target.value }))} className={infoInputClass} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Globe size={12} /> Business Type</label>
+                  <input value={infoForm.businessType} onChange={e => setInfoForm(f => ({ ...f, businessType: e.target.value }))} className={infoInputClass} />
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Phone size={16} className="text-slate-600" />
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold">Mobile</p>
-                  <p className="text-sm font-bold text-slate-100">{user.mobile || '-'}</p>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setEditingInfo(false)}
+                  className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-700 hover:text-white transition-all">
+                  Cancel
+                </button>
+                <button type="submit" disabled={actionLoading === 'info'}
+                  className="flex-1 bg-indigo-500 text-slate-900 py-2.5 rounded-xl font-bold text-sm hover:bg-indigo-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                  {actionLoading === 'info' ? <><RefreshCw size={16} className="animate-spin" /> Saving…</> : <><Save size={16} /> Save Changes</>}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Mail size={16} className="text-slate-600" />
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold">Email</p>
+                    <p className="text-sm font-bold text-slate-100">{user.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Phone size={16} className="text-slate-600" />
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold">Mobile</p>
+                    <p className="text-sm font-bold text-slate-100">{user.mobile || '-'}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Store size={16} className="text-slate-600" />
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold">Store Name</p>
+                    <p className="text-sm font-bold text-slate-100">{user.storeName || '-'}</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Store size={16} className="text-slate-600" />
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold">Store Name</p>
-                  <p className="text-sm font-bold text-slate-100">{user.storeName || '-'}</p>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Globe size={16} className="text-slate-600" />
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold">Business Type</p>
+                    <p className="text-sm font-bold text-slate-100 capitalize">{user.businessType || '-'}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Calendar size={16} className="text-slate-600" />
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold">Joined</p>
+                    <p className="text-sm font-bold text-slate-100">{new Date(user.createdAt).toLocaleDateString()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Ticket size={16} className="text-slate-600" />
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold">Support Tickets</p>
+                    <p className="text-sm font-bold text-slate-100">{user.ticketCount}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Globe size={16} className="text-slate-600" />
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold">Business Type</p>
-                  <p className="text-sm font-bold text-slate-100 capitalize">{user.businessType || '-'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Calendar size={16} className="text-slate-600" />
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold">Joined</p>
-                  <p className="text-sm font-bold text-slate-100">{new Date(user.createdAt).toLocaleDateString()}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Ticket size={16} className="text-slate-600" />
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold">Support Tickets</p>
-                  <p className="text-sm font-bold text-slate-100">{user.ticketCount}</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
+            </CardContent>
+          )}
         </Card>
 
         {/* Subscription Info */}
@@ -470,8 +562,8 @@ export default function AdminUserDetailPage() {
         {/* Update Plan Modal */}
         {showPlanForm && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200">
-              <div className="flex items-center justify-between p-6 border-b border-slate-800">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between p-6 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => setShowPlanForm(false)}
                     className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors" title="Back">
@@ -506,10 +598,28 @@ export default function AdminUserDetailPage() {
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Extend Expiry (days)</label>
-                  <input type="number" value={planForm.expiryDays} onChange={e => setPlanForm(f => ({ ...f, expiryDays: e.target.value }))}
-                    placeholder="e.g. 30"
-                    className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-slate-600" />
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Extend Expiry (relative)</label>
+                  <div className="flex gap-2">
+                    <input type="number" value={planForm.expiryDays}
+                      onChange={e => setPlanForm(f => ({ ...f, expiryDays: e.target.value, expiryDate: '' }))}
+                      placeholder="e.g. 30"
+                      className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-slate-600" />
+                    <div className="flex bg-slate-800 border border-slate-700 rounded-xl p-1">
+                      {(['days', 'months'] as const).map(u => (
+                        <button key={u} type="button" onClick={() => setPlanForm(f => ({ ...f, expiryUnit: u }))}
+                          className={cn('px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-colors', planForm.expiryUnit === u ? 'bg-indigo-500 text-slate-900' : 'text-slate-400')}>
+                          {u}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">OR Set Exact Expiry Date</label>
+                  <input type="date" value={planForm.expiryDate}
+                    onChange={e => setPlanForm(f => ({ ...f, expiryDate: e.target.value, expiryDays: '' }))}
+                    className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500" />
+                  <p className="text-[11px] text-slate-500">Works for any subscription status — filling this clears the relative amount above.</p>
                 </div>
                 {shop?.subscriptionStatus === 'trial' && (
                   <div className="border-t border-slate-800 pt-4 space-y-4">

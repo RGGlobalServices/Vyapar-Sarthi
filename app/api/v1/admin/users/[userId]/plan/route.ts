@@ -11,7 +11,7 @@ type Ctx = { params: Promise<{ userId: string }> };
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   await requireAdmin(req);
   const userId = parseInt((await params).userId);
-  const { plan, status, expiryDays, trialAction, days, date } = await readBody(req);
+  const { plan, status, expiryDays, expiryDate, trialAction, days, date } = await readBody(req);
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, 'User not found');
@@ -43,6 +43,12 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (expiryDays !== undefined && expiryDays !== null && !Number.isNaN(expiryDays)) {
     const baseExpiry = Math.max(Date.now(), maxExpiry);
     updateData.subscriptionExpiry = new Date(baseExpiry + expiryDays * 86400000);
+  } else if (expiryDate) {
+    // Absolute expiry — available for any subscription status, not just
+    // trial (which has its own date field further below, scoped to
+    // subscriptionTrialEnds too). Lets the admin set an exact renewal date
+    // for a paid/active shop instead of only relative day math.
+    updateData.subscriptionExpiry = new Date(expiryDate);
   }
 
   // Trial modifications

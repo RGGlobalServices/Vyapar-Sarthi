@@ -164,7 +164,7 @@ export async function POST(req: Request) {
     // keep scanning exactly as before.
     const purchaseProductIds = [...new Set(processedItems.map((i: any) => i.productId))] as string[];
     const [purchaseProductsInfo, existingBatchCounts] = await Promise.all([
-      prisma.product.findMany({ where: { id: { in: purchaseProductIds } }, select: { id: true, barcode: true, sku: true } }),
+      prisma.product.findMany({ where: { id: { in: purchaseProductIds } }, select: { id: true, barcode: true, sku: true, millCategory: true } }),
       prisma.batch.groupBy({ by: ['productId'], where: { productId: { in: purchaseProductIds } }, _count: { _all: true } }),
     ]);
     const purchaseProductById = new Map(purchaseProductsInfo.map((p) => [p.id, p]));
@@ -270,6 +270,37 @@ export async function POST(req: Request) {
         // stock/adjust/route.ts).
         prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid`
       ]),
+
+      // 4b. Mill raw-material bridge — a mill shop buying grain through this
+      // generic Purchases flow (instead of Gate Entry → Weighbridge →
+      // "Convert to Lot") would otherwise only bump Product.currentStock,
+      // leaving RawMaterialLot — what Production Batch actually reads from —
+      // completely untouched. That silently orphans the stock: it can never
+      // become a batch, never shows on the Raw Material page, no traceability.
+      // Scoped purely on the product's own millCategory (set only via the
+      // mill Add-Product form), same signal the Raw Material/Finished Goods/
+      // By-Products pages already filter on — never fires for a non-mill
+      // shop's purchase. Weight/rate mirror the purchase line; moisture% is
+      // left blank (Purchases doesn't collect it) — the shopkeeper can still
+      // edit it from the Raw Material page before starting a batch.
+      ...processedItems
+        .filter((item: any) => purchaseProductById.get(item.productId)?.millCategory === 'raw_material')
+        .map((item: any, i: number) =>
+          prisma.rawMaterialLot.create({
+            data: {
+              shopId: auth.shop.id,
+              productId: item.productId,
+              supplierId,
+              lotNumber: `${invoiceNumber}${processedItems.length > 1 ? `-L${i + 1}` : ''}`,
+              purchaseDate,
+              weightKg: item.baseQuantity,
+              ratePerKg: item.baseCost || null,
+              totalAmount: Math.round(item.baseQuantity * (item.baseCost || 0) * 100) / 100,
+              remainingKg: item.baseQuantity,
+              notes: `Auto-created from Purchase Invoice ${invoiceNumber}`,
+            },
+          })
+        ),
 
       // 5. Update Supplier Ledger
       prisma.supplier.update({

@@ -127,6 +127,10 @@ model Shop {
   // markup intuition. Independent of the tax-liability-aware profit used at
   // billing time (lib/financialEngine.ts), which always nets out GST.
   gstInclusiveProfit      Boolean?             @default(false) @map("gst_inclusive_profit")
+  // Which page opens first after login/app-load — a route segment like
+  // 'billing' or 'stock', matching the Sidebar's module keys. Null/empty
+  // means the normal default (Dashboard) — set from Settings.
+  defaultLandingPage      String?              @map("default_landing_page") @db.VarChar
   // Shown on printed/PDF bills (GST and Non-GST, every package tier) as a
   // scan-to-pay UPI QR + bank transfer details — set once in Profile, then
   // reused on every invoice without re-entering it per bill.

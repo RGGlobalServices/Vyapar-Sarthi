@@ -668,6 +668,8 @@
     "colTotal": "Total",
     "colClosing": "Close",
     "colSale": "Sale",
+    "colCash": "Cash",
+    "colBrand": "Brand",
     "saveRow": "Save",
     "savedRow": "Saved",
     "notCountedYet": "Not counted yet",

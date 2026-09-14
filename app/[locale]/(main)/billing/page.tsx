@@ -30,6 +30,8 @@ import {performSmartSearch} from '@/lib/smartSearch';
 import {computeGst} from '@/lib/gst';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import ManualBillUpload from '@/components/ManualBillUpload';
+import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
+import { extractMlToken } from '@/lib/liquorMatrix';
 import DiscountInput from '@/components/DiscountInput';
 import {splitVariantKey, isColorSizeVariants} from '@/components/ColorSizeVariantGrid';
 import {formatSizeLabel} from '@/components/SizeVariantGrid';
@@ -1001,7 +1003,100 @@ function StandardBillingUI() {
     }
   };
 
+  // Ctrl+P "quick save & print" — two different things depending on where the
+  // shopkeeper is:
+  //   - Still on the cart screen: skip Customer Details entirely and save
+  //     straight away (no name/mobile asked), same as a plain walk-in cash
+  //     sale. Only safe when nothing is going to Udhar (that still needs a
+  //     name to track against), so a partial/credit sale opens the modal
+  //     instead — exactly what clicking "Confirm Sale" already does.
+  //   - Already on Customer Details: same as clicking "Confirm & Print Slip".
+  // Either way, the actual print fires itself once the Bill Generated modal
+  // has genuinely mounted (pendingAutoPrintRef + the effect below) — calling
+  // window.print() any earlier has nothing in componentRef to print yet.
+  const pendingAutoPrintRef = useRef(false);
 
+  const handleQuickSaveAndPrint = () => {
+    if (items.length === 0 || isGeneratingBill) return;
+    if (collectedAmount > total) {
+      alert(t('collectedExceedsTotal') || 'Collected amount cannot be greater than Total bill.');
+      return;
+    }
+    if (remainingAmount > 0) {
+      handleCreateBillClick(); // Udhar needs a name — same as the normal button
+      return;
+    }
+    setCustomerName('');
+    setCustomerMobile('');
+    setCustomerEmail('');
+    setCustomerAddress('');
+    pendingAutoPrintRef.current = true;
+    handleConfirmBill();
+  };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'p') return;
+      e.preventDefault(); // otherwise the browser's own Print dialog opens
+      if (showCustomerModal) {
+        if (isGeneratingBill || (remainingAmount > 0 && !customerName.trim())) return;
+        pendingAutoPrintRef.current = true;
+        handleConfirmBill();
+      } else if (!showBillModal) {
+        handleQuickSaveAndPrint();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [showCustomerModal, showBillModal, isGeneratingBill, remainingAmount, customerName, items.length, collectedAmount, total]);
+
+  // Fires once the Bill Generated modal has actually rendered (componentRef
+  // needs real DOM to print) — not immediately after handleConfirmBill
+  // resolves, since that state update hasn't painted yet at that point.
+  useEffect(() => {
+    if (!showBillModal || !lastBill || !pendingAutoPrintRef.current) return;
+    pendingAutoPrintRef.current = false;
+    const timer = setTimeout(() => { handlePrint(); }, 300);
+    return () => clearTimeout(timer);
+  }, [showBillModal, lastBill]);
+
+  // F2/F3/Ctrl+K — same shortcuts WholesaleBillingUI.tsx already has, ported
+  // here for parity: F2 opens Customer Details (same as clicking "Confirm
+  // Sale"), F3 jumps focus to the search box, Ctrl+K opens Manual Add.
+  useEffect(() => {
+    const handleShortcutKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (items.length > 0 && !showCustomerModal && !showBillModal) {
+          handleCreateBillClick();
+        }
+      } else if (e.key === 'F3') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.ctrlKey && e.key === 'k') {
+        e.preventDefault();
+        setShowManualAdd(true);
+      }
+    };
+    window.addEventListener('keydown', handleShortcutKeyDown);
+    return () => window.removeEventListener('keydown', handleShortcutKeyDown);
+  }, [items.length, showCustomerModal, showBillModal]);
+
+  // Cart lines that belong in the Brand x ML matrix vs. the plain table below
+  // it — a sized liquor line (e.g. "Kingfisher 650ml", or a variant colour
+  // that's itself an ML value) goes in the matrix; anything else (snacks,
+  // cigarettes, a non-liquor shop's whole cart) stays in the normal table so
+  // nothing in the bill goes missing.
+  const isLiquorCartLine = useCallback((item: any) => {
+    if (!bizConfig.hasLiquorSpecs) return false;
+    if (item.variant) {
+      const color = String(item.variant).split('/')[0]?.trim() || '';
+      return !!extractMlToken(color);
+    }
+    return !!extractMlToken(item.name);
+  }, [bizConfig.hasLiquorSpecs]);
+  const liquorCartLines = useMemo(() => bizConfig.hasLiquorSpecs ? items.filter(isLiquorCartLine) : [], [items, isLiquorCartLine, bizConfig.hasLiquorSpecs]);
+  const nonLiquorCartItems = useMemo(() => bizConfig.hasLiquorSpecs ? items.filter(i => !isLiquorCartLine(i)) : items, [items, isLiquorCartLine, bizConfig.hasLiquorSpecs]);
 
   const paymentOptions: { id: PaymentMethod; label: string; icon: React.ReactNode }[] = [
     { id: 'cash', label: t('cash') || 'Cash', icon: <IndianRupee size={20}/> },
@@ -1162,6 +1257,7 @@ function StandardBillingUI() {
           >
             <PlusCircle size={20} />
             <span className="hidden md:inline">{t('manualAdd') || 'Manual Add'}</span>
+            <span className="hidden md:inline text-[10px] bg-emerald-200/50 dark:bg-emerald-900 px-1.5 rounded ml-1">Ctrl+K</span>
           </button>
           {/* <button
             onClick={() => setShowManualBillUpload(true)}
@@ -1330,17 +1426,36 @@ function StandardBillingUI() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[600px]">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase sticky top-0 z-10">
-                <tr>
+            {liquorCartLines.length > 0 && (
+              <LiquorCartMatrix
+                catalogRows={products.map((p: any) => ({ id: p.id, name: p.name, stock: p.currentStock || 0, price: p.sellingPrice, variants: p.variants }))}
+                lines={liquorCartLines.map(i => ({ id: i.id, name: i.name, variant: i.variant, quantity: i.quantity, price: i.price }))}
+                onAdd={(productId, variantKey) => {
+                  // Same addToCart every other entry point uses — stock guard,
+                  // batch lookup, price — a sibling size shown at qty 0 is a
+                  // real product, so adding it goes through the real flow too.
+                  const product = products.find((p: any) => p.id === productId);
+                  if (product) { addToCart(product, variantKey); checkFifoHintOnAdd(product); }
+                }}
+                onDecrement={(productId, variantKey, newQty) => {
+                  if (newQty <= 0) removeItem(productId, variantKey);
+                  else updateQuantity(productId, newQty, variantKey);
+                }}
+                onRemoveRow={(productId, variantKey) => removeItem(productId, variantKey)}
+              />
+            )}
+            {(nonLiquorCartItems.length > 0 || liquorCartLines.length === 0) && (
+            <div className="overflow-x-auto rounded-xl border-2 border-slate-300 dark:border-slate-700">
+              <table className="w-full text-left min-w-[600px] border-collapse">
+              <thead className="bg-slate-800 dark:bg-slate-900 text-white text-xs uppercase font-black sticky top-0 z-10">
+                <tr className="divide-x divide-slate-600">
                   <th className="px-4 py-3 w-10">
                     <input 
                       type="checkbox" 
                       className="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500 cursor-pointer w-4 h-4"
-                      checked={items.length > 0 && selectedItemIds.size === items.length}
+                      checked={nonLiquorCartItems.length > 0 && selectedItemIds.size === nonLiquorCartItems.length}
                       onChange={(e) => {
-                        if (e.target.checked) setSelectedItemIds(new Set(items.map(i => i.id)));
+                        if (e.target.checked) setSelectedItemIds(new Set(nonLiquorCartItems.map(i => i.id)));
                         else setSelectedItemIds(new Set());
                       }}
                     />
@@ -1360,12 +1475,12 @@ function StandardBillingUI() {
                   <th className="px-4 py-3 text-center whitespace-nowrap">{t('actionCol') || 'ACTION'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {items.map((item) => {
+              <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
+                {nonLiquorCartItems.map((item, rowIdx) => {
                   const stockInfo = resolveStockForItem(item, products);
                   const maxQty = stockInfo.known ? stockInfo.qty : undefined;
                   return (
-                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className="text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className={cn('text-slate-900 dark:text-slate-200 divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/30 transition-colors', rowIdx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
                     <td className="px-4 py-4">
                       <input
                         type="checkbox"
@@ -1379,7 +1494,7 @@ function StandardBillingUI() {
                         }}
                       />
                     </td>
-                    <td className="px-2 py-4 font-medium min-w-[200px]">
+                    <td className="px-2 py-4 font-bold min-w-[200px]">
                       {item.name}
                       {item.variant && !bizConfig.hasSizes && !bizConfig.hasLiquorSpecs && (
                         <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
@@ -1532,7 +1647,7 @@ function StandardBillingUI() {
                   </tr>
                   );
                 })}
-                  {items.length === 0 && (
+                  {nonLiquorCartItems.length === 0 && liquorCartLines.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-20 text-center text-slate-500">
                         {t('emptyCart') || 'No items in cart. Start scanning or searching!'}
@@ -1542,6 +1657,7 @@ function StandardBillingUI() {
                 </tbody>
               </table>
             </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1856,6 +1972,7 @@ function StandardBillingUI() {
           >
             <CheckCircle size={24} />
             {isEmi ? "Confirm EMI Sale" : "Confirm Sale"}
+            <span className="text-xs bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded ml-1">F2</span>
           </button>
           
           <p className="text-[10px] text-center text-slate-500 font-medium">

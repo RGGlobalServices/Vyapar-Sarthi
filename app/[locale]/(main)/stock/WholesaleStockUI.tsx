@@ -5,7 +5,7 @@ import {
   Box, Package, Archive, AlertTriangle, Search, Loader2, ArrowRightLeft,
   TrendingDown, Clock, CheckCircle, X, Filter, Download, Printer,
   Plus, Edit, Eye, AlertOctagon, Info, BarChart3, TrendingUp, CalendarDays, Store, Trash2,
-  Barcode as BarcodeIcon,
+  Barcode as BarcodeIcon, ListChecks, Wine,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,9 @@ import TransferDrawer from './TransferDrawer';
 import AdjustDrawer from './AdjustDrawer';
 import ReceiveDrawer from './ReceiveDrawer';
 import DailyStockRegister from './DailyStockRegister';
+import StockTakePanel from './StockTakePanel';
+import LiquorMLMatrix from './LiquorMLMatrix';
+import { getBusinessConfig } from '@/lib/businessConfig';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
@@ -183,7 +186,12 @@ export default function WholesaleStockUI() {
   // Action Modals
   const [actionModal, setActionModal] = useState<string | null>(null); // 'receive', 'transfer', 'adjust'
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
-  const [showDailyRegister, setShowDailyRegister] = useState(false);
+  // Daily Register and Stock Take are both full-page inline sections toggled
+  // from this same header, mutually exclusive with the normal stock table
+  // (and with each other) — Stock Take used to be its own separate sidebar
+  // item/route; it now lives here instead, same access pattern as Daily
+  // Register already had.
+  const [stockSection, setStockSection] = useState<'none' | 'register' | 'stockTake' | 'mlMatrix'>('none');
   const [showScanner, setShowScanner] = useState(false);
 
   // Hardware (keyboard-wedge) scanner — same detection logic Billing already
@@ -206,6 +214,7 @@ export default function WholesaleStockUI() {
 
   const { activeShopId, allShopAccess, profile } = useBusinessStore();
   const stockConfig = useMemo(() => getStockTableConfig(profile?.businessType || 'general'), [profile?.businessType]);
+  const isLiquor = !!getBusinessConfig(profile?.businessType as any)?.hasLiquorSpecs;
   const { data: products = [], isLoading: pLoad, isValidating: pValid, mutate: mutateProducts } = useSWR(activeShopId ? ['/products', activeShopId] : null, fetcher);
   const { data: batches = [], isLoading: bLoad, isValidating: bValid, mutate: mutateBatches } = useSWR(activeShopId ? ['/stock/batches', activeShopId] : null, safeFetcher);
   const { data: godowns = [], isLoading: gLoad, isValidating: gValid, mutate: mutateGodowns } = useSWR(activeShopId ? ['/godowns', activeShopId] : null, godownsFetcher);
@@ -283,6 +292,60 @@ export default function WholesaleStockUI() {
       mutateBatches();
       globalMutate(key => typeof key === 'string' && key.startsWith('/reports/dashboard'));
     }
+  };
+
+  // ML Matrix — inline +/- on a single variant cell, instant like the rest
+  // of this page's optimistic updates (mirrors handleDataRefresh's pattern:
+  // patch local state first, hit the API, revalidate after).
+  const handleMlCellAdjust = async (cell: import('@/lib/liquorMatrix').LiquorMatrixCell, delta: number) => {
+    const warehouseId = godowns?.[0]?.id;
+    if (!warehouseId) { alert('No warehouse found for this shop — add one under Warehouses first.'); return; }
+    const newProducts = products.map((p: any) => {
+      if (p.id !== cell.productId) return p;
+      if (cell.variantIndex != null && Array.isArray(p.variants)) {
+        const variants = p.variants.map((v: any, idx: number) => idx === cell.variantIndex ? { ...v, stock: (Number(v.stock) || 0) + delta } : v);
+        return { ...p, variants, currentStock: (p.currentStock || 0) + delta };
+      }
+      return { ...p, currentStock: (p.currentStock || 0) + delta };
+    });
+    mutateProducts(newProducts, false);
+    try {
+      const body: any = { productId: cell.productId, warehouseId };
+      if (cell.variantKey) body.variantDeltas = [{ variantKey: cell.variantKey, delta }];
+      else body.difference = delta;
+      await api.post('/stock/adjust', body);
+    } catch (e: any) {
+      mutateProducts();
+      alert(e?.response?.data?.error || 'Failed to adjust stock');
+      return;
+    }
+    mutateProducts();
+  };
+
+  // ML Matrix — "Dynamic Entry": one new brand Product with every filled
+  // size as a variants[] row (color = ML, size defaulted to Bottle — same
+  // convention this session's liquor AI-import fix already relies on).
+  const handleMlAddBrand = async (name: string, entries: Array<{ column: string; qty: number; price: number }>) => {
+    const variants = entries.map(e => ({
+      color: e.column.replace(' ML', 'ml'),
+      size: 'Bottle',
+      stock: e.qty,
+      costPrice: 0,
+      wholesalePrice: e.price,
+      sellingPrice: e.price,
+      mrp: e.price,
+    }));
+    const totalStock = entries.reduce((s, e) => s + e.qty, 0);
+    const firstPrice = entries.find(e => e.price > 0)?.price || 0;
+    await api.post('/products', {
+      name,
+      baseUnit: 'Bottle',
+      currentStock: totalStock,
+      sellingPrice: firstPrice,
+      mrp: firstPrice,
+      variants,
+    });
+    mutateProducts();
   };
 
   const loading = pLoad || bLoad || gLoad || mLoad;
@@ -525,11 +588,23 @@ export default function WholesaleStockUI() {
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('inventoryDesc')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowDailyRegister(v => !v)}
+            <button onClick={() => setStockSection(s => s === 'register' ? 'none' : 'register')}
               className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
-                showDailyRegister ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
+                stockSection === 'register' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
               <CalendarDays size={16} /> {t('dailyRegister')}
             </button>
+            <button onClick={() => setStockSection(s => s === 'stockTake' ? 'none' : 'stockTake')}
+              className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
+                stockSection === 'stockTake' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
+              <ListChecks size={16} /> Stock Take
+            </button>
+            {isLiquor && (
+              <button onClick={() => setStockSection(s => s === 'mlMatrix' ? 'none' : 'mlMatrix')}
+                className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
+                  stockSection === 'mlMatrix' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
+                <Wine size={16} /> ML Matrix
+              </button>
+            )}
             {/* Unlike Transfer/Adjust (which move or correct stock a product
                 already has, so picking that product from the table first
                 makes sense), Receiving is how NEW stock gets added — forcing
@@ -554,8 +629,18 @@ export default function WholesaleStockUI() {
           </div>
         </div>
 
-        {showDailyRegister ? (
+        {stockSection === 'register' ? (
           <DailyStockRegister />
+        ) : stockSection === 'stockTake' ? (
+          <StockTakePanel />
+        ) : stockSection === 'mlMatrix' ? (
+          <LiquorMLMatrix
+            rows={products.map((p: any) => ({ id: p.id, name: p.name, stock: p.currentStock || 0, price: p.sellingPrice, variants: p.variants }))}
+            loading={pLoad}
+            shopName={profile?.shopName}
+            onAdjustCell={handleMlCellAdjust}
+            onAddBrand={handleMlAddBrand}
+          />
         ) : (<>
         {/* Analytics Widgets */}
         <div className={cn("grid grid-cols-2 gap-4 mb-6", stockConfig.kpis.length <= 5 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-3 lg:grid-cols-6")}>

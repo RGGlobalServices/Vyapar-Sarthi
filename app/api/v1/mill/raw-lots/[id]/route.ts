@@ -39,8 +39,8 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   // (weight / rate) changes so totalAmount stays consistent without the
   // caller having to compute it.
   const patch: any = {};
-  if (body.lotNumber !== undefined)    patch.lotNumber   = String(body.lotNumber).trim() || null;
-  if (body.farmerName !== undefined)   patch.farmerName  = String(body.farmerName).trim() || null;
+  if (body.lotNumber !== undefined)    patch.lotNumber   = body.lotNumber == null ? null : String(body.lotNumber).trim() || null;
+  if (body.farmerName !== undefined)   patch.farmerName  = body.farmerName == null ? null : String(body.farmerName).trim() || null;
   if (body.productId !== undefined)    patch.productId   = body.productId || null;
   if (body.supplierId !== undefined)   patch.supplierId  = body.supplierId || null;
   if (body.purchaseDate !== undefined) patch.purchaseDate = new Date(body.purchaseDate);
@@ -49,7 +49,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (body.moisturePct !== undefined)  patch.moisturePct = body.moisturePct === null || body.moisturePct === ''
     ? null : Math.max(0, Math.min(100, Number(body.moisturePct) || 0));
   if (body.remainingKg !== undefined)  patch.remainingKg = Number(body.remainingKg) || 0;
-  if (body.notes !== undefined)        patch.notes       = String(body.notes).trim() || null;
+  if (body.notes !== undefined)        patch.notes       = body.notes == null ? null : String(body.notes).trim() || null;
 
   if (patch.weightKg != null || patch.ratePerKg != null) {
     const nextWeight = patch.weightKg ?? undefined;

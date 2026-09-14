@@ -43,12 +43,12 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const body = await readBody<any>(req);
 
   const patch: any = {};
-  if (body.driverName !== undefined) patch.driverName = String(body.driverName).trim() || null;
-  if (body.driverMobile !== undefined) patch.driverMobile = String(body.driverMobile).trim() || null;
+  if (body.driverName !== undefined) patch.driverName = body.driverName == null ? null : String(body.driverName).trim() || null;
+  if (body.driverMobile !== undefined) patch.driverMobile = body.driverMobile == null ? null : String(body.driverMobile).trim() || null;
   if (body.supplierId !== undefined) patch.supplierId = body.supplierId || null;
   if (body.partyId !== undefined) patch.partyId = body.partyId || null;
-  if (body.materialDescription !== undefined) patch.materialDescription = String(body.materialDescription).trim() || null;
-  if (body.notes !== undefined) patch.notes = String(body.notes).trim() || null;
+  if (body.materialDescription !== undefined) patch.materialDescription = body.materialDescription == null ? null : String(body.materialDescription).trim() || null;
+  if (body.notes !== undefined) patch.notes = body.notes == null ? null : String(body.notes).trim() || null;
   if (body.status !== undefined) patch.status = String(body.status);
   if (body.markExited === true) {
     patch.status = 'exited';

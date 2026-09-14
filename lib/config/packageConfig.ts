@@ -94,17 +94,19 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
   badaudyog: {
     id: 'badaudyog',
     label: 'Bada Udyog Package',
-    // Full mill / grain-processing feature set. Existing modules (dashboard,
-    // billing, products, party, suppliers, purchases, stock, warehouses,
-    // transfers, expenses, staff, returns, reports, import, settings,
-    // profile, calendar, referral, dukandar) work as-is; the mill-specific
-    // keys (gate-entry, weighbridge, transport, dispatch, production,
-    // quality-lab, batches, brokers, hamali, machines, maintenance,
-    // spare-parts, settlement, documents, outstanding, payments, receipts,
-    // ledger, raw-material, finished-goods, by-products) are rendered as
-    // "Coming in v2" scaffolds today — the sidebar surfaces them so the
-    // shopkeeper sees the promised feature set, each module ships fully
-    // over follow-up sessions.
+    // Full mill / grain-processing feature set. All modules below — core
+    // (dashboard, billing, products, party, suppliers, purchases, stock,
+    // warehouses, transfers, expenses, staff, returns, reports, import,
+    // settings, profile, calendar, referral, dukandar) and mill-specific
+    // (gate-entry, weighbridge, transport, dispatch, production, quality-lab,
+    // batches, brokers, hamali, machines, maintenance, spare-parts,
+    // settlement, documents, outstanding, payments, receipts, ledger,
+    // raw-material, finished-goods, by-products) — ship with real pages,
+    // API routes and Prisma models as of 2026-09-11 (gate-entry/weighbridge/
+    // batches/quality-lab/raw-material/by-products under app/api/v1/mill/,
+    // transport/dispatch under app/api/v1/logistics/, brokers/machines/
+    // maintenance/spare-parts under app/api/v1/management/). None of it is a
+    // placeholder; this comment previously said otherwise and was stale.
     modules: [
       // Core (existing)
       'dashboard',

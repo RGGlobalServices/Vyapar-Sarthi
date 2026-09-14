@@ -4,6 +4,7 @@ import { requireShop } from '@/lib/server/auth';
 import { parseFlexibleDate } from '@/lib/server/dates';
 import { parseSizeRange } from '@/lib/sizeRange';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { getBusinessConfig } from '@/lib/businessConfig';
 
 /**
  * Build the "<Colour> / <Size>" composite key used everywhere else in the
@@ -67,11 +68,47 @@ function mergeVariantIntoArray(
   return arr;
 }
 
+/**
+ * Row-level {colour, size} for variant tracking — normally the row's own
+ * Colour/Size columns, but for a liquor shop with no such columns (the
+ * common case: a wholesaler's bill has Volume + Bottle Type instead), falls
+ * back to those. `getVal` is passed in rather than imported since it's a
+ * per-request closure defined inside POST.
+ */
+function resolveRowVariant(
+  row: any,
+  getVal: (row: any, keys: string[]) => any,
+  isLiquorImport: boolean,
+): { rowColour: string | null; rowSize: string | null } {
+  let rowColour = String(getVal(row, ['colour', 'color']) || '').trim() || null;
+  let rowSize = String(getVal(row, ['size']) || '').trim() || null;
+  if (isLiquorImport && !rowColour && !rowSize) {
+    const volume = getVal(row, ['volume', 'volumeml', 'ml', 'packsize']);
+    if (volume !== undefined && String(volume).trim() !== '') {
+      const v = String(volume).trim();
+      rowColour = /ml$|l$/i.test(v) ? v : `${v}ml`;
+    }
+    const bottleType = getVal(row, ['bottletype', 'packaging', 'container', 'pack']);
+    if (bottleType) rowSize = String(bottleType).trim();
+  }
+  return { rowColour, rowSize };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const auth = await requireShop(req);
     if (auth instanceof NextResponse) return auth;
     const shopId = auth.shop.id;
+    // Liquor's variant dimension is Volume(ML) × Bottle Type, not Colour ×
+    // Size — but it's stored through the exact same {color, size} shape
+    // everywhere else in this file (variants[], PurchaseItem.variantKey,
+    // and what Billing's stock-decrement/ML-column code reads), same
+    // convention as ProductDetailsSheet/WholesaleBillingUI this session:
+    // color slot = ML, size slot = Bottle Type. So a liquor row with no
+    // explicit colour/size column falls back to volume/bottleType below
+    // instead of importing as a single flat-stock product with the ML
+    // size buried in metadata only (unreachable by the billing ML picker).
+    const isLiquorImport = !!getBusinessConfig(auth.shop.businessType as any)?.hasLiquorSpecs;
 
     const startedAt = Date.now();
     const body = await req.json();
@@ -326,9 +363,10 @@ export async function POST(req: NextRequest) {
             const quantity = parseFloat(getVal(row, ['quantity', 'stock', 'qty']) || 0);
             const extras = getProductExtras(row);
 
-            // Row-level colour+size (may be null for plain products).
-            const rowColour = String(getVal(row, ['colour', 'color']) || '').trim() || null;
-            const rowSize   = String(getVal(row, ['size']) || '').trim() || null;
+            // Row-level colour+size (may be null for plain products) — falls
+            // back to Volume/Bottle-Type for a liquor shop with no explicit
+            // colour/size columns (see resolveRowVariant).
+            const { rowColour, rowSize } = resolveRowVariant(row, getVal, isLiquorImport);
             const rowVariantKey = variantKey(rowColour, rowSize);
 
             if (matchId) {
@@ -674,10 +712,15 @@ export async function POST(req: NextRequest) {
         // a soft-deleted row when the shopkeeper genuinely wants a new one.
         const existingProducts = await prisma.product.findMany({
           where: { shopId, archived: false },
-          select: { id: true, name: true, barcode: true, currentStock: true, variants: true }
+          select: { id: true, name: true, barcode: true, currentStock: true, variants: true, millCategory: true }
         });
         const barcodeIndex = new Map<string, string>();
         const stockIndex = new Map<string, number>();
+        // Mill raw-material bridge (see the create-lot block below) — only
+        // ever true for a product already tagged via the mill Add-Product
+        // form, never guessed from the import row itself (imports carry no
+        // millCategory column).
+        const millCategoryIndex = new Map<string, string | null>();
         // Exact (case-/whitespace-insensitive) name match only — see the
         // 'product' case above for why fuzzy matching was removed. Also
         // doubles as same-batch dedup: two rows referencing the same NEW
@@ -694,6 +737,7 @@ export async function POST(req: NextRequest) {
           if (p.name) nameIndex.set(p.name.toLowerCase().trim(), p.id);
           stockIndex.set(p.id, p.currentStock || 0);
           variantsIndex.set(p.id, Array.isArray(p.variants) ? (p.variants as any[]).map((v: any) => ({ ...v })) : []);
+          millCategoryIndex.set(p.id, (p as any).millCategory ?? null);
         }
 
         // Size-range expansion: a supplier bill row for "size 6*8, qty 2" is
@@ -743,9 +787,9 @@ export async function POST(req: NextRequest) {
 
             // Colour / Size from THIS specific row — after size-range
             // expansion above, this is always one concrete pair (or empty
-            // for a plain product row).
-            const rowColour = String(getVal(row, ['colour', 'color']) || '').trim() || null;
-            const rowSize   = String(getVal(row, ['size']) || '').trim() || null;
+            // for a plain product row). Falls back to Volume/Bottle-Type
+            // for a liquor shop (see resolveRowVariant).
+            const { rowColour, rowSize } = resolveRowVariant(row, getVal, isLiquorImport);
             const rowVariantKey = variantKey(rowColour, rowSize);
 
             if (!matchId) {
@@ -858,6 +902,32 @@ export async function POST(req: NextRequest) {
               }
             }
             if (matchId) affectedProductIds.add(matchId);
+
+            // Mill raw-material bridge — importing a purchase bill for a
+            // product already tagged raw_material (via the mill Add-Product
+            // form) would otherwise only bump Product.currentStock, leaving
+            // RawMaterialLot — what Production Batch actually reads from —
+            // untouched. That silently orphans the stock: it can never
+            // become a batch, never shows on the Raw Material page, no
+            // traceability. Mirrors the same bridge in the plain Purchases
+            // route (app/api/v1/purchases/route.ts); moisture% is left blank
+            // (imports don't carry it) — editable later from Raw Material.
+            if (matchId && millCategoryIndex.get(matchId) === 'raw_material' && quantity > 0) {
+              await prisma.rawMaterialLot.create({
+                data: {
+                  shopId,
+                  productId: matchId,
+                  supplierId: dbSupplier.id,
+                  lotNumber: `${invoiceNumber}-L${i + 1}`,
+                  purchaseDate: billDate,
+                  weightKg: quantity,
+                  ratePerKg: unitCost || null,
+                  totalAmount: Math.round(quantity * unitCost * 100) / 100,
+                  remainingKg: quantity,
+                  notes: `Auto-created from imported Purchase Invoice ${invoiceNumber}`,
+                },
+              });
+            }
 
             // Purchase total = what the shopkeeper actually OWES the supplier =
             // the REAL bill total, WITH tax. Two things matter here:
