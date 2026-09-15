@@ -180,6 +180,7 @@ model Shop {
   weighbridgeEntries      WeighbridgeEntry[]
   freightEntries          FreightEntry[]
   dispatchEntries         DispatchEntry[]
+  jobWorkOrders           JobWorkOrder[]
   commissionEntries       CommissionEntry[]
   machines                Machine[]
   maintenanceEntries      MaintenanceEntry[]
@@ -572,6 +573,7 @@ model Customer {
   gateEntriesAsParty    GateEntry[]             @relation("GateEntryParty")
   freightEntries        FreightEntry[]
   dispatchEntries       DispatchEntry[]
+  jobWorkOrders         JobWorkOrder[]
   commissionEntries     CommissionEntry[]
 
   @@index([mobile], map: "ix_customers_mobile")
@@ -1760,6 +1762,7 @@ model GateEntry {
   weighbridgeEntries WeighbridgeEntry[]
   freightEntries     FreightEntry[]
   dispatchEntries    DispatchEntry[]
+  jobWorkOrders      JobWorkOrder[]
 
   @@unique([shopId, entryNumber])
   @@index([shopId])
@@ -1855,6 +1858,48 @@ model DispatchEntry {
   @@index([shopId])
   @@index([partyId])
   @@map("dispatch_entries")
+}
+
+// Custom milling / job work — a farmer/customer brings their own raw
+// material (e.g. paddy) and pays only a processing charge to get it back
+// milled (e.g. rice); the mill never owns the grain, so unlike Purchases →
+// RawMaterialLot → ProductionBatch (which assumes the mill bought the raw
+// material), this deliberately stays a separate, lightweight flow: no
+// Product.currentStock or RawMaterialLot is ever touched. Optionally linked
+// to the GateEntry for the same trip, same pattern as DispatchEntry.
+// feeAmount/feeBasis mirror a real mill's two common billing conventions —
+// a flat rate per kg of the customer's OWN paddy brought in, or per kg of
+// rice actually milled back out.
+model JobWorkOrder {
+  id                      String    @id @default(uuid()) @db.Uuid
+  shopId                  String    @map("shop_id") @db.Uuid
+  orderNumber             String    @map("order_number") @db.VarChar
+  customerId              String    @map("customer_id") @db.Uuid
+  gateEntryId             String?   @map("gate_entry_id") @db.Uuid
+  materialDescription     String    @map("material_description") @db.VarChar
+  inputWeightKg           Float     @map("input_weight_kg")
+  outputDescription       String?   @map("output_description") @db.VarChar
+  outputWeightKg          Float?    @map("output_weight_kg")
+  ratePerKg               Float     @map("rate_per_kg")
+  feeBasis                String    @default("input") @map("fee_basis") @db.VarChar // input | output
+  feeAmount               Float?    @map("fee_amount")
+  byproductRetainedByMill Boolean   @default(true) @map("byproduct_retained_by_mill")
+  status                  String    @default("received") @db.VarChar // received | processing | completed | delivered
+  notes                   String?   @db.VarChar
+  receivedAt              DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
+  completedAt             DateTime? @map("completed_at") @db.Timestamptz(6)
+  deliveredAt             DateTime? @map("delivered_at") @db.Timestamptz(6)
+  createdAt               DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop      Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customer  Customer   @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  gateEntry GateEntry? @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([shopId, orderNumber])
+  @@index([shopId])
+  @@index([customerId])
+  @@index([status])
+  @@map("job_work_orders")
 }
 
 // ─── Management: broker commission + machines/maintenance/spare parts ─────

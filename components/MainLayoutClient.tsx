@@ -5,11 +5,12 @@ import { useTranslations } from 'next-intl';
 import { usePathname } from '@/i18n/routing';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
+import { useUIStore } from '@/lib/uiStore';
 import AIFloatingButton from '@/components/AIFloatingButton';
 import NotificationBell from '@/components/NotificationBell';
 import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAccess';
 import api from '@/lib/api';
-import { Menu, Clock, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Menu, Clock, AlertTriangle, ArrowLeft, PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from '@/i18n/routing';
 import toast from 'react-hot-toast';
@@ -191,6 +192,7 @@ export default function MainLayoutClient({
   const pathname = usePathname();
   const { loadFromStorage, user, role } = useAuthStore();
   const { profile, fetchProfile, hydrateFromCache, activeShopId } = useBusinessStore();
+  const { sidebarHidden, loadSidebarPref, toggleSidebar } = useUIStore();
   const lastTracked = useRef('');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const router = useRouter();
@@ -198,6 +200,10 @@ export default function MainLayoutClient({
   useEffect(() => {
     loadFromStorage();
   }, [loadFromStorage]);
+
+  useEffect(() => {
+    loadSidebarPref();
+  }, [loadSidebarPref]);
 
   // Activate global realtime sync
   useRealtimeSync();
@@ -350,8 +356,25 @@ export default function MainLayoutClient({
           </div>
         </aside>
       ) : !isBillingRoute ? (
-        <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
+        // Sidebar always mounts — sidebarHidden only ever hides it at the
+        // md+ breakpoint (see its own `md:hidden` class), so this desktop
+        // "more width" preference never touches mobile's own hamburger-driven
+        // overlay drawer, which needs the component present to open at all.
+        <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} sidebarHidden={sidebarHidden} />
       ) : null}
+
+      {/* Restores a manually-hidden sidebar — only reachable when it's
+          actually gone (mounted, not billing, hidden), desktop-only since
+          mobile already has its own hamburger-driven overlay sidebar. */}
+      {mounted && !isBillingRoute && sidebarHidden && (
+        <button
+          onClick={toggleSidebar}
+          title="Show sidebar"
+          className="hidden md:flex fixed top-1/2 left-0 -translate-y-1/2 z-40 items-center justify-center w-6 h-14 bg-white dark:bg-slate-900 border border-l-0 border-slate-200 dark:border-slate-800 rounded-r-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+        >
+          <PanelLeftOpen size={15} />
+        </button>
+      )}
 
       <div className="flex-1 flex flex-col overflow-y-auto">
         <header className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">

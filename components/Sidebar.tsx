@@ -10,13 +10,14 @@ import {
   Warehouse, ChevronDown, ChevronRight, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle,
   // Bada Udyog / Mills icons
   Truck, Scale, Factory, FlaskConical, ClipboardCheck, Handshake, HardHat, Wrench, Cog, Cpu, FileText,
-  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3
+  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3, Sprout, PanelLeftClose
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
 import api from '@/lib/api';
 import { useAuthStore, useStockStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
+import { useUIStore } from '@/lib/uiStore';
 import { getBusinessConfig, getBusinessTypesForPackage } from '@/lib/businessConfig';
 import { getPackageConfig, isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { preload } from 'swr';
@@ -46,7 +47,7 @@ interface SidebarSection {
 const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'main',        label: 'Main',              emoji: '🏭', alwaysExpanded: true, keys: ['dashboard'] },
   { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'purchases', 'party', 'products', 'stock', 'warehouses'] },
-  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['gate-entry', 'weighbridge', 'production', 'quality-lab', 'batches', 'raw-material', 'finished-goods', 'by-products'] },
+  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['gate-entry', 'weighbridge', 'production', 'quality-lab', 'batches', 'raw-material', 'finished-goods', 'by-products', 'job-work'] },
   { id: 'logistics',   label: 'Logistics',         emoji: '🚚', keys: ['transport', 'dispatch', 'hamali'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'settlement', 'expenses'] },
   { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers', 'machines', 'maintenance', 'spare-parts'], defaultCollapsed: true },
@@ -121,13 +122,18 @@ function prefetchForSection(sectionKey: string, activeShopId: string | null) {
 export default function Sidebar({
   locale,
   isMobileOpen,
-  setIsMobileOpen
+  setIsMobileOpen,
+  sidebarHidden
 }: {
   locale: string;
   isMobileOpen?: boolean;
   setIsMobileOpen?: (val: boolean) => void;
+  /** Desktop-only "collapsed for more width" preference — never affects the
+   *  mobile overlay drawer, which keeps using isMobileOpen as always. */
+  sidebarHidden?: boolean;
 }) {
   const pathname = usePathname();
+  const { toggleSidebar } = useUIStore();
   const { user, loadFromStorage, logout, role, setRole } = useAuthStore();
   const { profile, fetchProfile, allShops, allShopsError, activeShopId, fetchAllShops, switchShop, createShop, loading, deleteShop, shopLimit } = useBusinessStore();
   const t = useTranslations('Nav');
@@ -292,6 +298,7 @@ export default function Sidebar({
     { key: 'raw-material',    icon: Wheat,           href: '/raw-material' },
     { key: 'finished-goods',  icon: Boxes,           href: '/finished-goods' },
     { key: 'by-products',     icon: Grid3x3,         href: '/by-products' },
+    { key: 'job-work',        icon: Sprout,          href: '/job-work' },
     { key: 'quality-lab',     icon: FlaskConical,    href: '/quality-lab' },
     { key: 'batches',         icon: ClipboardCheck,  href: '/batches' },
     { key: 'brokers',         icon: Handshake,       href: '/brokers' },
@@ -363,8 +370,20 @@ export default function Sidebar({
       <aside className={cn(
         "w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen z-50",
         "fixed inset-y-0 left-0 transform transition-transform duration-300 md:relative md:translate-x-0 md:sticky md:top-0",
-        isMobileOpen ? "translate-x-0" : "-translate-x-full"
+        isMobileOpen ? "translate-x-0" : "-translate-x-full",
+        sidebarHidden && "md:hidden"
       )}>
+      {/* Permanent collapse arrow — desktop only (mobile closes the overlay
+          via its own backdrop tap / hamburger toggle instead). Sits half off
+          the sidebar's right edge like a grab handle so it stays reachable
+          regardless of which nav item is scrolled into view. */}
+      <button
+        onClick={toggleSidebar}
+        title="Hide sidebar"
+        className="hidden md:flex absolute top-1/2 -right-3 -translate-y-1/2 z-10 items-center justify-center w-6 h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-r-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+      >
+        <PanelLeftClose size={15} />
+      </button>
       <div className="relative border-b border-slate-200 dark:border-slate-800">
         {/* Shop header + switcher. Single-shop plans (Dukan) with only one
             shop have nothing to switch between, so this renders as inert. */}

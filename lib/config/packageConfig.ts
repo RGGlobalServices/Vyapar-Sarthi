@@ -101,12 +101,16 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
     // (gate-entry, weighbridge, transport, dispatch, production, quality-lab,
     // batches, brokers, hamali, machines, maintenance, spare-parts,
     // settlement, documents, outstanding, payments, receipts, ledger,
-    // raw-material, finished-goods, by-products) — ship with real pages,
-    // API routes and Prisma models as of 2026-09-11 (gate-entry/weighbridge/
-    // batches/quality-lab/raw-material/by-products under app/api/v1/mill/,
-    // transport/dispatch under app/api/v1/logistics/, brokers/machines/
-    // maintenance/spare-parts under app/api/v1/management/). None of it is a
-    // placeholder; this comment previously said otherwise and was stale.
+    // raw-material, finished-goods, by-products, job-work) — ship with real
+    // pages, API routes and Prisma models as of 2026-09-11 (gate-entry/
+    // weighbridge/batches/quality-lab/raw-material/by-products/job-work
+    // under app/api/v1/mill/, transport/dispatch under app/api/v1/logistics/,
+    // brokers/machines/maintenance/spare-parts under app/api/v1/management/).
+    // None of it is a placeholder; this comment previously said otherwise and
+    // was stale. job-work (added 2026-09-14) is intentionally separate from
+    // the raw-material/ProductionBatch pipeline — it never touches
+    // Product.currentStock or RawMaterialLot, since the mill doesn't own that
+    // grain (see app/[locale]/(main)/job-work/page.tsx's header comment).
     modules: [
       // Core (existing)
       'dashboard',
@@ -131,7 +135,7 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'dukandar',
       'orders',
       'challans',
-      // Mill Operations (v2 scaffolds)
+      // Mill Operations
       'gate-entry',
       'weighbridge',
       'production',
@@ -140,17 +144,18 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'raw-material',
       'finished-goods',
       'by-products',
-      // Logistics (v2 scaffolds)
+      'job-work',
+      // Logistics
       'transport',
       'dispatch',
       'hamali',
-      // Finance (v2 scaffolds + existing)
+      // Finance
       'payments',
       'receipts',
       'outstanding',
       'ledger',
       'settlement',
-      // Management (v2 scaffolds)
+      // Management
       'brokers',
       'machines',
       'maintenance',

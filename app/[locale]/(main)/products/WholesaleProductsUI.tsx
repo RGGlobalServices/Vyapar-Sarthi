@@ -19,6 +19,7 @@ import ProductDetailsSheet from './ProductDetailsSheet';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVariantGrid';
 import { ExportButton } from '@/lib/hooks/useExport';
+import ExpandViewButton from '@/components/ExpandViewButton';
 import { useCategories } from '@/lib/useCategories';
 import { CategoryPicker } from '@/components/CategoryPicker';
 import { calculateProductProfit, profitColorClass, sellingPriceForMargin } from '@/lib/profitCalc';
@@ -921,6 +922,7 @@ export default function WholesaleProductsUI() {
           </p>
         </div>
         <div className="flex gap-2">
+          <ExpandViewButton />
           <ExportButton
             filename="products"
             title="Product List"

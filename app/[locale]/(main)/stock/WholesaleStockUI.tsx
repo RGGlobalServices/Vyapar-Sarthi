@@ -23,6 +23,7 @@ import BarcodeQRModal from '@/components/BarcodeQRModal';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { cssColor } from '@/components/ColorSizeVariantGrid';
+import ExpandViewButton from '@/components/ExpandViewButton';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
 import { getStockTableConfig, type StockColumn } from '@/lib/stockTableConfig';
@@ -588,6 +589,7 @@ export default function WholesaleStockUI() {
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('inventoryDesc')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <ExpandViewButton />
             <button onClick={() => setStockSection(s => s === 'register' ? 'none' : 'register')}
               className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
                 stockSection === 'register' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>

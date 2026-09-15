@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLocale } from 'next-intl';
 import {
-  Eye, EyeOff, ShoppingBag, Loader2, AlertCircle,
+  Eye, EyeOff, Loader2, AlertCircle,
   CheckCircle2, ArrowRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -153,9 +153,7 @@ export default function SignupPage() {
         <div className="absolute w-80 h-80 rounded-full bg-emerald-500/5 -top-10 -right-10" />
         <div className="relative z-10 space-y-6 max-w-xs">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-xl shadow-emerald-500/30">
-              <ShoppingBag size={24} className="text-slate-900" />
-            </div>
+            <img src="/logo.png" alt="Vyapar Sarthi" className="w-12 h-12 drop-shadow-xl" />
             <div>
               <p className="text-lg font-black text-slate-50">Vyapar Sarthi</p>
               <p className="text-emerald-400 text-xs font-medium">AI Store Management</p>

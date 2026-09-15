@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Eye, EyeOff, ShoppingBag, Loader2, AlertCircle, ArrowLeft,
+  Eye, EyeOff, Loader2, AlertCircle, ArrowLeft,
   CheckCircle2, Mail, KeyRound, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -120,9 +120,7 @@ export default function LoginPage() {
       <div className="absolute w-64 h-64 rounded-full bg-emerald-500/10 bottom-10 right-10" />
       <div className="relative z-10 text-center space-y-6 max-w-md">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="w-14 h-14 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-emerald-500/30">
-            <ShoppingBag size={28} className="text-slate-900" />
-          </div>
+          <img src="/logo.png" alt="Vyapar Sarthi" className="w-14 h-14 drop-shadow-2xl" />
           <div className="text-left">
             <h1 className="text-2xl font-black text-slate-50">Vyapar Sarthi</h1>
             <p className="text-emerald-400 text-sm font-medium">Store Management</p>
@@ -153,9 +151,7 @@ export default function LoginPage() {
 
   const mobileHeader = (
     <div className="flex items-center gap-3 lg:hidden">
-      <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
-        <ShoppingBag size={20} className="text-slate-900" />
-      </div>
+      <img src="/logo.png" alt="Vyapar Sarthi" className="w-10 h-10" />
       <span className="text-xl font-black text-slate-50">Vyapar Sarthi</span>
     </div>
   );
