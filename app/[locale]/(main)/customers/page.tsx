@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2, NotebookText, ScanLine } from 'lucide-react';
+import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2, NotebookText, ScanLine, Pencil } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
@@ -161,6 +161,11 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [showEditCustomer, setShowEditCustomer] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: '', mobile: '', address: '', creditLimit: '0', creditDays: '0', customerType: 'customer',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [showAddBill, setShowAddBill] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
   const [generatingRegister, setGeneratingRegister] = useState(false);
@@ -257,6 +262,44 @@ export default function CustomersPage() {
       console.error(e);
     }
   };
+
+  function openEditCustomer(c: Customer) {
+    setEditForm({
+      name: c.name || '',
+      mobile: c.mobile || '',
+      address: (c as any).address || '',
+      creditLimit: String(c.creditLimit ?? 0),
+      creditDays: String(c.creditDays ?? 0),
+      customerType: c.customerType || 'customer',
+    });
+    setShowEditCustomer(true);
+  }
+
+  async function handleUpdateCustomer(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    setSavingEdit(true);
+    try {
+      const res = await api.put(`/customers/${selectedCustomer.id}`, {
+        name: editForm.name,
+        mobile: editForm.mobile,
+        address: editForm.address,
+        customerType: editForm.customerType,
+        creditLimit: editForm.creditLimit,
+        creditDays: editForm.creditDays,
+      });
+      const updated = res.data;
+      setSelectedCustomer(prev => (prev ? { ...prev, ...updated } : prev));
+      setCustomers(prev => prev.map(c => (c.id === selectedCustomer.id ? { ...c, ...updated } : c)));
+      setShowEditCustomer(false);
+      toast.success(t('editSuccess') || 'Customer updated');
+    } catch (err) {
+      console.error(err);
+      toast.error(t('editFailed') || 'Failed to update customer');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   // Per-type roll-up: count of customers + total outstanding per customerType,
   // computed from the already-loaded list so no extra API call is needed.
@@ -530,13 +573,20 @@ export default function CustomersPage() {
               <div>
                 <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                   {selectedCustomer.name}
+                  <button
+                    onClick={() => openEditCustomer(selectedCustomer)}
+                    title={t('editCustomer') || 'Edit customer'}
+                    className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                  >
+                    <Pencil size={16} />
+                  </button>
                 </h2>
                 <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
                   <span className="flex items-center gap-1"><Phone size={14}/> {selectedCustomer.mobile || t('na')}</span>
                   {selectedCustomer.address && <span className="flex items-center gap-1"><MapPin size={14}/> {selectedCustomer.address}</span>}
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => { setSelectedCustomer(null); setActiveTab('ledger'); }}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white"
               >
@@ -743,6 +793,59 @@ export default function CustomersPage() {
                 </div>
               </div>
               <button type="submit" className="w-full h-10 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">{t('saveCustomer')}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Customer Modal */}
+      {showEditCustomer && selectedCustomer && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h2 className="text-lg font-bold">{t('editModalTitle') || 'Edit Customer'}</h2>
+              <button onClick={() => setShowEditCustomer(false)}><X size={20} className="text-slate-400"/></button>
+            </div>
+            <form onSubmit={handleUpdateCustomer} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold mb-1">{t('nameLabel')} *</label>
+                <input required disabled={savingEdit} value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 disabled:opacity-50" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1">{t('mobileLabel')}</label>
+                <input disabled={savingEdit} value={editForm.mobile} onChange={e=>setEditForm({...editForm, mobile: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 disabled:opacity-50" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1">{t('addressLabel')}</label>
+                <input disabled={savingEdit} value={editForm.address} onChange={e=>setEditForm({...editForm, address: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 disabled:opacity-50" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1">{t('customerTypeLabel')}</label>
+                <select
+                  disabled={savingEdit}
+                  value={editForm.customerType}
+                  onChange={e => setEditForm({ ...editForm, customerType: e.target.value })}
+                  className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 disabled:opacity-50"
+                >
+                  {typeOptions.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-1">{t('creditLimitLabel')}</label>
+                  <input disabled={savingEdit} type="number" value={editForm.creditLimit} onChange={e=>setEditForm({...editForm, creditLimit: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 disabled:opacity-50" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">{t('creditDaysLabel')}</label>
+                  <input disabled={savingEdit} type="number" value={editForm.creditDays} onChange={e=>setEditForm({...editForm, creditDays: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 disabled:opacity-50" />
+                </div>
+              </div>
+              <button type="submit" disabled={savingEdit} className="w-full h-10 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {savingEdit ? <Loader2 size={16} className="animate-spin" /> : null}
+                {savingEdit ? t('saving') : (t('saveChanges') || 'Save Changes')}
+              </button>
             </form>
           </div>
         </div>

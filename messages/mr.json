@@ -2224,6 +2224,12 @@
     "collectPayment": "पेमेंट घ्या",
     "noCustomersMatching": "\"{search}\" शी जुळणारे ग्राहक आढळले नाहीत",
     "addBtn": "जोडा",
+    "editCustomer": "ग्राहक संपादित करा",
+    "editModalTitle": "ग्राहक संपादित करा",
+    "saveChanges": "बदल जतन करा",
+    "saving": "जतन करत आहे...",
+    "editSuccess": "ग्राहक अपडेट झाला",
+    "editFailed": "ग्राहक अपडेट करण्यात अयशस्वी",
     "type": {
       "customer": "किरकोळ ग्राहक",
       "farmer": "शेतकरी",
@@ -2848,7 +2854,14 @@
     "noNotes": "कोणतीही टीप नाही",
     "loadError": "खर्च लोड करण्यात अयशस्वी",
     "addSuccess": "खर्च यशस्वीरित्या जोडला",
-    "addError": "खर्च जोडण्यात अयशस्वी"
+    "addError": "खर्च जोडण्यात अयशस्वी",
+    "filterLabel": "फिल्टर",
+    "filterAll": "सर्व वेळ",
+    "filterToday": "आज",
+    "filterYesterday": "काल",
+    "filterTo": "ते",
+    "filterTotal": "एकूण",
+    "emptyFilterTitle": "या तारीख कालावधीत कोणताही खर्च नाही"
   },
   "Collection": {
     "title": "कलेक्शन रजिस्टर",

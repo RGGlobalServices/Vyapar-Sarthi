@@ -24,12 +24,14 @@ const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { 
 import { useIsMobile } from '@/hooks/use-mobile';
 import {cn} from '@/lib/utils';
 import {BillSlip, generateWhatsAppText} from '@/components/BillSlip';
+import {generateWhatsAppLink} from '@/lib/shareUtils';
 import {uploadInvoiceToSupabase} from '@/lib/supabaseStorage';
 import Calculator from '@/components/Calculator';
 import {performSmartSearch} from '@/lib/smartSearch';
 import {computeGst} from '@/lib/gst';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import ManualBillUpload from '@/components/ManualBillUpload';
+import ExpandViewButton from '@/components/ExpandViewButton';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
 import DiscountInput from '@/components/DiscountInput';
@@ -248,6 +250,10 @@ function StandardBillingUI() {
   const [customerAddress, setCustomerAddress] = useState('');
   const [sendStatus, setSendStatus] = useState<{ email: boolean | null } | null>(null);
   const [waUrl, setWaUrl] = useState<string | null>(null);
+  // Desktop-only fallback for when the shop's PC doesn't have WhatsApp
+  // Desktop installed — the primary CTA below tries the app (whatsapp://)
+  // first, this stays as a plain wa.me/WhatsApp Web link underneath it.
+  const [waWebFallbackUrl, setWaWebFallbackUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string | number>>(new Set());
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
@@ -947,6 +953,7 @@ function StandardBillingUI() {
   const autoSendAfterBill = async (billData: any, phone: string, email: string) => {
     setSendStatus(email ? { email: null } : null);
     setWaUrl(null);
+    setWaWebFallbackUrl(null);
 
     let pdfUrl: string | null = null;
 
@@ -975,10 +982,23 @@ function StandardBillingUI() {
         });
         let normalized = phone.replace(/\D/g, '');
         if (normalized.length === 10) normalized = `91${normalized}`;
-        const url = `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`;
+        // Mobile: wa.me hands off to the WhatsApp app via the OS, so it's
+        // safe to auto-open — one tap already got the cashier there before.
+        // Desktop: wa.me only ever opens WhatsApp Web in a new browser tab,
+        // and auto-popping one on every single bill saved is exactly the
+        // "web repeatedly opens" complaint — so on desktop we no longer
+        // auto-open anything. We just point the CTA button at the
+        // WhatsApp Desktop app's own whatsapp:// link instead, with a
+        // plain wa.me link underneath as a fallback if that app isn't
+        // installed, both surfaced only after this explicit "record sale"
+        // action — a single click when the cashier actually wants to send.
+        const url = generateWhatsAppLink(normalized, text, isMobile);
         setWaUrl(url);
-        // Try auto-open — works on mobile; desktop browsers may block popup after async
-        window.open(url, '_blank');
+        if (isMobile) {
+          window.open(url, '_blank');
+        } else {
+          setWaWebFallbackUrl(generateWhatsAppLink(normalized, text, true));
+        }
       }
 
       // Email: send silently via server (SMTP)
@@ -1123,18 +1143,21 @@ function StandardBillingUI() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-full lg:h-full relative overflow-y-auto lg:overflow-visible">
       {/* Left: Product Search & Cart */}
       <div className="lg:col-span-2 space-y-6 flex flex-col">
-        {/* Business mode badge */}
-        {bizConfig && (
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-            <span className="text-base">{bizConfig.emoji}</span>
-            <span>{bizConfig.label} Mode</span>
-            {isElectronics && (
-              <span className="bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
-                <Zap size={9} />{t('emiMode') || 'EMI Available'}
-              </span>
-            )}
-          </div>
-        )}
+        {/* Business mode badge + expand-view toggle */}
+        <div className="flex items-center justify-between gap-2">
+          {bizConfig ? (
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+              <span className="text-base">{bizConfig.emoji}</span>
+              <span>{bizConfig.label} Mode</span>
+              {isElectronics && (
+                <span className="bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
+                  <Zap size={9} />{t('emiMode') || 'EMI Available'}
+                </span>
+              )}
+            </div>
+          ) : <div />}
+          <ExpandViewButton />
+        </div>
 
         <div className="flex gap-4 relative">
           {/* Camera scanning — opens an in-app viewfinder, not the device's
@@ -2506,17 +2529,32 @@ function StandardBillingUI() {
                 </div>
               )}
 
-              {/* WhatsApp CTA — shown when customer mobile was provided */}
+              {/* WhatsApp CTA — shown when customer mobile was provided.
+                  Mobile: wa.me (OS hands it to the app). Desktop: whatsapp://
+                  so the WhatsApp Desktop app opens instead of the browser —
+                  no target/rel on a custom-scheme link, which avoids leaving
+                  a stray blank tab behind. */}
               {waUrl && (
                 <a
                   href={waUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  {...(isMobile ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                   className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#1ebe5d] active:scale-95 transition-all animate-pulse"
                   onClick={() => setWaUrl(null)}
                 >
                   <MessageCircle size={18} />
                   Send Bill on WhatsApp
+                </a>
+              )}
+              {/* Desktop-only fallback if WhatsApp Desktop isn't installed */}
+              {waWebFallbackUrl && (
+                <a
+                  href={waWebFallbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-center text-[11px] font-semibold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 underline underline-offset-2"
+                  onClick={() => setWaWebFallbackUrl(null)}
+                >
+                  App not opening? Send via WhatsApp Web instead
                 </a>
               )}
 

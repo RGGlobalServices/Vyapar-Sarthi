@@ -30,13 +30,20 @@ export async function shareFileOrText(
   return false;
 }
 
-export function generateWhatsAppLink(phone: string, text: string): string {
+// `wa.me` correctly hands off to the WhatsApp app on mobile (the OS
+// intercepts the link), but on a desktop browser it always opens WhatsApp
+// Web — even when the WhatsApp Desktop app is installed. The desktop app
+// instead registers the `whatsapp://` protocol, so route there when the
+// caller knows this isn't a phone. Defaults to the wa.me/mobile form so
+// existing callers that don't pass `isMobile` keep their old behaviour.
+export function generateWhatsAppLink(phone: string, text: string, isMobile: boolean = true): string {
   // Strip non-numeric characters from phone
   const cleanPhone = phone.replace(/\D/g, '');
   const encodedText = encodeURIComponent(text);
-  
-  // Use wa.me for general web/mobile compatibility
-  return `https://wa.me/${cleanPhone}?text=${encodedText}`;
+
+  return isMobile
+    ? `https://wa.me/${cleanPhone}?text=${encodedText}`
+    : `whatsapp://send?phone=${cleanPhone}&text=${encodedText}`;
 }
 
 export function generateEmailLink(email: string, subject: string, body: string): string {

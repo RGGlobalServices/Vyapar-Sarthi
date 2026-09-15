@@ -320,10 +320,10 @@ export default function MainLayoutClient({
     }
   }, [pathname, currentPackageConfig, profile.id, mounted, role, router]);
 
-  // Billing runs full-screen — the sidebar hides itself so the bill/cart gets
-  // the whole width (a counter-sale screen benefits from every inch), and the
-  // header's hamburger becomes a back arrow to Dashboard, which is also what
-  // brings the sidebar back (leaving /billing does it automatically).
+  // Billing's header swaps the hamburger for a back-to-Dashboard arrow (a
+  // counter-sale screen wants that over a menu trigger) — desktop's sidebar
+  // collapse is the same ExpandViewButton/arrow every other data-heavy page
+  // uses (see uiStore's sidebarHidden), no longer force-hidden here.
   const routeSegments = pathname.split('/').filter(Boolean);
   const routeMainSegment = routeSegments.length > 0 && ['en', 'hi', 'mr'].includes(routeSegments[0]) ? routeSegments[1] : routeSegments[0];
   const isBillingRoute = routeMainSegment === 'billing';
@@ -355,18 +355,19 @@ export default function MainLayoutClient({
             ))}
           </div>
         </aside>
-      ) : !isBillingRoute ? (
+      ) : (
         // Sidebar always mounts — sidebarHidden only ever hides it at the
         // md+ breakpoint (see its own `md:hidden` class), so this desktop
         // "more width" preference never touches mobile's own hamburger-driven
         // overlay drawer, which needs the component present to open at all.
+        // Billing used to force this to null unconditionally (full-screen
+        // counter); it now respects the same toggle as every other page.
         <Sidebar locale={locale} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} sidebarHidden={sidebarHidden} />
-      ) : null}
+      )}
 
-      {/* Restores a manually-hidden sidebar — only reachable when it's
-          actually gone (mounted, not billing, hidden), desktop-only since
-          mobile already has its own hamburger-driven overlay sidebar. */}
-      {mounted && !isBillingRoute && sidebarHidden && (
+      {/* Restores a manually-hidden sidebar — desktop-only since mobile
+          already has its own hamburger-driven overlay sidebar. */}
+      {mounted && sidebarHidden && (
         <button
           onClick={toggleSidebar}
           title="Show sidebar"

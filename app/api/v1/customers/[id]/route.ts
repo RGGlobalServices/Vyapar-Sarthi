@@ -8,24 +8,28 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// PUT /customers/:id — update name / mobile / email
+// PUT /customers/:id — update editable profile fields
 export const PUT = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop } = await requireShop(req);
   const customer = await prisma.customer.findFirst({ where: { id, shopId: shop.id } });
   if (!customer) throw new ApiError(404, 'Customer not found');
 
-  const { name, mobile, email } = await readBody(req);
+  const { name, mobile, email, address, customerType, creditLimit, creditDays } = await readBody(req);
   const updated = await prisma.customer.update({
     where: { id },
     data: {
       ...(name !== undefined && { name: name.trim() }),
       ...(mobile !== undefined && { mobile: mobile.trim() }),
       ...(email !== undefined && { email: email.trim() }),
+      ...(address !== undefined && { address: address.trim() }),
+      ...(customerType !== undefined && { customerType }),
+      ...(creditLimit !== undefined && { creditLimit: Number(creditLimit) || 0 }),
+      ...(creditDays !== undefined && { creditDays: Number(creditDays) || 0 }),
     },
   });
 
-  return json({ id: updated.id, name: updated.name, mobile: updated.mobile });
+  return json(updated);
 });
 
 // PATCH /customers/:id — update the uploaded documents list (photos/PDFs)

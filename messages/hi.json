@@ -2224,6 +2224,12 @@
     "collectPayment": "भुगतान लें",
     "noCustomersMatching": "\"{search}\" से मेल खाते कोई ग्राहक नहीं मिले",
     "addBtn": "जोड़ें",
+    "editCustomer": "ग्राहक संपादित करें",
+    "editModalTitle": "ग्राहक संपादित करें",
+    "saveChanges": "बदलाव सहेजें",
+    "saving": "सहेजा जा रहा है...",
+    "editSuccess": "ग्राहक अपडेट किया गया",
+    "editFailed": "ग्राहक अपडेट करने में विफल",
     "type": {
       "customer": "खुदरा ग्राहक",
       "farmer": "किसान",
@@ -2848,7 +2854,14 @@
     "noNotes": "कोई टिप्पणी नहीं",
     "loadError": "व्यय लोड करने में विफल",
     "addSuccess": "व्यय सफलतापूर्वक जोड़ा गया",
-    "addError": "व्यय जोड़ने में विफल"
+    "addError": "व्यय जोड़ने में विफल",
+    "filterLabel": "फ़िल्टर",
+    "filterAll": "सभी समय",
+    "filterToday": "आज",
+    "filterYesterday": "कल",
+    "filterTo": "से",
+    "filterTotal": "कुल",
+    "emptyFilterTitle": "इस तारीख की सीमा में कोई व्यय नहीं"
   },
   "Collection": {
     "title": "कलेक्शन रजिस्टर",

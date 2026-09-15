@@ -1,11 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { Loader2, Plus, Receipt } from 'lucide-react';
+import { Loader2, Plus, Receipt, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// Calendar-day helpers in IST — a shop's "today"/"yesterday" must match the
+// Indian calendar day the expense was actually logged on, not a UTC-diff
+// bucket that can silently be off by a day depending on the browser/server
+// clock's own timezone (same reasoning as billing's formatAddedDate).
+const istYmd = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+type FilterMode = 'all' | 'today' | 'yesterday' | 'custom';
 
 export default function ExpensesPage() {
   const t = useTranslations('Expenses');
@@ -13,6 +21,10 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   const [category, setCategory] = useState('');
   const [amount, setAmount] = useState('');
@@ -59,6 +71,31 @@ export default function ExpensesPage() {
     }
   }
 
+  const filteredExpenses = useMemo(() => {
+    if (filterMode === 'all') return expenses;
+    const todayYmd = istYmd(new Date());
+    if (filterMode === 'today') {
+      return expenses.filter(e => istYmd(new Date(e.date || e.createdAt)) === todayYmd);
+    }
+    if (filterMode === 'yesterday') {
+      const y = new Date(Date.now() - 86400000);
+      const yYmd = istYmd(y);
+      return expenses.filter(e => istYmd(new Date(e.date || e.createdAt)) === yYmd);
+    }
+    // custom range — either bound alone still filters (open-ended)
+    return expenses.filter(e => {
+      const ymd = istYmd(new Date(e.date || e.createdAt));
+      if (customFrom && ymd < customFrom) return false;
+      if (customTo && ymd > customTo) return false;
+      return true;
+    });
+  }, [expenses, filterMode, customFrom, customTo]);
+
+  const filteredTotal = useMemo(
+    () => filteredExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
+    [filteredExpenses]
+  );
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -85,6 +122,56 @@ export default function ExpensesPage() {
         >
           <Plus size={18} /> {t('recordExpense')}
         </button>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
+          <Calendar size={16} />
+          <span className="text-xs font-bold uppercase tracking-wider">{t('filterLabel')}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(['all', 'today', 'yesterday'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => { setFilterMode(mode); setCustomFrom(''); setCustomTo(''); }}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filterMode === mode
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              {mode === 'all' ? t('filterAll') : mode === 'today' ? t('filterToday') : t('filterYesterday')}
+            </button>
+          ))}
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={e => { setCustomFrom(e.target.value); setFilterMode('custom'); }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border outline-none transition-colors ${
+                filterMode === 'custom'
+                  ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950'
+              }`}
+            />
+            <span className="text-xs text-slate-400">{t('filterTo')}</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={e => { setCustomTo(e.target.value); setFilterMode('custom'); }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border outline-none transition-colors ${
+                filterMode === 'custom'
+                  ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950'
+              }`}
+            />
+          </div>
+        </div>
+        {filteredExpenses.length > 0 && (
+          <div className="sm:ml-auto text-xs font-bold text-slate-500 whitespace-nowrap">
+            {t('filterTotal')}: <span className="text-rose-600 dark:text-rose-400">₹{filteredTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+          </div>
+        )}
       </div>
 
       {showAdd && (
@@ -132,6 +219,13 @@ export default function ExpensesPage() {
             <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300">{t('emptyTitle')}</h3>
             <p className="text-sm text-slate-500 max-w-sm mx-auto">{t('emptyDesc')}</p>
           </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
+            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-300 dark:text-slate-600 mb-2">
+              <Calendar size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300">{t('emptyFilterTitle')}</h3>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse whitespace-nowrap">
@@ -145,10 +239,10 @@ export default function ExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {expenses.map((expense: any) => (
+                {filteredExpenses.map((expense: any) => (
                   <tr key={expense.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group">
                     <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium">
-                      {new Date(expense.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {new Date(expense.date || expense.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
                     <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-slate-100">
                       {expense.category}

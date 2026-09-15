@@ -1739,6 +1739,12 @@
     "collectPayment": "Collect Payment",
     "noCustomersMatching": "No customers found matching \"{search}\"",
     "addBtn": "Add",
+    "editCustomer": "Edit customer",
+    "editModalTitle": "Edit Customer",
+    "saveChanges": "Save Changes",
+    "saving": "Saving...",
+    "editSuccess": "Customer updated",
+    "editFailed": "Failed to update customer",
     "type": {
       "customer": "Retail Customer",
       "farmer": "Farmer",
@@ -2844,7 +2850,14 @@
     "noNotes": "No notes",
     "loadError": "Failed to load expenses",
     "addSuccess": "Expense added successfully",
-    "addError": "Failed to add expense"
+    "addError": "Failed to add expense",
+    "filterLabel": "Filter",
+    "filterAll": "All Time",
+    "filterToday": "Today",
+    "filterYesterday": "Yesterday",
+    "filterTo": "to",
+    "filterTotal": "Total",
+    "emptyFilterTitle": "No expenses in this date range"
   },
   "Collection": {
     "title": "Collection Register",
