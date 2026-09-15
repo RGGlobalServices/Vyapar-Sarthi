@@ -76,8 +76,16 @@ export default function GlobalSearch({ locale }: { locale: string }) {
     setQuery('');
   };
 
+  // Plain JS substitution instead of next-intl's ICU {type} interpolation —
+  // that path was throwing "INVALID_MESSAGE: Incorrect locale information
+  // provided (undefined)" on production (Hostinger) on every render of this
+  // always-mounted header component, spamming the server log. Caught by
+  // Providers.tsx's onError so it never crashed the page (falls back to the
+  // raw message key), but the placeholder text also silently rendered wrong
+  // — this sidesteps whatever locale-resolution edge case triggered it
+  // entirely rather than chasing it inside next-intl's formatter internals.
   const searchTargetLabel = isWholesale ? t('parties') : t('customers');
-  const searchPlaceholder = t('searchPlaceholder', { type: searchTargetLabel });
+  const searchPlaceholder = `${t('searchPlaceholderPrefix')} ${searchTargetLabel} ${t('searchPlaceholderSuffix')}`;
 
   return (
     <div className="relative w-full max-w-md hidden md:block" ref={wrapperRef}>
@@ -150,7 +158,7 @@ export default function GlobalSearch({ locale }: { locale: string }) {
 
             {results.products?.length === 0 && results.suppliers?.length === 0 && results.customers?.length === 0 && (
               <div className="p-4 text-center text-slate-500 text-sm">
-                {t('noResultsFor', { query })}
+                {t('noResultsPrefix')} "{query}"
               </div>
             )}
 

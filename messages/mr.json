@@ -117,10 +117,11 @@
     "suppliers": "पुरवठादार",
     "customers": "ग्राहक",
     "parties": "पार्टी",
-    "searchPlaceholder": "उत्पादने, पुरवठादार, {type} शोधा (Cmd+K)",
+    "searchPlaceholderPrefix": "उत्पादने, पुरवठादार,",
+    "searchPlaceholderSuffix": "शोधा (Cmd+K)",
     "noContactInfo": "संपर्क माहिती नाही",
     "noPhone": "फोन नाही",
-    "noResultsFor": "\"{query}\" साठी कोणतेही निकाल सापडले नाहीत"
+    "noResultsPrefix": "यासाठी कोणतेही निकाल सापडले नाहीत"
   },
   "NotificationBell": {
     "ariaLabel": "सूचना",

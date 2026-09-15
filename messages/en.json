@@ -117,10 +117,11 @@
     "suppliers": "Suppliers",
     "customers": "Customers",
     "parties": "Parties",
-    "searchPlaceholder": "Search products, suppliers, {type} (Cmd+K)",
+    "searchPlaceholderPrefix": "Search products, suppliers,",
+    "searchPlaceholderSuffix": "(Cmd+K)",
     "noContactInfo": "No contact info",
     "noPhone": "No phone",
-    "noResultsFor": "No results found for \"{query}\""
+    "noResultsPrefix": "No results found for"
   },
   "NotificationBell": {
     "ariaLabel": "Notifications",

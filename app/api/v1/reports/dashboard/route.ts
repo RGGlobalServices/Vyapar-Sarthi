@@ -353,7 +353,7 @@ export const GET = handle(async (req) => {
       where: { shopId: { in: shopIds } },
       _sum: { balance: true },
     }),
-  ], 6);
+  ], 5);
 
   const totalUdhar = customers._sum?.totalDue || 0;
   const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
