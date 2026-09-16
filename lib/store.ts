@@ -134,6 +134,17 @@ interface CartStore {
   updatePrice: (shopId: string, id: string | number, price: number, variant?: string) => void;
   updateGstPercent: (shopId: string, id: string | number, gstPercent: number, variant?: string) => void;
   updateBatchNumber: (shopId: string, id: string | number, batchNumber: string, variant?: string) => void;
+  /** Quietly pins an already-added line to a specific lot/batch — cost,
+   *  batchId, batchNumber and profit — WITHOUT touching quantity. Used to
+   *  reconcile an optimistically-added line (see billing's addToCart) once
+   *  its background batch lookup resolves, so the line's real FIFO cost
+   *  lands without a second addItem() call re-incrementing the quantity.
+   *  `profit` is caller-supplied rather than computed here because the
+   *  retail and wholesale billing screens use different formulas (flat
+   *  price-minus-cost vs. GST-exclusive-price-minus-cost) — pass it
+   *  pre-computed the same way the line's own addItem() call did, or omit
+   *  it to fall back to the simple `price - cost`. */
+  setLineBatch: (shopId: string, id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number }) => void;
   clearCart: (shopId: string) => void;
 }
 
@@ -203,6 +214,25 @@ export const useCartStore = create<CartStore>((set) => ({
       carts: {
         ...state.carts,
         [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, batchNumber } : i)
+      }
+    };
+  }),
+  setLineBatch: (shopId, id, variant, batch) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return {
+      carts: {
+        ...state.carts,
+        [shopId]: shopCart.map((i) => {
+          if (!sameLine(i, id, variant)) return i;
+          const cost = batch.cost !== undefined && batch.cost !== null && batch.cost > 0 ? batch.cost : i.cost;
+          return {
+            ...i,
+            batchId: batch.batchId,
+            batchNumber: batch.batchNumber ?? i.batchNumber,
+            cost,
+            profit: batch.profit !== undefined ? batch.profit : i.price - cost,
+          };
+        })
       }
     };
   }),

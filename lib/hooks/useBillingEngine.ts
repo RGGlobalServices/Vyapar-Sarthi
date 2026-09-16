@@ -33,6 +33,7 @@ export function useBillingEngine(
   const updatePriceInStore = useCartStore((state) => state.updatePrice);
   const updateGstPercentInStore = useCartStore((state) => state.updateGstPercent);
   const updateBatchNumberInStore = useCartStore((state) => state.updateBatchNumber);
+  const setLineBatchInStore = useCartStore((state) => state.setLineBatch);
   const clearCartInStore = useCartStore((state) => state.clearCart);
 
   const [discount, setDiscount] = useState<number | DiscountInput>(initialDiscount);
@@ -144,6 +145,11 @@ export function useBillingEngine(
     updateBatchNumberInStore(shopId, id, batchNumber, variant);
   }, [shopId, updateBatchNumberInStore]);
 
+  const setLineBatch = useCallback((id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number }) => {
+    if (!shopId) return;
+    setLineBatchInStore(shopId, id, variant, batch);
+  }, [shopId, setLineBatchInStore]);
+
   const clearCart = useCallback(() => {
     if (!shopId) return;
     clearCartInStore(shopId);
@@ -190,6 +196,7 @@ export function useBillingEngine(
     updatePrice,
     updateGstPercent,
     updateBatchNumber,
+    setLineBatch,
     clearCart,
   };
 }

@@ -31,7 +31,6 @@ import {performSmartSearch} from '@/lib/smartSearch';
 import {computeGst} from '@/lib/gst';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import ManualBillUpload from '@/components/ManualBillUpload';
-import ExpandViewButton from '@/components/ExpandViewButton';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
 import DiscountInput from '@/components/DiscountInput';
@@ -203,7 +202,7 @@ function StandardBillingUI() {
   useEffect(() => setMounted(true), []);
   
   const {
-    items, addItem, removeItem, updateQuantity, updatePrice, updateBatchNumber, clearCart,
+    items, addItem, removeItem, updateQuantity, updatePrice, updateBatchNumber, setLineBatch, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount,
     remainingAmount, isEmi, setIsEmi,
@@ -249,10 +248,9 @@ function StandardBillingUI() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [sendStatus, setSendStatus] = useState<{ email: boolean | null } | null>(null);
-  const [waUrl, setWaUrl] = useState<string | null>(null);
-  // Desktop-only fallback for when the shop's PC doesn't have WhatsApp
-  // Desktop installed — the primary CTA below tries the app (whatsapp://)
-  // first, this stays as a plain wa.me/WhatsApp Web link underneath it.
+  // Desktop-only fallback link, shown after the "WhatsApp" button is
+  // clicked, for when the shop's PC doesn't have WhatsApp Desktop installed
+  // — the click already tried the app (whatsapp://) first via handleWhatsAppPDF.
   const [waWebFallbackUrl, setWaWebFallbackUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string | number>>(new Set());
@@ -286,6 +284,15 @@ function StandardBillingUI() {
 
   const componentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Debounces addToCart against a genuine rapid double-fire on the same
+  // product+variant (a real double-tap, or a stale dropdown button still
+  // registering a second click before React removes it) — maps
+  // `${productId}::${variant}` to the timestamp of its last add. A second
+  // add within the cooldown is ignored; anything after it goes through
+  // normally (so scanning/clicking the same item again a moment later to
+  // mean "quantity 2" still works as always).
+  const pendingAddKeysRef = useRef<Map<string, number>>(new Map());
+  const DUPLICATE_ADD_COOLDOWN_MS = 700;
 
   // Use SWR for instant cache loading. Also persisted to localStorage so a
   // cold app start with no connection yet still has yesterday's catalogue to
@@ -388,6 +395,7 @@ function StandardBillingUI() {
   const handleWhatsAppPDF = async () => {
     if (isSharing) return;
     setIsSharing(true);
+    setWaWebFallbackUrl(null);
     const fileName = `bill-${lastBill?.billNumber || Date.now()}.pdf`;
 
     try {
@@ -409,7 +417,17 @@ function StandardBillingUI() {
           pan: profile.pan || undefined,
           t: tBill,
         });
-        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+        // Mobile: wa.me hands off to the app via the OS. Desktop: wa.me
+        // only ever opens WhatsApp Web, so use the WhatsApp Desktop app's
+        // own whatsapp:// link instead, with a plain wa.me fallback link
+        // shown right after in case that app isn't installed.
+        const url = generateWhatsAppLink(phone, text, isMobile);
+        if (isMobile) {
+          window.open(url, '_blank');
+        } else {
+          window.open(url, '_self');
+          setWaWebFallbackUrl(generateWhatsAppLink(phone, text, true));
+        }
       } else {
         // No phone → native share so user can pick the contact themselves
         const file = new File([blob], fileName, { type: 'application/pdf' });
@@ -437,6 +455,15 @@ function StandardBillingUI() {
   };
 
   const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null) => {
+    // Instant feedback the moment ANY add is triggered — closes the search
+    // dropdown and clears the box right away, before the (possibly slow,
+    // see the batch lookup below) async work even starts. Without this the
+    // dropdown sat open for the full lookup duration, which reads as "my
+    // click didn't register" and invites a second click on the same result
+    // — see the dedup guard below for why that used to double the quantity.
+    setSearch('');
+    setSearchResults([]);
+
     // 1. Check Out of Stock first.
     // Resolve stock robustly: variant products track stock per size in
     // size_variants; simple products in currentStock. Field names may arrive in
@@ -491,48 +518,22 @@ function StandardBillingUI() {
       return;
     }
 
-    // Lot/batch picker — only for a genuine manual add (no batchInfo yet, so
-    // not already pinned via barcode scan or a prior picker choice, and not
-    // a forced re-add from that same picker). Fetches this product's live
-    // lots; with 2+ available it pauses here and lets the shopkeeper pick
-    // (oldest pre-highlighted as the FIFO recommendation), otherwise it
-    // proceeds immediately exactly as before — zero extra steps for the
-    // common single-lot case.
-    if (!batchInfo && !forceAdd && product?.id) {
-      // Cap the wait at 3.5s: under a slow/exhausted DB connection pool this
-      // lookup can hang for the full request timeout (~30s), during which the
-      // item visibly never gets added — a shopkeeper reading that as "search
-      // select isn't working" and clicking again/elsewhere. `settled` also
-      // guards against the ORIGINAL request finally resolving after the
-      // timeout already added the item plain — without it, that late .then()
-      // would silently re-add (or wrongly batch-prompt for) a line the
-      // shopkeeper may have since deleted, looking like "delete doesn't work".
-      let settled = false;
-      const fallbackTimer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        addToCart(product, variant, true, null);
-      }, 3500);
-      api.get(`/products/${product.id}/batches`).then(res => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(fallbackTimer);
-        const batches = Array.isArray(res.data) ? res.data : [];
-        if (batches.length > 1) {
-          setBatchSelectionProduct(product);
-          setBatchSelectionVariant(variant);
-          setBatchSelectionOptions(batches);
-        } else {
-          const only = batches[0];
-          addToCart(product, variant, true, only ? { id: only.id, batchNumber: only.batchNumber, costPrice: only.costPrice, sellingPrice: only.sellingPrice } : null);
-        }
-      }).catch(() => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(fallbackTimer);
-        addToCart(product, variant, true, null); // never block a sale on this lookup
-      });
-      return;
+    // A genuine first click for this product+variant (not the lot-picker's
+    // own forceAdd re-entry, and not a scan that already pinned a batch) —
+    // decides both whether to debounce a rapid double-fire below AND
+    // whether to kick off the background lot lookup further down.
+    const isOriginalClick = !batchInfo && !forceAdd && !!product?.id;
+    if (isOriginalClick) {
+      // Debounce: a second click on the same product+variant landing within
+      // the cooldown (a real double-tap, or a stale dropdown button still
+      // registering a second click before React removes it) is ignored —
+      // without this, the immediate addItem() below would run twice and
+      // double the quantity exactly like the old network-latency race did.
+      const addKey = `${product.id}::${variant || ''}`;
+      const now = Date.now();
+      const lastAdd = pendingAddKeysRef.current.get(addKey);
+      if (lastAdd && now - lastAdd < DUPLICATE_ADD_COOLDOWN_MS) return;
+      pendingAddKeysRef.current.set(addKey, now);
     }
 
     const defaultQty = product.is_loose ? 0.5 : 1;
@@ -603,10 +604,30 @@ function StandardBillingUI() {
       // quoted per product.
       mrp: Number(product.mrp) || 0,
     });
-    setSearch('');
-    setSearchResults([]);
-    setVariantSelectionProduct(null);
-  }, [addItem, bizConfig.hasSizes]);
+
+    // Background lot/batch reconciliation — the line above is already in
+    // the cart and sellable at the product's own flat cost; this quietly
+    // pins it to the real FIFO lot once the lookup resolves, instead of
+    // making the shopkeeper wait for a network round trip before the item
+    // even appears. Only for a genuine first click (not the lot-picker's
+    // own forceAdd re-entry, and not a scan that already pinned a batch).
+    if (isOriginalClick) {
+      api.get(`/products/${product.id}/batches`).then(res => {
+        const batches = Array.isArray(res.data) ? res.data : [];
+        if (batches.length > 1) {
+          // A real choice to make — surface the picker. The line stays at
+          // its flat cost until the shopkeeper picks a lot below.
+          setBatchSelectionProduct(product);
+          setBatchSelectionVariant(variant);
+          setBatchSelectionOptions(batches);
+        } else if (batches.length === 1) {
+          const only = batches[0];
+          setLineBatch(product.id, variant, { batchId: only.id, batchNumber: only.batchNumber, cost: only.costPrice });
+        }
+        // 0 batches: nothing to reconcile, the flat-cost line is already correct.
+      }).catch(() => { /* best-effort only — line already added at flat cost */ });
+    }
+  }, [addItem, setLineBatch, bizConfig.hasSizes]);
 
   // FIFO nudge for a manually-added item (search tap / variant tile) — the
   // scan path above already nudges by comparing the SCANNED batch to the
@@ -931,15 +952,17 @@ function StandardBillingUI() {
       setShowCustomerModal(false);
       setShowBillModal(true);
 
-      // Auto-send bill via WhatsApp link + email if contact info provided.
+      // Auto-send bill via email if provided. WhatsApp is deliberately NOT
+      // auto-triggered — the cashier taps the "WhatsApp" button in the bill
+      // modal (handleWhatsAppPDF) when they actually want to send it, so
+      // nothing pops a browser tab / tries the app on every single sale.
       // Skipped for an offline bill — it uploads the PDF to Supabase, which
       // needs a connection the cashier doesn't have right now; they can
-      // resend from the bill view once back online.
+      // send from the bill view once back online.
       if (!isOfflineBill) {
-        const phone = customerMobile.trim();
         const email = customerEmail.trim();
-        if (phone || email) {
-          autoSendAfterBill(billData, phone, email);
+        if (email) {
+          autoSendAfterBill(billData, email);
         }
       }
     } catch (err) {
@@ -950,10 +973,11 @@ function StandardBillingUI() {
     }
   };
 
-  const autoSendAfterBill = async (billData: any, phone: string, email: string) => {
+  // WhatsApp is intentionally NOT part of this — it only ever fires from an
+  // explicit tap on the "WhatsApp" button (handleWhatsAppPDF below), never
+  // automatically after a sale.
+  const autoSendAfterBill = async (billData: any, email: string) => {
     setSendStatus(email ? { email: null } : null);
-    setWaUrl(null);
-    setWaWebFallbackUrl(null);
 
     let pdfUrl: string | null = null;
 
@@ -961,44 +985,12 @@ function StandardBillingUI() {
       // Wait for React to render the modal so componentRef is available
       await new Promise(resolve => setTimeout(resolve, 500)); // increased slightly
 
-      // Upload PDF once — reused for both WhatsApp link and email attachment
       try {
         const { blob } = await generatePDFBlob();
         const fileName = `bill-${billData.billNumber || Date.now()}.pdf`;
         pdfUrl = await uploadInvoiceToSupabase(blob, fileName);
       } catch (pdfErr) {
         console.warn('PDF generation or upload failed, continuing without PDF:', pdfErr);
-      }
-
-      // Build wa.me link with pre-filled bill message
-      if (phone) {
-        const text = generateWhatsAppText({
-          ...billData,
-          storeName: profile.shopName || user?.storeName,
-          pdfUrl: pdfUrl || undefined,
-          gst: profile.gst || undefined,
-          pan: profile.pan || undefined,
-          t: tBill,
-        });
-        let normalized = phone.replace(/\D/g, '');
-        if (normalized.length === 10) normalized = `91${normalized}`;
-        // Mobile: wa.me hands off to the WhatsApp app via the OS, so it's
-        // safe to auto-open — one tap already got the cashier there before.
-        // Desktop: wa.me only ever opens WhatsApp Web in a new browser tab,
-        // and auto-popping one on every single bill saved is exactly the
-        // "web repeatedly opens" complaint — so on desktop we no longer
-        // auto-open anything. We just point the CTA button at the
-        // WhatsApp Desktop app's own whatsapp:// link instead, with a
-        // plain wa.me link underneath as a fallback if that app isn't
-        // installed, both surfaced only after this explicit "record sale"
-        // action — a single click when the cashier actually wants to send.
-        const url = generateWhatsAppLink(normalized, text, isMobile);
-        setWaUrl(url);
-        if (isMobile) {
-          window.open(url, '_blank');
-        } else {
-          setWaWebFallbackUrl(generateWhatsAppLink(normalized, text, true));
-        }
       }
 
       // Email: send silently via server (SMTP)
@@ -1143,21 +1135,18 @@ function StandardBillingUI() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-full lg:h-full relative overflow-y-auto lg:overflow-visible">
       {/* Left: Product Search & Cart */}
       <div className="lg:col-span-2 space-y-6 flex flex-col">
-        {/* Business mode badge + expand-view toggle */}
-        <div className="flex items-center justify-between gap-2">
-          {bizConfig ? (
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-              <span className="text-base">{bizConfig.emoji}</span>
-              <span>{bizConfig.label} Mode</span>
-              {isElectronics && (
-                <span className="bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
-                  <Zap size={9} />{t('emiMode') || 'EMI Available'}
-                </span>
-              )}
-            </div>
-          ) : <div />}
-          <ExpandViewButton />
-        </div>
+        {/* Business mode badge */}
+        {bizConfig && (
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+            <span className="text-base">{bizConfig.emoji}</span>
+            <span>{bizConfig.label} Mode</span>
+            {isElectronics && (
+              <span className="bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
+                <Zap size={9} />{t('emiMode') || 'EMI Available'}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-4 relative">
           {/* Camera scanning — opens an in-app viewfinder, not the device's
@@ -2024,10 +2013,10 @@ function StandardBillingUI() {
             setLastBill(fullBillData);
             setShowManualBillUpload(false);
             setShowBillModal(true);
-            // Matches the regular sale flow: a mobile number and/or email
-            // entered on the manual bill triggers the same auto-share.
-            if (billData.customerMobile || billData.customerEmail) {
-              autoSendAfterBill(fullBillData, billData.customerMobile || '', billData.customerEmail || '');
+            // Matches the regular sale flow: only email auto-sends here.
+            // WhatsApp is click-only via the bill modal's "WhatsApp" button.
+            if (billData.customerEmail) {
+              autoSendAfterBill(fullBillData, billData.customerEmail);
             }
           }}
         />
@@ -2213,9 +2202,13 @@ function StandardBillingUI() {
                 <button
                   key={b.id}
                   onClick={() => {
+                    // The line is already sitting in the cart at the flat
+                    // cost (added optimistically the moment it was first
+                    // clicked) — pin it to the chosen lot's real cost rather
+                    // than adding it again, which would double the quantity.
                     const chosen = batchSelectionProduct; const chosenVariant = batchSelectionVariant;
                     setBatchSelectionProduct(null); setBatchSelectionOptions([]);
-                    addToCart(chosen, chosenVariant, true, { id: b.id, batchNumber: b.batchNumber, costPrice: b.costPrice, sellingPrice: b.sellingPrice });
+                    setLineBatch(chosen.id, chosenVariant, { batchId: b.id, batchNumber: b.batchNumber, cost: b.costPrice });
                   }}
                   className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-between gap-3"
                 >
@@ -2481,7 +2474,7 @@ function StandardBillingUI() {
                   <span className="text-[9px] bg-amber-500/15 text-amber-500 dark:text-amber-400 px-1.5 py-0.5 rounded uppercase tracking-wide">Offline</span>
                 )}
               </span>
-              <button onClick={() => { setShowBillModal(false); setWaUrl(null); setSendStatus(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 p-1 transition-colors">
+              <button onClick={() => { setShowBillModal(false); setWaWebFallbackUrl(null); setSendStatus(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 p-1 transition-colors">
                 <X size={22} />
               </button>
             </div>
@@ -2529,23 +2522,10 @@ function StandardBillingUI() {
                 </div>
               )}
 
-              {/* WhatsApp CTA — shown when customer mobile was provided.
-                  Mobile: wa.me (OS hands it to the app). Desktop: whatsapp://
-                  so the WhatsApp Desktop app opens instead of the browser —
-                  no target/rel on a custom-scheme link, which avoids leaving
-                  a stray blank tab behind. */}
-              {waUrl && (
-                <a
-                  href={waUrl}
-                  {...(isMobile ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                  className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#1ebe5d] active:scale-95 transition-all animate-pulse"
-                  onClick={() => setWaUrl(null)}
-                >
-                  <MessageCircle size={18} />
-                  Send Bill on WhatsApp
-                </a>
-              )}
-              {/* Desktop-only fallback if WhatsApp Desktop isn't installed */}
+              {/* WhatsApp is click-only now (via the "WhatsApp" action button
+                  below, handleWhatsAppPDF) — this is just its desktop-only
+                  fallback link, shown after that click if the WhatsApp
+                  Desktop app doesn't open (e.g. not installed). */}
               {waWebFallbackUrl && (
                 <a
                   href={waWebFallbackUrl}
