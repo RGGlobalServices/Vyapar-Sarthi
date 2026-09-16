@@ -7,47 +7,11 @@ const globalForPrisma = globalThis as unknown as {
   __dbSemaphore?: { queue: (() => void)[]; active: number };
 };
 
-// ── Global concurrency semaphore ──────────────────────────────────────
-// Supabase free tier has ~15 PostgreSQL slots total (minus reserved).
-// Multiple Next.js API routes fire in parallel on page load (dashboard,
-// profile, notifications, calendar …), each running several queries.
-// Without a gate, the combined burst easily exceeds the pool — even with
-// connection_limit=3 in the URL — because Prisma eagerly opens a
-// connection per concurrent query. This semaphore caps how many queries
-// are actually in-flight at any moment across the whole process.
-const MAX_CONCURRENT = 4;
-
-function getSemaphore() {
-  if (!globalForPrisma.__dbSemaphore) {
-    globalForPrisma.__dbSemaphore = { queue: [], active: 0 };
-  }
-  return globalForPrisma.__dbSemaphore;
-}
-
-async function withSemaphore<T>(fn: () => Promise<T>): Promise<T> {
-  const sem = getSemaphore();
-
-  if (sem.active >= MAX_CONCURRENT) {
-    await new Promise<void>((resolve) => sem.queue.push(resolve));
-  }
-  sem.active++;
-
-  try {
-    return await fn();
-  } finally {
-    sem.active--;
-    if (sem.queue.length > 0) {
-      const next = sem.queue.shift()!;
-      next();
-    }
-  }
-}
-
 // ── Retry wrapper ─────────────────────────────────────────────────────
 // PgBouncer drops idle connections silently; connection pool exhaustion
 // on Supabase is transient. Retry with backoff instead of failing.
 const RETRYABLE = /server has closed the connection|connection reset|connection terminated|can't reach database|socket hang up|econnreset|prepared statement .* does not exist|remaining connection slots are reserved|too many database connections/i;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 2;
 
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   let attempt = 0;
@@ -58,9 +22,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       attempt++;
       const msg = err?.message || '';
       if (attempt < MAX_RETRIES && RETRYABLE.test(msg)) {
-        const isPoolExhausted = /remaining connection slots|too many database connections/i.test(msg);
-        const delay = isPoolExhausted ? 1500 * attempt : 250 * attempt;
-        await new Promise(r => setTimeout(r, delay));
+        await new Promise(r => setTimeout(r, 150 * attempt));
         continue;
       }
       throw err;
@@ -77,7 +39,7 @@ const prisma = basePrisma.$extends({
   query: {
     $allModels: {
       async $allOperations({ args, query }) {
-        return withSemaphore(() => withRetry(() => query(args)));
+        return withRetry(() => query(args));
       },
     },
   },
