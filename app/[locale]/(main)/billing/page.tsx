@@ -400,49 +400,38 @@ function StandardBillingUI() {
 
     try {
       const { blob } = await generatePDFBlob();
+      const publicUrl = await uploadInvoiceToSupabase(blob, fileName);
+      const text = generateWhatsAppText({
+        ...lastBill,
+        storeName: profile.shopName || user?.storeName,
+        pdfUrl: publicUrl || undefined,
+        gst: profile.gst || undefined,
+        pan: profile.pan || undefined,
+        t: tBill,
+      });
 
       // Normalize customer phone (strip non-digits, add country code)
       let phone = (lastBill?.customerMobile || '').replace(/\D/g, '');
       if (phone.length === 10) phone = `91${phone}`;
       else if (phone.length > 10 && phone.startsWith('0')) phone = `91${phone.substring(1)}`;
+      // No phone on file → leave it blank. wa.me/whatsapp:// both treat an
+      // empty number as "let the user pick a chat" (WhatsApp's own contact
+      // picker), rather than falling back to navigator.share()/a plain file
+      // download — a "WhatsApp" button that sometimes just downloads a PDF
+      // instead (what native share silently did on phones where PDF file
+      // sharing isn't supported) is a real, reported bug, not a fallback.
+      if (phone.length < 10) phone = '';
 
-      if (phone.length >= 10) {
-        // Phone known → upload PDF, open directly in that customer's WhatsApp chat (no contact picker)
-        const publicUrl = await uploadInvoiceToSupabase(blob, fileName);
-        const text = generateWhatsAppText({
-          ...lastBill,
-          storeName: profile.shopName || user?.storeName,
-          pdfUrl: publicUrl || undefined,
-          gst: profile.gst || undefined,
-          pan: profile.pan || undefined,
-          t: tBill,
-        });
-        // Mobile: wa.me hands off to the app via the OS. Desktop: wa.me
-        // only ever opens WhatsApp Web, so use the WhatsApp Desktop app's
-        // own whatsapp:// link instead, with a plain wa.me fallback link
-        // shown right after in case that app isn't installed.
-        const url = generateWhatsAppLink(phone, text, isMobile);
-        if (isMobile) {
-          window.open(url, '_blank');
-        } else {
-          window.open(url, '_self');
-          setWaWebFallbackUrl(generateWhatsAppLink(phone, text, true));
-        }
+      // Mobile: wa.me hands off to the app via the OS. Desktop: wa.me only
+      // ever opens WhatsApp Web, so use the WhatsApp Desktop app's own
+      // whatsapp:// link instead, with a plain wa.me fallback link shown
+      // right after in case that app isn't installed.
+      const url = generateWhatsAppLink(phone, text, isMobile);
+      if (isMobile) {
+        window.open(url, '_blank');
       } else {
-        // No phone → native share so user can pick the contact themselves
-        const file = new File([blob], fileName, { type: 'application/pdf' });
-        if (navigator.canShare?.({ files: [file] })) {
-          try {
-            await navigator.share({ files: [file], title: fileName, text: `Bill from ${user?.storeName ?? 'Store'}` });
-            return;
-          } catch (shareError: any) {
-            if (shareError?.name === 'AbortError') return;
-          }
-        }
-        // Last resort: download the PDF
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        window.open(url, '_self');
+        setWaWebFallbackUrl(generateWhatsAppLink(phone, text, true));
       }
     } catch (error: any) {
       if (error?.name !== 'AbortError') {
