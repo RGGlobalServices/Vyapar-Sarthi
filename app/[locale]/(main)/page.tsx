@@ -262,23 +262,6 @@ function DashboardInner() {
     }
   );
 
-  // Belt-and-braces: force a fresh fetch every time this page mounts or the
-  // active shop switches — bypasses SWR's dedupe window so the "back to the
-  // dashboard right after making a bill/expense" case always shows the new
-  // numbers, not cached-since-a-moment-ago ones. Also forces the *server*
-  // cache to refresh in case a write from another process/tab that didn't
-  // hit our invalidation hook has left the cached payload stale.
-  useEffect(() => {
-    if (!activeShopId) return;
-    mutateDashboard(
-      async () => {
-        const res = await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}&refresh=true`);
-        return res.data;
-      },
-      { revalidate: false }
-    ).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeShopId]);
 
   useEffect(() => {
     if (dashboardPayload) {
