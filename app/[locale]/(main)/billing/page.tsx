@@ -23,6 +23,7 @@ import nextDynamic from 'next/dynamic';
 const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { ssr: false });
 import { useIsMobile } from '@/hooks/use-mobile';
 import {cn} from '@/lib/utils';
+import { toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 import {BillSlip, generateWhatsAppText} from '@/components/BillSlip';
 import {generateWhatsAppLink} from '@/lib/shareUtils';
 import {uploadInvoiceToSupabase} from '@/lib/supabaseStorage';
@@ -163,32 +164,77 @@ const CartQuantityInputRetail = ({ item, updateQuantity, removeItem, maxQty }: a
   );
 };
 
-const CartPriceInputRetail = ({ item, updatePrice }: any) => {
-  const [localVal, setLocalVal] = useState(item.price.toString());
+const GST_SLABS = [0, 5, 12, 18, 28];
+
+// GST invoice only: per-line "price includes GST / price excludes GST" toggle + a GST% override — both scoped to THIS bill's cart
+// line only (never the product's own saved GST%, same as WholesaleBillingUI's identical control). A non-GST bill shows only the
+// plain price box, exactly as before.
+const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }: any) => {
+  const [mode, setMode] = useState<'inclusive' | 'exclusive'>('inclusive');
+  const gstPercent = Number(item.gstPercent) || 0;
+
+  const toDisplay = (inclusivePrice: number) =>
+    mode === 'exclusive' ? toExclusivePrice(inclusivePrice, gstPercent) : inclusivePrice;
+
+  const [localVal, setLocalVal] = useState(() => (Math.round(toDisplay(item.price) * 100) / 100).toString());
   useEffect(() => {
-    setLocalVal(item.price.toString());
-  }, [item.price]);
+    setLocalVal((Math.round(toDisplay(item.price) * 100) / 100).toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.price, mode, gstPercent]);
+
+  const writePrice = (typed: number) => {
+    const inclusive = mode === 'exclusive' ? toInclusivePrice(typed, gstPercent) : typed;
+    updatePrice(item.id, Math.round(inclusive * 100) / 100, item.variant);
+  };
 
   return (
-    <input
-      type="number"
-      className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-right text-emerald-600 dark:text-emerald-500 font-bold focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
-      value={localVal}
-      onChange={(e) => {
-        setLocalVal(e.target.value);
-        const num = Number(e.target.value);
-        if (!isNaN(num)) {
-          updatePrice(item.id, num, item.variant);
-        }
-      }}
-      onBlur={(e) => {
-        const num = Number(e.target.value);
-        if (e.target.value === '') updatePrice(item.id, 0, item.variant);
-        setLocalVal(num.toString());
-      }}
-      step="any"
-      min="0"
-    />
+    <div className="flex flex-col items-end gap-1">
+      <input
+        type="number"
+        className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-right text-emerald-600 dark:text-emerald-500 font-bold focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+        value={localVal}
+        onChange={(e) => {
+          setLocalVal(e.target.value);
+          const num = Number(e.target.value);
+          if (!isNaN(num)) writePrice(num);
+        }}
+        onBlur={(e) => {
+          if (e.target.value === '') { writePrice(0); return; }
+          const num = Number(e.target.value);
+          setLocalVal((Math.round(num * 100) / 100).toString());
+        }}
+        step="any"
+        min="0"
+      />
+      {isGstBill && (
+        <div className="flex items-center gap-1">
+          <select
+            value={gstPercent}
+            onChange={(e) => updateGstPercent(item.id, Number(e.target.value), item.variant)}
+            title="GST % for this item (this bill only)"
+            className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
+          >
+            {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
+          </select>
+          <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden shrink-0">
+            {(['inclusive', 'exclusive'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                title={m === 'inclusive' ? 'Price includes GST' : 'Price excludes GST'}
+                className={cn(
+                  'px-1 py-0.5 text-[9px] font-bold transition-colors',
+                  mode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+                )}
+              >
+                {m === 'inclusive' ? 'Incl' : 'Excl'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -202,7 +248,7 @@ function StandardBillingUI() {
   useEffect(() => setMounted(true), []);
   
   const {
-    items, addItem, removeItem, updateQuantity, updatePrice, updateBatchNumber, setLineBatch, clearCart,
+    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, updateBatchNumber, setLineBatch, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount,
     remainingAmount, isEmi, setIsEmi,
@@ -1637,7 +1683,7 @@ function StandardBillingUI() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <CartPriceInputRetail item={item} updatePrice={updatePrice} />
+                      <CartPriceInputRetail item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
                     </td>
                     <td className="px-6 py-4 text-right font-bold">₹{item.total}</td>
                     <td className="px-6 py-4 text-center">

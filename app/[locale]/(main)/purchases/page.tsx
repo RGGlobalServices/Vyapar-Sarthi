@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer } from 'lucide-react';
+import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer, Wheat } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -113,9 +113,11 @@ export default function PurchasesPage() {
   const [mounted, setMounted] = useState(false);
 
   const [showAdd, setShowAdd] = useState(false);
+  const [showReturnsHistory, setShowReturnsHistory] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  const [convertingRaw, setConvertingRaw] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [deleteReverseStock, setDeleteReverseStock] = useState(true);
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -214,6 +216,8 @@ export default function PurchasesPage() {
   const [supplierId, setSupplierId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [broker, setBroker] = useState(EMPTY_BROKER);
+  const [tareWeightKg, setTareWeightKg] = useState('');
+  const [grossWeightKg, setGrossWeightKg] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [items, setItems] = useState<any[]>([emptyItem()]);
@@ -233,6 +237,8 @@ export default function PurchasesPage() {
     setSupplierId('');
     setInvoiceNumber('');
     setBroker(EMPTY_BROKER);
+    setTareWeightKg('');
+    setGrossWeightKg('');
     setDate(new Date().toISOString().split('T')[0]);
     setWarehouseId('');
     setItems([emptyItem()]);
@@ -254,6 +260,8 @@ export default function PurchasesPage() {
       setInvoiceNumber(full.invoiceNumber || '');
       setDate(new Date(full.date).toISOString().split('T')[0]);
       setWarehouseId(full.warehouseId || '');
+      setTareWeightKg(full.tareWeightKg != null ? String(full.tareWeightKg) : '');
+      setGrossWeightKg(full.grossWeightKg != null ? String(full.grossWeightKg) : '');
       // Purchase items come back as a flat list — each colour/size a saved
       // invoice covered is its own row with the same productId. Group them
       // back into one form row per product so re-editing shows the same
@@ -381,6 +389,8 @@ export default function PurchasesPage() {
       date,
       items: expandItemsForApi(items),
       ...(isMill && slipId && !editingInvoice ? { weighbridgeEntryId: slipId } : {}),
+      ...(isMill && tareWeightKg !== '' ? { tareWeightKg } : {}),
+      ...(isMill && grossWeightKg !== '' ? { grossWeightKg } : {}),
     };
 
     try {
@@ -608,6 +618,26 @@ export default function PurchasesPage() {
                 </div>
                 {isMill && !editingInvoice && (
                   <div className="sm:col-span-2"><BrokerField kind="supplier" value={broker} onChange={setBroker} /></div>
+                )}
+                {isMill && (
+                  <div className="sm:col-span-2 grid grid-cols-3 gap-2" data-testid="weight-fields">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Tare Weight (kg)</label>
+                      <input type="number" min="0" step="0.001" value={tareWeightKg} onChange={e => setTareWeightKg(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Gross Weight (kg)</label>
+                      <input type="number" min="0" step="0.001" value={grossWeightKg} onChange={e => setGrossWeightKg(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Net Weight (kg)</label>
+                      <div className="w-full px-3 py-2.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 dark:text-slate-400">
+                        {tareWeightKg !== '' && grossWeightKg !== '' ? Math.max(0, Number(grossWeightKg) - Number(tareWeightKg)).toLocaleString('en-IN') : '—'}
+                      </div>
+                    </div>
+                  </div>
                 )}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('purchaseDate') || 'Purchase Date'}</label>
@@ -963,11 +993,15 @@ export default function PurchasesPage() {
             ]}
             data={exportRows}
           />
+          <button onClick={() => setShowReturnsHistory(true)} data-testid="purchase-returns-history-btn"
+            className="bg-white dark:bg-slate-800 border border-orange-200 dark:border-orange-500/30 text-orange-600 dark:text-orange-400 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-orange-50 dark:hover:bg-orange-500/10">
+            <RotateCcw size={18} /> Returns</button>
           <button onClick={openAdd}
             className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors">
             <Plus size={18} /> {t('newPurchase') || 'New Purchase'}</button>
         </div>
       </div>
+      {showReturnsHistory && <PurchaseReturnsHistoryModal onClose={() => setShowReturnsHistory(false)} />}
 
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardContent className="p-4 space-y-3">
@@ -1121,6 +1155,29 @@ export default function PurchasesPage() {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('totalAmount') || 'Total Amount'}</p>
                   <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">₹{(selectedInvoice.totalCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
                 </div>
+                {isMill && (selectedInvoice.tareWeightKg != null || selectedInvoice.grossWeightKg != null) && (
+                  <div className="col-span-2 md:col-span-4 grid grid-cols-3 gap-2" data-testid="weight-display">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tare Weight</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white font-mono">{selectedInvoice.tareWeightKg != null ? `${selectedInvoice.tareWeightKg.toLocaleString('en-IN')} kg` : '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gross Weight</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white font-mono">{selectedInvoice.grossWeightKg != null ? `${selectedInvoice.grossWeightKg.toLocaleString('en-IN')} kg` : '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Weight</p>
+                      <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                        {selectedInvoice.tareWeightKg != null && selectedInvoice.grossWeightKg != null ? `${Math.max(0, selectedInvoice.grossWeightKg - selectedInvoice.tareWeightKg).toLocaleString('en-IN')} kg` : '-'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {isMill && (
+                  <div className="col-span-2 md:col-span-4">
+                    <PurchaseBillPhotos invoice={selectedInvoice} onSaved={(docs) => setSelectedInvoice((inv: any) => inv && { ...inv, supplier: { ...inv.supplier, documents: docs } })} />
+                  </div>
+                )}
                 {Array.isArray(selectedInvoice.charges) && selectedInvoice.charges.length > 0 && (
                   <div className="col-span-2 md:col-span-4" data-testid="purchase-charges">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Bill charges (included in the total)</p>
@@ -1195,6 +1252,28 @@ export default function PurchasesPage() {
                   className="px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                   <Printer size={14} /> {t('printBatchLabels') || 'Print Batch Labels'}
                 </button>
+                {isMill && selectedInvoice.hasRawMaterialItems && (
+                  selectedInvoice.rawMaterialAdded ? (
+                    <span data-testid="raw-material-already-added"
+                      className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Check size={14} className="text-emerald-600" /> Already Added
+                    </span>
+                  ) : (
+                    <button onClick={async () => {
+                      setConvertingRaw(true);
+                      try {
+                        await api.post(`/purchases/${selectedInvoice.id}/to-raw-material`, {});
+                        setSelectedInvoice((inv: any) => inv && { ...inv, rawMaterialAdded: true });
+                        mutateInvoices();
+                      } catch (err: any) {
+                        alert(err?.response?.data?.detail || err?.response?.data?.error || 'Could not add to Raw Material.');
+                      } finally { setConvertingRaw(false); }
+                    }} disabled={convertingRaw} data-testid="add-to-raw-material"
+                      className="px-4 py-2.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors flex items-center gap-2 disabled:opacity-50">
+                      {convertingRaw ? <Loader2 size={14} className="animate-spin" /> : <Wheat size={14} />} Add to Raw Material
+                    </button>
+                  )
+                )}
                 <button onClick={() => handleDelete(selectedInvoice)} disabled={deleting}
                   className="px-4 py-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center gap-2 text-red-600 dark:text-red-400 disabled:opacity-50">
                   {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} {t('delete') || 'Delete'}
@@ -1270,6 +1349,177 @@ export default function PurchasesPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Bada Udyog: the physical bill / weighbridge-slip photo for one purchase. Reuses the exact storage Suppliers already use for bill
+// photos (Supplier.documents, tagged by an id — transactionId there, purchaseInvoiceId here) so no schema change is needed.
+function PurchaseBillPhotos({ invoice, onSaved }: { invoice: any; onSaved: (docs: any[]) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const docs: any[] = Array.isArray(invoice.supplier?.documents) ? invoice.supplier.documents : [];
+  const mine = docs.filter((d: any) => d.purchaseInvoiceId === invoice.id);
+
+  const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    e.target.value = '';
+    setUploading(true);
+    const uploaded: any[] = [];
+    try {
+      for (const file of files) {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('folder', 'purchase-bills');
+        const res = await api.post('/upload', body);
+        if (res.data.url) uploaded.push({ id: crypto.randomUUID(), url: res.data.url, uploadedAt: new Date().toISOString(), name: file.name || undefined, purchaseInvoiceId: invoice.id });
+      }
+      if (uploaded.length) {
+        const next = [...docs, ...uploaded];
+        await api.patch(`/suppliers/${invoice.supplierId}`, { documents: next });
+        onSaved(next);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Could not upload the bill photo. Please try again.');
+    } finally { setUploading(false); }
+  };
+
+  return (
+    <div data-testid="purchase-bill-photos">
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Bill / Weight Slip Photo</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {mine.map((d: any) => (
+          <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer"
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 flex items-center gap-1.5">
+            <FileText size={12} /> {d.name || 'Bill'}
+          </a>
+        ))}
+        <label className="text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-emerald-400 text-emerald-700 dark:text-emerald-400 cursor-pointer flex items-center gap-1.5">
+          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} {mine.length ? 'Add another' : 'Upload photo'}
+          <input type="file" accept="image/*,application/pdf" multiple onChange={upload} className="hidden" disabled={uploading} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// Standalone history across every supplier/invoice — the per-invoice "Return" button raises one and shows it inside that one
+// invoice's detail; this is every purchase return this shop has ever raised, newest first, so "did I already return this bill?"
+// doesn't mean hunting through every invoice one at a time.
+function PurchaseReturnsHistoryModal({ onClose }: { onClose: () => void }) {
+  const profile = useBusinessStore(s => s.profile);
+  const [data, setData] = useState<{ rows: any[]; summary: any } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const downloadPdf = async (r: any) => {
+    setDownloadingId(r.id);
+    try {
+      // Same generator PurchaseReturnModal already uses right after raising a return — kept as the one source of truth for what
+      // a return PDF looks like, so a return downloaded from here looks identical to one downloaded right after creating it.
+      const { generatePurchaseReturnPdfBlob } = await import('@/lib/pdf/purchaseReturn');
+      const { blob, filename } = await generatePurchaseReturnPdfBlob({
+        shop: { name: profile.shopName || 'Store', address: profile.address || undefined, mobile: profile.mobile || undefined, gst: profile.gst || undefined, pan: profile.pan || undefined },
+        supplierName: r.supplier?.name || 'Supplier',
+        returnNumber: r.returnNumber || r.id,
+        date: r.date,
+        originalInvoiceNumber: r.purchaseInvoice?.invoiceNumber || '',
+        items: (r.items || []).map((it: any) => ({ name: it.name, variant: it.variantKey, quantity: it.quantity, rate: it.rate, amount: it.amount })),
+        totalAmount: r.totalAmount || 0,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to generate return PDF', err);
+      alert('Could not generate the PDF. Please try again.');
+    } finally { setDownloadingId(null); }
+  };
+
+  useEffect(() => {
+    api.get('/purchases/returns').then(({ data }) => setData(data)).catch(() => setData({ rows: [], summary: { count: 0, totalAmount: 0 } })).finally(() => setLoading(false));
+  }, []);
+
+  const rows = data?.rows || [];
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <RotateCcw size={18} className="text-orange-500" /> Purchase Returns History
+          </h2>
+          <button onClick={onClose} className="p-2 -mr-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 rounded-full transition-colors"><X size={18} /></button>
+        </div>
+        {!loading && data && (
+          <div className="px-6 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-6 text-sm">
+            <span className="text-slate-500">{data.summary.count} return{data.summary.count === 1 ? '' : 's'}</span>
+            <span className="font-bold text-orange-600 dark:text-orange-400">₹{(data.summary.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} total</span>
+          </div>
+        )}
+        <div className="overflow-y-auto flex-1">
+          {loading ? (
+            <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
+          ) : rows.length === 0 ? (
+            <div className="p-12 text-center">
+              <RotateCcw size={40} className="mx-auto text-slate-300 dark:text-slate-700" />
+              <p className="mt-3 text-sm text-slate-500">No purchase returns yet. Open a purchase's details and use "Return" to raise one.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase text-xs sticky top-0">
+                <tr>
+                  <th className="px-4 py-3 font-bold">Date</th>
+                  <th className="px-3 py-3 font-bold">Supplier</th>
+                  <th className="px-3 py-3 font-bold">Invoice #</th>
+                  <th className="px-3 py-3 font-bold">Return #</th>
+                  <th className="px-3 py-3 font-bold text-right">Amount</th>
+                  <th className="px-3 py-3 font-bold w-10" />
+                  <th className="px-3 py-3 font-bold w-8" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {rows.map((r: any) => (
+                  <>
+                    <tr key={r.id} onClick={() => setExpanded(expanded === r.id ? null : r.id)} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 cursor-pointer">
+                      <td className="px-4 py-2.5 text-slate-500">{new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-900 dark:text-white">{r.supplier?.name || '—'}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.purchaseInvoice?.invoiceNumber || '—'}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.returnNumber || '—'}</td>
+                      <td className="px-3 py-2.5 text-right font-bold text-orange-600 dark:text-orange-400">₹{(r.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                      <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => downloadPdf(r)} disabled={downloadingId === r.id} title="Download PDF" data-testid="download-return-pdf"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10 disabled:opacity-50">
+                          {downloadingId === r.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-400">{expanded === r.id ? '▲' : '▼'}</td>
+                    </tr>
+                    {expanded === r.id && (
+                      <tr className="bg-slate-50/60 dark:bg-slate-800/30">
+                        <td colSpan={7} className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {(r.items || []).map((it: any) => (
+                              <span key={it.id} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                                <strong>{it.name}</strong>{it.variantKey ? ` (${it.variantKey})` : ''} · {it.quantity} × ₹{it.rate} = ₹{it.amount.toLocaleString('en-IN')}
+                              </span>
+                            ))}
+                          </div>
+                          {r.note && <p className="text-xs text-slate-500 mt-2 italic">{r.note}</p>}
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

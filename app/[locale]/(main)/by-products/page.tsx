@@ -38,6 +38,7 @@ export default function ByProductsPage() {
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [adding, setAdding] = useState(false);
   const [sellingId, setSellingId] = useState<string | null>(null);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
 
   const { data: rows = [], mutate: refetch, isLoading } = useSWR<ByProductRow[]>(
     activeShopId ? ['/mill/by-products', activeShopId] : null, ([u]) => fetcher(u),
@@ -129,7 +130,14 @@ export default function ByProductsPage() {
                           : r.source === 'job_work' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300')}>{SOURCE_LABEL[r.source || 'manual']}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">{r.product?.name || '—'}</td>
+                    <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">
+                      {r.product?.name || (remaining > 0 ? (
+                        <button onClick={() => setLinkingId(r.id)} data-testid="add-to-products"
+                          className="text-xs font-bold px-2.5 py-1 rounded-lg border border-dashed border-emerald-500 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10">
+                          + Add to Products
+                        </button>
+                      ) : '—')}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-slate-700 dark:text-slate-300">{qty.toLocaleString('en-IN')} Kg</td>
                     <td className="px-3 py-2.5 text-right text-blue-600 dark:text-blue-400 font-semibold">{sold.toLocaleString('en-IN')} Kg</td>
                     <td className="px-3 py-2.5 text-right font-bold text-amber-600 dark:text-amber-400">{remaining.toLocaleString('en-IN')} Kg</td>
@@ -164,6 +172,14 @@ export default function ByProductsPage() {
           row={rows.find(r => r.id === sellingId)!}
           onClose={() => setSellingId(null)}
           onSaved={() => { setSellingId(null); refetch(); }}
+        /></ModalPortal>
+      )}
+      {linkingId && (
+        <ModalPortal><LinkProductModal
+          row={rows.find(r => r.id === linkingId)!}
+          products={byProductProducts}
+          onClose={() => setLinkingId(null)}
+          onSaved={() => { setLinkingId(null); refetch(); }}
         /></ModalPortal>
       )}
     </div>
@@ -300,6 +316,74 @@ function RecordSaleModal({ row, onClose, onSaved }: {
             className="w-full h-11 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <IndianRupee size={16} />}
             Record Sale
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Turns a not-yet-tracked by-product into real stock — links it to an existing "by_product" product, or creates one — so it shows
+// up in Products/Stock and can be sold through Billing like anything else. Credits the remaining (unsold) quantity once.
+function LinkProductModal({ row, products, onClose, onSaved }: {
+  row: ByProductRow; products: Product[]; onClose: () => void; onSaved: () => void;
+}) {
+  const remaining = Math.max(0, (row.quantityKg ?? 0) - (row.soldKg ?? 0));
+  const [mode, setMode] = useState<'existing' | 'new'>(products.length ? 'existing' : 'new');
+  const [productId, setProductId] = useState('');
+  const [name, setName] = useState(row.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try {
+      await api.patch(`/mill/by-products/${row.id}`, {
+        linkProduct: mode === 'existing' ? { productId } : { name: name.trim() },
+      });
+      onSaved();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to add to Products');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-lg font-black">Add to Products — {row.name}</h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+        <form onSubmit={submit} className="p-6 space-y-4">
+          <p className="text-xs text-slate-500">{remaining.toLocaleString('en-IN')} Kg goes into stock, once, so this by-product can be billed like any product.</p>
+          {products.length > 0 && (
+            <div className="flex gap-2 text-xs font-bold">
+              <button type="button" onClick={() => setMode('existing')} className={cn('flex-1 h-9 rounded-lg border', mode === 'existing' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>Existing product</button>
+              <button type="button" onClick={() => setMode('new')} className={cn('flex-1 h-9 rounded-lg border', mode === 'new' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>New product</button>
+            </div>
+          )}
+          {mode === 'existing' ? (
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Product *</span>
+              <select value={productId} onChange={e => setProductId(e.target.value)} required
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
+                <option value="">Select product</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+          ) : (
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Product Name *</span>
+              <input value={name} onChange={e => setName(e.target.value)} required autoFocus
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+            </label>
+          )}
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button type="submit" disabled={saving || (mode === 'existing' ? !productId : !name.trim())}
+            className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            Add to Products
           </button>
         </form>
       </div>

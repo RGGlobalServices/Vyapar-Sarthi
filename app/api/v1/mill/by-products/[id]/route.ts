@@ -29,6 +29,37 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const body = await readBody<any>(req);
   const patch: any = {};
 
+  // Link this by-product to a real Product so it shows up in Products/Stock and can be sold through Billing — either an existing
+  // product (must already be this shop's), or a brand-new one created here. Only for a row that isn't linked yet; the remaining
+  // (unsold) quantity is credited to the product's stock once, the same way a by-product created WITH a product already is.
+  if (body.linkProduct !== undefined) {
+    if (existing.productId) throw new ApiError(409, 'This by-product is already linked to a product.', 'ALREADY_LINKED');
+    const remainingKg = round3((existing.quantityKg ?? 0) - (existing.soldKg ?? 0));
+    if (remainingKg <= 0) throw new ApiError(400, 'Nothing left of this by-product to add to stock.', 'NOTHING_REMAINING');
+    let productId: string = body.linkProduct.productId || '';
+    let product: { id: string; name: string | null; baseUnit: string | null } | null = null;
+    if (productId) {
+      product = await prisma.product.findFirst({ where: { id: productId, shopId: shop.id }, select: { id: true, name: true, baseUnit: true } });
+      if (!product) throw new ApiError(404, 'Product not found for this shop');
+    } else {
+      const name = String(body.linkProduct.name ?? '').trim().slice(0, 100) || existing.name;
+      product = await prisma.product.create({
+        data: { shopId: shop.id, name, category: 'By-Products', millCategory: 'by_product', baseUnit: 'kg', currentStock: 0, sellingPrice: 0 } as any,
+        select: { id: true, name: true, baseUnit: true },
+      });
+      productId = product.id;
+    }
+    const stockQty = kgToProductUnit(remainingKg, product.baseUnit, product.name ?? '');
+    const linked = await prisma.$transaction(async (tx) => {
+      const moved = await (tx as any).byProduct.updateMany({ where: { id, shopId: shop.id, productId: null }, data: { productId } });
+      if (moved.count === 0) throw new ApiError(409, 'This by-product is already linked to a product.', 'ALREADY_LINKED');
+      await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${stockQty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+      await tx.stockMovement.create({ data: { shopId: shop.id, productId, type: 'byproduct_manual', quantity: stockQty, referenceId: id } });
+      return (tx as any).byProduct.findFirst({ where: { id }, include: INCLUDE });
+    }, { timeout: 15000, maxWait: 10000 });
+    return json(linked);
+  }
+
   if (body.addSoldKg !== undefined) {
     const add = round3(Number(body.addSoldKg));
     if (!isFinite(add) || add <= 0) throw new ApiError(400, 'addSoldKg must be a positive number', 'INVALID_QUANTITY');

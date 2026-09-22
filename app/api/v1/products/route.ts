@@ -66,6 +66,14 @@ export const GET = handle(async (req) => {
         baseUnit: true,
         mrp: true,
         createdAt: true,
+        // Billing's product search (`GET /products?lite=true`) reads these off each result when adding to the cart — missing here
+        // meant every line added through search silently carried gstPercent=0, so a GST invoice's CGST/SGST/IGST always came out
+        // ₹0 no matter what rate the product actually had. gender/is_loose were the same gap for their own cart fields.
+        gstPercent: true,
+        gender: true,
+        is_loose: true,
+        wholesaleCost: true,
+        costPrice: true,
       },
       skip,
       take: limit,
