@@ -892,8 +892,8 @@ function StandardBillingUI() {
         // No connection — save the bill locally instead of blocking the sale.
         // It's automatically replayed against the server once back online
         // (see lib/offlineSync.ts), decrementing real stock at that point.
-        const queued = queueOfflineSale(salePayload);
-        billNumber = `OFF-${queued.localId.slice(-8).toUpperCase()}`;
+        const queued = await queueOfflineSale(salePayload, activeShopId || profile.id);
+        billNumber = queued.localId;
         isOfflineBill = true;
       }
 

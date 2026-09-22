@@ -50,6 +50,7 @@ export const POST = handle(async (req) => {
       creditDays: parseInt(data.creditDays) || 0,
       creditLimit: parseFloat(data.creditLimit) || 0,
       notes: data.notes?.trim() || null,
+      ...(data.customerType === 'broker' ? { brokerType: ['supplier', 'customer', 'both'].includes(data.brokerType) ? data.brokerType : null } : {}),
       totalDue: parseFloat(data.openingBalance) || 0,
     },
   });

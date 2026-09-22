@@ -8,6 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useLocale } from 'next-intl';
 import api from '@/lib/api';
+import { clearLocalSession } from '@/lib/clientSession';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 type View = 'login' | 'forgot' | 'otp' | 'reset' | 'done';
@@ -53,6 +54,8 @@ export default function LoginPage() {
       });
       const { access_token, user } = resp.data;
       if (access_token && user) {
+        // A new sign-in must never inherit the previous user's shop id, role or cached data.
+        await clearLocalSession();
         document.cookie = `ks_auth=1; path=/; max-age=${60 * 60 * 24 * 7}`;
         localStorage.setItem('ks_auth', JSON.stringify({
           access_token,

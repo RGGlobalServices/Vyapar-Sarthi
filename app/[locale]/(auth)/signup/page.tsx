@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { PAYMENT_URL } from '@/lib/config';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
+import { clearLocalSession } from '@/lib/clientSession';
 
 interface Form {
   ownerName: string;
@@ -113,6 +114,8 @@ export default function SignupPage() {
       const { access_token, user } = resp.data;
 
       if (access_token && user) {
+        // A new sign-in must never inherit the previous user's shop id, role or cached data.
+        await clearLocalSession();
         document.cookie = `ks_auth=1; path=/; max-age=${60 * 60 * 24 * 7}`;
         localStorage.setItem('ks_auth', JSON.stringify({
           access_token,

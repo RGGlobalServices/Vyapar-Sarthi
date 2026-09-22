@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
 import { sendWebPush } from '@/lib/server/push';
+import { checkCronAuth } from '@/lib/server/cronAuth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
+  const denied = checkCronAuth(req);
+  if (denied) return denied;
+
   try {
     const settings = await prisma.notificationSetting.findMany({
       where: { dailySummaryEnabled: true }

@@ -46,7 +46,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       let warehouses: Record<string, string> = {};
       if (warehouseIds.length > 0) {
         const gods = await prisma.godown.findMany({ 
-          where: { id: { in: warehouseIds } } 
+          where: { id: { in: warehouseIds }, shopId: shop.id } 
         });
         warehouses = gods.reduce((acc: any, g: any) => ({ ...acc, [g.id]: g.name }), {});
       }

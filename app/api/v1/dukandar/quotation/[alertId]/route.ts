@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireUser } from '@/lib/server/auth';
+import { requireUser, requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -24,9 +24,19 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   const retailer = await prisma.user.findUnique({ where: { uuid: alert.retailerId! } });
   const rtShop = await prisma.shop.findFirst({ where: { ownerId: alert.retailerId! } });
 
+  // The alert's product list is wholesaler-editable (POST below), so an id in
+  // it is untrusted: only resolve prices for products that belong to one of the
+  // retailer's own shops, never an arbitrary product id from another tenant.
+  const retailerShopIds = (await prisma.shop.findMany({
+    where: { ownerId: alert.retailerId! },
+    select: { id: true },
+  })).map((s) => s.id);
+
   const fullProducts = await Promise.all(
     products.map(async (p: { id: string } & Record<string, unknown>) => {
-      const full = await prisma.product.findUnique({ where: { id: p.id } });
+      const full = p?.id
+        ? await prisma.product.findFirst({ where: { id: p.id, shopId: { in: retailerShopIds } } })
+        : null;
       return {
         ...p,
         sellingPrice: full?.sellingPrice || p.sellingPrice || 0,
@@ -47,7 +57,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
 export const POST = handle<Ctx>(async (req, { params }) => {
   const { alertId } = await params;
-  const user = await requireUser(req);
+  const { user, shop: wsShop } = await requireShop(req, { enforceSubscription: false });
   const { products } = await readBody(req);
 
   if (!products || !Array.isArray(products)) {
@@ -57,6 +67,16 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   const alert = await prisma.dukandarStockAlert.findUnique({ where: { id: alertId } });
   if (!alert) throw new ApiError(404, 'Alert not found');
   if (alert.wholesalerId !== user.uuid) throw new ApiError(403, 'Unauthorized');
+
+  // A quotation may only re-price / re-quantify the products the alert already
+  // contained. Accepting arbitrary product ids let a wholesaler point the
+  // alert at any product in the database and read its prices via GET.
+  const allowedIds = new Set<string>(
+    (JSON.parse(alert.products || '[]') as Array<{ id?: string }>).map((p) => p?.id).filter(Boolean) as string[]
+  );
+  if (products.some((p: { id?: string }) => !p?.id || !allowedIds.has(p.id))) {
+    throw new ApiError(400, 'Quotation contains products that are not part of this request');
+  }
 
   // Update alert status and products list (with new prices & quantities)
   await prisma.dukandarStockAlert.update({
@@ -69,8 +89,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   });
 
   // Notify retailer
-  const wsShop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
-  const senderName = wsShop?.name || user.storeName || 'Wholesaler';
+  const senderName = wsShop.name || user.storeName || 'Wholesaler';
 
   await prisma.userNotification.create({
     data: {

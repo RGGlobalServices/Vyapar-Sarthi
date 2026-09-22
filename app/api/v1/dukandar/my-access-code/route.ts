@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireUser } from '@/lib/server/auth';
+import { requireShop } from '@/lib/server/auth';
 import { handle, json } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -12,17 +12,16 @@ function generateNameBasedCode(nameBase: string) {
 }
 
 export const GET = handle(async (req) => {
-  const user = await requireUser(req);
+  const { user, shop } = await requireShop(req, { enforceSubscription: false });
   let refCode = await prisma.referralCode.findUnique({ where: { userId: user.uuid! } });
   if (!refCode) {
     const base = user.storeName || user.fullName || user.name || user.email;
     const code = generateNameBasedCode(base);
     refCode = await prisma.referralCode.create({ data: { userId: user.uuid, code } });
   }
-  const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
   return json({
     accessCode: refCode.code,
-    shopName: shop?.name || user.storeName || '',
+    shopName: shop.name || user.storeName || '',
     ownerName: user.fullName || user.name || '',
   });
 });

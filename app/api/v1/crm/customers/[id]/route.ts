@@ -27,6 +27,7 @@ export const PUT = handle(async (req, { params }: any) => {
       creditDays: parseInt(data.creditDays) || 0,
       creditLimit: parseFloat(data.creditLimit) || 0,
       notes: data.notes?.trim() || null,
+      ...(data.customerType === 'broker' ? { brokerType: ['supplier', 'customer', 'both'].includes(data.brokerType) ? data.brokerType : null } : {}),
       // Bill-photo attachments (see AddBillModal) — same convention as
       // Supplier's `documents` JSON array: [{id, url, uploadedAt,
       // transactionId?}]. Only touched when the caller actually sends it, so

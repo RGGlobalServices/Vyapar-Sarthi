@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -71,6 +72,9 @@ export const GET = handle(async (req) => {
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const body = await readBody<any>(req);
+  // Linked ids are client-supplied — they must belong to this shop, or another
+  // shop's names/mobiles come back through the response join.
+  await assertRefsOwned(shop.id, { productId: body.productId, supplierId: body.supplierId });
 
   const grossWeightKg = Number(body.grossWeightKg);
   if (!isFinite(grossWeightKg) || grossWeightKg <= 0) {

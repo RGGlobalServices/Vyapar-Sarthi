@@ -34,12 +34,20 @@ export async function generateCustomerBillPDF({
   entityName,
   bill,
   items,
+  mill,
   filename,
 }: {
   shop: ShopHeader;
   entityName: string;
   bill: CustomerBillDetail;
   items: CustomerBillItem[];
+  /** Stored Mill (mill_v2) breakdown - when present the PDF shows the GST-EXCLUSIVE Mill layout (never the legacy
+   *  inclusive reading): Rate (Excl. GST), taxable, GST split, commercial charges, round-off and the stored Grand Total. */
+  mill?: {
+    goods: number; discount: number; taxable: number; gstBilled: boolean; interState: boolean;
+    cgst: number; sgst: number; igst: number; totalGst: number; charges: Record<string, number>; chargesTotal: number;
+    roundOff: number; grand: number; paid: number; balance: number;
+  } | null;
   filename: string;
 }) {
   const [{ default: jsPDF }, { default: autoTable }, { saveOrShareBlob }] = await Promise.all([
@@ -72,7 +80,7 @@ export async function generateCustomerBillPDF({
   const line1 = [
     bill.billNumber ? `Bill No: ${bill.billNumber}` : null,
     `Type: ${isPayment ? 'Payment' : 'Credit Bill'}`,
-    bill.gstPercent != null ? `GST: ${bill.gstPercent}% (${fmtInr(bill.gstAmount)})` : null,
+    bill.gstPercent != null ? `GST: ${bill.gstPercent}% (${fmtInr(bill.gstAmount)})${mill ? ' on taxable amount' : ''}` : null,
   ].filter(Boolean).join('   |   ');
   if (line1) doc.text(line1, L + 3, y + 12);
   if (bill.note) doc.text(`Note: ${bill.note}`, L + 3, y + 17);
@@ -80,7 +88,7 @@ export async function generateCustomerBillPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(...PDF_LAYOUT.accent);
-  doc.text(`${isPayment ? 'Amount Paid' : 'Bill Amount'}: ${fmtInr(bill.amount)}`, L + 3, y + 23);
+  doc.text(mill ? `Grand Total: ${fmtInr(mill.grand)}` : `${isPayment ? 'Amount Paid' : 'Bill Amount'}: ${fmtInr(bill.amount)}`, L + 3, y + 23);
 
   y += 32;
 
@@ -95,7 +103,7 @@ export async function generateCustomerBillPDF({
     ]);
     autoTable(doc, {
       startY: y,
-      head: [['Product', 'Qty', 'Cost', 'Selling', 'Profit', 'Profit %']],
+      head: [['Product', 'Qty', 'Cost', mill ? 'Rate (Excl. GST)' : 'Selling', 'Profit', 'Profit %']],
       body: rows,
       theme: 'grid',
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.5, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.15 },
@@ -108,6 +116,31 @@ export async function generateCustomerBillPDF({
     doc.setFontSize(9);
     doc.setTextColor(120);
     doc.text('No itemised product breakdown is available for this entry.', L, y + 8);
+  }
+
+  if (mill) {
+    const after = ((doc as any).lastAutoTable?.finalY ?? y + 12) + 6;
+    const label = (k: string) => `${k === 'other' ? 'Other Charges' : k.charAt(0).toUpperCase() + k.slice(1)} (commercial charge)`;
+    const money = (v: number) => ({ content: fmtInr(v), styles: { halign: 'right' } });
+    const rows: any[] = [
+      ['Goods Subtotal (rates exclusive of GST)', money(mill.goods)],
+      ...(mill.discount > 0 ? [['Discount', money(-mill.discount)]] : []),
+      ['Taxable Amount', money(mill.taxable)],
+      ...(mill.gstBilled ? (mill.interState ? [['IGST', money(mill.igst)]] : [['CGST', money(mill.cgst)], ['SGST', money(mill.sgst)]]) : []),
+      ...Object.entries(mill.charges).filter(([, v]) => v > 0).map(([k, v]) => [label(k), money(v)]),
+      ...(mill.roundOff !== 0 ? [['Round Off', money(mill.roundOff)]] : []),
+      [{ content: 'Grand Total', styles: { fontStyle: 'bold' } }, { content: fmtInr(mill.grand), styles: { fontStyle: 'bold', halign: 'right' } }],
+      ['Amount Received', money(mill.paid)],
+      ['Balance / Udhar', money(mill.balance)],
+    ];
+    autoTable(doc, {
+      startY: after,
+      body: rows,
+      theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 1.8, textColor: PDF_LAYOUT.ink as any },
+      margin: { left: PDF_LAYOUT.marginX + 60, right: PDF_LAYOUT.marginX },
+      rowPageBreak: 'avoid',
+    });
   }
 
   renderProfessionalFooter(doc, `${title} — generated ${fmtDate(new Date())}`);

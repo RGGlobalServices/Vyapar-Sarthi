@@ -8,6 +8,8 @@
 // Backend now lives in this same Next.js app under /api/v1 (Route Handlers),
 // so the default is a same-origin relative path. NEXT_PUBLIC_API_URL can still
 // override it if the API is ever hosted on a separate origin.
+import { clearLocalSession, clearShopScopedLocalCache } from './clientSession';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 /**
@@ -77,11 +79,29 @@ async function request(url: string, options: RequestInit = {}) {
   // than whichever one is currently "active" (e.g. editing a pooled cross-shop
   // list row without switching shops first), and needs to target that row's own
   // shop explicitly rather than silently 404ing against the active shop's id.
+  // `shopAtStart` is set only when the shop header was auto-attached from the
+  // active shop — a caller that pins its own x-shop-id (pooled cross-shop rows,
+  // the offline sync) opts out of the stale-response and recovery handling below.
+  let shopAtStart: string | null = null;
   if (!url.startsWith('/shop/my-shops') && !url.startsWith('/shop/create')) {
     if (!headers.has('x-shop-id')) {
       const activeShopId = typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null;
-      if (activeShopId) headers.set('x-shop-id', activeShopId);
+      if (activeShopId) {
+        headers.set('x-shop-id', activeShopId);
+        shopAtStart = activeShopId;
+      }
     }
+  }
+
+  // The Profile page's admin/staff toggle (useAuthStore's `role`) was purely
+  // a client-side UI convenience until now — nothing on the server ever knew
+  // which mode a request came from, so anything gated on it (e.g. hiding
+  // Reports/Suppliers in the sidebar for staff mode) was cosmetic only, not
+  // real authorization. Carrying it as a header lets specific routes (see
+  // GET /staff/:id/salary and /advance) enforce it server-side instead.
+  if (!headers.has('x-ui-role')) {
+    const uiRole = typeof window !== 'undefined' ? localStorage.getItem('ks_role') : null;
+    if (uiRole) headers.set('x-ui-role', uiRole);
   }
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -105,9 +125,9 @@ async function request(url: string, options: RequestInit = {}) {
           window.location.href = `/${loc}/admin/login`;
         }
       } else {
-        localStorage.removeItem('ks_auth');
-        document.cookie = 'ks_auth=; path=/; max-age=0';
-        document.cookie = 'ks_plan=; path=/; max-age=0';
+        // Wipes the user's shop id, role, cached data etc. — but never the
+        // offline outbox, so unsynced bills survive an expired session.
+        await clearLocalSession();
         if (!window.location.pathname.includes('/login')) {
           window.location.href = `/${window.location.pathname.split('/')[1] || 'en'}/login`;
         }
@@ -137,6 +157,28 @@ async function request(url: string, options: RequestInit = {}) {
         errorData = { detail: text || `HTTP Error ${response.status}` };
       }
       
+      // The stored active shop is no longer one of this account's shops (deleted,
+      // or the id was tampered with). Drop it and reload once so the app
+      // re-resolves to a valid shop instead of failing every request.
+      if (
+        response.status === 403 &&
+        errorData?.code === 'SHOP_INVALID' &&
+        shopAtStart &&
+        typeof window !== 'undefined' &&
+        !url.startsWith('/admin/')
+      ) {
+        try {
+          if (sessionStorage.getItem('ks_shop_recovering') !== shopAtStart) {
+            sessionStorage.setItem('ks_shop_recovering', shopAtStart);
+            if (localStorage.getItem('ks_active_shop_id') === shopAtStart) {
+              localStorage.removeItem('ks_active_shop_id');
+            }
+            clearShopScopedLocalCache();
+            window.location.reload();
+          }
+        } catch {}
+      }
+
       const errorMessage = errorData?.error || errorData?.detail || `Request failed with status ${response.status}`;
       const err = new Error(errorMessage);
       (err as any).response = { status: response.status, data: errorData };
@@ -159,6 +201,21 @@ async function request(url: string, options: RequestInit = {}) {
       throw friendlyErr;
     }
     const data = await response.json().catch(() => ({}));
+
+    // The user switched shops while this READ was in flight: its rows belong to
+    // the previous shop and must not be written into the new shop's screens.
+    // Reads only — a WRITE that already succeeded must still report success,
+    // or the caller would retry it and create a duplicate.
+    if (
+      shopAtStart &&
+      (options.method || 'GET').toUpperCase() === 'GET' &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem('ks_active_shop_id') !== shopAtStart
+    ) {
+      const abort = new Error('Shop changed while the request was in flight');
+      abort.name = 'AbortError';
+      throw abort;
+    }
 
     // A write succeeded — pull the rest of the visible UI back in sync.
     // Auth calls are excluded: those navigate the app anyway, and revalidating

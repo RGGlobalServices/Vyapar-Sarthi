@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -72,6 +73,9 @@ export const GET = handle(async (req) => {
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const body = await readBody<any>(req);
+  // Linked ids are client-supplied — they must belong to this shop, or another
+  // shop's names/mobiles come back through the response join.
+  await assertRefsOwned(shop.id, { supplierId: body.supplierId, customerId: body.partyId });
 
   const vehicleNumber = (body.vehicleNumber || '').toString().trim();
   if (!vehicleNumber) throw new ApiError(400, 'Vehicle number is required');

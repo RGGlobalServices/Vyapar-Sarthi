@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
+import { readCharges, chargesTotal } from '@/lib/server/purchaseCharges';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
+import { apiErrorResponse } from '@/lib/server/http';
 import prisma from '@/lib/server/prisma';
 import { reversePurchaseInvoiceEffects, cleanupPurchaseLedgerAndBatches, PurchaseReversalBlockedError } from '@/lib/server/purchases';
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
@@ -52,6 +55,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
     }
 
+    // Checked BEFORE the reversal below so a foreign id fails with no mutation.
+    await assertOwned(auth.shop.id, {
+      purchaseInvoiceId: id,
+      supplierId,
+      godownId: warehouseId,
+      productId: items.map((i: any) => i.productId),
+    });
+
     const finalAmountPaid = typeof amountPaid === 'number' ? amountPaid : 0;
     const finalPaymentMode = paymentMode || 'Cash';
 
@@ -68,6 +79,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
       totalCost += item.quantity * item.cost;
       if (item.gst) totalGst += item.gst;
     }
+    // The bill's charges (hamali, freight … set when it was imported) are part of what is owed and survive an edit of the items.
+    const prior = await prisma.purchaseInvoice.findFirst({ where: { id, shopId: auth!.shop.id }, select: { charges: true } });
+    totalCost += chargesTotal(readCharges(prior?.charges));
 
     // Undo the old stock/ledger effects, then re-apply as if this were a
     // fresh purchase — same machinery as POST, just keeping the invoice id
@@ -83,7 +97,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       await tx.purchaseItem.deleteMany({ where: { purchaseInvoiceId: id } });
 
       const updatedInvoice = await tx.purchaseInvoice.update({
-        where: { id },
+        where: { id, shopId: auth!.shop.id },
         data: {
           supplierId,
           invoiceNumber: invoiceNumber || null,
@@ -140,10 +154,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
           // currentStock is nullable with no default — a plain increment
           // silently no-ops when it's NULL, so COALESCE it first (see the
           // matching comment in purchases/route.ts POST).
-          tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid`,
+          tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid AND shop_id = ${auth!.shop.id}::uuid`,
         ]),
         tx.supplier.update({
-          where: { id: supplierId },
+          where: { id: supplierId, shopId: auth!.shop.id },
           data: { balance: { increment: totalCost - finalAmountPaid } },
         }),
         tx.supplierTransaction.create({
@@ -193,7 +207,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const reapplyDeltas: VariantStockDelta[] = processedItems
         .filter((item: any) => item.variant)
         .map((item: any) => ({ productId: item.productId, variantKey: item.variant, delta: item.baseQuantity }));
-      await applyVariantStockDeltas(prisma, [...reverseDeltas, ...reapplyDeltas]);
+      await applyVariantStockDeltas(prisma, [...reverseDeltas, ...reapplyDeltas], auth!.shop.id);
     } catch (e) { console.error('Variant stock update failed:', e); }
 
     try {
@@ -207,6 +221,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (error instanceof PurchaseReversalBlockedError) {
       return NextResponse.json({ error: error.message, code: 'REVERSAL_BLOCKED' }, { status: 409 });
     }
+    const known = apiErrorResponse(error);
+    if (known) return known;
     console.error('[API] Error updating purchase:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -314,7 +330,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
         const reverseDeltas: VariantStockDelta[] = invoice.purchaseItems
           .filter((item) => item.variantKey)
           .map((item) => ({ productId: item.productId, variantKey: item.variantKey, delta: -item.quantity }));
-        await applyVariantStockDeltas(prisma, reverseDeltas);
+        await applyVariantStockDeltas(prisma, reverseDeltas, auth!.shop.id);
       } catch (e) { console.error('Variant stock update failed:', e); }
     }
 

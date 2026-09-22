@@ -18,8 +18,21 @@ type BillItem = {
   profitPercent: number | null;
 };
 
+
+/** Stored Mill (mill_v2) bill breakdown from /crm/ledger — null on every legacy row. All figures in rupees, from the stored sale. */
+export type MillLedgerBreakdown = {
+  goods: number; discount: number; taxable: number; gstBilled: boolean; interState: boolean;
+  cgst: number; sgst: number; igst: number; totalGst: number;
+  charges: Record<string, number>; chargesTotal: number; roundOff: number; grand: number; paid: number; balance: number;
+  consistent: boolean; problems: string[];
+};
+
+
+
 type Transaction = {
   id: string;
+  pricingModel?: string | null;
+  mill?: MillLedgerBreakdown | null;
   type: string;
   amount: number;
   note: string;
@@ -41,6 +54,7 @@ type Transaction = {
 };
 
 const rupee = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+const rupeeExact = (n: number) => `${n < 0 ? '-' : ''}₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
  * Party/Customer equivalent of the Supplier module's transaction detail
@@ -105,6 +119,8 @@ export default function TransactionDetailModal({
             outstandingAmount: match.outstandingAmount ?? null,
             paymentType: match.paymentType ?? null,
             paymentDetails: match.paymentDetails ?? null,
+            pricingModel: match.pricingModel ?? null,
+            mill: match.mill ?? null,
           }));
         }
       })
@@ -114,6 +130,9 @@ export default function TransactionDetailModal({
   }, [transaction.id, transaction.items.length, entityId, entityType]);
 
   const [downloading, setDownloading] = useState(false);
+  // Mill (mill_v2) bills carry paise (GST-exclusive rates, charges, round-off) - shown exactly; legacy rows keep the
+  // existing whole-rupee display.
+  const money = (n: number) => (resolved.mill ? rupeeExact(n) : rupee(n));
 
   const isPayment = transaction.type === 'payment';
   const isSale = transaction.type === 'sale';
@@ -260,6 +279,7 @@ export default function TransactionDetailModal({
           gstAmount: resolved.gstAmount,
         },
         items: resolved.items,
+        mill: resolved.mill || null,
         filename: `${isPayment ? 'payment' : 'bill'}-${(transaction.billNumber || transaction.id).toString().trim().replace(/\s+/g, '-').toLowerCase()}`,
       });
     } catch (e) {
@@ -295,16 +315,50 @@ export default function TransactionDetailModal({
               {isPayment ? (t('paymentReceived') || 'Amount') : (t('amount') || 'Amount')}
             </span>
             <span className={`text-xl font-black ${isPayment ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-              {isPayment ? '−' : '+'}{rupee(transaction.amount)}
+              {isPayment ? '−' : '+'}{money(transaction.amount)}
             </span>
           </div>
 
-          {resolved.gstPercent != null && (
+          {resolved.gstPercent != null && !resolved.mill && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20">
               <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">GST</span>
               <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400">
-                {resolved.gstPercent}% · {rupee(resolved.gstAmount || 0)}
+                {resolved.gstPercent}% · {money(resolved.gstAmount || 0)}
               </span>
+            </div>
+          )}
+
+          {resolved.mill && (
+            <div data-testid="mill-ledger-breakdown" className="rounded-xl border border-indigo-200 dark:border-indigo-500/30 overflow-hidden">
+              <div className="px-3 py-2 bg-indigo-50 dark:bg-indigo-500/10 border-b border-indigo-100 dark:border-indigo-500/20 flex items-center justify-between">
+                <h3 className="text-[11px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-widest">Mill Invoice - rates exclusive of GST</h3>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                {([
+                  ['Goods Subtotal', resolved.mill.goods, 'goods'],
+                  ...(resolved.mill.discount > 0 ? [['Discount', -resolved.mill.discount, 'discount']] : []),
+                  ['Taxable Amount', resolved.mill.taxable, 'taxable'],
+                  ...(resolved.mill.gstBilled
+                    ? (resolved.mill.interState
+                        ? [[`IGST${resolved.gstPercent ? ` (${resolved.gstPercent}%)` : ''}`, resolved.mill.igst, 'igst']]
+                        : [[`CGST${resolved.gstPercent ? ` (GST ${resolved.gstPercent}% total)` : ''}`, resolved.mill.cgst, 'cgst'], ['SGST', resolved.mill.sgst, 'sgst']])
+                    : []),
+                  ...Object.entries(resolved.mill.charges).filter(([, v]) => (v as number) > 0).map(([k, v]) => [`${k === 'other' ? 'Other Charges' : k.charAt(0).toUpperCase() + k.slice(1)} (charge)`, v as number, k]),
+                  ...(resolved.mill.roundOff !== 0 ? [['Round Off', resolved.mill.roundOff, 'roundoff']] : []),
+                ] as [string, number, string][]).map(([label, val, k]) => (
+                  <div key={k} className="px-3 py-1.5 flex items-center justify-between">
+                    <span className="text-slate-600 dark:text-slate-300">{label}</span>
+                    <span data-testid={`mlb-${k}`} className="font-mono text-slate-900 dark:text-white">{rupeeExact(val)}</span>
+                  </div>
+                ))}
+                <div className="px-3 py-2 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60">
+                  <span className="font-bold text-slate-800 dark:text-slate-100">Grand Total</span>
+                  <span data-testid="mlb-grand" className="font-mono font-black text-slate-900 dark:text-white">{rupeeExact(resolved.mill.grand)}</span>
+                </div>
+                {!resolved.mill.consistent && (
+                  <div data-testid="mlb-inconsistent" className="px-3 py-2 text-xs font-bold text-red-600">Stored figures are inconsistent - do not rely on this breakdown.</div>
+                )}
+              </div>
             </div>
           )}
 
@@ -318,24 +372,24 @@ export default function TransactionDetailModal({
               <div className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
                 <div className="px-3 py-2 flex items-center justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Bill Total</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{rupee(billTotal || 0)}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{money(billTotal || 0)}</span>
                 </div>
                 {paymentDetails && (paymentDetails.cash || 0) > 0 && (
                   <div className="px-3 py-2 flex items-center justify-between">
                     <span className="text-slate-600 dark:text-slate-300">Cash Paid</span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{rupee(paymentDetails.cash || 0)}</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{money(paymentDetails.cash || 0)}</span>
                   </div>
                 )}
                 {paymentDetails && (paymentDetails.upi || 0) > 0 && (
                   <div className="px-3 py-2 flex items-center justify-between">
                     <span className="text-slate-600 dark:text-slate-300">UPI Paid</span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{rupee(paymentDetails.upi || 0)}</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{money(paymentDetails.upi || 0)}</span>
                   </div>
                 )}
                 {paymentDetails && (paymentDetails.card || 0) > 0 && (
                   <div className="px-3 py-2 flex items-center justify-between">
                     <span className="text-slate-600 dark:text-slate-300">Card Paid</span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{rupee(paymentDetails.card || 0)}</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{money(paymentDetails.card || 0)}</span>
                   </div>
                 )}
                 {!paymentDetails && (billPaid || 0) > 0 && (
@@ -343,7 +397,7 @@ export default function TransactionDetailModal({
                     <span className="text-slate-600 dark:text-slate-300">
                       Paid{resolved.paymentType ? ` (${resolved.paymentType})` : ''}
                     </span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{rupee(billPaid || 0)}</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{money(billPaid || 0)}</span>
                   </div>
                 )}
                 <div className={`px-3 py-2 flex items-center justify-between ${(billOutstanding || 0) > 0 ? 'bg-orange-50 dark:bg-orange-500/10' : 'bg-emerald-50 dark:bg-emerald-500/10'}`}>
@@ -351,7 +405,7 @@ export default function TransactionDetailModal({
                     {(billOutstanding || 0) > 0 ? 'Udhar (Unpaid)' : 'Fully Paid'}
                   </span>
                   <span className={`font-black ${(billOutstanding || 0) > 0 ? 'text-orange-800 dark:text-orange-300' : 'text-emerald-800 dark:text-emerald-300'}`}>
-                    {rupee(billOutstanding || 0)}
+                    {money(billOutstanding || 0)}
                   </span>
                 </div>
               </div>
@@ -397,6 +451,7 @@ export default function TransactionDetailModal({
                     <tr>
                       <th className="px-3 py-2 text-left font-bold">{t('product') || 'Product'}</th>
                       <th className="px-3 py-2 text-right font-bold">{t('qty') || 'Qty'}</th>
+                      {resolved.mill && <th className="px-3 py-2 text-right font-bold">Rate (Excl. GST)</th>}
                       <th className="px-3 py-2 text-right font-bold">{t('costPrice') || 'Cost'}</th>
                       <th className="px-3 py-2 text-right font-bold">{t('profit') || 'Profit'}</th>
                       <th className="px-3 py-2 text-right font-bold">{t('profitPercent') || 'Profit %'}</th>
@@ -407,8 +462,9 @@ export default function TransactionDetailModal({
                       <tr key={i}>
                         <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">{it.name}</td>
                         <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{it.quantity}</td>
-                        <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{rupee(it.costPrice)}</td>
-                        <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">{rupee(it.profitPerUnit * it.quantity)}</td>
+                        {resolved.mill && <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{rupeeExact(it.sellingPrice)}</td>}
+                        <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{money(it.costPrice)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">{money(it.profitPerUnit * it.quantity)}</td>
                         <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300">{it.profitPercent != null ? `${it.profitPercent}%` : '-'}</td>
                       </tr>
                     ))}

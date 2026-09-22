@@ -1,5 +1,5 @@
-import { config } from '@/lib/server/config';
-import { json, errorResponse, query } from '@/lib/server/http';
+import { json } from '@/lib/server/http';
+import { checkCronAuth } from '@/lib/server/cronAuth';
 import { processDueSubscriptions } from '@/lib/server/billing';
 
 export const runtime = 'nodejs';
@@ -12,13 +12,8 @@ export const dynamic = 'force-dynamic';
 //   GET /api/v1/cron/process-subscriptions
 //   Authorization: Bearer <CRON_SECRET>
 async function run(req: Request) {
-  const authHeader = req.headers.get('authorization') || '';
-  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  const secret = bearer || query(req).secret || '';
-
-  if (secret !== config.cronSecret) {
-    return errorResponse('Unauthorized', 401);
-  }
+  const denied = checkCronAuth(req);
+  if (denied) return denied;
 
   const result = await processDueSubscriptions();
 

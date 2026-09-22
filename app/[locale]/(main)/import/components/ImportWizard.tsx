@@ -7,7 +7,8 @@ import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useUdharStore } from '@/lib/store';
-import { getImportTemplate, applyTemplate, getAddableColumns } from '@/lib/importTemplates';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { CHARGE_COLUMNS, getImportTemplate, applyTemplate, getAddableColumns } from '@/lib/importTemplates';
 import { printLabelSheet } from '@/lib/printLabels';
 
 type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' | 'sales' | 'ledger';
@@ -58,6 +59,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     name: '', mobile: '', gst: '', address: '',
     creditDays: '', creditLimit: '', paidAmount: '',
   });
+  // Bill-level charges read from the bill (hamali, freight, loading …) — editable here, stored on the purchase, never as products.
+  const [purchaseBroker, setPurchaseBroker] = useState({ name: '', commission: '' });
+  const [purchaseCharges, setPurchaseCharges] = useState<{ name: string; amount: string }[]>([]);
   const [supplierMatch, setSupplierMatch] = useState<null | {
     id: string; name: string; balance: number; creditLimit: number; creditDays: number;
   }>(null);
@@ -373,6 +377,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             const res = await api.post('/wholesale-import/analyze', fd);
             const data = res.data;
             if (data.stats) setExtractionStats(data.stats);
+            if (importType === 'purchase') setPurchaseCharges((Array.isArray(data.charges) ? data.charges : []).map((c: any) => ({ name: String(c.name || ''), amount: String(c.amount ?? '') })));
 
             if (data.items && data.items.length > 0) {
               const aiHeaders = Object.keys(data.items[0]);
@@ -448,7 +453,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   // that aren't part of the default review columns, offered here instead of
   // showing them in every import. Picking one adds it to every row (blank,
   // fillable), same as a template column the file itself had.
-  const addableColumns = getAddableColumns(importType).filter(c => !headers.includes(c.label));
+  const addableColumns = getAddableColumns(importType, isMillBillingPackage(profile?.packageType)).filter(c => !headers.includes(c.label));
   const handleAddColumn = (label: string) => {
     if (!label || headers.includes(label)) return;
     setHeaders(prev => [...prev, label]);
@@ -659,6 +664,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 // first batch of a purchase import so the server doesn't re-apply
                 // enrichment / re-increment balance on every subsequent chunk.
                 supplier: (importType === 'purchase' && offset === 0) ? purchaseSupplier : undefined,
+                broker: (importType === 'purchase' && offset === 0 && isMillBillingPackage(profile?.packageType) && purchaseBroker.name.trim()) ? purchaseBroker : undefined,
+                charges: (importType === 'purchase' && offset === 0) ? [
+                  ...purchaseCharges.filter(c => c.name.trim() || c.amount !== '').map(c => ({ name: c.name.trim(), amount: c.amount })),
+                  // Charge columns added to the review table (Hamali, Freight …): one bill per import, so each column's total is one bill charge.
+                  ...CHARGE_COLUMNS.filter(l => headers.includes(l)).map(l => ({ name: l, amount: previewData.reduce((a, r) => a + (parseFloat(String(r[l] ?? '').replace(/[₹,\s]/g, '')) || 0), 0) })).filter(c => c.amount > 0),
+                ] : undefined,
               });
             } catch (e) {
               if (attempt === 1) throw e;
@@ -1112,6 +1123,43 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <span className="block text-[10px] text-slate-400 mt-1">The rest becomes owed. Leave 0 if the whole bill is on credit.</span>
                   </label>
                 </div>
+              </div>
+            )}
+
+            {importType === 'purchase' && (
+              <div className="mb-5 p-5 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-500/5" data-testid="import-charges">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Bill Charges</h4>
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-3">Hamali, freight, loading … read from the bill. They are added to this purchase and to what the supplier is owed — not to Products or Stock. Edit, add or remove any line.</p>
+                {purchaseCharges.length === 0 && <p className="text-xs text-slate-400 mb-2">No charges found on the bill.</p>}
+                <div className="space-y-2">
+                  {purchaseCharges.map((c, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_8rem_auto] gap-2 items-center">
+                      <input value={c.name} onChange={e => setPurchaseCharges(list => list.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} placeholder="Charge name (e.g. Hamali)"
+                        className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
+                      <input type="number" min="0" step="0.01" value={c.amount} onChange={e => setPurchaseCharges(list => list.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} placeholder="₹"
+                        className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
+                      <button type="button" onClick={() => setPurchaseCharges(list => list.filter((_, j) => j !== i))} aria-label="Remove charge"
+                        className="h-9 w-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"><X size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3 mt-3">
+                  <button type="button" onClick={() => setPurchaseCharges(list => [...list, { name: '', amount: '' }])}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-amber-500 text-amber-700 dark:text-amber-400">+ Add charge</button>
+                  {purchaseCharges.length > 0 && (
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Charges total: ₹{purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  )}
+                </div>
+                {isMillBillingPackage(profile?.packageType) && (
+                  <div className="mt-4 pt-3 border-t border-amber-200 dark:border-amber-500/20" data-testid="import-broker">
+                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">Broker (optional)</h5>
+                    <p className="text-[11px] text-slate-500 mb-2">A broker record is created in Party → Brokers (or reused) and the commission is logged as owed to them. It is not added to what the supplier is owed.</p>
+                    <div className="grid grid-cols-[1fr_8rem] gap-2">
+                      <input value={purchaseBroker.name} onChange={e => setPurchaseBroker(b => ({ ...b, name: e.target.value }))} placeholder="Broker name" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
+                      <input type="number" min="0" step="0.01" value={purchaseBroker.commission} onChange={e => setPurchaseBroker(b => ({ ...b, commission: e.target.value }))} placeholder="Commission ₹" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import prisma from '@/lib/server/prisma';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 
@@ -62,7 +63,8 @@ export async function PATCH(req: Request, ctx: any) {
           prisma,
           challan.items
             .filter((it) => it.variantKey)
-            .map((it) => ({ productId: it.productId, variantKey: it.variantKey, delta: it.quantity }))
+            .map((it) => ({ productId: it.productId, variantKey: it.variantKey, delta: it.quantity })),
+          shop.id
         );
       } catch (e) {
         console.error('[challans PATCH cancel] variant stock restore failed (non-fatal):', e);
@@ -78,6 +80,7 @@ export async function PATCH(req: Request, ctx: any) {
       if (!body.saleId) {
         return NextResponse.json({ error: 'saleId is required.' }, { status: 400 });
       }
+      await assertOwned(shop.id, { saleId: body.saleId });
       const updated = await prisma.deliveryChallan.update({
         where: { id },
         data: { status: 'invoiced', saleId: body.saleId, invoicedAt: new Date() },

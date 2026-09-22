@@ -11,7 +11,9 @@ import useSWR from 'swr';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
 import { canUseGodowns } from '@/lib/planGates';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import PurchaseReturnModal from '@/components/purchases/PurchaseReturnModal';
+import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
 import { printLabelSheet } from '@/lib/printLabels';
 import { resolveActiveProfile } from '@/lib/printProfiles';
 
@@ -19,7 +21,7 @@ const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
 const emptyItem = () => ({
-  productId: '', quantity: 1, cost: 0, batchNumber: '', sellingPrice: '', unitId: '', conversionFactor: 1,
+  productId: '', quantity: 1, cost: 0, batchNumber: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '', toRaw: undefined as boolean | undefined,
   // One qty per colour/size, keyed the same way as everywhere else — only
   // used when the selected product has variant rows; `quantity` above is
   // still what's used for a plain (non-variant) product.
@@ -84,6 +86,17 @@ const cleanPurchaseNumStr = (s: any): string => {
  *  tell when an Auto-Calculate result has gone stale after a later edit. */
 const purchaseItemsSig = (rows: any[]): string =>
   rows.map(i => `${i.productId}|${i.quantity}|${i.cost}|${i.mrp}|${i.discountPercent}|${i.costMode}|${JSON.stringify(i.variantQty || {})}`).join(';');
+
+// Bada Udyog (mill) purchases are weighed goods: the unit list is kg / quintal / ton / g, converted to the product's own base unit
+// through the same `conversionFactor` the server already uses (base qty = qty × factor, base cost = cost ÷ factor).
+const MILL_UNITS: { key: string; label: string; kg: number }[] = [
+  { key: 'kg', label: 'Kg', kg: 1 }, { key: 'quintal', label: 'Quintal (100 kg)', kg: 100 }, { key: 'ton', label: 'Ton (1000 kg)', kg: 1000 }, { key: 'g', label: 'Gram', kg: 0.001 },
+];
+const kgPerBase = (baseUnit: string | null | undefined): number | null => {
+  const k = String(baseUnit ?? 'kg').trim().toLowerCase();
+  const hit = MILL_UNITS.find(u => u.key === k) || (['kgs', 'kilogram', 'kilograms'].includes(k) ? MILL_UNITS[0] : ['qtl', 'quintals'].includes(k) ? MILL_UNITS[1] : ['tons', 'tonne', 'tonnes', 'mt'].includes(k) ? MILL_UNITS[2] : ['gm', 'gram', 'grams'].includes(k) ? MILL_UNITS[3] : undefined);
+  return hit ? hit.kg : null;
+};
 
 export default function PurchasesPage() {
   const t = useTranslations('Purchases');
@@ -179,6 +192,14 @@ export default function PurchasesPage() {
     fetcher
   );
 
+  const isMill = isMillBillingPackage(profile.packageType);
+  // Completed weighbridge slips that have not been used yet — an OPTIONAL shortcut, never required.
+  const { data: weighSlips = [] } = useSWR(
+    shouldFetchDetails && isMill && activeShopId ? ['/mill/weighbridge?status=completed', activeShopId] : null,
+    fetcher
+  );
+  const { mutate: mutateProductsList } = useSWR(shouldFetchDetails && activeShopId ? ['/products', activeShopId] : null, fetcher);
+
   const { data: masterData } = useSWR(
     shouldFetchDetails && activeShopId ? ['/master-data', activeShopId] : null,
     fetcher
@@ -192,10 +213,15 @@ export default function PurchasesPage() {
 
   const [supplierId, setSupplierId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [broker, setBroker] = useState(EMPTY_BROKER);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [items, setItems] = useState<any[]>([emptyItem()]);
   const [saving, setSaving] = useState(false);
+  const [slipId, setSlipId] = useState('');
+  // Inline "new product" (mill): which row is creating one, and its draft.
+  const [newProd, setNewProd] = useState<{ index: number; name: string; unit: string; category: string } | null>(null);
+  const [creatingProd, setCreatingProd] = useState(false);
 
   // Inline {t('supplierLabel')} State
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
@@ -206,9 +232,12 @@ export default function PurchasesPage() {
     setEditingInvoice(null);
     setSupplierId('');
     setInvoiceNumber('');
+    setBroker(EMPTY_BROKER);
     setDate(new Date().toISOString().split('T')[0]);
     setWarehouseId('');
     setItems([emptyItem()]);
+    setSlipId('');
+    setNewProd(null);
   };
 
   const openAdd = () => {
@@ -292,8 +321,54 @@ export default function PurchasesPage() {
           conversionFactor: item.conversionFactor,
         }));
     }
-    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice }] : [];
+    const addToRawMaterial = isMill ? (item.toRaw ?? (product?.millCategory === 'raw_material')) : undefined;
+    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice, ...(isMill ? { addToRawMaterial } : {}) }] : [];
   });
+
+  const setItemUnit = (index: number, unitKey: string) => {
+    const newItems = [...items];
+    const prod = products.find((p: any) => p.id === newItems[index].productId);
+    const u = MILL_UNITS.find(x => x.key === unitKey);
+    const base = kgPerBase(prod?.baseUnit);
+    newItems[index].unitLabel = unitKey;
+    newItems[index].unitId = '';
+    newItems[index].conversionFactor = u && base ? u.kg / base : 1;
+    setItems(newItems);
+  };
+
+  // Fill the form from a completed weighbridge slip. Every field stays editable, and nothing is linked until the purchase is saved.
+  const importSlip = (id: string) => {
+    setSlipId(id);
+    const slip = weighSlips.find((x: any) => x.id === id);
+    if (!slip) return;
+    if (slip.supplierId) setSupplierId(slip.supplierId);
+    const prod = slip.productId ? products.find((p: any) => p.id === slip.productId) : null;
+    const base = kgPerBase(prod?.baseUnit) || 1;
+    setItems([{ ...emptyItem(), productId: slip.productId || '', quantity: Number(slip.netWeightKg) || 1, cost: Number(slip.ratePerKg) || 0, unitLabel: 'kg', conversionFactor: 1 / base }]);
+  };
+
+  // Product Master creation, only after the user confirms it in the inline form.
+  const createProductInline = async () => {
+    if (!newProd || !newProd.name.trim()) return;
+    setCreatingProd(true);
+    try {
+      const millCategory = newProd.category;
+      const label = millCategory === 'raw_material' ? 'Raw Material' : millCategory === 'finished_goods' ? 'Finished Goods' : 'By-Products';
+      const { data: created } = await api.post('/products', { name: newProd.name.trim(), category: label, millCategory, baseUnit: newProd.unit, currentStock: 0, sellingPrice: 0 });
+      await mutateProductsList();
+      const newItems = [...items];
+      const u = MILL_UNITS.find(x => x.key === newProd.unit);
+      newItems[newProd.index].productId = created.id;
+      newItems[newProd.index].unitLabel = u ? u.key : '';
+      newItems[newProd.index].conversionFactor = 1;
+      setItems(newItems);
+      setNewProd(null);
+    } catch (err: any) {
+      alert('Failed to create product: ' + (err?.response?.data?.detail || err?.response?.data?.error || err.message));
+    } finally {
+      setCreatingProd(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -304,14 +379,21 @@ export default function PurchasesPage() {
       warehouseId: warehouseId || null,
       invoiceNumber,
       date,
-      items: expandItemsForApi(items)
+      items: expandItemsForApi(items),
+      ...(isMill && slipId && !editingInvoice ? { weighbridgeEntryId: slipId } : {}),
     };
 
     try {
       if (editingInvoice) {
         await api.patch(`/purchases/${editingInvoice.id}`, payload);
       } else {
-        await api.post('/purchases', payload);
+        const res = await api.post('/purchases', payload);
+        // Broker + commission: best-effort, after the purchase is safely saved (a failure never undoes the bill).
+        if (isMill && broker.name.trim()) {
+          const inv = res?.data?.invoice;
+          api.post('/mill/broker-commission', { name: broker.name, commission: broker.commission, billNumber: inv?.invoiceNumber || invoiceNumber || inv?.id, kind: 'supplier' })
+            .catch((e: any) => console.error('Broker commission not saved:', e));
+        }
       }
       setShowAdd(false);
       resetForm();
@@ -524,6 +606,9 @@ export default function PurchasesPage() {
                   <input type="text" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="e.g. INV-2023-001" />
                 </div>
+                {isMill && !editingInvoice && (
+                  <div className="sm:col-span-2"><BrokerField kind="supplier" value={broker} onChange={setBroker} /></div>
+                )}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('purchaseDate') || 'Purchase Date'}</label>
                   <input type="date" value={date} onChange={e => setDate(e.target.value)}
@@ -532,6 +617,22 @@ export default function PurchasesPage() {
               </div>
             </CardContent>
           </Card>
+
+          {isMill && !editingInvoice && (
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm" data-testid="weighbridge-import">
+              <CardContent className="p-6 space-y-3">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('millImportTitle')}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t('millImportHint')}</p>
+                <select value={slipId} onChange={e => e.target.value ? importSlip(e.target.value) : setSlipId('')}
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="">{weighSlips.length ? t('millImportNone') : t('millImportEmpty')}</option>
+                  {weighSlips.map((w: any) => (
+                    <option key={w.id} value={w.id}>{w.slipNumber} · {w.vehicleNumber}{w.materialDescription ? ` · ${w.materialDescription}` : ''} · {w.netWeightKg} kg</option>
+                  ))}
+                </select>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
             <CardContent className="p-6">
@@ -564,6 +665,38 @@ export default function PurchasesPage() {
                         <option value="">{t('selectProduct') || 'Select Product...'}</option>
                         {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
+                      {isMill && (
+                        <>
+                          <button type="button" onClick={() => setNewProd({ index, name: '', unit: 'kg', category: 'raw_material' })}
+                            className="mt-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1">
+                            <Plus size={12} /> {t('millNewProduct')}
+                          </button>
+                          {newProd?.index === index && (
+                            <div className="mt-2 grid grid-cols-2 gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" data-testid="new-product-form">
+                              <input autoFocus placeholder={t('millNewProductName')} value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })}
+                                className="col-span-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white" />
+                              <select value={newProd.category} onChange={e => setNewProd({ ...newProd, category: e.target.value })}
+                                className="px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white">
+                                <option value="raw_material">{t('millCatRaw')}</option>
+                                <option value="finished_goods">{t('millCatFinished')}</option>
+                                <option value="by_product">{t('millCatByProduct')}</option>
+                              </select>
+                              <select value={newProd.unit} onChange={e => setNewProd({ ...newProd, unit: e.target.value })}
+                                className="px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white">
+                                {MILL_UNITS.slice(0, 3).map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
+                              </select>
+                              <p className="col-span-2 text-[10px] text-amber-700 dark:text-amber-400">{t('millNewProductHint')}</p>
+                              <div className="col-span-2 flex gap-2 justify-end">
+                                <button type="button" onClick={() => setNewProd(null)} className="px-3 py-1.5 text-xs font-semibold text-slate-500">{t('cancel') || 'Cancel'}</button>
+                                <button type="button" onClick={createProductInline} disabled={creatingProd || !newProd.name.trim()}
+                                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 flex items-center gap-1">
+                                  {creatingProd ? <Loader2 size={12} className="animate-spin" /> : null} {t('millConfirmCreate')}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                     {singleColour && (
                       <div className="w-32">
@@ -581,13 +714,26 @@ export default function PurchasesPage() {
                     {!hasVariants && (
                       <div className="w-24">
                         <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('qty') || 'Qty'}</label>
-                        <input type="number" required min="1" value={item.quantity} onChange={e => {
+                        <input type="number" required min={isMill ? '0.001' : '1'} step={isMill ? 'any' : undefined} value={item.quantity} onChange={e => {
                           const newItems = [...items];
-                          newItems[index].quantity = parseInt(e.target.value) || 1;
+                          newItems[index].quantity = isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1);
                           setItems(newItems);
                         }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                       </div>
                     )}
+                    {isMill ? (
+                      <div className="w-36">
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('unit') || 'Unit'}</label>
+                        <select value={item.unitLabel || (kgPerBase(selectedProduct?.baseUnit) !== null ? String(selectedProduct?.baseUnit || 'kg').toLowerCase() : '')} onChange={e => setItemUnit(index, e.target.value)}
+                          disabled={!!selectedProduct && kgPerBase(selectedProduct?.baseUnit) === null}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                          {MILL_UNITS.map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
+                        </select>
+                        {item.conversionFactor && item.conversionFactor !== 1 && Number(item.quantity) > 0 && (
+                          <p className="text-[10px] text-slate-500 mt-0.5">{t('millAddsToStock', { qty: Math.round(Number(item.quantity) * item.conversionFactor * 1000) / 1000, unit: selectedProduct?.baseUnit || 'kg' })}</p>
+                        )}
+                      </div>
+                    ) : (
                     <div className="w-28">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Unit</label>
                       <select value={item.unitId || ''} onChange={e => {
@@ -603,6 +749,7 @@ export default function PurchasesPage() {
                         ))}
                       </select>
                     </div>
+                    )}
                     <div className="w-32">
                       <div className="flex items-center justify-between mb-1">
                         <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">{t('unitCost') || 'Unit Cost'}</label>
@@ -681,6 +828,13 @@ export default function PurchasesPage() {
                             }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                         </div>
                       </div>
+                    )}
+                    {isMill && item.productId && (
+                      <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer" data-testid="to-raw-toggle">
+                        <input type="checkbox" checked={item.toRaw ?? (selectedProduct?.millCategory === 'raw_material')}
+                          onChange={e => { const n = [...items]; n[index].toRaw = e.target.checked; setItems(n); }} />
+                        {t('millAddToRaw')}
+                      </label>
                     )}
                     {hasVariants && (
                       <div>
@@ -967,6 +1121,18 @@ export default function PurchasesPage() {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('totalAmount') || 'Total Amount'}</p>
                   <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">₹{(selectedInvoice.totalCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
                 </div>
+                {Array.isArray(selectedInvoice.charges) && selectedInvoice.charges.length > 0 && (
+                  <div className="col-span-2 md:col-span-4" data-testid="purchase-charges">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Bill charges (included in the total)</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedInvoice.charges.map((c: any, i: number) => (
+                        <span key={i} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+                          {c.name}: ₹{Number(c.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {purchaseTotalReturnedAmount(selectedInvoice) > 0 && (
                   <>
                     <div>

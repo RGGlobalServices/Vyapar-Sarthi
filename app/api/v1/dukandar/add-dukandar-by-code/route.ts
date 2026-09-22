@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireUser } from '@/lib/server/auth';
+import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -7,17 +7,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const POST = handle(async (req) => {
-  const user = await requireUser(req);
+  const { user, shop } = await requireShop(req, { enforceSubscription: false });
   const { accessCode } = await readBody(req);
   if (!accessCode) throw new ApiError(400, 'Access code is required');
 
-  // Run shop + referral code lookups in parallel
-  const [shop, refCode] = await Promise.all([
-    prisma.shop.findFirst({ where: { ownerId: user.uuid! } }),
-    prisma.referralCode.findUnique({ where: { code: accessCode } }),
-  ]);
+  const refCode = await prisma.referralCode.findUnique({ where: { code: accessCode } });
 
-  if (!shop || !isWholesaleTierPackage(shop.subscriptionPlan)) {
+  if (!isWholesaleTierPackage(shop.subscriptionPlan)) {
     throw new ApiError(403, 'Business plan required to add dukandar');
   }
   if (!refCode) throw new ApiError(404, 'Invalid access code');

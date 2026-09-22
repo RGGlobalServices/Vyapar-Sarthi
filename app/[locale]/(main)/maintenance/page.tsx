@@ -8,6 +8,8 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
+import MachinesPage from '../machines/page';
+import SparePartsPage from '../spare-parts/page';
 
 type MaintenanceRow = {
   id: string; description: string; cost: number | null; performedBy: string | null;
@@ -19,7 +21,7 @@ type Machine = { id: string; name: string; status: string };
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
-export default function MaintenancePage() {
+function MaintenanceLog() {
   const t = useTranslations('Maintenance');
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const searchParams = useSearchParams();
@@ -99,7 +101,7 @@ function LogMaintenanceModal({ machines, defaultMachineId, onClose, onLogged }: 
 }) {
   const t = useTranslations('Maintenance');
   const [form, setForm] = useState({
-    machineId: defaultMachineId || '', description: '', cost: '', performedBy: '',
+    machineId: defaultMachineId || '', description: '', cost: '', performedBy: '', paymentMethod: 'Cash',
     nextDueDate: '', notes: '', setStatus: '' as '' | 'working' | 'under_maintenance',
   });
   const [saving, setSaving] = useState(false);
@@ -145,6 +147,13 @@ function LogMaintenanceModal({ machines, defaultMachineId, onClose, onLogged }: 
                 className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
             </label>
             <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Paid by</span>
+              <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" data-testid="maint-paymode">
+                <option value="Cash">Cash</option><option value="UPI">UPI</option><option value="Card">Card</option><option value="Bank">Bank / Online</option>
+              </select>
+            </label>
+            <label className="block">
               <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('performedByOptional')}</span>
               <input value={form.performedBy} onChange={e => setForm(f => ({ ...f, performedBy: e.target.value }))}
                 className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
@@ -178,6 +187,49 @@ function LogMaintenanceModal({ machines, defaultMachineId, onClose, onLogged }: 
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+
+type Summary = { maintenanceTotal: number; maintenanceMonth: number; sparePartsTotal: number; sparePartsMonth: number; byMachine: { machineId: string; name: string; cost: number; visits: number }[] };
+
+// Maintenance hub: the service log, the machines and the spare parts in one place, with what it all cost. Every cost is also an Expense.
+export default function MaintenancePage() {
+  const activeShopId = useBusinessStore(s => s.activeShopId);
+  const [tab, setTab] = useState<'log' | 'machines' | 'parts'>('log');
+  const { data: sum } = useSWR<Summary>(activeShopId ? ['/management/maintenance/summary', activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: false });
+  const cards: [string, number][] = sum ? [
+    ['Maintenance - this month', sum.maintenanceMonth], ['Spare parts - this month', sum.sparePartsMonth],
+    ['Maintenance - total', sum.maintenanceTotal], ['Spare parts - total', sum.sparePartsTotal],
+  ] : [];
+  const tabs: [typeof tab, string][] = [['log', 'Maintenance Log'], ['machines', 'Machines'], ['parts', 'Spare Parts']];
+  return (
+    <div>
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 space-y-4">
+        {cards.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="maint-cards">
+            {cards.map(([l, v]) => (
+              <div key={l} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+                <p className="text-[11px] text-slate-500 uppercase font-bold">{l}</p>
+                <p className="text-lg font-black text-slate-900 dark:text-white">{rupee(v)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {sum && sum.byMachine.length > 0 && (
+          <p className="text-xs text-slate-500">Service cost by machine: {sum.byMachine.map(m => `${m.name} ${rupee(m.cost)} (${m.visits})`).join(' | ')}</p>
+        )}
+        <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
+          {tabs.map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} data-testid={`maint-tab-${k}`}
+              className={cn('px-4 py-2 text-sm font-bold border-b-2 -mb-px', tab === k ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {tab === 'log' && <MaintenanceLog />}
+      {tab === 'machines' && <MachinesPage />}
+      {tab === 'parts' && <SparePartsPage />}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
+import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
 import { cn } from '@/lib/utils';
 import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
@@ -31,6 +32,14 @@ import { splitVariantKey, makeVariantKey } from '@/components/ColorSizeVariantGr
 import { toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
+import { useMillMode, millCartKey } from '@/lib/hooks/useMillMode';
+import { calculateMillInvoice, normalizeMillCharges, type MillChargeKey, type MillResult } from '@/lib/millBilling';
+import { takeMillDuplicate } from '@/lib/millDuplicateHandoff';
+import MillRateInput from '@/components/billing/MillRateInput';
+import MillCommercialCharges, { EMPTY_MILL_CHARGES, type MillChargeInputs } from '@/components/billing/MillCommercialCharges';
+import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
+import MillTotalsSummary from '@/components/billing/MillTotalsSummary';
+import MillBillSavedModal from '@/components/billing/MillBillSavedModal';
 
 // Same key a variant row is stored/matched under everywhere else (Products'
 // Variant Builder, the Purchases item picker, the server-side stock helper)
@@ -209,11 +218,19 @@ export default function WholesaleBillingUI() {
   const { user } = useAuthStore();
   const { profile } = useBusinessStore();
 
+  // Mill Billing (Bada Udyog `mill_v2`) — availability is decided by the SERVER. For every other shop this is
+  // 'not_applicable' and nothing below changes: the legacy billing screen runs exactly as before.
+  const mill = useMillMode();
+  const isMill = mill.isMill;
+  // The Mill cart is a SEPARATE cart (own key): a legacy GST-inclusive cart can never be reinterpreted as exclusive.
+  const cartKey = profile?.id ? (isMill ? millCartKey(profile.id) : profile.id) : undefined;
+  const tMill = useTranslations('MillBilling');
+
   const {
     items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, updateBatchNumber, setLineBatch, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount, remainingAmount
-  } = useBillingEngine(profile?.id);
+  } = useBillingEngine(cartKey);
   const bizConfig = getBusinessConfig(profile?.businessType);
 
   // Cart lines that belong in the Brand x ML matrix vs. the plain table below
@@ -375,8 +392,15 @@ export default function WholesaleBillingUI() {
   const fetchParties = useCallback(async () => {
     if (!profile?.id) return;
     try {
-      const res = await api.get(`/crm/customers?type=party&_shop=${profile.id}`);
-      setParties(Array.isArray(res.data) ? res.data : []);
+      const data = await withOfflineCache(
+        `parties_${profile.id}`,
+        async () => {
+          const res = await api.get(`/crm/customers?type=party&_shop=${profile.id}`);
+          return Array.isArray(res.data) ? res.data : [];
+        },
+        profile.id
+      );
+      setParties(data || []);
     } catch (err) {
       console.error('Failed to load parties', err);
     }
@@ -416,8 +440,15 @@ export default function WholesaleBillingUI() {
   const fetchUdharCustomers = useCallback(async () => {
     if (!profile?.id) return;
     try {
-      const res = await api.get(`/crm/customers?type=customer&_shop=${profile.id}`);
-      setUdharCustomers(Array.isArray(res.data) ? res.data : []);
+      const data = await withOfflineCache(
+        `udhar_customers_${profile.id}`,
+        async () => {
+          const res = await api.get(`/crm/customers?type=customer&_shop=${profile.id}`);
+          return Array.isArray(res.data) ? res.data : [];
+        },
+        profile.id
+      );
+      setUdharCustomers(data || []);
     } catch (err) {
       console.error('Failed to load udhar customers', err);
     }
@@ -482,8 +513,68 @@ export default function WholesaleBillingUI() {
     () => Object.values(charges).reduce((sum, v) => sum + (Number(v) || 0), 0),
     [charges]
   );
-  const grandTotal = total + chargesTotal;
-  const grandRemaining = Math.max(0, grandTotal - collectedAmount);
+  // ─── Mill Billing (mill_v2) state ─────────────────────────────────────────────────────────────
+  // Charges are kept as raw strings (blank / half-typed stays editable) and validated with the engine's OWN rules.
+  const ZERO_MILL_CHARGES = { freight: 0, hamali: 0, loading: 0, unloading: 0, other: 0 };
+  const [millCharges, setMillCharges] = useState<MillChargeInputs>(EMPTY_MILL_CHARGES);
+  const [saleBroker, setSaleBroker] = useState(EMPTY_BROKER);
+  const millChargesParsed = useMemo(() => {
+    try { return { value: normalizeMillCharges(millCharges), error: null as string | null }; }
+    catch (e: any) { return { value: ZERO_MILL_CHARGES, error: String(e?.message || 'Invalid charges') }; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [millCharges]);
+  const [millSaved, setMillSaved] = useState<any>(null);
+  // "Duplicate invoice" hand-off: a copy of a legacy NON-GST invoice stays non-GST until its copied rates are re-entered.
+  const [dupFrom, setDupFrom] = useState<string | null>(null);
+  const [dupForceNonGst, setDupForceNonGst] = useState(false);
+  const [dupOriginalRates, setDupOriginalRates] = useState<Record<string, number>>({});
+  const dupKey = (it: any) => `${it.id}|${it.variant || ''}`;
+  const dupRestrictionActive = dupForceNonGst && items.some((it: any) => dupOriginalRates[dupKey(it)] !== undefined && Math.round((Number(it.price) || 0) * 100) === Math.round(dupOriginalRates[dupKey(it)] * 100));
+  const millDiscountNumber = Math.round((Number(typeof discount === 'number' ? discount : (discount as any)?.value) || 0) * 100) / 100;
+  // The SAME engine the server runs (lib/millBilling.ts) → this preview equals what the server will store.
+  const millCalc: MillResult | null = useMemo(() => {
+    if (!isMill || items.length === 0) return null;
+    try {
+      return calculateMillInvoice({
+        lines: items.map((it: any) => ({
+          quantity: Number(it.quantity) || 0,
+          rate: Number(it.price) || 0,
+          gstRate: Number(it.gstPercent) || 0,
+          costTotal: (Number(it.cost) || 0) * (Number(it.quantity) || 0),
+          hsnCode: it.hsnCode || null,
+        })),
+        discount: millDiscountNumber > 0 ? { type: 'fixed', value: millDiscountNumber } : null,
+        billType,
+        interState: gstInterState,
+        charges: millChargesParsed.value,
+      });
+    } catch { return null; }
+  }, [isMill, items, millDiscountNumber, billType, gstInterState, millChargesParsed]);
+
+  const grandTotal = isMill ? (millCalc?.grandTotal ?? 0) : total + chargesTotal;
+  const grandRemaining = isMill
+    ? Math.max(0, Math.round(grandTotal * 100) - Math.round(collectedAmount * 100)) / 100
+    : Math.max(0, grandTotal - collectedAmount);
+
+  useEffect(() => {
+    if (!isMill || !profile?.id || products.length === 0) return; // wait for the catalogue (GST rates) before consuming
+    const dup = takeMillDuplicate();
+    if (!dup) return;
+    clearCart();
+    const originals: Record<string, number> = {};
+    dup.items.forEach((it, idx) => {
+      const id = it.product_id || `manual.${idx}`;
+      const gstPercent = Number(products.find((p: any) => p.id === it.product_id)?.gstPercent ?? 0) || 0;
+      originals[`${id}|${it.variant || ''}`] = it.rate;
+      addItem({ id, name: it.name, unit: it.unit || 'Unit', variant: it.variant || undefined, quantity: it.quantity, price: it.rate, cost: 0, profit: 0, total: Math.round(it.quantity * it.rate * 100) / 100, gstPercent } as any);
+    });
+    const c: any = dup.charges || {};
+    setMillCharges({ freight: c.freight ? String(c.freight) : '', hamali: c.hamali ? String(c.hamali) : '', loading: c.loading ? String(c.loading) : '', unloading: c.unloading ? String(c.unloading) : '', other: c.other ? String(c.other) : '' });
+    setDiscount(dup.discount?.value ?? 0);
+    setDupFrom(dup.duplicatedFrom);
+    if (dup.forceBillType === 'non_gst') { setBillType('non_gst'); setDupForceNonGst(true); setDupOriginalRates(originals); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMill, profile?.id, products.length]);
 
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -584,8 +675,15 @@ export default function WholesaleBillingUI() {
 
   const fetchProducts = async () => {
     try {
-      const res = await api.get('/products');
-      setProducts(res.data);
+      const data = await withOfflineCache(
+        `products_${profile?.id || 'default'}`,
+        async () => {
+          const res = await api.get('/products');
+          return res.data;
+        },
+        profile?.id
+      );
+      setProducts(data || []);
     } catch (err) {
       console.error('Failed to load products', err);
     }
@@ -1095,8 +1193,121 @@ export default function WholesaleBillingUI() {
     cash: 'Cash', upi: 'UPI', bank: 'Bank', cheque: 'Cheque', credit: 'Credit', mixed: 'Split',
   };
 
+  // ─── Mill Billing (mill_v2) checkout ─────────────────────────────────────────────────────────────
+  // Sends the RAW inputs (rates, quantities, discount, charges, flags). The SERVER recomputes every figure with
+  // lib/millBilling.ts and is the only authority — the total sent below is informational and never used.
+  const millView = (c: MillResult) => ({
+    goods_subtotal: c.goodsSubtotal, discount: c.discount, taxable: c.taxable,
+    gst: { billed: c.gstBilled, inter_state: c.interState, cgst: c.cgst, sgst: c.sgst, igst: c.igst, total: c.totalGst },
+    charges: c.charges, round_off: c.roundOff, grand_total: c.grandTotal,
+  });
+  const handleMillCheckout = async () => {
+    if (items.length === 0 || !millCalc) return;
+    if (millChargesParsed.error) { alert(`${tMill('chargesInvalid')}: ${millChargesParsed.error}`); return; }
+    if (isWholesale && !selectedParty) { alert(t('partyRequiredToSave') || 'Please select a party before saving the invoice.'); return; }
+    if (!isWholesale && grandRemaining > 0 && !customerName.trim()) {
+      alert(t('nameRequiredForUdhar') || 'Please enter a customer name — this sale has an outstanding balance to track.');
+      return;
+    }
+    if (Math.round(collectedAmount * 100) > Math.round(grandTotal * 100)) { alert(t('collectedExceedsTotal')); return; }
+
+    setIsGenerating(true);
+    try {
+      const paymentDetailsExtra: Record<string, any> = { method: paymentMethod };
+      if (paymentMethod === 'upi') { paymentDetailsExtra.upiApp = upiApp || undefined; paymentDetailsExtra.upiTxnId = upiTxnId || undefined; }
+      if (paymentMethod === 'bank') { paymentDetailsExtra.bankName = bankName || undefined; paymentDetailsExtra.bankRefNo = bankRefNo || undefined; }
+      if (paymentMethod === 'cheque') { paymentDetailsExtra.chequeNo = chequeNo || undefined; paymentDetailsExtra.chequeDate = chequeDate || undefined; paymentDetailsExtra.chequeBank = chequeBank || undefined; }
+      if (grandRemaining > 0) {
+        paymentDetailsExtra.creditDays = creditDays;
+        paymentDetailsExtra.dueDate = new Date(Date.now() + creditDays * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      const saleItems = items.map((item: any) => ({
+        product_id: (item as any).fromChallan ? null : (typeof item.id === 'string' && !item.id.includes('.') ? item.id : null),
+        name: item.name,
+        unit: item.unit,
+        variant: item.variant || null,
+        quantity: item.quantity,
+        price_per_unit: item.price, // GST-EXCLUSIVE rate, as typed
+        purchase_price: item.cost || 0,
+        ...(billType === 'gst' ? { gst_percent: item.gstPercent } : {}),
+        hsn_code: item.hsnCode,
+        batch_id: (item as any).batchId || undefined,
+      }));
+      const payload: any = {
+        billing_model: 'mill_v2',
+        customer_id: isWholesale ? selectedParty!.id : null,
+        customer_name: isWholesale ? selectedParty!.name : (customerName.trim() || null),
+        customer_mobile: customerMobile.trim() || null,
+        customer_email: customerEmail.trim() || null,
+        customer_address: customerAddress.trim() || null,
+        items: saleItems,
+        discount: millDiscountNumber,
+        charges: millChargesParsed.value,
+        bill_type: billType,
+        gst_inter_state: gstInterState,
+        total_amount: grandTotal, // informational only — the server ignores it and flags any mismatch
+        payment_type: paymentTypeWire[paymentMethod],
+        amount_paid: collectedAmount,
+        payment_details: { ...splitPayments, udhar: grandRemaining, ...paymentDetailsExtra },
+        ...(dupRestrictionActive && dupFrom ? { duplicated_from: dupFrom } : {}),
+      };
+
+      let saved: any = null;
+      try {
+        const res = await api.post('/billing/', payload);
+        saved = res.data;
+      } catch (err: any) {
+        if (!isNetworkError(err)) throw err;
+        // Offline: queue the SAME payload; on replay the server recomputes and its total wins.
+        const queued = await queueOfflineSale(payload, profile?.id);
+        saved = { id: queued.localId, invoice_number: queued.localId, totalAmount: millCalc.grandTotal, amountPaid: collectedAmount, pricing_model: 'mill_v2', offline: true, mill: millView(millCalc) };
+      }
+      if (!saved?.offline && Math.round((Number(saved?.totalAmount) || 0) * 100) !== Math.round(millCalc.grandTotal * 100)) {
+        console.warn('Mill bill: server total differs from the on-screen total', { server: saved?.totalAmount, ui: millCalc.grandTotal });
+      }
+      // Customer broker + commission: best-effort, after the bill is saved (online only; never affects the bill or the customer's balance).
+      if (saleBroker.name.trim() && !saved?.offline && saved?.invoice_number) {
+        api.post('/mill/broker-commission', { name: saleBroker.name, commission: saleBroker.commission, billNumber: saved.invoice_number, kind: 'customer', party: isWholesale ? selectedParty?.name : (customerName.trim() || undefined) })
+          .catch((e: any) => console.error('Broker commission not saved:', e));
+      }
+      saved._customerName = isWholesale ? selectedParty?.name : (customerName.trim() || undefined);
+
+      if (pendingChallanId && saved?.id && !saved.offline) {
+        api.patch(`/challans/${pendingChallanId}`, { action: 'invoice', saleId: saved.id }).catch((e) => console.error('Failed to mark challan invoiced:', e));
+        setPendingChallanId(null);
+      }
+
+      clearCart();
+      setSelectedParty(null);
+      setCustomerName('');
+      setCustomerAddress('');
+      setPaymentMethod('cash');
+      setUpiApp(''); setUpiTxnId('');
+      setBankName(''); setBankRefNo('');
+      setChequeNo(''); setChequeDate(''); setChequeBank('');
+      setCreditDays(30);
+      setMillCharges(EMPTY_MILL_CHARGES);
+      setSaleBroker(EMPTY_BROKER);
+      setDupFrom(null); setDupForceNonGst(false); setDupOriginalRates({});
+      fetchParties();
+      fetchUdharCustomers();
+      setShowCheckout(false);
+      setMillSaved(saved);
+    } catch (err: any) {
+      console.error('Failed to save mill bill', err);
+      // The server is authoritative: a rejected Mill request (internal platform flag off, wrong package) is shown as such —
+      // it is never retried as a legacy bill.
+      alert(err?.response?.data?.code === 'MILL_NOT_ENABLED' ? tMill('blockedPlatform') : (err?.response?.data?.detail || err?.message || tMill('saveFailed')));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isMill) { await handleMillCheckout(); return; }
     if (items.length === 0) return;
 
     // Party is mandatory in Wholesale pricing mode — it's what lets the
@@ -1210,15 +1421,25 @@ export default function WholesaleBillingUI() {
         gst_details: isGstBill ? gst : null,
       };
 
-      const res = await api.post('/billing/', payload);
-      const dbSale = res.data;
-      const billNumber = `INV-${dbSale.id.substring(0, 8).toUpperCase()}`;
+      let dbSale: any = null;
+      let billNumber: string;
+      let isOfflineBill = false;
+      try {
+        const res = await api.post('/billing/', payload);
+        dbSale = res.data;
+        billNumber = `INV-${dbSale.id.substring(0, 8).toUpperCase()}`;
+      } catch (err: any) {
+        if (!isNetworkError(err)) throw err;
+        const queued = await queueOfflineSale(payload, profile?.id);
+        billNumber = queued.localId;
+        isOfflineBill = true;
+      }
 
       // Sale is real and committed at this point — safe to mark the source
       // challan invoiced. Best-effort: a failure here just leaves the
       // challan showing "open" a little longer, never blocks the bill that
       // already succeeded.
-      if (pendingChallanId) {
+      if (pendingChallanId && dbSale?.id) {
         api.patch(`/challans/${pendingChallanId}`, { action: 'invoice', saleId: dbSale.id }).catch((e) => console.error('Failed to mark challan invoiced:', e));
         setPendingChallanId(null);
       }
@@ -1256,6 +1477,7 @@ export default function WholesaleBillingUI() {
         billNumber,
         date: new Date().toLocaleDateString(),
         dueDate: dueDateIso,
+        isOfflineBill,
         // GST invoice data (undefined for non-GST → invoice renders normally)
         billType,
         gstBreakdown: isGstBill ? gst : undefined,
@@ -1351,6 +1573,8 @@ export default function WholesaleBillingUI() {
       setIsGenerating(false);
     }
   };
+
+
 
 
   return (
@@ -1460,7 +1684,7 @@ export default function WholesaleBillingUI() {
                 {bizConfig.hasBatch && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
                 <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('unitCol') || 'Unit'}</th>
                 <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center">{t('qty') || 'Qty'}</th>
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{t('price') || 'Price'}</th>
+                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{isMill ? tMill('rateExclGst') : (t('price') || 'Price')}</th>
                 <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{t('totalUpper') || 'Total'}</th>
                 <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center">{t('act') || 'Act'}</th>
               </tr>
@@ -1551,7 +1775,9 @@ export default function WholesaleBillingUI() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
+                    {isMill
+                      ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
+                      : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
                   </td>
                   <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono">
                     ₹{item.total.toLocaleString()}
@@ -1569,6 +1795,18 @@ export default function WholesaleBillingUI() {
           </div>
           )}
         </div>
+        {/* Mill Billing: commercial charges (NOT cart lines) — below the cart */}
+        {isMill && (
+          <MillCommercialCharges
+            values={millCharges}
+            onChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
+            error={millChargesParsed.error}
+            disabled={isGenerating}
+          />
+        )}
+        {isMill && (
+          <div className="mt-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"><BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} /></div>
+        )}
       </div>
 
       {/* RIGHT PANEL: Summary & Action */}
@@ -1616,7 +1854,9 @@ export default function WholesaleBillingUI() {
               </button>
               <button
                 type="button"
-                onClick={() => setBillType('gst')}
+                onClick={() => { if (isMill && dupRestrictionActive) return; setBillType('gst'); }}
+                disabled={isMill && dupRestrictionActive}
+                title={isMill && dupRestrictionActive ? tMill('duplicateLocked') : undefined}
                 aria-pressed={isGstBill}
                 className={cn('py-2 rounded-lg text-xs font-bold transition-all', isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500')}
               >
@@ -1631,6 +1871,21 @@ export default function WholesaleBillingUI() {
             )}
           </div>
 
+          {isMill ? (
+            <div className="space-y-3 flex-1 lg:overflow-y-auto lg:min-h-0">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">{tMill('gstAddedOnTop')}</p>
+              {dupRestrictionActive && (
+                <p data-testid="mill-dup-note" className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-2 py-1.5">{tMill('duplicateLocked')}</p>
+              )}
+              <MillTotalsSummary
+                calc={millCalc}
+                itemsCount={items.length}
+                collected={collectedAmount}
+                balance={grandRemaining}
+                discountSlot={<DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />}
+              />
+            </div>
+          ) : (
           <div className="space-y-3 flex-1 lg:overflow-y-auto lg:min-h-0">
             <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
               <span>{t('itemsCount', { count: items.length })}</span>
@@ -1698,6 +1953,7 @@ export default function WholesaleBillingUI() {
               )}
             </div>
           </div>
+          )}
 
           <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800 shrink-0">
             <button
@@ -1777,7 +2033,7 @@ export default function WholesaleBillingUI() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">Selling Price (₹)</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">{isMill ? `${tMill('rateExclGst')} (₹)` : 'Selling Price (₹)'}</label>
                 <input required type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-emerald-600 dark:text-emerald-400"
                   value={manualProduct.price} onChange={e => setManualProduct({...manualProduct, price: e.target.value})} />
               </div>
@@ -1846,7 +2102,9 @@ export default function WholesaleBillingUI() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBillType('gst')}
+                onClick={() => { if (isMill && dupRestrictionActive) return; setBillType('gst'); }}
+                disabled={isMill && dupRestrictionActive}
+                title={isMill && dupRestrictionActive ? tMill('duplicateLocked') : undefined}
                     aria-pressed={isGstBill}
                     className={cn('py-2.5 rounded-lg text-xs font-bold transition-all', isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500')}
                   >
@@ -2209,6 +2467,7 @@ export default function WholesaleBillingUI() {
               </div>
 
               {/* Charges — folded into the invoice as extra line items on save */}
+              {!isMill && (
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
                   <Truck size={15} /> {t('charges') || 'Charges'}
@@ -2229,6 +2488,7 @@ export default function WholesaleBillingUI() {
                   ))}
                 </div>
               </div>
+              )}
 
               <button
                 type="submit"
@@ -2243,6 +2503,11 @@ export default function WholesaleBillingUI() {
       )}
 
       {/* Bill Success Modal (Simplified representation) */}
+      {/* Mill Billing: server-generated breakdown after save. Print/PDF/WhatsApp are disabled here on purpose (next phase). */}
+      {millSaved && (
+        <MillBillSavedModal bill={millSaved} customerName={millSaved._customerName} onClose={() => setMillSaved(null)} />
+      )}
+
       {showBillModal && lastBill && (() => {
         const isA4Bill = lastBill.invoiceFormat === 'a4' || lastBill.invoiceFormat === 'wholesale';
         return (

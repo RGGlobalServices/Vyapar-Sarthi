@@ -4,6 +4,7 @@ import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { recordDeletion } from '@/lib/server/trash';
 import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, createSaleEffects, restoreBatchQuantities } from '@/lib/server/sales';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
+import { assertSaleEditable } from '@/lib/server/millGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     },
     include: {
       items: { include: { product: { select: { name: true, hsnCode: true, gstPercent: true } } } },
-      customer: { select: { name: true } },
+      customer: { select: { name: true, mobile: true, address: true, gst: true } },
     },
   });
 
@@ -46,7 +47,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
         where: { id: raw[0].id },
         include: {
           items: { include: { product: { select: { name: true, hsnCode: true, gstPercent: true } } } },
-          customer: { select: { name: true } },
+          customer: { select: { name: true, mobile: true, address: true, gst: true } },
         },
       });
     }
@@ -55,6 +56,24 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   if (!sale) throw new ApiError(404, 'Invoice not found');
 
   const returnedQuantities = await getReturnedQuantitiesForSale(prisma, shopId, sale.id);
+
+  // Mill (mill_v2) invoices only: the extra detail the Mill invoice template prints (unit, batch numbers, customer
+  // contact). Legacy sales get exactly the response they always had.
+  const isMillSale = (sale as any).pricingModel === 'mill_v2';
+  const millBatchNames = new Map<string, string[]>();
+  if (isMillSale && sale.items.length) {
+    const rows = await prisma.saleItemBatch.findMany({
+      where: { saleItemId: { in: sale.items.map((i) => i.id) } },
+      include: { batch: { select: { batchNumber: true } } },
+    });
+    for (const r of rows) {
+      const n = r.batch?.batchNumber;
+      if (!n) continue;
+      const arr = millBatchNames.get(r.saleItemId) || [];
+      if (!arr.includes(n)) arr.push(n);
+      millBatchNames.set(r.saleItemId, arr);
+    }
+  }
 
   return json({
     id: sale.id,
@@ -66,10 +85,21 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     bill_type: sale.billType,
     gst_amount: sale.gstAmount,
     gst_details: sale.gstDetails,
+    // Mill Billing fields (null on every legacy sale)
+    pricing_model: (sale as any).pricingModel ?? null,
+    discount_amount: (sale as any).discountAmount ?? null,
+    charges: (sale as any).charges ?? null,
+    charges_total: (sale as any).chargesTotal ?? null,
+    round_off_amount: (sale as any).roundOffAmount ?? null,
     is_manual: sale.isManual,
     bill_image_url: sale.billImageUrl,
     customer_id: sale.customerId || null,
     customer_name: sale.customer?.name || null,
+    ...(isMillSale ? {
+      customer_mobile: sale.customer?.mobile || null,
+      customer_address: sale.customer?.address || null,
+      customer_gst: sale.customer?.gst || null,
+    } : {}),
     created_at: sale.createdAt,
     items: sale.items.map((item) => {
       const returnedQty = returnedQuantities[item.id] || returnedQuantities[item.productId || ''] || returnedQuantities[item.product?.name || ''] || 0;
@@ -83,6 +113,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
         total: (item.pricePerUnit || 0) * (item.quantity || 0),
         hsnCode: item.product?.hsnCode || '',
         gstPercent: item.product?.gstPercent || 0,
+        ...(isMillSale ? { unit: item.unit || null, variant: item.variant || null, batch_numbers: millBatchNames.get(item.id) || [] } : {}),
       };
     }),
   });
@@ -121,6 +152,10 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     },
   });
   if (!existing) throw new ApiError(404, 'Invoice not found');
+
+  // Mill bills (`mill_v2`) are not editable yet — this path rebuilds a bill with the LEGACY inclusive engine and would
+  // silently drop its charges/round-off. Legacy bills continue below, unchanged.
+  assertSaleEditable(existing as any);
 
   // A bill with a return/exchange already recorded against it can't be
   // cleanly reversed — MaterialReturn's note references the OLD SaleItem

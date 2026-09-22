@@ -7,6 +7,7 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import ModalPortal from '@/components/mill/ModalPortal';
 
 type JobWorkOrder = {
   id: string; orderNumber: string; materialDescription: string; inputWeightKg: number;
@@ -33,6 +34,7 @@ export default function JobWorkPage() {
   const t = useTranslations('JobWork');
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [creating, setCreating] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [completingOrder, setCompletingOrder] = useState<JobWorkOrder | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
 
@@ -96,7 +98,7 @@ export default function JobWorkPage() {
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {orders.map(o => (
-              <li key={o.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
+              <li key={o.id} onClick={() => setDetailId(o.id)} className="p-4 flex items-center justify-between gap-4 flex-wrap cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black text-slate-900 dark:text-white">{o.orderNumber}</span>
@@ -109,7 +111,7 @@ export default function JobWorkPage() {
                     {o.feeAmount != null ? ` · ${rupee(o.feeAmount)}` : ` · ₹${o.ratePerKg}/Kg`}
                   </p>
                 </div>
-                <div className="shrink-0">
+                <div className="shrink-0" onClick={e => e.stopPropagation()}>
                   {o.status === 'received' && (
                     <button onClick={() => startProcessing(o)} disabled={startingId === o.id}
                       className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 disabled:opacity-50">
@@ -129,16 +131,17 @@ export default function JobWorkPage() {
         </div>
       )}
 
+      {detailId && <ModalPortal><OrderDetailModal id={detailId} onClose={() => setDetailId(null)} /></ModalPortal>}
       {creating && (
-        <CreateOrderModal
+        <ModalPortal><CreateOrderModal
           customers={customers}
           gateEntries={gateEntries}
           onClose={() => setCreating(false)}
           onCreated={() => { setCreating(false); refetch(); }}
-        />
+        /></ModalPortal>
       )}
       {completingOrder && (
-        <CompleteOrderModal
+        <ModalPortal><CompleteOrderModal
           order={completingOrder}
           onClose={() => setCompletingOrder(null)}
           onCompleted={(paymentFailed) => {
@@ -146,7 +149,7 @@ export default function JobWorkPage() {
             refetch();
             if (paymentFailed) alert(t('paymentNotRecordedWarning'));
           }}
-        />
+        /></ModalPortal>
       )}
     </div>
   );
@@ -191,7 +194,7 @@ function CreateOrderModal({ customers, gateEntries, onClose, onCreated }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
           <h2 className="text-lg font-black">{t('newOrder')}</h2>
@@ -282,8 +285,13 @@ function CompleteOrderModal({ order, onClose, onCompleted }: {
   const [outputWeightKg, setOutputWeightKg] = useState('');
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
   const [amountPaid, setAmountPaid] = useState('');
+  const [bps, setBps] = useState<{ name: string; kg: string; productId: string }[]>([]);
+  const activeShopId = useBusinessStore(s => s.activeShopId);
+  const { data: products = [] } = useSWR<any[]>(activeShopId && order.byproductRetainedByMill ? ['/products', activeShopId] : null, ([u]) => fetcher(u));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const bpTotal = bps.reduce((a, b) => a + (Number(b.kg) > 0 ? Number(b.kg) : 0), 0);
+  const balanceLeft = Math.round((order.inputWeightKg - (Number(outputWeightKg) || 0) - bpTotal) * 1000) / 1000;
 
   const basisWeight = order.feeBasis === 'output' ? Number(outputWeightKg) || 0 : order.inputWeightKg;
   const projectedFee = Math.round(basisWeight * order.ratePerKg * 100) / 100;
@@ -297,6 +305,7 @@ function CompleteOrderModal({ order, onClose, onCompleted }: {
         outputWeightKg: Number(outputWeightKg),
         paymentMode,
         amountPaid: amountPaid === '' ? 0 : Number(amountPaid),
+        byProducts: bps.filter(b => b.name.trim() || b.kg).map(b => ({ name: b.name.trim(), quantityKg: Number(b.kg), productId: b.productId || undefined })),
       });
       onCompleted(res.data?.paymentApplied === false);
     } catch (err: any) {
@@ -305,8 +314,8 @@ function CompleteOrderModal({ order, onClose, onCompleted }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <h2 className="text-lg font-black">{t('completeTitle')}</h2>
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
@@ -318,6 +327,31 @@ function CompleteOrderModal({ order, onClose, onCompleted }: {
             <input type="number" min="0" step="0.01" autoFocus value={outputWeightKg} onChange={e => setOutputWeightKg(e.target.value)}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
           </label>
+          <div className="space-y-2" data-testid="jw-byproducts">
+            <p className="text-xs font-bold uppercase text-slate-500">{t('byProductsTitle')}</p>
+            <p className="text-[11px] text-slate-500">{order.byproductRetainedByMill ? t('byProductsKept') : t('byProductsReturned')}</p>
+            {bps.map((b, i) => (
+              <div key={i} className="grid grid-cols-[1fr_5.5rem_auto] gap-2 items-center">
+                <input value={b.name} onChange={e => setBps(x => x.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} placeholder={t('byProductNamePlaceholder')}
+                  className="h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-950 text-sm min-w-0" />
+                <input type="number" min="0" step="0.01" value={b.kg} onChange={e => setBps(x => x.map((r, j) => j === i ? { ...r, kg: e.target.value } : r))} placeholder="Kg"
+                  className="h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-950 text-sm" />
+                <button type="button" onClick={() => setBps(x => x.filter((_, j) => j !== i))} aria-label="Remove" className="h-9 w-9 flex items-center justify-center text-red-500"><X size={14} /></button>
+                {order.byproductRetainedByMill && (
+                  <select value={b.productId} onChange={e => setBps(x => x.map((r, j) => j === i ? { ...r, productId: e.target.value } : r))}
+                    className="col-span-3 h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-950 text-xs">
+                    <option value="">{t('byProductNoProduct')}</option>
+                    {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                )}
+              </div>
+            ))}
+            <button type="button" onClick={() => setBps(x => [...x, { name: '', kg: '', productId: '' }])}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-emerald-400 text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><Plus size={12} /> {t('addByProduct')}</button>
+            <p className={cn('text-[11px] font-semibold', balanceLeft < -0.005 ? 'text-red-500' : 'text-slate-500')}>
+              {balanceLeft < -0.005 ? t('jwOver', { qty: Math.abs(balanceLeft) }) : t('jwLeft', { qty: balanceLeft })}
+            </p>
+          </div>
           <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3 flex items-center justify-between">
             <span className="text-xs text-slate-500">{t('feeAmount')}</span>
             <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">{rupee(projectedFee)}</span>
@@ -341,12 +375,66 @@ function CompleteOrderModal({ order, onClose, onCompleted }: {
             </div>
           </label>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <button type="submit" disabled={saving || !outputWeightKg}
+          <button type="submit" disabled={saving || !outputWeightKg || balanceLeft < -0.005}
             className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
             {t('confirmComplete')}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function OrderDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const t = useTranslations('JobWork');
+  const { data: o } = useSWR<any>(['/mill/job-work/' + id], ([u]) => fetcher(u));
+  const Row = ({ k, children }: { k: string; children: React.ReactNode }) => (
+    <div className="flex items-start justify-between gap-3 text-xs py-1"><span className="text-slate-500 shrink-0">{k}</span><span className="font-semibold text-slate-800 dark:text-slate-200 text-right break-words min-w-0">{children}</span></div>
+  );
+  const box = 'rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4';
+  const head = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1';
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-slate-50 dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto" data-testid="jw-detail">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-slate-50 dark:bg-slate-900">
+          <h2 className="text-lg font-black">{o?.orderNumber || '…'}</h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+        {!o ? <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={22} /></div> : (
+          <div className="p-5 space-y-3">
+            <div className={box}>
+              <p className={head}>{t('detailCustomer')}</p>
+              <Row k={t('customer')}>{o.customer?.name || '—'}{o.customer?.mobile ? ` · ${o.customer.mobile}` : ''}</Row>
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">{t('customerOwned')}</p>
+            </div>
+            <div className={box}>
+              <p className={head}>{t('detailInput')}</p>
+              <Row k={t('material')}>{o.materialDescription}</Row>
+              <Row k={t('inputWeight')}>{o.inputWeightKg} Kg</Row>
+              <Row k={t('gateEntryOptional')}>{o.gateEntry?.entryNumber || '—'}</Row>
+              <Row k={t('detailDate')}>{new Date(o.receivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Row>
+            </div>
+            <div className={box}>
+              <p className={head}>{t('detailProcessing')}</p>
+              <Row k={t('detailStatus')}>{t(o.status)}</Row>
+              <Row k={t('outputMaterialOptional')}>{o.outputDescription || '—'}</Row>
+              <Row k={t('outputWeight')}>{o.outputWeightKg != null ? `${o.outputWeightKg} Kg` : '—'}</Row>
+              <Row k={t('byProductsTitle')}>{o.byproductRetainedByMill ? t('byProductsKeptShort') : t('byProductsReturnedShort')}</Row>
+              {o.byProductsKept?.length > 0 && <Row k={t('byProductsKeptList')}>{o.byProductsKept.map((b: any) => `${b.name} ${b.quantityKg} Kg`).join(', ')}</Row>}
+            </div>
+            <div className={box}>
+              <p className={head}>{t('detailCharges')}</p>
+              <Row k={t('feeBasis')}>{o.feeBasis === 'output' ? t('feeBasisOutput') : t('feeBasisInput')}</Row>
+              <Row k={t('rate')}>₹{o.ratePerKg}/Kg</Row>
+              <Row k={o.status === 'completed' ? t('feeAmount') : t('feePreview')}>
+                {o.feeCalculated != null
+                  ? `${o.feeBasis === 'output' ? (o.outputWeightKg ?? 0) : o.inputWeightKg} Kg × ₹${o.ratePerKg} = ${rupee(o.feeCalculated)}`
+                  : t('feeAfterOutput')}
+              </Row>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

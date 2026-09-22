@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
 import api from '@/lib/api';
 import { useAuthStore, useStockStore } from '@/lib/store';
+import { countPendingOfflineBills } from '@/lib/clientSession';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useUIStore } from '@/lib/uiStore';
 import { getBusinessConfig, getBusinessTypesForPackage } from '@/lib/businessConfig';
@@ -44,15 +45,21 @@ interface SidebarSection {
   defaultCollapsed?: boolean; // header + starts closed
 }
 
+// Business-process order. Nothing here is a required step: Gate Entry, Weighbridge and Quality / Lab are optional (a purchase bill
+// can go straight to Raw Material), and no screen checks that another one was used first. `OPTIONAL_KEYS` only labels them.
+const OPTIONAL_KEYS = new Set(['gate-entry', 'weighbridge', 'quality-lab']);
+
 const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'main',        label: 'Main',              emoji: '🏭', alwaysExpanded: true, keys: ['dashboard'] },
-  { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'purchases', 'party', 'products', 'stock', 'warehouses'] },
-  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['gate-entry', 'weighbridge', 'production', 'quality-lab', 'batches', 'raw-material', 'finished-goods', 'by-products', 'job-work'] },
-  { id: 'logistics',   label: 'Logistics',         emoji: '🚚', keys: ['transport', 'dispatch', 'hamali'] },
+  { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'party', 'products'] },
+  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'batches', 'production', 'finished-goods', 'by-products', 'job-work'] },
+  { id: 'quality',     label: 'Quality',           emoji: '🧪', keys: ['quality-lab'] },
+  { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'settlement', 'expenses'] },
-  { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers', 'machines', 'maintenance', 'spare-parts'], defaultCollapsed: true },
+  { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers'], defaultCollapsed: true },
+  { id: 'maintenance', label: 'Maintenance',      emoji: '🔧', keys: ['maintenance'], defaultCollapsed: true },
   { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
-  { id: 'admin',       label: 'Setup',             emoji: '⚙️', keys: ['staff', 'import', 'referral', 'dukandar', 'calendar', 'returns', 'settings', 'profile', 'trash'], defaultCollapsed: true },
+  { id: 'admin',       label: 'Setup',             emoji: '⚙️', keys: ['staff', 'import', 'referral', 'calendar', 'returns', 'settings', 'profile', 'trash'], defaultCollapsed: true },
 ];
 
 const UsersThree = ({ size = 24, className = "" }) => (
@@ -155,6 +162,7 @@ export default function Sidebar({
   const [isSwitchingShop, setIsSwitchingShop] = useState(false);
   const [switchingToName, setSwitchingToName] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [pendingOfflineBills, setPendingOfflineBills] = useState(0);
 
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -593,6 +601,9 @@ export default function Sidebar({
                 <div className="flex items-center gap-3 flex-1">
                   <Icon size={isBadaUdyog ? 18 : 20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
                   <span className="text-sm">{label}</span>
+                  {isBadaUdyog && OPTIONAL_KEYS.has(item.key) && (
+                    <span className="ml-auto text-[9px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-600">{t('optionalTag')}</span>
+                  )}
                 </div>
                 {!!item.badge && item.badge > 0 && (
                   <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
@@ -732,7 +743,7 @@ export default function Sidebar({
         </div>
 
         <button
-          onClick={() => setShowLogoutConfirm(true)}
+          onClick={() => { countPendingOfflineBills().then(setPendingOfflineBills); setShowLogoutConfirm(true); }}
           className="flex items-center gap-3 px-4 py-3 w-full text-slate-600 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
         >
           <LogOut size={18} />
@@ -756,6 +767,11 @@ export default function Sidebar({
                 <p className="text-xs text-slate-500">{t('confirmLogout')}</p>
               </div>
             </div>
+            {pendingOfflineBills > 0 && (
+              <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                {t('logoutPendingBills', { count: pendingOfflineBills })}
+              </div>
+            )}
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setShowLogoutConfirm(false)}
@@ -767,7 +783,7 @@ export default function Sidebar({
                 onClick={() => { setShowLogoutConfirm(false); logout(); }}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
               >
-                {t('logout') || 'Logout'}
+                {pendingOfflineBills > 0 ? t('logoutAnyway') : (t('logout') || 'Logout')}
               </button>
             </div>
           </div>

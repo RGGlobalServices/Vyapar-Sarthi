@@ -6,6 +6,7 @@ import { Plus, X, Loader2, Scale, CheckCircle2, ArrowRight, Search, LogOut } fro
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
+import ModalPortal from '@/components/mill/ModalPortal';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import { ExportButton } from '@/lib/hooks/useExport';
@@ -226,6 +227,13 @@ export default function WeighbridgePage() {
         </div>
       </div>
 
+      {stats.completed > 0 && (
+        <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 flex flex-wrap items-center gap-2 text-sm" data-testid="pending-raw-banner">
+          <span className="font-bold text-amber-800 dark:text-amber-300">{t('notInRawMaterialBanner', { count: stats.completed })}</span>
+          <span className="text-xs text-amber-700 dark:text-amber-400">{t('notInRawMaterialHint')}</span>
+        </div>
+      )}
+
       {/* ── Register table — a diary-style row per weighment, newest first,
           same data the export buttons above turn into PDF/Excel/CSV/Print. */}
       {isLoading ? (
@@ -250,6 +258,7 @@ export default function WeighbridgePage() {
                 <th className="text-right px-3 py-2.5 font-bold">{t('colNet')}</th>
                 <th className="text-right px-3 py-2.5 font-bold">{t('colRate')}</th>
                 <th className="text-left px-4 py-2.5 font-bold">{t('colStatus')}</th>
+                <th className="text-left px-3 py-2.5 font-bold"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -271,6 +280,11 @@ export default function WeighbridgePage() {
                       {t(e.status)}
                     </span>
                   </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    {e.status === 'completed' && (
+                      <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 text-white">{t('addToRawMaterial')}</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -279,21 +293,21 @@ export default function WeighbridgePage() {
       )}
 
       {creating && (
-        <CreateWeighmentModal
+        <ModalPortal><CreateWeighmentModal
           products={rawMaterialProducts}
           suppliers={suppliers}
           prefilledGateEntryId={prefilledGateEntryId}
           onClose={() => { setCreating(false); router.replace(`/${locale}/weighbridge`); }}
           onCreated={(id) => { setCreating(false); refetch(); setSelectedId(id); router.replace(`/${locale}/weighbridge`); }}
-        />
+        /></ModalPortal>
       )}
 
       {selected && (
-        <WeighmentDetailModal
+        <ModalPortal><WeighmentDetailModal
           entry={selected}
           onClose={() => setSelectedId(null)}
           onChanged={refetch}
-        />
+        /></ModalPortal>
       )}
     </div>
   );
@@ -370,7 +384,7 @@ function CreateWeighmentModal({ products, suppliers, prefilledGateEntryId, onClo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
           <h2 className="text-lg font-black">{t('firstWeighmentTitle')}</h2>
@@ -494,7 +508,7 @@ function WeighmentDetailModal({ entry, onClose, onChanged }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
           <div>

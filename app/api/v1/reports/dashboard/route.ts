@@ -1,23 +1,63 @@
 import prisma from '@/lib/server/prisma';
 import { requireShopScope } from '@/lib/server/auth';
-import { handle, json, query } from '@/lib/server/http';
+import { handle, json, query, ApiError } from '@/lib/server/http';
 import { getDateRange, startOfDay, endOfDay, formatDate } from '@/lib/server/dates';
 import { getDashboardCache, setDashboardCache } from '@/lib/server/dashboardCache';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { runBatched } from '@/lib/server/runBatched';
+import { isStaffUiRole } from '@/lib/server/staffAccess';
+import { getSalesMetrics, getCreditMetrics, getBalanceMetrics, marginOnNetGoods, type PaymentModes } from '@/lib/server/salesMetrics';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// How many of the (independent) queries run at once — kept under the pool size so a cache miss never starves other requests.
+const BATCH = 6;
+
+// A malformed date must be a 400, never a 500. Empty/missing keeps the existing "today" default; the selected-range
+// semantics (and the IST day boundaries applied by getDateRange) are unchanged.
+function cleanDateParam(name: string, raw: string | undefined): string | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const bad = () => new ApiError(400, `Invalid ${name}: expected an ISO date (YYYY-MM-DD) or timestamp.`, 'INVALID_DATE');
+  if (raw.length > 64 || /[\u0000-\u001f]/.test(raw)) throw bad();
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime()) || d.getUTCFullYear() < 2000 || d.getUTCFullYear() > 2100) throw bad();
+  return raw;
+}
+
+// What a staff-mode session must NOT receive from this API (the UI hides these cards for staff; the server now enforces it,
+// through the existing x-ui-role mechanism — see lib/server/staffAccess.ts): profit, and the money-in/money-out row.
+const STAFF_HIDDEN_SUMMARY_KEYS = [
+  'today_profit', 'expected_profit', 'cash_profit', 'udhar_profit', 'net_margin',
+  'sales_collection', 'udhar_collection', 'advance_collection', 'total_collection', 'amount_received',
+  'collection_cash', 'collection_upi', 'collection_card', 'collection_other', 'collection_bank', 'collection_cheque', 'collection_unclassified',
+  'expenses_amount', 'expenses_count', 'today_expenses_amount', 'today_expenses_count', 'month_expenses_amount', 'month_expenses_count',
+  'purchases_amount', 'purchases_count', 'today_purchases_amount', 'today_purchases_count', 'month_purchases_amount', 'month_purchases_count',
+  'total_purchases_amount', 'total_purchases_count', 'supplier_payable',
+  'net_goods_sales', 'gst_collected', 'commercial_charges', 'round_off', 'discount',
+];
+function viewFor(payload: any, staff: boolean) {
+  if (!staff) return payload;
+  const summary = { ...payload.summary };
+  for (const k of STAFF_HIDDEN_SUMMARY_KEYS) delete summary[k];
+  return { ...payload, summary };
+}
 
 export const GET = handle(async (req) => {
   const { shop, shopIds, allShopAccess, ownedShops } = await requireShopScope(req);
   const shopNameById = new Map(ownedShops.map(s => [s.id, s.name]));
   const q = query(req);
-  const { startDate, endDate } = getDateRange(q);
+  const { startDate, endDate } = getDateRange({
+    ...q,
+    start_date: cleanDateParam('start_date', q.start_date) as any,
+    end_date: cleanDateParam('end_date', q.end_date) as any,
+  });
   const forceRefresh = q.refresh === 'true' || q.refresh === '1';
+  const staff = isStaffUiRole(req);
 
   // Pooled and single-shop requests must never share a cache entry — the same
   // date range means two very different result sets depending on scope.
+  // The cache holds the FULL payload; the staff view is derived per request, so a staff call can never poison an admin's.
   const scopeKey = allShopAccess ? `all:${[...shopIds].sort().join(',')}` : shop.id;
   const cacheKey = `${scopeKey}_${startDate.getTime()}_${endDate.getTime()}`;
 
@@ -25,479 +65,255 @@ export const GET = handle(async (req) => {
     const cached = getDashboardCache(cacheKey);
     if (cached) {
       console.log(`[API] Dashboard Cache HIT for shop ${shop.id}`);
-      return json(cached);
+      return json(viewFor(cached, staff));
     }
   }
 
-  console.log(`[API] Dashboard Cache MISS/REFRESH for shop ${shop.id}. Fetching from DB...`);
+  const t0 = Date.now();
+  let queryCount = 0;
+  const tally = () => { queryCount++; };
+  const track = <T,>(fn: () => Promise<T>) => () => { tally(); return fn(); };
 
-  // Today's and this-month's expenses are shown on the dashboard regardless
-  // of the selected timeframe filter, so they use their own fixed date
-  // bounds instead of the query's startDate/endDate.
+  // Today's and this-month's expenses/purchases are shown on the dashboard regardless
+  // of the selected timeframe filter, so they use their own fixed date bounds.
   const todayStart = startOfDay();
   const todayEnd = endOfDay();
   const [todayYear, todayMonth] = formatDate().split('-');
   const monthStart = startOfDay(`${todayYear}-${todayMonth}-01`);
+  const isWholesaleTier = isWholesaleTierPackage(shop.subscriptionPlan);
 
-  // None of these queries depend on each other's results, so they run
-  // concurrently rather than one round-trip at a time — but a plain
-  // Promise.all here previously fired all ~28 of them in the same instant,
-  // since a Prisma call starts its query the moment it's invoked, not when
-  // awaited. That alone can exceed DATABASE_URL's connection_limit before
-  // Promise.all ever starts waiting, and was a real contributor to this
-  // app's recurring "Too many database connections" errors — every
-  // dashboard load, including cache-miss refreshes, opened up to ~28
-  // connections at once, starving whatever else was running concurrently
-  // (sidebar profile fetch, notifications, calendar, …). runBatched defers
-  // each query behind a thunk and runs them a handful at a time instead.
-  const [
-    salesAndProfit,
-    expensesAgg,
-    todayExpensesAgg,
-    monthExpensesAgg,
-    salePayments,
-    udharPaymentRows,
-    customers,
-    productsCount,
-    returnsSummary,
-    returnsByReason,
-    returnsProfitLost,
-    realizedProfitData,
-    udharPaymentsData,
-    marginData,
-    udharGivenData,
-    partyCreditAgg,
-    partyCollectionTotalData,
-    partyCollectionTodayData,
-    lowStock,
-    recentBills,
-    topProd,
-    fastProd,
-    slowProd,
-    periodPurchasesAgg,
-    todayPurchasesAgg,
-    monthPurchasesAgg,
-    allTimePurchasesAgg,
-    supplierPayableAgg,
-  ] = await runBatched([
-    () => prisma.sale.aggregate({
-      where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
-      // amountPaid is what actually came into the drawer; totalAmount includes
-      // the udhar portion that has not been paid yet.
-      _sum: { totalAmount: true, totalProfit: true, amountPaid: true },
-    }),
+  // ── Every query is independent; they run BATCH at a time (see runBatched). The former ~32 statements are folded into
+  //    ~12: one pass over sales (all sales metrics + payment modes), one over customer_transactions, one balances
+  //    statement, one each for expenses / purchases / returns / low stock / product movers.
+  const jobs: Record<string, () => Promise<any>> = {
+    sales: () => getSalesMetrics(shopIds, startDate, endDate, { onQuery: tally }),
+    credit: () => getCreditMetrics(shopIds, startDate, endDate, todayStart, todayEnd, { onQuery: tally }),
+    balances: () => getBalanceMetrics(shopIds, { onQuery: tally }),
 
-    () => prisma.expense.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
-      _sum: { amount: true },
-      _count: { id: true },
-    }),
-
-    () => prisma.expense.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: todayStart, lte: todayEnd } },
-      _sum: { amount: true },
-      _count: { id: true },
-    }),
-
-    () => prisma.expense.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: monthStart, lte: todayEnd } },
-      _sum: { amount: true },
-      _count: { id: true },
-    }),
-
-    // Per-bill payment split, so collection can be reported by mode. A 'Split'
-    // bill carries the breakdown in paymentDetails; anything else put its whole
-    // paid amount through one mode.
-    () => prisma.sale.findMany({
-      where: { shopId: { in: shopIds }, createdAt: { gte: startDate, lte: endDate } },
-      select: { paymentType: true, paymentDetails: true, amountPaid: true },
-    }),
-
-    // Udhar-side money in. There is no payment-mode column on
-    // customer_transactions — /crm/payments records it in the note as
-    // "Payment via UPI - ...", so the mode is recovered from there and falls
-    // back to Cash (the overwhelmingly common case) when absent.
-    // Includes BOTH retail Udhar (customer/NULL customer_type) AND B2B Party
-    // credit collections (customer_type='party'): the dashboard's Total
-    // Collection and today's Udhar Collection cards need to reflect every
-    // rupee actually received against outstanding credit — whichever pool it
-    // came from. Party collections are still reported on their own in the
-    // WholesaleWidgets partyCreditCollectionTotal/Today counters below;
-    // this is additive, not double-counting.
-    () => prisma.$queryRaw<{ amount: number; note: string | null; type: string }[]>`
-      SELECT t.amount::float AS amount, t.note, t.type
-      FROM customer_transactions t
-      JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ANY(${shopIds}::uuid[])
-        AND t.type IN ('payment', 'advance')
-        AND t.created_at >= ${startDate}
-        AND t.created_at <= ${endDate}
-    `,
-
-    () => prisma.customer.aggregate({
-      where: { shopId: { in: shopIds }, OR: [{ customerType: null }, { customerType: { not: 'party' } }] },
-      _sum: { totalDue: true }
-    }),
-
-    // Low-stock count must match the low-stock list criteria below so the
-    // dashboard badge and list agree.
-    () => prisma.$queryRaw<{ count: number }[]>`
-      SELECT COUNT(*)::int as count
-      FROM products
+    // period / today / this-month expenses in ONE scan
+    expenses: track(() => prisma.$queryRaw<any[]>`
+      SELECT
+        COALESCE(SUM(amount) FILTER (WHERE date >= ${startDate} AND date <= ${endDate}), 0)::float8 AS period_amount,
+        (COUNT(*) FILTER (WHERE date >= ${startDate} AND date <= ${endDate}))::int AS period_count,
+        COALESCE(SUM(amount) FILTER (WHERE date >= ${todayStart} AND date <= ${todayEnd}), 0)::float8 AS today_amount,
+        (COUNT(*) FILTER (WHERE date >= ${todayStart} AND date <= ${todayEnd}))::int AS today_count,
+        COALESCE(SUM(amount) FILTER (WHERE date >= ${monthStart} AND date <= ${todayEnd}), 0)::float8 AS month_amount,
+        (COUNT(*) FILTER (WHERE date >= ${monthStart} AND date <= ${todayEnd}))::int AS month_count
+      FROM expenses
       WHERE shop_id = ANY(${shopIds}::uuid[])
-        AND current_stock <= min_stock
-        AND min_stock > 0
-    `,
+        AND date >= LEAST(${startDate}::timestamptz, ${monthStart}::timestamptz) AND date <= GREATEST(${endDate}::timestamptz, ${todayEnd}::timestamptz)
+    `),
 
-    // Returns aggregate — only counts rows the closed-loop pipeline HASN'T
-    // already settled through Sale/customer.totalDue/cashBook. Post-fix
-    // returns are marked settled:true in their note JSON so we don't
-    // double-subtract them here. Legacy rows (no marker) are still summed
-    // the old way so pre-existing dashboards keep the number they had.
-    () => prisma.$queryRaw<{ total: number; cnt: number }[]>`
-      SELECT COALESCE(SUM(amount), 0)::float as total, COUNT(*)::int as cnt
-      FROM material_returns
+    // period / today / month / all-time supplier bills in ONE scan (aggregated on the purchase `date`, like the Purchases page)
+    purchases: track(() => prisma.$queryRaw<any[]>`
+      SELECT
+        COALESCE(SUM(total_cost) FILTER (WHERE date >= ${startDate} AND date <= ${endDate}), 0)::float8 AS period_amount,
+        (COUNT(*) FILTER (WHERE date >= ${startDate} AND date <= ${endDate}))::int AS period_count,
+        COALESCE(SUM(total_cost) FILTER (WHERE date >= ${todayStart} AND date <= ${todayEnd}), 0)::float8 AS today_amount,
+        (COUNT(*) FILTER (WHERE date >= ${todayStart} AND date <= ${todayEnd}))::int AS today_count,
+        COALESCE(SUM(total_cost) FILTER (WHERE date >= ${monthStart} AND date <= ${todayEnd}), 0)::float8 AS month_amount,
+        (COUNT(*) FILTER (WHERE date >= ${monthStart} AND date <= ${todayEnd}))::int AS month_count,
+        COALESCE(SUM(total_cost), 0)::float8 AS total_amount,
+        COUNT(*)::int AS total_count
+      FROM purchase_invoices
       WHERE shop_id = ANY(${shopIds}::uuid[])
-        AND date >= ${startDate} AND date <= ${endDate}
-        AND (note IS NULL OR note NOT LIKE '%"settled":true%')
-    `,
+    `),
 
-    // Grouped by reason — kept unfiltered so the "returns breakdown" card
-    // still shows the full picture (legacy + new). It's display-only, doesn't
-    // participate in the math.
-    () => prisma.materialReturn.groupBy({
-      by: ['reason'],
-      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
-      _sum: { amount: true },
-      _count: { id: true },
-    }),
-
-    // Profit-lost for LEGACY (unsettled) rows only — uses current product
-    // cost as a rough estimate. Post-fix rows carry the *actual* historical
-    // per-unit margin in note.refundProfit (computed from SaleItem.
-    // marginPerUnit at return time), so those are read straight out below
-    // and NOT recomputed here. This was the source of the "profit minus"
-    // bug: the old query used product's current selling_price which drifts.
-    () => prisma.$queryRaw<{ profit_lost: number }[]>`
-      SELECT SUM(
-        r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.cost_price, p.wholesale_cost, 0))
-      )::float as profit_lost
+    // Returns: the breakdown card (every row) and the unsettled/legacy figures the maths uses — one statement.
+    // Post-fix returns are marked settled:true in their note JSON and are already reflected in the Sale row, so only
+    // unsettled rows count toward the totals (subtracting settled ones again would double-count).
+    returns: track(() => prisma.$queryRaw<any[]>`
+      SELECT r.reason,
+        COALESCE(SUM(r.amount), 0)::float8 AS amount,
+        COUNT(*)::int AS cnt,
+        COALESCE(SUM(r.amount) FILTER (WHERE r.note IS NULL OR r.note NOT LIKE '%"settled":true%'), 0)::float8 AS unsettled_amount,
+        (COUNT(*) FILTER (WHERE r.note IS NULL OR r.note NOT LIKE '%"settled":true%'))::int AS unsettled_count,
+        COALESCE(SUM(r.quantity * (COALESCE(p.selling_price, 0) - COALESCE(p.cost_price, p.wholesale_cost, 0)))
+                 FILTER (WHERE r.note IS NULL OR r.note NOT LIKE '%"settled":true%'), 0)::float8 AS profit_lost
       FROM material_returns r
       LEFT JOIN products p ON r.product_id = p.id
-      WHERE r.shop_id = ANY(${shopIds}::uuid[])
-        AND r.date >= ${startDate} AND r.date <= ${endDate}
-        AND (r.note IS NULL OR r.note NOT LIKE '%"settled":true%')
-    `,
+      WHERE r.shop_id = ANY(${shopIds}::uuid[]) AND r.date >= ${startDate} AND r.date <= ${endDate}
+      GROUP BY r.reason
+    `),
 
-    () => prisma.$queryRaw<{ realized_sales_profit: number }[]>`
-      SELECT SUM(
-        CASE
-          WHEN total_amount > 0 THEN (amount_paid / total_amount) * total_profit
-          ELSE 0
-        END
-      )::float as realized_sales_profit
-      FROM sales
-      WHERE shop_id = ANY(${shopIds}::uuid[]) AND created_at >= ${startDate} AND created_at <= ${endDate}
-    `,
-
-    () => prisma.$queryRaw<{ total_udhar_paid: number }[]>`
-      SELECT SUM(t.amount)::float as total_udhar_paid
-      FROM customer_transactions t
-      JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ANY(${shopIds}::uuid[])
-        AND t.type = 'payment'
-        AND t.created_at >= ${startDate}
-        AND t.created_at <= ${endDate}
-        AND (c.customer_type IS NULL OR c.customer_type != 'party')
-    `,
-
-    () => prisma.$queryRaw<{ total_profit: number, total_amount: number }[]>`
-      SELECT SUM(total_profit)::float as total_profit, SUM(total_amount)::float as total_amount
-      FROM sales
-      WHERE shop_id = ANY(${shopIds}::uuid[])
-    `,
-
-    () => prisma.$queryRaw<{ total_udhar_given: number }[]>`
-      SELECT SUM(t.amount)::float as total_udhar_given
-      FROM customer_transactions t
-      JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ANY(${shopIds}::uuid[])
-        AND t.type = 'udhar'
-        AND t.created_at >= ${startDate}
-        AND t.created_at <= ${endDate}
-        AND (c.customer_type IS NULL OR c.customer_type != 'party')
-    `,
-
-    // Party credit (Udyog B2B wholesale AR) — current outstanding balance,
-    // reported separately from retail Udhar above. Same Customer table,
-    // customerType='party' is what the /party page already keys off.
-    () => prisma.customer.aggregate({
-      where: { shopId: { in: shopIds }, customerType: 'party' },
-      _sum: { totalDue: true }
-    }),
-
-    // All-time party-credit collections — deliberately NOT scoped to the
-    // dashboard's startDate/endDate filter, same "total vs today" split the
-    // expenses KPIs above already use.
-    () => prisma.$queryRaw<{ total: number }[]>`
-      SELECT SUM(t.amount)::float as total
-      FROM customer_transactions t
-      JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ANY(${shopIds}::uuid[])
-        AND t.type = 'payment'
-        AND c.customer_type = 'party'
-    `,
-
-    () => prisma.$queryRaw<{ total: number }[]>`
-      SELECT SUM(t.amount)::float as total
-      FROM customer_transactions t
-      JOIN customers c ON t.customer_id = c.id
-      WHERE c.shop_id = ANY(${shopIds}::uuid[])
-        AND t.type = 'payment'
-        AND c.customer_type = 'party'
-        AND t.created_at >= ${todayStart}
-        AND t.created_at <= ${todayEnd}
-    `,
-
-    // Low stock
-    () => prisma.$queryRaw<any[]>`
-      SELECT id, name, category, current_stock, min_stock, shop_id
+    // Low stock: the list and the badge count come from the same predicate in one statement.
+    lowStock: track(() => prisma.$queryRaw<any[]>`
+      SELECT id, name, category, current_stock, min_stock, shop_id, (COUNT(*) OVER ())::int AS total
       FROM products
-      WHERE shop_id = ANY(${shopIds}::uuid[])
-        AND current_stock <= min_stock
-        AND min_stock > 0
+      WHERE shop_id = ANY(${shopIds}::uuid[]) AND current_stock <= min_stock AND min_stock > 0
       ORDER BY (current_stock / min_stock) ASC
       LIMIT 5
-    `,
+    `),
 
-    // Recent bills
-    () => prisma.sale.findMany({
+    recentBills: track(() => prisma.sale.findMany({
       where: { shopId: { in: shopIds } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: { customer: { select: { name: true, mobile: true } } },
-    }),
+    })),
 
-    // Top Products by Value (Optimized)
-    () => prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, p.shop_id, s_agg.value, s_agg.qty
-      FROM (
-        SELECT si.product_id, SUM(si.price_per_unit * si.quantity) as value, SUM(si.quantity) as qty
+    // Top by value, fast-moving by quantity and slow-moving: ONE aggregation over sale_items, shared by all three lists.
+    movers: track(() => prisma.$queryRaw<any[]>`
+      WITH agg AS (
+        SELECT si.product_id, SUM(si.price_per_unit * si.quantity) AS value, SUM(si.quantity) AS qty
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
         WHERE s.shop_id = ANY(${shopIds}::uuid[]) AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
         GROUP BY si.product_id
-      ) s_agg
-      JOIN products p ON s_agg.product_id = p.id
-      ORDER BY s_agg.value DESC
-      LIMIT 5
-    `,
-
-    // Fast moving by Qty (Optimized)
-    () => prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, p.shop_id, s_agg.qty, s_agg.value
-      FROM (
-        SELECT si.product_id, SUM(si.quantity) as qty, SUM(si.price_per_unit * si.quantity) as value
-        FROM sale_items si
-        JOIN sales s ON si.sale_id = s.id
-        WHERE s.shop_id = ANY(${shopIds}::uuid[]) AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
-        GROUP BY si.product_id
-      ) s_agg
-      JOIN products p ON s_agg.product_id = p.id
-      ORDER BY s_agg.qty DESC
-      LIMIT 5
-    `,
-
-    // Slow moving (Products with high stock and low/zero sales)
-    () => prisma.$queryRaw<any[]>`
-      SELECT p.id, p.name, p.category, p.shop_id, COALESCE(s_agg.qty, 0)::float as qty, p.current_stock
-      FROM products p
-      LEFT JOIN (
-        SELECT si.product_id, SUM(si.quantity) as qty
-        FROM sale_items si
-        JOIN sales s ON si.sale_id = s.id
-        WHERE s.shop_id = ANY(${shopIds}::uuid[]) AND s.created_at >= ${startDate} AND s.created_at <= ${endDate}
-        GROUP BY si.product_id
-      ) s_agg ON p.id = s_agg.product_id
-      WHERE p.shop_id = ANY(${shopIds}::uuid[]) AND p.current_stock > 0
-      ORDER BY COALESCE(s_agg.qty, 0) ASC, p.current_stock DESC
-      LIMIT 5
-    `,
-
-    // ── Purchases (supplier bills) — mirrors the sales/expenses KPIs so the
-    //    dashboard can show what the shop BOUGHT, not just what it sold.
-    //    Aggregated on the purchase `date` (what the shopkeeper picks when
-    //    recording the bill), same field the Purchases page keys off. ──
-    // Period (respects the dashboard's timeframe filter, like today_sales).
-    () => prisma.purchaseInvoice.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: startDate, lte: endDate } },
-      _sum: { totalCost: true }, _count: { id: true },
-    }),
-    // Fixed "today" (ignores the filter, like today_expenses).
-    () => prisma.purchaseInvoice.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: todayStart, lte: todayEnd } },
-      _sum: { totalCost: true }, _count: { id: true },
-    }),
-    // Fixed "this month".
-    () => prisma.purchaseInvoice.aggregate({
-      where: { shopId: { in: shopIds }, date: { gte: monthStart, lte: todayEnd } },
-      _sum: { totalCost: true }, _count: { id: true },
-    }),
-    // All-time total purchases (parallel to all-time sales).
-    () => prisma.purchaseInvoice.aggregate({
-      where: { shopId: { in: shopIds } },
-      _sum: { totalCost: true }, _count: { id: true },
-    }),
-    // Total outstanding payable to suppliers (parallel to total_udhar owed to us).
-    () => prisma.supplier.aggregate({
-      where: { shopId: { in: shopIds } },
-      _sum: { balance: true },
-    }),
-  ], 10);
-
-  const totalUdhar = customers._sum?.totalDue || 0;
-  const lowStockCount = Number((productsCount as any[])[0]?.count || 0);
-  // Legacy (unsettled) returns only. Post-fix returns are already reflected
-  // in the Sale row, so they participate via salesAndProfit — subtracting
-  // them here again would double-count and swing the KPIs negative when a
-  // return day has few sales (the original bug).
-  const legacyReturnsAmount = Number((returnsSummary as any[])[0]?.total || 0);
-  const legacyReturnsCount = Number((returnsSummary as any[])[0]?.cnt || 0);
-  let returnsProfit = Number((returnsProfitLost as any[])[0]?.profit_lost || 0);
-  const returnsAmount = legacyReturnsAmount;
-
-  // Realized Profit Calculation
-  const realizedSalesProfit = Number((realizedProfitData as any[])[0]?.realized_sales_profit || 0);
-  const udharPaid = Number((udharPaymentsData as any[])[0]?.total_udhar_paid || 0);
-  const allTimeProfit = Number((marginData as any[])[0]?.total_profit || 0);
-  const allTimeSales = Number((marginData as any[])[0]?.total_amount || 0);
-  const avgMargin = allTimeSales > 0 ? (allTimeProfit / allTimeSales) : 0.0;
-  
-  if (returnsAmount > 0 && returnsProfit === 0) {
-    const todayGrossSales = salesAndProfit._sum.totalAmount || 0;
-    const todayGrossProfit = salesAndProfit._sum.totalProfit || 0;
-    const todayMargin = todayGrossSales > 0 ? (todayGrossProfit / todayGrossSales) : avgMargin;
-    returnsProfit = returnsAmount * todayMargin;
-  }
-  
-  // Realized Profit = (Profit from Cash collected today) + (Udhar Payments collected today * All Time Profit Margin)
-  const finalProfit = realizedSalesProfit + (udharPaid * avgMargin);
-
-  // ── Cash-flow figures a shopkeeper closes the day on ──────────────────────
-  // Deliberately about MONEY MOVED, not billed value:
-  //   salesCollection — the paid portion of this period's bills (udhar excluded)
-  //   udharCollection — old dues recovered in this period
-  //   totalCollection — everything that came in, less refunds paid out
-  //   netInHand       — what should actually be left after expenses
-  const salesCollection = salesAndProfit._sum.amountPaid || 0;
-  const expensesAmount = expensesAgg._sum.amount || 0;
-
-  // ── Split every rupee collected by HOW it arrived ────────────────────────
-  const modes = { cash: 0, upi: 0, card: 0, other: 0 };
-  const bucketFor = (raw: string | null | undefined): keyof typeof modes => {
-    const m = String(raw || '').toLowerCase();
-    if (m.includes('cash')) return 'cash';
-    if (m.includes('upi') || m.includes('gpay') || m.includes('phonepe') || m.includes('paytm')) return 'upi';
-    if (m.includes('card') || m.includes('debit') || m.includes('credit')) return 'card';
-    return 'other';
+      ), top AS (
+        SELECT p.id, p.name, p.category, p.shop_id, p.base_unit, a.value, a.qty, ROW_NUMBER() OVER (ORDER BY a.value DESC) AS rn
+        FROM agg a JOIN products p ON a.product_id = p.id ORDER BY a.value DESC LIMIT 5
+      ), fast AS (
+        SELECT p.id, p.name, p.category, p.shop_id, p.base_unit, a.value, a.qty, ROW_NUMBER() OVER (ORDER BY a.qty DESC) AS rn
+        FROM agg a JOIN products p ON a.product_id = p.id ORDER BY a.qty DESC LIMIT 5
+      ), slow AS (
+        SELECT p.id, p.name, p.category, p.shop_id, p.base_unit, COALESCE(a.qty, 0)::float8 AS qty, p.current_stock,
+               ROW_NUMBER() OVER (ORDER BY COALESCE(a.qty, 0) ASC, p.current_stock DESC) AS rn
+        FROM products p LEFT JOIN agg a ON p.id = a.product_id
+        WHERE p.shop_id = ANY(${shopIds}::uuid[]) AND p.current_stock > 0
+        ORDER BY COALESCE(a.qty, 0) ASC, p.current_stock DESC LIMIT 5
+      )
+      SELECT 'top' AS kind, id, name, category, shop_id, base_unit, value::float8 AS value, qty::float8 AS qty, NULL::float8 AS current_stock, rn::int AS rn FROM top
+      UNION ALL SELECT 'fast', id, name, category, shop_id, base_unit, value::float8, qty::float8, NULL::float8, rn::int FROM fast
+      UNION ALL SELECT 'slow', id, name, category, shop_id, base_unit, NULL::float8, qty::float8, current_stock::float8, rn::int FROM slow
+    `),
   };
 
-  for (const s of salePayments) {
-    const paid = Number(s.amountPaid) || 0;
-    if (paid <= 0) continue;
-    const details: any = typeof s.paymentDetails === 'string'
-      ? (() => { try { return JSON.parse(s.paymentDetails as string); } catch { return null; } })()
-      : s.paymentDetails;
-
-    // Udhar inside a split bill is credit extended, not money received.
-    const cash = Number(details?.cash) || 0;
-    const upi = Number(details?.upi) || 0;
-    const card = Number(details?.card) || 0;
-    const splitTotal = cash + upi + card;
-
-    if (splitTotal > 0) {
-      modes.cash += cash;
-      modes.upi += upi;
-      modes.card += card;
-      // A rounding gap between the split lines and what was actually paid.
-      if (paid > splitTotal) modes.other += paid - splitTotal;
-    } else {
-      modes[bucketFor(s.paymentType)] += paid;
-    }
+  // ERP / wholesale-tier extras join the same batches instead of running as a separate sequential round afterwards.
+  if (isWholesaleTier) {
+    // cost_price is the real per-unit cost on wholesale-tier shops — wholesale_cost is repurposed there as the wholesale
+    // SELLING price; it is only a fallback for older products saved before the 3-tier pricing split.
+    jobs.inventoryValue = track(() => prisma.$queryRaw<{ total_value: number }[]>`
+      SELECT COALESCE(SUM(current_stock * COALESCE(NULLIF(cost_price, 0), wholesale_cost, 0)), 0)::float as total_value
+      FROM products
+      WHERE shop_id = ANY(${shopIds}::uuid[]) AND current_stock > 0
+    `);
+    jobs.expiringBatches = track(() => prisma.batch.findMany({
+      where: { shopId: { in: shopIds }, quantity: { gt: 0 }, expiryDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } },
+      include: { product: { select: { name: true } } },
+      orderBy: { expiryDate: 'asc' },
+      take: 5,
+    }));
+    jobs.recentFeeds = track(() => prisma.$queryRaw<any[]>`
+      SELECT m.id, m.type, m.quantity, m.created_at, m.shop_id, p.name as product_name
+      FROM stock_movements m
+      JOIN products p ON p.id = m.product_id
+      WHERE m.shop_id = ANY(${shopIds}::uuid[])
+      ORDER BY m.created_at DESC
+      LIMIT 5
+    `);
   }
 
-  // Money received in the Udhar section: dues cleared plus any advance.
-  let udharCollection = 0;
-  let advanceCollection = 0;
-  for (const row of udharPaymentRows) {
-    const amt = Number(row.amount) || 0;
-    if (amt <= 0) continue;
-    if (row.type === 'advance') advanceCollection += amt;
-    else udharCollection += amt;
-    // note looks like "Payment via UPI - remark"
-    const viaMatch = /via\s+([a-z]+)/i.exec(row.note || '');
-    modes[bucketFor(viaMatch?.[1] || 'cash')] += amt;
-  }
+  const names = Object.keys(jobs);
+  const results = await runBatched(names.map((n) => jobs[n]) as any, BATCH) as any[];
+  const R: Record<string, any> = {};
+  names.forEach((n, i) => { R[n] = results[i]; });
+  const rounds = Math.ceil(names.length / BATCH);
 
-  const totalCollection = salesCollection + udharCollection + advanceCollection - returnsAmount;
-  const netInHand = totalCollection - expensesAmount;
-  const netProfit = (salesAndProfit._sum.totalProfit || 0) - returnsProfit - expensesAmount;
+  const sales = R.sales as Awaited<ReturnType<typeof getSalesMetrics>>;
+  const credit = R.credit as Awaited<ReturnType<typeof getCreditMetrics>>;
+  const bal = R.balances as Awaited<ReturnType<typeof getBalanceMetrics>>;
+  const exp = R.expenses[0] || {};
+  const pur = R.purchases[0] || {};
+
+  // ── Returns (legacy / unsettled rows only participate in the maths; the by-reason card shows everything) ──
+  const returnsRows: any[] = R.returns;
+  const returnsAmount = returnsRows.reduce((a, r) => a + (+r.unsettled_amount || 0), 0);
+  const returnsCount = returnsRows.reduce((a, r) => a + (+r.unsettled_count || 0), 0);
+  let returnsProfit = returnsRows.reduce((a, r) => a + (+r.profit_lost || 0), 0);
+  // Contract margin = Profit ÷ NET GOODS SALES (Billed Value would include GST and commercial charges).
+  const periodMargin = marginOnNetGoods(sales.profit, sales.netGoodsSales);
+  // Returns whose profit could not be derived from product prices are estimated at the period's margin. Compatibility rule:
+  // a period with NO Mill invoices keeps the estimation basis this dashboard has always used (profit ÷ Billed Value), so
+  // legacy-only numbers do not move; a period that contains Mill invoices uses the contract basis (Net Goods Sales).
+  const returnsEstimateMargin = sales.millInvoiceCount > 0
+    ? periodMargin
+    : (sales.billedValue > 0 ? sales.profit / sales.billedValue : 0);
+  if (returnsAmount > 0 && returnsProfit === 0) returnsProfit = returnsAmount * returnsEstimateMargin;
+
+  // Realised profit = profit already collected in cash + the retail Udhar paid back × the period's Net-Goods margin.
+  const finalProfit = sales.realizedProfit + credit.retailPaymentsPeriod * periodMargin;
+
+  // ── Collection by mode: bills' paid amounts + Udhar/advance payments, by HOW it arrived ──
+  const modes: PaymentModes = { ...sales.collectionBySalesMode };
+  (Object.keys(credit.collectionByMode) as (keyof PaymentModes)[]).forEach((k) => { modes[k] += credit.collectionByMode[k]; });
+
+  // Cash-flow figures a shopkeeper closes the day on — money MOVED, not billed value.
+  const salesCollection = sales.amountReceived;
+  const totalCollection = salesCollection + credit.udharCollection + credit.advanceCollection - returnsAmount;
+
+  // Udhar: the retail Customer pool AND, for wholesale-tier packages (Udyog / Bada Udyog), the B2B Party pool —
+  // the Party pool is where a mill's credit sales live. The two pools are also exposed separately.
+  const totalUdhar = bal.retailOutstanding + (isWholesaleTier ? bal.partyOutstanding : 0);
+  const periodUdhar = credit.periodUdharRetail + (isWholesaleTier ? credit.periodUdharParty : 0);
+
+  const movers = (kind: string) => (R.movers as any[]).filter((r) => r.kind === kind).sort((a, b) => a.rn - b.rn);
+  const shopTag = (id: string) => (allShopAccess ? { shopName: shopNameById.get(id) } : {});
 
   const payload: any = {
     summary: {
-      today_sales: (salesAndProfit._sum.totalAmount || 0) - returnsAmount,
-      today_profit: (salesAndProfit._sum.totalProfit || 0) - returnsProfit,
-      expected_profit: (salesAndProfit._sum.totalProfit || 0) - returnsProfit,
+      // Headline: Billed Value less legacy unsettled returns — definition unchanged.
+      today_sales: sales.billedValue - returnsAmount,
+      today_profit: sales.profit - returnsProfit,
+      expected_profit: sales.profit - returnsProfit,
       cash_profit: finalProfit - returnsProfit,
-      udhar_profit: Math.max(0, (salesAndProfit._sum.totalProfit || 0) - finalProfit),
+      udhar_profit: Math.max(0, sales.profit - finalProfit),
       total_udhar: totalUdhar,
-      period_udhar: Number((udharGivenData as any[])[0]?.total_udhar_given || 0),
-      low_stock_count: lowStockCount,
+      period_udhar: periodUdhar,
+      low_stock_count: Number(R.lowStock[0]?.total || 0),
       returns_amount: returnsAmount,
-      returns_count: legacyReturnsCount,
-      // New cash-flow KPIs
+      returns_count: returnsCount,
       sales_collection: salesCollection,
-      udhar_collection: udharCollection,
-      advance_collection: advanceCollection,
+      udhar_collection: credit.udharCollection,
+      advance_collection: credit.advanceCollection,
       total_collection: totalCollection,
-      expenses_amount: expensesAmount,
-      expenses_count: expensesAgg._count.id || 0,
-      today_expenses_amount: todayExpensesAgg._sum.amount || 0,
-      today_expenses_count: todayExpensesAgg._count.id || 0,
-      month_expenses_amount: monthExpensesAgg._sum.amount || 0,
-      month_expenses_count: monthExpensesAgg._count.id || 0,
-      // Purchases KPIs (supplier bills) — same shape as the expenses KPIs.
-      purchases_amount: periodPurchasesAgg._sum.totalCost || 0,
-      purchases_count: periodPurchasesAgg._count.id || 0,
-      today_purchases_amount: todayPurchasesAgg._sum.totalCost || 0,
-      today_purchases_count: todayPurchasesAgg._count.id || 0,
-      month_purchases_amount: monthPurchasesAgg._sum.totalCost || 0,
-      month_purchases_count: monthPurchasesAgg._count.id || 0,
-      total_purchases_amount: allTimePurchasesAgg._sum.totalCost || 0,
-      total_purchases_count: allTimePurchasesAgg._count.id || 0,
-      supplier_payable: supplierPayableAgg._sum.balance || 0,
-      net_in_hand: netInHand,
-      net_profit: netProfit,
-      // How the money arrived, and from where.
+      expenses_amount: +exp.period_amount || 0,
+      expenses_count: +exp.period_count || 0,
+      today_expenses_amount: +exp.today_amount || 0,
+      today_expenses_count: +exp.today_count || 0,
+      month_expenses_amount: +exp.month_amount || 0,
+      month_expenses_count: +exp.month_count || 0,
+      purchases_amount: +pur.period_amount || 0,
+      purchases_count: +pur.period_count || 0,
+      today_purchases_amount: +pur.today_amount || 0,
+      today_purchases_count: +pur.today_count || 0,
+      month_purchases_amount: +pur.month_amount || 0,
+      month_purchases_count: +pur.month_count || 0,
+      total_purchases_amount: +pur.total_amount || 0,
+      total_purchases_count: +pur.total_count || 0,
+      supplier_payable: bal.supplierPayable,
+      // How the money arrived. `collection_other` keeps its previous meaning "everything that is not cash/UPI/card" (so the
+      // existing chips still add up to Total Collection) — bank and cheque are now also broken out on their own.
       collection_cash: modes.cash,
       collection_upi: modes.upi,
       collection_card: modes.card,
-      collection_other: modes.other,
+      collection_other: modes.other + modes.bank + modes.cheque,
+      collection_bank: modes.bank,
+      collection_cheque: modes.cheque,
+      collection_unclassified: modes.other,
+
+      // ── Reporting-contract metrics (additive) — defined once in lib/server/salesMetrics.ts ──
+      billed_value: sales.billedValue,
+      net_goods_sales: sales.netGoodsSales,
+      gst_collected: sales.gstCollected,
+      commercial_charges: sales.commercialCharges,
+      round_off: sales.roundOff,
+      discount: sales.discount,
+      amount_received: sales.amountReceived,
+      invoice_count: sales.invoiceCount,
+      net_margin: periodMargin,
+      retail_udhar_outstanding: bal.retailOutstanding,
+      party_outstanding: bal.partyOutstanding,
+      period_retail_udhar: credit.periodUdharRetail,
+      period_party_udhar: credit.periodUdharParty,
+      udhar_includes_party: isWholesaleTier,
     },
-    returnsByReason: returnsByReason.map(r => ({
-      reason: r.reason,
-      amount: r._sum?.amount || 0,
-      count: Number((r._count as any)?.id) || 0,
+    returnsByReason: returnsRows.map((r) => ({ reason: r.reason, amount: +r.amount || 0, count: +r.cnt || 0 })),
+    lowStock: R.lowStock.map((p: any) => ({
+      id: p.id, name: p.name, category: p.category, current_stock: p.current_stock, min_stock: p.min_stock,
+      ...shopTag(p.shop_id),
     })),
-    lowStock: lowStock.map((p) => ({
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      current_stock: p.current_stock,
-      min_stock: p.min_stock,
-      ...(allShopAccess ? { shopName: shopNameById.get(p.shop_id) } : {}),
-    })),
-    recentBills: recentBills.map((s) => ({
+    recentBills: R.recentBills.map((s: any) => ({
       id: s.id,
       invoice_number: s.invoice_number,
       total_amount: s.totalAmount || 0,
@@ -508,81 +324,28 @@ export const GET = handle(async (req) => {
       created_at: s.createdAt,
       ...(allShopAccess ? { shopName: shopNameById.get(s.shopId as string) } : {}),
     })),
-    topProducts: topProd.map(r => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      value: Number(r.value || 0),
-      qty: Number(r.qty || 0),
-      ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
-    })),
-    fastMoving: fastProd.map(r => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      value: Number(r.value || 0),
-      qty: Number(r.qty || 0),
-      ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
-    })),
-    slowMoving: slowProd.map(r => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      current_stock: Number(r.current_stock || 0),
-      qty: Number(r.qty || 0),
-      ...(allShopAccess ? { shopName: shopNameById.get(r.shop_id) } : {}),
-    }))
+    topProducts: movers('top').map((r) => ({ id: r.id, name: r.name, category: r.category, unit: r.base_unit || null, value: Number(r.value || 0), qty: Number(r.qty || 0), ...shopTag(r.shop_id) })),
+    fastMoving: movers('fast').map((r) => ({ id: r.id, name: r.name, category: r.category, unit: r.base_unit || null, value: Number(r.value || 0), qty: Number(r.qty || 0), ...shopTag(r.shop_id) })),
+    slowMoving: movers('slow').map((r) => ({ id: r.id, name: r.name, category: r.category, unit: r.base_unit || null, current_stock: Number(r.current_stock || 0), qty: Number(r.qty || 0), ...shopTag(r.shop_id) })),
   };
 
-  // Add ERP / Wholesale specific stats
-  if (isWholesaleTierPackage(shop.subscriptionPlan)) {
-    const [inventoryValueResult, expiringBatches, recentFeeds] = await Promise.all([
-      // cost_price is the real per-unit cost on wholesale-tier shops —
-      // wholesale_cost is repurposed there as the wholesale SELLING price
-      // (see memory: udyog-three-tier-pricing; same convention billing's
-      // cost-basis resolution and the Wholesale Reports valuation follow).
-      // Falls back to wholesale_cost only for older products saved before
-      // the 3-tier pricing split, where cost_price may still be null.
-      prisma.$queryRaw<{ total_value: number }[]>`
-        SELECT COALESCE(SUM(current_stock * COALESCE(NULLIF(cost_price, 0), wholesale_cost, 0)), 0)::float as total_value
-        FROM products
-        WHERE shop_id = ANY(${shopIds}::uuid[]) AND current_stock > 0
-      `,
-      prisma.batch.findMany({
-        where: {
-          shopId: { in: shopIds },
-          quantity: { gt: 0 },
-          expiryDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } // Next 30 days
-        },
-        include: { product: { select: { name: true } } },
-        orderBy: { expiryDate: 'asc' },
-        take: 5
-      }),
-      prisma.$queryRaw`
-        SELECT m.id, m.type, m.quantity, m.created_at, m.shop_id, p.name as product_name
-        FROM stock_movements m
-        JOIN products p ON p.id = m.product_id
-        WHERE m.shop_id = ANY(${shopIds}::uuid[])
-        ORDER BY m.created_at DESC
-        LIMIT 5
-      ` as Promise<any[]>,
-    ]);
-
+  if (isWholesaleTier) {
     payload.wholesale = {
-      inventoryValue: inventoryValueResult[0]?.total_value || 0,
+      inventoryValue: R.inventoryValue?.[0]?.total_value || 0,
       expiringBatches: allShopAccess
-        ? expiringBatches.map(b => ({ ...b, shopName: shopNameById.get(b.shopId as string) }))
-        : expiringBatches,
+        ? R.expiringBatches.map((b: any) => ({ ...b, shopName: shopNameById.get(b.shopId as string) }))
+        : R.expiringBatches,
       recentFeeds: allShopAccess
-        ? recentFeeds.map(f => ({ ...f, shopName: shopNameById.get(f.shop_id) }))
-        : recentFeeds,
-      partyCreditTotal: partyCreditAgg._sum?.totalDue || 0,
-      partyCreditCollectionTotal: Number((partyCollectionTotalData as any[])[0]?.total || 0),
-      partyCreditCollectionToday: Number((partyCollectionTodayData as any[])[0]?.total || 0),
+        ? R.recentFeeds.map((f: any) => ({ ...f, shopName: shopNameById.get(f.shop_id) }))
+        : R.recentFeeds,
+      partyCreditTotal: bal.partyOutstanding,
+      partyCreditCollectionTotal: bal.partyCollectionsAllTime,
+      partyCreditCollectionToday: credit.partyPaymentsToday,
     };
   }
 
+  console.log(`[API] Dashboard Cache MISS/REFRESH for shop ${shop.id}: queries=${queryCount} rounds=${rounds} ms=${Date.now() - t0}`);
   setDashboardCache(cacheKey, payload);
 
-  return json(payload);
+  return json(viewFor(payload, staff));
 });

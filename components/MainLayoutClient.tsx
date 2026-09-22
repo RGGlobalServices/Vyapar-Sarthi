@@ -10,15 +10,17 @@ import AIFloatingButton from '@/components/AIFloatingButton';
 import NotificationBell from '@/components/NotificationBell';
 import { isAllowedWhenEnded, isSubscriptionEnded } from '@/lib/subscriptionAccess';
 import api from '@/lib/api';
-import { Menu, Clock, AlertTriangle, ArrowLeft, PanelLeftOpen } from 'lucide-react';
+import { Menu, Clock, AlertTriangle, ArrowLeft, PanelLeftOpen, WifiOff, RefreshCw as SyncIcon, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from '@/i18n/routing';
 import toast from 'react-hot-toast';
 import { getPackageConfig } from '@/lib/config/packageConfig';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import { useOnlineStatus, useOfflineQueueCount } from '@/lib/useOnlineStatus';
-import { flushOfflineSales } from '@/lib/offlineSync';
-import { WifiOff, RefreshCw as SyncIcon } from 'lucide-react';
+import { flushOfflineSales, flushOfflineTransactions } from '@/lib/offlineSync';
+import SyncStatusIndicator from '@/components/SyncStatusIndicator';
+import { useNetworkStatus } from '@/lib/offline/networkStatus';
+import { saveOfflineSession } from '@/lib/offline/session';
 
 // Map URL segment → tool key for usage tracking
 const PATH_TO_TOOL: Record<string, string> = {
@@ -28,6 +30,7 @@ const PATH_TO_TOOL: Record<string, string> = {
 
 import Sidebar from '@/components/Sidebar';
 import SWRProvider from '@/components/SWRProvider';
+import GlobalSearch from './GlobalSearch';
 import { useRealtimeSync } from '@/lib/hooks/useRealtimeSync';
 
 function TrialCountdownTracker({ profile }: { profile: any }) {
@@ -151,35 +154,58 @@ function PaymentReminderBanner({ profile, locale }: { profile: any, locale: stri
   return null;
 }
 
-function OfflineStatusBanner() {
+function OfflineStatusBanner({ shopId }: { shopId?: string | null }) {
   const t = useTranslations('MainLayout');
-  const isOnline = useOnlineStatus();
-  const pendingCount = useOfflineQueueCount();
+  const status = useNetworkStatus(shopId);
 
-  if (isOnline && pendingCount === 0) return null;
+  if (status.state === 'ONLINE' && status.pendingCount === 0 && status.conflictCount === 0 && status.failedCount === 0) {
+    return null;
+  }
 
-  if (!isOnline) {
+  if (status.state === 'OFFLINE') {
     return (
       <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
-        <WifiOff size={14} className="text-amber-400" />
+        <WifiOff size={14} className="text-amber-400 flex-shrink-0" />
         <span>
-          {t('offlineBase')}
-          {pendingCount > 0 && t('offlinePendingSuffix', { count: pendingCount })}
+          Offline Mode — Your work is being saved on this device and will sync automatically when connection returns.
+          {status.pendingCount > 0 && ` (${status.pendingCount} pending)`}
         </span>
       </div>
     );
   }
 
-  // Back online but the queue hasn't drained yet (e.g. sync just kicked off).
-  return (
-    <div className="bg-emerald-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
-      <SyncIcon size={14} className="animate-spin" />
-      <span>{t('syncingBills', { count: pendingCount })}</span>
-    </div>
-  );
-}
+  if (status.state === 'SERVER_UNAVAILABLE') {
+    return (
+      <div className="bg-amber-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
+        <AlertCircle size={14} className="text-white flex-shrink-0" />
+        <span>
+          Server temporarily unavailable — You can continue working offline. Your data is safe on this device.
+          {status.pendingCount > 0 && ` (${status.pendingCount} pending)`}
+        </span>
+      </div>
+    );
+  }
 
-import GlobalSearch from './GlobalSearch';
+  if (status.state === 'SYNCING') {
+    return (
+      <div className="bg-emerald-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
+        <SyncIcon size={14} className="animate-spin flex-shrink-0" />
+        <span>Syncing pending transactions with server...</span>
+      </div>
+    );
+  }
+
+  if (status.conflictCount > 0) {
+    return (
+      <div className="bg-orange-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold z-40 relative">
+        <AlertCircle size={14} className="flex-shrink-0" />
+        <span>Some transactions have stock conflicts. Click Sync Status above to resolve.</span>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export default function MainLayoutClient({ 
   locale, 
@@ -217,23 +243,37 @@ export default function MainLayoutClient({
     api.post('/user/tool-usage', { tool }).catch(() => { /* silent */ });
   }, [pathname]);
 
-  // Setup check is no longer needed as business type is selected during signup
   useEffect(() => {
-    // Apply the last-known cached profile immediately (client-only, so it
-    // can't cause a hydration mismatch — see hydrateFromCache's own
-    // comment), then let fetchProfile() confirm/correct it over the network.
     hydrateFromCache();
     fetchProfile();
   }, [hydrateFromCache, fetchProfile]);
 
-  // Replay any bills that were saved locally while offline. Runs once on
-  // mount (covers "was already back online when the app opened") and again
-  // every time the browser fires 'online' (covers "reconnected mid-session").
+  // Save offline authorization snapshot into IndexedDB for 7-day grace period
   useEffect(() => {
-    flushOfflineSales();
-    window.addEventListener('online', flushOfflineSales);
-    return () => window.removeEventListener('online', flushOfflineSales);
-  }, []);
+    if (profile.id && user?.id) {
+      saveOfflineSession({
+        shopId: profile.id,
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        role,
+        storeName: profile.shopName,
+        businessType: profile.businessType,
+        packageType: profile.packageType,
+        subscriptionPlan: profile.subscriptionPlan,
+        subscriptionStatus: profile.subscriptionStatus,
+        allowNegativeStock: (profile as any).allowNegativeStock,
+      }).catch(() => {});
+    }
+  }, [profile, user, role]);
+
+  // Auto-sync pending transactions on mount & reconnection
+  useEffect(() => {
+    flushOfflineTransactions(activeShopId || profile.id);
+    const triggerSync = () => flushOfflineTransactions(activeShopId || profile.id);
+    window.addEventListener('online', triggerSync);
+    return () => window.removeEventListener('online', triggerSync);
+  }, [activeShopId, profile.id]);
 
   // Refresh profile on tab focus/visibility to pick up plan changes from landing page.
   // Throttled: at most once per 30 s to avoid hammering the API on rapid tab switches.
@@ -418,11 +458,12 @@ export default function MainLayoutClient({
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {mounted && <SyncStatusIndicator shopId={activeShopId || profile.id} />}
             {mounted && <TrialCountdownTracker profile={profile} />}
             <NotificationBell />
           </div>
         </header>
-        {mounted && <OfflineStatusBanner />}
+        {mounted && <OfflineStatusBanner shopId={activeShopId || profile.id} />}
         {mounted && <PaymentReminderBanner profile={profile} locale={locale} />}
         <main key={activeShopId || 'default'} className="flex-1 p-3 md:p-8">
           <div className={cn(!mounted || (ended && !isExcludedRoute) ? 'hidden' : 'block')}>

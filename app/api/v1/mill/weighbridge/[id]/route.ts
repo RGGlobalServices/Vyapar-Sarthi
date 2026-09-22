@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -42,8 +43,11 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  const { entry } = await assertOwned(req, id);
+  const { shop, entry } = await assertOwned(req, id);
   const body = await readBody<any>(req);
+  // Linked ids are client-supplied — they must belong to this shop, or another
+  // shop's names/mobiles come back through the response join.
+  await assertRefsOwned(shop.id, { productId: body.productId, supplierId: body.supplierId });
 
   if (entry.status === 'converted') {
     throw new ApiError(400, 'This slip is already converted to a Raw Material Lot and can no longer be edited');

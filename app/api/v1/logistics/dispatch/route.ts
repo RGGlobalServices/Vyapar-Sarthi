@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -47,6 +48,10 @@ export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const body = await readBody<any>(req);
 
+  // partyId is a Customer id supplied by the client (product and gate entry are
+  // already shop-checked below).
+  await assertOwned(shop.id, { customerId: body.partyId });
+
   const vehicleNumber = (body.vehicleNumber || '').toString().trim();
   const dispatchNumber = (body.dispatchNumber || '').toString().trim() || await nextDispatchNumber(shop.id);
 
@@ -89,7 +94,7 @@ export const POST = handle(async (req) => {
   // best-effort only when a real product + quantity were given.
   if (productId && quantity && quantity > 0) {
     ops.push(
-      prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${quantity} WHERE id = ${productId}::uuid`,
+      prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${quantity} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`,
       prisma.stockMovement.create({
         data: { shopId: shop.id, productId, type: 'dispatch', quantity, referenceId: gateEntryId },
       }),

@@ -1,3 +1,5 @@
+import { resolveAppUrl } from './appUrl';
+
 // Server-side configuration, ported from the former Express backend.
 // Reads from process.env at runtime (server-only — never import in client code).
 export const config = {
@@ -7,7 +9,8 @@ export const config = {
 
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   landingUrl: process.env.LANDING_URL || 'http://localhost:3001',
-  appUrl: process.env.APP_URL || 'http://localhost:3000',
+  // Required in production (throws at load if missing) — see lib/server/appUrl.ts.
+  appUrl: resolveAppUrl(process.env),
 
   // PayU
   payuKey: process.env.PAYU_KEY || '',
@@ -23,8 +26,9 @@ export const config = {
   billingCycleDays: 30,      // recurring billing interval
   moneyBackDays: 30,         // money-back guarantee window from first real charge
 
-  // Cron / scheduled jobs (protect the subscription processor endpoint)
-  cronSecret: process.env.CRON_SECRET || 'change-me-cron-secret',
+  // NOTE: cron auth reads CRON_SECRET directly (lib/server/cronAuth.ts) and
+  // renewal links use RENEWAL_LINK_SECRET (lib/server/renewalLinks.ts) — neither
+  // has a fallback value, so neither lives here.
 
   // Email / SMTP
   smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',

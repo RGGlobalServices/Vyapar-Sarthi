@@ -180,6 +180,7 @@ function MovementModal({ part, type, onClose, onSaved }: { part: SparePart; type
   const t = useTranslations('SpareParts');
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -187,7 +188,7 @@ function MovementModal({ part, type, onClose, onSaved }: { part: SparePart; type
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      await api.post(`/management/spare-parts/${part.id}/movements`, { type, quantity: Number(quantity), note });
+      await api.post(`/management/spare-parts/${part.id}/movements`, { type, quantity: Number(quantity), note, paymentMethod });
       onSaved();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToSave'));
@@ -208,6 +209,15 @@ function MovementModal({ part, type, onClose, onSaved }: { part: SparePart; type
             <input type="number" min="0" step="1" autoFocus max={type === 'out' ? part.quantity : undefined} value={quantity} onChange={e => setQuantity(e.target.value)}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
           </label>
+          {type === 'in' && (part.unitCost || 0) > 0 && (
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Paid by</span>
+              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" data-testid="part-paymode">
+                <option value="Cash">Cash</option><option value="UPI">UPI</option><option value="Card">Card</option><option value="Bank">Bank / Online</option>
+              </select>
+            </label>
+          )}
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('notesOptional')}</span>
             <input value={note} onChange={e => setNote(e.target.value)}

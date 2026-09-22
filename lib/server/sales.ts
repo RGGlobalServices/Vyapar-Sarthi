@@ -1,7 +1,9 @@
+import { resolveAmountPaid, validatePaymentDetails, resolveLineCost } from '@/lib/server/moneyValidation';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
 import { ApiError } from '@/lib/server/http';
+import { assertOwned } from '@/lib/server/ownership';
 
 export type ReversedSale = Prisma.SaleGetPayload<{ include: { items: true } }>;
 
@@ -73,7 +75,7 @@ export async function reverseSaleEffects(
 
   const productIds = [...netQuantitiesByProduct.keys()];
   if (productIds.length) {
-    const products = await tx.product.findMany({ where: { id: { in: productIds } } });
+    const products = await tx.product.findMany({ where: { id: { in: productIds }, shopId } });
     const productById = new Map(products.map(p => [p.id, p]));
 
     for (const productId of productIds) {
@@ -110,7 +112,7 @@ export async function reverseSaleEffects(
       }
 
       await tx.product.update({
-        where: { id: productId },
+        where: { id: productId, shopId },
         data: {
           ...(product.currentStock !== null ? { currentStock: { increment: netQuantitiesByProduct.get(productId) } } : {}),
           size_variants: newSizeVariants,
@@ -135,7 +137,7 @@ export async function reverseSaleEffects(
       tx.customer_transactions.findMany({
         where: { customer_id: sale.customerId, type: 'refund', bill_number: sale.invoice_number },
       }),
-      tx.customer.findUnique({ where: { id: sale.customerId } }),
+      tx.customer.findFirst({ where: { id: sale.customerId, shopId } }),
     ]);
     const netDue = udharTxns.reduce((s, t) => s + (t.amount || 0), 0)
                  - refundTxns.reduce((s, t) => s + (t.amount || 0), 0);
@@ -144,7 +146,7 @@ export async function reverseSaleEffects(
       await Promise.all([
         tx.customer_transactions.deleteMany({ where: { id: { in: allIds } } }),
         tx.customer.update({
-          where: { id: sale.customerId },
+          where: { id: sale.customerId, shopId },
           data: { totalDue: Math.max(0, (customer.totalDue || 0) - netDue) },
         }),
       ]);
@@ -197,8 +199,13 @@ export async function createSaleEffects(
     if (price < 0) throw new ApiError(400, `Invalid price for item ${item.product_id || item.productId}`);
   }
 
+  // Every referenced id must belong to this shop before any read or write
+  // (runs inside the caller's transaction, so a failure rolls back the whole
+  // edit — including the reversal that already ran).
+  await assertOwned(shopId, { customerId, productId: items.map((i: any) => i.product_id || i.productId) });
+
   const productIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId).filter(Boolean))) as string[];
-  const products = productIds.length > 0 ? await tx.product.findMany({ where: { id: { in: productIds } } }) : [];
+  const products = productIds.length > 0 ? await tx.product.findMany({ where: { id: { in: productIds }, shopId } }) : [];
   const productMap = new Map(products.map(p => [p.id, p]));
 
   // Same per-line stock guard as POST — a shortage here must reject the
@@ -248,17 +255,9 @@ export async function createSaleEffects(
     const pid = i.product_id || i.productId;
     const dbProduct: any = pid ? productMap.get(pid) : null;
     const sp = Number(i.price_per_unit ?? i.pricePerUnit ?? i.price) || 0;
-    let cp = Number(i.purchase_price) || Number(i.purchasePrice) || Number(i.cost) || 0;
-    if (!cp && dbProduct) {
-      const variantKey = i.variant || null;
-      if (variantKey && Array.isArray(dbProduct.variants)) {
-        for (const v of dbProduct.variants as any[]) {
-          const key = v.color ? `${v.color} / ${v.size || ''}` : (v.size || '');
-          if (key === variantKey) { cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0; break; }
-        }
-      }
-      if (!cp) cp = Number(dbProduct.costPrice) || Number(dbProduct.wholesaleCost) || 0;
-    }
+    // Cost comes from the server (variant → product cost); the client's
+    // purchase_price is never used for a product-backed line.
+    const cp = resolveLineCost(i, dbProduct, sp);
     const gstRate = Number(i.gst_percent ?? i.gstPercent ?? dbProduct?.gstPercent) || 0;
     return {
       productId: pid || null,
@@ -283,8 +282,11 @@ export async function createSaleEffects(
   const gstAmount = billType === 'gst' ? calcResult.totalGst : null;
 
   const paymentType = body.payment_type || 'Cash';
-  const amountPaid = typeof body.amount_paid !== 'undefined' ? Number(body.amount_paid) : (paymentType === 'Udhar' ? 0 : totalAmount);
-  const paymentDetails = body.payment_details || {};
+  // amount_paid / split components are validated against the SERVER-computed
+  // total; nothing money-related from the client is trusted as-is.
+  const amountPaid = resolveAmountPaid(body.amount_paid === null ? undefined : body.amount_paid, totalAmount, paymentType);
+  const validatedPayment = validatePaymentDetails(body.payment_details, paymentType, amountPaid);
+  const paymentDetails = validatedPayment.details;
   const outstandingAmount = Math.max(0, totalAmount - amountPaid);
 
   if (outstandingAmount > 0 && (!customerId && !body.customer_name)) {
@@ -300,7 +302,7 @@ export async function createSaleEffects(
       finalCustomerId = existing.id;
       if ((body.customer_mobile && !existing.mobile) || (body.customer_email && !existing.email)) {
         await tx.customer.update({
-          where: { id: existing.id },
+          where: { id: existing.id, shopId },
           data: {
             ...(body.customer_mobile && !existing.mobile ? { mobile: body.customer_mobile } : {}),
             ...(body.customer_email && !existing.email ? { email: body.customer_email } : {}),
@@ -393,9 +395,9 @@ export async function createSaleEffects(
         }
       }
 
-      promises.push(tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${product.id}::uuid`);
+      promises.push(tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${product.id}::uuid AND shop_id = ${shopId}::uuid`);
       promises.push(tx.product.update({
-        where: { id: product.id },
+        where: { id: product.id, shopId },
         data: { size_variants: newSizeVariants, ...(variantsChanged ? { variants: newVariants as any } : {}) },
       }));
 
@@ -409,7 +411,7 @@ export async function createSaleEffects(
   }
 
   if (outstandingAmount > 0 && finalCustomerId) {
-    const custData = await tx.customer.findUnique({ where: { id: finalCustomerId } });
+    const custData = await tx.customer.findFirst({ where: { id: finalCustomerId, shopId } });
     if (custData && (custData.creditLimit ?? 0) > 0) {
       const currentDue = custData.totalDue || 0;
       if (currentDue + outstandingAmount > custData.creditLimit!) {
@@ -417,14 +419,14 @@ export async function createSaleEffects(
       }
     }
     await Promise.all([
-      tx.customer.update({ where: { id: finalCustomerId }, data: { totalDue: { increment: outstandingAmount } } }),
+      tx.customer.update({ where: { id: finalCustomerId, shopId }, data: { totalDue: { increment: outstandingAmount } } }),
       tx.customer_transactions.create({
         data: { customer_id: finalCustomerId, type: 'udhar', amount: outstandingAmount, note: `Bill: ${invoice_number}`, bill_number: invoice_number, created_at: new Date() },
       }),
     ]);
   }
 
-  const cashAmount = paymentType === 'Split' ? Number(paymentDetails?.cash || 0) : (paymentType === 'Cash' ? amountPaid : 0);
+  const cashAmount = validatedPayment.cash;
   if (cashAmount > 0) {
     await tx.cashBook.create({
       data: {

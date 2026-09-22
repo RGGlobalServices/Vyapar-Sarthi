@@ -13,6 +13,15 @@ export function isWholesaleTierPackage(type: PackageType | string | null | undef
   return type === 'wholesale' || type === 'badaudyog';
 }
 
+/**
+ * Mill Billing (`mill_v2`: GST-exclusive rates, non-GST charges, round-off) is for the Bada Udyog
+ * package ONLY — deliberately narrower than isWholesaleTierPackage, which also covers Wholesale.
+ * Server-side callers must pass shop.packageType (never a client-supplied value).
+ */
+export function isMillBillingPackage(type: PackageType | string | null | undefined): boolean {
+  return type === 'badaudyog';
+}
+
 export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
   dukan: {
     id: 'dukan',

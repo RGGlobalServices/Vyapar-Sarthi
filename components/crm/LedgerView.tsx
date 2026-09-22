@@ -25,6 +25,8 @@ type BillItem = {
 
 type Transaction = {
   id: string;
+  pricingModel?: string | null;
+  mill?: import('./TransactionDetailModal').MillLedgerBreakdown | null;
   type: string;
   amount: number;
   note: string;
@@ -53,6 +55,8 @@ type Transaction = {
 // never has to care which entityType it's rendering.
 type RawTransaction = {
   id: string;
+  pricingModel?: string | null;
+  mill?: import('./TransactionDetailModal').MillLedgerBreakdown | null;
   type: string | null;
   amount: number | null;
   note: string | null;
@@ -104,6 +108,8 @@ export default function LedgerView({
       const res = await api.get(`/crm/ledger?${params.toString()}`);
       const normalized: Transaction[] = (res.data || []).map((tx: RawTransaction) => ({
         id: tx.id,
+        pricingModel: tx.pricingModel ?? null,
+        mill: tx.mill ?? null,
         type: tx.type || '',
         amount: tx.amount || 0,
         note: tx.note || '',

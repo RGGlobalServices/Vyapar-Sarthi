@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -23,6 +24,10 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, 'staffId and amount are required');
   }
 
+  // A foreign staffId used to create an advance against another shop's staff
+  // member and copy their name into this shop's activity log.
+  await assertOwned(shop.id, { staffId: data.staffId });
+
   const result = await prisma.$transaction(async (tx) => {
     const advance = await tx.advanceSalary.create({
       data: {
@@ -45,7 +50,7 @@ export const POST = handle(async (req) => {
       });
     }
 
-    const staff = await tx.staff.findUnique({ where: { id: data.staffId }});
+    const staff = await tx.staff.findFirst({ where: { id: data.staffId, shopId: shop.id } });
     await tx.activityLog.create({
       data: {
         shopId: shop.id,

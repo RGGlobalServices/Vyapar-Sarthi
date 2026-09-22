@@ -2,7 +2,7 @@ import { config } from '@/lib/server/config';
 import prisma from '@/lib/server/prisma';
 import { isTestMode, getPayuConfig, requestHash } from '@/lib/server/payu';
 import { verifyRenewalToken } from '@/lib/server/renewalLinks';
-import { getPlanLabel } from '@/lib/subscriptionPricing';
+import { getPlanLabel, getTotalAmount } from '@/lib/subscriptionPricing';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token') || '';
 
-  let payload: { shopId: string; plan: string; amount: number; cycle?: 'monthly' | 'yearly' | '5_years' };
+  let payload: { shopId: string; plan: string; cycle: 'monthly' | 'yearly' | '5_years' };
   try {
     const res = verifyRenewalToken(token);
     if (!res) throw new Error('Invalid token');
@@ -26,8 +26,10 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const { shopId, plan, amount } = payload;
-  const cycle = payload.cycle || 'monthly';
+  const { shopId, plan, cycle } = payload;
+  // The price is never read from the link: it is computed here from the
+  // verified plan + cycle, exactly as create-order does.
+  const amount = getTotalAmount(plan, cycle);
 
   // Verify the shop still needs renewal (not already active).
   const shop = await prisma.shop.findUnique({ where: { id: shopId } });

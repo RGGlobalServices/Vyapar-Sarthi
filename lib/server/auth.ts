@@ -110,6 +110,21 @@ function loadAuthContext(userId: string, sessionId?: string) {
   return promise;
 }
 
+// A supplied x-shop-id must be one of the caller's own shops. It used to fall
+// back silently to shops[0] when it wasn't, so a stale or tampered header made
+// writes land in a different shop than the one the user was looking at. Only
+// a genuinely ABSENT header falls back to the first owned shop.
+function resolveActiveShop<S extends { id: string }>(shops: S[], requestedShopId: string | null): S {
+  if (requestedShopId) {
+    const match = shops.find(s => s.id === requestedShopId);
+    if (!match) throw new ApiError(403, 'Invalid or unauthorized shop', 'SHOP_INVALID');
+    return match;
+  }
+  const first = shops[0];
+  if (!first) throw new ApiError(404, 'Shop not found');
+  return first;
+}
+
 export async function requireUser(req: Request) {
   const { sub: userId, sessionId } = getAuthPayloadFromToken(req);
 
@@ -148,9 +163,7 @@ export async function requireShop(
     throw new ApiError(401, 'Session expired or revoked from another device. Please log in again.');
   }
 
-  const shop =
-    (requestedShopId && shops.find(s => s.id === requestedShopId)) || shops[0];
-  if (!shop) throw new ApiError(404, 'Shop not found');
+  const shop = resolveActiveShop(shops, requestedShopId);
 
   // Removed cross-shop subscription sharing to enforce strict Data Isolation per shop.
   // Each shop now maintains its own independent packageType and subscriptionPlan.
@@ -165,7 +178,6 @@ export async function requireShop(
     const isExempt = path.includes('/shop/profile') || 
                      path.includes('/shop/switch-plan') || 
                      path.includes('/payments/create-order') ||
-                     path.includes('/payments/activate-plan') ||
                      path.includes('/user/tool-usage');
                      
     if (!isExempt) {
@@ -208,9 +220,7 @@ export async function requireShopScope(
     throw new ApiError(401, 'Session expired or revoked from another device. Please log in again.');
   }
 
-  const shop =
-    (requestedShopId && shops.find(s => s.id === requestedShopId)) || shops[0];
-  if (!shop) throw new ApiError(404, 'Shop not found');
+  const shop = resolveActiveShop(shops, requestedShopId);
 
   const enforce = options.enforceSubscription ?? true;
 
@@ -220,7 +230,6 @@ export async function requireShopScope(
     const isExempt = path.includes('/shop/profile') ||
                      path.includes('/shop/switch-plan') ||
                      path.includes('/payments/create-order') ||
-                     path.includes('/payments/activate-plan') ||
                      path.includes('/user/tool-usage');
     if (!isExempt) {
       throw new ApiError(403, 'Subscription expired');

@@ -6,29 +6,30 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import dynamic from 'next/dynamic';
 import { Link } from '@/i18n/routing';
 import {
   TrendingUp, Wallet, AlertTriangle, ShoppingCart,
-  Package, IndianRupee, Calendar, Eye, EyeOff, RefreshCw, X,
+  Package, IndianRupee, Eye, EyeOff, RefreshCw, X,
   Sparkles, CheckCircle, Receipt, Banknote, HandCoins, ShoppingBag,
+  Percent, Landmark, Truck, Tag, Scale, Users, Calculator,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { planLabel } from '@/lib/planGates';
-import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { isWholesaleTierPackage, isMillBillingPackage } from '@/lib/config/packageConfig';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
 import UpcomingEventsCard from '@/components/UpcomingEventsCard';
+import { StatCard, rupees, signedRupees } from '@/components/dashboard/StatCard';
+import PaymentBreakdown from '@/components/dashboard/PaymentBreakdown';
+import { DashboardSkeleton, DashboardError, DashboardEmpty, StaleNotice } from '@/components/dashboard/DashboardStates';
 import WholesaleWidgets from './WholesaleWidgets';
 
-const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
-  ssr: false,
-  loading: () => <div className="h-[300px] bg-slate-100 dark:bg-slate-900/50 rounded-xl animate-pulse border border-slate-200 dark:border-slate-800" />,
-});
+type Timeframe = 'today' | 'yesterday' | 'last7Days' | 'weekly' | 'monthly' | 'custom';
+const TIMEFRAMES: Timeframe[] = ['today', 'yesterday', 'last7Days', 'weekly', 'monthly', 'custom'];
 
-
-
-
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">{children}</h2>;
+}
 
 function DashboardInner() {
   const t = useTranslations('Dashboard');
@@ -43,6 +44,7 @@ function DashboardInner() {
   // in their package's module whitelist — linking there trips the route
   // guard and bounces the shopkeeper back with an error toast.
   const isWholesaleTier = isWholesaleTierPackage(profile.packageType);
+  const isMill = isMillBillingPackage(profile.packageType);
   const udharHref = isWholesaleTier ? '/party' : '/udhar';
 
   const [paymentBanner, setPaymentBanner] = useState<{ plan: string } | null>(null);
@@ -59,54 +61,6 @@ function DashboardInner() {
     }
   }, [searchParams, fetchProfile, router, locale]);
 
-  const [stats, setStats] = useState({
-    today_sales: 0,
-    today_profit: 0,
-    expected_profit: 0,
-    cash_profit: 0,
-    udhar_profit: 0,
-    total_udhar: 0,
-    period_udhar: 0,
-    low_stock_count: 0,
-    returns_amount: 0,
-    returns_count: 0,
-    sales_collection: 0,
-    udhar_collection: 0,
-    advance_collection: 0,
-    total_collection: 0,
-    expenses_amount: 0,
-    expenses_count: 0,
-    today_expenses_amount: 0,
-    today_expenses_count: 0,
-    month_expenses_amount: 0,
-    month_expenses_count: 0,
-    purchases_amount: 0,
-    purchases_count: 0,
-    today_purchases_amount: 0,
-    today_purchases_count: 0,
-    month_purchases_amount: 0,
-    month_purchases_count: 0,
-    total_purchases_amount: 0,
-    total_purchases_count: 0,
-    supplier_payable: 0,
-    net_in_hand: 0,
-    net_profit: 0,
-    collection_cash: 0,
-    collection_upi: 0,
-    collection_card: 0,
-    collection_other: 0,
-  });
-  const [data, setData] = useState<any>({
-    salesTrend: [],
-    lowStock: [],
-    recentBills: [],
-    topProducts: [],
-    fastMoving: [],
-    slowMoving: [],
-    returnsByReason: [],
-    wholesale: null
-  });
-
   const getFormattedPaymentType = (type: string, details: any) => {
     if (type !== 'Split' || !details) return type;
     try {
@@ -122,10 +76,11 @@ function DashboardInner() {
     }
   };
 
-  const [loading, setLoading] = useState(true);
   const [showProfit, setShowProfit] = useState(true);
 
-  const [timeframe, setTimeframe] = useState(t('today'));
+  // The filter is a stable key (not the translated label) so switching language never desyncs it.
+  const [tf, setTf] = useState<Timeframe>('today');
+  const timeframe = t(tf);
   const [customDates, setCustomDates] = useState({ start: '', end: '' });
   const [appliedCustomDates, setAppliedCustomDates] = useState({ start: '', end: '' });
   const [showTopProductsModal, setShowTopProductsModal] = useState(false);
@@ -140,7 +95,7 @@ function DashboardInner() {
   const handleQuickFill = async (productId: string) => {
     const qty = parseFloat(refillValues[productId]);
     if (isNaN(qty) || qty <= 0) return;
-    
+
     setRefillLoading(productId);
     try {
       await api.post(`/products/${productId}/adjust`, {
@@ -148,13 +103,13 @@ function DashboardInner() {
         type: 'add',
         note: t('quickRefillNote')
       });
-      
+
       // Refresh data in the background — no spinner, so the stock-alerts
       // modal (which sits on top of the dashboard) doesn't get blown away
-      // by the full-page skeleton while it's open.
-      initData(false);
+      // by a skeleton while it's open.
+      mutateDashboard();
       loadFullStockAlerts();
-      
+
       // Clear value
       setRefillValues(prev => {
         const next = { ...prev };
@@ -169,18 +124,22 @@ function DashboardInner() {
     }
   };
 
+  // The date range is only *sent* to the server, which applies its own day boundaries; nothing is calculated from it here.
   const getDates = useCallback(() => {
     const end = new Date();
     let start = new Date();
-    if (timeframe === t('last7Days')) {
+    if (tf === 'yesterday') {
+      start.setDate(start.getDate() - 1);
+      end.setDate(end.getDate() - 1);
+    } else if (tf === 'last7Days') {
       start.setDate(end.getDate() - 6);
-    } else if (timeframe === t('weekly')) {
+    } else if (tf === 'weekly') {
       const day = end.getDay();
       const diff = end.getDate() - day + (day === 0 ? -6 : 1);
       start.setDate(diff);
-    } else if (timeframe === t('monthly')) {
+    } else if (tf === 'monthly') {
       start.setDate(1); // Start of month
-    } else if (timeframe === t('custom')) {
+    } else if (tf === 'custom') {
       if (appliedCustomDates.start && appliedCustomDates.end) {
         // If it's a custom date string (YYYY-MM-DD), we should parse it to local bounds
         const d1 = new Date(appliedCustomDates.start);
@@ -190,17 +149,17 @@ function DashboardInner() {
         return { start_date: d1.toISOString(), end_date: d2.toISOString() };
       }
     }
-    
+
     // Set start of day for start date
     start.setHours(0, 0, 0, 0);
     // Set end of day for end date
     end.setHours(23, 59, 59, 999);
 
-    return { 
-      start_date: start.toISOString(), 
-      end_date: end.toISOString() 
+    return {
+      start_date: start.toISOString(),
+      end_date: end.toISOString()
     };
-  }, [timeframe, appliedCustomDates, t]);
+  }, [tf, appliedCustomDates]);
 
   const getDynamicTitle = (baseLabel: string) => {
     const labelMap: Record<string, string> = {
@@ -208,9 +167,9 @@ function DashboardInner() {
       'Profit': t('todaysProfit').split(' ')[1] || 'Profit',
       'Returns': t('todaysReturns').split(' ')[1] || 'Returns'
     };
-    
+
     // For today, we have exact translations like "आजची विक्री"
-    if (timeframe === t('today')) {
+    if (tf === 'today') {
       if (baseLabel === 'Sales') return t('todaysSales');
       if (baseLabel === 'Profit') return t('todaysProfit');
       if (baseLabel === 'Returns') return t('todaysReturns');
@@ -219,23 +178,31 @@ function DashboardInner() {
 
     // For other timeframes, fallback to simple concatenation
     const translatedLabel = labelMap[baseLabel] || baseLabel;
-    
-    if (timeframe === t('last7Days')) return `${t('last7Days')} ${translatedLabel}`;
-    if (timeframe === t('weekly')) return `${t('weekly')} ${translatedLabel}`;
-    if (timeframe === t('monthly')) return `${t('monthly')} ${translatedLabel}`;
-    if (timeframe === t('custom')) {
+
+    if (tf === 'custom') {
       if (appliedCustomDates.start && appliedCustomDates.end) {
         const d1 = new Date(appliedCustomDates.start);
         const d2 = new Date(appliedCustomDates.end);
         const diff = Math.max(1, Math.ceil((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
         return `${diff} Days ${translatedLabel}`;
       }
-      return `${t('custom')} ${translatedLabel}`;
     }
-    return translatedLabel;
+    return `${timeframe} ${translatedLabel}`;
   };
 
   const { start_date, end_date } = getDates();
+
+  // A clear statement of the period being shown.
+  const periodText = (() => {
+    const fmt = (d: Date) => {
+      const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+      // A malformed locale segment in the URL must never crash the page.
+      try { return d.toLocaleDateString(locale === 'en' ? 'en-IN' : locale, opts); } catch { return d.toLocaleDateString('en-IN', opts); }
+    };
+    const a = new Date(start_date), b = new Date(end_date);
+    return a.toDateString() === b.toDateString() ? fmt(a) : `${fmt(a)} – ${fmt(b)}`;
+  })();
+
   const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
   // Auto-poll the dashboard so a sale/expense/payment made in another tab or
   // section shows up without the shopkeeper hitting refresh. The backend has
@@ -243,14 +210,16 @@ function DashboardInner() {
   // on POST, so this polling is cheap most ticks — a cache-hit round-trip —
   // and returns fresh KPIs on the very first tick after any write. Focus /
   // reconnect revalidation still fires on top of this for the tab-switch case.
-  const { data: dashboardPayload, mutate: mutateDashboard } = useSWR(
+  const { data: dashboardPayload, error: dashboardError, isValidating, mutate: mutateDashboard } = useSWR(
     activeShopId ? [`/reports/dashboard?start_date=${start_date}&end_date=${end_date}`, activeShopId] : null,
     fetcher,
     {
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
       revalidateOnMount: true,
-      keepPreviousData: true,
+      // Explicitly off (the app-wide SWRProvider turns it on): a different period/shop must never briefly show the previous
+      // one's figures under the new label.
+      keepPreviousData: false,
       refreshInterval: 8000,
       refreshWhenHidden: false,
       // SWR's default 2s dedupe is enough — the earlier 4000ms swallowed the
@@ -262,69 +231,25 @@ function DashboardInner() {
     }
   );
 
-
-  useEffect(() => {
-    if (dashboardPayload) {
-      const payload = dashboardPayload;
-      setStats({
-        today_sales: payload.summary?.today_sales ?? 0,
-        today_profit: payload.summary?.today_profit ?? 0,
-        expected_profit: payload.summary?.expected_profit ?? 0,
-        cash_profit: payload.summary?.cash_profit ?? 0,
-        udhar_profit: payload.summary?.udhar_profit ?? 0,
-        total_udhar: payload.summary?.total_udhar ?? 0,
-        period_udhar: payload.summary?.period_udhar ?? 0,
-        low_stock_count: payload.summary?.low_stock_count ?? 0,
-        returns_amount: payload.summary?.returns_amount ?? 0,
-        returns_count: payload.summary?.returns_count ?? 0,
-        sales_collection: payload.summary?.sales_collection ?? 0,
-        udhar_collection: payload.summary?.udhar_collection ?? 0,
-        advance_collection: payload.summary?.advance_collection ?? 0,
-        total_collection: payload.summary?.total_collection ?? 0,
-        expenses_amount: payload.summary?.expenses_amount ?? 0,
-        expenses_count: payload.summary?.expenses_count ?? 0,
-        today_expenses_amount: payload.summary?.today_expenses_amount ?? 0,
-        today_expenses_count: payload.summary?.today_expenses_count ?? 0,
-        month_expenses_amount: payload.summary?.month_expenses_amount ?? 0,
-        month_expenses_count: payload.summary?.month_expenses_count ?? 0,
-        purchases_amount: payload.summary?.purchases_amount ?? 0,
-        purchases_count: payload.summary?.purchases_count ?? 0,
-        today_purchases_amount: payload.summary?.today_purchases_amount ?? 0,
-        today_purchases_count: payload.summary?.today_purchases_count ?? 0,
-        month_purchases_amount: payload.summary?.month_purchases_amount ?? 0,
-        month_purchases_count: payload.summary?.month_purchases_count ?? 0,
-        total_purchases_amount: payload.summary?.total_purchases_amount ?? 0,
-        total_purchases_count: payload.summary?.total_purchases_count ?? 0,
-        supplier_payable: payload.summary?.supplier_payable ?? 0,
-        net_in_hand: payload.summary?.net_in_hand ?? 0,
-        net_profit: payload.summary?.net_profit ?? 0,
-        collection_cash: payload.summary?.collection_cash ?? 0,
-        collection_upi: payload.summary?.collection_upi ?? 0,
-        collection_card: payload.summary?.collection_card ?? 0,
-        collection_other: payload.summary?.collection_other ?? 0,
-      });
-      setData({
-        lowStock: payload.lowStock || [],
-        recentBills: payload.recentBills || [],
-        salesTrend: [],
-        topProducts: payload.topProducts || [],
-        fastMoving: payload.fastMoving || [],
-        slowMoving: payload.slowMoving || [],
-        returnsByReason: payload.returnsByReason || [],
-        wholesale: payload.wholesale || null,
-      });
-      setLoading(false);
-    }
-  }, [dashboardPayload]);
-
-  const initData = useCallback(async (showSpinner = true, forceRefresh = false) => {
-    if (showSpinner) setLoading(true);
-    if (forceRefresh) {
-      await api.get(`/reports/dashboard?start_date=${start_date}&end_date=${end_date}&refresh=true`);
-    }
-    await mutateDashboard();
-    setLoading(false);
-  }, [mutateDashboard, start_date, end_date]);
+  // Every figure comes straight from the server's summary. A key the server did not send (staff redaction) is simply
+  // absent: `has()` gates the card, so it is hidden rather than shown as ₹0 — and nothing is rebuilt client-side.
+  const summary: Record<string, any> = dashboardPayload?.summary ?? {};
+  const has = (k: string) => typeof summary[k] === 'number';
+  const n = (k: string) => Number(summary[k] ?? 0);
+  const data = {
+    lowStock: dashboardPayload?.lowStock || [],
+    recentBills: dashboardPayload?.recentBills || [],
+    topProducts: dashboardPayload?.topProducts || [],
+    fastMoving: dashboardPayload?.fastMoving || [],
+    slowMoving: dashboardPayload?.slowMoving || [],
+    returnsByReason: dashboardPayload?.returnsByReason || [],
+    wholesale: dashboardPayload?.wholesale || null,
+  };
+  const showsWholesaleCredit = !!summary.udhar_includes_party;
+  const initialLoading = !dashboardPayload && !dashboardError;
+  const failedWithoutData = !dashboardPayload && !!dashboardError;
+  const isEmptyShop = !!dashboardPayload && n('invoice_count') === 0 && data.recentBills.length === 0 && data.topProducts.length === 0;
+  const retryDashboard = () => { mutateDashboard(); };
 
   const [topProductsError, setTopProductsError] = useState(false);
   const [stockAlertsError, setStockAlertsError] = useState(false);
@@ -374,56 +299,10 @@ function DashboardInner() {
   useEffect(() => {
     setFullTopProducts([]);
     setFullStockAlerts([]);
-  }, [timeframe, appliedCustomDates, activeShopId]);
+  }, [tf, appliedCustomDates, activeShopId]);
 
   // No mount-triggered fetch here: useSWR already fetches automatically as
-  // soon as `activeShopId` makes the key non-null, and the effect above
-  // syncs `stats`/`data`/`loading` off `dashboardPayload` once it arrives.
-  // Calling mutateDashboard() again here just duplicated that first request
-  // and forced the full-page skeleton back on every mount/tab-focus, even
-  // when SWR already had fresh cached data to show instantly.
-
-  if (loading) {
-    return (
-      <div className="space-y-6 animate-in fade-in duration-300">
-        {/* Skeleton header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div>
-            <div className="h-9 w-48 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse" />
-            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800/60 rounded-lg mt-2 animate-pulse" />
-          </div>
-          <div className="h-10 w-72 bg-slate-200 dark:bg-slate-800/60 rounded-xl animate-pulse" />
-        </div>
-        {/* Skeleton stat cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
-              <div className="h-3 w-24 bg-slate-200 dark:bg-slate-800 rounded animate-pulse mb-4" />
-              <div className="h-8 w-32 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse" />
-            </div>
-          ))}
-        </div>
-        {/* Skeleton bottom cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-                <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
-              </div>
-              <div className="p-4 space-y-3">
-                {[...Array(5)].map((_, j) => (
-                  <div key={j} className="flex justify-between">
-                    <div className="h-4 w-32 bg-slate-100 dark:bg-slate-800/70 rounded animate-pulse" />
-                    <div className="h-4 w-16 bg-slate-100 dark:bg-slate-800/70 rounded animate-pulse" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  // soon as `activeShopId` makes the key non-null.
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -445,33 +324,34 @@ function DashboardInner() {
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{t('title')}</h1>
           <p className="text-slate-500 text-sm font-medium">{t('businessHealth')}</p>
+          <p data-testid="dashboard-period" className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1">{t('showingPeriod', { range: periodText })}</p>
         </div>
-        <div className="flex flex-col md:items-end gap-3 w-full md:w-auto">
+        <div className="flex flex-col md:items-end gap-3 w-full md:w-auto min-w-0">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full">
             <div className="flex flex-wrap gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              {[t('today'), t('last7Days'), t('weekly'), t('monthly'), t('custom')].map(tf => (
-                <button 
-                  key={tf} 
-                  onClick={() => setTimeframe(tf)} 
+              {TIMEFRAMES.map(k => (
+                <button
+                  key={k}
+                  onClick={() => setTf(k)}
                   className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-bold transition-all", 
-                    timeframe === tf ? "bg-emerald-500 text-white dark:text-slate-900 shadow-sm" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                    "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                    tf === k ? "bg-emerald-500 text-white dark:text-slate-900 shadow-sm" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                   )}
                 >
-                  {tf}
+                  {t(k)}
                 </button>
               ))}
             </div>
-            {role !== 'staff' && (
+            {has('today_profit') && role !== 'staff' && (
               <button
                 onClick={() => setShowProfit(!showProfit)}
                 className={cn(
                   'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm',
-                  showProfit 
-                    ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' 
+                  showProfit
+                    ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     : 'bg-emerald-600 border-emerald-500 text-white'
                 )}
               >
@@ -480,22 +360,22 @@ function DashboardInner() {
               </button>
             )}
           </div>
-          {timeframe === t('custom') && (
+          {tf === 'custom' && (
             <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
-              <input 
-                type="date" 
-                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-                value={customDates.start} 
-                onChange={e => setCustomDates({...customDates, start: e.target.value})} 
+              <input
+                type="date"
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                value={customDates.start}
+                onChange={e => setCustomDates({...customDates, start: e.target.value})}
               />
               <span className="text-slate-500 text-xs font-medium">to</span>
-              <input 
-                type="date" 
-                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-                value={customDates.end} 
-                onChange={e => setCustomDates({...customDates, end: e.target.value})} 
+              <input
+                type="date"
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                value={customDates.end}
+                onChange={e => setCustomDates({...customDates, end: e.target.value})}
               />
-              <button 
+              <button
                 onClick={() => setAppliedCustomDates(customDates)}
                 className="bg-emerald-500 text-white dark:text-slate-900 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-400 transition-colors shadow-sm ml-1"
                 disabled={!customDates.start || !customDates.end}
@@ -507,112 +387,133 @@ function DashboardInner() {
         </div>
       </div>
 
-      {/* ── Today's money: what came in, what went out, what's left ──
-          Separated from the operational stats below because these are
-          cash-flow figures (money actually moved), not billed value. */}
-      {role !== 'staff' && (
-        <div>
-          <div className="flex items-baseline gap-2 mb-3">
-            <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-              {timeframe === t('today') ? t('todaysMoney') : t('periodMoney', { timeframe })}
-            </h2>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
+      {initialLoading && <DashboardSkeleton />}
+      {failedWithoutData && <DashboardError onRetry={retryDashboard} retrying={isValidating} />}
+
+      {dashboardPayload && (<>
+      {dashboardError && <StaleNotice onRetry={retryDashboard} />}
+      {isEmptyShop && <DashboardEmpty />}
+
+      {/* Row 1 — primary business cards */}
+      <section data-testid="dash-primary">
+        <div className={cn('grid grid-cols-2 gap-3 md:gap-6', showsWholesaleCredit ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
+          <StatCard
+            title={t('salesBilledValue')}
+            value={rupees(n('today_sales'))}
+            footnote={t('billedValueNote')}
+            icon={<TrendingUp className="text-emerald-500" />}
+            href="/reports"
+          />
+          {has('total_collection') && (
             <StatCard
               title={t('totalCollection')}
-              value={`₹ ${Math.round(stats.total_collection).toLocaleString('en-IN')}`}
+              value={rupees(n('total_collection'))}
               icon={<Banknote className="text-emerald-500" />}
               href="/reports"
               accent="emerald"
-              breakdown={[
-                { label: t('cashLabel'), amount: stats.collection_cash },
-                { label: t('upiLabel'), amount: stats.collection_upi },
-                { label: t('cardLabel'), amount: stats.collection_card },
-                { label: t('otherLabel'), amount: stats.collection_other },
-              ]}
               footnote={t('collectionFootnote', {
-                billing: Math.round(stats.sales_collection).toLocaleString('en-IN'),
-                udhar: Math.round(stats.udhar_collection).toLocaleString('en-IN'),
-                advance: stats.advance_collection > 0 ? t('advanceSuffix', { amount: Math.round(stats.advance_collection).toLocaleString('en-IN') }) : '',
+                billing: Math.round(n('sales_collection')).toLocaleString('en-IN'),
+                udhar: Math.round(n('udhar_collection')).toLocaleString('en-IN'),
+                advance: n('advance_collection') > 0 ? t('advanceSuffix', { amount: Math.round(n('advance_collection')).toLocaleString('en-IN') }) : '',
               })}
             />
+          )}
+          <StatCard
+            title={tf === 'today' ? t('todaysUdharAllCaps') : t('periodUdharAllCaps')}
+            value={rupees(n('period_udhar'))}
+            icon={<Wallet className="text-orange-500" />}
+            href={udharHref}
+            accent="amber"
+          />
+          <StatCard
+            title={t('outstandingLabel')}
+            value={rupees(n('total_udhar'))}
+            subtitle={t('outstandingNote')}
+            footnote={showsWholesaleCredit ? t('retailOutstandingNote', { amount: Math.round(n('retail_udhar_outstanding')).toLocaleString('en-IN') }) : undefined}
+            icon={<Scale className="text-red-500" />}
+            href={udharHref}
+            accent="red"
+          />
+          {showsWholesaleCredit && (
             <StatCard
-              title={timeframe === t('today') ? t('todaysUdharCollection') : t('periodUdharCollection', { timeframe })}
-              value={`₹ ${Math.round(stats.udhar_collection).toLocaleString('en-IN')}`}
-              subtitle={t('receivedInUdharSection')}
-              icon={<HandCoins className="text-blue-500" />}
-              href={udharHref}
-              accent="blue"
+              title={t('partyOutstandingLabel')}
+              value={rupees(n('party_outstanding'))}
+              subtitle={t('partyOutstandingNote')}
+              icon={<Users className="text-indigo-500" />}
+              href="/party"
+              accent="indigo"
+              highlight
+              className="col-span-2 lg:col-span-1"
             />
-            <StatCard
-              title={t('todaysExpenses')}
-              value={`₹ ${Math.round(stats.today_expenses_amount).toLocaleString('en-IN')}`}
-              subtitle={t('plusThisMonth', { amount: Math.round(stats.month_expenses_amount).toLocaleString('en-IN') })}
-              footnote={stats.today_expenses_count > 0 ? t('entriesToday', { count: stats.today_expenses_count }) : t('noExpensesToday')}
-              icon={<Receipt className="text-rose-500" />}
-              href="/expenses"
-              accent="rose"
-            />
-            {/* Purchases (money out to suppliers) — today + month + all-time
-                total + outstanding payable, mirroring the expenses card. */}
-            <StatCard
-              title={t('todaysPurchases')}
-              value={`₹ ${Math.round(stats.today_purchases_amount).toLocaleString('en-IN')}`}
-              subtitle={t('plusThisMonth', { amount: Math.round(stats.month_purchases_amount).toLocaleString('en-IN') })}
-              breakdown={[
-                { label: t('totalPurchasesLabel'), amount: stats.total_purchases_amount },
-                { label: t('supplierPayableLabel'), amount: stats.supplier_payable },
-              ]}
-              footnote={stats.today_purchases_count > 0 ? t('billsToday', { count: stats.today_purchases_count }) : t('noPurchasesToday')}
-              icon={<ShoppingBag className="text-amber-500" />}
-              href="/purchases"
-              accent="amber"
-            />
-          </div>
+          )}
         </div>
+      </section>
+
+      {/* Row 2 — Mill sales breakdown (Bada Udyog only; every figure is the server's own) */}
+      {isMill && has('net_goods_sales') && (
+        <section data-testid="dash-breakdown">
+          <SectionHeading>{t('financialBreakdown')}</SectionHeading>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-6">
+            <StatCard title={t('netGoodsSales')} value={rupees(n('net_goods_sales'))} footnote={t('netGoodsNote')} icon={<Calculator className="text-emerald-500" />} accent="emerald" />
+            <StatCard title={t('gstCollected')} value={rupees(n('gst_collected'))} icon={<Percent className="text-blue-500" />} accent="blue" />
+            <StatCard title={t('commercialCharges')} value={rupees(n('commercial_charges'))} footnote={t('commercialChargesNote')} icon={<Truck className="text-amber-500" />} accent="amber" />
+            <StatCard title={t('discountLabel')} value={rupees(n('discount'))} icon={<Tag className="text-rose-500" />} accent="rose" />
+            <StatCard title={t('roundOffLabel')} value={signedRupees(n('round_off'))} icon={<Scale className="text-slate-500" />} />
+          </div>
+        </section>
       )}
 
-      {/* Main Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-6">
-        <StatCard 
-          title={getDynamicTitle('Sales')} 
-          value={`₹ ${Math.round(stats.today_sales).toLocaleString('en-IN')}`} 
-          icon={<TrendingUp className="text-emerald-500" />} 
-          href="/reports"
-        />
-        {role !== 'staff' && showProfit && (
-          <StatCard 
-            title={getDynamicTitle('Profit')} 
-            value={`₹ ${Math.round(stats.today_profit).toLocaleString('en-IN')}`} 
-            icon={<ShoppingCart className="text-indigo-500" />} 
-            href="/reports"
-          />
-        )}
-        <StatCard
-          title={timeframe === t('today') ? t('todaysUdharAllCaps') : t('periodUdharAllCaps')}
-          value={`₹ ${Math.round(stats.period_udhar).toLocaleString('en-IN')}`}
-          subtitle={t('plusTotalUdhar', { amount: Math.round(stats.total_udhar).toLocaleString('en-IN') })}
-          icon={<Wallet className="text-orange-500" />}
-          href={udharHref}
-        />
-        <StatCard 
-          title={getDynamicTitle('Returns')} 
-          value={`₹ ${stats.returns_amount ? Math.round(stats.returns_amount).toLocaleString('en-IN') : '0'}`} 
-          icon={<RefreshCw className="text-purple-500" />} 
-          href="/returns"
-        />
-        <StatCard 
-          title={t('lowStockAlerts')} 
-          value={stats.low_stock_count.toString()} 
-          icon={<AlertTriangle className="text-red-500" />} 
-          href="/stock"
-        />
-      </div>
+      {/* Row 3 — profit / purchasing / expenses (each card appears only if the server sent its figure) */}
+      {(has('today_profit') || has('purchases_amount') || has('expenses_amount')) && (
+        <section data-testid="dash-profit">
+          <SectionHeading>{t('profitSection')}</SectionHeading>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-6">
+            {has('today_profit') && showProfit && (
+              <StatCard title={getDynamicTitle('Profit')} value={rupees(n('today_profit'))} icon={<ShoppingCart className="text-indigo-500" />} href="/reports" accent="indigo" />
+            )}
+            {isMill && has('net_margin') && has('today_profit') && showProfit && (
+              <StatCard title={t('marginOnNetGoods')} value={`${(n('net_margin') * 100).toFixed(1)}%`} footnote={t('marginNote')} icon={<Percent className="text-indigo-500" />} accent="indigo" />
+            )}
+            {has('purchases_amount') && (
+              <StatCard
+                title={t('purchasesLabel')}
+                value={rupees(n('purchases_amount'))}
+                subtitle={t('thisMonthAmount', { amount: Math.round(n('month_purchases_amount')).toLocaleString('en-IN') })}
+                icon={<ShoppingBag className="text-amber-500" />}
+                href="/purchases"
+                accent="amber"
+              />
+            )}
+            {showsWholesaleCredit && has('supplier_payable') && (
+              <StatCard title={t('supplierPayableTitle')} value={rupees(n('supplier_payable'))} footnote={t('supplierPayableNote')} icon={<Landmark className="text-orange-500" />} href="/purchases" accent="amber" />
+            )}
+            {has('expenses_amount') && (
+              <StatCard
+                title={t('expensesLabel')}
+                value={rupees(n('expenses_amount'))}
+                subtitle={t('thisMonthAmount', { amount: Math.round(n('month_expenses_amount')).toLocaleString('en-IN') })}
+                icon={<Receipt className="text-rose-500" />}
+                href="/expenses"
+                accent="rose"
+              />
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Row 4 — payment breakdown */}
+      {has('collection_cash') && <PaymentBreakdown summary={summary} />}
+
+      {/* Row 5 — stock & operations */}
+      <section data-testid="dash-operations">
+        <SectionHeading>{t('operationsSection')}</SectionHeading>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+          <StatCard title={t('lowStockAlerts')} value={n('low_stock_count').toString()} icon={<AlertTriangle className="text-red-500" />} href="/stock" accent={n('low_stock_count') > 0 ? 'red' : 'slate'} />
+          <StatCard title={getDynamicTitle('Returns')} value={rupees(n('returns_amount'))} icon={<RefreshCw className="text-purple-500" />} href="/returns" />
+        </div>
+      </section>
 
       {data.wholesale && <WholesaleWidgets data={data.wholesale} />}
-
-
-
       {/* Upcoming calendar events */}
       <UpcomingEventsCard />
 
@@ -622,12 +523,13 @@ function DashboardInner() {
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <TrendingUp size={16} className="text-emerald-500 dark:text-emerald-400" /> {t('topProducts')}
+              <TrendingUp size={16} className="text-emerald-500 dark:text-emerald-400" /> {t('topProductsSalesValue')}
             </CardTitle>
             <button onClick={() => setShowTopProductsModal(true)} className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 px-3 py-1 rounded-full font-bold transition-colors">
               {t('all')}
             </button>
           </CardHeader>
+          <p className="px-6 py-2 text-[10px] leading-snug text-slate-500 border-b border-slate-100 dark:border-slate-800/50">{isMill ? t('topProductsBasisMill') : t('topProductsBasis')}</p>
           <CardContent className="p-0 flex-1 overflow-y-auto">
             {data.topProducts?.length > 0 ? data.topProducts.map((item: any, idx: number) => (
               <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
@@ -641,7 +543,7 @@ function DashboardInner() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">₹{item.value.toLocaleString('en-IN')}</p>
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-500/80 font-bold">{item.qty} {t('units')}</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-500/80 font-bold">{item.qty} {item.unit || t('unitNone')}</p>
                 </div>
               </div>
             )) : (
@@ -663,6 +565,9 @@ function DashboardInner() {
               {t('all')}
             </button>
           </CardHeader>
+          {n('low_stock_count') > data.lowStock.length && (
+            <p className="px-6 py-2 text-[10px] font-bold text-slate-500 border-b border-slate-100 dark:border-slate-800">{t('lowStockShowing', { shown: data.lowStock.length, total: n('low_stock_count') })}</p>
+          )}
           <CardContent className="p-0">
             {data.lowStock.length > 0 ? data.lowStock.slice(0, 5).map((item: any) => (
               <div key={item.id} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
@@ -741,10 +646,10 @@ function DashboardInner() {
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <Sparkles size={16} className="text-blue-500 dark:text-blue-400" /> {t('fastMovingItems')}
+              <Sparkles size={16} className="text-blue-500 dark:text-blue-400" /> {t('topMovingProducts')}
             </CardTitle>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('topByVolume')}</span>
           </CardHeader>
+          <p className="px-6 py-2 text-[10px] leading-snug text-slate-500 border-b border-slate-100 dark:border-slate-800/50">{t('topMovingNote')}</p>
           <CardContent className="p-0 flex-1 overflow-y-auto max-h-[350px]">
             {data.fastMoving?.length > 0 ? data.fastMoving.map((item: any, idx: number) => (
               <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
@@ -757,7 +662,7 @@ function DashboardInner() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">{item.qty} {t('units')}</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">{item.qty} {item.unit || t('unitNone')}</p>
                   <p className="text-[10px] text-blue-600 dark:text-blue-500/80 font-bold">₹{item.value.toLocaleString('en-IN')} {t('revSuffix')}</p>
                 </div>
               </div>
@@ -774,10 +679,10 @@ function DashboardInner() {
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
           <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
             <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-              <Package size={16} className="text-orange-500 dark:text-orange-400" /> {t('slowMovingItems')}
+              <Package size={16} className="text-orange-500 dark:text-orange-400" /> {t('leastSoldProducts')}
             </CardTitle>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('needAttention')}</span>
           </CardHeader>
+          <p className="px-6 py-2 text-[10px] leading-snug text-slate-500 border-b border-slate-100 dark:border-slate-800/50">{t('leastSoldNote')}</p>
           <CardContent className="p-0 flex-1 overflow-y-auto max-h-[350px]">
             {data.slowMoving?.length > 0 ? data.slowMoving.map((item: any, idx: number) => (
               <div key={idx} className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
@@ -791,9 +696,9 @@ function DashboardInner() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-slate-100">
-                    {item.qty === 0 ? <span className="text-red-500">0 {t('unitsSold')}</span> : `${item.qty} ${t('unitsSold')}`}
+                    {item.qty === 0 ? <span className="text-red-500">{t('soldQty', { qty: 0, unit: item.unit || t('unitNone') })}</span> : t('soldQty', { qty: item.qty, unit: item.unit || t('unitNone') })}
                   </p>
-                  <p className="text-[10px] text-orange-600 dark:text-orange-500/80 font-bold">{item.current_stock} {t('inStock')}</p>
+                  <p className="text-[10px] text-orange-600 dark:text-orange-500/80 font-bold">{t('inStockQty', { qty: item.current_stock, unit: item.unit || t('unitNone') })}</p>
                 </div>
               </div>
             )) : (
@@ -822,7 +727,7 @@ function DashboardInner() {
               <div className="p-6">
                 <div className="flex flex-col gap-4">
                   {data.returnsByReason.map((item: any, idx: number) => {
-                    const percent = Math.round((item.amount / (stats.returns_amount || 1)) * 100);
+                    const percent = Math.round((item.amount / (n('returns_amount') || 1)) * 100);
                     return (
                       <div key={idx} className="flex items-center gap-4">
                         <div className="flex-1">
@@ -849,6 +754,8 @@ function DashboardInner() {
           </CardContent>
         </Card>
       </div>
+
+      </>)}
 
       {/* {t('topProducts')} Modal */}
       {showTopProductsModal && (
@@ -1027,78 +934,4 @@ export default function Dashboard() {
       <DashboardInner />
     </Suspense>
   );
-}
-
-type Accent = 'slate' | 'emerald' | 'blue' | 'rose' | 'indigo' | 'red' | 'amber';
-
-// Bottom border tints the card by meaning: money-in green, money-out red,
-// the closing figure indigo. Keeps the row scannable at a glance.
-const ACCENT_BAR: Record<Accent, string> = {
-  slate: 'border-b-slate-200 dark:border-b-slate-800',
-  emerald: 'border-b-emerald-500',
-  blue: 'border-b-blue-500',
-  rose: 'border-b-rose-500',
-  indigo: 'border-b-indigo-500',
-  red: 'border-b-red-500',
-  amber: 'border-b-amber-500',
-};
-
-function StatCard({ title, value, icon, href, subtitle, accent = 'slate', highlight, breakdown, footnote }: {
-  title: string; value: string; icon: React.ReactNode; href?: string; subtitle?: string;
-  accent?: Accent; highlight?: boolean;
-  /** Payment-mode split shown under the value. Zero rows are dropped. */
-  breakdown?: { label: string; amount: number }[];
-  footnote?: string;
-}) {
-  const shownBreakdown = (breakdown || []).filter(b => Math.round(b.amount) > 0);
-  const card = (
-    <Card className={cn(
-      'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl border-b-4 transition-all duration-300 cursor-pointer h-full hover:border-emerald-500/50',
-      ACCENT_BAR[accent],
-      highlight && 'ring-1 ring-indigo-500/25 shadow-md shadow-indigo-500/5',
-    )}>
-      <CardHeader className="flex flex-row items-center justify-between pb-1 md:pb-2 p-4 md:p-6">
-        <CardTitle className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest leading-tight">{title}</CardTitle>
-        <div className="scale-75 md:scale-100 origin-right">{icon}</div>
-      </CardHeader>
-      <CardContent className="px-4 pb-4 md:px-6 md:pb-6 pt-0 flex flex-col justify-end min-h-[60px]">
-        <div className={cn(
-          'text-xl md:text-2xl font-black tracking-tighter',
-          accent === 'red' ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-50',
-        )}>{value}</div>
-        {subtitle && (
-          <p className={cn(
-            'text-[10px] md:text-xs font-bold mt-1',
-            accent === 'rose' ? 'text-rose-600 dark:text-rose-400'
-              : accent === 'red' ? 'text-red-600 dark:text-red-400'
-              : accent === 'blue' ? 'text-blue-600 dark:text-blue-400'
-              : accent === 'indigo' ? 'text-indigo-600 dark:text-indigo-400'
-              : accent === 'amber' ? 'text-amber-600 dark:text-amber-400'
-              : 'text-emerald-600 dark:text-emerald-400',
-          )}>{subtitle}</p>
-        )}
-
-        {shownBreakdown.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {shownBreakdown.map(b => (
-              <span key={b.label}
-                className="text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                {b.label} ₹{Math.round(b.amount).toLocaleString('en-IN')}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {footnote && (
-          <p className="text-[9px] md:text-[10px] font-medium text-slate-400 mt-1.5 leading-tight">{footnote}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  return href ? (
-    <Link href={href as any} className="block group">
-      {card}
-    </Link>
-  ) : card;
 }

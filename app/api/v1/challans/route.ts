@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import prisma from '@/lib/server/prisma';
 import { randomUUID } from 'crypto';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
@@ -64,6 +65,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'A party is required.' }, { status: 400 });
     }
 
+    // Client-supplied ids must belong to this shop before any write.
+    await assertOwned(shop.id, {
+      customerId,
+      orderId,
+      productId: items.map((it: any) => it.productId),
+    });
+
     const challanNumber = `CH-${randomUUID().substring(0, 8).toUpperCase()}`;
 
     // One transaction: create the challan + items, and decrement each
@@ -117,7 +125,8 @@ export async function POST(req: Request) {
         prisma,
         items
           .filter((it: any) => it.variantKey)
-          .map((it: any) => ({ productId: it.productId, variantKey: it.variantKey, delta: -(Number(it.quantity) || 0) }))
+          .map((it: any) => ({ productId: it.productId, variantKey: it.variantKey, delta: -(Number(it.quantity) || 0) })),
+        shop.id
       );
     } catch (e) {
       console.error('[challans POST] variant stock update failed (non-fatal):', e);

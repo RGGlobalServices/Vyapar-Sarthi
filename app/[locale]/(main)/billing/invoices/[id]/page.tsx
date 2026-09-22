@@ -4,7 +4,9 @@ import { useState, useEffect, use, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Link } from '@/i18n/routing';
+import { Link, useRouter } from '@/i18n/routing';
+import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
+import { isMillInvoice } from '@/lib/millInvoice';
 import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
@@ -16,6 +18,7 @@ import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const t = useTranslations('Invoices');
   const { id } = use(params);
+  const router = useRouter();
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -128,6 +131,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         <Link href="/billing/invoices" className="bg-emerald-500 text-white dark:text-slate-900 px-8 py-3 rounded-2xl font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
           {t('backToHistory')}
         </Link>
+      </div>
+    );
+  }
+
+  // Mill (mill_v2) invoices have their own invoice: it prints the STORED figures and stored invoice number. The legacy
+  // template below (inclusive GST, id-derived bill number) is never used for them.
+  if (isMillInvoice(invoice)) {
+    return (
+      <div className="max-w-4xl mx-auto py-10 text-center">
+        <Link href="/billing/invoices" className="text-emerald-600 font-bold text-sm">{t('backToHistory')}</Link>
+        <MillInvoicePreviewModal invoiceId={invoice.id} onClose={() => router.push('/billing/invoices' as any)} />
       </div>
     );
   }
