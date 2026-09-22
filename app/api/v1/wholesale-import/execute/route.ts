@@ -711,6 +711,12 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // Bada Udyog weighbridge/kanta-chitthi capture — bill-level, read once from the first row (same convention as invoiceNumber/date).
+        const tareWeightRaw = getVal(firstRow, ['tareweight', 'tareweightkg', 'tare']);
+        const grossWeightRaw = getVal(firstRow, ['grossweight', 'grossweightkg', 'totalweight', 'total']);
+        const tareWeightKg = tareWeightRaw !== undefined && String(tareWeightRaw).trim() !== '' ? parseFloat(String(tareWeightRaw)) : null;
+        const grossWeightKg = grossWeightRaw !== undefined && String(grossWeightRaw).trim() !== '' ? parseFloat(String(grossWeightRaw)) : null;
+
         const purchaseInvoice = await prisma.purchaseInvoice.create({
           data: {
             shopId,
@@ -718,7 +724,9 @@ export async function POST(req: NextRequest) {
             invoiceNumber: String(invoiceNumber),
             date: billDate,
             totalCost: 0,
-            gst: 0
+            gst: 0,
+            ...(tareWeightKg != null && isFinite(tareWeightKg) ? { tareWeightKg } : {}),
+            ...(grossWeightKg != null && isFinite(grossWeightKg) ? { grossWeightKg } : {}),
           }
         });
 

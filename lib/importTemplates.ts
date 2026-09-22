@@ -77,13 +77,17 @@ function productColumns(businessType?: string): ImportColumn[] {
 // table's "+ Column" picker, so a shopkeeper whose sheet actually needs
 // Brand / Location / mill grading / etc. can add just that column.
 // Bill-level charges offered as review columns for mill purchases; totals become the bill's charges (never products/stock).
-export const CHARGE_COLUMNS = ['Hamali', 'Freight', 'Loading', 'Unloading', 'Weighment', 'Other Charges'];
+export const CHARGE_COLUMNS = ['Hamali', 'Freight', 'Loading', 'Unloading', 'Weighment', 'Driver Charges', 'Other Charges'];
+// Bill-level weight capture (kanta chitthi) — not a charge, so kept out of CHARGE_COLUMNS; stored directly on the purchase invoice.
+export const WEIGHT_COLUMNS = ['Tare Weight', 'Gross Weight'];
 
 export function getAddableColumns(importType: string, isMill = false): ImportColumn[] {
   if (!['product', 'stock', 'purchase'].includes(importType)) return [];
   const chargeCols: ImportColumn[] = isMill && importType === 'purchase' ? CHARGE_COLUMNS.map(label => ({ label, aliases: [label.toLowerCase().replace(/\s+/g, '')], numeric: true, profile: 'price' } as ImportColumn)) : [];
+  const weightCols: ImportColumn[] = isMill && importType === 'purchase' ? WEIGHT_COLUMNS.map(label => ({ label, aliases: [label.toLowerCase().replace(/\s+/g, '')], numeric: true, profile: 'quantity' } as ImportColumn)) : [];
   return [
     ...chargeCols,
+    ...weightCols,
     // Bada Udyog (mill): classifies the product so purchases of raw material flow into Raw Material lots.
     ...(isMill ? [{ label: 'Mill Category', aliases: ['millcategory', 'millclass', 'materialtype', 'itemclass'], profile: 'text' } as ImportColumn] : []),
     { label: 'Brand', aliases: ['brand', 'make'], profile: 'text' },

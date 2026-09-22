@@ -1242,6 +1242,9 @@ model PurchaseInvoice {
   gst           Float?
   // Bill-level charges beyond the goods (hamali, freight, loading …): [{ name, amount }]. Already included in totalCost.
   charges       Json?
+  // Bada Udyog weighbridge/kanta-chitthi capture on the bill itself — optional, informational only (Net = gross - tare); never affects totalCost or stock.
+  tareWeightKg  Float?    @map("tare_weight_kg")
+  grossWeightKg Float?    @map("gross_weight_kg")
   // Offline reference number assigned while offline
   offlineRefNumber String?  @map("offline_ref_number") @db.VarChar
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)

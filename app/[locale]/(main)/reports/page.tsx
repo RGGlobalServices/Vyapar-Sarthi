@@ -6,8 +6,9 @@ import {
   TrendingUp, IndianRupee, Percent, Package, Users, ShoppingCart,
   FileText, Download, Loader2, BarChart3, PieChart, Receipt,
   Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Box, Scale,
-  FileSpreadsheet, ClipboardCheck, ExternalLink
+  FileSpreadsheet, ClipboardCheck, ExternalLink, Wheat
 } from 'lucide-react';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -22,9 +23,9 @@ const ReportFilterBar = dynamic(() => import('@/components/reports/ReportFilterB
 const DrillDownChart = dynamic(() => import('@/components/reports/DrillDownChart'), { ssr: false });
 const ReportTable = dynamic(() => import('@/components/reports/ReportTable'), { ssr: false });
 
-type Tab = 'sales' | 'purchases' | 'stock' | 'financials' | 'expenses' | 'crm' | 'staff' | 'ca';
+type Tab = 'sales' | 'purchases' | 'stock' | 'financials' | 'expenses' | 'crm' | 'staff' | 'ca' | 'milling';
 
-const TAB_META: { id: Tab; icon: any; plans?: string[] }[] = [
+const TAB_META: { id: Tab; icon: any; plans?: string[]; millOnly?: boolean }[] = [
   { id: 'sales', icon: TrendingUp },
   { id: 'financials', icon: Scale },
   { id: 'stock', icon: Package },
@@ -33,6 +34,7 @@ const TAB_META: { id: Tab; icon: any; plans?: string[] }[] = [
   { id: 'purchases', icon: ShoppingCart, plans: ['wholesale'] },
   { id: 'staff', icon: FileText },
   { id: 'ca', icon: ClipboardCheck },
+  { id: 'milling', icon: Wheat, millOnly: true },
 ];
 
 function KPICard({ label, value, sub, icon: Icon, color = 'emerald', trend }: any) {
@@ -919,6 +921,81 @@ function PurchasesTab({ filters }: { filters: any }) {
   );
 }
 
+// ── MILLING TAB (Bada Udyog) ─────────────────────────────────────────────
+// Every production batch in the date range, one row each: raw material consumed, every output it produced (finished good,
+// bran/konda, husk/bhusa, broken, rejections — whatever the batch actually recorded), the operator(s) who ran it, and how
+// long it took. Fully downloadable as PDF / Excel / CSV via ExportButton — this tab is a thin table, the export IS the report.
+function MillingTab({ filters }: { filters: any }) {
+  const { activeShopId } = useBusinessStore();
+  const [data, setData] = useState<{ rows: any[]; summary: any } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/reports/mill-production?start_date=${filters.startDate}&end_date=${filters.endDate}`);
+      setData(data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [filters, activeShopId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
+
+  const rows = data?.rows || [];
+  const s = data?.summary || {};
+  const columns = [
+    { key: 'batchNumber', label: 'Batch' },
+    { key: 'status', label: 'Status' },
+    { key: 'rawMaterial', label: 'Raw Material' },
+    { key: 'rawLotNumber', label: 'Raw Lot' },
+    { key: 'inputKg', label: 'Input (Kg)', type: 'number' as const },
+    { key: 'outputProduct', label: 'Finished Good' },
+    { key: 'finishedKg', label: 'Finished (Kg)', type: 'number' as const },
+    { key: 'branKg', label: 'Bran / Konda (Kg)', type: 'number' as const },
+    { key: 'huskKg', label: 'Husk / Bhusa (Kg)', type: 'number' as const },
+    { key: 'brokenKg', label: 'Broken (Kg)', type: 'number' as const },
+    { key: 'wastageKg', label: 'Wastage (Kg)', type: 'number' as const },
+    { key: 'recoveryPct', label: 'Recovery %', type: 'number' as const },
+    { key: 'operators', label: 'Operator(s)' },
+    { key: 'stages', label: 'Stages' },
+    { key: 'outputs', label: 'All Outputs' },
+    { key: 'startedAt', label: 'Started' },
+    { key: 'closedAt', label: 'Closed' },
+    { key: 'processingHours', label: 'Processing (Hours)', type: 'number' as const },
+    { key: 'processingDays', label: 'Processing (Days)', type: 'number' as const },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard label="Batches" value={(s.batches || 0).toLocaleString()} icon={Wheat} color="emerald" />
+        <KPICard label="Raw Material In (Kg)" value={(s.totalInputKg || 0).toLocaleString('en-IN')} icon={Package} color="amber" />
+        <KPICard label="Finished Out (Kg)" value={(s.totalFinishedKg || 0).toLocaleString('en-IN')} icon={Box} color="blue" />
+        <KPICard label="Bran + Husk (Kg)" value={((s.totalBranKg || 0) + (s.totalHuskKg || 0)).toLocaleString('en-IN')} icon={Scale} color="purple" />
+      </div>
+      <SectionCard title="Milling Report — every batch"
+        actions={<ExportButton columns={columns} data={rows} filename="milling_report" title="Milling Report" orientation="landscape"
+          summary={[
+            { label: 'Batches', value: String(s.batches || 0) },
+            { label: 'Raw Material In', value: `${(s.totalInputKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: 'Finished Out', value: `${(s.totalFinishedKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: 'Bran / Konda', value: `${(s.totalBranKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: 'Husk / Bhusa', value: `${(s.totalHuskKg || 0).toLocaleString('en-IN')} Kg` },
+          ]} />}>
+        {rows.length === 0 ? (
+          <p className="text-sm text-slate-500 py-8 text-center">No production batches in this period.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <ReportTable columns={columns.map(c => ({ ...c, sortable: true, align: c.type === 'number' ? 'right' as const : 'left' as const }))} rows={rows} maxHeight="480px" />
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
 // ── CA REPORTS TAB ────────────────────────────────────────────────────────
 // The CA/Accountant reporting layer — Sales/Purchase Registers, GST Summary
 // + Monthly, Non-GST report, Data Quality checklist, Trading Account, P&L,
@@ -1073,7 +1150,8 @@ export default function ReportsPage() {
     groupBy: 'day' as 'day' | 'week' | 'month',
   });
 
-  const availableTabs = TAB_META.filter(tab => !tab.plans || tab.plans.includes(profile?.subscriptionPlan || ''));
+  const isMill = isMillBillingPackage(profile?.packageType);
+  const availableTabs = TAB_META.filter(tab => (!tab.plans || tab.plans.includes(profile?.subscriptionPlan || '')) && (!tab.millOnly || isMill));
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -1121,6 +1199,7 @@ export default function ReportsPage() {
         {activeTab === 'crm' && <CRMTab filters={filters} />}
         {activeTab === 'staff' && <StaffTab filters={filters} />}
         {activeTab === 'purchases' && <PurchasesTab filters={filters} />}
+        {activeTab === 'milling' && <MillingTab filters={filters} />}
       </ReportPeriodProvider>
       {/* CA Reports manages its own Financial-Year period (not the calendar
           date range above) and its own ReportPeriodProvider internally. */}

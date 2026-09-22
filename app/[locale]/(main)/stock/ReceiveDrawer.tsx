@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
   return api.get(target).then(res => res.data);
@@ -41,6 +42,14 @@ export default function ReceiveDrawer({
 
   const { activeShopId, profile } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
+  const isMill = isMillBillingPackage(profile.packageType);
+  // Bada Udyog: stock can be received from a supplier (the normal purchase flow below) OR pulled in from a by-product that hasn't
+  // been added to Products yet (an unsold ByProduct row with no productId) — an alternate source, not a variant of the purchase form.
+  const [source, setSource] = useState<'supplier' | 'byproduct'>('supplier');
+  const [byProductId, setByProductId] = useState('');
+  const { data: byProductRows = [] } = useSWR(isMill && activeShopId ? ['/mill/by-products', activeShopId] : null, fetcher);
+  const availableByProducts = (Array.isArray(byProductRows) ? byProductRows : []).filter((r: any) => !r.productId && (Number(r.quantityKg || 0) - Number(r.soldKg || 0)) > 0);
+  const pickedByProduct = availableByProducts.find((r: any) => r.id === byProductId);
   const { data: suppliersData = [], mutate: mutateSuppliers, isLoading: sLoad } = useSWR(activeShopId ? ['/suppliers', activeShopId] : null, fetcher);
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
 
@@ -103,6 +112,18 @@ export default function ReceiveDrawer({
   const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pickedProduct) { setError(t('selectProductFirst') || 'Select a product first.'); return; }
+    if (source === 'byproduct') {
+      if (!byProductId) { setError('Pick a by-product to bring into stock.'); return; }
+      setLoading(true);
+      try {
+        await api.patch(`/mill/by-products/${byProductId}`, { linkProduct: { productId: pickedProduct.id } });
+        onSuccess({ type: 'receive', productId: pickedProduct.id });
+        onClose();
+      } catch (err: any) {
+        setError(err.response?.data?.detail || err.response?.data?.error || err.message || t('failedToReceiveStock'));
+      } finally { setLoading(false); }
+      return;
+    }
     const hasVariants = productVariants.length > 0;
     const variantEntries = Object.entries(form.variantQty).filter(([, q]) => Number(q) > 0);
 
@@ -230,6 +251,41 @@ export default function ReceiveDrawer({
 
         {pickedProduct && (
         <form id="receive-form" onSubmit={handleReceive} className="space-y-4">
+          {isMill && (
+            <div data-testid="receive-source">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Source</label>
+              <div className="flex gap-2 text-xs font-bold">
+                <button type="button" onClick={() => setSource('supplier')}
+                  className={cn('flex-1 h-9 rounded-lg border', source === 'supplier' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>Supplier (Purchase)</button>
+                <button type="button" onClick={() => setSource('byproduct')}
+                  className={cn('flex-1 h-9 rounded-lg border', source === 'byproduct' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>By-Product</button>
+              </div>
+            </div>
+          )}
+          {isMill && source === 'byproduct' ? (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">By-Product *</label>
+              {availableByProducts.length === 0 ? (
+                <p className="text-xs text-slate-400">No by-product is waiting to be added to stock. Finished goods are already live in Products the moment production finalizes — there's nothing separate to receive for those.</p>
+              ) : (
+                <>
+                  <select value={byProductId} onChange={e => setByProductId(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500">
+                    <option value="">Select a by-product</option>
+                    {availableByProducts.map((r: any) => (
+                      <option key={r.id} value={r.id}>{r.name} — {Math.max(0, (r.quantityKg || 0) - (r.soldKg || 0)).toLocaleString('en-IN')} Kg remaining</option>
+                    ))}
+                  </select>
+                  {pickedByProduct && (
+                    <p className="text-xs text-slate-500 mt-1.5">
+                      {Math.max(0, (pickedByProduct.quantityKg || 0) - (pickedByProduct.soldKg || 0)).toLocaleString('en-IN')} Kg will be added to {pickedProduct.name}'s stock.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+          <>
           {productVariants.length > 0 && (
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -410,6 +466,8 @@ export default function ReceiveDrawer({
               />
             </div>
           </div>
+          </>
+          )}
         </form>
         )}
       </div>
@@ -418,7 +476,7 @@ export default function ReceiveDrawer({
         <button
           form="receive-form"
           type="submit"
-          disabled={loading || !pickedProduct}
+          disabled={loading || !pickedProduct || (source === 'byproduct' && !byProductId)}
           className="w-full py-2.5 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors text-sm shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} 

@@ -42,6 +42,7 @@ export default function RawMaterialPage() {
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [statusFilter, setStatusFilter] = useState<'available' | 'consumed' | 'all'>('available');
   const [adding, setAdding] = useState(false);
+  const [viewing, setViewing] = useState<Lot | null>(null);
 
   // Every lot is fetched once; the tabs and the summary cards are derived from it (a lot is Available while anything remains).
   const { data: allLots = [], mutate: refetch, isLoading } = useSWR<Lot[]>(
@@ -139,7 +140,7 @@ export default function RawMaterialPage() {
                 const remaining = l.remainingKg ?? 0;
                 const isConsumed = remaining <= 0;
                 return (
-                  <tr key={l.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                  <tr key={l.id} onClick={() => setViewing(l)} data-testid="raw-lot-row" className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 cursor-pointer">
                     <td className="px-4 py-2.5 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{l.lotNumber || '—'}</td>
                     <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{l.product?.name || '—'}</td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap" data-source={l.source}>
@@ -176,6 +177,10 @@ export default function RawMaterialPage() {
         </div>
       )}
 
+      {viewing && (
+        <ModalPortal><LotDetailModal lot={viewing} onClose={() => setViewing(null)} /></ModalPortal>
+      )}
+
       {adding && (
         <ModalPortal><AddLotModal
           products={rawProducts}
@@ -183,6 +188,75 @@ export default function RawMaterialPage() {
           onAdded={() => { setAdding(false); refetch(); }}
         /></ModalPortal>
       )}
+    </div>
+  );
+}
+
+// One lot's full detail — the row itself is too narrow to show everything (notes, every batch it fed, the full source reference).
+function LotDetailModal({ lot, onClose }: { lot: Lot; onClose: () => void }) {
+  const remaining = lot.remainingKg ?? 0;
+  const isConsumed = remaining <= 0;
+  const rows: [string, React.ReactNode][] = [
+    ['Lot Number', lot.lotNumber || '—'],
+    ['Product', lot.product?.name || '—'],
+    ['Source', <span key="s">
+      <span className={cn('font-bold uppercase text-[10px] px-2 py-0.5 rounded-full',
+        lot.source === 'weighbridge' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
+          : lot.source === 'purchase' ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
+          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300')}>
+        {lot.source === 'weighbridge' ? 'Weighbridge' : lot.source === 'purchase' ? 'Purchase' : 'Manual'}
+      </span>
+      {lot.sourceRef && <span className="ml-1.5 font-mono text-xs text-slate-500">{lot.sourceRef}</span>}
+    </span>],
+    ['Farmer / Vendor', lot.farmerName || lot.supplier?.name || '—'],
+    ['Vendor Mobile', lot.supplier?.mobile || '—'],
+    ['Date', new Date(lot.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })],
+    ['Weight Received', `${(lot.weightKg ?? 0).toLocaleString('en-IN')} Kg`],
+    ['Moisture', lot.moisturePct != null ? `${lot.moisturePct}%` : '—'],
+    ['Rate / Kg', lot.ratePerKg != null ? rupee(lot.ratePerKg) : '—'],
+    ['Total Amount', lot.totalAmount != null ? rupee(lot.totalAmount) : '—'],
+    ['Remaining', <span key="r" className="font-bold text-amber-600 dark:text-amber-400">{remaining.toLocaleString('en-IN')} Kg</span>],
+    ['Status', <span key="st" className={cn('text-[10px] font-black uppercase px-2 py-0.5 rounded-full', isConsumed ? 'bg-slate-200 dark:bg-slate-700 text-slate-500' : 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300')}>
+      {isConsumed ? 'Consumed' : 'Available'}
+    </span>],
+  ];
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"><Wheat size={18} className="text-amber-600" /> Lot Details</h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+        <div className="p-6 overflow-y-auto space-y-3">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex items-start justify-between gap-4 text-sm">
+              <span className="text-slate-500">{label}</span>
+              <span className="font-semibold text-slate-900 dark:text-white text-right">{value}</span>
+            </div>
+          ))}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-slate-500 text-sm mb-1.5">Used in (production batches)</p>
+            {lot.batches?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {lot.batches.map(b => (
+                  <span key={b.id} className="text-xs font-mono px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    {b.batchNumber}{b.inputKg != null ? ` · ${b.inputKg} Kg` : ''} · {b.status}
+                  </span>
+                ))}
+              </div>
+            ) : <p className="text-sm text-slate-400">Not used in any batch yet.</p>}
+          </div>
+          {lot.notes && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-slate-500 text-sm mb-1">Notes</p>
+              <p className="text-sm text-slate-700 dark:text-slate-300">{lot.notes}</p>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+          <button onClick={onClose} className="px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">Close</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1915,7 +1915,8 @@
       "crm": "CRM",
       "purchases": "Purchases",
       "staff": "Staff",
-      "ca": "CA Reports"
+      "ca": "CA Reports",
+      "milling": "Milling"
     },
     "subTabs": {
       "overview": "Overview",

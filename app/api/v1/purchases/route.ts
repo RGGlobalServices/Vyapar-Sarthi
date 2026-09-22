@@ -12,6 +12,26 @@ import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 
+
+// Bada Udyog: whether a saved purchase's items include a Raw-Material-classed product, and whether it has already been pushed into
+// Raw Material (created at save time, or via the retroactive "Add to Raw Material" button) — so the button can read "Already Added"
+// instead of the shopkeeper clicking it and hitting an error. Same note-matching convention as POST .../to-raw-material.
+async function annotateRawMaterialStatus(shopId: string, invoices: any[]) {
+  const millInvoices = invoices.filter((inv) => inv.purchaseItems?.some((it: any) => it.product?.millCategory === 'raw_material'));
+  if (millInvoices.length === 0) return invoices.map((inv) => ({ ...inv, hasRawMaterialItems: false, rawMaterialAdded: false }));
+  const lots = await (prisma as any).rawMaterialLot.findMany({
+    where: { shopId, OR: millInvoices.map((inv: any) => ({ notes: { contains: `Purchase Invoice ${inv.invoiceNumber}` } })) },
+    select: { notes: true },
+  });
+  const addedNumbers = new Set(
+    lots.flatMap((l: any) => millInvoices.filter((inv: any) => String(l.notes || '').includes(`Purchase Invoice ${inv.invoiceNumber}`)).map((inv: any) => inv.invoiceNumber)),
+  );
+  return invoices.map((inv) => {
+    const hasRawMaterialItems = inv.purchaseItems?.some((it: any) => it.product?.millCategory === 'raw_material') || false;
+    return { ...inv, hasRawMaterialItems, rawMaterialAdded: hasRawMaterialItems && addedNumbers.has(inv.invoiceNumber) };
+  });
+}
+
 export async function GET(req: Request) {
   try {
     const auth = await requireShop(req);
@@ -62,10 +82,11 @@ export async function GET(req: Request) {
       paginated ? prisma.purchaseInvoice.count({ where }) : Promise.resolve(0),
     ]);
 
+    const annotated = await annotateRawMaterialStatus(auth.shop.id, invoices);
     if (paginated) {
-      return NextResponse.json({ data: invoices, total, page, limit });
+      return NextResponse.json({ data: annotated, total, page, limit });
     }
-    return NextResponse.json(invoices);
+    return NextResponse.json(annotated);
   } catch (error: any) {
     console.error('[API] Error fetching purchases:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -162,6 +183,8 @@ export async function POST(req: Request) {
               date: date ? new Date(date) : new Date(),
               totalCost,
               gst: totalGst,
+              ...(data.tareWeightKg != null && data.tareWeightKg !== '' ? { tareWeightKg: Number(data.tareWeightKg) } : {}),
+              ...(data.grossWeightKg != null && data.grossWeightKg !== '' ? { grossWeightKg: Number(data.grossWeightKg) } : {}),
             },
           });
 
