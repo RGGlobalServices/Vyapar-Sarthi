@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import { computeItemsAndTotal, type OrderItemInput } from '@/lib/server/orderItems';
 
 export const runtime = 'nodejs';
@@ -39,13 +40,21 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
 
   const { items, totalAmount } = computeItemsAndTotal(data.items, Number(data.totalAmount) || order.totalAmount);
 
+  // Checked before the delete + recreate transaction so a foreign id fails with
+  // nothing changed (and never comes back through the response `include`).
+  await assertOwned(shop.id, {
+    customerId: direction === 'incoming' ? data.customerId : null,
+    supplierId: direction === 'outgoing' ? data.supplierId : null,
+    productId: items.map(i => i.productId),
+  });
+
   // Line items are replaced wholesale (delete + recreate) rather than diffed
   // in place — simplest correct approach for a handful of rows, and matches
   // how the client always resubmits the full current item list on save.
   const updated = await prisma.$transaction([
-    prisma.orderItem.deleteMany({ where: { orderId: id } }),
+    prisma.orderItem.deleteMany({ where: { orderId: id, order: { shopId: shop.id } } }),
     prisma.order.update({
-      where: { id },
+      where: { id, shopId: shop.id },
       data: {
         orderNumber: data.orderNumber,
         status: data.status,
@@ -78,7 +87,7 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   if (!order) throw new ApiError(404, 'Order not found');
 
   await prisma.order.delete({
-    where: { id }
+    where: { id, shopId: shop.id }
   });
 
   return json({ success: true });

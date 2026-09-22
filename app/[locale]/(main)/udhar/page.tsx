@@ -25,6 +25,35 @@ import { exportUdharPDF } from '@/lib/pdf/udharReport';
 import { exportUdharCSV } from '@/lib/csv/udharReport';
 const TopProductsPieChart = dynamic(() => import('@/components/TopProductsPieChart'), { ssr: false });
 
+/** 12 -> "12", 2.5 -> "2.5" (kg/litre quantities are fractional) — never "2.000". */
+function fmtQty(q: number) {
+  return Number.isInteger(q) ? String(q) : String(Math.round(q * 1000) / 1000);
+}
+
+/**
+ * What was bought, right under the Bill line of an Udhar card. Up to 3 items get a line each; a bigger
+ * bill shows the first 2 plus "+N more". Renders nothing for legacy/manual rows that carry no item
+ * data, so those cards look exactly as before.
+ */
+function TxItemSummary({ summary }: { summary?: UdharTransaction['itemSummary'] }) {
+  const t = useTranslations('Udhar');
+  if (!summary || !summary.items?.length) return null;
+  const shown = summary.itemCount > 3 ? summary.items.slice(0, 2) : summary.items;
+  const more = summary.itemCount - shown.length;
+  return (
+    <div className="mt-0.5 space-y-px">
+      {shown.map((it, i) => (
+        <p key={i} className="text-xs text-slate-600 dark:text-slate-400 break-words">
+          {it.name || t('itemFallback')}
+          {it.variant && !(it.name || '').includes(it.variant) ? ` (${it.variant})` : ''} × {fmtQty(it.quantity)}
+        </p>
+      ))}
+      {more > 0 && <p className="text-xs text-slate-500">+{more} {t('moreLabel')}</p>}
+      <p className="text-xs font-medium text-slate-500">{t('totalQtyLabel')}: {fmtQty(summary.totalQty)}</p>
+    </div>
+  );
+}
+
 function totalDue(c: UdharCustomer) {
   if (c.totalDue !== undefined && c.totalDue !== null) return c.totalDue;
   return (c.transactions || []).reduce((sum, t) => t.type === 'udhar' ? sum + t.amount : sum - t.amount, 0);
@@ -751,7 +780,7 @@ export default function UdharPage() {
                     className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-100 dark:bg-slate-800/50 transition-colors cursor-pointer"
                     onClick={() => setRecentTx({ tx, customer: selected!, newDue: totalDue(selected!) })}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <input
                         type="checkbox"
                         checked={selectedTxIds.has(tx.id)}
@@ -763,19 +792,20 @@ export default function UdharPage() {
                         tx.type === 'udhar' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400')}>
                         {tx.type === 'udhar' ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
                       </div>
-                      <div>
+                      <div className="min-w-0 pr-2">
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-200">
                           {tx.type === 'udhar' ? t('udharGiven') : t('paymentReceived')}
                           {tx.billNumber && <span className="ml-2 text-xs text-slate-500">#{tx.billNumber}</span>}
                         </p>
                         {tx.note && <p className="text-xs text-slate-500">{tx.note}</p>}
+                        {tx.type === 'udhar' && <TxItemSummary summary={tx.itemSummary} />}
                         <p className="text-[11px] text-slate-600 mt-0.5">
                           {new Date(tx.date).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <p className={cn('font-bold text-base', tx.type === 'udhar' ? 'text-orange-400' : 'text-emerald-400')}>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <p className={cn('font-bold text-base whitespace-nowrap', tx.type === 'udhar' ? 'text-orange-400' : 'text-emerald-400')}>
                         {tx.type === 'udhar' ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
                       </p>
                       {txDeleteId === tx.id ? (

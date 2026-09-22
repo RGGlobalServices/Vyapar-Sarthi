@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { parseCharges, chargesTotal } from '@/lib/server/purchaseCharges';
+import { logBrokerCommission } from '@/lib/server/brokerCommission';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
+import { apiErrorResponse } from '@/lib/server/http';
 import { parseFlexibleDate } from '@/lib/server/dates';
 import { parseSizeRange } from '@/lib/sizeRange';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
@@ -113,6 +117,11 @@ export async function POST(req: NextRequest) {
     const startedAt = Date.now();
     const body = await req.json();
     const { importType, data, godownId } = body;
+
+    // godownId and importLogId are client-supplied: verify both belong to this
+    // shop before any row is imported (a foreign godownId used to receive stock
+    // and a foreign importLogId had its counters/errors overwritten).
+    await assertOwned(shopId, { godownId, importLogId: body.importLogId });
     // Optional job metadata from the wizard for the ImportLog (recovery/audit).
     const fileName: string | null = body.fileName ? String(body.fileName) : null;
     const extractionStats = body.stats && typeof body.stats === 'object' ? body.stats : null;
@@ -238,6 +247,12 @@ export async function POST(req: NextRequest) {
       // clutter every import.
       const location = getVal(row, ['location', 'rack', 'shelf', 'bin']);
       if (location) extras.location = String(location).trim();
+      const millCat = getVal(row, ['millcategory', 'millclass', 'materialtype', 'itemclass']);
+      if (millCat) {
+        const k = String(millCat).trim().toLowerCase().replace(/[\s-]+/g, '_');
+        const map: Record<string, string> = { raw_material: 'raw_material', raw: 'raw_material', rawmaterial: 'raw_material', finished_goods: 'finished_goods', finished: 'finished_goods', finishedgoods: 'finished_goods', by_product: 'by_product', byproduct: 'by_product', by_products: 'by_product' };
+        if (map[k]) extras.millCategory = map[k];
+      }
       const grade = getVal(row, ['grade']);
       if (grade) extras.grade = String(grade).trim();
       const variety = getVal(row, ['variety']);
@@ -655,6 +670,10 @@ export async function POST(req: NextRequest) {
         // Amount the shopkeeper already handed over at the counter — the rest
         // becomes an unpaid balance the supplier is owed.
         const paidAtImport = Math.max(0, parseFloat(String(supplierOverride.paidAmount ?? '')) || 0);
+        // Bill-level charges (hamali, freight …) reviewed in the import screen; sent with the first batch only. They are part of what the
+        // supplier is owed and are stored on the purchase — never as products or stock.
+        const billCharges = parseCharges((body as any).charges);
+        const billChargesTotal = chargesTotal(billCharges);
 
         const invoiceNumber = getVal(firstRow, ['invoicenumber', 'billnumber', 'invoice']) || `INV-${Date.now()}`;
         const rawDate = getVal(firstRow, ['invoicedate', 'billdate', 'date']);
@@ -982,7 +1001,11 @@ export async function POST(req: NextRequest) {
           where: { id: purchaseInvoice.id },
           // totalCost is tax-inclusive; gst holds the tax portion so the
           // Purchases detail can show Subtotal + GST = Total.
-          data: { totalCost: totalInvoiceCost, gst: Math.round(totalInvoiceGst * 100) / 100 }
+          data: {
+            totalCost: totalInvoiceCost + billChargesTotal,
+            gst: Math.round(totalInvoiceGst * 100) / 100,
+            ...(billCharges.length ? { charges: billCharges as any } : {}),
+          }
         });
 
         // Reflect the invoice on the supplier's ledger — otherwise the imported
@@ -994,8 +1017,9 @@ export async function POST(req: NextRequest) {
         // supplier-ledger side-effects once, on the initial batch — subsequent
         // batches would double-count balance / spam Payment History otherwise.
         const runSupplierSideEffects = !!supplierOverride && Object.keys(supplierOverride).length > 0;
-        if (runSupplierSideEffects && totalInvoiceCost > 0) {
-          const owed = Math.max(0, totalInvoiceCost - paidAtImport);
+        const grandTotal = totalInvoiceCost + billChargesTotal;
+        if (runSupplierSideEffects && grandTotal > 0) {
+          const owed = Math.max(0, grandTotal - paidAtImport);
           await prisma.supplier.update({
             where: { id: dbSupplier.id },
             data: { balance: { increment: owed } },
@@ -1004,9 +1028,9 @@ export async function POST(req: NextRequest) {
             data: {
               supplierId: dbSupplier.id,
               type: 'purchase',
-              amount: totalInvoiceCost,
+              amount: grandTotal,
               billNumber: String(invoiceNumber),
-              note: 'Imported purchase invoice',
+              note: billCharges.length ? `Imported purchase invoice (incl. ${billCharges.map((c) => c.name).join(', ')})` : 'Imported purchase invoice',
               ...(billDate ? { createdAt: billDate } : {}),
             },
           });
@@ -1025,6 +1049,12 @@ export async function POST(req: NextRequest) {
             });
           }
         }
+        // Broker who arranged this bill (Bada Udyog): find/create the Broker party and log the commission owed to them.
+        // Best-effort and outside the purchase itself — a failure here must never undo the imported bill.
+        try {
+          const br = (body as any).broker;
+          if (String(br?.name ?? '').trim()) await logBrokerCommission(shopId, { name: br.name, commission: br.commission, billNumber: String(invoiceNumber), kind: 'supplier', party: String(getVal(firstRow, ['supplier', 'vendor', 'suppliername']) || '') });
+        } catch (e) { console.error('[import purchase] broker step failed (purchase kept):', e); }
         break;
       }
 
@@ -1416,10 +1446,10 @@ export async function POST(req: NextRequest) {
 
     if (importLogId) {
       // Append this batch's errors (read-modify-write; batches run sequentially).
-      const existing = await prisma.importLog.findUnique({ where: { id: importLogId }, select: { errors: true } }).catch(() => null);
+      const existing = await prisma.importLog.findFirst({ where: { id: importLogId, shopId }, select: { errors: true } }).catch(() => null);
       const prevErrors = Array.isArray(existing?.errors) ? (existing!.errors as any[]) : [];
       await prisma.importLog.update({
-        where: { id: importLogId },
+        where: { id: importLogId, shopId },
         data: {
           importedCount: { increment: created },
           updatedCount: { increment: updated },
@@ -1483,6 +1513,8 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
+    const known = apiErrorResponse(error);
+    if (known) return known;
     console.error('Import execution error:', error);
     return NextResponse.json({ error: error.message || 'Failed to execute import' }, { status: 500 });
   }

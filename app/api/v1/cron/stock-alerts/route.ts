@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
 import { sendWebPush } from '@/lib/server/push';
+import { checkCronAuth } from '@/lib/server/cronAuth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  // In a real app, you would verify a cron secret here.
-  // const authHeader = req.headers.get('authorization');
-  // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = checkCronAuth(req);
+  if (denied) return denied;
 
   try {
     // Scan every shop (was previously gated to `subscriptionPlan='wholesale'`

@@ -9,16 +9,19 @@ import { User, Phone, MapPin, CreditCard, HeartPulse, Save, Trash2, IndianRupee,
 import { Link } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
+import DocumentUpload from '@/components/staff/DocumentUpload';
 import { exportSalarySlipPDF } from '@/lib/pdf/salarySlip';
 import { shareFileOrText } from '@/lib/shareUtils';
 import { summarizeAttendance, daysInMonthUTC } from '@/lib/attendance';
 import { ExportButton } from '@/lib/hooks/useExport';
+import { useBusinessStore } from '@/lib/businessStore';
 
 export default function StaffProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const isNew = resolvedParams.id === 'new';
   const router = useRouter();
   const t = useTranslations('Staff');
+  const profile = useBusinessStore(s => s.profile);
 
   const [activeTab, setActiveTab] = useState<'profile' | 'attendance' | 'salary'>('profile');
   
@@ -34,8 +37,30 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     salaryAmount: '',
     photoUrl: '',
     bankAccount: { accNo: '', ifsc: '', upi: '' },
-    documents: {} as Record<string, string>
+    documents: {} as Record<string, string>,
+    status: 'active',
+    employeeCode: '',
+    department: '',
+    employeeType: 'full_time',
+    email: '',
+    alternateMobile: '',
+    dateOfBirth: '',
+    gender: '',
+    shift: '',
+    pan: '',
+    aadhaarLast4: '',
+    uan: '',
+    pfApplicable: false,
+    esiApplicable: false,
+    ptApplicable: false,
+    tdsApplicable: false,
   });
+  const [salaryChangeReason, setSalaryChangeReason] = useState('');
+  const [originalSalaryAmount, setOriginalSalaryAmount] = useState<string | null>(null);
+  const [showCompliance, setShowCompliance] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [salaryRevisions, setSalaryRevisions] = useState<any[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -46,6 +71,8 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   const [calcMonth, setCalcMonth] = useState(new Date().toISOString().slice(0, 7));
   const [calcData, setCalcData] = useState({ baseAmount: 0, deductions: 0, bonus: { Performance: 0, Diwali: 0 }, netAmount: 0, paymentMode: 'Cash' });
   const [salaryHistory, setSalaryHistory] = useState<any[]>([]);
+  const [payingSalary, setPayingSalary] = useState(false);
+  const [deletingSalaryId, setDeletingSalaryId] = useState<string | null>(null);
 
   // Advance Salary state
   const [advanceHistory, setAdvanceHistory] = useState<any[]>([]);
@@ -80,14 +107,35 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
   const pendingAdvances = advanceHistory.filter(a => !a.deducted);
   const pendingAdvanceTotal = pendingAdvances.reduce((sum, a) => sum + Number(a.amount), 0);
 
+  // salaryHistory is loaded sorted by paidAt desc (see the GET route), so
+  // [0] is genuinely the most recent payment made, for any month.
+  const lastPayment = salaryHistory[0] || null;
+  // Whether the CURRENTLY SELECTED month picker already has a payment on
+  // record — drives the "already paid" state below so the same month can't
+  // be paid twice from the UI (the API also rejects it server-side as a
+  // second line of defence, see POST /staff/:id/salary).
+  const alreadyPaidForCalcMonth = salaryHistory.find(p => p.monthYear === calcMonth) || null;
+
+  function nextMonthOf(monthYear: string): string {
+    const [y, m] = monthYear.split('-').map(Number);
+    // `m` from the "YYYY-MM" string is 1-indexed (09 = September), but
+    // Date.UTC's month param is 0-indexed — passing it through unchanged
+    // lands one month ahead for free (9 as a 0-indexed month = October),
+    // and December (12) overflows cleanly into next year's January.
+    const d = new Date(Date.UTC(y, m, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
   useEffect(() => {
     if (!isNew) loadStaff();
+    loadDepartmentOptions();
   }, [isNew, resolvedParams.id]);
 
   useEffect(() => {
     if (isNew || activeTab !== 'salary') return;
     loadSalaryHistory();
     loadAdvanceHistory();
+    loadSalaryRevisions();
   }, [isNew, resolvedParams.id, activeTab]);
 
   useEffect(() => {
@@ -132,8 +180,25 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         salaryAmount: res.data.salaryAmount?.toString() || '',
         photoUrl: res.data.photoUrl || '',
         bankAccount: res.data.bankAccount || { accNo: '', ifsc: '', upi: '' },
-        documents: res.data.documents || {}
+        documents: res.data.documents || {},
+        status: res.data.status || 'active',
+        employeeCode: res.data.employeeCode || '',
+        department: res.data.department || '',
+        employeeType: res.data.employeeType || 'full_time',
+        email: res.data.email || '',
+        alternateMobile: res.data.alternateMobile || '',
+        dateOfBirth: res.data.dateOfBirth ? new Date(res.data.dateOfBirth).toISOString().split('T')[0] : '',
+        gender: res.data.gender || '',
+        shift: res.data.shift || '',
+        pan: res.data.pan || '',
+        aadhaarLast4: res.data.aadhaarLast4 || '',
+        uan: res.data.uan || '',
+        pfApplicable: !!res.data.pfApplicable,
+        esiApplicable: !!res.data.esiApplicable,
+        ptApplicable: !!res.data.ptApplicable,
+        tdsApplicable: !!res.data.tdsApplicable,
       });
+      setOriginalSalaryAmount(res.data.salaryAmount?.toString() || '');
       if (res.data.salaryType === 'monthly') {
         setCalcData(prev => ({ ...prev, baseAmount: res.data.salaryAmount }));
       }
@@ -143,6 +208,23 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadSalaryRevisions() {
+    try {
+      const res = await api.get(`/staff/${resolvedParams.id}/salary-revisions`);
+      setSalaryRevisions(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function loadDepartmentOptions() {
+    try {
+      const res = await api.get('/staff');
+      const depts = new Set<string>((res.data || []).map((s: any) => s.department).filter(Boolean));
+      setDepartmentOptions([...depts]);
+    } catch (e) { /* best-effort suggestions only */ }
   }
 
   async function loadSalaryHistory() {
@@ -182,11 +264,14 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         const res = await api.post('/staff', form);
         router.replace(`/staff/${res.data.id}`);
       } else {
-        await api.patch(`/staff/${resolvedParams.id}`, form);
+        await api.patch(`/staff/${resolvedParams.id}`, { ...form, salaryChangeReason });
+        setSalaryChangeReason('');
+        setOriginalSalaryAmount(form.salaryAmount);
+        loadSalaryRevisions();
         alert(t('savedSuccessfully'));
       }
-    } catch (e) {
-      alert(t('failedToSave'));
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || t('failedToSave'));
     } finally {
       setSaving(false);
     }
@@ -206,17 +291,51 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
 
   async function handleDeleteDocument(key: string) {
     if (!confirm(t('confirmRemoveDoc', { docName: key.replace(/([A-Z])/g, ' $1').trim() }))) return;
-    const documents = { ...form.documents };
-    delete documents[key];
     try {
-      await api.patch(`/staff/${resolvedParams.id}`, { documents });
-      setForm(prev => ({ ...prev, documents }));
+      if (key === 'photoUrl') {
+        await api.patch(`/staff/${resolvedParams.id}`, { photoUrl: '' });
+        setForm(prev => ({ ...prev, photoUrl: '' }));
+      } else {
+        const documents = { ...form.documents };
+        delete documents[key];
+        await api.patch(`/staff/${resolvedParams.id}`, { documents });
+        setForm(prev => ({ ...prev, documents }));
+      }
     } catch (e) {
       alert(t('failedToDeleteDoc'));
     }
   }
 
+  // The profile page could previously only view/delete documents added at
+  // creation time on /staff/new — this is the missing "add one now" path.
+  async function handleUploadDocument(docType: string, file: File) {
+    setUploadingDoc(docType);
+    const body = new FormData();
+    body.append('file', file);
+    try {
+      const res = await api.post('/upload', body);
+      if (res.data.url) {
+        if (docType === 'photoUrl') {
+          await api.patch(`/staff/${resolvedParams.id}`, { photoUrl: res.data.url });
+          setForm(prev => ({ ...prev, photoUrl: res.data.url }));
+        } else {
+          const documents = { ...form.documents, [docType]: res.data.url };
+          await api.patch(`/staff/${resolvedParams.id}`, { documents });
+          setForm(prev => ({ ...prev, documents }));
+        }
+      }
+    } catch (e) {
+      alert(t('uploadFailed'));
+    } finally {
+      setUploadingDoc(null);
+    }
+  }
+
   async function paySalary() {
+    // Defensive client-side guard (the button is already hidden once this
+    // month is paid, but keeps this function safe to call from anywhere).
+    if (alreadyPaidForCalcMonth || payingSalary) return;
+    setPayingSalary(true);
     try {
       await api.post(`/staff/${resolvedParams.id}/salary`, {
         monthYear: calcMonth,
@@ -228,10 +347,36 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         advanceIds: pendingAdvances.map(a => a.id)
       });
       alert(t('salaryMarkedPaid'));
+      // Start a fresh period right away — otherwise the same just-paid
+      // month stays selected and looks payable again until the shopkeeper
+      // manually picks the next month (this is what produced real duplicate
+      // payroll rows before the "already paid" guard existed).
+      setCalcMonth(nextMonthOf(calcMonth));
       loadSalaryHistory();
       loadAdvanceHistory();
+    } catch (e: any) {
+      if (e?.response?.status === 409) {
+        alert(e.response.data?.detail || `Salary for ${calcMonth} is already marked as paid`);
+        loadSalaryHistory(); // resync — our local state was stale
+      } else {
+        alert(t('failedToPaySalary'));
+      }
+    } finally {
+      setPayingSalary(false);
+    }
+  }
+
+  async function deleteSalaryPayment(pay: any) {
+    if (!confirm(`Delete this ₹${pay.netAmount} payment for ${pay.monthYear}? This cannot be undone.`)) return;
+    setDeletingSalaryId(pay.id);
+    try {
+      await api.delete(`/staff/${resolvedParams.id}/salary/${pay.id}`);
+      loadSalaryHistory();
+      loadAdvanceHistory(); // any advance this payment had settled goes back to pending
     } catch (e) {
-      alert(t('failedToPaySalary'));
+      alert('Failed to delete this payment.');
+    } finally {
+      setDeletingSalaryId(null);
     }
   }
 
@@ -323,7 +468,16 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
         return;
       }
       
-      const shopInfo = { name: 'Vyapar Sarthi Store' }; // Can be fetched from user context if available
+      // The real shop's name/address/mobile and the owner's saved e-signature
+      // (from Profile) — was hardcoded to a generic "Vyapar Sarthi Store"
+      // with no signature before, so every slip looked identical regardless
+      // of which shop issued it.
+      const shopInfo = {
+        name: profile.shopName || 'Store',
+        address: profile.address || undefined,
+        contact: profile.mobile || undefined,
+        signatureUrl: profile.signatureUrl || undefined,
+      };
       const staffInfo = { name: form.name, role: form.role, joiningDate: form.joiningDate, salaryType: form.salaryType };
       
       const pdfFile = await exportSalarySlipPDF({
@@ -412,21 +566,49 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Phone size={14} /> Mobile Number</label>
                 <input type="text" value={form.mobile} onChange={e => setForm({...form, mobile: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Phone size={14} /> {t('alternateMobile')}</label>
+                <input type="tel" value={form.alternateMobile} onChange={e => setForm({...form, alternateMobile: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><User size={14} /> {t('email')}</label>
+                <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+              </div>
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><MapPin size={14} /> Address</label>
                 <input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
               <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><HeartPulse size={14} /> {t('emergencyContact')}</label>
+                <input type="tel" value={form.emergencyContact} onChange={e => setForm({...form, emergencyContact: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Calendar size={14} /> {t('dateOfBirth')}</label>
+                <input type="date" value={form.dateOfBirth} onChange={e => setForm({...form, dateOfBirth: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Briefcase size={14} /> Role</label>
-                <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
-                  {['Salesman', 'Helper', 'Cashier', 'Warehouse Staff', 'Delivery Boy', 'Other'].map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <input list="staff-role-options" type="text" value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+                <datalist id="staff-role-options">
+                  {['Salesman', 'Helper', 'Cashier', 'Warehouse Staff', 'Delivery Boy', 'Other'].map(r => <option key={r} value={r} />)}
+                </datalist>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Calendar size={14} /> Joining Date</label>
                 <input type="date" value={form.joiningDate} onChange={e => setForm({...form, joiningDate: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
               </div>
-              
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Check size={14} /> {t('employmentStatus')}</label>
+                <select value={form.status} onChange={e => setForm({...form, status: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
+                  <option value="active">{t('statusActive')}</option>
+                  <option value="on_leave">{t('statusOnLeave')}</option>
+                  <option value="suspended">{t('statusSuspended')}</option>
+                  <option value="resigned">{t('statusResigned')}</option>
+                  <option value="terminated">{t('statusTerminated')}</option>
+                  <option value="inactive">{t('statusInactive')}</option>
+                </select>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><Wallet size={14} /> {t('salaryType', { fallback: 'Salary Type' })}</label>
                 <select value={form.salaryType} onChange={e => setForm({...form, salaryType: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
@@ -438,8 +620,14 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><IndianRupee size={14} /> {t('baseSalary', { fallback: 'Base Salary' })}</label>
                 <input type="number" value={form.salaryAmount} onChange={e => setForm({...form, salaryAmount: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder={form.salaryType === 'daily' ? 'Per Day (e.g. 300)' : 'Per Month'} />
               </div>
+              {originalSalaryAmount !== null && form.salaryAmount !== originalSalaryAmount && (
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">{t('salaryChangeReason')}</label>
+                  <input type="text" value={salaryChangeReason} onChange={e => setSalaryChangeReason(e.target.value)} className="w-full px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg text-sm font-semibold" placeholder={t('salaryChangeReason')} />
+                </div>
+              )}
             </div>
-            
+
             <div className="mt-8 flex justify-between items-center">
               {!isNew ? (
                 <button onClick={handleDelete} disabled={deleting} className="text-sm font-bold text-red-500 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors flex items-center gap-2">
@@ -450,35 +638,125 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 <Save size={18} /> {saving ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
+
+            {salaryRevisions.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('salaryHistory')}</p>
+                <div className="space-y-1.5">
+                  {salaryRevisions.map(rev => (
+                    <div key={rev.id} className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 px-1">
+                      <span>
+                        {new Date(rev.effectiveFrom).toLocaleDateString('en-GB')} —{' '}
+                        {rev.oldAmount != null ? `₹${rev.oldAmount.toLocaleString('en-IN')} ${t('to')} ` : ''}
+                        <span className="font-bold text-slate-800 dark:text-slate-200">₹{rev.newAmount.toLocaleString('en-IN')}</span>
+                        {rev.reason && <span className="italic"> — {rev.reason}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
-          
+
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4 md:p-6">
+            <h3 className="font-bold text-slate-900 dark:text-white mb-4">{t('employmentDetails')}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">{t('employeeCode')}</label>
+                <input type="text" value={form.employeeCode} onChange={e => setForm({...form, employeeCode: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder={t('employeeCodePlaceholder')} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">{t('department')}</label>
+                <input list="staff-department-options" type="text" value={form.department} onChange={e => setForm({...form, department: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+                <datalist id="staff-department-options">
+                  {departmentOptions.map(d => <option key={d} value={d} />)}
+                </datalist>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">{t('employeeType')}</label>
+                <select value={form.employeeType} onChange={e => setForm({...form, employeeType: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
+                  <option value="full_time">Full Time</option>
+                  <option value="part_time">Part Time</option>
+                  <option value="temporary">Temporary</option>
+                  <option value="contract">Contract</option>
+                  <option value="daily_wage">Daily Wage</option>
+                  <option value="apprentice">Apprentice</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">{t('shift')}</label>
+                <input type="text" value={form.shift} onChange={e => setForm({...form, shift: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder={t('shiftPlaceholder')} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">{t('gender')}</label>
+                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
+                  <option value="">{t('optionalPlaceholder')}</option>
+                  <option value="male">{t('genderMale')}</option>
+                  <option value="female">{t('genderFemale')}</option>
+                  <option value="other">{t('genderOther')}</option>
+                </select>
+              </div>
+            </div>
+          </Card>
+
+          {/* Compliance — collapsed by default, never required */}
+          <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowCompliance(v => !v)}
+              className="w-full p-4 md:p-6 flex items-center justify-between gap-3 text-left"
+            >
+              <h3 className="font-bold text-slate-900 dark:text-white">{t('complianceOptional')}</h3>
+              <span className="text-xs font-bold text-indigo-500">{showCompliance ? t('hide') : t('show')}</span>
+            </button>
+            {showCompliance && (
+              <div className="px-4 md:px-6 pb-4 md:pb-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500">{t('pan')}</label>
+                    <input type="text" value={form.pan} onChange={e => setForm({...form, pan: e.target.value.toUpperCase()})} maxLength={10} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold uppercase" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500">{t('aadhaarLast4')}</label>
+                    <input type="text" value={form.aadhaarLast4} onChange={e => setForm({...form, aadhaarLast4: e.target.value.replace(/\D/g, '').slice(0, 4)})} maxLength={4} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" placeholder="XXXX" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500">{t('uan')}</label>
+                    <input type="text" value={form.uan} onChange={e => setForm({...form, uan: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {([['pfApplicable', 'pfLabel'], ['esiApplicable', 'esiLabel'], ['ptApplicable', 'ptLabel'], ['tdsApplicable', 'tdsLabel']] as const).map(([key, labelKey]) => (
+                    <label key={key} className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={form[key]} onChange={e => setForm({...form, [key]: e.target.checked})} className="w-4 h-4 accent-indigo-500" />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{t(labelKey)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm rounded-2xl p-4 md:p-6">
             <h3 className="font-bold text-slate-900 dark:text-white mb-4">Uploaded Documents</h3>
             <div className="space-y-2">
-              {Object.keys(form.documents).length === 0 ? (
-                <p className="text-sm text-slate-500 italic">No documents uploaded.</p>
-              ) : (
-                Object.entries(form.documents).map(([key, url]) => (
-                  <div key={key} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <span className="text-sm font-bold capitalize text-slate-700 dark:text-slate-300">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setViewingDoc({ url, label: key.replace(/([A-Z])/g, ' $1').trim() })}
-                        className="text-indigo-600 flex items-center gap-1 text-xs font-bold hover:underline"
-                      >
-                        View <Eye size={12} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteDocument(key)}
-                        title={t('removeDocumentTitle')}
-                        className="text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg p-1.5 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+              {[
+                ['photoUrl', t('passportPhoto')],
+                ['aadhaarFront', t('aadhaarFront')],
+                ['aadhaarBack', t('aadhaarBack')],
+                ['panCard', t('panCard')],
+                ['addressProof', t('addressProof')],
+              ].map(([docType, label]) => (
+                <DocumentUpload
+                  key={docType}
+                  label={label}
+                  fileUrl={docType === 'photoUrl' ? form.photoUrl : form.documents[docType]}
+                  isUploading={uploadingDoc === docType}
+                  onUpload={(file) => handleUploadDocument(docType, file)}
+                  onRemove={() => handleDeleteDocument(docType)}
+                  onView={() => setViewingDoc({ url: docType === 'photoUrl' ? form.photoUrl : form.documents[docType], label })}
+                />
+              ))}
             </div>
           </Card>
         </div>
@@ -589,6 +867,22 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
       {/* --- SALARY TAB --- */}
       {activeTab === 'salary' && (
         <div className="space-y-6">
+          {/* Last payment summary — always visible regardless of which
+              month is selected below, so "when/how much did I last pay
+              this person" never requires scrolling through history. */}
+          {lastPayment && (
+            <div className="flex items-center justify-between gap-3 p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl">
+              <div className="flex items-center gap-2 text-sm">
+                <Check size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="text-slate-600 dark:text-slate-300">
+                  Last paid <span className="font-black text-slate-900 dark:text-white">₹{Number(lastPayment.netAmount).toLocaleString('en-IN')}</span> on{' '}
+                  <span className="font-bold">{new Date(lastPayment.paidAt).toLocaleDateString('en-GB')}</span>
+                  {' '}for {lastPayment.monthYear} via <span className="font-bold">{lastPayment.paymentMode}</span>
+                </span>
+              </div>
+            </div>
+          )}
+
           <Card className="border-none rounded-2xl shadow-xl overflow-hidden">
             <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 p-6 text-white space-y-4">
               <div className="flex items-center justify-between">
@@ -598,67 +892,100 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
                 <input type="month" value={calcMonth} onChange={e => setCalcMonth(e.target.value)} className="text-sm font-bold bg-white/10 border-none rounded-lg px-2 py-1 outline-none text-white" />
               </div>
 
-              {/* Month-end day counts for this payout's month — the same
-                  breakdown as the Attendance tab, shown here since it's what
-                  the base amount below is actually computed from. */}
-              <div className="grid grid-cols-4 gap-2">
-                <div className="p-2 bg-white/5 rounded-lg text-center">
-                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Full</p>
-                  <p className="text-base font-black text-emerald-400">{calcAttendanceSummary.present}</p>
+              {/* Already-paid state for the selected month — replaces the
+                  whole calc+pay form below it (nothing left to compute or
+                  pay again) rather than just disabling the button, so it's
+                  unmistakable that re-selecting this month won't do anything. */}
+              {alreadyPaidForCalcMonth && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-400 font-black">
+                    <Check size={18} /> Already paid for {calcMonth}
+                  </div>
+                  <p className="text-sm text-indigo-200">
+                    ₹{Number(alreadyPaidForCalcMonth.netAmount).toLocaleString('en-IN')} paid on{' '}
+                    {new Date(alreadyPaidForCalcMonth.paidAt).toLocaleDateString('en-GB')} via {alreadyPaidForCalcMonth.paymentMode}
+                  </p>
+                  <button
+                    onClick={() => setCalcMonth(nextMonthOf(calcMonth))}
+                    className="text-sm font-bold bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Start {nextMonthOf(calcMonth)} →
+                  </button>
                 </div>
-                <div className="p-2 bg-white/5 rounded-lg text-center">
-                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Half</p>
-                  <p className="text-base font-black text-amber-400">{calcAttendanceSummary.halfDay}</p>
-                </div>
-                <div className="p-2 bg-white/5 rounded-lg text-center">
-                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Absent</p>
-                  <p className="text-base font-black text-red-400">{calcAttendanceSummary.absent}</p>
-                </div>
-                <div className="p-2 bg-white/5 rounded-lg text-center">
-                  <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Leave</p>
-                  <p className="text-base font-black text-sky-400">{calcAttendanceSummary.leave}</p>
-                </div>
-              </div>
-
-              {form.salaryType === 'monthly' && (
-                <label className="flex items-center justify-between gap-3 p-3 bg-white/5 rounded-lg cursor-pointer">
-                  <span className="text-xs font-bold text-indigo-200">Pay as per attendance this month (per-day rate × days present) instead of flat salary</span>
-                  <input type="checkbox" checked={payByAttendance} onChange={e => setPayByAttendance(e.target.checked)} className="w-4 h-4 shrink-0 accent-emerald-500" />
-                </label>
               )}
 
-              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                <span className="text-sm font-bold text-indigo-200">
-                  {t('baseSalary', { fallback: 'Base Salary' })} {form.salaryType === 'daily' && '(Daily calc)'} {form.salaryType === 'monthly' && payByAttendance && '(Attendance calc)'}
-                </span>
-                <span className="font-black">₹{calcData.baseAmount}</span>
-              </div>
+              {!alreadyPaidForCalcMonth && (
+                <>
+                  {/* Month-end day counts for this payout's month — the same
+                      breakdown as the Attendance tab, shown here since it's what
+                      the base amount below is actually computed from. */}
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="p-2 bg-white/5 rounded-lg text-center">
+                      <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Full</p>
+                      <p className="text-base font-black text-emerald-400">{calcAttendanceSummary.present}</p>
+                    </div>
+                    <div className="p-2 bg-white/5 rounded-lg text-center">
+                      <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Half</p>
+                      <p className="text-base font-black text-amber-400">{calcAttendanceSummary.halfDay}</p>
+                    </div>
+                    <div className="p-2 bg-white/5 rounded-lg text-center">
+                      <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Absent</p>
+                      <p className="text-base font-black text-red-400">{calcAttendanceSummary.absent}</p>
+                    </div>
+                    <div className="p-2 bg-white/5 rounded-lg text-center">
+                      <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">Leave</p>
+                      <p className="text-base font-black text-sky-400">{calcAttendanceSummary.leave}</p>
+                    </div>
+                  </div>
 
-              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-red-500/30">
-                <span className="text-sm font-bold text-red-300">{t('deductions', { fallback: 'Deductions' })}</span>
-                <input type="number" value={calcData.deductions} onChange={e => setCalcData({...calcData, deductions: Number(e.target.value)})} className="w-24 px-2 py-1 bg-black/20 rounded text-right font-bold text-red-300 outline-none" />
-              </div>
-              
-              {pendingAdvanceTotal > 0 && (
-                 <div className="flex justify-between items-center p-3 bg-red-950/40 rounded-lg border border-red-500/50">
-                   <span className="text-sm font-bold text-red-200">{t('deductAdvance', { fallback: 'Deduct Advance' })} (Auto)</span>
-                   <span className="font-black text-red-400">-₹{pendingAdvanceTotal}</span>
-                 </div>
+                  {form.salaryType === 'monthly' && (
+                    <label className="flex items-center justify-between gap-3 p-3 bg-white/5 rounded-lg cursor-pointer">
+                      <span className="text-xs font-bold text-indigo-200">Pay as per attendance this month (per-day rate × days present) instead of flat salary</span>
+                      <input type="checkbox" checked={payByAttendance} onChange={e => setPayByAttendance(e.target.checked)} className="w-4 h-4 shrink-0 accent-emerald-500" />
+                    </label>
+                  )}
+
+                  <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
+                    <span className="text-sm font-bold text-indigo-200">
+                      {t('baseSalary', { fallback: 'Base Salary' })} {form.salaryType === 'daily' && '(Daily calc)'} {form.salaryType === 'monthly' && payByAttendance && '(Attendance calc)'}
+                    </span>
+                    <span className="font-black">₹{calcData.baseAmount}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-red-500/30">
+                    <span className="text-sm font-bold text-red-300">{t('deductions', { fallback: 'Deductions' })}</span>
+                    <input type="number" value={calcData.deductions} onChange={e => setCalcData({...calcData, deductions: Number(e.target.value)})} className="w-24 px-2 py-1 bg-black/20 rounded text-right font-bold text-red-300 outline-none" />
+                  </div>
+
+                  {pendingAdvanceTotal > 0 && (
+                     <div className="flex justify-between items-center p-3 bg-red-950/40 rounded-lg border border-red-500/50">
+                       <span className="text-sm font-bold text-red-200">{t('deductAdvance', { fallback: 'Deduct Advance' })} (Auto)</span>
+                       <span className="font-black text-red-400">-₹{pendingAdvanceTotal}</span>
+                     </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-4 border-t border-white/10">
+                    <span className="text-lg font-black">{t('netSalary', { fallback: 'Net Payable' })}</span>
+                    <span className="text-3xl font-black text-emerald-400">₹{calcData.netAmount.toLocaleString('en-IN')}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    <select value={calcData.paymentMode} onChange={e => setCalcData({...calcData, paymentMode: e.target.value})} className="px-3 py-3 bg-white/10 border border-white/20 rounded-xl font-bold outline-none text-white text-sm">
+                      <option value="Cash" className="text-black">Cash</option>
+                      <option value="UPI" className="text-black">UPI</option>
+                      <option value="Bank Transfer" className="text-black">Bank Transfer</option>
+                    </select>
+                    <button
+                      onClick={paySalary}
+                      disabled={payingSalary}
+                      className="bg-emerald-500 text-white font-black rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      {payingSalary ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {payingSalary ? 'Paying…' : 'Mark as Paid'}
+                    </button>
+                  </div>
+                </>
               )}
-              
-              <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                <span className="text-lg font-black">{t('netSalary', { fallback: 'Net Payable' })}</span>
-                <span className="text-3xl font-black text-emerald-400">₹{calcData.netAmount.toLocaleString('en-IN')}</span>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                <select value={calcData.paymentMode} onChange={e => setCalcData({...calcData, paymentMode: e.target.value})} className="px-3 py-3 bg-white/10 border border-white/20 rounded-xl font-bold outline-none text-white text-sm">
-                  <option value="Cash" className="text-black">Cash</option>
-                  <option value="UPI" className="text-black">UPI</option>
-                  <option value="Bank Transfer" className="text-black">Bank Transfer</option>
-                </select>
-                <button onClick={paySalary} className="bg-emerald-500 text-white font-black rounded-xl hover:bg-emerald-600 transition-colors">Mark as Paid</button>
-              </div>
             </div>
           </Card>
           
@@ -713,14 +1040,34 @@ export default function StaffProfilePage({ params }: { params: Promise<{ id: str
               </div>
               <div className="space-y-2">
                 {salaryHistory.map(pay => (
-                  <div key={pay.id} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <div key={pay.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg group">
                     <div>
                       <p className="font-bold text-slate-900 dark:text-white text-sm">{pay.monthYear}</p>
-                      <p className="text-[10px] font-bold text-slate-500">{new Date(pay.paidAt).toLocaleDateString('en-GB')} • {pay.paymentMode}</p>
+                      <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5">
+                        {new Date(pay.paidAt).toLocaleDateString('en-GB')}
+                        <span className={cn(
+                          'px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide',
+                          pay.paymentMode === 'Cash'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
+                            : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300'
+                        )}>
+                          {pay.paymentMode}
+                        </span>
+                      </p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-black text-emerald-600 dark:text-emerald-400">₹{pay.netAmount}</p>
-                      {pay.deductions > 0 && <p className="text-[10px] text-red-500 font-bold">-₹{pay.deductions}</p>}
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <p className="font-black text-emerald-600 dark:text-emerald-400">₹{pay.netAmount}</p>
+                        {pay.deductions > 0 && <p className="text-[10px] text-red-500 font-bold">-₹{pay.deductions}</p>}
+                      </div>
+                      <button
+                        onClick={() => deleteSalaryPayment(pay)}
+                        disabled={deletingSalaryId === pay.id}
+                        title="Delete this payment"
+                        className="p-1.5 text-slate-300 group-hover:text-slate-400 hover:!text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
+                      >
+                        {deletingSalaryId === pay.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                      </button>
                     </div>
                   </div>
                 ))}

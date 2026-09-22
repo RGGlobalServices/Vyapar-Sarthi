@@ -3,6 +3,9 @@ import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { importConfig } from '@/lib/importConfig';
+import { requireShop } from '@/lib/server/auth';
+import { ApiError, errorResponse } from '@/lib/server/http';
+import { parseCharges, scanChargesFromText, mergeCharges, type PurchaseCharge } from '@/lib/server/purchaseCharges';
 
 /* ─── Deterministic table reader ─────────────────────────────────────────────
  *
@@ -145,6 +148,15 @@ function parseInvoiceHeader(text: string): Record<string, string> {
 }
 
 export async function POST(req: NextRequest) {
+  // Was fully unauthenticated while spending paid Gemini quota. Its only
+  // in-app caller (ImportWizard) goes through lib/api.ts, which sends the token.
+  try {
+    await requireShop(req);
+  } catch (e) {
+    if (e instanceof ApiError) return errorResponse(e.message, e.status, e.code);
+    throw e;
+  }
+
   try {
     const fd = await req.formData();
     const files = fd.getAll('files[]') as File[];
@@ -220,6 +232,7 @@ export async function POST(req: NextRequest) {
         'If HSN/SAC has slash (e.g. HSN/SAC), take just the code number.',
         'HSN codes are 4, 6 or 8 digits and are a SEPARATE column from quantity — never merge them. If you see "6203" in the HSN column and "18" in the Qty column, output hsnCode "6203" and quantity 18, never "620318".',
         'Also output discount and taxableAmount when the invoice shows them; they are used to cross-check each row.',
+        'ALSO output a top-level "charges" array (next to "items") for every bill-level extra charge printed on the bill that is NOT a goods row, NOT GST/tax, NOT discount and NOT round-off — for example Hamali, Freight / Transport, Loading, Unloading, Packing, Weighment / Weighbridge, Commission, Mandi fee, Other charges. Each entry is { "name": the label as printed, "amount": the number printed }. Use [] when there are none. Never put these charges inside "items".',
       ].join(' ');
     } else {
       specificInstructions = `Extract all data relevant to the ${targetType} category. The document may be a photo of a handwritten notebook, an informal note, a kacha bill, or a structured table. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible.`;
@@ -616,6 +629,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // sequentially — one call per image — and their extracted rows are merged.
     const aggregatedItems: any[] = [];
     let header: Record<string, any> = {}; // purchase-only top-level fields
+    let aiCharges: PurchaseCharge[] = [];   // purchase-only: bill-level charges the model read (hamali, freight …)
     const perCallErrors: string[] = [];
     let lastRaw = '';
 
@@ -629,6 +643,9 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         // each row (not just the top-level of the analyze response).
         for (const k of ['supplier', 'invoiceNumber', 'invoiceDate', 'warehouse']) {
           if (!header[k] && r?.[k]) header[k] = r[k];
+        }
+        if (Array.isArray(r?.charges)) {
+          try { aiCharges = mergeCharges(aiCharges, parseCharges(r.charges)); } catch { /* an unreadable charges block is simply ignored — the user can add charges by hand */ }
         }
         if (Array.isArray(r?.items)) {
           const withHeader = r.items.map((it: any) => ({
@@ -1122,6 +1139,9 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         deterministicTable: usedDeterministicTable,
       },
       ...header,
+      // Bill-level charges (hamali, freight …): what the model read plus what a text scan of the bill found. Reviewed and edited by the
+      // user before import; they are stored on the purchase, never as products.
+      ...(targetType === 'purchase' ? { charges: mergeCharges(aiCharges, scanChargesFromText(extractedText)) } : {}),
       items: dedupedItems,
       partialErrors: perCallErrors.length ? perCallErrors : undefined,
     });

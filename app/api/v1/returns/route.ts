@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
+import { apiErrorResponse } from '@/lib/server/http';
 import prisma from '@/lib/server/prisma';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -33,6 +35,10 @@ export async function POST(req: NextRequest) {
   try {
     const { shop } = await requireShop(req);
     const data = await req.json();
+
+    // Before the create: a foreign productId used to leave an orphan return row
+    // linked to another shop's product before the scoped stock update failed.
+    await assertOwned(shop.id, { productId: data.productId });
 
     const newReturn = await prisma.materialReturn.create({
       data: {
@@ -83,6 +89,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(newReturn);
   } catch (error: any) {
+    const known = apiErrorResponse(error);
+    if (known) return known;
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

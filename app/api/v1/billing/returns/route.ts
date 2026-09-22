@@ -1,6 +1,9 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { toPaise } from '@/lib/server/moneyValidation';
+import { assertNotMillSale } from '@/lib/server/millGuards';
+import { planReturn, parsePriorReturns, splitRefund } from '@/lib/server/refunds';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
 export const runtime = 'nodejs';
@@ -54,95 +57,90 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, 'bill_id and items are required');
   }
 
-  const sale = await prisma.sale.findFirst({
-    where: { id: bill_id, shopId: shop.id },
-    include: { items: { include: { product: true } }, customer: true },
-  });
-  if (!sale) throw new ApiError(404, 'Bill not found');
+  // Mill bills (`mill_v2`) are GST-exclusive with charges and round-off; the refund maths below is for legacy
+  // bills only, so returns on a mill bill are refused (409) until they are supported. Legacy bills are unaffected.
+  await assertNotMillSale(shop.id, bill_id, 'return');
 
-  // Reject asks that exceed the qty still returnable on this bill — better
-  // to fail cleanly before touching stock than to half-process and leave the
-  // shopkeeper reconciling by hand.
-  const priorReturns = await prisma.materialReturn.findMany({
-    where: { shopId: shop.id, note: { contains: sale.id } },
-    select: { productId: true, itemName: true, quantity: true, note: true },
-  });
-  const alreadyReturnedByItem = new Map<string, number>();
-  for (const r of priorReturns) {
-    let noteData: any = {};
-    try { if (r.note) noteData = JSON.parse(r.note); } catch {}
-    const key = noteData?.saleItemId || r.productId || r.itemName;
-    if (key) alreadyReturnedByItem.set(key, (alreadyReturnedByItem.get(key) || 0) + r.quantity);
-  }
-
-  interface Prepared {
-    saleItem: typeof sale.items[number];
-    qty: number;
-    reason: string;
-    refundAmount: number;
-    refundProfit: number;
-    variantKey: string | null;
-  }
-  const prepared: Prepared[] = [];
-  for (const ret of items) {
-    const saleItem = sale.items.find((si) => si.id === ret.item_id);
-    if (!saleItem) throw new ApiError(400, `Sale item ${ret.item_id} not on this bill`);
-    const qty = Number(ret.quantity) || 0;
-    if (qty <= 0) continue;
-    const alreadyReturned = alreadyReturnedByItem.get(saleItem.id) || 0;
-    const returnable = (saleItem.quantity || 0) - alreadyReturned;
-    if (qty > returnable) {
-      throw new ApiError(400, `Only ${returnable} of "${saleItem.product?.name || saleItem.itemName || 'this item'}" can still be returned`);
-    }
-    const price = Number(ret.price) || Number(saleItem.pricePerUnit) || 0;
-    const margin = Number(saleItem.marginPerUnit) || 0;
-    prepared.push({
-      saleItem,
-      qty,
-      reason: ret.reason || 'Customer Return',
-      refundAmount: qty * price,
-      refundProfit: qty * margin,
-      variantKey: saleItem.variant || null,
-    });
-  }
-  if (!prepared.length) throw new ApiError(400, 'No valid return quantities provided');
-
-  const totalRefund = prepared.reduce((s, p) => s + p.refundAmount, 0);
-
-  // Attribution: udhar first, cash second. `outstandingOnThisBill` is what
-  // the customer still owes *on this specific bill* — never touching
-  // customer.totalDue for older bills the customer also has.
-  const paidBefore = Number(sale.amountPaid) || 0;
-  const totalBefore = Number(sale.totalAmount) || 0;
-  const outstandingOnThisBill = Math.max(0, totalBefore - paidBefore);
-  const udharCleared = Math.min(totalRefund, outstandingOnThisBill);
-  const cashRefunded = totalRefund - udharCleared;
-
-  // The full pipeline runs inside a transaction — a return that half-runs
-  // (stock restored but udhar not cleared) is the exact failure mode this
-  // rewrite exists to prevent.
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Stock: currentStock, size_variants, variants[], batches
-    // Aggregate net qty per product so we do ONE product.update per product,
-    // not one per line — same shape sales.ts/reverseSaleEffects follows.
+    // 1. Lock the target Sale row to serialize concurrent returns on the same bill
+    const lockedSales = await tx.$queryRaw<Array<{
+      id: string;
+      shop_id: string;
+      total_amount: number;
+      amount_paid: number;
+      customer_id: string | null;
+      invoice_number: string;
+      payment_type: string;
+      created_at: Date;
+    }>>`
+      SELECT id, shop_id, total_amount, amount_paid, customer_id, invoice_number, payment_type, created_at
+      FROM sales
+      WHERE id = ${bill_id}::uuid AND shop_id = ${shop.id}::uuid
+      FOR UPDATE
+    `;
+    if (!lockedSales.length) throw new ApiError(404, 'Bill not found');
+    const saleRow = lockedSales[0];
+
+    const [saleItems, priorRows] = await Promise.all([
+      tx.saleItem.findMany({
+        where: { saleId: bill_id },
+        include: { product: true },
+      }),
+      tx.materialReturn.findMany({
+        where: { shopId: shop.id, note: { contains: bill_id } },
+        select: { productId: true, itemName: true, quantity: true, amount: true, note: true },
+      }),
+    ]);
+
+    const { lines: prepared0, totalRefund } = planReturn({
+      saleItems,
+      saleTotal: Number(saleRow.total_amount) || 0,
+      priorReturns: parsePriorReturns(priorRows as any, bill_id),
+      requests: items.map((i) => ({ item_id: i?.item_id, quantity: i?.quantity })),
+    });
+
+    const reasonByItem = new Map(items.map((i) => [i?.item_id, i?.reason]));
+    const prepared = prepared0.map((l) => ({
+      saleItem: l.saleItem as typeof saleItems[number],
+      qty: l.qty,
+      reason: reasonByItem.get(l.saleItem.id) || 'Customer Return',
+      refundAmount: l.refundAmount,
+      refundProfit: l.refundProfit,
+      variantKey: (l.saleItem.variant as string | null) || null,
+    }));
+
+    // 2. Stock: currentStock, size_variants, variants[], batches
     const qtyByProduct = new Map<string, number>();
     for (const p of prepared) {
       if (!p.saleItem.productId) continue;
       qtyByProduct.set(p.saleItem.productId, (qtyByProduct.get(p.saleItem.productId) || 0) + p.qty);
     }
 
-    const productIds = [...qtyByProduct.keys()];
-    const products = productIds.length
-      ? await tx.product.findMany({ where: { id: { in: productIds } } })
-      : [];
-    const productById = new Map(products.map(pp => [pp.id, pp]));
+    const sortedProductIds = [...qtyByProduct.keys()].sort();
+    const lockedProducts: Array<{ id: string; current_stock: number | null; size_variants: any; variants: any }> = [];
+    for (const pid of sortedProductIds) {
+      const rows = await tx.$queryRaw<Array<{
+        id: string;
+        current_stock: number | null;
+        size_variants: any;
+        variants: any;
+      }>>`
+        SELECT id, current_stock, size_variants, variants
+        FROM products
+        WHERE id = ${pid}::uuid AND shop_id = ${shop.id}::uuid
+        FOR UPDATE
+      `;
+      if (rows.length) lockedProducts.push(rows[0]);
+    }
+    const productById = new Map(lockedProducts.map((pp) => [pp.id, pp]));
 
-    for (const [productId, totalQty] of qtyByProduct.entries()) {
+    for (const productId of sortedProductIds) {
       const product = productById.get(productId);
       if (!product) continue;
+      const totalQty = qtyByProduct.get(productId) || 0;
 
       let newSizeVariants = product.size_variants;
-      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
+      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
       let variantsChanged = false;
 
       for (const p of prepared) {
@@ -165,25 +163,45 @@ export const POST = handle(async (req) => {
         }
       }
 
+      await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${totalQty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
       await tx.product.update({
         where: { id: productId },
         data: {
-          ...(product.currentStock !== null ? { currentStock: { increment: totalQty } } : {}),
           size_variants: newSizeVariants,
           ...(variantsChanged ? { variants: newVariants as any } : {}),
         },
       });
     }
 
-    // 2. materialReturn records — one per line item, with the SETTLED marker
-    //    so the dashboard knows Sale + customer.totalDue already reflect this
-    //    return and doesn't double-count. Legacy pre-fix rows won't have the
-    //    marker and continue to be subtracted the old way.
+    // Lock order (global): sale -> products (also serialises batches) -> customer.
+    // Billing takes products -> customer, so both paths agree and cannot deadlock.
+    // Lock customer row if present to prevent concurrent payment/refund balance races
+    let customerDue: number | null = null;
+    let customerName = 'Guest';
+    if (saleRow.customer_id) {
+      const lockedCustomers = await tx.$queryRaw<Array<{ id: string; total_due: number | null; name: string | null }>>`
+        SELECT id, total_due, name
+        FROM customers
+        WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+        FOR UPDATE
+      `;
+      if (lockedCustomers.length) {
+        customerDue = Number(lockedCustomers[0].total_due || 0);
+        customerName = lockedCustomers[0].name || 'Guest';
+      }
+    }
+
+    const paidBefore = Number(saleRow.amount_paid) || 0;
+    const totalBefore = Number(saleRow.total_amount) || 0;
+    const outstandingOnThisBill = Math.max(0, totalBefore - paidBefore);
+    const { udharCleared, cashRefunded } = splitRefund(totalRefund, outstandingOnThisBill, customerDue);
+
+    // 3. materialReturn records
     const created = [] as string[];
     for (const p of prepared) {
       const row = await tx.materialReturn.create({
         data: {
-          shopId: sale.shopId!,
+          shopId: shop.id,
           productId: p.saleItem.productId ?? undefined,
           itemName: p.saleItem.product?.name || p.saleItem.itemName || p.variantKey || 'Unknown Item',
           quantity: p.qty,
@@ -191,20 +209,17 @@ export const POST = handle(async (req) => {
           amount: p.refundAmount,
           date: new Date(),
           note: JSON.stringify({
-            billId: sale.id,
-            invoiceNumber: sale.invoice_number,
-            customerName: sale.customer?.name || 'Guest',
-            customerId: sale.customerId || null,
-            paymentType: sale.paymentType,
-            saleDate: sale.createdAt,
+            billId: saleRow.id,
+            invoiceNumber: saleRow.invoice_number,
+            customerName,
+            customerId: saleRow.customer_id || null,
+            paymentType: saleRow.payment_type,
+            saleDate: saleRow.created_at,
             saleItemId: p.saleItem.id,
             variant: p.variantKey,
             refundProfit: p.refundProfit,
             udharCleared: udharCleared > 0 && p.refundAmount > 0 ? (udharCleared * p.refundAmount) / totalRefund : 0,
             cashRefunded: cashRefunded > 0 && p.refundAmount > 0 ? (cashRefunded * p.refundAmount) / totalRefund : 0,
-            // Marker: this return was processed by the closed-loop pipeline
-            // (Sale row + customer.totalDue + cashBook already adjusted).
-            // Dashboard/reports must NOT subtract this row's amount again.
             settled: true,
           }),
         }
@@ -235,68 +250,54 @@ export const POST = handle(async (req) => {
       }
     }
 
-    // 3. Adjust the Sale row so ALL downstream aggregations (dashboard,
-    //    reports, party ledger) see the correct post-return numbers without
-    //    each report having to know about materialReturn separately.
+    // 4. Adjust the Sale row
     const totalProfitRefunded = prepared.reduce((s, p) => s + p.refundProfit, 0);
     await tx.sale.update({
-      where: { id: sale.id },
+      where: { id: saleRow.id },
       data: {
         totalAmount: { decrement: totalRefund },
         totalProfit: { decrement: totalProfitRefunded },
-        // Only the CASH portion of the refund reduces amountPaid — the udhar
-        // portion never came in in the first place. Symmetric with attribution.
-        ...(cashRefunded > 0 ? { amountPaid: { decrement: cashRefunded } } : {}),
+        ...(cashRefunded > 0 ? { amountPaid: { decrement: Math.min(cashRefunded, paidBefore) } } : {}),
       },
     });
 
-    // 4. Udhar side — reduce customer.totalDue AND write a refund row so
-    //    the party ledger shows "why did their outstanding drop today".
-    if (sale.customerId && udharCleared > 0) {
-      await tx.customer.update({
-        where: { id: sale.customerId },
-        data: { totalDue: { decrement: udharCleared } },
-      });
+    // 5. Udhar side
+    if (saleRow.customer_id && udharCleared > 0) {
+      const dec = await tx.$executeRaw`
+        UPDATE customers SET total_due = COALESCE(total_due, 0) - ${udharCleared}
+        WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+          AND ROUND(COALESCE(total_due, 0)::numeric * 100) >= ${toPaise(udharCleared)}
+      `;
+      if (dec === 0) throw new ApiError(409, 'Customer balance changed; please retry');
       await tx.customer_transactions.create({
         data: {
-          customer_id: sale.customerId,
-          // type='refund' so dashboards that group payments (type='payment')
-          // don't count this as money-in — nothing came in, we gave credit
-          // back. The party ledger view treats refund + payment identically
-          // for balance display.
+          customer_id: saleRow.customer_id,
           type: 'refund',
           amount: udharCleared,
-          note: `Return refund: ${sale.invoice_number}`,
-          bill_number: sale.invoice_number,
+          note: `Return refund: ${saleRow.invoice_number}`,
+          bill_number: saleRow.invoice_number,
           created_at: new Date(),
         }
       });
     }
 
-    // 5. Cash side — physical money going OUT of the drawer for the paid
-    //    portion of the refund. Same referenceId as the sale so a shopkeeper
-    //    scrolling the cashbook can see the sale row and its refund row line
-    //    up. Sign convention: type='refund' with positive amount, direction
-    //    implied by type — matches how 'expense' is stored.
+    // 6. Cash side
     if (cashRefunded > 0) {
       await tx.cashBook.create({
         data: {
           shopId: shop.id,
           type: 'refund',
           amount: cashRefunded,
-          referenceId: sale.id,
-          description: `Refund for ${sale.invoice_number}`,
+          referenceId: saleRow.id,
+          description: `Refund for ${saleRow.invoice_number}`,
         },
       });
     }
 
     return { createdReturnIds: created, totalRefund, udharCleared, cashRefunded, totalProfitRefunded };
   }, {
-    // Same envelope as billing/route.ts's own POST — enough room for a
-    // multi-line bill under Prisma Accelerate latency, without stretching
-    // the connection lease unnecessarily.
-    maxWait: 10000,
-    timeout: 20000,
+    maxWait: 30000,
+    timeout: 60000,
   });
 
   return json({

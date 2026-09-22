@@ -19,11 +19,13 @@ async function getOwnedAdvance(req: Request, staffId: string, advanceId: string)
 // Advances aren't reflected in any running balance column — pendingAdvanceTotal
 // is summed client-side from the list on every load, and a settled advance's
 // deduction is a frozen snapshot on the SalaryPayment row it was paid against
-// (SalaryPayment.deductions). So editing/deleting an advance here never needs
-// to reverse anything elsewhere, unlike Purchases.
+// (SalaryPayment.deductions). Editing/deleting an advance here never needs to
+// touch the `deducted`/SalaryPayment side of things — but it DOES now need to
+// keep the CashBook entry POST /staff/:id/advance writes in sync, since that
+// entry didn't exist when this comment was first written.
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id, advanceId } = await params;
-  await getOwnedAdvance(req, id, advanceId);
+  const { shop } = await getOwnedAdvance(req, id, advanceId);
   const b = await readBody(req);
 
   const data: any = {};
@@ -35,13 +37,26 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (b.date) data.date = new Date(b.date);
   if (b.deducted != null) data.deducted = !!b.deducted;
 
-  const updated = await prisma.advanceSalary.update({ where: { id: advanceId }, data });
+  const ops: any[] = [prisma.advanceSalary.update({ where: { id: advanceId }, data })];
+  if (data.amount !== undefined || data.date !== undefined) {
+    ops.push(prisma.cashBook.updateMany({
+      where: { shopId: shop.id, referenceId: advanceId, type: 'withdrawal' },
+      data: {
+        ...(data.amount !== undefined && { amount: data.amount }),
+        ...(data.date !== undefined && { date: data.date }),
+      },
+    }));
+  }
+  const [updated] = await prisma.$transaction(ops);
   return json(updated);
 });
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id, advanceId } = await params;
-  await getOwnedAdvance(req, id, advanceId);
-  await prisma.advanceSalary.delete({ where: { id: advanceId } });
+  const { shop } = await getOwnedAdvance(req, id, advanceId);
+  await prisma.$transaction([
+    prisma.cashBook.deleteMany({ where: { shopId: shop.id, referenceId: advanceId, type: 'withdrawal' } }),
+    prisma.advanceSalary.delete({ where: { id: advanceId } }),
+  ]);
   return json({ success: true });
 });

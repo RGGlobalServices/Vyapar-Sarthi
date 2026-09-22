@@ -1,13 +1,12 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { parseStageExtras, round3, BALANCE_TOLERANCE_KG } from '@/lib/server/millProduction';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> };
-
-const STAGES = ['cleaning', 'drying', 'shelling', 'polishing', 'packing'] as const;
 
 /**
  * PATCH /api/v1/mill/batches/[id]/stages/[stageId]
@@ -17,8 +16,7 @@ const STAGES = ['cleaning', 'drying', 'shelling', 'polishing', 'packing'] as con
  * batch's currentStage is auto-advanced to the next stage in the sequence,
  * and the batch flips to 'in_progress' if it was 'open'. When ALL stages
  * are complete, the batch is left in 'in_progress' — the operator still has
- * to hit "Close Batch" and enter final by-product qty on the batch-level
- * endpoint so recovery % is measured against explicit output.
+ * to finalize it (POST /finalize) with its outputs and loss.
  */
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id, stageId } = await params;
@@ -31,6 +29,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (!batch) throw new ApiError(404, 'Batch not found');
   const stage = batch.stages.find((s: any) => s.id === stageId);
   if (!stage) throw new ApiError(404, 'Stage not found on this batch');
+  if (batch.status === 'closed') throw new ApiError(409, 'This batch is finalized.', 'BATCH_FINALIZED');
 
   const body = await readBody<any>(req);
 
@@ -40,6 +39,19 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (body.wastageKg !== undefined)    patch.wastageKg    = body.wastageKg === null || body.wastageKg === '' ? null : Number(body.wastageKg);
   if (body.operatorName !== undefined) patch.operatorName = body.operatorName == null ? null : String(body.operatorName).trim() || null;
   if (body.notes !== undefined)        patch.notes        = body.notes == null ? null : String(body.notes).trim() || null;
+
+  // Extra results of this stage (tukada, kani, bhusa … whatever the mill calls them). Informational: stock moves only at finalize.
+  if (body.extras !== undefined) {
+    const extras = parseStageExtras(body.extras);
+    const inKg = patch.inputKg !== undefined ? patch.inputKg : stage.inputKg;
+    const outKg = patch.outputKg !== undefined ? patch.outputKg : stage.outputKg;
+    const waste = patch.wastageKg !== undefined ? patch.wastageKg : stage.wastageKg;
+    const total = round3((outKg || 0) + (waste || 0) + extras.reduce((a, e) => a + e.kg, 0));
+    if (inKg != null && total > inKg + BALANCE_TOLERANCE_KG) {
+      throw new ApiError(400, `Output + wastage + extras (${total} kg) exceed this stage's input of ${inKg} kg.`, 'STAGE_BALANCE');
+    }
+    patch.extras = extras.length ? extras : null;
+  }
 
   const nowCompleting = body.completed === true && !stage.completedAt;
   const uncompleting  = body.completed === false && stage.completedAt;
@@ -58,8 +70,9 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (nowCompleting) {
     if (batch.status === 'open') batchPatch.status = 'in_progress';
     if (batch.currentStage === stage.stageName) {
-      const idx = STAGES.indexOf(stage.stageName as any);
-      const next = idx >= 0 && idx < STAGES.length - 1 ? STAGES[idx + 1] : stage.stageName;
+      const order: string[] = batch.stages.map((s: any) => s.stageName);
+      const idx = order.indexOf(stage.stageName);
+      const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : stage.stageName;
       batchPatch.currentStage = next;
       // Auto-seed the next stage's inputKg with this stage's outputKg so the
       // operator doesn't retype it — the whole pipeline is "output of stage N

@@ -25,6 +25,10 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
   if (body.resolve) {
     if (existing.endedAt) throw new ApiError(400, 'Already resolved');
+    if (body.maintenanceEntryId) {
+      const linked = await (prisma as any).maintenanceEntry.count({ where: { id: body.maintenanceEntryId, shopId: shop.id } });
+      if (!linked) throw new ApiError(404, 'Maintenance entry not found');
+    }
     ops.push((prisma as any).machineDowntime.update({
       where: { id },
       data: {

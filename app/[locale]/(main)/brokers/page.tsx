@@ -70,6 +70,11 @@ export default function BrokersPage() {
                 <div className="min-w-0">
                   <p className="font-bold text-slate-900 dark:text-white truncate">{b.name}</p>
                   {b.mobile && <p className="text-xs text-slate-500">{b.mobile}</p>}
+                  <div className="flex gap-1 mt-1 flex-wrap">
+                    {['Supplier broker', 'Customer broker'].filter(k => entries.some(e => e.brokerId === b.id && (e.note || '').startsWith(`[${k}]`))).map(k => (
+                      <span key={k} className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">{k}</span>
+                    ))}
+                  </div>
                 </div>
                 <span className={cn('text-lg font-black shrink-0', b.balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
                   {rupee(Math.abs(b.balance))}

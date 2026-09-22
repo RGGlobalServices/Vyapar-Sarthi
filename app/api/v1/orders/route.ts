@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import { computeItemsAndTotal, type OrderItemInput } from '@/lib/server/orderItems';
 
 export const runtime = 'nodejs';
@@ -61,6 +62,14 @@ export const POST = handle(async (req) => {
   }
 
   const direction = data.direction === 'outgoing' ? 'outgoing' : 'incoming';
+
+  // The response `include`s the full customer / supplier / product rows, so a
+  // foreign id here would have returned another shop's records.
+  await assertOwned(shop.id, {
+    customerId: direction === 'incoming' ? data.customerId : null,
+    supplierId: direction === 'outgoing' ? data.supplierId : null,
+    productId: items.map(i => i.productId),
+  });
 
   const order = await prisma.order.create({
     data: {

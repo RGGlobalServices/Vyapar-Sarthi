@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
+import { apiErrorResponse } from '@/lib/server/http';
 import prisma from '@/lib/server/prisma';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -245,6 +247,10 @@ export async function POST(req: Request) {
 
     const productIds = entries.map(e => e.productId);
 
+    // Every product in the batch must belong to this shop — checked before the
+    // single array transaction below, so one foreign id rejects the whole save.
+    await assertOwned(shop.id, { productId: productIds });
+
     // Rows already saved for this product/date — their receivedQty is already
     // reflected in currentStock from a prior save, so re-saving must apply only
     // the *change* since then, not the full figure again.
@@ -303,7 +309,7 @@ export async function POST(req: Request) {
 
       if (stockDelta !== 0) {
         ops.push(prisma.product.update({
-          where: { id: e.productId },
+          where: { id: e.productId, shopId: shop.id },
           data: { currentStock: { increment: stockDelta } },
         }));
         ops.push(prisma.stockLog.create({
@@ -360,6 +366,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, count: entries.length, newHistoryByProduct });
   } catch (error: any) {
+    const known = apiErrorResponse(error);
+    if (known) return known;
     console.error('[API] Error saving daily stock register:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

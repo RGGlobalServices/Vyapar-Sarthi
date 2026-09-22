@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startOfDay, startOfWeek, startOfMonth, startOfQuarter, startOfYear, format, parseISO, subDays, subMonths, subYears } from 'date-fns';
 import prisma from '@/lib/server/prisma';
+import { requireShop } from '@/lib/server/auth';
+import { ApiError, errorResponse } from '@/lib/server/http';
 
 export async function GET(req: NextRequest) {
+  // Previously this trusted the raw x-shop-id header with no token check, so
+  // anyone who knew a shop uuid could read its full sales history.
+  let shopId: string;
   try {
-    const shopId = req.headers.get('x-shop-id');
-    if (!shopId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    shopId = (await requireShop(req)).shop.id;
+  } catch (e) {
+    if (e instanceof ApiError) return errorResponse(e.message, e.status, e.code);
+    throw e;
+  }
 
+  try {
     const { searchParams } = new URL(req.url);
     const timeframe = searchParams.get('timeframe') || 'month'; // day, week, month, quarter, year
     const startParam = searchParams.get('startDate');

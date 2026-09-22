@@ -1,4 +1,5 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
+import { ApiError } from '@/lib/server/http';
 
 export type VariantStockDelta = { productId: string; variantKey: string | null | undefined; delta: number };
 
@@ -11,26 +12,21 @@ function rowKey(v: any): string {
 }
 
 /**
- * Applies signed stock deltas to Product.variants[] JSON rows, batched per
- * product so multiple lines against the same product in one call don't race
- * on read-modify-write (each product gets exactly one read + one write).
- * Deltas with no matching row (stale/renamed variant) are silently skipped —
- * the flat Product.currentStock counter, updated separately and
- * unconditionally by the caller, stays correct either way. Decrements clamp
- * at 0 rather than going negative.
- *
- * Best-effort by design: call this AFTER the caller's own critical
- * transaction has committed, wrapped in try/catch — see purchases/route.ts
- * and purchases/[id]/route.ts for the established pattern (mirrors
- * cleanupPurchaseLedgerAndBatches in lib/server/purchases.ts).
+ * Applies signed stock deltas to Product.variants[] JSON rows, batched and
+ * locked per product in deterministic ID order to prevent lost updates under concurrency.
  */
-export async function applyVariantStockDeltas(prisma: PrismaClient, deltas: VariantStockDelta[]) {
-  // Net every delta for the same (product, variant) pair down to one number
-  // BEFORE touching any stock value. Applying deltas one at a time with a
-  // clamp-at-0 on each step would make the result depend on call order —
-  // e.g. an edit's reverse(-5) then reapply(+8) clamps through 0 and lands
-  // on 8, while the reverse order lands on 6. Summing first and clamping
-  // exactly once against the real current value avoids that entirely.
+export async function applyVariantStockDeltas(
+  db: Prisma.TransactionClient | PrismaClient,
+  deltas: VariantStockDelta[],
+  shopId: string,
+  opts?: { rejectNegative?: boolean }
+): Promise<void> {
+  // FOR UPDATE only holds inside a transaction. A caller passing the plain
+  // client (post-commit best-effort callers) gets its own short one, so the
+  // read-modify-write of the variants JSON can never interleave with another.
+  if (typeof (db as PrismaClient).$transaction === 'function') {
+    return (db as PrismaClient).$transaction((tx) => applyVariantStockDeltas(tx, deltas, shopId, opts), { maxWait: 30000, timeout: 60000 });
+  }
   const byProduct = new Map<string, Map<string, number>>();
   for (const d of deltas) {
     if (!d.variantKey || !d.delta) continue;
@@ -39,21 +35,41 @@ export async function applyVariantStockDeltas(prisma: PrismaClient, deltas: Vari
     byProduct.set(d.productId, perVariant);
   }
 
-  for (const [productId, perVariant] of byProduct) {
-    const product = await prisma.product.findUnique({ where: { id: productId }, select: { variants: true } });
-    if (!product || !Array.isArray(product.variants)) continue;
+  // Deterministic order to prevent deadlocks across concurrent transactions
+  const productIds = [...byProduct.keys()].sort();
 
-    const variants = (product.variants as any[]).map((v) => ({ ...v }));
+  for (const productId of productIds) {
+    const perVariant = byProduct.get(productId);
+    if (!perVariant) continue;
+
+    // Lock product row to prevent read-modify-write lost update on the variants JSON
+    const lockedRows = await db.$queryRaw<Array<{ id: string; variants: any }>>`
+      SELECT id, variants FROM products
+      WHERE id = ${productId}::uuid AND shop_id = ${shopId}::uuid
+      FOR UPDATE
+    `;
+    if (!lockedRows.length) continue;
+
+    const rawVariants = lockedRows[0].variants;
+    const variants = Array.isArray(rawVariants)
+      ? (rawVariants as any[]).map((v) => ({ ...v }))
+      : [];
+    if (!variants.length) continue;
+
     let changed = false;
     for (const [variantKey, netDelta] of perVariant) {
       if (!netDelta) continue;
       const row = variants.find((v) => rowKey(v) === variantKey);
       if (!row) continue;
-      row.stock = Math.max(0, (Number(row.stock) || 0) + netDelta);
+      const next = (Number(row.stock) || 0) + netDelta;
+      // Manual stock adjustments must reject, not silently clamp: clamping would leave the
+      // variant and the product/warehouse totals out of step. Checked under the product row lock.
+      if (opts?.rejectNegative && next < 0) throw new ApiError(400, `Negative stock is not allowed for "${variantKey}".`);
+      row.stock = Math.max(0, next);
       changed = true;
     }
     if (changed) {
-      await prisma.product.update({ where: { id: productId }, data: { variants } });
+      await db.product.update({ where: { id: productId, shopId }, data: { variants } });
     }
   }
 }

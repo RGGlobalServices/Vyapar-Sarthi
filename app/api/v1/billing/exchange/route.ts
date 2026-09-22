@@ -1,7 +1,10 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
-import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { planReturn, parsePriorReturns, splitRefund } from '@/lib/server/refunds';
+import { serverSellingPriceFor, serverCostFor, round2, toPaise } from '@/lib/server/moneyValidation';
+import { isMillBillingPackage, isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { assertNotMillSale } from '@/lib/server/millGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,28 +19,6 @@ export const dynamic = 'force-dynamic';
  * UPI/card/udhar. Calling the two existing endpoints back-to-back would
  * double-handle the traded-in value (paid out as a refund, then paid back in
  * as a new sale) and desync the ledger.
- *
- * For the returned side: same stock-restore + MaterialReturn bookkeeping as
- * /billing/returns, with the returned rows' `note` additionally carrying
- * `exchange: true` / `exchangeSaleId` / `exchangedFor` so the Returns page
- * can show what the customer actually left with instead of cash.
- *
- * For the replacement side: a real new Sale + SaleItem[] (invoice-numbered
- * `EXC-XXXXXXXX` to stay visually distinct from a normal `INV-` sale), so it
- * shows up in the dashboard/party ledger/stock reports the same way any
- * other sale does — no separate exchange-aware report code needed anywhere
- * else in the app.
- *
- * Settlement of `exchangeValue - returnValue`:
- *   - 0: nothing else happens, the new sale is fully covered by the trade-in.
- *   - negative (shop owes money back): the excess is refunded udhar-first-
- *     then-cash, identical attribution to /billing/returns.
- *   - positive (customer owes more): settled via `settlement_method`
- *     (Cash/UPI/Card fully collected now, or added to the customer's udhar).
- *
- * Whole thing runs in one transaction — a half-processed exchange (stock
- * moved but ledger not settled, or vice versa) is worse than not processing
- * at all.
  */
 
 interface ReturnItemInput {
@@ -59,6 +40,7 @@ interface ExchangeItemInput {
 
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
+  const allowNegativeStock = Boolean((shop as any).allowNegativeStock);
   const body = await readBody(req) as {
     bill_id: string;
     return_items: ReturnItemInput[];
@@ -69,128 +51,162 @@ export const POST = handle(async (req) => {
 
   if (!bill_id || !return_items?.length) throw new ApiError(400, 'bill_id and return_items are required');
   if (!exchange_items?.length) throw new ApiError(400, 'exchange_items is required — use /billing/returns for a plain refund');
-
-  const sale = await prisma.sale.findFirst({
-    where: { id: bill_id, shopId: shop.id },
-    include: { items: { include: { product: true } }, customer: true },
-  });
-  if (!sale) throw new ApiError(404, 'Bill not found');
-
-  // ── Validate the returned side (identical guard to /billing/returns) ──
-  const priorReturns = await prisma.materialReturn.findMany({
-    where: { shopId: shop.id, note: { contains: sale.id } },
-    select: { productId: true, itemName: true, quantity: true, note: true },
-  });
-  const alreadyReturnedByItem = new Map<string, number>();
-  for (const r of priorReturns) {
-    let noteData: any = {};
-    try { if (r.note) noteData = JSON.parse(r.note); } catch {}
-    const key = noteData?.saleItemId || r.productId || r.itemName;
-    if (key) alreadyReturnedByItem.set(key, (alreadyReturnedByItem.get(key) || 0) + r.quantity);
+  if (settlement_method !== undefined && !['Cash', 'UPI', 'Card', 'Udhar'].includes(settlement_method as string)) {
+    throw new ApiError(400, 'Invalid settlement_method');
   }
 
-  interface PreparedReturn {
-    saleItem: typeof sale.items[number];
-    qty: number;
-    reason: string;
-    refundAmount: number;
-    refundProfit: number;
-    variantKey: string | null;
-  }
-  const preparedReturns: PreparedReturn[] = [];
-  for (const ret of return_items) {
-    const saleItem = sale.items.find((si) => si.id === ret.item_id);
-    if (!saleItem) throw new ApiError(400, `Sale item ${ret.item_id} not on this bill`);
-    const qty = Number(ret.quantity) || 0;
-    if (qty <= 0) continue;
-    const alreadyReturned = alreadyReturnedByItem.get(saleItem.id) || 0;
-    const returnable = (saleItem.quantity || 0) - alreadyReturned;
-    if (qty > returnable) {
-      throw new ApiError(400, `Only ${returnable} of "${saleItem.product?.name || saleItem.itemName || 'this item'}" can still be returned`);
-    }
-    const price = Number(ret.price) || Number(saleItem.pricePerUnit) || 0;
-    const margin = Number(saleItem.marginPerUnit) || 0;
-    preparedReturns.push({
-      saleItem,
-      qty,
-      reason: ret.reason || 'Customer Return',
-      refundAmount: qty * price,
-      refundProfit: qty * margin,
-      variantKey: saleItem.variant || null,
-    });
-  }
-  if (!preparedReturns.length) throw new ApiError(400, 'No valid return quantities provided');
-  const returnValue = preparedReturns.reduce((s, p) => s + p.refundAmount, 0);
+  // Mill bills (`mill_v2`) cannot be exchanged yet (the exchange leg is priced GST-inclusive). Legacy bills unaffected.
+  await assertNotMillSale(shop.id, bill_id, 'exchange');
 
-  // ── Validate the exchange side ──
-  interface PreparedExchange {
-    productId: string;
-    product: any;
-    variantKey: string | null;
-    qty: number;
-    price: number;
-    name: string;
-  }
-  const exchangeProductIds = [...new Set(exchange_items.map(e => e.product_id))];
-  const exchangeProducts = await prisma.product.findMany({ where: { id: { in: exchangeProductIds }, shopId: shop.id } });
-  const exchangeProductById = new Map(exchangeProducts.map(p => [p.id, p]));
-
-  const preparedExchange: PreparedExchange[] = [];
-  for (const ex of exchange_items) {
-    const qty = Number(ex.quantity) || 0;
-    if (qty <= 0) continue;
-    const product = exchangeProductById.get(ex.product_id);
-    if (!product) throw new ApiError(400, `Product ${ex.product_id} not found`);
-    preparedExchange.push({
-      productId: product.id,
-      product,
-      variantKey: ex.variant || null,
-      qty,
-      price: Number(ex.price) || Number(product.sellingPrice) || 0,
-      name: ex.name || product.name || 'Item',
-    });
-  }
-  if (!preparedExchange.length) throw new ApiError(400, 'No valid exchange quantities provided');
-  const exchangeValue = preparedExchange.reduce((s, p) => s + p.qty * p.price, 0);
-
-  // Stock-availability guard, checked before any write — same pattern as
-  // app/api/v1/purchases/[id]/return/route.ts. Aggregate qty per product
-  // first since one product can appear via more than one variant line.
-  const exchangeQtyByProduct = new Map<string, number>();
-  for (const p of preparedExchange) exchangeQtyByProduct.set(p.productId, (exchangeQtyByProduct.get(p.productId) || 0) + p.qty);
-  const short = exchangeProducts.filter(p => (p.currentStock ?? 0) < (exchangeQtyByProduct.get(p.id) || 0));
-  if (short.length) {
-    throw new ApiError(409, `Not enough stock to give in exchange: ${short.map(p => p.name).join(', ')}.`);
-  }
-
-  const difference = Math.round((exchangeValue - returnValue) * 100) / 100;
-  if (difference > 0 && !settlement_method) {
-    throw new ApiError(400, 'settlement_method is required when the exchange value is more than the return value');
-  }
-  if (difference > 0 && settlement_method === 'Udhar' && !sale.customerId) {
-    throw new ApiError(400, 'This bill has no linked customer — cannot add the difference to udhar');
+  // (After the Mill-sale check above, which keeps answering 409 for a Mill invoice.) An exchange creates a NEW legacy (unmarked) sale. Bada Udyog package = Mill Billing, so a Bada Udyog shop cannot create
+  // legacy sales by any route (same rule as POST /billing).
+  if (isMillBillingPackage(shop.packageType)) {
+    throw new ApiError(400, 'Legacy exchanges are not available for the Bada Udyog package (its bills are Mill invoices).', 'MILL_BILLING_REQUIRED');
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Restock the RETURNED items — COALESCE-safe raw SQL (unlike the
-    //    older conditional-skip idiom in /billing/returns) so a null
-    //    currentStock never silently swallows the restore.
+    // 1. Lock original Sale row to serialize concurrent returns/exchanges
+    const lockedSales = await tx.$queryRaw<Array<{
+      id: string;
+      shop_id: string;
+      total_amount: number;
+      amount_paid: number;
+      customer_id: string | null;
+      invoice_number: string;
+      payment_type: string;
+      created_at: Date;
+    }>>`
+      SELECT id, shop_id, total_amount, amount_paid, customer_id, invoice_number, payment_type, created_at
+      FROM sales
+      WHERE id = ${bill_id}::uuid AND shop_id = ${shop.id}::uuid
+      FOR UPDATE
+    `;
+    if (!lockedSales.length) throw new ApiError(404, 'Bill not found');
+    const saleRow = lockedSales[0];
+
+    const [saleItems, priorRows] = await Promise.all([
+      tx.saleItem.findMany({
+        where: { saleId: bill_id },
+        include: { product: true },
+      }),
+      tx.materialReturn.findMany({
+        where: { shopId: shop.id, note: { contains: bill_id } },
+        select: { productId: true, itemName: true, quantity: true, amount: true, note: true },
+      }),
+    ]);
+
+    const { lines: planned, totalRefund: returnValueRaw } = planReturn({
+      saleItems,
+      saleTotal: Number(saleRow.total_amount) || 0,
+      priorReturns: parsePriorReturns(priorRows as any, bill_id),
+      requests: return_items.map((i) => ({ item_id: i?.item_id, quantity: i?.quantity })),
+    });
+    const reasonByItem = new Map(return_items.map((i) => [i?.item_id, i?.reason]));
+    const preparedReturns = planned.map((l) => ({
+      saleItem: l.saleItem as typeof saleItems[number],
+      qty: l.qty,
+      reason: reasonByItem.get(l.saleItem.id) || 'Customer Return',
+      refundAmount: l.refundAmount,
+      refundProfit: l.refundProfit,
+      variantKey: (l.saleItem.variant as string | null) || null,
+    }));
+    const returnValue = returnValueRaw;
+
+    // Deterministic locking of all involved products (return and exchange)
     const returnQtyByProduct = new Map<string, number>();
     for (const p of preparedReturns) {
       if (!p.saleItem.productId) continue;
       returnQtyByProduct.set(p.saleItem.productId, (returnQtyByProduct.get(p.saleItem.productId) || 0) + p.qty);
     }
     const returnedProductIds = [...returnQtyByProduct.keys()];
+    const exchangeProductIds = [...new Set(exchange_items.map((e) => e.product_id))];
+    const allProductIds = [...new Set([...returnedProductIds, ...exchangeProductIds])].sort();
+
+    for (const pid of allProductIds) {
+      await tx.$queryRaw`
+        SELECT id FROM products
+        WHERE id = ${pid}::uuid AND shop_id = ${shop.id}::uuid
+        FOR UPDATE
+      `;
+    }
+
+    // Lock order (global): sale -> products (also serialises batches) -> customer.
+    // Lock customer row if present
+    let lockedCustomer: { id: string; total_due: number | null; name: string | null; credit_limit: number | null } | null = null;
+    if (saleRow.customer_id) {
+      const lockedCustomers = await tx.$queryRaw<Array<{ id: string; total_due: number | null; name: string | null; credit_limit: number | null }>>`
+        SELECT id, total_due, name, credit_limit
+        FROM customers
+        WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+        FOR UPDATE
+      `;
+      if (lockedCustomers.length) {
+        lockedCustomer = lockedCustomers[0];
+      }
+    }
+
+    const exchangeProducts = await tx.product.findMany({ where: { id: { in: exchangeProductIds }, shopId: shop.id } });
+    const exchangeProductById = new Map(exchangeProducts.map((p) => [p.id, p]));
+
+    interface PreparedExchange {
+      productId: string;
+      product: any;
+      variantKey: string | null;
+      qty: number;
+      price: number;
+      cost: number;
+      name: string;
+    }
+
+    const preparedExchange: PreparedExchange[] = [];
+    for (const ex of exchange_items) {
+      const qty = typeof ex.quantity === 'number' ? ex.quantity : Number(ex.quantity);
+      if (!Number.isFinite(qty) || qty < 0) throw new ApiError(400, 'Exchange quantity must be a valid non-negative number');
+      if (qty === 0) continue;
+      const product = exchangeProductById.get(ex.product_id);
+      if (!product) throw new ApiError(400, `Product ${ex.product_id} not found`);
+      const serverPrice = serverSellingPriceFor(product, ex.variant || null);
+      if (!(serverPrice > 0)) throw new ApiError(400, `"${product.name}" has no selling price set; cannot exchange`);
+      preparedExchange.push({
+        productId: product.id,
+        product,
+        variantKey: ex.variant || null,
+        qty,
+        price: serverPrice,
+        cost: serverCostFor(product, ex.variant || null),
+        name: ex.name || product.name || 'Item',
+      });
+    }
+    if (!preparedExchange.length) throw new ApiError(400, 'No valid exchange quantities provided');
+    const exchangeValue = round2(preparedExchange.reduce((s, p) => s + p.qty * p.price, 0));
+
+    // Stock-availability check for exchange items
+    const exchangeQtyByProduct = new Map<string, number>();
+    for (const p of preparedExchange) exchangeQtyByProduct.set(p.productId, (exchangeQtyByProduct.get(p.productId) || 0) + p.qty);
+    const short = exchangeProducts.filter((p) => (p.currentStock ?? 0) < (exchangeQtyByProduct.get(p.id) || 0));
+    if (short.length && !allowNegativeStock) {
+      throw new ApiError(409, `Not enough stock to give in exchange: ${short.map((p) => p.name).join(', ')}.`);
+    }
+
+    const difference = Math.round((exchangeValue - returnValue) * 100) / 100;
+    if (difference > 0 && !settlement_method) {
+      throw new ApiError(400, 'settlement_method is required when the exchange value is more than the return value');
+    }
+    if (difference > 0 && settlement_method === 'Udhar' && !saleRow.customer_id) {
+      throw new ApiError(400, 'This bill has no linked customer — cannot add the difference to udhar');
+    }
+
+    // 1. Restock the RETURNED items
     const returnedProducts = returnedProductIds.length
       ? await tx.product.findMany({ where: { id: { in: returnedProductIds } } })
       : [];
-    const returnedProductById = new Map(returnedProducts.map(pp => [pp.id, pp]));
+    const returnedProductById = new Map(returnedProducts.map((pp) => [pp.id, pp]));
 
     for (const [productId, totalQty] of returnQtyByProduct.entries()) {
       const product = returnedProductById.get(productId);
       if (!product) continue;
       let newSizeVariants = product.size_variants;
-      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
+      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
       let variantsChanged = false;
 
       for (const p of preparedReturns) {
@@ -213,7 +229,7 @@ export const POST = handle(async (req) => {
         }
       }
 
-      await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${totalQty} WHERE id = ${productId}::uuid`;
+      await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${totalQty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
       await tx.product.update({
         where: { id: productId },
         data: {
@@ -228,30 +244,27 @@ export const POST = handle(async (req) => {
       }
     }
 
-    // 2. Create the replacement Sale (the "new item" leg) — mirrors
-    //    POST /billing's creation shape.
+    // 2. Create replacement Sale
     const exchangeInvoiceNumber = `EXC-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
-    const totalExchangeProfit = preparedExchange.reduce((s, p) => s + (p.price - (Number(p.product.costPrice) || 0)) * p.qty, 0);
+    const totalExchangeProfit = preparedExchange.reduce((s, p) => s + (p.price - p.cost) * p.qty, 0);
 
     let exchangeAmountPaid: number;
     let exchangePaymentType: string;
     if (difference <= 0) {
-      // Fully covered by the trade-in credit (exactly even, or the shop
-      // owes money back — that excess is settled separately below).
       exchangeAmountPaid = exchangeValue;
       exchangePaymentType = 'Cash';
     } else if (settlement_method === 'Udhar') {
-      exchangeAmountPaid = returnValue; // only the trade-in portion is "paid"
+      exchangeAmountPaid = returnValue;
       exchangePaymentType = 'Udhar';
     } else {
-      exchangeAmountPaid = exchangeValue; // trade-in + collected method covers it all
+      exchangeAmountPaid = exchangeValue;
       exchangePaymentType = settlement_method!;
     }
 
     const newSale = await tx.sale.create({
       data: {
         shopId: shop.id,
-        customerId: sale.customerId,
+        customerId: saleRow.customer_id,
         totalAmount: exchangeValue,
         totalProfit: totalExchangeProfit,
         paymentType: exchangePaymentType,
@@ -259,12 +272,12 @@ export const POST = handle(async (req) => {
         invoice_number: exchangeInvoiceNumber,
         billType: 'non_gst',
         items: {
-          create: preparedExchange.map(p => ({
+          create: preparedExchange.map((p) => ({
             productId: p.productId,
             unit: p.product.baseUnit || undefined,
             quantity: p.qty,
             pricePerUnit: p.price,
-            marginPerUnit: p.price - (Number(p.product.costPrice) || 0),
+            marginPerUnit: p.price - p.cost,
             variant: p.variantKey || undefined,
             itemName: p.name,
           })),
@@ -272,10 +285,9 @@ export const POST = handle(async (req) => {
       },
     });
 
-    // 3. Decrement stock for the EXCHANGE items — COALESCE raw SQL, mirrors
-    //    POST /billing exactly.
+    // 3. Decrement stock for the EXCHANGE items
     const exchangeProductsFresh = await tx.product.findMany({ where: { id: { in: [...exchangeQtyByProduct.keys()] } } });
-    const exchangeProductByIdFresh = new Map(exchangeProductsFresh.map(pp => [pp.id, pp]));
+    const exchangeProductByIdFresh = new Map(exchangeProductsFresh.map((pp) => [pp.id, pp]));
     const activeBatches = isWholesaleTierPackage(shop.packageType)
       ? await tx.batch.findMany({ where: { productId: { in: [...exchangeQtyByProduct.keys()] }, shopId: shop.id, quantity: { gt: 0 } }, orderBy: { createdAt: 'asc' } })
       : [];
@@ -289,7 +301,7 @@ export const POST = handle(async (req) => {
       const product = exchangeProductByIdFresh.get(productId);
       if (!product) continue;
       let newSizeVariants = product.size_variants;
-      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
+      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
       let variantsChanged = false;
 
       for (const p of preparedExchange) {
@@ -312,7 +324,23 @@ export const POST = handle(async (req) => {
         }
       }
 
-      await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${productId}::uuid`;
+      if (!allowNegativeStock) {
+        const decCount = await tx.$executeRaw`
+          UPDATE products
+          SET current_stock = COALESCE(current_stock, 0) - ${totalQty}
+          WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid AND COALESCE(current_stock, 0) >= ${totalQty}
+        `;
+        if (decCount === 0) {
+          throw new ApiError(409, `Not enough stock to give in exchange for product ${product.name}`);
+        }
+      } else {
+        await tx.$executeRaw`
+          UPDATE products
+          SET current_stock = COALESCE(current_stock, 0) - ${totalQty}
+          WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid
+        `;
+      }
+
       await tx.product.update({
         where: { id: productId },
         data: {
@@ -333,14 +361,13 @@ export const POST = handle(async (req) => {
       }
     }
 
-    // 4. MaterialReturn rows for the returned items, carrying the exchange
-    //    linkage in `note` so the Returns page can show what was given back.
-    const exchangedForSnapshot = preparedExchange.map(p => ({ name: p.name, variant: p.variantKey, quantity: p.qty, price: p.price }));
+    // 4. MaterialReturn rows
+    const exchangedForSnapshot = preparedExchange.map((p) => ({ name: p.name, variant: p.variantKey, quantity: p.qty, price: p.price }));
     const createdReturnIds: string[] = [];
     for (const p of preparedReturns) {
       const row = await tx.materialReturn.create({
         data: {
-          shopId: sale.shopId!,
+          shopId: saleRow.shop_id,
           productId: p.saleItem.productId ?? undefined,
           itemName: p.saleItem.product?.name || p.saleItem.itemName || p.variantKey || 'Unknown Item',
           quantity: p.qty,
@@ -348,18 +375,15 @@ export const POST = handle(async (req) => {
           amount: p.refundAmount,
           date: new Date(),
           note: JSON.stringify({
-            billId: sale.id,
-            invoiceNumber: sale.invoice_number,
-            customerName: sale.customer?.name || 'Guest',
-            customerId: sale.customerId || null,
-            paymentType: sale.paymentType,
-            saleDate: sale.createdAt,
+            billId: saleRow.id,
+            invoiceNumber: saleRow.invoice_number,
+            customerName: lockedCustomer?.name || 'Guest',
+            customerId: saleRow.customer_id || null,
+            paymentType: saleRow.payment_type,
+            saleDate: saleRow.created_at,
             saleItemId: p.saleItem.id,
             variant: p.variantKey,
             refundProfit: p.refundProfit,
-            // No cash/udhar refund of the traded-in value itself — it went
-            // toward the new sale, not back to the customer. Only the NET
-            // difference (settled below) ever touches cash/udhar.
             udharCleared: 0,
             cashRefunded: 0,
             settled: true,
@@ -377,9 +401,7 @@ export const POST = handle(async (req) => {
       }
     }
 
-    // 5. Adjust the ORIGINAL sale — identical to /billing/returns. The
-    //    amountPaid decrement only happens for whatever cash/udhar portion
-    //    is actually settled below (step 6), never for the traded-in value.
+    // 5. Adjust original sale
     const totalProfitRefunded = preparedReturns.reduce((s, p) => s + p.refundProfit, 0);
 
     let udharCleared = 0;
@@ -388,49 +410,58 @@ export const POST = handle(async (req) => {
     let cashCollected = 0;
 
     if (difference < 0) {
-      // Shop owes the customer the excess back — udhar-first-then-cash,
-      // identical attribution to /billing/returns, against this bill's own
-      // outstanding.
       const excess = -difference;
-      const paidBefore = Number(sale.amountPaid) || 0;
-      const totalBefore = Number(sale.totalAmount) || 0;
+      const paidBefore = Number(saleRow.amount_paid) || 0;
+      const totalBefore = Number(saleRow.total_amount) || 0;
       const outstandingOnThisBill = Math.max(0, totalBefore - paidBefore);
-      udharCleared = Math.min(excess, outstandingOnThisBill);
-      cashRefunded = excess - udharCleared;
+      const split = splitRefund(excess, outstandingOnThisBill, lockedCustomer ? Number(lockedCustomer.total_due) || 0 : null);
+      udharCleared = split.udharCleared;
+      cashRefunded = split.cashRefunded;
     } else if (difference > 0 && settlement_method === 'Udhar') {
       udharAdded = difference;
     } else if (difference > 0) {
-      cashCollected = settlement_method === 'Cash' ? difference : 0; // UPI/Card collected but never touches CashBook, matching POST /billing
+      cashCollected = settlement_method === 'Cash' ? difference : 0;
     }
 
     await tx.sale.update({
-      where: { id: sale.id },
+      where: { id: saleRow.id },
       data: {
         totalAmount: { decrement: returnValue },
         totalProfit: { decrement: totalProfitRefunded },
-        ...(cashRefunded > 0 ? { amountPaid: { decrement: cashRefunded } } : {}),
+        ...(cashRefunded > 0 ? { amountPaid: { decrement: Math.min(cashRefunded, Number(saleRow.amount_paid) || 0) } } : {}),
       },
     });
 
     // 6. Net settlement — udhar side
-    if (sale.customerId && udharCleared > 0) {
-      await tx.customer.update({ where: { id: sale.customerId }, data: { totalDue: { decrement: udharCleared } } });
+    if (saleRow.customer_id && udharCleared > 0) {
+      const dec = await tx.$executeRaw`
+        UPDATE customers SET total_due = COALESCE(total_due, 0) - ${udharCleared}
+        WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+          AND ROUND(COALESCE(total_due, 0)::numeric * 100) >= ${toPaise(udharCleared)}
+      `;
+      if (dec === 0) throw new ApiError(409, 'Customer balance changed; please retry');
       await tx.customer_transactions.create({
         data: {
-          customer_id: sale.customerId,
+          customer_id: saleRow.customer_id,
           type: 'refund',
           amount: udharCleared,
-          note: `Exchange refund: ${sale.invoice_number}`,
-          bill_number: sale.invoice_number,
+          note: `Exchange refund: ${saleRow.invoice_number}`,
+          bill_number: saleRow.invoice_number,
           created_at: new Date(),
         },
       });
     }
-    if (sale.customerId && udharAdded > 0) {
-      await tx.customer.update({ where: { id: sale.customerId }, data: { totalDue: { increment: udharAdded } } });
+    if (saleRow.customer_id && udharAdded > 0) {
+      if (lockedCustomer && (lockedCustomer.credit_limit ?? 0) > 0) {
+        const curDue = Number(lockedCustomer.total_due || 0);
+        if (curDue + udharAdded > lockedCustomer.credit_limit!) {
+          throw new ApiError(400, `Credit Limit of ₹${lockedCustomer.credit_limit} exceeded by ₹${(curDue + udharAdded) - lockedCustomer.credit_limit!}`);
+        }
+      }
+      await tx.customer.update({ where: { id: saleRow.customer_id }, data: { totalDue: { increment: udharAdded } } });
       await tx.customer_transactions.create({
         data: {
-          customer_id: sale.customerId,
+          customer_id: saleRow.customer_id,
           type: 'udhar',
           amount: udharAdded,
           note: `Exchange: ${exchangeInvoiceNumber}`,
@@ -440,11 +471,10 @@ export const POST = handle(async (req) => {
       });
     }
 
-    // 7. Net settlement — cash side (physical drawer movement only; UPI/Card
-    //    never get a CashBook row anywhere else in this app either).
+    // 7. Net settlement — cash side
     if (cashRefunded > 0) {
       await tx.cashBook.create({
-        data: { shopId: shop.id, type: 'refund', amount: cashRefunded, referenceId: sale.id, description: `Exchange refund for ${sale.invoice_number}` },
+        data: { shopId: shop.id, type: 'refund', amount: cashRefunded, referenceId: saleRow.id, description: `Exchange refund for ${saleRow.invoice_number}` },
       });
     }
     if (cashCollected > 0) {
@@ -463,8 +493,8 @@ export const POST = handle(async (req) => {
       settlement: { udharCleared, cashRefunded, udharAdded, cashCollected },
     };
   }, {
-    maxWait: 10000,
-    timeout: 20000,
+    maxWait: 30000,
+    timeout: 60000,
   });
 
   return json({ detail: 'Exchange processed', ...result });

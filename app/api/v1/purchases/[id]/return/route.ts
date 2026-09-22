@@ -26,90 +26,93 @@ export async function POST(req: Request, { params }: Ctx) {
       return NextResponse.json({ error: 'No items to return.' }, { status: 400 });
     }
 
-    const invoice = await prisma.purchaseInvoice.findFirst({
-      where: { id, shopId: auth.shop.id },
-      include: {
-        purchaseItems: true,
-        purchaseReturns: { include: { items: true } },
-      },
-    });
-    if (!invoice) return NextResponse.json({ error: 'Purchase invoice not found' }, { status: 404 });
+    const created = await prisma.$transaction(async (tx) => {
+      // 1. Lock the purchase invoice to serialize concurrent return requests
+      const lockedInvoices = await tx.$queryRaw<Array<{ id: string; supplier_id: string; invoice_number: string | null }>>`
+        SELECT id, supplier_id, invoice_number
+        FROM purchase_invoices
+        WHERE id = ${id}::uuid AND shop_id = ${auth.shop.id}::uuid
+        FOR UPDATE
+      `;
+      if (!lockedInvoices.length) {
+        throw new Error('Purchase invoice not found');
+      }
+      const invoice = lockedInvoices[0];
 
-    // "<productId>::<variantKey>" (variantKey normalised to '' when absent)
-    // — same composite-key idea PurchaseItem/StockMovement already use for
-    // per-variant rows, just keyed for a quick remaining-qty lookup here.
-    const rowKey = (productId: string, variantKey: string | null | undefined) => `${productId}::${variantKey || ''}`;
+      const [purchaseItems, purchaseReturns] = await Promise.all([
+        tx.purchaseItem.findMany({ where: { purchaseInvoiceId: id } }),
+        tx.purchaseReturn.findMany({
+          where: { purchaseInvoiceId: id, shopId: auth.shop.id },
+          include: { items: true }
+        }),
+      ]);
 
-    const originalQtyByKey = new Map<string, number>();
-    for (const item of invoice.purchaseItems) {
-      const k = rowKey(item.productId, item.variantKey);
-      originalQtyByKey.set(k, (originalQtyByKey.get(k) || 0) + item.quantity);
-    }
-    const alreadyReturnedByKey = new Map<string, number>();
-    for (const ret of invoice.purchaseReturns) {
-      for (const item of ret.items) {
+      const rowKey = (productId: string, variantKey: string | null | undefined) => `${productId}::${variantKey || ''}`;
+
+      const originalQtyByKey = new Map<string, number>();
+      for (const item of purchaseItems) {
         const k = rowKey(item.productId, item.variantKey);
-        alreadyReturnedByKey.set(k, (alreadyReturnedByKey.get(k) || 0) + item.quantity);
+        originalQtyByKey.set(k, (originalQtyByKey.get(k) || 0) + item.quantity);
       }
-    }
-
-    // Validate each requested line against what's actually still returnable
-    // from THIS invoice, and total the per-product quantity being decremented
-    // (a product can appear in more than one requested line via different
-    // variants) so the stock guard below checks the combined effect, not
-    // each line in isolation.
-    const qtyByProduct = new Map<string, number>();
-    for (const r of requested) {
-      if (!r.productId || !(r.quantity > 0)) {
-        return NextResponse.json({ error: 'Every returned item needs a positive quantity.' }, { status: 400 });
+      const alreadyReturnedByKey = new Map<string, number>();
+      for (const ret of purchaseReturns) {
+        for (const item of ret.items) {
+          const k = rowKey(item.productId, item.variantKey);
+          alreadyReturnedByKey.set(k, (alreadyReturnedByKey.get(k) || 0) + item.quantity);
+        }
       }
-      const k = rowKey(r.productId, r.variantKey);
-      const original = originalQtyByKey.get(k) || 0;
-      const already = alreadyReturnedByKey.get(k) || 0;
-      const remaining = original - already;
-      if (r.quantity > remaining) {
-        return NextResponse.json(
-          { error: `"${r.name}"${r.variantKey ? ` (${r.variantKey})` : ''} — only ${remaining} left to return from this invoice.` },
-          { status: 400 }
-        );
+
+      // Aggregate duplicate lines for the same product/variant BEFORE checking the
+      // limit, so two entries of 10 + 10 cannot slip past a remaining quantity of 10.
+      const qtyByProduct = new Map<string, number>();
+      const requestedByKey = new Map<string, number>();
+      for (const r of requested) {
+        if (!r.productId || !(r.quantity > 0) || !Number.isFinite(Number(r.quantity))) {
+          throw new Error('Every returned item needs a positive quantity.');
+        }
+        const k = rowKey(r.productId, r.variantKey);
+        const total = (requestedByKey.get(k) || 0) + Number(r.quantity);
+        requestedByKey.set(k, total);
+        const remaining = (originalQtyByKey.get(k) || 0) - (alreadyReturnedByKey.get(k) || 0);
+        if (total > remaining) {
+          throw new Error(`"${r.name}"${r.variantKey ? ` (${r.variantKey})` : ''} — only ${remaining} left to return from this invoice.`);
+        }
+        qtyByProduct.set(r.productId, (qtyByProduct.get(r.productId) || 0) + Number(r.quantity));
       }
-      qtyByProduct.set(r.productId, (qtyByProduct.get(r.productId) || 0) + r.quantity);
-    }
 
-    // Can't return stock that's already been sold/moved elsewhere — mirrors
-    // the guard reversePurchaseInvoiceEffects uses in lib/server/purchases.ts.
-    const products = await prisma.product.findMany({
-      where: { id: { in: [...qtyByProduct.keys()] } },
-      select: { id: true, name: true, currentStock: true },
-    });
-    const short = products.filter(p => (p.currentStock ?? 0) < (qtyByProduct.get(p.id) || 0));
-    if (short.length) {
-      return NextResponse.json(
-        { error: `Not enough current stock to return: ${short.map(p => p.name).join(', ')}.` },
-        { status: 409 }
-      );
-    }
+      // Decrement product current_stock atomically with stock availability guard
+      for (const [productId, qty] of [...qtyByProduct.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        const updated = await tx.$executeRaw`
+          UPDATE products
+          SET current_stock = COALESCE(current_stock, 0) - ${qty}
+          WHERE id = ${productId}::uuid AND shop_id = ${auth.shop.id}::uuid
+            AND COALESCE(current_stock, 0) >= ${qty}
+        `;
+        if (updated === 0) {
+          const p = await tx.product.findFirst({ where: { id: productId, shopId: auth.shop.id } });
+          const name = p?.name || productId;
+          throw new Error(`Not enough current stock to return: ${name}.`);
+        }
+      }
 
-    const totalAmount = requested.reduce((sum, r) => sum + r.quantity * r.rate, 0);
-    const returnId = randomUUID();
-    const returnNumber = `RET-${randomUUID().substring(0, 8).toUpperCase()}`;
+      const totalAmount = requested.reduce((sum, r) => sum + r.quantity * r.rate, 0);
+      const returnId = randomUUID();
+      const returnNumber = `RET-${randomUUID().substring(0, 8).toUpperCase()}`;
 
-    // Flat array transaction (not an interactive callback) — same choice
-    // POST /purchases makes, so this stays one round-trip against the remote
-    // DB instead of an open transaction waiting on sequential awaits.
-    await prisma.$transaction([
-      prisma.purchaseReturn.create({
+      await tx.purchaseReturn.create({
         data: {
           id: returnId,
           shopId: auth.shop.id,
-          supplierId: invoice.supplierId,
+          supplierId: invoice.supplier_id,
           purchaseInvoiceId: invoice.id,
           returnNumber,
           totalAmount,
         },
-      }),
-      prisma.purchaseReturnItem.createMany({
-        data: requested.map(r => ({
+      });
+
+      await tx.purchaseReturnItem.createMany({
+        data: requested.map((r) => ({
+          id: randomUUID(),
           returnId,
           productId: r.productId,
           name: r.name,
@@ -118,69 +121,52 @@ export async function POST(req: Request, { params }: Ctx) {
           rate: r.rate,
           amount: r.quantity * r.rate,
         })),
-      }),
-      // currentStock is nullable with no DB default — COALESCE first so a
-      // plain decrement never silently no-ops on NULL (same fix already
-      // applied to every other stock-writing route in this module).
-      ...[...qtyByProduct.entries()].map(([productId, qty]) =>
-        prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${qty} WHERE id = ${productId}::uuid`
-      ),
-      prisma.stockMovement.createMany({
-        data: requested.map(r => ({
+      });
+
+      await tx.stockMovement.createMany({
+        data: requested.map((r) => ({
+          id: randomUUID(),
           shopId: auth.shop.id,
           productId: r.productId,
-          // Reuses the existing generic 'adjustment' type rather than a new
-          // 'purchase_return' type, so Stock Ledger / daily register (which
-          // already know how to read 'adjustment' rows) don't need new
-          // classification logic to show this correctly.
           type: 'adjustment',
           quantity: r.quantity,
           referenceId: returnId,
         })),
-      }),
-      prisma.supplier.update({
-        where: { id: invoice.supplierId },
+      });
+
+      await tx.supplier.update({
+        where: { id: invoice.supplier_id },
         data: { balance: { decrement: totalAmount } },
-      }),
-      prisma.supplierTransaction.create({
+      });
+
+      await tx.supplierTransaction.create({
         data: {
-          supplierId: invoice.supplierId,
+          id: randomUUID(),
+          supplierId: invoice.supplier_id,
           type: 'purchase_return',
           amount: totalAmount,
           billNumber: returnNumber,
-          note: `Return against Purchase Invoice: ${invoice.invoiceNumber || invoice.id}`,
+          note: `Return against Purchase Invoice: ${invoice.invoice_number || invoice.id}`,
         },
-      }),
-      prisma.activityLog.create({
-        data: {
-          shopId: auth.shop.id,
-          action: 'purchase_return_added',
-          entityId: returnId,
-          details: { invoice: invoice.invoiceNumber || invoice.id, return: returnNumber, total: totalAmount },
-        },
-      }),
-    ]);
+      });
 
-    // Best-effort, after commit (same convention as every other
-    // applyVariantStockDeltas call) — reduces Product.variants[] JSON stock
-    // for variant-tracked lines. The flat currentStock update above already
-    // landed unconditionally, so a failure here doesn't leave stock wrong,
-    // only the per-variant breakdown momentarily stale.
-    try {
       const deltas: VariantStockDelta[] = requested
-        .filter(r => r.variantKey)
-        .map(r => ({ productId: r.productId, variantKey: r.variantKey, delta: -r.quantity }));
-      await applyVariantStockDeltas(prisma, deltas);
-    } catch (e) { console.error('Variant stock update failed (purchase return):', e); }
+        .filter((r) => r.variantKey)
+        .map((r) => ({ productId: r.productId, variantKey: r.variantKey, delta: -r.quantity }));
+      if (deltas.length) {
+        await applyVariantStockDeltas(tx, deltas, auth.shop.id);
+      }
 
-    const created = await prisma.purchaseReturn.findUnique({
-      where: { id: returnId },
-      include: { items: true, supplier: true },
-    });
+      return tx.purchaseReturn.findUnique({
+        where: { id: returnId },
+        include: { items: true, supplier: true },
+      });
+    }, { maxWait: 30000, timeout: 60000 });
 
     return NextResponse.json({ success: true, purchaseReturn: created });
   } catch (error: any) {
-    console.error('[API] Error creating purchase return:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const msg = error.message || String(error);
+    const status = msg.includes('not found') ? 404 : (msg.includes('Not enough current stock') ? 409 : 400);
+    return NextResponse.json({ error: msg }, { status });
   }
 }

@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -31,8 +32,11 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  await assertOwned(req, id);
+  const { shop, lot } = await assertOwned(req, id);
   const body = await readBody<any>(req);
+  // Linked ids are client-supplied — they must belong to this shop, or another
+  // shop's names/mobiles come back through the response join.
+  await assertRefsOwned(shop.id, { productId: body.productId, supplierId: body.supplierId });
 
   // Blank-cell-never-overwrites convention — any field the caller doesn't
   // send is left alone. Numeric fields are re-derived when a related value
@@ -46,10 +50,31 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (body.purchaseDate !== undefined) patch.purchaseDate = new Date(body.purchaseDate);
   if (body.weightKg !== undefined)     patch.weightKg    = Number(body.weightKg) || 0;
   if (body.ratePerKg !== undefined)    patch.ratePerKg   = Number(body.ratePerKg) || null;
-  if (body.moisturePct !== undefined)  patch.moisturePct = body.moisturePct === null || body.moisturePct === ''
-    ? null : Math.max(0, Math.min(100, Number(body.moisturePct) || 0));
-  if (body.remainingKg !== undefined)  patch.remainingKg = Number(body.remainingKg) || 0;
+  if (body.moisturePct !== undefined) {
+    if (body.moisturePct === null || body.moisturePct === '') patch.moisturePct = null;
+    else {
+      const m = Number(body.moisturePct);
+      if (!isFinite(m) || m < 0 || m > 100) throw new ApiError(400, 'Moisture must be between 0 and 100 %', 'INVALID_MOISTURE');
+      patch.moisturePct = m;
+    }
+  }
   if (body.notes !== undefined)        patch.notes       = body.notes == null ? null : String(body.notes).trim() || null;
+
+  // Stock safety: what production has already taken out of the lot stays taken out. The weight cannot drop below it, and the
+  // remaining quantity is derived from it — it can never go negative or exceed the weight.
+  const consumed = Math.max(0, (Number(lot.weightKg) || 0) - (Number(lot.remainingKg ?? lot.weightKg) || 0));
+  if (patch.weightKg !== undefined) {
+    if (!(patch.weightKg > 0)) throw new ApiError(400, 'weightKg must be a positive number', 'INVALID_WEIGHT');
+    if (patch.weightKg < consumed) throw new ApiError(409, `${consumed} kg of this lot is already consumed — the weight cannot be lower than that.`, 'BELOW_CONSUMED');
+    patch.remainingKg = Math.round((patch.weightKg - consumed) * 1000) / 1000;
+  }
+  if (body.remainingKg !== undefined) {
+    const w = patch.weightKg ?? (Number(lot.weightKg) || 0);
+    const r = Number(body.remainingKg);
+    if (!isFinite(r) || r < 0 || r > w) throw new ApiError(400, 'Remaining must be between 0 and the lot weight.', 'INVALID_REMAINING');
+    patch.remainingKg = r;
+  }
+  if (patch.ratePerKg !== undefined && (!isFinite(patch.ratePerKg) || patch.ratePerKg < 0)) throw new ApiError(400, 'Invalid rate', 'INVALID_RATE');
 
   if (patch.weightKg != null || patch.ratePerKg != null) {
     const nextWeight = patch.weightKg ?? undefined;
@@ -59,7 +84,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     }
   }
 
-  const updated = await (prisma as any).rawMaterialLot.update({ where: { id }, data: patch });
+  const updated = await (prisma as any).rawMaterialLot.update({ where: { id, shopId: shop.id }, data: patch });
   return json(updated);
 });
 

@@ -535,6 +535,8 @@ function SettingsPageInner() {
           </CardContent>
         </Card>
 
+        {/* Bada Udyog only: owner confirmation for Mill Billing (GST-exclusive rates). Enforced server-side. */}
+
         {/* Startup Screen — which page opens right after login, instead of
             Dashboard. Different shopkeepers live in different modules all
             day (a counter clerk wants Billing every time), so this is a

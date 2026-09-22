@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireUser } from '@/lib/server/auth';
+import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -7,12 +7,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const POST = handle(async (req) => {
-  const user = await requireUser(req);
+  const { user, shop } = await requireShop(req, { enforceSubscription: false });
   const { retailerId } = await readBody(req);
   if (!retailerId) throw new ApiError(400, 'retailerId required');
 
-  const shop = await prisma.shop.findFirst({ where: { ownerId: user.uuid! } });
-  if (!shop || !isWholesaleTierPackage(shop.subscriptionPlan)) throw new ApiError(403, 'Udyog plan required');
+  if (!isWholesaleTierPackage(shop.subscriptionPlan)) throw new ApiError(403, 'Udyog plan required');
 
   const relationship = await prisma.dukandarRelationship.findFirst({
     where: { wholesalerId: user.uuid, retailerId, status: 'active' },

@@ -6,6 +6,23 @@ import { normalizeAttendanceStatus, summarizeAttendance } from '@/lib/attendance
 import { classifySaleLine, classifyPurchaseLine } from '@/lib/gstClassification';
 import { isSupplierCredit, isCustomerCredit } from '@/lib/server/ledgerClassification';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { getSalesMetrics } from '@/lib/server/salesMetrics';
+
+
+// ─── Mill (mill_v2) sales in GST reports ────────────────────────────────────
+// A Mill bill's rates are GST-EXCLUSIVE, so the legacy "gross / (1 + rate)" extraction below must never be applied to
+// it (it would understate taxable value, ignore the discount and mis-state GST). For Mill bills every GST figure is read
+// from the STORED per-rate groups (gstDetails.groups / hsnGroups) — exactly what the invoice printed.
+const NOT_MILL = { OR: [{ pricingModel: null }, { pricingModel: { not: 'mill_v2' } }] };
+type MillRateGroup = { rate: number; hsn: string; taxable: number; cgst: number; sgst: number; igst: number };
+function millGroupsOf(gstDetails: any): MillRateGroup[] {
+  const g: any = gstDetails || {};
+  const src: any[] = Array.isArray(g.hsnGroups) && g.hsnGroups.length ? g.hsnGroups : (Array.isArray(g.groups) ? g.groups : []);
+  return src.map((x: any) => ({
+    rate: Number(x.rate) || 0, hsn: x.hsnCode && x.hsnCode !== '-' ? String(x.hsnCode) : '',
+    taxable: Number(x.taxable) || 0, cgst: Number(x.cgst) || 0, sgst: Number(x.sgst) || 0, igst: Number(x.igst) || 0,
+  }));
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -251,18 +268,41 @@ async function handleSales(shop: any, startDate: Date, endDate: Date, q: Record<
         AND s.created_at >= ${startDate}
         AND s.created_at <= ${endDate}
         AND s.bill_type = 'gst'
+        AND s.pricing_model IS DISTINCT FROM 'mill_v2'
         AND COALESCE(p.gst_percent, 0) > 0
       GROUP BY gst_rate
       ORDER BY gst_rate
     `;
-    const mapped = rows.map(r => ({
-      gst_rate: Number(r.gst_rate),
-      taxable_value: Math.round(Number(r.taxable_value) * 100) / 100,
-      gst_amount: Math.round(Number(r.gst_amount) * 100) / 100,
-      cgst: Math.round((Number(r.gst_amount) / 2) * 100) / 100,
-      sgst: Math.round((Number(r.gst_amount) / 2) * 100) / 100,
-      qty: Number(r.qty),
-    }));
+    const byRate = new Map<number, { gst_rate: number; taxable_value: number; gst_amount: number; cgst: number; sgst: number; igst: number; qty: number }>();
+    for (const r of rows) {
+      byRate.set(Number(r.gst_rate), {
+        gst_rate: Number(r.gst_rate),
+        taxable_value: Math.round(Number(r.taxable_value) * 100) / 100,
+        gst_amount: Math.round(Number(r.gst_amount) * 100) / 100,
+        cgst: Math.round((Number(r.gst_amount) / 2) * 100) / 100,
+        sgst: Math.round((Number(r.gst_amount) / 2) * 100) / 100,
+        igst: 0,
+        qty: Number(r.qty),
+      });
+    }
+    // Mill GST bills: stored per-rate groups (exclusive rates) — never the inclusive extraction above.
+    const millGstSales = await prisma.sale.findMany({
+      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate }, billType: 'gst', pricingModel: 'mill_v2' },
+      select: { gstDetails: true },
+    });
+    for (const ms of millGstSales) {
+      for (const g of millGroupsOf(ms.gstDetails)) {
+        if (g.rate <= 0) continue;
+        const acc = byRate.get(g.rate) || { gst_rate: g.rate, taxable_value: 0, gst_amount: 0, cgst: 0, sgst: 0, igst: 0, qty: 0 };
+        acc.taxable_value = Math.round((acc.taxable_value + g.taxable) * 100) / 100;
+        acc.cgst = Math.round((acc.cgst + g.cgst) * 100) / 100;
+        acc.sgst = Math.round((acc.sgst + g.sgst) * 100) / 100;
+        acc.igst = Math.round((acc.igst + g.igst) * 100) / 100;
+        acc.gst_amount = Math.round((acc.gst_amount + g.cgst + g.sgst + g.igst) * 100) / 100;
+        byRate.set(g.rate, acc); // qty is not stored per rate group on a Mill bill, so it is not added here
+      }
+    }
+    const mapped = [...byRate.values()].sort((a, b) => a.gst_rate - b.gst_rate);
     const totalTaxable = Math.round(mapped.reduce((a, r) => a + r.taxable_value, 0) * 100) / 100;
     const totalGst = Math.round(mapped.reduce((a, r) => a + r.gst_amount, 0) * 100) / 100;
     // Count of GST invoices in the period.
@@ -532,11 +572,10 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
   const reportType = q.report_type || 'pnl';
 
   if (reportType === 'pnl') {
-    const [salesAgg, expensesAgg, salariesAgg] = await Promise.all([
-      prisma.sale.aggregate({
-        where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
-        _sum: { totalAmount: true, totalProfit: true, amountPaid: true }
-      }),
+    // Sales figures come from the shared metrics layer (lib/server/salesMetrics.ts) so P&L and the Dashboard use the
+    // same definitions. Existing fields keep their meaning; Net Goods Sales / GST / charges are additive.
+    const [salesM, expensesAgg, salariesAgg] = await Promise.all([
+      getSalesMetrics([shop.id], startDate, endDate),
       prisma.expense.aggregate({
         where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
         _sum: { amount: true }
@@ -547,8 +586,8 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
       })
     ]);
 
-    const grossRevenue = salesAgg._sum.totalAmount || 0;
-    const grossProfit = salesAgg._sum.totalProfit || 0;
+    const grossRevenue = salesM.billedValue;
+    const grossProfit = salesM.profit;
     const totalExpenses = expensesAgg._sum.amount || 0;
     const totalSalaries = salariesAgg._sum.netAmount || 0;
     const netProfit = grossProfit - totalExpenses - totalSalaries;
@@ -563,7 +602,14 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
       total_overhead: totalExpenses + totalSalaries,
       net_profit: netProfit,
       net_margin: margin,
-      outstanding_collected: salesAgg._sum.amountPaid || 0
+      outstanding_collected: salesM.amountReceived,
+      // additive — reporting contract
+      net_goods_sales: salesM.netGoodsSales,
+      gst_collected: salesM.gstCollected,
+      commercial_charges: salesM.commercialCharges,
+      round_off: salesM.roundOff,
+      discount: salesM.discount,
+      gross_margin_on_net_goods: salesM.netGoodsSales > 0 ? (grossProfit / salesM.netGoodsSales) * 100 : 0
     });
   }
 
@@ -700,28 +746,36 @@ async function handleCRM(shop: any, startDate: Date, endDate: Date, q: Record<st
   }
 
   if (reportType === 'ledger') {
+    const { shopIds } = scope;
     const id = q.entity_id;
     if (!id) return json({ error: 'entity_id required' }, 400);
 
     if (entityType === 'customer') {
-      const [entity, transactions] = await Promise.all([
-        prisma.customer.findUnique({ where: { id }, select: { name: true, mobile: true, totalDue: true } }),
-        prisma.customer_transactions.findMany({
-          where: { customer_id: id },
-          orderBy: { created_at: 'desc' },
-          take: 200
-        })
-      ]);
+      // entity_id is client-supplied: it must belong to one of this owner's
+      // shops (`shopIds` is exactly what the caller is entitled to read), or a
+      // foreign customer's name, mobile, balance and ledger would be returned.
+      const entity = await prisma.customer.findFirst({
+        where: { id, shopId: { in: shopIds } },
+        select: { name: true, mobile: true, totalDue: true },
+      });
+      if (!entity) return json({ error: 'Customer not found' }, 404);
+      const transactions = await prisma.customer_transactions.findMany({
+        where: { customer_id: id },
+        orderBy: { created_at: 'desc' },
+        take: 200
+      });
       return json({ entity, transactions });
     } else {
-      const [entity, transactions] = await Promise.all([
-        prisma.supplier.findUnique({ where: { id }, select: { name: true, mobile: true, balance: true } }),
-        prisma.supplierTransaction.findMany({
-          where: { supplierId: id },
-          orderBy: { createdAt: 'desc' },
-          take: 200
-        })
-      ]);
+      const entity = await prisma.supplier.findFirst({
+        where: { id, shopId: { in: shopIds } },
+        select: { name: true, mobile: true, balance: true },
+      });
+      if (!entity) return json({ error: 'Supplier not found' }, 404);
+      const transactions = await prisma.supplierTransaction.findMany({
+        where: { supplierId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 200
+      });
       return json({ entity, transactions });
     }
   }
@@ -747,6 +801,11 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
     if (q.gst_class && q.gst_class !== 'gst') where.sale.billType = 'non_gst';
     if (q.gst_class === 'gst') where.sale.billType = 'gst';
 
+    // Mill (mill_v2) bills are NOT read through the inclusive per-line extraction below (their rates are GST-exclusive and
+    // exact per-line tax is not stored when a discount applies). They appear as one row per invoice per GST rate group,
+    // straight from the stored gstDetails — the same invoice-wise / rate-wise layout used for GST filing.
+    const millWhere: any = { ...where.sale, pricingModel: 'mill_v2' };
+    where.sale = { ...where.sale, ...NOT_MILL };
     const items = await prisma.saleItem.findMany({
       where,
       include: {
@@ -792,6 +851,42 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
         gstClass: classifySaleLine(sale.billType, it.product?.gstPercent, it.product?.hsnCode),
       };
     });
+
+    const millSales = await prisma.sale.findMany({
+      where: millWhere,
+      orderBy: { createdAt: 'asc' },
+      include: { customer: { select: { name: true, mobile: true, gst: true } } },
+    });
+    for (const ms of millSales) {
+      const paidRatio = ms.totalAmount ? (ms.amountPaid || 0) / ms.totalAmount : 1;
+      const paymentStatus = paidRatio >= 0.999 ? 'paid' : paidRatio > 0 ? 'partial' : 'unpaid';
+      const common = {
+        saleId: ms.id, date: ms.createdAt, invoiceNumber: ms.invoice_number,
+        customerName: ms.customer?.name || '__walk_in__', customerGstin: ms.customer?.gst || '',
+        quantity: null as number | null, unit: '', invoiceTotal: ms.totalAmount, paymentStatus, paymentMode: ms.paymentType,
+        gstSplitRecorded: true,
+      };
+      const groups = ms.billType === 'gst' ? millGroupsOf(ms.gstDetails) : [];
+      if (groups.length) {
+        for (const g of groups) {
+          rows.push({
+            ...common, product: `Mill invoice goods @ ${g.rate}% GST (exclusive rates)`, hsn: g.hsn,
+            taxableValue: Math.round(g.taxable * 100) / 100, gstRate: g.rate,
+            cgst: g.cgst, sgst: g.sgst, igst: g.igst, gstAmount: Math.round((g.cgst + g.sgst + g.igst) * 100) / 100,
+            gstClass: 'gst',
+          } as any);
+        }
+      } else {
+        // Non-GST Mill bill: taxable = goods less discount = stored total less charges and round-off (no GST on it).
+        const taxable = (ms.totalAmount || 0) - (ms.roundOffAmount || 0) - (ms.chargesTotal || 0);
+        rows.push({
+          ...common, product: 'Mill invoice goods (non-GST)', hsn: '',
+          taxableValue: Math.round(taxable * 100) / 100, gstRate: null, cgst: null, sgst: null, igst: null, gstAmount: 0,
+          gstClass: 'non_gst',
+        } as any);
+      }
+    }
+    rows.sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
 
     if (q.gst_class === 'gst_info_missing') rows = rows.filter(r => r.gstClass === 'gst_info_missing');
     if (q.gst_rate) rows = rows.filter(r => String(r.gstRate ?? '') === q.gst_rate);
@@ -857,7 +952,7 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
   if (reportType === 'gst_summary' || reportType === 'gst_monthly') {
     const [saleItems, purchaseItems] = await Promise.all([
       prisma.saleItem.findMany({
-        where: { sale: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate }, billType: 'gst' } },
+        where: { sale: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate }, billType: 'gst', ...NOT_MILL } },
         include: { sale: { select: { createdAt: true, gstDetails: true } }, product: { select: { gstPercent: true } } },
       }),
       prisma.purchaseItem.findMany({
@@ -892,6 +987,24 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
       const m = outputByMonth.get(mk) || { taxable: 0, gst: 0 };
       m.taxable += taxable; m.gst += gstAmt;
       outputByMonth.set(mk, m);
+    }
+
+    // Mill GST bills: stored per-rate groups (exclusive rates), never the inclusive extraction above.
+    const millGstSales = await prisma.sale.findMany({
+      where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate }, billType: 'gst', pricingModel: 'mill_v2' },
+      select: { createdAt: true, gstDetails: true },
+    });
+    for (const ms of millGstSales) {
+      const mk = monthKey(ms.createdAt);
+      for (const g of millGroupsOf(ms.gstDetails)) {
+        if (g.rate <= 0) continue;
+        const r = outputByRate.get(g.rate) || { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
+        r.taxable += g.taxable; r.cgst += g.cgst; r.sgst += g.sgst; r.igst += g.igst;
+        outputByRate.set(g.rate, r);
+        const m = outputByMonth.get(mk) || { taxable: 0, gst: 0 };
+        m.taxable += g.taxable; m.gst += g.cgst + g.sgst + g.igst;
+        outputByMonth.set(mk, m);
+      }
     }
 
     let inputTaxable = 0, inputGst = 0;
@@ -1038,11 +1151,8 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
     // per-sale gross-profit figure — reused rather than re-derived here),
     // plus the expense category breakdown so the CA sees WHERE the
     // indirect expenses went, matching the classic P&L layout requested.
-    const [salesAgg, expensesAgg, expenseByCategory, salariesAgg] = await Promise.all([
-      prisma.sale.aggregate({
-        where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
-        _sum: { totalAmount: true, totalProfit: true },
-      }),
+    const [salesM, expensesAgg, expenseByCategory, salariesAgg] = await Promise.all([
+      getSalesMetrics([shop.id], startDate, endDate),
       prisma.expense.aggregate({
         where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
         _sum: { amount: true },
@@ -1059,8 +1169,8 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
       }),
     ]);
 
-    const revenue = salesAgg._sum.totalAmount || 0;
-    const grossProfit = salesAgg._sum.totalProfit || 0;
+    const revenue = salesM.billedValue;
+    const grossProfit = salesM.profit;
     const totalExpenses = expensesAgg._sum.amount || 0;
     const totalSalaries = salariesAgg._sum.netAmount || 0;
     const netProfit = grossProfit - totalExpenses - totalSalaries;
@@ -1076,6 +1186,13 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
       totalExpenses: totalExpenses + totalSalaries,
       netProfit,
       netMargin: revenue > 0 ? round2((netProfit / revenue) * 100) : 0,
+      // additive — reporting contract
+      netGoodsSales: salesM.netGoodsSales,
+      gstCollected: salesM.gstCollected,
+      commercialCharges: salesM.commercialCharges,
+      roundOff: salesM.roundOff,
+      discount: salesM.discount,
+      grossMarginOnNetGoods: salesM.netGoodsSales > 0 ? round2((grossProfit / salesM.netGoodsSales) * 100) : 0,
     });
   }
 

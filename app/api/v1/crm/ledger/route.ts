@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, ApiError } from '@/lib/server/http';
+import { buildMillInvoiceData } from '@/lib/millInvoice';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,9 @@ export const GET = handle(async (req) => {
         select: {
           id: true, invoice_number: true, totalAmount: true, amountPaid: true, createdAt: true,
           gstAmount: true, gstDetails: true, billType: true,
+          // Mill (mill_v2) bills only — null on every legacy sale. They let the ledger show the stored Mill breakdown
+          // instead of applying the legacy inclusive-GST reading to a GST-exclusive bill.
+          pricingModel: true, discountAmount: true, charges: true, chargesTotal: true, roundOffAmount: true,
           // paymentType + paymentDetails power the "How this bill was paid"
           // block in TransactionDetailModal — same shape the return-refund
           // attribution and the AddBill "This return will…" preview use.
@@ -53,7 +57,7 @@ export const GET = handle(async (req) => {
           },
         },
       }),
-      prisma.customer.findUnique({ where: { id: entityId }, select: { documents: true } }),
+      prisma.customer.findFirst({ where: { id: entityId, shopId: shop.id }, select: { documents: true } }),
     ]);
     // Bill photos attached via AddBillModal — a flat JSON array on the
     // customer row (same convention as Supplier.documents), each entry
@@ -156,8 +160,31 @@ export const GET = handle(async (req) => {
         ? Math.max(0, saleTotalAmount - saleAmountPaid)
         : null;
 
+      // Mill bill: the stored breakdown (same builder the Mill invoice uses — no legacy inclusive-GST maths).
+      let mill: any = null;
+      if (sale && (sale as any).pricingModel === 'mill_v2') {
+        const d = buildMillInvoiceData({
+          invoice_number: sale.invoice_number, bill_type: sale.billType, total_amount: sale.totalAmount, amount_paid: sale.amountPaid,
+          payment_type: sale.paymentType, payment_details: sale.paymentDetails, pricing_model: 'mill_v2',
+          discount_amount: (sale as any).discountAmount, charges: (sale as any).charges, charges_total: (sale as any).chargesTotal,
+          round_off_amount: (sale as any).roundOffAmount, gst_details: sale.gstDetails,
+          items: sale.items.map((i) => ({ name: i.product?.name || i.itemName || '', quantity: i.quantity, price_per_unit: i.pricePerUnit })),
+        }, {}, '');
+        const r = (p: number) => p / 100;
+        mill = {
+          goods: r(d.goodsPaise), discount: r(d.discountPaise), taxable: r(d.taxablePaise),
+          gstBilled: d.gstBilled, interState: d.interState, cgst: r(d.cgstPaise), sgst: r(d.sgstPaise), igst: r(d.igstPaise), totalGst: r(d.totalGstPaise),
+          charges: Object.fromEntries(Object.entries(d.charges).map(([k, v]) => [k, r(v as number)])), chargesTotal: r(d.chargesTotalPaise),
+          roundOff: r(d.roundOffPaise), grand: r(d.grandPaise), paid: r(d.paidPaise), balance: r(d.balancePaise),
+          consistent: d.consistent, problems: d.problems,
+        };
+      }
+
       return {
         ...t,
+        pricingModel: mill ? 'mill_v2' : null,
+        saleId: sale?.id ?? null,
+        mill,
         gstPercent,
         gstAmount: isGstBill ? Number(sale?.gstAmount) || 0 : null,
         items,

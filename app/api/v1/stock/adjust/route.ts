@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
+import { apiErrorResponse } from '@/lib/server/http';
 import prisma from '@/lib/server/prisma';
 import { ensureWholesaleTables } from '@/lib/server/wholesale';
 import { checkLowStockAlerts } from '@/lib/server/notificationsEngine';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
+import { applyStockAdjustment } from '@/lib/server/stockAdjust';
 
 export async function POST(req: Request) {
   try {
@@ -33,8 +36,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Difference cannot be zero.' }, { status: 400 });
     }
 
+    // Product and warehouse must belong to this shop before any read or write.
+    await assertOwned(auth.shop.id, { productId, godownId: warehouseId });
+
     if (variantDeltas.length > 0) {
-      const product = await prisma.product.findUnique({ where: { id: productId }, select: { variants: true } });
+      const product = await prisma.product.findFirst({ where: { id: productId, shopId: auth.shop.id }, select: { variants: true } });
       const variants = Array.isArray(product?.variants) ? (product!.variants as any[]) : [];
       const rowKey = (v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || ''));
       for (const d of variantDeltas) {
@@ -55,23 +61,15 @@ export async function POST(req: Request) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Update Warehouse Stock
-      await tx.$executeRaw`
-        INSERT INTO godown_products (id, godown_id, product_id, quantity, updated_at)
-        VALUES (gen_random_uuid(), ${warehouseId}::uuid, ${productId}::uuid, ${difference}, NOW())
-        ON CONFLICT (godown_id, product_id)
-        DO UPDATE SET 
-          quantity = godown_products.quantity + ${difference},
-          updated_at = NOW()
-      `;
+      // Warehouse row + product total, atomically and shop-scoped: an invalid
+      // warehouse or product throws here and rolls the whole transaction back.
+      await applyStockAdjustment(tx, { shopId: auth.shop.id, warehouseId, productId, difference });
 
-      // Update Global Product Stock
-      await tx.product.update({
-        where: { id: productId },
-        data: {
-          currentStock: { increment: difference }
-        }
-      });
+      // Per-variant stock breakdown (Udyog colour/size rows in Product.variants[])
+      // applied inside the transaction with row locks to prevent lost updates.
+      if (variantDeltas.length > 0) {
+        await applyVariantStockDeltas(tx, variantDeltas.map((d) => ({ productId, variantKey: d.variantKey, delta: d.delta })), auth.shop.id, { rejectNegative: true });
+      }
 
       // Log Adjustment
       await tx.stockMovement.create({
@@ -98,17 +96,7 @@ export async function POST(req: Request) {
       });
 
       return { success: true };
-    });
-
-    // Per-variant stock breakdown (Udyog colour/size rows in Product.variants[])
-    // — best-effort, after the critical transaction above has already
-    // committed the flat currentStock/godown totals. Same pattern as
-    // purchases/route.ts.
-    if (variantDeltas.length > 0) {
-      try {
-        await applyVariantStockDeltas(prisma, variantDeltas.map((d) => ({ productId, variantKey: d.variantKey, delta: d.delta })));
-      } catch (e) { console.error('Variant stock update failed:', e); }
-    }
+    }, { maxWait: 30000, timeout: 60000 });
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -118,6 +106,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json(result);
   } catch (error: any) {
+    const known = apiErrorResponse(error);
+    if (known) return known;
     console.error('[API] Error processing stock adjustment:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

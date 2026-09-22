@@ -2,12 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import Link from 'next/link';
-import { useLocale } from 'next-intl';
-import { Plus, X, Loader2, Recycle, Package, IndianRupee } from 'lucide-react';
+import { Plus, X, Loader2, Recycle, IndianRupee } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
+import ModalPortal from '@/components/mill/ModalPortal';
 
 type ByProductRow = {
   id: string;
@@ -18,6 +17,7 @@ type ByProductRow = {
   ratePerKg: number | null;
   notes: string | null;
   createdAt: string;
+  source?: 'production' | 'job_work' | 'manual';
   product?: { id: string; name: string; baseUnit: string | null } | null;
   batch?: { id: string; batchNumber: string } | null;
 };
@@ -26,7 +26,7 @@ type Product = { id: string; name: string; millCategory?: string | null };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-const NAME_SUGGESTIONS = ['Bran', 'Husk', 'Chuni', 'Polish', 'Dust', 'Broken Rice', 'Oil Cake'];
+const SOURCE_LABEL: Record<string, string> = { production: 'Production', job_work: 'Job Work', manual: 'Manual' };
 
 // By-Products — everything a production batch throws off besides its main
 // output (bran, husk, broken rice, …). The ByProduct DB model + API already
@@ -35,7 +35,6 @@ const NAME_SUGGESTIONS = ['Bran', 'Husk', 'Chuni', 'Polish', 'Dust', 'Broken Ric
 // has been sold vs is still in hand, lets the shopkeeper add one manually,
 // and record a sale against it.
 export default function ByProductsPage() {
-  const locale = useLocale();
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [adding, setAdding] = useState(false);
   const [sellingId, setSellingId] = useState<string | null>(null);
@@ -50,9 +49,12 @@ export default function ByProductsPage() {
   const totals = useMemo(() => {
     const totalQty = rows.reduce((s, r) => s + (r.quantityKg || 0), 0);
     const totalSold = rows.reduce((s, r) => s + (r.soldKg || 0), 0);
+    // Value only where a rate was actually recorded — no invented prices.
     const totalValue = rows.reduce((s, r) => s + (r.soldKg || 0) * (r.ratePerKg || 0), 0);
-    return { totalQty, totalSold, totalValue };
+    return { totalQty, totalSold, available: Math.max(0, totalQty - totalSold), totalValue };
   }, [rows]);
+  // Names the mill already uses — suggestions only; every name is the user's own.
+  const knownNames = useMemo(() => Array.from(new Set(rows.map(r => r.name))), [rows]);
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
@@ -61,20 +63,24 @@ export default function ByProductsPage() {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Recycle size={22} className="text-blue-600" /> By-Products
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Bran, Husk, Chuni, Broken Rice — what each batch throws off, and what's been sold.</p>
+          <p className="text-sm text-slate-500 mt-1">What your production batches (and job work you keep the husk/bran of) throw off — how much was produced, sold or used, and what is left.</p>
         </div>
         <button onClick={() => setAdding(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors">
           <Plus size={18} /> Add By-Product
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="bp-cards">
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
           <p className="text-xs text-slate-500 uppercase font-bold">Total Produced</p>
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{totals.totalQty.toLocaleString('en-IN')} Kg</p>
         </div>
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500 uppercase font-bold">Sold</p>
+          <p className="text-xs text-slate-500 uppercase font-bold">Available</p>
+          <p className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">{totals.available.toLocaleString('en-IN')} Kg</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-xs text-slate-500 uppercase font-bold">Sold / Used</p>
           <p className="text-xl font-black text-blue-600 dark:text-blue-400 mt-1">{totals.totalSold.toLocaleString('en-IN')} Kg</p>
         </div>
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
@@ -88,7 +94,7 @@ export default function ByProductsPage() {
       ) : rows.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
           <Recycle size={40} className="mx-auto text-slate-300 dark:text-slate-700" />
-          <p className="mt-3 text-sm text-slate-500">No by-products recorded yet. Closing a production batch auto-adds Broken Rice / Bran / Husk here.</p>
+          <p className="mt-3 text-sm text-slate-500">No by-products yet. When you finalize a production batch, every output you mark as a by-product appears here.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -98,8 +104,10 @@ export default function ByProductsPage() {
                 <th className="px-4 py-3 font-bold">Date</th>
                 <th className="px-3 py-3 font-bold">Name</th>
                 <th className="px-3 py-3 font-bold">Batch</th>
-                <th className="px-3 py-3 font-bold text-right">Quantity</th>
-                <th className="px-3 py-3 font-bold text-right">Sold</th>
+                <th className="px-3 py-3 font-bold">Source</th>
+                <th className="px-3 py-3 font-bold">Linked product</th>
+                <th className="px-3 py-3 font-bold text-right">Produced</th>
+                <th className="px-3 py-3 font-bold text-right">Sold / Used</th>
                 <th className="px-3 py-3 font-bold text-right">Remaining</th>
                 <th className="px-3 py-3 font-bold text-right">Rate/Kg</th>
                 <th className="px-3 py-3 font-bold w-10" />
@@ -115,13 +123,20 @@ export default function ByProductsPage() {
                     <td className="px-4 py-2.5 text-slate-500">{new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                     <td className="px-3 py-2.5 font-semibold text-slate-900 dark:text-white">{r.name}</td>
                     <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.batch?.batchNumber || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" data-source={r.source}>
+                      <span className={cn('font-bold uppercase text-[10px] px-2 py-0.5 rounded-full',
+                        r.source === 'production' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                          : r.source === 'job_work' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300')}>{SOURCE_LABEL[r.source || 'manual']}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">{r.product?.name || '—'}</td>
                     <td className="px-3 py-2.5 text-right text-slate-700 dark:text-slate-300">{qty.toLocaleString('en-IN')} Kg</td>
                     <td className="px-3 py-2.5 text-right text-blue-600 dark:text-blue-400 font-semibold">{sold.toLocaleString('en-IN')} Kg</td>
                     <td className="px-3 py-2.5 text-right font-bold text-amber-600 dark:text-amber-400">{remaining.toLocaleString('en-IN')} Kg</td>
                     <td className="px-3 py-2.5 text-right text-slate-500">{r.ratePerKg != null ? rupee(r.ratePerKg) : '—'}</td>
                     <td className="px-3 py-2.5">
                       {remaining > 0 && (
-                        <button onClick={() => setSellingId(r.id)} title="Record a sale"
+                        <button onClick={() => setSellingId(r.id)} title="Record a sale or use"
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10">
                           <IndianRupee size={14} />
                         </button>
@@ -135,32 +150,28 @@ export default function ByProductsPage() {
         </div>
       )}
 
-      <Link href={`/${locale}/products?view=by-products`}
-        className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600">
-        <Package size={13} /> View by-product items in the full catalogue →
-      </Link>
-
       {adding && (
-        <AddByProductModal
+        <ModalPortal><AddByProductModal
           batches={batches}
           products={byProductProducts}
+          names={knownNames}
           onClose={() => setAdding(false)}
           onAdded={() => { setAdding(false); refetch(); }}
-        />
+        /></ModalPortal>
       )}
       {sellingId && (
-        <RecordSaleModal
+        <ModalPortal><RecordSaleModal
           row={rows.find(r => r.id === sellingId)!}
           onClose={() => setSellingId(null)}
           onSaved={() => { setSellingId(null); refetch(); }}
-        />
+        /></ModalPortal>
       )}
     </div>
   );
 }
 
-function AddByProductModal({ batches, products, onClose, onAdded }: {
-  batches: Batch[]; products: Product[]; onClose: () => void; onAdded: () => void;
+function AddByProductModal({ batches, products, names, onClose, onAdded }: {
+  batches: Batch[]; products: Product[]; names: string[]; onClose: () => void; onAdded: () => void;
 }) {
   const [form, setForm] = useState({ name: '', batchId: '', productId: '', quantityKg: '', ratePerKg: '', notes: '' });
   const [saving, setSaving] = useState(false);
@@ -181,7 +192,7 @@ function AddByProductModal({ batches, products, onClose, onAdded }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
           <h2 className="text-lg font-black">Add By-Product</h2>
@@ -193,7 +204,7 @@ function AddByProductModal({ batches, products, onClose, onAdded }: {
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="e.g. Bran" className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {NAME_SUGGESTIONS.map(n => (
+              {names.map(n => (
                 <button key={n} type="button" onClick={() => setForm(f => ({ ...f, name: n }))}
                   className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-blue-100 dark:hover:bg-blue-500/10 hover:text-blue-600">
                   {n}
@@ -203,6 +214,7 @@ function AddByProductModal({ batches, products, onClose, onAdded }: {
           </label>
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Batch (optional)</span>
+            <span className="block text-[10px] text-slate-400 mb-1">Production adds a batch's by-products itself when the batch is finalized — use this only for extra material, not to repeat those.</span>
             <select value={form.batchId} onChange={e => setForm(f => ({ ...f, batchId: e.target.value }))}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
               <option value="">-- None --</option>
@@ -216,13 +228,13 @@ function AddByProductModal({ batches, products, onClose, onAdded }: {
               <option value="">-- None --</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <span className="block text-[10px] text-slate-400 mt-1">Linking credits that product's stock immediately.</span>
+            <span className="block text-[10px] text-slate-400 mt-1">Linking adds this quantity to that product's stock, once. (Production-created by-products are never added again.)</span>
           </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
-              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Quantity (Kg)</span>
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Quantity (Kg) *</span>
               <input type="number" min="0" step="0.01" value={form.quantityKg} onChange={e => setForm(f => ({ ...f, quantityKg: e.target.value }))}
-                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
             </label>
             <label className="block">
               <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Rate / Kg (₹)</span>
@@ -231,7 +243,7 @@ function AddByProductModal({ batches, products, onClose, onAdded }: {
             </label>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <button type="submit" disabled={saving || !form.name}
+          <button type="submit" disabled={saving || !form.name || !(Number(form.quantityKg) > 0)}
             className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
             Add By-Product
@@ -265,14 +277,14 @@ function RecordSaleModal({ row, onClose, onSaved }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <h2 className="text-lg font-black">Record Sale — {row.name}</h2>
+          <h2 className="text-lg font-black">Record sale / use — {row.name}</h2>
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
-          <p className="text-xs text-slate-500">{remaining.toLocaleString('en-IN')} Kg remaining to sell.</p>
+          <p className="text-xs text-slate-500">{remaining.toLocaleString('en-IN')} Kg remaining. A linked product's stock goes down by the same amount.</p>
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Quantity Sold Now (Kg) *</span>
             <input type="number" min="0" max={remaining} step="0.01" value={addSoldKg} onChange={e => setAddSoldKg(e.target.value)}

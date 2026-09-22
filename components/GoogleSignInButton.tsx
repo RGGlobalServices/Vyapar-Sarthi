@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useLocale } from 'next-intl';
 import { Capacitor } from '@capacitor/core';
 import { SocialLogin } from '@capgo/capacitor-social-login';
+import { clearLocalSession } from '@/lib/clientSession';
 
 declare global {
   interface Window { google?: any }
@@ -43,6 +44,7 @@ export default function GoogleSignInButton() {
       }
       const data = await res.json();
       const { access_token, user } = data;
+      await clearLocalSession();
       document.cookie = `ks_auth=1; path=/; max-age=${60 * 60 * 24 * 7}`;
       localStorage.setItem('ks_auth', JSON.stringify({
         access_token,

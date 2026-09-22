@@ -242,6 +242,39 @@ export async function runAutoMigrations() {
       CREATE INDEX IF NOT EXISTS ix_by_products_batch ON by_products(batch_id);
     `);
 
+    // Offline-First Sync & Idempotency
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='shops' AND column_name='allow_negative_stock') THEN
+          ALTER TABLE shops ADD COLUMN allow_negative_stock BOOLEAN DEFAULT FALSE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales' AND column_name='offline_ref_number') THEN
+          ALTER TABLE sales ADD COLUMN offline_ref_number VARCHAR;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='purchase_invoices' AND column_name='offline_ref_number') THEN
+          ALTER TABLE purchase_invoices ADD COLUMN offline_ref_number VARCHAR;
+        END IF;
+      END $$;
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS sync_records (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        device_id VARCHAR NOT NULL,
+        idempotency_key VARCHAR NOT NULL,
+        entity_type VARCHAR NOT NULL,
+        local_id VARCHAR,
+        server_id VARCHAR,
+        status VARCHAR NOT NULL DEFAULT 'processed',
+        response JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS ix_sync_records_shop_idempotency ON sync_records(shop_id, idempotency_key);
+      CREATE INDEX IF NOT EXISTS ix_sync_records_shop_id ON sync_records(shop_id);
+    `);
+
     console.log('[AutoMigrate] Database schema checked successfully.');
   } catch (err) {
     console.error('[AutoMigrate] Error checking database schema:', err);

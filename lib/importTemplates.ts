@@ -76,9 +76,16 @@ function productColumns(businessType?: string): ImportColumn[] {
 // import for shops that never use them). Offered instead via the review
 // table's "+ Column" picker, so a shopkeeper whose sheet actually needs
 // Brand / Location / mill grading / etc. can add just that column.
-export function getAddableColumns(importType: string): ImportColumn[] {
+// Bill-level charges offered as review columns for mill purchases; totals become the bill's charges (never products/stock).
+export const CHARGE_COLUMNS = ['Hamali', 'Freight', 'Loading', 'Unloading', 'Weighment', 'Other Charges'];
+
+export function getAddableColumns(importType: string, isMill = false): ImportColumn[] {
   if (!['product', 'stock', 'purchase'].includes(importType)) return [];
+  const chargeCols: ImportColumn[] = isMill && importType === 'purchase' ? CHARGE_COLUMNS.map(label => ({ label, aliases: [label.toLowerCase().replace(/\s+/g, '')], numeric: true, profile: 'price' } as ImportColumn)) : [];
   return [
+    ...chargeCols,
+    // Bada Udyog (mill): classifies the product so purchases of raw material flow into Raw Material lots.
+    ...(isMill ? [{ label: 'Mill Category', aliases: ['millcategory', 'millclass', 'materialtype', 'itemclass'], profile: 'text' } as ImportColumn] : []),
     { label: 'Brand', aliases: ['brand', 'make'], profile: 'text' },
     { label: 'Location', aliases: ['location', 'rack', 'shelf', 'bin'], profile: 'text' },
     { label: 'Grade', aliases: ['grade'], profile: 'text' },

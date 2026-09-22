@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { requireUser } from '@/lib/server/auth';
+import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -7,17 +7,15 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const POST = handle(async (req) => {
-  const user = await requireUser(req);
+  // Active shop (x-shop-id) — was shop.findFirst({ownerId}), i.e. always the
+  // owner's FIRST shop regardless of which one they were working in.
+  const { user, shop } = await requireShop(req, { enforceSubscription: false });
   const { retailerEmail } = await readBody(req);
   if (!retailerEmail) throw new ApiError(400, 'Retailer email is required');
 
-  // Run shop + retailer lookups in parallel
-  const [shop, retailer] = await Promise.all([
-    prisma.shop.findFirst({ where: { ownerId: user.uuid! } }),
-    prisma.user.findUnique({ where: { email: retailerEmail } }),
-  ]);
+  const retailer = await prisma.user.findUnique({ where: { email: retailerEmail } });
 
-  if (!shop || !isWholesaleTierPackage(shop.subscriptionPlan)) {
+  if (!isWholesaleTierPackage(shop.subscriptionPlan)) {
     throw new ApiError(403, 'Business plan required to add dukandar');
   }
   if (!retailer) throw new ApiError(404, 'Retailer not found');

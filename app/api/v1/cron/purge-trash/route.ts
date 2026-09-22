@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/server/prisma';
+import { checkCronAuth } from '@/lib/server/cronAuth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,9 +9,8 @@ const WARN_AFTER_DAYS = 27;
 const PURGE_AFTER_WARN_DAYS = 3;
 
 export async function GET(req: Request) {
-  // In a real app, you would verify a cron secret here.
-  // const authHeader = req.headers.get('authorization');
-  // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = checkCronAuth(req);
+  if (denied) return denied;
 
   try {
     const now = Date.now();

@@ -32,6 +32,44 @@ export const GET = handle(async (req) => {
     take: 1000 // Prevent massive payload, needs full pagination later
   });
 
+  // Item summary for the Udhar cards, so the shopkeeper sees what was sold without opening the bill.
+  // Reuses the existing Sale/SaleItem rows (no new table, no duplicated data) and costs exactly ONE
+  // extra query for every bill referenced by the transactions returned above — never one per card.
+  // Only 'udhar' rows get a summary: a refund/payment row carrying the same bill number is about part
+  // of that bill, so showing the whole bill's items there would mislead. Legacy/manual rows whose
+  // bill number matches no sale simply get no summary.
+  const billNumbers = new Set<string>();
+  for (const c of customers) {
+    for (const t of c.customer_transactions || []) {
+      if ((t.type || 'udhar') === 'udhar' && t.bill_number) billNumbers.add(t.bill_number);
+    }
+  }
+  type ItemSummary = { items: { name: string; quantity: number; variant: string | null }[]; itemCount: number; totalQty: number };
+  const itemsByBill = new Map<string, ItemSummary>();
+  if (billNumbers.size) {
+    const sales = await prisma.sale.findMany({
+      where: { shopId: { in: shopIds }, invoice_number: { in: [...billNumbers] } },
+      select: {
+        invoice_number: true,
+        items: { select: { quantity: true, variant: true, itemName: true, product: { select: { name: true } } } },
+      },
+    });
+    for (const s of sales) {
+      if (!s.invoice_number || !s.items.length) continue;
+      const lines = s.items.map((i) => ({
+        name: i.product?.name || i.itemName || '',
+        quantity: Number(i.quantity) || 0,
+        variant: i.variant || null,
+      }));
+      itemsByBill.set(s.invoice_number, {
+        // The card shows at most 3 lines, so only the first 3 travel; the totals cover the whole bill.
+        items: lines.slice(0, 3),
+        itemCount: lines.length,
+        totalQty: Math.round(lines.reduce((sum, l) => sum + l.quantity, 0) * 1000) / 1000,
+      });
+    }
+  }
+
   const shopNameById = new Map(ownedShops.map(s => [s.id, s.name]));
 
   const mapped = customers.map((c) => ({
@@ -49,6 +87,9 @@ export const GET = handle(async (req) => {
       note: t.note || '',
       billNumber: t.bill_number || '',
       date: t.created_at ? t.created_at.toISOString() : new Date().toISOString(),
+      ...((t.type || 'udhar') === 'udhar' && t.bill_number && itemsByBill.has(t.bill_number)
+        ? { itemSummary: itemsByBill.get(t.bill_number) }
+        : {}),
     })),
   }));
 

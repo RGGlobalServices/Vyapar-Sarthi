@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import prisma from '@/lib/server/prisma';
 import { ApiError } from '@/lib/server/http';
+import { parseMoney, round2, toPaise } from '@/lib/server/moneyValidation';
 import { recordDeletion } from '@/lib/server/trash';
 
 /**
@@ -23,16 +24,27 @@ export async function applyCustomerPayment(
   tx: Prisma.TransactionClient,
   params: { shopId: string; customerId: string; amount: number; paymentMode: string; note?: string }
 ): Promise<{ customerTransactionId: string; customerName: string; customerMobile: string | null; newTotalDue: number }> {
-  const { shopId, customerId, amount, paymentMode, note } = params;
+  const { shopId, customerId, paymentMode, note } = params;
+  const amount = round2(parseMoney(params.amount, 'amount'));
+  if (amount <= 0) throw new ApiError(400, 'Payment amount must be greater than zero');
 
-  const customer = await tx.customer.findUnique({ where: { id: customerId, shopId } });
-  if (!customer) throw new ApiError(404, 'Customer/Party not found');
+  const lockedCustomers = await tx.$queryRaw<Array<{ id: string; name: string | null; mobile: string | null; total_due: number | null }>>`
+    SELECT id, name, mobile, total_due
+    FROM customers
+    WHERE id = ${customerId}::uuid AND shop_id = ${shopId}::uuid
+    FOR UPDATE
+  `;
+  if (!lockedCustomers.length) throw new ApiError(404, 'Customer/Party not found');
+  const customer = lockedCustomers[0];
 
-  // Computed, not re-read — this update is the only write to totalDue inside
-  // this transaction, so (previous value) - amount is exactly what the row
-  // now holds, without paying for a second round-trip against this app's
-  // slow remote DB just to read back a number we already know.
-  const newTotalDue = Number(customer.totalDue || 0) - amount;
+  // A payment can never exceed what the customer owes — that would push the
+  // balance negative (there is no customer-advance feature).
+  const owed = Number(customer.total_due || 0);
+  if (toPaise(amount) > toPaise(owed)) {
+    throw new ApiError(400, `Payment (${amount}) exceeds the outstanding balance (${round2(Math.max(0, owed))})`, 'PAYMENT_EXCEEDS_DUE');
+  }
+
+  const newTotalDue = owed - amount;
 
   await tx.customer.update({
     where: { id: customerId },

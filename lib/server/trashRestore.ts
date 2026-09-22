@@ -58,6 +58,30 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
       break;
     }
 
+    case 'salary_payment': {
+      // Snapshot shape from DELETE /staff/:id/salary/:paymentId —
+      // { payment, cashBookEntry, deductedAdvanceIds }. Restoring re-inserts
+      // the payment (and its CashBook row, if it had one) and puts back
+      // `deducted: true` on any advance it had settled, mirroring what the
+      // delete route undoes.
+      const { payment, cashBookEntry, deductedAdvanceIds } = data;
+      const existing = await prisma.salaryPayment.findUnique({ where: { id: record.entityId } });
+      if (existing) throw new ApiError(409, 'A salary payment with this ID already exists — it may have been restored already.');
+      // The same-month duplicate guard would reject this insert if another
+      // payment now occupies that staff+month — a legitimate case to skip
+      // rather than fail the whole restore.
+      const conflict = await prisma.salaryPayment.findFirst({ where: { staffId: payment.staffId, monthYear: payment.monthYear } });
+      if (conflict) { skipped.push(`salary payment ${payment.monthYear} — that month is already paid`); break; }
+      await prisma.salaryPayment.create({ data: payment });
+      if (cashBookEntry) {
+        try { await prisma.cashBook.create({ data: cashBookEntry }); } catch { skipped.push('cash book entry'); }
+      }
+      for (const advId of deductedAdvanceIds || []) {
+        try { await prisma.advanceSalary.update({ where: { id: advId }, data: { deducted: true, deductedFromSalaryId: payment.id } }); } catch { skipped.push(`advance ${advId}`); }
+      }
+      break;
+    }
+
     case 'supplier': {
       const { supplier, supplierTransactions, purchaseInvoices } = data;
       const existing = await prisma.supplier.findUnique({ where: { id: record.entityId } });

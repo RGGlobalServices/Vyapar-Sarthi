@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
 import { recordDeletion } from '@/lib/server/trash';
+import { assertOwned } from '@/lib/server/ownership';
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -50,6 +51,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const { id } = await params;
     const auth = await requireShop(req);
 
+    // Ownership first: the counts, history snapshot and cascade deleteMany below
+    // are keyed by the supplier id alone, so without this a foreign id leaked
+    // its history counts and pulled another shop's transactions into this
+    // shop's recycle bin.
+    await assertOwned(auth.shop.id, { supplierId: id });
+
     // If ?cascade=true is passed, wipe the supplier's transaction/purchase
     // history first — the FK relations use onDelete: NoAction, so a plain
     // delete throws P2003 whenever anything references the row. Callers that
@@ -60,7 +67,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
     const [txnCount, invoiceCount] = await Promise.all([
       prisma.supplierTransaction.count({ where: { supplierId: id } }),
-      prisma.purchaseInvoice.count({ where: { supplierId: id } }),
+      prisma.purchaseInvoice.count({ where: { supplierId: id, shopId: auth.shop.id } }),
     ]);
     const linked = txnCount + invoiceCount;
 
@@ -82,7 +89,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const [supplierRow, supplierTransactions, purchaseInvoices] = await Promise.all([
       prisma.supplier.findUnique({ where: { id, shopId: auth.shop.id } }),
       cascade && linked > 0 ? prisma.supplierTransaction.findMany({ where: { supplierId: id } }) : Promise.resolve([]),
-      cascade && linked > 0 ? prisma.purchaseInvoice.findMany({ where: { supplierId: id }, include: { purchaseItems: true } }) : Promise.resolve([]),
+      cascade && linked > 0 ? prisma.purchaseInvoice.findMany({ where: { supplierId: id, shopId: auth.shop.id }, include: { purchaseItems: true } }) : Promise.resolve([]),
     ]);
     if (supplierRow) {
       await recordDeletion({
@@ -99,7 +106,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       // Ordered inside a transaction so a mid-way failure doesn't half-delete.
       await prisma.$transaction([
         prisma.supplierTransaction.deleteMany({ where: { supplierId: id } }),
-        prisma.purchaseInvoice.deleteMany({ where: { supplierId: id } }),
+        prisma.purchaseInvoice.deleteMany({ where: { supplierId: id, shopId: auth.shop.id } }),
         prisma.supplier.delete({ where: { id, shopId: auth.shop.id } }),
       ]);
     } else {

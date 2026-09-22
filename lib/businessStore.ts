@@ -345,7 +345,34 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       cacheType(shop.businessType as BusinessType);
       cachePackage(shop.packageType);
       cachePlan(shop.subscriptionPlan);
-      set(state => ({ profile: { ...state.profile, businessType: shop.businessType as BusinessType, packageType: shop.packageType, subscriptionPlan: shop.subscriptionPlan } }));
+      // Swap the whole shop identity at once. Only patching business type /
+      // package used to leave the PREVIOUS shop's id, GSTIN, UPI, bank details
+      // and logo on the profile until /shop/profile answered, so a bill printed
+      // in that window carried the wrong shop's details (and a failed fetch left
+      // them there permanently). Shop-specific fields are blanked instead.
+      set(state => ({
+        profile: {
+          ...state.profile,
+          id: shopId,
+          shopName: shop.name ?? '',
+          address: shop.address ?? '',
+          mobile: shop.mobile ?? '',
+          shopCode: shop.shopCode ?? null,
+          businessType: shop.businessType as BusinessType,
+          packageType: shop.packageType,
+          subscriptionPlan: shop.subscriptionPlan,
+          logoUrl: '',
+          signatureUrl: '',
+          gst: null,
+          pan: null,
+          invoiceFooter: null,
+          upiId: null,
+          bankName: null,
+          bankAccountName: null,
+          bankAccountNumber: null,
+          bankIfsc: null,
+        },
+      }));
     }
     try {
       await api.post('/shop/profile', { shopId });

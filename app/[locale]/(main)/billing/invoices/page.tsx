@@ -7,6 +7,9 @@ import { Link, useRouter } from '@/i18n/routing';
 import { useAuthStore, useCartStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { useMillMode } from '@/lib/hooks/useMillMode';
+import { setMillDuplicate } from '@/lib/millDuplicateHandoff';
+import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { cn } from '@/lib/utils';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
@@ -608,6 +611,8 @@ export default function InvoiceHistoryPage() {
   const router = useRouter();
   const { user, role } = useAuthStore();
   const { profile } = useBusinessStore();
+  const mill = useMillMode();
+  const tMill = useTranslations('MillBilling');
   const { addItem, clearCart } = useCartStore();
 
   // Data
@@ -627,6 +632,7 @@ export default function InvoiceHistoryPage() {
 
   // Modals
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [millPreviewId, setMillPreviewId] = useState<string | null>(null);
   const [returnInvoice, setReturnInvoice] = useState<Invoice | null>(null);
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -692,6 +698,29 @@ export default function InvoiceHistoryPage() {
 
   // ── Duplicate bill into cart
   const handleDuplicate = async (inv: Invoice) => {
+    // Bada Udyog: Mill Billing decides. A copy must NEVER land in the legacy (GST-inclusive) cart, and it is never
+    // silently made when Mill Billing is unavailable.
+    if (mill.isMill) {
+      try {
+        // The SERVER decides from the source invoice's own data (legacy non-GST → as-is & stays non-GST;
+        // legacy GST → blocked; mill invoice → as-is). The source invoice is only READ.
+        const res = await api.get(`/billing/${inv.id}/duplicate-preview`);
+        const p = res.data;
+        if (p?.status === 'blocked') { alert(p.reason); return; }
+        setMillDuplicate({
+          duplicatedFrom: p.duplicated_from,
+          forceBillType: p.force_bill_type || null,
+          items: p.items || [],
+          charges: p.charges || null,
+          discount: p.discount || null,
+          sourceInvoiceNumber: p.source?.invoice_number ?? null,
+        });
+        router.push('/billing' as any);
+      } catch (e: any) {
+        alert(e?.response?.data?.detail || tMill('dupFailed'));
+      }
+      return;
+    }
     try {
       const res = await api.get(`/billing/${inv.id}`);
       const detail = res.data;
@@ -757,6 +786,8 @@ export default function InvoiceHistoryPage() {
 
   // ── Load full invoice for preview
   const handlePreview = async (inv: Invoice) => {
+    // Mill invoices use the dedicated Mill invoice (stored figures); everything below is the unchanged legacy path.
+    if ((inv as any).pricing_model === 'mill_v2') { setMillPreviewId(inv.id); return; }
     if (inv.items) { setPreviewInvoice(inv); return; }
     try {
       const res = await api.get(`/billing/${inv.id}`);
@@ -1068,16 +1099,20 @@ export default function InvoiceHistoryPage() {
                             <Copy size={13} />
                           </button>
                           <button
-                            onClick={() => setReturnInvoice(inv)}
-                            title={t('returnRefund')}
-                            className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
+                            onClick={() => (inv as any).pricing_model === 'mill_v2' ? alert(tMill('actionsBlockedMill')) : setReturnInvoice(inv)}
+                            title={(inv as any).pricing_model === 'mill_v2' ? tMill('actionsBlockedMill') : t('returnRefund')}
+                            aria-disabled={(inv as any).pricing_model === 'mill_v2' || undefined}
+                            data-testid="inv-action-return"
+                            className={cn('w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all', (inv as any).pricing_model === 'mill_v2' && 'opacity-40 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-500')}
                           >
                             <RotateCcw size={13} />
                           </button>
                           <button
-                            onClick={() => setEditInvoice(inv)}
-                            title="Edit Bill"
-                            className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
+                            onClick={() => (inv as any).pricing_model === 'mill_v2' ? alert(tMill('actionsBlockedMill')) : setEditInvoice(inv)}
+                            title={(inv as any).pricing_model === 'mill_v2' ? tMill('actionsBlockedMill') : 'Edit Bill'}
+                            aria-disabled={(inv as any).pricing_model === 'mill_v2' || undefined}
+                            data-testid="inv-action-edit"
+                            className={cn('w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all', (inv as any).pricing_model === 'mill_v2' && 'opacity-40 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-500')}
                           >
                             <Pencil size={13} />
                           </button>
@@ -1129,6 +1164,7 @@ export default function InvoiceHistoryPage() {
       </div>
 
       {/* ── Modals ── */}
+      {millPreviewId && <MillInvoicePreviewModal invoiceId={millPreviewId} onClose={() => setMillPreviewId(null)} />}
       {previewInvoice && (
         <InvoicePreviewModal
           invoice={previewInvoice}

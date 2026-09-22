@@ -72,6 +72,16 @@ export const POST = handle(async (req) => {
     );
   }
 
+  // Also an Expense, so the cost shows up under Expenses (the cash-book row above is the cash side; same pairing as POST /expenses).
+  if (body.cost && Number(body.cost) > 0) {
+    const pm = ['Cash', 'UPI', 'Card', 'Bank'].includes(body.paymentMethod) ? body.paymentMethod : 'Cash';
+    ops.push(
+      prisma.expense.create({
+        data: { shopId: shop.id, category: 'Machine Maintenance', amount: Number(body.cost), description: `${machine.name} - ${description}`, paymentMode: pm, date: body.serviceDate ? new Date(body.serviceDate) : new Date() },
+      }),
+    );
+  }
+
   const [created] = await prisma.$transaction(ops);
   return json(created, 201);
 });

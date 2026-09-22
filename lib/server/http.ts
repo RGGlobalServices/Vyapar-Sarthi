@@ -4,9 +4,11 @@ import { NextResponse } from 'next/server';
 // shape the former Express backend returned: { detail: string }.
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, detail: string) {
+  code?: string;
+  constructor(status: number, detail: string, code?: string) {
     super(detail);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -20,8 +22,19 @@ export function query(req: Request): Record<string, string> {
   return Object.fromEntries(new URL(req.url).searchParams.entries());
 }
 
-export function errorResponse(detail: string, status = 500) {
-  return NextResponse.json({ detail }, { status });
+// For routes that wrap their body in their own try/catch (instead of handle()):
+// lets an ApiError keep its real status + code (401/403/404/409...) instead of
+// being flattened into a generic 500. Returns null for any other error.
+export function apiErrorResponse(err: unknown): Response | null {
+  if (!(err instanceof ApiError)) return null;
+  return NextResponse.json(
+    { error: err.message, detail: err.message, ...(err.code ? { code: err.code } : {}) },
+    { status: err.status }
+  );
+}
+
+export function errorResponse(detail: string, status = 500, code?: string) {
+  return NextResponse.json(code ? { detail, code } : { detail }, { status });
 }
 
 // Wrap a route handler so thrown ApiErrors become { detail } responses with
@@ -35,7 +48,7 @@ export function handle<C = unknown>(fn: Handler<C>): Handler<C> {
       return await fn(req, ctx);
     } catch (err) {
       if (err instanceof ApiError) {
-        return errorResponse(err.message, err.status);
+        return errorResponse(err.message, err.status, err.code);
       }
       const message = err instanceof Error ? err.message : 'Internal server error';
       const stack = err instanceof Error ? err.stack : String(err);
@@ -43,7 +56,10 @@ export function handle<C = unknown>(fn: Handler<C>): Handler<C> {
       try {
         require('fs').appendFileSync(require('path').join(process.cwd(), 'scratch', 'api_errors.log'), `[${req.url}] ${stack}\n\n`);
       } catch (e) {}
-      return errorResponse(message || 'Internal server error', 500);
+      // Raw Prisma/SQL messages can expose schema and query details — only
+      // surface them outside production.
+      const safe = process.env.NODE_ENV === 'production' ? 'Internal server error' : (message || 'Internal server error');
+      return errorResponse(safe, 500);
     }
   };
 }

@@ -1,9 +1,9 @@
 import prisma from './prisma';
 import { config } from './config';
-import { generateRenewalToken } from './renewalLinks';
+import { generateRenewalToken, sellablePlanFor, buildRenewalUrl, buildInAppRenewalUrl } from './renewalLinks';
 import { sendWhatsApp } from './whatsapp';
 import { sendRenewalEmail } from './email';
-import { getTotalAmount, type BillingCycle } from '../subscriptionPricing';
+import { type BillingCycle } from '../subscriptionPricing';
 
 export type ProcessResult = {
   remindersSent: number;
@@ -103,9 +103,25 @@ async function sendRenewalOutbound(
   const owner = await prisma.user.findFirst({ where: { uuid: ownerId } });
   if (!owner) return;
 
-  const amount = getTotalAmount(plan, cycle);
-  const token = generateRenewalToken(shopId, plan, amount, cycle);
-  const renewalUrl = `${config.appUrl}/api/v1/payments/renewal-pay?token=${token}`;
+  // If RENEWAL_LINK_SECRET is not configured the one-click link is disabled
+  // (fail closed) — fall back to the normal in-app payment page, which requires
+  // the owner to sign in, rather than sending an unsigned or default-signed link.
+  //
+  // A legacy plan name (e.g. 'professional') cannot be bought, so a one-click
+  // token for it would never verify; those shops get the in-app path instead.
+  let renewalUrl: string;
+  const sellablePlan = sellablePlanFor(plan);
+  if (!sellablePlan) {
+    renewalUrl = buildInAppRenewalUrl(config.appUrl, plan, cycle);
+  } else {
+    try {
+      const token = generateRenewalToken(shopId, sellablePlan, cycle);
+      renewalUrl = buildRenewalUrl(config.appUrl, token);
+    } catch (err) {
+      console.error('[BILLING] Renewal link unavailable:', err instanceof Error ? err.message : err);
+      renewalUrl = buildInAppRenewalUrl(config.appUrl, sellablePlan, cycle);
+    }
+  }
   const name = owner.name || 'there';
   const when = daysLeft === 0 ? 'aaj' : `${daysLeft} din mein`;
 

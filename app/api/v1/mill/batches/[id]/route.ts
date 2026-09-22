@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { lotSource } from '@/lib/server/millProduction';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,11 +10,9 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * GET  /api/v1/mill/batches/[id] — full detail (rawLot + stages + byProducts)
- * PATCH /api/v1/mill/batches/[id] — batch-level edits: currentStage, output/
- *                                    broken/bran/husk kg, close batch.
- *                                    On status='closed', recoveryPct is
- *                                    auto-computed from outputKg / inputKg and
- *                                    closedAt is stamped.
+ * PATCH /api/v1/mill/batches/[id] — batch-level edits (stage, notes, planned output, input weight) while the run is open.
+ *                                    Closing is NOT done here — use POST /finalize, which consumes the raw material and books
+ *                                    the outputs atomically. A finalized batch is read-only.
  */
 
 async function assertOwned(req: Request, id: string) {
@@ -34,15 +33,21 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     include: {
       rawLot: {
         include: {
-          product: { select: { name: true, baseUnit: true } },
+          product: { select: { id: true, name: true, baseUnit: true } },
           supplier: { select: { name: true, mobile: true } },
+          weighbridgeEntries: { select: { slipNumber: true } },
         },
       },
       stages: { orderBy: { sequence: 'asc' } },
       byProducts: true,
+      outputs: { orderBy: { createdAt: 'asc' } },
     },
   });
   if (!batch) throw new ApiError(404, 'Production batch not found');
+  if (batch.rawLot) {
+    const { weighbridgeEntries, ...lot } = batch.rawLot;
+    return json({ ...batch, rawLot: { ...lot, ...lotSource(batch.rawLot) } });
+  }
   return json(batch);
 });
 
@@ -51,8 +56,19 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { shop, batch } = await assertOwned(req, id);
   const body = await readBody<any>(req);
 
+  if (body.status !== undefined && String(body.status) === 'closed') {
+    throw new ApiError(400, 'Finalize the batch from the production screen (POST /finalize) — closing it directly would skip the raw material consumption and the mass balance.', 'USE_FINALIZE');
+  }
+  if (batch.status === 'closed') {
+    throw new ApiError(409, 'This batch is finalized — its stock effects can no longer be edited.', 'BATCH_FINALIZED');
+  }
+  // Recorded results are written by /finalize only; they cannot be typed in here.
+  for (const k of ['outputKg', 'wastageKg', 'brokenKg', 'branKg', 'huskKg', 'recoveryPct']) {
+    if (body[k] !== undefined) throw new ApiError(400, `${k} is set when the batch is finalized, not edited here.`, 'USE_FINALIZE');
+  }
+
   const patch: any = {};
-  const numKeys = ['inputKg', 'outputKg', 'wastageKg', 'brokenKg', 'branKg', 'huskKg', 'plannedOutputKg'] as const;
+  const numKeys = ['inputKg', 'plannedOutputKg'] as const;
   for (const k of numKeys) {
     if (body[k] !== undefined) patch[k] = body[k] === null || body[k] === '' ? null : Number(body[k]);
   }
@@ -67,31 +83,16 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     patch.outputProductId = body.outputProductId || null;
   }
 
-  // Closing a batch is the moment recovery is measured — output ÷ input ×
-  // 100. Guard against divide-by-zero; a batch closed with no input is a
-  // data-entry error, not a math problem, so leave recoveryPct null and let
-  // the UI show a warning instead of "Infinity%".
-  const closing = patch.status === 'closed' && batch.status !== 'closed';
-  let finalOutput = 0;
-  if (closing) {
-    finalOutput = Number(patch.outputKg ?? batch.outputKg ?? 0) || 0;
-    const finalInput = Number(patch.inputKg ?? batch.inputKg ?? 0) || 0;
-    patch.recoveryPct = finalInput > 0
-      ? Math.round((finalOutput / finalInput) * 10000) / 100
-      : null;
-    patch.closedAt = new Date();
-    patch.currentStage = 'packing';
+  if (patch.inputKg !== undefined && (patch.inputKg === null || !isFinite(patch.inputKg) || patch.inputKg <= 0)) {
+    throw new ApiError(400, 'inputKg must be a positive number');
+  }
+  if (patch.inputKg !== undefined && batch.rawLotId) {
+    const lot = await (prisma as any).rawMaterialLot.findFirst({ where: { id: batch.rawLotId, shopId: shop.id }, select: { remainingKg: true } });
+    if (lot && (lot.remainingKg ?? 0) < patch.inputKg) {
+      throw new ApiError(400, `Only ${lot.remainingKg ?? 0} kg is left in the raw material lot.`, 'INSUFFICIENT_RAW_STOCK');
+    }
   }
 
-  const outputProductId: string | null = patch.outputProductId !== undefined ? patch.outputProductId : batch.outputProductId;
-
-  // Closing with a known output product credits that product's stock in the
-  // same transaction as the batch update, and auto-records the three
-  // hardcoded by-product fields (broken/bran/husk) as real ByProduct rows —
-  // otherwise those numbers only ever lived on the batch itself and nothing
-  // else in the codebase ever read them (ByProduct was defined but unused).
-  // Skipped if by-products were already recorded for this batch (e.g. a
-  // re-save after closing) so re-patching never double-credits stock.
   const ops: any[] = [
     (prisma as any).productionBatch.update({
       where: { id },
@@ -105,33 +106,10 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
         },
         stages: { orderBy: { sequence: 'asc' } },
         byProducts: true,
+        outputs: { orderBy: { createdAt: 'asc' } },
       },
     }),
   ];
-
-  if (closing && outputProductId && finalOutput > 0) {
-    ops.push(
-      prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${finalOutput} WHERE id = ${outputProductId}::uuid`,
-      prisma.stockMovement.create({
-        data: { shopId: shop.id, productId: outputProductId, type: 'production_output', quantity: finalOutput, referenceId: id },
-      }),
-    );
-  }
-
-  if (closing && (batch.byProducts?.length ?? 0) === 0) {
-    const autoByProducts: { name: string; quantityKg: number }[] = [];
-    const brokenKg = patch.brokenKg ?? batch.brokenKg;
-    const branKg = patch.branKg ?? batch.branKg;
-    const huskKg = patch.huskKg ?? batch.huskKg;
-    if (brokenKg && brokenKg > 0) autoByProducts.push({ name: 'Broken Rice', quantityKg: brokenKg });
-    if (branKg && branKg > 0) autoByProducts.push({ name: 'Bran', quantityKg: branKg });
-    if (huskKg && huskKg > 0) autoByProducts.push({ name: 'Husk', quantityKg: huskKg });
-    for (const bp of autoByProducts) {
-      ops.push((prisma as any).byProduct.create({
-        data: { shopId: shop.id, batchId: id, name: bp.name, quantityKg: bp.quantityKg },
-      }));
-    }
-  }
 
   const [updated] = await prisma.$transaction(ops);
   return json(updated);
@@ -139,17 +117,21 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  const { batch } = await assertOwned(req, id);
-  // Return the consumed weight to the source lot so the raw-material ledger
-  // stays consistent — otherwise deleting a mid-run batch would silently
-  // "eat" inventory. Skipped for closed batches on the assumption that the
-  // consumption is already reflected in downstream inventory.
-  if (batch.rawLotId && batch.status !== 'closed' && batch.inputKg) {
-    await (prisma as any).rawMaterialLot.update({
-      where: { id: batch.rawLotId },
-      data: { remainingKg: { increment: Number(batch.inputKg) || 0 } },
-    });
+  const { shop, batch } = await assertOwned(req, id);
+  // A finalized run has already moved stock (raw material out, outputs in, and possibly sold on). There is no reversal
+  // workflow yet, so deleting it would silently leave the stock wrong.
+  if (batch.status === 'closed') {
+    throw new ApiError(409, 'A finalized batch cannot be deleted — its stock effects are permanent.', 'BATCH_FINALIZED');
   }
-  await (prisma as any).productionBatch.delete({ where: { id } });
+  // Batches started under the finalize workflow have consumed nothing yet, so there is nothing to give back. Older batches took
+  // their kilos out of the lot when they were created (no `production_start` marker) — return those.
+  const marker = await prisma.stockMovement.findFirst({ where: { shopId: shop.id, type: 'production_start', referenceId: id }, select: { id: true } });
+  await prisma.$transaction(async (tx) => {
+    if (!marker && batch.rawLotId && batch.inputKg) {
+      await (tx as any).rawMaterialLot.update({ where: { id: batch.rawLotId }, data: { remainingKg: { increment: Number(batch.inputKg) || 0 } } });
+    }
+    await tx.stockMovement.deleteMany({ where: { shopId: shop.id, type: 'production_start', referenceId: id } });
+    await (tx as any).productionBatch.delete({ where: { id } });
+  });
   return json({ success: true });
 });

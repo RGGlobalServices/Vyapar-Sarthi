@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import api from './api';
 import { withOfflineCache } from './offlineCache';
 import { invalidateProductCaches } from './swrInvalidate';
+import { clearLocalSession } from './clientSession';
 
 // ─── Auth / Profile Store ──────────────────────────────────────────────────
 
@@ -91,9 +92,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
       // the user unable to sign out.
       try { await api.post('/auth/logout', {}); } catch {}
 
-      localStorage.removeItem('ks_auth');
-      document.cookie = 'ks_auth=; path=/; max-age=0';
-      document.cookie = 'ks_plan=; path=/; max-age=0';
+      // Clears shop id, role, cached lists and IndexedDB caches, but keeps the
+      // offline outbox (unsynced bills). The UI has already warned about any
+      // pending bills before calling this.
+      await clearLocalSession();
       set({ user: null });
       window.location.href = `/${window.location.pathname.split('/')[1] || 'en'}/login`;
     }
@@ -248,6 +250,12 @@ export interface UdharTransaction {
   note: string;
   date: string;
   billNumber?: string;
+  /** Present only on 'udhar' rows that come from a real bill; absent for legacy/manual entries. */
+  itemSummary?: {
+    items: { name: string; quantity: number; variant?: string | null }[];
+    itemCount: number;
+    totalQty: number;
+  };
 }
 
 export interface UdharCustomer {
@@ -313,12 +321,14 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
     if (!hasData) {
       set({ loading: true });
     }
+    const shopAtStart = activeShopNow();
     try {
       const res = await api.get('/customers');
+      if (activeShopNow() !== shopAtStart) return; // switched shops mid-request
       const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0, createdAt: c.createdAt || '' }));
       set({ customers, loading: false });
     } catch {
-      set({ loading: false });
+      if (activeShopNow() === shopAtStart) set({ loading: false });
     }
   },
 
@@ -326,8 +336,10 @@ export const useUdharStore = create<UdharStore>((set, get) => ({
   // loading spinner, so optimistic updates stay instant while eventually syncing
   // server-truth (ids, server-computed fields, other devices).
   silentRefresh: async () => {
+    const shopAtStart = activeShopNow();
     try {
       const res = await api.get('/customers');
+      if (activeShopNow() !== shopAtStart) return;
       const customers = (res.data || []).map((c: any) => ({ ...c, email: c.email || '', totalDue: c.totalDue || 0, createdAt: c.createdAt || '' }));
       set({ customers });
     } catch { /* keep optimistic state */ }
@@ -555,7 +567,11 @@ interface StockStore {
 
 // Module-scoped dedupe: a hover-prefetch on the Stock link followed by the
 // actual navigation would otherwise fire /products twice on the same tick.
+// A response is only applied if the user is still in the shop that requested it.
+const activeShopNow = () => (typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null);
+
 let stockFetchInFlight: Promise<void> | null = null;
+let stockFetchGeneration = 0;
 let stockFetchedAt = 0;
 const STOCK_FRESH_MS = 30_000;
 
@@ -566,6 +582,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
 
   resetStock: () => {
     stockFetchInFlight = null;
+    stockFetchGeneration++;
     stockFetchedAt = 0;
     set({ items: [], log: [], loading: false });
   },
@@ -578,6 +595,9 @@ export const useStockStore = create<StockStore>((set, get) => ({
     if (!hasData) {
       set({ loading: true });
     }
+    const shopAtStart = activeShopNow();
+    const generation = ++stockFetchGeneration;
+    const isCurrent = () => generation === stockFetchGeneration && activeShopNow() === shopAtStart;
     stockFetchInFlight = (async () => {
     try {
       // Products load first; the stock page can render as soon as they arrive.
@@ -585,6 +605,8 @@ export const useStockStore = create<StockStore>((set, get) => ({
       // slow, only powers the recent-activity strip, and nothing hard-depends
       // on it, so it fetches in the background and updates the store when done.
       const productsData = await withOfflineCache('stock-products', () => api.get('/products').then(r => r.data));
+
+      if (!isCurrent()) return; // user switched shops mid-request — these rows are the old shop's
 
       const items = productsData.map((p: any) => ({
         id: p.id,
@@ -623,6 +645,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       // Background: load activity log without blocking first paint.
       withOfflineCache('stock-logs', () => api.get('/products/logs/all').then(r => r.data))
         .then((logsData: any[]) => {
+          if (!isCurrent()) return;
           const log = (logsData || []).map((l: any) => ({
             id: l.id,
             itemName: l.product_name || l.products?.name || 'Product',
@@ -637,9 +660,9 @@ export const useStockStore = create<StockStore>((set, get) => ({
         .catch(() => { /* activity log is best-effort; page still works without it */ });
       stockFetchedAt = Date.now();
     } catch (err) {
-      set({ loading: false });
+      if (isCurrent()) set({ loading: false });
     } finally {
-      stockFetchInFlight = null;
+      if (generation === stockFetchGeneration) stockFetchInFlight = null;
     }
     })();
     return stockFetchInFlight;

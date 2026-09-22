@@ -135,12 +135,12 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
   );
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
-  const [form, setForm] = useState({ name: '', mobile: '', address: '', notes: '' });
+  const [form, setForm] = useState({ name: '', mobile: '', address: '', notes: '', brokerType: '' });
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
 
-  const openNew = () => { setEditing(null); setForm({ name: '', mobile: '', address: '', notes: '' }); setShowAdd(true); };
-  const openEdit = (row: any) => { setEditing(row); setForm({ name: row.name || '', mobile: row.mobile || '', address: row.address || '', notes: row.notes || '' }); setShowAdd(true); };
+  const openNew = () => { setEditing(null); setForm({ name: '', mobile: '', address: '', notes: '', brokerType: '' }); setShowAdd(true); };
+  const openEdit = (row: any) => { setEditing(row); setForm({ name: row.name || '', mobile: row.mobile || '', address: row.address || '', notes: row.notes || '', brokerType: row.brokerType || '' }); setShowAdd(true); };
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -230,7 +230,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-bold text-slate-900 dark:text-white truncate">{row.name}</h3>
-                    <span className={`text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${accentClasses.chip}`}>{label}</span>
+                    <span className={`text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${accentClasses.chip}`}>{customerType === 'broker' && row.brokerType ? `${row.brokerType === 'both' ? 'Supplier + Customer' : row.brokerType === 'supplier' ? 'Supplier' : 'Customer'} ${label}` : label}</span>
                   </div>
                   {row.mobile && (
                     <a href={`tel:${row.mobile}`} className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-600">
@@ -275,6 +275,18 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
                   placeholder={customerType === 'broker' ? 'e.g. Ramesh Dalal' : 'e.g. Prakash Transport'}
                 />
               </div>
+              {customerType === 'broker' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Broker type</label>
+                  <select value={form.brokerType} onChange={(e) => setForm({ ...form, brokerType: e.target.value })}
+                    className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 ${accentClasses.ring}`}>
+                    <option value="">Not set</option>
+                    <option value="supplier">Supplier broker (purchases)</option>
+                    <option value="customer">Customer broker (sales)</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Mobile</label>
                 <input

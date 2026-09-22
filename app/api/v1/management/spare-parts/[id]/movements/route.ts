@@ -28,6 +28,14 @@ export const POST = handle<Ctx>(async (req, { params }) => {
     throw new ApiError(400, `Only ${part.quantity} in stock — cannot use ${quantity}`);
   }
 
+  // Restocking a part with a known unit cost is money spent: record it as an Expense (+ cash-book outflow), like POST /expenses.
+  const spend = type === 'in' ? Math.round(quantity * (Number(part.unitCost) || 0) * 100) / 100 : 0;
+  const pm = ['Cash', 'UPI', 'Card', 'Bank'].includes(body.paymentMethod) ? body.paymentMethod : 'Cash';
+  const extra: any[] = spend > 0 ? [
+    prisma.expense.create({ data: { shopId: shop.id, category: 'Spare Parts', amount: spend, description: `${part.name} x ${quantity}`, paymentMode: pm } }),
+    ...(pm === 'Cash' ? [prisma.cashBook.create({ data: { shopId: shop.id, type: 'expense', amount: spend, description: `Expense: Spare Parts - ${part.name}` } })] : []),
+  ] : [];
+
   const [updated] = await prisma.$transaction([
     (prisma as any).sparePart.update({
       where: { id },
@@ -37,6 +45,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
     (prisma as any).sparePartMovement.create({
       data: { shopId: shop.id, sparePartId: id, type, quantity, note: (body.note || '').trim() || null },
     }),
+    ...extra,
   ]);
 
   return json(updated, 201);

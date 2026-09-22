@@ -146,6 +146,8 @@ model Shop {
   // additive: never read by the businessType/packageType engine below.
   industryCategoryId      String?              @map("industry_category_id") @db.Uuid
 
+  allowNegativeStock      Boolean?             @default(false) @map("allow_negative_stock")
+
   customers               Customer[]
   products                Product[]
   sales                   Sale[]
@@ -189,10 +191,12 @@ model Shop {
   sparePartMovements      SparePartMovement[]
   deletedRecords          DeletedRecord[]
   collectionSheets        CollectionSheet[]
+  syncRecords             SyncRecord[]
 
   @@index([name], map: "ix_shops_name")
   @@index([ownerId], map: "ix_shops_owner_id")
   @@map("shops")
+  productionOutputs ProductionOutput[]
 }
 
 // Recovery bin — a snapshot taken right before a real (destructive) delete
@@ -541,6 +545,7 @@ model Product {
   @@index([baseUnitId], map: "ix_products_base_unit_id")
   @@index([shopId, archived], map: "ix_products_shop_archived")
   @@map("products")
+  productionOutputs ProductionOutput[]
 }
 
 model Customer {
@@ -561,6 +566,7 @@ model Customer {
   creditLimit           Float?                  @default(0) @map("credit_limit")
   birthday              DateTime?               @db.Date
   notes                 String?                 @db.VarChar
+  brokerType            String?                 @map("broker_type") @db.VarChar // broker only: supplier | customer | both
   documents             Json?                   @default("[]")
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -604,6 +610,16 @@ model Sale {
   // Manual bill upload: reference to the stored bill image/PDF and a manual flag.
   billImageUrl   String?    @map("bill_image_url") @db.VarChar
   isManual       Boolean?   @default(false) @map("is_manual")
+  // Offline reference number (e.g. OFF-20260917-DEVICE-000123) assigned while offline
+  offlineRefNumber String?    @map("offline_ref_number") @db.VarChar
+  // Mill Billing (Bada Udyog) — all nullable; NULL on every pre-existing row = legacy sale.
+  // pricingModel 'mill_v2' = priced by lib/millBilling.ts (GST-exclusive, non-GST add-on
+  // charges, round-off). Legacy sales never set any of these.
+  pricingModel   String?     @map("pricing_model") @db.VarChar
+  discountAmount Float?      @map("discount_amount")   // goods discount (₹) as applied by the server
+  charges        Json?                                 // { freight, hamali, loading, unloading, other }
+  chargesTotal   Float?      @map("charges_total")
+  roundOffAmount Float?      @map("round_off_amount")  // signed; totalAmount = pre-round total + roundOffAmount
   items          SaleItem[]
   customer       Customer?  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   shop           Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -611,6 +627,7 @@ model Sale {
   @@index([shopId, createdAt(sort: Desc)], map: "ix_sales_shop_created")
   @@index([customerId], map: "ix_sales_customer_id")
   @@index([shopId, invoice_number], map: "ix_sales_shop_invoice")
+  @@index([shopId, offlineRefNumber], map: "ix_sales_shop_offline_ref")
   @@map("sales")
 }
 
@@ -921,17 +938,77 @@ model Staff {
   bankAccount      Json?    @map("bank_account")
   documents        Json?    @default("{}")
   photoUrl         String?  @map("photo_url")
+  // Employment status: active | on_leave | suspended | resigned | terminated
+  // | inactive. Column already existed (defaulted "active") but was never
+  // read/written by any route or UI before the HR upgrade — reused as-is.
   status           String   @default("active") @db.VarChar
+  // "Work Location" — also a pre-existing, previously-unused column.
   warehouseId      String?  @map("warehouse_id") @db.Uuid
+
+  // --- Employee Master fields (HR upgrade) ---
+  employeeCode        String?   @map("employee_code") @db.VarChar
+  department          String?   @db.VarChar
+  employeeType        String?   @default("full_time") @map("employee_type") @db.VarChar
+  email               String?   @db.VarChar
+  alternateMobile     String?   @map("alternate_mobile") @db.VarChar
+  dateOfBirth         DateTime? @map("date_of_birth") @db.Date
+  gender              String?   @db.VarChar
+  shift               String?   @db.VarChar
+  reportingManagerId  String?   @map("reporting_manager_id") @db.Uuid
+  preferredPaymentMode String?  @default("Cash") @map("preferred_payment_mode") @db.VarChar
+
+  // Compliance — all optional, never required for shops that don't use them.
+  pan            String?  @db.VarChar
+  aadhaarLast4   String?  @map("aadhaar_last4") @db.VarChar
+  uan            String?  @db.VarChar
+  pfApplicable   Boolean  @default(false) @map("pf_applicable")
+  esiApplicable  Boolean  @default(false) @map("esi_applicable")
+  ptApplicable   Boolean  @default(false) @map("pt_applicable")
+  tdsApplicable  Boolean  @default(false) @map("tds_applicable")
+
+  // Exit / resignation
+  resignationDate  DateTime? @map("resignation_date") @db.Date
+  lastWorkingDay   DateTime? @map("last_working_day") @db.Date
+  exitReason       String?   @map("exit_reason") @db.VarChar
+  noticePeriodDays Int?      @map("notice_period_days")
+  exitNotes        String?   @map("exit_notes") @db.VarChar
+
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  shop           Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  attendance     Attendance[]
-  salaryPayments SalaryPayment[]
-  advanceSalaries AdvanceSalary[]
+  shop             Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  attendance       Attendance[]
+  salaryPayments   SalaryPayment[]
+  advanceSalaries  AdvanceSalary[]
+  salaryRevisions  SalaryRevision[]
+  reportingManager Staff?           @relation("StaffReportingManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+  directReports    Staff[]          @relation("StaffReportingManager")
 
+  // No DB-level uniqueness on (shopId, employeeCode) yet — `prisma db push`
+  // needs --accept-data-loss to add any new unique constraint and that flag
+  // is blocked by this environment's safety classifier. Enforced at the API
+  // layer instead (see POST/PATCH /staff), same as this app already does
+  // elsewhere for "no duplicates" rules that predate a DB constraint.
   @@map("staff")
+}
+
+// Append-only salary-rate history — written whenever Staff.salaryAmount
+// changes, so past rate changes stay traceable. Past SalaryPayment rows
+// already freeze baseAmount at time of payment and are never touched by this.
+model SalaryRevision {
+  id            String   @id @default(uuid()) @db.Uuid
+  staffId       String   @map("staff_id") @db.Uuid
+  oldAmount     Float?   @map("old_amount")
+  newAmount     Float    @map("new_amount")
+  effectiveFrom DateTime @default(now()) @map("effective_from") @db.Date
+  reason        String?  @db.VarChar
+  changedBy     String?  @map("changed_by") @db.VarChar
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@map("salary_revisions")
 }
 
 model Attendance {
@@ -1163,6 +1240,10 @@ model PurchaseInvoice {
   date          DateTime? @default(now()) @db.Timestamptz(6)
   totalCost     Float?    @map("total_cost")
   gst           Float?
+  // Bill-level charges beyond the goods (hamali, freight, loading …): [{ name, amount }]. Already included in totalCost.
+  charges       Json?
+  // Offline reference number assigned while offline
+  offlineRefNumber String?  @map("offline_ref_number") @db.VarChar
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -1172,6 +1253,7 @@ model PurchaseInvoice {
 
   @@index([shopId])
   @@index([supplierId])
+  @@index([shopId, offlineRefNumber], map: "ix_purchases_shop_offline_ref")
   @@map("purchase_invoices")
 }
 
@@ -1639,6 +1721,7 @@ model ProductionBatch {
   outputProduct Product?       @relation("ProductionBatchOutput", fields: [outputProductId], references: [id], onDelete: NoAction)
   stages       BatchStage[]
   byProducts   ByProduct[]
+  outputs      ProductionOutput[]
   qualityTests QualityTest[]
 
   @@unique([shopId, batchNumber])
@@ -1646,6 +1729,35 @@ model ProductionBatch {
   @@index([rawLotId])
   @@index([status])
   @@map("production_batches")
+}
+
+// One classified result of a production run — user-defined, never a fixed rice list. A run's mass balance is
+//   input = Σ outputs (all types) + loss (ProductionBatch.wastageKg)
+// finished_good and by_product rows credit the linked Product's stock (productId), and are traceable to the run through
+// batchId / outputLotNumber; a rejection may be untracked (no productId) and is then only recorded. Rows are written once, at
+// finalisation, in the same transaction as the raw-material consumption.
+model ProductionOutput {
+  id              String    @id @default(uuid()) @db.Uuid
+  shopId          String    @map("shop_id") @db.Uuid
+  batchId         String    @map("batch_id") @db.Uuid
+  productId       String?   @map("product_id") @db.Uuid
+  name            String    @db.VarChar
+  outputType      String    @map("output_type") @db.VarChar   // finished_good | by_product | rejection
+  quantity        Float                                       // as entered, in `unit`
+  unit            String    @default("kg") @db.VarChar
+  quantityKg      Float     @map("quantity_kg")               // the same quantity in kg (mass balance)
+  outputLotNumber String?   @map("output_lot_number") @db.VarChar
+  notes           String?   @db.VarChar
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop    Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  batch   ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id], onDelete: NoAction)
+
+  @@index([shopId])
+  @@index([batchId])
+  @@index([productId])
+  @@map("production_outputs")
 }
 
 model BatchStage {
@@ -1660,6 +1772,8 @@ model BatchStage {
   completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
   operatorName String?   @map("operator_name") @db.VarChar
   notes        String?   @db.VarChar
+  // User-defined extra results of this stage, e.g. [{"name":"Tukada","kg":120}] — informational; stock moves only at finalize.
+  extras       Json?
   createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
@@ -2031,4 +2145,23 @@ model SparePartMovement {
   @@index([shopId])
   @@index([sparePartId])
   @@map("spare_part_movements")
+}
+
+model SyncRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  shopId         String   @map("shop_id") @db.Uuid
+  deviceId       String   @map("device_id") @db.VarChar
+  idempotencyKey String   @map("idempotency_key") @db.VarChar
+  entityType     String   @map("entity_type") @db.VarChar
+  localId        String?  @map("local_id") @db.VarChar
+  serverId       String?  @map("server_id") @db.VarChar
+  status         String   @default("processed") @db.VarChar
+  response       Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, idempotencyKey], map: "ix_sync_records_shop_idempotency")
+  @@index([shopId])
+  @@map("sync_records")
 }

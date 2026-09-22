@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { requireShop } from '@/lib/server/auth';
+import { assertOwned } from '@/lib/server/ownership';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
@@ -18,6 +19,7 @@ export const GET = handle(async (req) => {
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const data = await readBody<{ category: string, amount: number, description?: string, paymentMode?: string, date?: string, attachmentUrl?: string, isRecurring?: boolean, warehouseId?: string }>(req);
+  await assertOwned(shop.id, { godownId: data.warehouseId });
   
   if (!data.category || !data.amount) {
     throw new ApiError(400, 'Category and amount are required');

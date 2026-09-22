@@ -100,6 +100,7 @@ function computeVariantOptions(raw: any): VariantOption[] {
 
 export default function ReturnsPage() {
   const t = useTranslations('Returns');
+  const tMill = useTranslations('MillBilling');
   const locale = useLocale();
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -250,6 +251,13 @@ export default function ReturnsPage() {
       
       if (!res.data || Array.isArray(res.data)) {
         throw new Error('Invoice not found or invalid response');
+      }
+
+      // Mill (mill_v2) invoices can't be returned/exchanged (the server would answer 409): explain instead.
+      if (res.data.pricing_model === 'mill_v2') {
+        setBill(null); setReturnItems([]);
+        alert(tMill('actionsBlockedMill'));
+        return;
       }
 
       setBill(res.data);
