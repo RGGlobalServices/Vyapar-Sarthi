@@ -6,6 +6,7 @@ import { createFinishedGoodsLot } from '@/lib/server/finishedGoodsService';
 import { createWipLotFromStageOutput } from '@/lib/server/wipService';
 import { createRejectionLot } from '@/lib/server/rejectionService';
 import { recordStageAuditEvent } from '@/lib/server/audit';
+import { computeQualityFlag } from '@/lib/businessConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -312,6 +313,68 @@ export const POST = handle<Ctx>(async (req, { params }) => {
 
     return { balance: bal, consumed: consume ? inputKg : 0, finishedKg, isJobWork };
   }, { timeout: 90000, maxWait: 15000 });
+
+  // Auto-create a Quality Lab record from stage quality parameters — same pattern
+  // as by-products/rejections going to their sections. Only fires when stages have
+  // at least one quality parameter defined (even if no actual value recorded yet).
+  // Runs outside the transaction so a Quality Lab failure never rolls back the batch.
+  (async () => {
+    try {
+      const snapshot = await (prisma as any).batchWorkflowSnapshot.findFirst({
+        where: { productionBatchId: id },
+        include: {
+          stages: {
+            include: { qualityParameters: true },
+          },
+        },
+      });
+
+      const allParams: any[] = snapshot?.stages?.flatMap((s: any) => s.qualityParameters ?? []) ?? [];
+      if (allParams.length === 0) return; // no quality checks defined for this batch — skip
+
+      // Map parameterName / parameterCode to QualityTest fields by keyword match.
+      const canon = (s: string) => String(s).toLowerCase().replace(/[^a-z]/g, '');
+      const num = (v: any) => { const n = parseFloat(String(v ?? '')); return isFinite(n) ? n : null; };
+
+      const fieldMap: Record<string, string> = {};
+      for (const p of allParams) {
+        const key = canon(p.parameterCode || p.parameterName);
+        let field: string | null = null;
+        if (/moisture/.test(key)) field = 'moisturePct';
+        else if (/foreign|fm/.test(key)) field = 'foreignMatterPct';
+        else if (/broken/.test(key)) field = 'brokenPct';
+        else if (/damage/.test(key)) field = 'damagedPct';
+        else if (/doc/.test(key)) field = 'docPct';
+        if (field && p.actualValue != null) fieldMap[field] = p.actualValue;
+      }
+
+      const reading = {
+        moisturePct: num(fieldMap.moisturePct),
+        foreignMatterPct: num(fieldMap.foreignMatterPct),
+        brokenPct: num(fieldMap.brokenPct),
+        damagedPct: num(fieldMap.damagedPct),
+      };
+
+      // Skip if a QualityTest for this batch already exists (idempotent).
+      const existing = await (prisma as any).qualityTest.findFirst({ where: { shopId: shop.id, batchId: id } });
+      if (existing) return;
+
+      await (prisma as any).qualityTest.create({
+        data: {
+          shopId: shop.id,
+          batchId: id,
+          testDate: new Date(),
+          ...reading,
+          docPct: num(fieldMap.docPct),
+          flag: computeQualityFlag(reading),
+          decision: 'pending',
+          notes: 'Auto-created from batch stage quality checks on finalize.',
+        },
+      });
+    } catch (_) {
+      // Non-critical — batch is already finalized; Quality Lab entry can be added manually.
+    }
+  })();
 
   // Audit outside the transaction — non-critical and avoids extending the lock window
   recordStageAuditEvent({
