@@ -212,7 +212,7 @@ export async function buildStageExecutionReportData(
   const productNameById = new Map<string, string>();
   if (productIds.length > 0) {
     const products = await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true } });
-    products.forEach((p) => productNameById.set(p.id, p.name));
+    products.forEach((p) => productNameById.set(p.id, p.name ?? ''));
   }
 
   // Fetch lot number lookup for LOT-type fields
