@@ -224,6 +224,41 @@ export async function exportBatchFullReportPDF(reportData: { shop: any; batch: a
     y = ((doc as any).lastAutoTable?.finalY ?? y + 20) + 8;
   }
 
+  // ── Quality Test Results ─────────────────────────────────────────────────────
+  const qualityTests: any[] = batch.qualityTests || [];
+  if (qualityTests.length > 0) {
+    if (y > 220) { doc.addPage(); y = 20; }
+    y = renderSectionTitle(doc, y, 'Quality Test Results');
+
+    const FLAG_LABEL: Record<string, string> = { green: 'Green ✓', amber: 'Amber ⚠', red: 'Red ✗' };
+    const DECISION_LABEL: Record<string, string> = { accepted: 'Accepted', rejected: 'Rejected', pending: 'Pending' };
+    const fmtPct = (v: any) => (v != null ? `${Number(v).toFixed(2)}%` : '—');
+
+    const qtRows = qualityTests.map((qt: any) => [
+      qt.testDate ? new Date(qt.testDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+      qt.testedBy || '—',
+      fmtPct(qt.moisturePct),
+      fmtPct(qt.foreignMatterPct),
+      fmtPct(qt.brokenPct),
+      fmtPct(qt.damagedPct),
+      qt.flag ? (FLAG_LABEL[qt.flag] ?? qt.flag) : '—',
+      qt.decision ? (DECISION_LABEL[qt.decision] ?? qt.decision) : '—',
+      qt.notes || '—',
+    ]);
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Tested By', 'Moisture %', 'Foreign Matter %', 'Broken %', 'Damaged %', 'Flag', 'Decision', 'Notes']],
+      body: qtRows,
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, textColor: PDF_LAYOUT.ink as any, lineColor: PDF_LAYOUT.divider as any, lineWidth: 0.2 },
+      headStyles: { fillColor: [139, 92, 246] as any, textColor: [255, 255, 255] as any, fontStyle: 'bold', fontSize: 8 },
+      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      margin: { left: L, right: PDF_LAYOUT.marginX },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y + 20) + 8;
+  }
+
   // ── Mass balance summary ─────────────────────────────────────────────────────
   if (y > 230) { doc.addPage(); y = 20; }
   y = renderSectionTitle(doc, y, 'Mass Balance Summary');

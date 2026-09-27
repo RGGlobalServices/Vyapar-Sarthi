@@ -34,6 +34,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       },
       byProducts: true,
       finishedGoodsLots: { include: { godown: { select: { name: true } } } },
+      qualityTests: { orderBy: { testDate: 'desc' }, take: 5 },
     },
   });
 
