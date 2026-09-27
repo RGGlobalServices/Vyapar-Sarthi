@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer, Percent, Plus, Minus, PencilLine, PlusCircle } from 'lucide-react';
@@ -1295,7 +1295,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     const isExisting = match?.status === 'existing';
                     const isSelected = selectedRows.includes(i);
                     return (
-                    <tr key={i} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-300 group ${action === 'skip' ? 'opacity-45' : ''} ${isSelected ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''}`}>
+                    <Fragment key={i}>
+                    <tr className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-300 group ${action === 'skip' ? 'opacity-45' : ''} ${isSelected ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''}`}>
                       <td className="px-3 py-1 whitespace-nowrap sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800 text-center">
                         <input
                           type="checkbox"
@@ -1356,6 +1357,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                         </button>
                       </td>
                     </tr>
+                    {row._warning && (
+                      <tr className="bg-amber-50/60 dark:bg-amber-900/20">
+                        <td colSpan={headers.length + 3} className="px-4 py-1.5 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                          ⚠️ {String(row._warning)}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                     );
                   })}
                 </tbody>

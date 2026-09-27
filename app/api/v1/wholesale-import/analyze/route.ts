@@ -175,7 +175,9 @@ export async function POST(req: NextRequest) {
     // ── OpenAI (primary) ─────────────────────────────────────────────────────
     const openaiKey = process.env.OPENAI_API_KEY || '';
     const openaiClient = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
-    const openaiModel = process.env.IMPORT_OPENAI_MODEL || 'gpt-4o-mini';
+    // gpt-4o gives significantly better vision accuracy over gpt-4o-mini for
+    // handwritten / non-standard Indian mill bills. Override via env to control cost.
+    const openaiModel = process.env.IMPORT_OPENAI_MODEL || 'gpt-4o';
 
     // ── Gemini (secondary / fallback) ────────────────────────────────────────
     // Multi-key support: rotate through GEMINI_API_KEY, GEMINI_API_KEY_2 … on quota exhaustion.
@@ -212,6 +214,19 @@ export async function POST(req: NextRequest) {
     } else if (businessTypeStr === 'liquor') {
       businessSpecificFields = '- Must extract Brand, Volume (e.g. 90ml/180ml/375ml/650ml/750ml), Alcohol Percentage (ABV %), Bottle Type (Bottle/Can/PET), Category (Beer/Wine/Whisky/Rum/Vodka/Gin/Brandy/Scotch/Soft Drinks/Snacks/Cigarettes), MRP, Purchase Price, Barcode, and Batch Number. For supplier liquor invoices also extract units-per-case for unit conversion.';
       businessSpecificSchema = '"brand": "string", "volume": "string", "alcoholPercentage": "string", "bottleType": "string"';
+    } else if (businessTypeStr === 'millprocessing' || businessTypeStr === 'mill' || businessTypeStr === 'grains') {
+      // Indian grain mill / agro-processor bills have several unusual conventions
+      // that generic models consistently misread without explicit guidance.
+      businessSpecificFields = [
+        '- QUANTITY: Indian mill bills have a BAGS column AND a WEIGHT column. The WEIGHT column (Quintal/Kg) is the true quantity — NOT the bag count. Extract the Kg sub-column value as "quantity" and set unit to "kg". If only Quintal is present, multiply by 100 to get kg. Example: "BAGS: 400/30kg, WEIGHT Kg: 12000" → quantity=12000, unit="kg".',
+        '- RATE: Indian grain invoices often split rate into two columns labelled "Rupees" and "Pai." (or "Paise" or "P."). These are ONE price: Rupees + Paise/100. Example: "54 | 75" means ₹54.75 per kg — output unitCost=54.75. Never treat them as separate items or add them together without dividing the paise column by 100.',
+        '- AMOUNT: The rightmost column labelled "Amount Rupees" or "Total" is the line total. Cross-check: quantity × unitCost should be close to amount. If they disagree, re-read the rate column — a "5475" in rate that should be "54.75" is the most common error.',
+        '- BAGS notation: "400/30kg" or "400 Bags × 30 Kg" means 400 bags of 30 kg each. This is packaging info, not the quantity. The quantity is the total weight (12000 kg). Do NOT output 400 or 30 as quantity.',
+        '- BATCH NO: Extract batch/lot number if a column exists; leave empty if absent.',
+        '- Extra charges at the bottom (Hamali, Freight, Weighment, Commission) go into the "charges" array, not "items".',
+        '- Extract Moisture% if printed on the bill into a "moisturePct" field.',
+      ].join(' ');
+      businessSpecificSchema = '"moisturePct": "number", "batchNumber": "string"';
     } else {
       businessSpecificFields = '- Extract Brand, Category, Unit, and any specific variants/models.';
     }
@@ -1167,6 +1182,28 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       }
     }
 
+    // ── Cross-validation: flag rows where qty×rate diverges badly from amount ─
+    // This catches the specific mill-bill failure mode where the AI reads a
+    // split "Rupees | Paise" rate column as one inflated number (e.g. 5475
+    // instead of 54.75), making qty×rate >> amount. The review table shows
+    // these warnings so the shopkeeper knows to double-check before importing.
+    let flaggedRows = 0;
+    for (const it of dedupedItems as any[]) {
+      if (!it || typeof it !== 'object') continue;
+      const qty = num(pick(it, ['quantity', 'qty']));
+      const rate = num(pick(it, ['unitcost', 'rate', 'price']));
+      const amount = num(pick(it, ['amount', 'total', 'lineamount', 'netamount']));
+      if (Number.isFinite(qty) && qty > 0 && Number.isFinite(rate) && rate > 0 && Number.isFinite(amount) && amount > 0) {
+        const computed = qty * rate;
+        const ratio = Math.max(computed, amount) / Math.min(computed, amount);
+        // If computed and stated totals differ by more than 20%, warn the user.
+        if (ratio > 1.2) {
+          it._warning = `Qty×Rate (${qty}×${rate}=${Math.round(computed)}) differs from bill amount (${amount}). Please verify quantity and rate before saving.`;
+          flaggedRows++;
+        }
+      }
+    }
+
     return NextResponse.json({
       summary: (usedDeterministicTable
         ? `Read ${tableItems.length} rows directly from the document's table layout (exact values, no AI guessing)`
@@ -1175,6 +1212,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         + `${failedCount > 0 ? ` — ${failedCount} section(s) failed after retry` : ''}`
         + `${duplicatesRemoved > 0 ? `, ${duplicatesRemoved} duplicate(s) removed` : ''}`
         + `${repairedRows > 0 ? `, ${repairedRows} quantity/HSN corrected from invoice totals` : ''}`
+        + `${flaggedRows > 0 ? `, ${flaggedRows} row(s) flagged — please verify qty & rate` : ''}`
         + `${imageContents.length > MAX_IMAGES ? ` (first ${MAX_IMAGES} images processed)` : ''}`,
       stats: {
         sectionsTotal: totalTasks,
@@ -1185,6 +1223,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         rowsAfterDedup: dedupedItems.length,
         duplicatesRemoved,
         repairedRows,
+        flaggedRows,
         // True when values came straight from the PDF's column layout rather
         // than from a model — useful when diagnosing a bad import.
         deterministicTable: usedDeterministicTable,
