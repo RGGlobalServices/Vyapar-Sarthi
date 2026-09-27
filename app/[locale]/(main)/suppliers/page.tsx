@@ -15,6 +15,7 @@ import { ExportButton } from '@/lib/hooks/useExport';
 import { generatePendingBillsPDF } from '@/lib/pdf/pendingBillsReport';
 import { generatePurchaseBillPDF } from '@/lib/pdf/purchaseBillDetail';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { useRowSelection } from '@/lib/hooks/useRowSelection';
 
@@ -1859,6 +1860,7 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
 }) {
   const t = useTranslations('Suppliers');
   const { profile } = useBusinessStore();
+  const isMill = isMillBillingPackage(profile?.packageType);
   const [detail, setDetail] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -2153,12 +2155,18 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
                 />
                 <div className="text-sm">
                   <div className="font-semibold text-slate-900 dark:text-white">
-                    {t('reverseStockLabel') || 'Also reverse the stock this purchase added'}
+                    {isMill
+                      ? 'Also remove the raw material lot this purchase created'
+                      : (t('reverseStockLabel') || 'Also reverse the stock this purchase added')}
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
-                    {deleteReverseStock
-                      ? (t('reverseStockOnHint') || 'Stock added by this purchase will be subtracted back out. Blocked if that stock has already been sold — uncheck to still delete the invoice.')
-                      : (t('reverseStockOffHint') || 'Stock stays exactly as it is now — only the invoice and its supplier balance/ledger entry are removed.')}
+                    {isMill
+                      ? (deleteReverseStock
+                          ? 'The raw material lot created by this purchase will be deleted. Blocked if that lot has already been used in a production batch.'
+                          : 'Raw material lot stays as-is — only the invoice and its supplier ledger entry are removed.')
+                      : (deleteReverseStock
+                          ? (t('reverseStockOnHint') || 'Stock added by this purchase will be subtracted back out. Blocked if that stock has already been sold — uncheck to still delete the invoice.')
+                          : (t('reverseStockOffHint') || 'Stock stays exactly as it is now — only the invoice and its supplier balance/ledger entry are removed.'))}
                   </div>
                 </div>
               </label>
