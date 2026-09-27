@@ -965,6 +965,12 @@ function MillingTab({ filters }: { filters: any }) {
     { key: 'closedAt', label: 'Closed' },
     { key: 'processingHours', label: 'Processing (Hours)', type: 'number' as const },
     { key: 'processingDays', label: 'Processing (Days)', type: 'number' as const },
+    { key: 'qualityFlag', label: 'Quality Flag' },
+    { key: 'qualityDecision', label: 'Quality Decision' },
+    { key: 'moisturePct', label: 'Moisture %' },
+    { key: 'foreignMatterPct', label: 'Foreign Matter %' },
+    { key: 'brokenPct', label: 'Broken %' },
+    { key: 'damagedPct', label: 'Damaged %' },
   ];
 
   return (

@@ -29,6 +29,7 @@ export const GET = handle(async (req) => {
       outputProduct: { select: { name: true } },
       stages: { orderBy: { sequence: 'asc' }, select: { stageName: true, operatorName: true, startedAt: true, completedAt: true, inputKg: true, outputKg: true, wastageKg: true } },
       outputs: { select: { name: true, outputType: true, quantity: true, unit: true, quantityKg: true, outputLotNumber: true } },
+      qualityTests: { select: { moisturePct: true, foreignMatterPct: true, brokenPct: true, damagedPct: true, docPct: true, flag: true, decision: true }, take: 1, orderBy: { testDate: 'desc' } },
     },
     orderBy: { startedAt: 'desc' },
     take: 500,
@@ -53,6 +54,10 @@ export const GET = handle(async (req) => {
     const stagesText = (b.stages || [])
       .map((s: any) => `${s.stageName}${s.operatorName ? ` by ${s.operatorName}` : ''}${s.completedAt ? ` (done)` : ' (open)'}`)
       .join('; ') || '—';
+    const qt = b.qualityTests?.[0] ?? null;
+    const fmtPct = (v: any) => (v != null ? `${round2(Number(v))}%` : '—');
+    const qualityFlag = qt?.flag ?? '—';
+    const qualityDecision = qt?.decision ?? '—';
     return {
       batchNumber: b.batchNumber,
       status: b.status,
@@ -73,6 +78,12 @@ export const GET = handle(async (req) => {
       closedAt: fmtDT(b.closedAt),
       processingHours: processingHours != null ? processingHours : '—',
       processingDays: processingHours != null ? round2(processingHours / 24) : '—',
+      qualityFlag,
+      qualityDecision,
+      moisturePct: fmtPct(qt?.moisturePct),
+      foreignMatterPct: fmtPct(qt?.foreignMatterPct),
+      brokenPct: fmtPct(qt?.brokenPct),
+      damagedPct: fmtPct(qt?.damagedPct),
     };
   });
 
