@@ -923,31 +923,13 @@ export async function POST(req: NextRequest) {
               godownQtyMap.set(matchId, (godownQtyMap.get(matchId) || 0) + quantity);
             }
             if (matchId) affectedProductIds.add(matchId);
-
-            // Mill raw-material bridge — importing a purchase bill for a
-            // product already tagged raw_material (via the mill Add-Product
-            // form) would otherwise only bump Product.currentStock, leaving
-            // RawMaterialLot — what Production Batch actually reads from —
-            // untouched. That silently orphans the stock: it can never
-            // become a batch, never shows on the Raw Material page, no
-            // traceability. Mirrors the same bridge in the plain Purchases
-            // route (app/api/v1/purchases/route.ts); moisture% is left blank
-            // (imports don't carry it) — editable later from Raw Material.
-            if (matchId && millCategoryIndex.get(matchId) === 'raw_material' && quantity > 0) {
-              rawLotsData.push({
-                shopId,
-                productId: matchId,
-                supplierId: dbSupplier.id,
-                lotNumber: `${invoiceNumber}-L${i + 1}`,
-                purchaseDate: billDate,
-                quantity,
-                unit: 'kg',
-                ratePerUnit: unitCost || null,
-                totalAmount: Math.round(quantity * unitCost * 100) / 100,
-                remainingQuantity: quantity,
-                notes: `Auto-created from imported Purchase Invoice ${invoiceNumber}`,
-              });
-            }
+            // Raw material lot creation is intentionally NOT auto-run here.
+            // OCR quantities are often wrong, and auto-creating a lot blocks
+            // the "Import from Purchase" dropdown in Add Raw Material Lot modal
+            // (the lot-exists check filters out candidates that already have a lot).
+            // The correct flow: import the bill → PurchaseItem is created →
+            // user opens Raw Material → Add Lot → "Import from Purchase" dropdown
+            // shows the bill line with correct data for verification before saving.
 
             // Purchase total = what the shopkeeper actually OWES the supplier =
             // the REAL bill total, WITH tax. Two things matter here:

@@ -957,7 +957,10 @@ function AddLotModal({ products, onClose, onAdded }: {
     for (const inv of invoices) {
       const items: any[] = inv.purchaseItems || [];
       items.forEach((it, idx) => {
-        const per = kgPerUnit(it.product?.baseUnit);
+        // For raw_material products allow any baseUnit (unit may be 'pcs'/'bag'
+        // from import default); fall back to per=1 so the item always appears.
+        const isRawMat = it.product?.category === 'raw_material';
+        const per = kgPerUnit(it.product?.baseUnit) ?? (isRawMat ? 1 : null);
         const inv_no = inv.invoiceNumber || '';
         if (!per || !it.product || !(Number(it.quantity) > 0) || !inv_no) return;
         const already = allLots.some((l: any) => l.productId === it.productId && (l.lotNumber === inv_no || String(l.lotNumber || '').startsWith(`${inv_no}-L`)));
