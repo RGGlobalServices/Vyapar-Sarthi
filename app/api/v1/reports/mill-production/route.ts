@@ -56,8 +56,10 @@ export const GET = handle(async (req) => {
       .join('; ') || '—';
     const qt = b.qualityTests?.[0] ?? null;
     const fmtPct = (v: any) => (v != null ? `${round2(Number(v))}%` : '—');
-    const qualityFlag = qt?.flag ?? '—';
-    const qualityDecision = qt?.decision ?? '—';
+    const FLAG_EMOJI: Record<string, string> = { green: '🟢 Green', amber: '🟡 Amber', red: '🔴 Red' };
+    const DECISION_LABEL: Record<string, string> = { accepted: '✅ Accepted', rejected: '❌ Rejected', pending: '⏳ Pending' };
+    const qualityFlag = qt?.flag ? (FLAG_EMOJI[qt.flag] ?? qt.flag) : '—';
+    const qualityDecision = qt?.decision ? (DECISION_LABEL[qt.decision] ?? qt.decision) : '—';
     return {
       batchNumber: b.batchNumber,
       status: b.status,
