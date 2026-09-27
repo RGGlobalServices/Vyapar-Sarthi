@@ -792,6 +792,17 @@ export async function POST(req: NextRequest) {
             expandedData.push(clone);
           }
         }
+        // Accumulators — filled per row, flushed in bulk after the loop to
+        // cut round-trips from O(N×5) sequential to ~O(N) + a few batch writes.
+        const purchaseItemsData: any[] = [];
+        const stockLogsData: any[] = [];
+        const stockMovementsData: any[] = [];
+        const rawLotsData: any[] = [];
+        // Map of productId → latest updateData (last write wins — stock is cumulative)
+        const productUpdateMap = new Map<string, { id: string; data: any }>();
+        // Map of productId → total quantity to upsert into godownProduct
+        const godownQtyMap = new Map<string, number>();
+
         // Iterate expanded rows so a "6*8" shorthand actually creates 3
         // per-size PurchaseItem rows + 3 variant entries downstream.
         for (let i = 0; i < expandedData.length; i++) {
@@ -902,26 +913,14 @@ export async function POST(req: NextRequest) {
                 updateData.variants = mergedVariants as any;
                 variantsIndex.set(matchId, mergedVariants);
               }
-              await prisma.product.update({ where: { id: matchId }, data: updateData });
+              productUpdateMap.set(matchId, { id: matchId as string, data: updateData });
               stockIndex.set(matchId, newStock);
               updated++;
             }
 
             // Mill pack: skip godown stock — stock tracked via RawMaterialLots/batches.
             if (!isMillImport && godownId && matchId) {
-              const existingGodownProd = await prisma.godownProduct.findUnique({
-                where: { godownId_productId: { godownId, productId: matchId } }
-              });
-              if (existingGodownProd) {
-                await prisma.godownProduct.update({
-                  where: { godownId_productId: { godownId, productId: matchId } },
-                  data: { quantity: { increment: quantity } }
-                });
-              } else {
-                await prisma.godownProduct.create({
-                  data: { godownId, productId: matchId, quantity }
-                });
-              }
+              godownQtyMap.set(matchId, (godownQtyMap.get(matchId) || 0) + quantity);
             }
             if (matchId) affectedProductIds.add(matchId);
 
@@ -935,20 +934,18 @@ export async function POST(req: NextRequest) {
             // route (app/api/v1/purchases/route.ts); moisture% is left blank
             // (imports don't carry it) — editable later from Raw Material.
             if (matchId && millCategoryIndex.get(matchId) === 'raw_material' && quantity > 0) {
-              await prisma.rawMaterialLot.create({
-                data: {
-                  shopId,
-                  productId: matchId,
-                  supplierId: dbSupplier.id,
-                  lotNumber: `${invoiceNumber}-L${i + 1}`,
-                  purchaseDate: billDate,
-                  quantity,
-                  unit: 'kg',
-                  ratePerUnit: unitCost || null,
-                  totalAmount: Math.round(quantity * unitCost * 100) / 100,
-                  remainingQuantity: quantity,
-                  notes: `Auto-created from imported Purchase Invoice ${invoiceNumber}`,
-                },
+              rawLotsData.push({
+                shopId,
+                productId: matchId,
+                supplierId: dbSupplier.id,
+                lotNumber: `${invoiceNumber}-L${i + 1}`,
+                purchaseDate: billDate,
+                quantity,
+                unit: 'kg',
+                ratePerUnit: unitCost || null,
+                totalAmount: Math.round(quantity * unitCost * 100) / 100,
+                remainingQuantity: quantity,
+                notes: `Auto-created from imported Purchase Invoice ${invoiceNumber}`,
               });
             }
 
@@ -994,46 +991,36 @@ export async function POST(req: NextRequest) {
               importedBatchId = importedBatch.id;
             }
 
-            await prisma.purchaseItem.create({
-              data: {
-                purchaseInvoiceId: purchaseInvoice.id,
-                productId: matchId,
-                // Same "Colour / Size" composite key everything else uses to
-                // identify a variant row — see billing/route.ts stock
-                // decrement + the returns pipeline. Null when there's no
-                // variant on this line (plain products keep working).
-                variantKey: rowVariantKey ?? undefined,
-                quantity,
-                cost: unitCost,
-                gst: rowGstPct,
-                mrp: extractedMrp > 0 ? extractedMrp : undefined,
-                ...(importedBatchId ? { batchId: importedBatchId } : {}),
-              }
+            purchaseItemsData.push({
+              purchaseInvoiceId: purchaseInvoice.id,
+              productId: matchId,
+              variantKey: rowVariantKey ?? undefined,
+              quantity,
+              cost: unitCost,
+              gst: rowGstPct,
+              mrp: extractedMrp > 0 ? extractedMrp : undefined,
+              ...(importedBatchId ? { batchId: importedBatchId } : {}),
             });
 
-            await prisma.stockLog.create({
-               data: {
-                  shopId,
-                  productId: matchId,
-                  type: 'purchase',
-                  quantity,
-                  note: `Purchase Invoice ${invoiceNumber}`
-               }
+            stockLogsData.push({
+              shopId,
+              productId: matchId,
+              type: 'purchase',
+              quantity,
+              note: `Purchase Invoice ${invoiceNumber}`,
             });
             // StockMovement is what reversePurchaseInvoiceEffects reads to
             // reverse stock when this invoice is deleted. Mill pack skips
             // this because we didn't update product stock — reversal would
             // have nothing to undo (mill stock is managed via lots/batches).
             if (!isMillImport) {
-              await prisma.stockMovement.create({
-                data: {
-                  shopId,
-                  productId: matchId as string,
-                  warehouseId: godownId || null,
-                  type: 'purchase',
-                  quantity,
-                  referenceId: purchaseInvoice.id,
-                },
+              stockMovementsData.push({
+                shopId,
+                productId: matchId as string,
+                warehouseId: godownId || null,
+                type: 'purchase',
+                quantity,
+                referenceId: purchaseInvoice.id,
               });
             }
           } catch (rowErr: any) {
@@ -1041,6 +1028,29 @@ export async function POST(req: NextRequest) {
             skipped++;
             rowErrors.push(`Row ${i + 1}: ${rowErr.message || 'Failed to import'}`);
           }
+        }
+
+        // Bulk-flush all per-row writes accumulated above — turns O(N×5)
+        // sequential round-trips into a handful of parallel batch inserts.
+        {
+          const flushOps: Promise<any>[] = [];
+          if (purchaseItemsData.length) flushOps.push(prisma.purchaseItem.createMany({ data: purchaseItemsData }));
+          if (stockLogsData.length) flushOps.push(prisma.stockLog.createMany({ data: stockLogsData }));
+          if (stockMovementsData.length) flushOps.push(prisma.stockMovement.createMany({ data: stockMovementsData }));
+          if (rawLotsData.length) flushOps.push(prisma.rawMaterialLot.createMany({ data: rawLotsData }));
+          for (const { id, data } of productUpdateMap.values()) {
+            flushOps.push(prisma.product.update({ where: { id }, data }));
+          }
+          if (godownId) {
+            for (const [productId, qty] of godownQtyMap.entries()) {
+              flushOps.push(prisma.godownProduct.upsert({
+                where: { godownId_productId: { godownId, productId } },
+                create: { godownId, productId, quantity: qty },
+                update: { quantity: { increment: qty } },
+              }));
+            }
+          }
+          await Promise.all(flushOps);
         }
 
         await prisma.purchaseInvoice.update({
