@@ -7,7 +7,7 @@ import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse } from '@/lib/server/http';
 import { parseFlexibleDate } from '@/lib/server/dates';
 import { parseSizeRange } from '@/lib/sizeRange';
-import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { isWholesaleTierPackage, isMillBillingPackage } from '@/lib/config/packageConfig';
 import { getBusinessConfig } from '@/lib/businessConfig';
 
 /**
@@ -113,6 +113,10 @@ export async function POST(req: NextRequest) {
     // instead of importing as a single flat-stock product with the ML
     // size buried in metadata only (unreachable by the billing ML picker).
     const isLiquorImport = !!getBusinessConfig(auth.shop.businessType as any)?.hasLiquorSpecs;
+    // Bada Udyog pack: purchase import creates financial records only (PurchaseInvoice +
+    // PurchaseItems + Supplier). Stock is tracked through RawMaterialLots and production
+    // batches — NOT through product.currentStock. Opening Stock ('stock') still updates stock.
+    const isMillImport = isMillBillingPackage(auth.shop.packageType);
 
     const startedAt = Date.now();
     const body = await req.json();
@@ -822,15 +826,15 @@ export async function POST(req: NextRequest) {
             if (!matchId) {
               // New product — seed variants[] with the current row's variant
               // if present, so per-variant stock tracking is live from row 1.
+              // Mill pack: stock stays 0 — tracked via RawMaterialLots/batches.
+              const stockSeed = isMillImport ? 0 : quantity;
               const newVariants = rowVariantKey
                 ? [{
                     color: rowColour,
                     size: rowSize,
-                    stock: quantity,
+                    stock: stockSeed,
                     costPrice: unitCost > 0 ? unitCost : undefined,
                     wholesalePrice: unitCost > 0 ? unitCost : undefined,
-                    // No blind markup guess — see the sellingPrice/mrp comment
-                    // on the plain-product branch below.
                     sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : undefined,
                     mrp: extractedMrp > 0 ? extractedMrp : undefined,
                   }]
@@ -842,19 +846,12 @@ export async function POST(req: NextRequest) {
                   name: String(name),
                   barcode: barcodeStr ?? undefined,
                   baseUnit: getVal(row, ['unit']) || 'pcs',
-                  // Derive selling/MRP only from a real cost — a 0 cost the AI
-                  // couldn't read should leave these unset, not store 0. And
-                  // when a real cost WAS read but no selling price/MRP was in
-                  // the source (e.g. a Purchase Invoice import, which never
-                  // carries a resale price), leave those unset too rather than
-                  // silently inventing a 20%/25% markup — the shopkeeper sets
-                  // their own margin via the review table or Edit Product.
                   wholesaleCost: unitCost > 0 ? unitCost : undefined,
                   costPrice: unitCost > 0 ? unitCost : undefined,
                   sellingPrice: rowSellingPrice > 0 ? rowSellingPrice : undefined,
                   mrp: extractedMrp > 0 ? extractedMrp : undefined,
                   category: getVal(row, ['category']) || 'General',
-                  currentStock: quantity,
+                  currentStock: stockSeed,
                   variants: newVariants.length ? (newVariants as any) : undefined,
                   metadata: rowColour ? { color: rowColour } : {},
                   ...getProductExtras(row),
@@ -863,17 +860,14 @@ export async function POST(req: NextRequest) {
               matchId = newProduct.id;
               if (barcodeStr) barcodeIndex.set(barcodeStr, matchId);
               nameIndex.set(String(name).toLowerCase().trim(), matchId);
-              stockIndex.set(matchId, quantity);
+              stockIndex.set(matchId, stockSeed);
               variantsIndex.set(matchId, newVariants);
               created++;
             } else {
-              // Existing product — accumulate the row's qty on both the
-              // top-level currentStock rollup AND its specific variant row.
-              // The variants[] merge is the same shape the Add-Product form
-              // + Purchases module already write, so downstream billing's
-              // stock-decrement path can find it.
+              // Existing product — accumulate stock rollup.
+              // Mill pack: skip stock update — tracked via RawMaterialLots/batches.
               const newStock = (stockIndex.get(matchId) || 0) + quantity;
-              const updateData: any = {
+              const updateData: any = isMillImport ? {} : {
                 currentStock: newStock,
               };
               // Never overwrite a real cost with 0 — a purchase row whose cost
@@ -913,7 +907,8 @@ export async function POST(req: NextRequest) {
               updated++;
             }
 
-            if (godownId && matchId) {
+            // Mill pack: skip godown stock — stock tracked via RawMaterialLots/batches.
+            if (!isMillImport && godownId && matchId) {
               const existingGodownProd = await prisma.godownProduct.findUnique({
                 where: { godownId_productId: { godownId, productId: matchId } }
               });
@@ -1026,20 +1021,21 @@ export async function POST(req: NextRequest) {
                }
             });
             // StockMovement is what reversePurchaseInvoiceEffects reads to
-            // reverse stock when this invoice is deleted — without it, delete
-            // silently keeps stock at the imported value instead of subtracting
-            // it back, and restore (which reads reverseStock:true from the
-            // trash snapshot) then adds stock a second time, doubling it.
-            await prisma.stockMovement.create({
-              data: {
-                shopId,
-                productId: matchId as string,
-                warehouseId: godownId || null,
-                type: 'purchase',
-                quantity,
-                referenceId: purchaseInvoice.id,
-              },
-            });
+            // reverse stock when this invoice is deleted. Mill pack skips
+            // this because we didn't update product stock — reversal would
+            // have nothing to undo (mill stock is managed via lots/batches).
+            if (!isMillImport) {
+              await prisma.stockMovement.create({
+                data: {
+                  shopId,
+                  productId: matchId as string,
+                  warehouseId: godownId || null,
+                  type: 'purchase',
+                  quantity,
+                  referenceId: purchaseInvoice.id,
+                },
+              });
+            }
           } catch (rowErr: any) {
             console.error(`Import row ${i + 1} failed [${importType}]:`, JSON.stringify(row), rowErr.message, rowErr.meta);
             skipped++;
