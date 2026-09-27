@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import { Link, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
@@ -315,7 +315,7 @@ export default function Sidebar({
     { key: 'hamali',          icon: HardHat,         href: '/hamali' },
     { key: 'machines',        icon: Cog,             href: '/machines' },
     { key: 'maintenance',     icon: Wrench,          href: '/maintenance' },
-    { key: 'spare-parts',     icon: Cpu,             href: '/spare-parts' },
+    { key: 'spare-parts',     icon: Cpu,             href: '/spare-parts', subOf: 'maintenance' },
     { key: 'payments',        icon: ArrowUpFromLine, href: '/payments' },
     { key: 'receipts',        icon: ArrowDownToLine, href: '/receipts' },
     { key: 'outstanding',     icon: Hourglass,       href: '/outstanding' },
@@ -665,7 +665,24 @@ export default function Sidebar({
                       </button>
                       {!isCollapsed && (
                         <div className="mt-0.5 space-y-0.5">
-                          {items.map(renderItem)}
+                          {(() => {
+                            const topLevel = items.filter(i => !(i as any).subOf);
+                            const byParent = new Map<string, typeof items>();
+                            items.filter(i => (i as any).subOf).forEach(i => {
+                              const p = (i as any).subOf as string;
+                              byParent.set(p, [...(byParent.get(p) ?? []), i]);
+                            });
+                            return topLevel.map(item => (
+                              <Fragment key={item.key}>
+                                {renderItem(item)}
+                                {byParent.get(item.key)?.map(child => (
+                                  <div key={child.key} className="ml-3 pl-2 border-l-2 border-slate-200 dark:border-slate-700/60">
+                                    {renderItem(child)}
+                                  </div>
+                                ))}
+                              </Fragment>
+                            ));
+                          })()}
                         </div>
                       )}
                     </div>
