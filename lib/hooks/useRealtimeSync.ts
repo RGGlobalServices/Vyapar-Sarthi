@@ -42,11 +42,7 @@ export function useRealtimeSync() {
         { event: '*', schema: 'public', table: 'ActivityLog', filter: `shopId=eq.${shopId}` },
         () => handleSync() // Silent refresh for minor activity logs
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`[Realtime Sync] Connected for shop ${shopId}`);
-        }
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);

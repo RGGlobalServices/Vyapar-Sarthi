@@ -15,10 +15,33 @@ type Ctx = { params: Promise<{ id: string }> };
  * DELETE — only a manual entry nothing has been taken from; production-generated rows are permanent.
  */
 
+import { getByProductLotByIdService, getByProductTraceabilityService } from '@/lib/server/byProductService';
+
 const INCLUDE = {
   product: { select: { id: true, name: true, baseUnit: true } },
   batch: { select: { id: true, batchNumber: true } },
 };
+
+export const GET = handle<Ctx>(async (req, { params }) => {
+  const { id } = await params;
+  const { shop } = await requireShop(req);
+  const url = new URL(req.url);
+
+  const includeTraceability = url.searchParams.get('traceability') === 'true';
+
+  try {
+    if (includeTraceability) {
+      const traceability = await getByProductTraceabilityService(shop.id, id);
+      return json(traceability);
+    }
+    const lot = await getByProductLotByIdService(shop.id, id);
+    return json(lot);
+  } catch (err: any) {
+    const legacy = await (prisma as any).byProduct.findFirst({ where: { id, shopId: shop.id }, include: INCLUDE });
+    if (legacy) return json(legacy);
+    throw err;
+  }
+});
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
@@ -34,8 +57,8 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   // (unsold) quantity is credited to the product's stock once, the same way a by-product created WITH a product already is.
   if (body.linkProduct !== undefined) {
     if (existing.productId) throw new ApiError(409, 'This by-product is already linked to a product.', 'ALREADY_LINKED');
-    const remainingKg = round3((existing.quantityKg ?? 0) - (existing.soldKg ?? 0));
-    if (remainingKg <= 0) throw new ApiError(400, 'Nothing left of this by-product to add to stock.', 'NOTHING_REMAINING');
+    const remainingQuantity = round3((existing.quantityKg ?? 0) - (existing.soldKg ?? 0));
+    if (remainingQuantity <= 0) throw new ApiError(400, 'Nothing left of this by-product to add to stock.', 'NOTHING_REMAINING');
     let productId: string = body.linkProduct.productId || '';
     let product: { id: string; name: string | null; baseUnit: string | null } | null = null;
     if (productId) {
@@ -49,7 +72,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       });
       productId = product.id;
     }
-    const stockQty = kgToProductUnit(remainingKg, product.baseUnit, product.name ?? '');
+    const stockQty = kgToProductUnit(remainingQuantity, product.baseUnit, product.name ?? '');
     const linked = await prisma.$transaction(async (tx) => {
       const moved = await (tx as any).byProduct.updateMany({ where: { id, shopId: shop.id, productId: null }, data: { productId } });
       if (moved.count === 0) throw new ApiError(409, 'This by-product is already linked to a product.', 'ALREADY_LINKED');
@@ -80,9 +103,9 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       }
     });
   }
-  if (body.ratePerKg !== undefined) {
-    patch.ratePerKg = body.ratePerKg === '' || body.ratePerKg === null ? null : Number(body.ratePerKg);
-    if (patch.ratePerKg !== null && (!isFinite(patch.ratePerKg) || patch.ratePerKg < 0)) throw new ApiError(400, 'Rate must be zero or a positive number', 'INVALID_RATE');
+  if (body.ratePerUnit !== undefined) {
+    patch.ratePerUnit = body.ratePerUnit === '' || body.ratePerUnit === null ? null : Number(body.ratePerUnit);
+    if (patch.ratePerUnit !== null && (!isFinite(patch.ratePerUnit) || patch.ratePerUnit < 0)) throw new ApiError(400, 'Rate must be zero or a positive number', 'INVALID_RATE');
   }
   if (body.notes !== undefined) patch.notes = (body.notes || '').toString().trim().slice(0, 250) || null;
 

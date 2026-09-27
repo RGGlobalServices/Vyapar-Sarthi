@@ -19,6 +19,7 @@ export const GET = handle(async (req) => {
   const pageStr = url.searchParams.get('page');
   const limitStr = url.searchParams.get('limit');
   const lite = url.searchParams.get('lite') === 'true'; // for fast caching
+  const isRawMaterialStr = url.searchParams.get('isRawMaterial');
 
   const page = pageStr ? parseInt(pageStr, 10) : 1;
   const limit = limitStr ? parseInt(limitStr, 10) : (q ? 50 : 2000); // Max 2000 if not specified to prevent crashes
@@ -28,6 +29,12 @@ export const GET = handle(async (req) => {
     shopId: { in: shopIds },
     OR: [{ archived: false }, { archived: null }]
   };
+
+  if (isRawMaterialStr === 'true') {
+    where.isRawMaterial = true;
+  } else if (isRawMaterialStr === 'false') {
+    where.isRawMaterial = false;
+  }
 
   if (q) {
     where.AND = [
@@ -74,6 +81,7 @@ export const GET = handle(async (req) => {
         is_loose: true,
         wholesaleCost: true,
         costPrice: true,
+        isRawMaterial: true,
       },
       skip,
       take: limit,
@@ -162,6 +170,7 @@ export const POST = handle(async (req) => {
         cartonBarcode: b.cartonBarcode ?? b.carton_barcode ?? null,
         location: b.location ?? null,
         is_loose: b.is_loose ?? b.isLoose,
+        isRawMaterial: b.isRawMaterial ?? b.is_raw_material ?? false,
         expiryDate: b.expiry_date ?? b.expiryDate,
         batch_number: b.batch_number ?? b.batchNumber,
         drug_schedule: b.drug_schedule ?? b.drugSchedule,

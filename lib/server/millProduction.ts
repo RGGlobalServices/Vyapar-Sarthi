@@ -5,7 +5,7 @@ import { ApiError } from '@/lib/server/http';
  * Nothing here touches the database.
  */
 
-export const OUTPUT_TYPES = ['finished_good', 'by_product', 'rejection'] as const;
+export const OUTPUT_TYPES = ['finished_good', 'wip', 'by_product', 'rejection'] as const;
 export type OutputType = (typeof OUTPUT_TYPES)[number];
 
 // kg per one unit. A production run is weighed, so only weight units are accepted — a "bag" or "piece" has no weight
@@ -130,4 +130,55 @@ export function parseStageExtras(raw: any): StageExtra[] {
     if (!Number.isFinite(kg) || kg <= 0 || kg > 1e9) throw new ApiError(400, `"${name}" must be a positive number of kg.`, 'INVALID_EXTRAS');
     return { name, kg: round3(kg) };
   });
+}
+
+/** Canonical received/inward date across Purchase, Weighbridge, and Manual lots. */
+export function canonicalReceivedDate(lot: { purchaseDate?: Date | string | null; createdAt?: Date | string | null; notes?: string | null; weighbridgeEntries?: any[] }): Date {
+  const src = lotSource(lot).source;
+  if (src === 'purchase' && lot.purchaseDate) return new Date(lot.purchaseDate);
+  if (src === 'weighbridge') return new Date(lot.createdAt || lot.purchaseDate || Date.now());
+  return new Date(lot.purchaseDate || lot.createdAt || Date.now());
+}
+
+export type LotQuantities = {
+  quantity: number;
+  allocatedKg: number;
+  consumedKg: number;
+  availableKg: number;
+  operationalStatus: 'available' | 'allocated' | 'in_production' | 'partially_consumed' | 'consumed';
+};
+
+export function computeLotQuantities(lot: {
+  quantity?: number | null;
+  remainingQuantity?: number | null;
+  batches?: { inputKg?: number | null; status?: string | null }[] | null;
+}): LotQuantities {
+  const quantity = round3(Number(lot.quantity) || 0);
+  const unconsumedKg = round3(Math.max(0, Number(lot.remainingQuantity ?? quantity) || 0));
+
+  const batches = lot.batches || [];
+  const activeBatches = batches.filter((b) => b.status === 'open' || b.status === 'in_progress');
+  const allocatedKg = round3(activeBatches.reduce((s, b) => s + (Number(b.inputKg) || 0), 0));
+  const consumedKg = round3(Math.max(0, quantity - unconsumedKg));
+  const availableKg = round3(Math.max(0, unconsumedKg - allocatedKg));
+
+  let operationalStatus: LotQuantities['operationalStatus'] = 'available';
+  if (unconsumedKg <= 0 && allocatedKg <= 0) {
+    operationalStatus = 'consumed';
+  } else if (allocatedKg > 0) {
+    const hasInProgress = activeBatches.some((b) => b.status === 'in_progress');
+    operationalStatus = hasInProgress ? 'in_production' : 'allocated';
+  } else if (consumedKg > 0) {
+    operationalStatus = 'partially_consumed';
+  } else {
+    operationalStatus = 'available';
+  }
+
+  return {
+    quantity,
+    allocatedKg,
+    consumedKg,
+    availableKg,
+    operationalStatus,
+  };
 }

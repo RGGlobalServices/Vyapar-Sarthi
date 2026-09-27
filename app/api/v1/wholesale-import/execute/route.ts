@@ -947,10 +947,11 @@ export async function POST(req: NextRequest) {
                   supplierId: dbSupplier.id,
                   lotNumber: `${invoiceNumber}-L${i + 1}`,
                   purchaseDate: billDate,
-                  weightKg: quantity,
-                  ratePerKg: unitCost || null,
+                  quantity,
+                  unit: 'kg',
+                  ratePerUnit: unitCost || null,
                   totalAmount: Math.round(quantity * unitCost * 100) / 100,
-                  remainingKg: quantity,
+                  remainingQuantity: quantity,
                   notes: `Auto-created from imported Purchase Invoice ${invoiceNumber}`,
                 },
               });
@@ -973,6 +974,31 @@ export async function POST(req: NextRequest) {
             totalInvoiceGst += Math.max(0, itemTotal - itemBase);
             totalInvoiceCost += itemTotal;
 
+            // Create Batch record first if a batch/lot number was provided in
+            // the row so the PurchaseItem can reference it from birth (enables
+            // FIFO billing and correct lot-based returns for imported invoices).
+            // Fall back to the bill-level batch entered in the review panel.
+            const billBatchNum = String(supplierOverride.batchNumber ?? '').trim();
+            const rowBatchNum = getVal(row, ['batchnumber', 'batch', 'lotnumber', 'lot']) || (billBatchNum || undefined);
+            let importedBatchId: string | null = null;
+            if (rowBatchNum && matchId) {
+              const expiryRaw = getVal(row, ['expirydate', 'expiry']);
+              const expiryDt = expiryRaw ? new Date(expiryRaw) : undefined;
+              const importedBatch = await prisma.batch.create({
+                data: {
+                  shopId,
+                  productId: matchId as string,
+                  batchNumber: String(rowBatchNum).trim(),
+                  quantity,
+                  initialQuantity: quantity,
+                  costPrice: unitCost > 0 ? unitCost : undefined,
+                  expiryDate: expiryDt && !isNaN(expiryDt.getTime()) ? expiryDt : undefined,
+                  purchaseDate: billDate,
+                },
+              });
+              importedBatchId = importedBatch.id;
+            }
+
             await prisma.purchaseItem.create({
               data: {
                 purchaseInvoiceId: purchaseInvoice.id,
@@ -986,6 +1012,7 @@ export async function POST(req: NextRequest) {
                 cost: unitCost,
                 gst: rowGstPct,
                 mrp: extractedMrp > 0 ? extractedMrp : undefined,
+                ...(importedBatchId ? { batchId: importedBatchId } : {}),
               }
             });
 
@@ -997,6 +1024,21 @@ export async function POST(req: NextRequest) {
                   quantity,
                   note: `Purchase Invoice ${invoiceNumber}`
                }
+            });
+            // StockMovement is what reversePurchaseInvoiceEffects reads to
+            // reverse stock when this invoice is deleted — without it, delete
+            // silently keeps stock at the imported value instead of subtracting
+            // it back, and restore (which reads reverseStock:true from the
+            // trash snapshot) then adds stock a second time, doubling it.
+            await prisma.stockMovement.create({
+              data: {
+                shopId,
+                productId: matchId as string,
+                warehouseId: godownId || null,
+                type: 'purchase',
+                quantity,
+                referenceId: purchaseInvoice.id,
+              },
             });
           } catch (rowErr: any) {
             console.error(`Import row ${i + 1} failed [${importType}]:`, JSON.stringify(row), rowErr.message, rowErr.meta);
@@ -1156,6 +1198,35 @@ export async function POST(req: NextRequest) {
               }
             }
             if (matchId) affectedProductIds.add(matchId);
+
+            // Create Batch record for opening stock when a lot/batch number is
+            // provided — lets FIFO billing pick up this stock immediately.
+            const rowBatchNum = getVal(row, ['batchnumber', 'batch', 'lotnumber', 'lot']);
+            if (rowBatchNum && matchId && quantity > 0) {
+              const expiryRaw = getVal(row, ['expirydate', 'expiry']);
+              const expiryDt = expiryRaw ? new Date(expiryRaw) : undefined;
+              const existingBatch = await prisma.batch.findFirst({
+                where: { shopId, productId: matchId, batchNumber: String(rowBatchNum).trim() },
+              });
+              if (!existingBatch) {
+                await prisma.batch.create({
+                  data: {
+                    shopId,
+                    productId: matchId,
+                    batchNumber: String(rowBatchNum).trim(),
+                    quantity,
+                    initialQuantity: quantity,
+                    costPrice: cost > 0 ? cost : undefined,
+                    expiryDate: expiryDt && !isNaN(expiryDt.getTime()) ? expiryDt : undefined,
+                  },
+                });
+              } else {
+                await prisma.batch.update({
+                  where: { id: existingBatch.id },
+                  data: { quantity, initialQuantity: quantity },
+                });
+              }
+            }
           } catch (rowErr: any) {
             console.error(`Import row ${i + 1} failed [stock]:`, JSON.stringify(row), rowErr.message, rowErr.meta);
             skipped++;

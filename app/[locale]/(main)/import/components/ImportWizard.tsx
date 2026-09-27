@@ -20,6 +20,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const t = useTranslations('Import');
   const { profile } = useBusinessStore();
   const [step, setStep] = useState<Step>('upload');
+  const [confirmBack, setConfirmBack] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loadingText, setLoadingText] = useState('Analyzing document...');
@@ -57,7 +58,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   // credit limit so the shopkeeper can see the impact before importing.
   const [purchaseSupplier, setPurchaseSupplier] = useState({
     name: '', mobile: '', gst: '', address: '',
-    creditDays: '', creditLimit: '', paidAmount: '',
+    creditDays: '', creditLimit: '', paidAmount: '', batchNumber: '',
   });
   // Bill-level charges read from the bill (hamali, freight, loading …) — editable here, stored on the purchase, never as products.
   const [purchaseBroker, setPurchaseBroker] = useState({ name: '', commission: '' });
@@ -109,6 +110,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       creditDays: prev.creditDays,
       creditLimit: prev.creditLimit,
       paidAmount: prev.paidAmount,
+      batchNumber: prev.batchNumber,
     }));
     setSupplierLookupDone(false);
   }, [importType, previewData]);
@@ -818,17 +820,24 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-24">
       <div className="flex items-center justify-between">
-        <button onClick={() => {
-          if (step === 'preview' && previewData.length > 0) {
-            const ok = window.confirm(
-              `Are you sure you want to leave?\n\nThe scanned data (${previewData.length} rows) will be lost and you'll need to scan the file again.`
-            );
-            if (!ok) return;
-          }
-          onBack();
-        }} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
-          <ArrowLeft size={20} /> Back to Import Types
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => {
+            if (step === 'preview' && previewData.length > 0) {
+              setConfirmBack(true);
+              return;
+            }
+            onBack();
+          }} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+            <ArrowLeft size={20} /> Back to Import Types
+          </button>
+          {confirmBack && (
+            <div className="flex items-center gap-2 text-sm bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg px-3 py-1.5">
+              <span className="text-red-700 dark:text-red-400 font-medium">Discard {previewData.length} rows?</span>
+              <button onClick={onBack} className="px-2 py-0.5 bg-red-600 text-white rounded font-bold text-xs hover:bg-red-700">Yes</button>
+              <button onClick={() => setConfirmBack(false)} className="px-2 py-0.5 border border-slate-300 dark:border-slate-600 rounded text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">No</button>
+            </div>
+          )}
+        </div>
         <h2 className="text-xl font-bold capitalize text-slate-900 dark:text-white">
           {importType.replace('-', ' ')} Import
         </h2>
@@ -1117,10 +1126,15 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <span className="text-[11px] font-bold uppercase text-slate-500">Credit Limit (₹)</span>
                     <input type="number" min="0" step="1" value={purchaseSupplier.creditLimit} onChange={e => setPurchaseSupplier(s => ({ ...s, creditLimit: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. 50000" />
                   </label>
-                  <label className="block sm:col-span-2">
+                  <label className="block">
                     <span className="text-[11px] font-bold uppercase text-slate-500">Amount Paid Now (₹)</span>
                     <input type="number" min="0" step="1" value={purchaseSupplier.paidAmount} onChange={e => setPurchaseSupplier(s => ({ ...s, paidAmount: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
                     <span className="block text-[10px] text-slate-400 mt-1">The rest becomes owed. Leave 0 if the whole bill is on credit.</span>
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Lot / Batch No. <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                    <input value={purchaseSupplier.batchNumber} onChange={e => setPurchaseSupplier(s => ({ ...s, batchNumber: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. LOT-001" />
+                    <span className="block text-[10px] text-slate-400 mt-1">Applied to all items on this bill. Rows with their own batch column take priority.</span>
                   </label>
                 </div>
               </div>

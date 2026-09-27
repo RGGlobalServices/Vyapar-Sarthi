@@ -153,6 +153,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
             mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
             expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
             quantity: item.baseQuantity,
+            initialQuantity: item.baseQuantity,
+            costPrice: item.baseCost,
+            sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
           })),
         }),
         tx.stockMovement.createMany({
@@ -178,6 +181,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
           // silently no-ops when it's NULL, so COALESCE it first (see the
           // matching comment in purchases/route.ts POST).
           tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid AND shop_id = ${auth!.shop.id}::uuid`,
+          // Keep the product's cost price in sync with the latest purchase
+          // price so the Products section always reflects current procurement cost.
+          tx.product.updateMany({
+            where: { id: item.productId, shopId: auth!.shop.id },
+            data: { costPrice: item.baseCost },
+          }),
         ]),
         tx.supplier.update({
           where: { id: supplierId, shopId: auth!.shop.id },

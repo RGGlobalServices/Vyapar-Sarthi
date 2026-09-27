@@ -116,6 +116,8 @@ export interface CartItem {
   variant?: string;
   batchNumber?: string;
   expiryDate?: string | Date;
+  serialNumber?: string;
+  warrantyDays?: number;
   color?: string;
   size?: string;
   model?: string;
@@ -136,6 +138,9 @@ interface CartStore {
   updatePrice: (shopId: string, id: string | number, price: number, variant?: string) => void;
   updateGstPercent: (shopId: string, id: string | number, gstPercent: number, variant?: string) => void;
   updateBatchNumber: (shopId: string, id: string | number, batchNumber: string, variant?: string) => void;
+  updateExpiryDate: (shopId: string, id: string | number, expiryDate: string, variant?: string) => void;
+  updateSerialNumber: (shopId: string, id: string | number, serialNumber: string, variant?: string) => void;
+  updateWarrantyDays: (shopId: string, id: string | number, warrantyDays: number, variant?: string) => void;
   /** Quietly pins an already-added line to a specific lot/batch — cost,
    *  batchId, batchNumber and profit — WITHOUT touching quantity. Used to
    *  reconcile an optimistically-added line (see billing's addToCart) once
@@ -212,12 +217,19 @@ export const useCartStore = create<CartStore>((set) => ({
   }),
   updateBatchNumber: (shopId, id, batchNumber, variant) => set((state) => {
     const shopCart = state.carts[shopId] || [];
-    return {
-      carts: {
-        ...state.carts,
-        [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, batchNumber } : i)
-      }
-    };
+    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, batchNumber } : i) } };
+  }),
+  updateExpiryDate: (shopId, id, expiryDate, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, expiryDate } : i) } };
+  }),
+  updateSerialNumber: (shopId, id, serialNumber, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, serialNumber } : i) } };
+  }),
+  updateWarrantyDays: (shopId, id, warrantyDays, variant) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, warrantyDays } : i) } };
   }),
   setLineBatch: (shopId, id, variant, batch) => set((state) => {
     const shopCart = state.carts[shopId] || [];

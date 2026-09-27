@@ -781,7 +781,7 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const t = useTranslations('Suppliers');
   const [form, setForm] = useState({
     name: '', contact: '', mobile: '', email: '', gst: '', address: '',
-    creditLimit: '', creditDays: '',
+    creditLimit: '', creditDays: '', openingBalance: '',
   });
   // Optional opening purchase recorded together with the supplier.
   const [withPurchase, setWithPurchase] = useState(false);
@@ -811,7 +811,7 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
         ...form,
         creditLimit: parseFloat(form.creditLimit) || 0,
         creditDays: parseInt(form.creditDays) || 0,
-        openingBalance: '0',
+        openingBalance: parseFloat(form.openingBalance) || 0,
       });
       const supplierId = res.data?.id;
       if (withPurchase && supplierId && amountNum > 0) {
@@ -924,6 +924,23 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
               />
             </Field>
           </div>
+
+          {/* Opening balance */}
+          <Field label={t('openingBalanceLabel') || 'Opening Balance'} hint={t('optionalTag')}>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₹</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.openingBalance}
+                onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
+                className={`${inputCls} pl-7`}
+                placeholder="0"
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">{t('openingBalanceHint') || 'Previous dues owed to this supplier before you started using the app'}</p>
+          </Field>
 
           {/* Opening purchase */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -1600,7 +1617,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
               // stays newest-first; data.transactions itself is untouched.
               data={[...(data?.transactions || [])].reverse().map((tr: any) => ({
                 date: tr.date,
-                type: tr.type === 'payment' ? t('paymentType') : t('purchaseType'),
+                type: tr.type === 'payment' ? t('paymentType') : tr.type === 'opening_balance' ? (t('openingBalanceType') || 'Opening Balance') : t('purchaseType'),
                 billNumber: tr.billNumber || '',
                 amount: tr.amount,
                 // Payment method only applies to an actual payment event — a
@@ -1685,9 +1702,11 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                               <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                                 it.type === 'payment'
                                   ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'
-                                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'
+                                  : it.type === 'opening_balance'
+                                    ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600'
+                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'
                               }`}>
-                                {it.type === 'payment' ? <Wallet size={14} /> : <ReceiptText size={14} />}
+                                {it.type === 'payment' ? <Wallet size={14} /> : it.type === 'opening_balance' ? <IndianRupee size={14} /> : <ReceiptText size={14} />}
                               </div>
                               <div className="min-w-0">
                                 {/* Description leads so the list reads like a real activity
@@ -1695,15 +1714,17 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                     No. + Description were required, every row here just said
                                     the bare word "Purchase"/"Payment" and looked identical. */}
                                 <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                  {it.note || (it.type === 'payment' ? t('paymentType') : t('purchaseType'))}
+                                  {it.note || (it.type === 'payment' ? t('paymentType') : it.type === 'opening_balance' ? (t('openingBalanceType') || 'Opening Balance') : t('purchaseType'))}
                                 </p>
                                 <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap mt-0.5">
                                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${
                                     it.type === 'payment'
                                       ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                                      : it.type === 'opening_balance'
+                                        ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                                        : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                                   }`}>
-                                    {it.type === 'payment' ? t('paymentType') : t('purchaseType')}
+                                    {it.type === 'payment' ? t('paymentType') : it.type === 'opening_balance' ? (t('openingBalanceType') || 'Opening Balance') : t('purchaseType')}
                                   </span>
                                   {it.billNumber && (
                                     <span className="font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded text-[10px]">

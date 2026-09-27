@@ -48,7 +48,7 @@ export const POST = handle(async (req) => {
     await prisma.supplierTransaction.create({
       data: {
         supplierId: supplier.id,
-        type: 'credit',
+        type: 'opening_balance',
         amount: supplier.balance,
         note: 'Opening Balance',
       }

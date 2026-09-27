@@ -24,9 +24,76 @@ const qty = (n: number | null | undefined, u?: string | null) => `${(n ?? 0).toL
 // prices and details are edited in Products, and sales go through Billing as usual.
 export default function FinishedGoodsPage() {
   const activeShopId = useBusinessStore(s => s.activeShopId);
-  const { data: rows = [], isLoading } = useSWR<FG[]>(activeShopId ? ['/mill/finished-goods', activeShopId] : null, ([u]) => fetcher(u));
+  const { data: rawData, isLoading } = useSWR<any>(activeShopId ? ['/mill/finished-goods', activeShopId] : null, ([u]) => fetcher(u));
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
+
+  const rawList: any[] = useMemo(() => {
+    if (Array.isArray(rawData)) return rawData;
+    if (Array.isArray(rawData?.items)) return rawData.items;
+    return [];
+  }, [rawData]);
+
+  const rows: FG[] = useMemo(() => {
+    if (rawList.length === 0) return [];
+
+    if (rawList[0]?.name !== undefined && rawList[0]?.lots !== undefined) {
+      return rawList as FG[];
+    }
+
+    const grouped: { [productId: string]: FG } = {};
+
+    rawList.forEach((item: any) => {
+      const p = item.product || {};
+      const pId = p.id || item.productId || item.id;
+      const pName = p.name || item.name || 'Finished Product';
+      const baseUnit = p.baseUnit || item.unit || 'kg';
+
+      if (!grouped[pId]) {
+        grouped[pId] = {
+          id: pId,
+          name: pName,
+          baseUnit: baseUnit,
+          currentStock: 0,
+          sellingPrice: p.sellingPrice ?? item.sellingPrice ?? null,
+          mrp: p.mrp ?? item.mrp ?? null,
+          minStock: p.minStock ?? item.minStock ?? null,
+          produced: 0,
+          batchesCount: 0,
+          lastBatch: null,
+          lots: [],
+        };
+      }
+
+      const fg = grouped[pId];
+      const availQty = Number(item.availableQuantity ?? item.quantity ?? 0);
+      const origQty = Number(item.quantity ?? 0);
+
+      fg.produced += origQty;
+      fg.currentStock = (fg.currentStock || 0) + availQty;
+
+      if (item.batch) {
+        fg.batchesCount += 1;
+        if (!fg.lastBatch || (item.createdAt && new Date(item.createdAt) > new Date(fg.lastBatch.date || 0))) {
+          fg.lastBatch = {
+            id: item.batch.id,
+            batchNumber: item.batch.batchNumber || item.lotNumber || '—',
+            date: item.createdAt || null,
+          };
+        }
+      }
+
+      fg.lots.push({
+        id: item.id,
+        batchNumber: item.batch?.batchNumber || item.lotNumber || '—',
+        quantity: availQty,
+        initialQuantity: origQty !== availQty ? origQty : null,
+        createdAt: item.createdAt || null,
+      });
+    });
+
+    return Object.values(grouped);
+  }, [rawList]);
 
   const filtered = useMemo(() => rows.filter(r => !q.trim() || (r.name || '').toLowerCase().includes(q.trim().toLowerCase())), [rows, q]);
   const totals = useMemo(() => ({

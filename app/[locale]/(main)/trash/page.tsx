@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Link } from '@/i18n/routing';
 import { useRowSelection } from '@/lib/hooks/useRowSelection';
+import { useBusinessStore } from '@/lib/businessStore';
 
 type DeletedRecord = {
   id: string;
@@ -53,6 +54,7 @@ export default function TrashPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const { profile } = useBusinessStore();
   const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(records.map(r => r.id));
 
   function showToast(next: Toast) {
@@ -144,6 +146,112 @@ export default function TrashPage() {
     setDownloadingId(r.id);
     try {
       const res = await api.get(`/trash/${r.id}/download`);
+
+      if (r.entityType === 'sale') {
+        const sale = res.data.data || {};
+        const billNum = r.label || sale.invoice_number || sale.id?.substring(0, 8).toUpperCase() || 'BILL';
+        const dateStr = sale.createdAt
+          ? new Date(sale.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : new Date(r.deletedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const items: any[] = Array.isArray(sale.items) ? sale.items : [];
+        const fmt = (n: number) => `Rs ${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        const itemRows = items.map((item: any) => {
+          const name = item.itemName || item.name || 'Item';
+          const variant = item.variant ? ` (${item.variant})` : '';
+          const qty = item.quantity || 0;
+          const rate = item.pricePerUnit || item.price_per_unit || 0;
+          const total = qty * rate;
+          return `<tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${name}${variant}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${item.unit || 'Pcs'}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${qty}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${fmt(rate)}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${fmt(total)}</td>
+          </tr>`;
+        }).join('');
+
+        const totalAmount = sale.totalAmount || sale.total_amount || 0;
+        const amountPaid = sale.amountPaid || sale.amount_paid || 0;
+        const balance = totalAmount - amountPaid;
+        const paymentType = sale.paymentType || sale.payment_type || '';
+        const gstAmount = sale.gstAmount || sale.gst_amount || 0;
+
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${billNum}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 16px; }
+            .header h1 { margin: 0 0 4px; font-size: 22px; }
+            .header p { margin: 2px 0; font-size: 13px; color: #555; }
+            .meta { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 13px; }
+            .label { font-weight: bold; color: #555; font-size: 11px; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; font-size: 13px; }
+            thead th { background: #f3f4f6; padding: 8px 12px; text-align: left; border-bottom: 2px solid #d1d5db; font-size: 11px; text-transform: uppercase; }
+            thead th:nth-child(3), thead th:nth-child(4), thead th:nth-child(5) { text-align: right; }
+            .totals { margin-top: 16px; text-align: right; font-size: 14px; }
+            .totals table { width: auto; float: right; }
+            .totals td { padding: 4px 8px; }
+            .totals .grand { font-weight: bold; font-size: 16px; border-top: 2px solid #111; }
+            .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #888; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+            .deleted-note { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-bottom: 16px; color: #92400e; }
+            @media print { .deleted-note { display: none; } }
+          </style>
+        </head><body>
+          <div class="header">
+            <h1>${profile.shopName || 'Store'}</h1>
+            ${profile.address ? `<p>${profile.address}</p>` : ''}
+            ${profile.mobile ? `<p>Ph: ${profile.mobile}</p>` : ''}
+            ${profile.gst ? `<p>GSTIN: ${profile.gst}</p>` : ''}
+          </div>
+          <div class="deleted-note">⚠️ This bill was deleted on ${new Date(r.deletedAt).toLocaleDateString('en-IN')}. Recovered from Recycle Bin.</div>
+          <div class="meta">
+            <div>
+              <div class="label">Bill No.</div>
+              <div style="font-size:16px;font-weight:bold;">${billNum}</div>
+            </div>
+            <div>
+              <div class="label">Date</div>
+              <div>${dateStr}</div>
+            </div>
+            ${paymentType ? `<div><div class="label">Payment</div><div>${paymentType.toUpperCase()}</div></div>` : ''}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Unit</th>
+                <th style="text-align:right;">Qty</th>
+                <th style="text-align:right;">Rate</th>
+                <th style="text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows || '<tr><td colspan="5" style="text-align:center;padding:16px;color:#888;">No items recorded</td></tr>'}</tbody>
+          </table>
+          <div class="totals">
+            <table>
+              ${gstAmount > 0 ? `<tr><td>GST</td><td>${fmt(gstAmount)}</td></tr>` : ''}
+              <tr class="grand"><td>Total</td><td>${fmt(totalAmount)}</td></tr>
+              ${amountPaid > 0 ? `<tr><td>Paid</td><td>${fmt(amountPaid)}</td></tr>` : ''}
+              ${balance > 0 ? `<tr><td style="color:#dc2626;">Balance</td><td style="color:#dc2626;">${fmt(balance)}</td></tr>` : ''}
+            </table>
+          </div>
+          <div style="clear:both;"></div>
+          <div class="footer">Thank you for your business!</div>
+          <script>window.onload = function() { window.print(); }</script>
+        </body></html>`;
+
+        const printWin = window.open('', '_blank', 'width=820,height=640,scrollbars=yes');
+        if (printWin) {
+          printWin.document.write(html);
+          printWin.document.close();
+          showToast({ kind: 'success', title: 'Invoice print dialog opened' });
+        } else {
+          showToast({ kind: 'error', title: 'Popup blocked — allow popups and try again' });
+        }
+        return;
+      }
+
+      // For all other entity types: download as JSON
       const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');

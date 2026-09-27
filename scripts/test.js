@@ -1,1 +1,0 @@
-const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); async function main() { const count = await prisma.customer.count({ where: { customerType: 'party' } }); console.log('Total Parties:', count); } main().finally(() => prisma.\$disconnect());

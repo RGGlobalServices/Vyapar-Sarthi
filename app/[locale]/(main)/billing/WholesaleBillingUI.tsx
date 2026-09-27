@@ -5,9 +5,11 @@ import { useAuthStore } from '@/lib/store';
 import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
+import { useCategoryConfig } from '@/lib/hooks/useCategoryConfig';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
+import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { cn } from '@/lib/utils';
 import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
@@ -136,30 +138,94 @@ const CartQuantityInput = ({ item, updateQuantity, removeItem, maxQty }: any) =>
 
 const GST_SLABS = [0, 5, 12, 18, 28];
 
-// Price + per-line GST editor for a cart row. item.price is always stored
-// GST-inclusive (matching computeGst()/financialEngine's assumption
-// everywhere else in the app) — the Incl/Excl toggle only changes what
-// number this input shows and expects to be typed, converting to/from the
-// stored inclusive value under the hood. Because the displayed value is
-// re-derived from item.price on every render (never mutated on toggle),
-// switching modes back and forth can't drift the real stored price.
+// Price + per-line GST editor for a cart row.
+//
+// SEMANTIC: item.price is always the GST-inclusive amount the customer pays
+// (what computeGst() and the financial engine expect).
+//
+// Toggle meaning (matches how Indian B2B sellers think about GST):
+//   Excl = "No GST charged" — selling price is what customer pays, gstPercent = 0.
+//   Incl = "GST added on top of selling price" — customer pays base + GST.
+//
+// The input always shows the BASE (selling) price. Switching modes never
+// changes the displayed number — only the total (and item.price) changes.
 const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any) => {
-  const [mode, setMode] = useState<'inclusive' | 'exclusive'>('inclusive');
   const gstPercent = Number(item.gstPercent) || 0;
 
-  const toDisplay = (inclusivePrice: number) =>
-    mode === 'exclusive' ? toExclusivePrice(inclusivePrice, gstPercent) : inclusivePrice;
+  // savedSlabRef holds the GST rate the user last chose (even when mode=Excl clears gstPercent to 0).
+  const savedSlabRef = useRef<number>(gstPercent || 12);
+  const initDone = useRef(false);
 
-  const [localVal, setLocalVal] = useState(() => (Math.round(toDisplay(item.price) * 100) / 100).toString());
+  // mode: 'exclusive' = no GST (item.price = base, gstPercent = 0)
+  //        'inclusive' = GST on top (item.price = base*(1+slab%), gstPercent = slab)
+  const [mode, setMode] = useState<'inclusive' | 'exclusive'>('exclusive');
+
+  // On first mount: capture the product's natural GST slab then start in Excl mode
+  // (selling price shown as-is, no GST applied until the user opts in).
   useEffect(() => {
-    setLocalVal((Math.round(toDisplay(item.price) * 100) / 100).toString());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.price, mode, gstPercent]);
+    if (initDone.current) return;
+    initDone.current = true;
+    const naturalSlab = Number(item.gstPercent) || 0;
+    if (naturalSlab > 0) {
+      savedSlabRef.current = naturalSlab;
+      updateGstPercent(item.id, 0, item.variant);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const writePrice = (typed: number) => {
-    const inclusive = mode === 'exclusive' ? toInclusivePrice(typed, gstPercent) : typed;
-    updatePrice(item.id, Math.round(inclusive * 100) / 100, item.variant);
+  // Keep savedSlab up-to-date when user explicitly picks a different rate.
+  useEffect(() => {
+    if (gstPercent > 0) savedSlabRef.current = gstPercent;
+  }, [gstPercent]);
+
+  // Base (exclusive) price to display in the input.
+  // Excl mode: gstPercent=0  → item.price = base → show as-is
+  // Incl mode: gstPercent>0  → item.price = base*(1+slab%) → extract base
+  const getBase = () => gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
+
+  const [localVal, setLocalVal] = useState(() => (Math.round(item.price * 100) / 100).toString());
+  useEffect(() => {
+    setLocalVal((Math.round(getBase() * 100) / 100).toString());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.price, gstPercent]);
+
+  // User always types the BASE price; we convert to inclusive before storing.
+  // Round to whole rupees so totals are always clean integers.
+  const writePrice = (typedBase: number) => {
+    const inclusive = gstPercent > 0 ? toInclusivePrice(typedBase, gstPercent) : typedBase;
+    updatePrice(item.id, Math.round(inclusive), item.variant);
   };
+
+  // Change GST slab while staying in Incl mode — keep the base price, update inclusive.
+  const changeGstSlab = (newSlab: number) => {
+    const base = getBase();
+    updateGstPercent(item.id, newSlab, item.variant);
+    if (newSlab > 0) {
+      updatePrice(item.id, Math.round(toInclusivePrice(base, newSlab)), item.variant);
+    } else {
+      updatePrice(item.id, Math.round(base), item.variant);
+    }
+  };
+
+  const switchMode = (newMode: 'inclusive' | 'exclusive') => {
+    if (newMode === mode) return;
+    const base = getBase();
+    if (newMode === 'exclusive') {
+      // Remove GST: price = base, gstPercent = 0
+      updateGstPercent(item.id, 0, item.variant);
+      updatePrice(item.id, Math.round(base), item.variant);
+    } else {
+      // Add GST: price = base*(1+slab%), gstPercent = saved slab
+      const slab = savedSlabRef.current || 12;
+      updateGstPercent(item.id, slab, item.variant);
+      updatePrice(item.id, Math.round(toInclusivePrice(base, slab)), item.variant);
+    }
+    setMode(newMode);
+  };
+
+  const basePrice = Math.round(getBase() * 100) / 100;
+  const gstAmt = gstPercent > 0 ? Math.round(basePrice * gstPercent) / 100 : 0;
+  const totalPrice = Math.round(item.price * 100) / 100;
 
   return (
     <div className="flex flex-col items-end gap-1">
@@ -181,31 +247,40 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
         min="0"
       />
       {isGstBill && (
-        <div className="flex items-center gap-1">
-          <select
-            value={gstPercent}
-            onChange={(e) => updateGstPercent(item.id, Number(e.target.value), item.variant)}
-            title="GST % for this item"
-            className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
-          >
-            {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
-          </select>
-          <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden shrink-0">
-            {(['inclusive', 'exclusive'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                title={m === 'inclusive' ? 'Price includes GST' : 'Price excludes GST'}
-                className={cn(
-                  'px-1 py-0.5 text-[9px] font-bold transition-colors',
-                  mode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
-                )}
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="flex items-center gap-1">
+            {mode === 'inclusive' && (
+              <select
+                value={gstPercent || savedSlabRef.current}
+                onChange={(e) => changeGstSlab(Number(e.target.value))}
+                title="GST % for this item"
+                className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
               >
-                {m === 'inclusive' ? 'Incl' : 'Excl'}
-              </button>
-            ))}
+                {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
+              </select>
+            )}
+            <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden shrink-0">
+              {(['exclusive', 'inclusive'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => switchMode(m)}
+                  title={m === 'inclusive' ? 'Add GST on top of this price' : 'No GST on this item'}
+                  className={cn(
+                    'px-1 py-0.5 text-[9px] font-bold transition-colors',
+                    mode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+                  )}
+                >
+                  {m === 'inclusive' ? 'Incl' : 'Excl'}
+                </button>
+              ))}
+            </div>
           </div>
+          {mode === 'inclusive' && gstPercent > 0 && (
+            <div className="text-[9px] text-slate-400 dark:text-slate-500 font-mono text-right leading-tight">
+              ₹{basePrice} + ₹{gstAmt.toFixed(2)} GST = <span className="text-emerald-600 dark:text-emerald-400 font-bold">₹{totalPrice.toFixed(2)}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -227,11 +302,25 @@ export default function WholesaleBillingUI() {
   const tMill = useTranslations('MillBilling');
 
   const {
-    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, updateBatchNumber, setLineBatch, clearCart,
+    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent,
+    updateBatchNumber, updateExpiryDate, updateSerialNumber, updateWarrantyDays,
+    setLineBatch, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount, remainingAmount
   } = useBillingEngine(cartKey);
   const bizConfig = getBusinessConfig(profile?.businessType);
+  const { config: categoryConfig } = useCategoryConfig();
+
+  // Merged display flags: hard-wired businessType flags OR CategoryConfig flags
+  const catSchema = categoryConfig.attributeSchema;
+  const showBatch   = bizConfig.hasBatch   || catSchema.showBatch;
+  const showExpiry  = catSchema.showExpiry;
+  const showSerial  = catSchema.showSerial;
+  const showWarranty = catSchema.showWarranty;
+
+  // Dual unit billing (e.g. Grocery: Bag × 25 Kg, FMCG: Carton × 12 pcs)
+  const isDualUnit = catSchema.dualUnit && !!catSchema.dualUnitConfig;
+  const dualUnitCfg = catSchema.dualUnitConfig;
 
   // Cart lines that belong in the Brand x ML matrix vs. the plain table below
   // it — same split as the retail billing page ([page.tsx]'s LiquorCartMatrix
@@ -315,7 +404,9 @@ export default function WholesaleBillingUI() {
           barcode,
         });
         addToCart(res.data, manualProduct.variant || undefined);
-        fetchProducts();
+        // Append the newly-created product to local state without a full re-fetch —
+        // a GET /products round-trip here would stall the cashier mid-billing.
+        setProducts(prev => [...prev, res.data]);
       } catch (err: any) {
         const msg = err?.response?.data?.detail || err?.message || '';
         if (String(msg).toLowerCase().includes('already exists')) {
@@ -323,7 +414,7 @@ export default function WholesaleBillingUI() {
             const lookup = await api.get(`/products/barcode/${encodeURIComponent(barcode)}`);
             if (lookup.data?.id) {
               addToCart(lookup.data, manualProduct.variant || undefined);
-              fetchProducts();
+              // Product already in catalogue; no need to re-fetch everything.
             } else {
               alert(msg || 'Failed to create product');
               return;
@@ -577,6 +668,13 @@ export default function WholesaleBillingUI() {
   }, [isMill, profile?.id, products.length]);
 
   const [isGenerating, setIsGenerating] = useState(false);
+  // Inline overdue-warning confirmation (replaces window.confirm which Chrome blocks in some contexts).
+  const [overdueConfirmPending, setOverdueConfirmPending] = useState(false);
+  const overdueConfirmResolveRef = useRef<((v: boolean) => void) | null>(null);
+  const confirmOverdue = () => new Promise<boolean>(resolve => {
+    setOverdueConfirmPending(true);
+    overdueConfirmResolveRef.current = resolve;
+  });
 
   // Bill Success Modal
   const [showBillModal, setShowBillModal] = useState(false);
@@ -596,6 +694,9 @@ export default function WholesaleBillingUI() {
   // Udyog variant products (colour/size) have no single price/stock — this
   // holds the product while the cashier picks which row they're selling.
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
+  // Per-axis selections inside the dynamic variant picker (Phase 3).
+  // Reset whenever variantSelectionProduct changes.
+  const [variantPickerSelections, setVariantPickerSelections] = useState<Record<string, string>>({});
   // Lot/batch picker — see addToCart's comment for when this fires.
   const [batchSelectionProduct, setBatchSelectionProduct] = useState<any>(null);
   const [batchSelectionVariant, setBatchSelectionVariant] = useState<string | undefined>(undefined);
@@ -612,6 +713,9 @@ export default function WholesaleBillingUI() {
   // mean "quantity 2" still works as always).
   const pendingAddKeysRef = useRef<Map<string, number>>(new Map());
   const DUPLICATE_ADD_COOLDOWN_MS = 700;
+  // Batch lookup cache — avoids re-fetching /products/{id}/batches on every
+  // add of the same product (e.g. scanning the same item multiple times).
+  const batchCacheRef = useRef<Map<string, any[]>>(new Map());
 
   // Set when arriving here via a Delivery Challan's "Convert to Invoice"
   // button (app/[locale]/(main)/challans/page.tsx) — after the sale is
@@ -812,6 +916,7 @@ export default function WholesaleBillingUI() {
     // which row before adding anything to the cart. Re-entering addToCart
     // with a variant (from the picker below) skips this and falls through.
     if (product.productType === 'variant' && Array.isArray(product.variants) && product.variants.length > 0 && !variant) {
+      setVariantPickerSelections({});
       setVariantSelectionProduct(product);
       return;
     }
@@ -907,6 +1012,12 @@ export default function WholesaleBillingUI() {
         // MRP travels with the line so the cart can flag the wholesaler's
         // "party discount %" off list price per row (mnemonic for the deal).
         mrp: Number(product.mrp) || 0,
+        // Category-level product attributes (fabric, grade, pattern…) — shown
+        // as sub-text under the product name in the cart when CategoryConfig
+        // lists them in billingDisplayFields.
+        categoryAttributes: (typeof product.metadata === 'object' && product.metadata !== null)
+          ? (product.metadata as any).categoryAttributes ?? {}
+          : {},
       });
 
       // Background lot/batch reconciliation — the line above is already in
@@ -917,26 +1028,29 @@ export default function WholesaleBillingUI() {
       // own forceAdd re-entry, and not a scan that already pinned a batch).
       if (isOriginalClick) {
         const gstPercent = Number(product.gstPercent ?? product.gst_percent ?? 0) || 0;
-        api.get(`/products/${product.id}/batches`).then(res => {
-          const batches = Array.isArray(res.data) ? res.data : [];
-          if (batches.length > 1) {
-            // A real choice to make — surface the picker. The line stays at
-            // its flat cost until the shopkeeper picks a lot below.
-            setBatchSelectionProduct(product);
-            setBatchSelectionVariant(variant);
-            setBatchSelectionOptions(batches);
-          } else if (batches.length === 1) {
-            const only = batches[0];
-            const reconciledCost = Number(only.costPrice) > 0 ? Number(only.costPrice) : cost;
+        const applyBatches = (batches: any[]) => {
+          if (batches.length >= 1) {
+            const first = batches[0];
+            const reconciledCost = Number(first.costPrice) > 0 ? Number(first.costPrice) : cost;
+            const displayBatchNumber = first.batchNumber || (batches.length > 1 ? `Lot 1` : null);
             setLineBatch(product.id, variant, {
-              batchId: only.id,
-              batchNumber: only.batchNumber,
+              batchId: first.id,
+              batchNumber: displayBatchNumber,
               cost: reconciledCost,
               profit: (price / (1 + gstPercent / 100)) - reconciledCost,
             });
           }
-          // 0 batches: nothing to reconcile, the flat-cost line is already correct.
-        }).catch(() => { /* best-effort only — line already added at flat cost */ });
+        };
+        const cached = batchCacheRef.current.get(product.id);
+        if (cached !== undefined) {
+          applyBatches(cached);
+        } else {
+          api.get(`/products/${product.id}/batches`).then(res => {
+            const batches = Array.isArray(res.data) ? res.data : [];
+            batchCacheRef.current.set(product.id, batches);
+            applyBatches(batches);
+          }).catch(() => { /* best-effort only — line already added at flat cost */ });
+        }
       }
     }
     setSearch('');
@@ -1032,11 +1146,15 @@ export default function WholesaleBillingUI() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [items.length, showCheckout, showBillModal]);
 
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearch(val);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     if (val.length > 1) {
-      setSearchResults(performSmartSearch(products, val));
+      searchDebounceRef.current = setTimeout(() => {
+        setSearchResults(performSmartSearch(products, val));
+      }, 120);
     } else {
       setSearchResults([]);
     }
@@ -1326,10 +1444,7 @@ export default function WholesaleBillingUI() {
     // health) — a shopkeeper may have a good reason to keep billing a
     // regular party who's slow to pay this month.
     if (isWholesale && selectedParty && partyCreditHealth && partyCreditHealth.overdueAmount > 0) {
-      const proceed = window.confirm(
-        `${selectedParty.name} has ${partyCreditHealth.overdueInvoicesCount} overdue bill${partyCreditHealth.overdueInvoicesCount > 1 ? 's' : ''} `
-        + `(₹${partyCreditHealth.overdueAmount.toLocaleString()}, oldest ${partyCreditHealth.oldestOverdueDays} days past due).\n\nContinue billing anyway?`
-      );
+      const proceed = await confirmOverdue();
       if (!proceed) return;
     }
     if (!isWholesale && grandRemaining > 0 && !customerName.trim()) {
@@ -1378,10 +1493,11 @@ export default function WholesaleBillingUI() {
           // shop's own recorded Sale.gstAmount.
           gst_percent: item.gstPercent,
           hsn_code: item.hsnCode,
-          // Which physical lot this line was pinned to (see addToCart's lot
-          // picker) — absent for lines added before a product ever had more
-          // than one live lot, which keeps drawing stock via automatic FIFO.
           batch_id: (item as any).batchId || undefined,
+          batch_number: item.batchNumber || undefined,
+          expiry_date: item.expiryDate ? String(item.expiryDate).slice(0, 10) : undefined,
+          serial_number: item.serialNumber || undefined,
+          warranty_days: item.warrantyDays || undefined,
         })),
         ...chargeItems,
       ];
@@ -1501,6 +1617,12 @@ export default function WholesaleBillingUI() {
       };
       setLastBill(billData);
 
+      if (!isOfflineBill) {
+        // Revalidate products so the Products & Stock pages reflect the sale's
+        // stock deduction without requiring a manual page refresh.
+        invalidateProductCaches();
+      }
+
       clearCart();
       // Local Udyog-only state the shared engine's clearCart() doesn't know about.
       setSelectedParty(null);
@@ -1578,9 +1700,9 @@ export default function WholesaleBillingUI() {
 
 
   return (
-    <div className="min-h-[calc(100vh-80px)] lg:h-[calc(100vh-80px)] flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
+    <div className="min-h-[calc(100vh-80px)] md:h-[calc(100vh-80px)] flex flex-col md:flex-row gap-3 overflow-y-auto md:overflow-hidden">
       {/* LEFT PANEL: Search & Cart Table */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 lg:overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 md:overflow-hidden">
         
         {/* Top Bar: Search & Scanner */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap gap-3 items-center">
@@ -1673,184 +1795,441 @@ export default function WholesaleBillingUI() {
             />
           )}
           {(nonLiquorCartItems.length > 0 || liquorCartLines.length === 0) && (
-          <div className="rounded-xl border-2 border-slate-300 dark:border-slate-700 overflow-hidden">
-          <table className="w-full text-left text-sm whitespace-nowrap border-collapse">
-            <thead className="sticky top-0 bg-slate-800 dark:bg-slate-900 text-white shadow-sm z-10">
-              <tr className="divide-x divide-slate-600">
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">#</th>
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
-                {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('ml') || 'ML'}</th>}
-                {bizConfig.hasGender && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('gender') || 'Gender'}</th>}
-                {bizConfig.hasBatch && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('batch') || 'Batch'}</th>}
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('unitCol') || 'Unit'}</th>
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center">{t('qty') || 'Qty'}</th>
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{isMill ? tMill('rateExclGst') : (t('price') || 'Price')}</th>
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right">{t('totalUpper') || 'Total'}</th>
-                <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center">{t('act') || 'Act'}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
+          <>
+            {/* Desktop / Tablet View: Compact table — extra fields inline under product name */}
+            <div className="hidden md:block rounded-xl border-2 border-slate-300 dark:border-slate-700">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead className="sticky top-0 bg-slate-800 dark:bg-slate-900 text-white shadow-sm z-10">
+                  <tr className="divide-x divide-slate-600">
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-10">#</th>
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
+                    {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-16">{t('ml') || 'ML'}</th>}
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-28">{t('qty') || 'Qty'}</th>
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? tMill('rateExclGst') : (t('price') || 'Price')}</th>
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-24">{t('totalUpper') || 'Total'}</th>
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-12">{t('act') || 'Act'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
+                  {nonLiquorCartItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={6 + (bizConfig.hasLiquorSpecs ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
+                        <Scan size={48} className="mx-auto mb-4 opacity-20" />
+                        <p className="text-lg font-medium">{t('cartEmpty')}</p>
+                        <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
+                      </td>
+                    </tr>
+                  ) : nonLiquorCartItems.map((item: any, idx: number) => {
+                    const lineStock = resolveStockForItem(item, products);
+                    const maxQty = lineStock.known ? lineStock.qty : undefined;
+                    const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
+                    const subLineParts = [
+                      item.variant && !bizConfig.hasLiquorSpecs ? item.variant : (item.size || null),
+                      bizConfig.hasGender && item.gender ? item.gender : null,
+                      isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit || null),
+                    ].filter(Boolean);
+                    return (
+                    <tr key={`${item.id}-${item.variant}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
+                      <td className="px-4 py-3 text-slate-400 align-top">{idx + 1}</td>
+                      <td className="px-4 py-3 align-top">
+                        <p className="font-bold text-slate-900 dark:text-white leading-snug">
+                          {item.name}
+                          {(() => {
+                            const mrp = Number(item.mrp) || 0;
+                            if (mrp <= 0 || !(item.price > 0) || item.price >= mrp) return null;
+                            const disc = ((mrp - item.price) / mrp) * 100;
+                            return (
+                              <span
+                                className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold align-middle"
+                                title={`MRP ₹${mrp.toFixed(2)} • Selling ₹${item.price.toFixed(2)}`}
+                              >
+                                {disc.toFixed(disc >= 10 ? 0 : 1)}% off
+                              </span>
+                            );
+                          })()}
+                        </p>
+                        {subLineParts.length > 0 && (
+                          <p className="text-[11px] text-slate-400 mt-0.5">{subLineParts.join(' · ')}</p>
+                        )}
+                        {(() => {
+                          const fields = categoryConfig.attributeSchema.billingDisplayFields;
+                          const attrs = item.categoryAttributes as Record<string, string> | undefined;
+                          if (!fields?.length || !attrs) return null;
+                          const parts = fields.map((k: string) => attrs[k]).filter(Boolean);
+                          if (!parts.length) return null;
+                          return <p className="text-[11px] text-violet-500 dark:text-violet-400 font-medium mt-0.5">{parts.join(' · ')}</p>;
+                        })()}
+                        {atMax && (
+                          <p className="text-[10px] text-amber-500 font-semibold mt-0.5">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
+                        )}
+                        {/* Lot/Batch badge — shown for any item with an assigned lot */}
+                        {(item as any).batchId && (() => {
+                          const pid = String(item.id);
+                          const cachedBatches = batchCacheRef.current.get(pid);
+                          const idx = cachedBatches ? cachedBatches.findIndex((b: any) => b.id === (item as any).batchId) : -1;
+                          const lotLabel = (item as any).batchNumber || (idx >= 0 ? `Lot ${idx + 1}` : 'Lot 1');
+                          const canChange = !cachedBatches || cachedBatches.length > 1;
+                          if (!canChange) {
+                            return (
+                              <div className="mt-1.5">
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-medium text-slate-500">
+                                  {lotLabel}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="mt-1.5">
+                              <button
+                                type="button"
+                                title="Click to change lot"
+                                onClick={async () => {
+                                  let batches = batchCacheRef.current.get(pid);
+                                  if (!batches) {
+                                    try {
+                                      const res = await api.get(`/products/${pid}/batches`);
+                                      batches = Array.isArray(res.data) ? res.data : [];
+                                      batchCacheRef.current.set(pid, batches);
+                                    } catch { batches = []; }
+                                  }
+                                  if (batches.length > 1) {
+                                    const prod = products.find((p: any) => p.id === pid) || { id: pid, name: item.name };
+                                    setBatchSelectionProduct(prod);
+                                    setBatchSelectionVariant(item.variant);
+                                    setBatchSelectionOptions(batches);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-800/30 transition-colors"
+                              >
+                                <span>{lotLabel}</span>
+                                <span className="text-[9px] opacity-60">↕</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
+                        {(showExpiry || showSerial || showWarranty) && (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {showExpiry && (
+                              <label className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5">
+                                <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">Exp</span>
+                                <input
+                                  type="date"
+                                  value={item.expiryDate ? String(item.expiryDate).slice(0, 10) : ''}
+                                  onChange={e => updateExpiryDate(item.id, e.target.value, item.variant)}
+                                  className="bg-transparent outline-none text-[11px] text-slate-700 dark:text-slate-300 min-w-0 w-28"
+                                />
+                              </label>
+                            )}
+                            {showSerial && (
+                              <label className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5">
+                                <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">S/N</span>
+                                <input
+                                  type="text"
+                                  value={item.serialNumber || ''}
+                                  onChange={e => updateSerialNumber(item.id, e.target.value, item.variant)}
+                                  placeholder="—"
+                                  className="bg-transparent outline-none text-[11px] w-20 text-slate-700 dark:text-slate-300 min-w-0"
+                                />
+                              </label>
+                            )}
+                            {showWarranty && (
+                              <label className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5">
+                                <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">Warranty</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.warrantyDays ?? ''}
+                                  onChange={e => updateWarrantyDays(item.id, Number(e.target.value) || 0, item.variant)}
+                                  placeholder="—"
+                                  className="bg-transparent outline-none text-[11px] w-10 text-slate-700 dark:text-slate-300 min-w-0"
+                                />
+                                <span className="text-[10px] text-slate-400">d</span>
+                              </label>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      {bizConfig.hasLiquorSpecs && (
+                        <td className="px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400 align-top">
+                          {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => {
+                              const newQty = item.quantity - (item.is_loose ? 0.5 : 1);
+                              if (newQty <= 0) removeItem(item.id as any, item.variant);
+                              else updateQuantity(item.id as any, newQty, item.variant);
+                            }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
+                              <Minus size={14} />
+                            </button>
+                            <CartQuantityInput item={item} updateQuantity={updateQuantity} removeItem={removeItem} maxQty={maxQty} />
+                            <button
+                              onClick={() => {
+                                const newQty = item.quantity + (item.is_loose ? 0.5 : 1);
+                                if (typeof maxQty === 'number' && newQty > maxQty) return;
+                                updateQuantity(item.id as any, newQty, item.variant);
+                              }}
+                              disabled={atMax}
+                              title={atMax ? (t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`) : undefined}
+                              className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-800"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                          {isDualUnit && dualUnitCfg && (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold whitespace-nowrap">
+                              = {(item.quantity * dualUnitCfg.conversionFactor).toLocaleString('en-IN')} {dualUnitCfg.secondaryUnit}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right align-top">
+                        {isMill
+                          ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
+                          : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono align-top">
+                        ₹{item.total.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center align-top">
+                        <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile View: Dedicated Touch-Friendly Cart Cards */}
+            <div className="md:hidden">
               {nonLiquorCartItems.length === 0 ? (
-                <tr>
-                  <td colSpan={7 + (bizConfig.hasLiquorSpecs ? 1 : 0) + (bizConfig.hasGender ? 1 : 0) + (bizConfig.hasBatch ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
-                    <Scan size={48} className="mx-auto mb-4 opacity-20" />
-                    <p className="text-lg font-medium">{t('cartEmpty')}</p>
-                    <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
-                  </td>
-                </tr>
-              ) : nonLiquorCartItems.map((item: any, idx: number) => {
-                const lineStock = resolveStockForItem(item, products);
-                const maxQty = lineStock.known ? lineStock.qty : undefined;
-                const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
-                return (
-                <tr key={`${item.id}-${item.variant}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
-                  <td className="px-4 py-3 text-slate-400">{idx + 1}</td>
-                  <td className="px-4 py-3">
-                    <p className="font-bold text-slate-900 dark:text-white">
-                      {item.name}
-                      {(() => {
-                        const mrp = Number(item.mrp) || 0;
-                        if (mrp <= 0 || !(item.price > 0) || item.price >= mrp) return null;
-                        const disc = ((mrp - item.price) / mrp) * 100;
-                        return (
-                          <span
-                            className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold align-middle"
-                            title={`MRP ₹${mrp.toFixed(2)} • Selling ₹${item.price.toFixed(2)}`}
-                          >
-                            {disc.toFixed(disc >= 10 ? 0 : 1)}% off
-                          </span>
-                        );
-                      })()}
-                    </p>
-                    {item.variant && !bizConfig.hasLiquorSpecs && <p className="text-xs text-slate-500">{item.variant}</p>}
-                    {item.variant && bizConfig.hasLiquorSpecs && item.size && <p className="text-xs text-slate-500">{item.size}</p>}
-                    {atMax && (
-                      <p className="text-[10px] text-amber-500 font-semibold">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
-                    )}
-                  </td>
-                  {bizConfig.hasLiquorSpecs && (
-                    <td className="px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400">
-                      {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
-                    </td>
-                  )}
-                  {bizConfig.hasGender && (
-                    <td className="px-4 py-3 text-xs font-semibold text-violet-600 dark:text-violet-400">
-                      {item.gender || '-'}
-                    </td>
-                  )}
-                  {bizConfig.hasBatch && (
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={item.batchNumber || ''}
-                        onChange={e => updateBatchNumber(item.id, e.target.value, item.variant)}
-                        placeholder={t('batchPlaceholder') || 'Batch #'}
-                        className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5"
-                      />
-                    </td>
-                  )}
-                  <td className="px-4 py-3 text-sm text-slate-400">{item.unit || '-'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => {
-                        const newQty = item.quantity - (item.is_loose ? 0.5 : 1);
-                        if (newQty <= 0) removeItem(item.id as any, item.variant);
-                        else updateQuantity(item.id as any, newQty, item.variant);
-                      }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
-                        <Minus size={14} />
-                      </button>
-                      <CartQuantityInput item={item} updateQuantity={updateQuantity} removeItem={removeItem} maxQty={maxQty} />
-                      <button
-                        onClick={() => {
-                          const newQty = item.quantity + (item.is_loose ? 0.5 : 1);
-                          if (typeof maxQty === 'number' && newQty > maxQty) return;
-                          updateQuantity(item.id as any, newQty, item.variant);
-                        }}
-                        disabled={atMax}
-                        title={atMax ? (t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`) : undefined}
-                        className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-800"
+                <div className="p-8 text-center text-slate-400">
+                  <Scan size={44} className="mx-auto mb-3 opacity-25" />
+                  <p className="text-base font-bold text-slate-700 dark:text-slate-300">{t('cartEmpty')}</p>
+                  <p className="text-xs text-slate-500 mt-1">{t('cartEmptyDesc')}</p>
+                </div>
+              ) : (
+                <div className="space-y-2 p-2">
+                  {nonLiquorCartItems.map((item: any, idx: number) => {
+                    const lineStock = resolveStockForItem(item, products);
+                    const maxQty = lineStock.known ? lineStock.qty : undefined;
+                    const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
+                    const mrp = Number(item.mrp) || 0;
+                    const disc = (mrp > 0 && item.price > 0 && item.price < mrp) ? ((mrp - item.price) / mrp) * 100 : 0;
+
+                    return (
+                      <div
+                        key={`m-${item.id}-${item.variant}`}
+                        className="px-3 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2.5"
                       >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {isMill
-                      ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
-                      : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
-                  </td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono">
-                    ₹{item.total.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
+                        {/* Top: Name & Delete */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2 min-w-0 flex-1">
+                            <span className="text-[10px] font-semibold text-slate-400 mt-0.5 shrink-0 w-4">{idx + 1}.</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm text-slate-900 dark:text-white leading-snug">
+                                {item.name}
+                                {disc > 0 && (
+                                  <span className="ml-1.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                    {disc.toFixed(disc >= 10 ? 0 : 1)}% off
+                                  </span>
+                                )}
+                              </p>
+                              {(() => {
+                                const mParts = [
+                                  item.variant || null,
+                                  isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit || null),
+                                ].filter(Boolean);
+                                return mParts.length > 0
+                                  ? <p className="text-[11px] text-slate-400 mt-0.5">{mParts.join(' · ')}</p>
+                                  : null;
+                              })()}
+                              {atMax && <p className="text-[10px] text-amber-500 font-medium mt-0.5">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => removeItem(item.id as any, item.variant)}
+                            className="p-1 text-slate-300 hover:text-red-500 transition-colors shrink-0"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {/* Lot badge — shown for any item with an assigned lot (mobile card view) */}
+                        {(item as any).batchId && (() => {
+                          const pid = String(item.id);
+                          const cachedBatches = batchCacheRef.current.get(pid);
+                          const idx = cachedBatches ? cachedBatches.findIndex((b: any) => b.id === (item as any).batchId) : -1;
+                          const lotLabel = (item as any).batchNumber || (idx >= 0 ? `Lot ${idx + 1}` : 'Lot 1');
+                          const canChange = !cachedBatches || cachedBatches.length > 1;
+                          if (!canChange) {
+                            return (
+                              <div className="mt-1.5 mb-1">
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-medium text-slate-500">
+                                  {lotLabel}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="mt-1.5 mb-1">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  let batches = batchCacheRef.current.get(pid);
+                                  if (!batches) {
+                                    try {
+                                      const res = await api.get(`/products/${pid}/batches`);
+                                      batches = Array.isArray(res.data) ? res.data : [];
+                                      batchCacheRef.current.set(pid, batches);
+                                    } catch { batches = []; }
+                                  }
+                                  if (batches.length > 1) {
+                                    const prod = products.find((p: any) => p.id === pid) || { id: pid, name: item.name };
+                                    setBatchSelectionProduct(prod);
+                                    setBatchSelectionVariant(item.variant);
+                                    setBatchSelectionOptions(batches);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors"
+                              >
+                                <span>{lotLabel}</span>
+                                <span className="text-[9px] opacity-60">↕</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
+                        {/* Inline editable fields: Expiry / Serial / Warranty */}
+                        {(showExpiry || showSerial || showWarranty) && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {showExpiry && (
+                              <label className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5">
+                                <span className="text-[10px] text-slate-400 whitespace-nowrap">Exp</span>
+                                <input type="date" value={item.expiryDate ? String(item.expiryDate).slice(0, 10) : ''} onChange={e => updateExpiryDate(item.id, e.target.value, item.variant)}
+                                  className="bg-transparent outline-none text-[11px] w-24 text-slate-700 dark:text-slate-300" />
+                              </label>
+                            )}
+                            {showSerial && (
+                              <label className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5">
+                                <span className="text-[10px] text-slate-400 whitespace-nowrap">S/N</span>
+                                <input type="text" value={item.serialNumber || ''} onChange={e => updateSerialNumber(item.id, e.target.value, item.variant)} placeholder="—"
+                                  className="bg-transparent outline-none text-[11px] w-16 text-slate-700 dark:text-slate-300" />
+                              </label>
+                            )}
+                            {showWarranty && (
+                              <label className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5">
+                                <span className="text-[10px] text-slate-400 whitespace-nowrap">Warranty</span>
+                                <input type="number" min={0} value={item.warrantyDays ?? ''} onChange={e => updateWarrantyDays(item.id, Number(e.target.value) || 0, item.variant)} placeholder="—"
+                                  className="bg-transparent outline-none text-[11px] w-8 text-slate-700 dark:text-slate-300" />
+                                <span className="text-[10px] text-slate-400">d</span>
+                              </label>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Rate & Qty row */}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[10px] text-slate-400 mb-0.5">{isMill ? tMill('rateExclGst') : (t('price') || 'Rate')}</span>
+                            {isMill
+                              ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
+                              : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
+                          </div>
+
+                          <div className="flex flex-col items-end shrink-0">
+                            <span className="text-[10px] text-slate-400 mb-0.5">{t('qty') || 'Qty'}</span>
+                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5">
+                              <button
+                                onClick={() => {
+                                  const newQty = item.quantity - (item.is_loose ? 0.5 : 1);
+                                  if (newQty <= 0) removeItem(item.id as any, item.variant);
+                                  else updateQuantity(item.id as any, newQty, item.variant);
+                                }}
+                                className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-red-600 transition-colors"
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <CartQuantityInput item={item} updateQuantity={updateQuantity} removeItem={removeItem} maxQty={maxQty} />
+                              <button
+                                onClick={() => {
+                                  const newQty = item.quantity + (item.is_loose ? 0.5 : 1);
+                                  if (typeof maxQty === 'number' && newQty > maxQty) return;
+                                  updateQuantity(item.id as any, newQty, item.variant);
+                                }}
+                                disabled={atMax}
+                                className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-emerald-600 transition-colors disabled:opacity-40"
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
+                            {isDualUnit && dualUnitCfg && (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 whitespace-nowrap">
+                                = {(item.quantity * dualUnitCfg.conversionFactor).toLocaleString('en-IN')} {dualUnitCfg.secondaryUnit}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Total row */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                          {atMax ? (
+                            <span className="text-[10px] text-amber-500 font-medium">{t('onlyXInStock', {count: maxQty}) || `Max ${maxQty} in stock`}</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Total</span>
+                          )}
+                          <span className="text-sm font-semibold text-slate-900 dark:text-white tabular-nums">
+                            ₹{item.total.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
           )}
         </div>
-        {/* Mill Billing: commercial charges (NOT cart lines) — below the cart */}
-        {isMill && (
-          <MillCommercialCharges
-            values={millCharges}
-            onChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
-            error={millChargesParsed.error}
-            disabled={isGenerating}
-          />
-        )}
-        {isMill && (
-          <div className="mt-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"><BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} /></div>
-        )}
       </div>
 
-      {/* RIGHT PANEL: Summary & Action */}
-      {/* lg:min-h-0 lets this column actually shrink to the row's height
-          instead of pushing past it — a flex item's default min-height is
-          "auto" (its content size), which silently defeats overflow/scroll
-          on the card below it. Without this, the desktop layout's outer
-          lg:overflow-hidden just clips whatever doesn't fit — usually the
-          Checkout button — with no way to reach it. Mobile never hit this
-          because it uses page-level scroll (overflow-y-auto) instead. */}
-      <div className="w-full md:w-80 flex flex-col gap-4 lg:min-h-0">
-        {/* Customer Type Toggle */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-4">
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">{t('pricingMode') || 'Pricing Mode'}</label>
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-            <button
-              onClick={() => setIsWholesale(true)}
-              className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-all", isWholesale ? "bg-white dark:bg-slate-700 shadow text-emerald-600 dark:text-emerald-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
-            >
-              {t('wholesale') || 'Wholesale'}
-            </button>
-            <button
-              onClick={() => setIsWholesale(false)}
-              className={cn("flex-1 py-2 text-sm font-bold rounded-lg transition-all", !isWholesale ? "bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
-            >
-              {t('retail') || 'Retail'}
-            </button>
+      {/* RIGHT PANEL: Unified Summary Card */}
+      <div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col flex-1 md:min-h-0 md:overflow-hidden">
+
+          {/* Pricing Mode */}
+          <div className="px-4 pt-3 pb-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{t('pricingMode') || 'Pricing Mode'}</p>
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+              <button
+                onClick={() => setIsWholesale(true)}
+                className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", isWholesale ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300")}
+              >
+                {t('wholesale') || 'Wholesale'}
+              </button>
+              <button
+                onClick={() => setIsWholesale(false)}
+                className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", !isWholesale ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300")}
+              >
+                {t('retail') || 'Retail'}
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Summary Card */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 shrink-0">{t('orderSummary')}</h2>
-
-          {/* Billing type: Non-GST (default) or GST tax invoice */}
-          <div className="mb-4 shrink-0">
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+          {/* Bill Type */}
+          <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
               <button
                 type="button"
                 onClick={() => setBillType('non_gst')}
                 aria-pressed={!isGstBill}
-                className={cn('py-2 rounded-lg text-xs font-bold transition-all', !isGstBill ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
+                className={cn('flex-1 py-1.5 rounded-md text-xs font-semibold transition-all', !isGstBill ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400')}
               >
-                {t('nonGstInvoice') || 'Non-GST Invoice'}
+                {t('nonGstInvoice') || 'Non-GST'}
               </button>
               <button
                 type="button"
@@ -1858,25 +2237,34 @@ export default function WholesaleBillingUI() {
                 disabled={isMill && dupRestrictionActive}
                 title={isMill && dupRestrictionActive ? tMill('duplicateLocked') : undefined}
                 aria-pressed={isGstBill}
-                className={cn('py-2 rounded-lg text-xs font-bold transition-all', isGstBill ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500')}
+                className={cn('flex-1 py-1.5 rounded-md text-xs font-semibold transition-all', isGstBill ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400')}
               >
                 {t('gstInvoice') || 'GST Invoice'}
               </button>
             </div>
             {isGstBill && (
-              <label className="flex items-center gap-2 mt-2 text-xs text-slate-500 cursor-pointer select-none">
-                <input type="checkbox" checked={gstInterState} onChange={e => setGstInterState(e.target.checked)} className="accent-indigo-500" />
+              <label className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 cursor-pointer select-none">
+                <input type="checkbox" checked={gstInterState} onChange={e => setGstInterState(e.target.checked)} className="accent-slate-600" />
                 {t('interStateIgst') || 'Inter-state sale (IGST)'}
               </label>
             )}
           </div>
 
+          {/* Scrollable totals area */}
           {isMill ? (
-            <div className="space-y-3 flex-1 lg:overflow-y-auto lg:min-h-0">
+            <div className="flex-1 md:overflow-y-auto md:min-h-0 px-4 py-3 space-y-3">
               <p className="text-[11px] text-slate-500 dark:text-slate-400">{tMill('gstAddedOnTop')}</p>
               {dupRestrictionActive && (
                 <p data-testid="mill-dup-note" className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-2 py-1.5">{tMill('duplicateLocked')}</p>
               )}
+              {/* Commercial charges & broker — right panel keeps left panel clear for cart */}
+              <MillCommercialCharges
+                values={millCharges}
+                onChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
+                error={millChargesParsed.error}
+                disabled={isGenerating}
+              />
+              <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
               <MillTotalsSummary
                 calc={millCalc}
                 itemsCount={items.length}
@@ -1886,82 +2274,75 @@ export default function WholesaleBillingUI() {
               />
             </div>
           ) : (
-          <div className="space-y-3 flex-1 lg:overflow-y-auto lg:min-h-0">
-            <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
+          <div className="flex-1 md:overflow-y-auto md:min-h-0 px-4 py-3 space-y-0">
+
+            {/* Line items */}
+            <div className="flex justify-between items-center py-1.5 text-sm text-slate-600 dark:text-slate-400">
               <span>{t('itemsCount', { count: items.length })}</span>
-              <span>₹{subtotal.toLocaleString()}</span>
+              <span className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">₹{subtotal.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 items-center">
+            <div className="flex justify-between items-center py-1.5 text-sm text-slate-600 dark:text-slate-400">
               <span>{t('discount')}</span>
               <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
-            
-            {/* GST tax summary — prices are GST-inclusive, so this breaks the same
-                total into taxable + tax. Shown even at 0% so a GST bill always
-                looks like one, regardless of business type or whether GST
-                rates have been set on the products yet. */}
+
+            {/* GST breakdown */}
             {isGstBill && items.length > 0 && (
-              <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/5 p-3 space-y-1.5 text-xs mt-3">
-                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
+                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 py-0.5">
                   <span>{t('taxableValue') || 'Taxable Value'}</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.taxable.toLocaleString('en-IN')}</span>
+                  <span className="tabular-nums">₹{gst.taxable.toLocaleString('en-IN')}</span>
                 </div>
                 {gstInterState ? (
-                  <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>IGST</span><span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.igst.toLocaleString('en-IN')}</span></div>
+                  <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 py-0.5"><span>IGST</span><span className="tabular-nums">₹{gst.igst.toLocaleString('en-IN')}</span></div>
                 ) : (
                   <>
-                    <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>CGST</span><span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.cgst.toLocaleString('en-IN')}</span></div>
-                    <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>SGST</span><span className="font-semibold text-slate-700 dark:text-slate-300">₹{gst.sgst.toLocaleString('en-IN')}</span></div>
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 py-0.5"><span>CGST</span><span className="tabular-nums">₹{gst.cgst.toLocaleString('en-IN')}</span></div>
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 py-0.5"><span>SGST</span><span className="tabular-nums">₹{gst.sgst.toLocaleString('en-IN')}</span></div>
                   </>
                 )}
-                <div className="flex justify-between pt-1 border-t border-indigo-200/60 dark:border-indigo-500/20 font-bold text-indigo-600 dark:text-indigo-400">
+                <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 pt-1 border-t border-slate-100 dark:border-slate-800">
                   <span>{t('totalGst') || 'Total GST'}</span>
-                  <span>₹{gst.totalGst.toLocaleString('en-IN')}</span>
+                  <span className="tabular-nums">₹{gst.totalGst.toLocaleString('en-IN')}</span>
                 </div>
               </div>
             )}
 
-
-            <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex justify-between items-end">
-                <span className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('totalPayable')}</span>
-                <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight">
-                  ₹{total.toLocaleString()}
-                </span>
+            {/* Totals block */}
+            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 space-y-1.5">
+              <div className="flex justify-between items-baseline">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{t('totalPayable')}</span>
+                <span className="text-xl font-bold text-slate-900 dark:text-white tabular-nums">₹{total.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{t('collectedAmount') || 'Collected'}</span>
-                <span className="text-lg font-bold text-slate-900 dark:text-white font-mono">
-                  ₹{collectedAmount.toLocaleString()}
-                </span>
+              <div className="flex justify-between items-baseline text-sm text-slate-600 dark:text-slate-400">
+                <span>{t('collectedAmount') || 'Collected'}</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">₹{collectedAmount.toLocaleString()}</span>
               </div>
               {remainingAmount > 0 && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-bold text-orange-400">{t('remainingUdhar') || 'Remaining (Udhar)'}</span>
-                  <span className="text-lg font-black text-orange-500 font-mono">
-                    ₹{remainingAmount.toLocaleString()}
-                  </span>
+                <div className="flex justify-between items-baseline text-sm">
+                  <span className="text-slate-500">{t('remainingUdhar') || 'Remaining (Udhar)'}</span>
+                  <span className="font-semibold text-orange-600 dark:text-orange-400 tabular-nums">₹{remainingAmount.toLocaleString()}</span>
                 </div>
               )}
               {collectedAmount > total && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-bold text-blue-400">{t('changeReturn') || 'Change Return'}</span>
-                  <span className="text-lg font-black text-blue-500 font-mono">
-                    ₹{(collectedAmount - total).toLocaleString()}
-                  </span>
+                <div className="flex justify-between items-baseline text-sm">
+                  <span className="text-slate-500">{t('changeReturn') || 'Change Return'}</span>
+                  <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">₹{(collectedAmount - total).toLocaleString()}</span>
                 </div>
               )}
             </div>
           </div>
           )}
 
-          <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800 shrink-0">
+          {/* Checkout button */}
+          <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
             <button
               disabled={items.length === 0}
               onClick={() => setShowCheckout(true)}
-              className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 disabled:opacity-40 text-white rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
             >
-              {t('checkout') || 'Checkout'} <span className="text-xs bg-emerald-600/50 px-1.5 py-0.5 rounded ml-1">F2</span>
+              {t('checkout') || 'Checkout'}
+              <span className="text-[10px] bg-white/20 dark:bg-slate-900/20 px-1.5 py-0.5 rounded font-mono">F2</span>
             </button>
           </div>
         </div>
@@ -2071,22 +2452,50 @@ export default function WholesaleBillingUI() {
         </div>
       )}
 
+      {/* Overdue-party inline confirmation — replaces window.confirm so it works in all browser contexts. */}
+      {overdueConfirmPending && selectedParty && partyCreditHealth && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle size={24} className="text-orange-500" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white text-center mb-1">Overdue Balance</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 text-center mb-4">
+              <strong>{selectedParty.name}</strong> has{' '}
+              {partyCreditHealth.overdueInvoicesCount} overdue bill{partyCreditHealth.overdueInvoicesCount > 1 ? 's' : ''}{' '}
+              — ₹{partyCreditHealth.overdueAmount.toLocaleString('en-IN')} pending
+              {partyCreditHealth.oldestOverdueDays ? `, oldest ${partyCreditHealth.oldestOverdueDays}d past due` : ''}.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => { setOverdueConfirmPending(false); overdueConfirmResolveRef.current?.(false); }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                Cancel
+              </button>
+              <button onClick={() => { setOverdueConfirmPending(false); overdueConfirmResolveRef.current?.(true); }}
+                className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold">
+                Bill Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Checkout Modal */}
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
-          <div className="relative w-full max-w-md max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-emerald-50 dark:bg-emerald-900/20 shrink-0">
-              <h3 className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                <CreditCard size={20} /> {t('checkout') || 'Checkout'}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowCheckout(false)} />
+          <div className="relative w-full max-w-md max-h-[90vh] bg-white dark:bg-slate-900 rounded-xl shadow-xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-700">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center shrink-0">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <CreditCard size={16} className="text-slate-400" /> {t('checkout') || 'Checkout'}
               </h3>
-              <button onClick={() => setShowCheckout(false)} className="text-emerald-600/50 hover:text-emerald-700 dark:hover:text-emerald-300"><X size={20} /></button>
+              <button onClick={() => setShowCheckout(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"><X size={18} /></button>
             </div>
 
             {/* Payment Method + Party grew this form well past a typical
                 viewport height — needs its own scroll region so the Charges
                 section and Confirm Order button at the bottom stay reachable. */}
-            <form onSubmit={handleCheckout} className="p-6 space-y-5 overflow-y-auto flex-1">
+            <form onSubmit={handleCheckout} className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
               {/* Invoice type — asked explicitly here, the last step before the bill
                   is generated, so it's never skipped by scrolling past the summary. */}
               <div>
@@ -2131,7 +2540,7 @@ export default function WholesaleBillingUI() {
                   </label>
                   <input
                     type="text"
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-all"
                     value={customerName}
                     onChange={e => { setCustomerName(e.target.value); setShowUdharDropdown(true); }}
                     onFocus={() => setShowUdharDropdown(true)}
@@ -2187,7 +2596,7 @@ export default function WholesaleBillingUI() {
                     </label>
                     <input
                       type="text"
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-all"
                       value={customerAddress}
                       onChange={e => setCustomerAddress(e.target.value)}
                       placeholder={t('cityAddressPlaceholder') || 'e.g. Pune, or full address'}
@@ -2201,11 +2610,11 @@ export default function WholesaleBillingUI() {
                   <span className="text-red-500 ml-1">*</span>
                 </label>
                 {selectedParty ? (
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <Building2 size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 text-sm">
+                          <Building2 size={13} className="text-slate-400 shrink-0" />
                           <span className="truncate">{selectedParty.name}</span>
                         </div>
                         {selectedParty.gst && <div className="text-[11px] text-slate-500 mt-0.5">GSTIN: {selectedParty.gst}</div>}
@@ -2252,7 +2661,7 @@ export default function WholesaleBillingUI() {
                   <>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                      <input className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
+                      <input className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-all"
                         value={partySearch}
                         onChange={e => { setPartySearch(e.target.value); setShowPartyDropdown(true); }}
                         onFocus={() => setShowPartyDropdown(true)}
@@ -2292,20 +2701,20 @@ export default function WholesaleBillingUI() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1 block">{t('mobileLabel') || 'Mobile'}</label>
-                  <input type="tel" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
+                  <input type="tel" className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-all"
                     value={customerMobile} onChange={e => setCustomerMobile(e.target.value)} placeholder={t('waPlaceholder') || "WhatsApp number for bill"} />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1 block">{t('emailLabel') || 'Email'}</label>
-                  <input type="email" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
+                  <input type="email" className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-all"
                     value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder={t('emailPlaceholder') || "For auto email bill receipt"} />
                 </div>
               </div>
 
               {/* Payment Method */}
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 block text-center">
-                  {t('paymentMethod') || 'Payment Method'} (Total: ₹{grandTotal.toLocaleString()})
+                <label className="text-[11px] font-medium text-slate-400 mb-2.5 block text-center uppercase tracking-wider">
+                  {t('paymentMethod') || 'Payment Method'} · ₹{grandTotal.toLocaleString()}
                 </label>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {([
@@ -2321,10 +2730,10 @@ export default function WholesaleBillingUI() {
                       type="button"
                       onClick={() => setPaymentMethod(key)}
                       className={cn(
-                        'flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border text-[11px] font-bold transition-all',
+                        'flex flex-col items-center justify-center gap-1 py-2.5 rounded-lg border text-[11px] font-semibold transition-all',
                         paymentMethod === key
-                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-300'
+                          ? 'bg-slate-900 border-slate-900 text-white dark:bg-white dark:border-white dark:text-slate-900 shadow-sm'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500'
                       )}
                     >
                       <Icon size={16} />
@@ -2339,7 +2748,7 @@ export default function WholesaleBillingUI() {
                   <div className="space-y-3 mb-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('receivedAmount') || 'Received Amount'}</label>
-                      <input type="number" min={0} max={grandTotal} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                      <input type="number" min={0} max={grandTotal} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none font-mono font-semibold text-slate-900 dark:text-white"
                         value={collectedAmount === 0 ? '' : collectedAmount} placeholder="0"
                         onChange={e => {
                           const val = e.target.value === '' ? 0 : Math.max(0, Math.min(grandTotal, Number(e.target.value)));
@@ -2351,7 +2760,7 @@ export default function WholesaleBillingUI() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('upiApp') || 'UPI App'}</label>
-                          <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <select className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={upiApp} onChange={e => setUpiApp(e.target.value)}>
                             <option value="">{t('select') || 'Select'}</option>
                             <option value="Google Pay">Google Pay</option>
@@ -2363,7 +2772,7 @@ export default function WholesaleBillingUI() {
                         </div>
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('transactionId') || 'Transaction ID'}</label>
-                          <input className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={upiTxnId} onChange={e => setUpiTxnId(e.target.value)} placeholder="UTR / Ref no." />
                         </div>
                       </div>
@@ -2372,12 +2781,12 @@ export default function WholesaleBillingUI() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('bank') || 'Bank'}</label>
-                          <input className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={bankName} onChange={e => setBankName(e.target.value)} placeholder="e.g. HDFC" />
                         </div>
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('referenceNo') || 'Reference No.'}</label>
-                          <input className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={bankRefNo} onChange={e => setBankRefNo(e.target.value)} placeholder="UTR" />
                         </div>
                       </div>
@@ -2386,17 +2795,17 @@ export default function WholesaleBillingUI() {
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('chequeNo') || 'Cheque No.'}</label>
-                          <input className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={chequeNo} onChange={e => setChequeNo(e.target.value)} />
                         </div>
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('chequeDate') || 'Cheque Date'}</label>
-                          <input type="date" className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <input type="date" className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={chequeDate} onChange={e => setChequeDate(e.target.value)} />
                         </div>
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('bank') || 'Bank'}</label>
-                          <input className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                          <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
                             value={chequeBank} onChange={e => setChequeBank(e.target.value)} />
                         </div>
                       </div>
@@ -2410,7 +2819,7 @@ export default function WholesaleBillingUI() {
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
                       {t('cash') || 'Cash'}
                     </label>
-                    <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                    <input type="number" min={0} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none font-mono font-semibold text-slate-900 dark:text-white"
                       value={splitPayments.cash === 0 ? '' : splitPayments.cash} placeholder="0"
                       onChange={e => setSplitPayments(p => ({ ...p, cash: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
                   </div>
@@ -2418,7 +2827,7 @@ export default function WholesaleBillingUI() {
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
                       {t('upi') || 'UPI'}
                     </label>
-                    <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                    <input type="number" min={0} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none font-mono font-semibold text-slate-900 dark:text-white"
                       value={splitPayments.upi === 0 ? '' : splitPayments.upi} placeholder="0"
                       onChange={e => setSplitPayments(p => ({ ...p, upi: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
                   </div>
@@ -2426,7 +2835,7 @@ export default function WholesaleBillingUI() {
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
                       {t('bank') || 'Bank'}
                     </label>
-                    <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                    <input type="number" min={0} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none font-mono font-semibold text-slate-900 dark:text-white"
                       value={splitPayments.bank === 0 ? '' : splitPayments.bank} placeholder="0"
                       onChange={e => setSplitPayments(p => ({ ...p, bank: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))} />
                   </div>
@@ -2453,7 +2862,7 @@ export default function WholesaleBillingUI() {
                   <div className="grid grid-cols-2 gap-3 mt-1">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('creditDays') || 'Credit Days'}</label>
-                      <input type="number" min={0} className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-slate-900 dark:text-white"
+                      <input type="number" min={0} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none font-mono font-semibold text-slate-900 dark:text-white"
                         value={creditDays} onChange={e => setCreditDays(Math.max(0, Number(e.target.value) || 0))} />
                     </div>
                     <div>
@@ -2469,8 +2878,8 @@ export default function WholesaleBillingUI() {
               {/* Charges — folded into the invoice as extra line items on save */}
               {!isMill && (
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
-                  <Truck size={15} /> {t('charges') || 'Charges'}
+                <label className="text-[11px] font-medium text-slate-400 mb-2.5 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Truck size={12} /> {t('charges') || 'Charges'}
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   {([
@@ -2481,7 +2890,7 @@ export default function WholesaleBillingUI() {
                   ] as [keyof typeof charges, string][]).map(([key, label]) => (
                     <div key={key}>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{label}</label>
-                      <input type="number" min={0} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-slate-900 dark:text-white"
+                      <input type="number" min={0} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none font-mono text-slate-900 dark:text-white"
                         value={charges[key]} placeholder="0"
                         onChange={e => setCharges(c => ({ ...c, [key]: e.target.value }))} />
                     </div>
@@ -2493,7 +2902,7 @@ export default function WholesaleBillingUI() {
               <button
                 type="submit"
                 disabled={isGenerating}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98] disabled:opacity-70 disabled:active:scale-100 flex justify-center items-center gap-2"
+                className="w-full bg-slate-900 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-semibold py-3 rounded-lg transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 flex justify-center items-center gap-2 text-sm"
               >
                 {isGenerating ? <><Loader2 size={18} className="animate-spin" /> {t('generating') || 'Generating...'}</> : <><CheckCircle size={18} /> {t('confirmOrder') || 'Confirm Order'}</>}
               </button>
@@ -2538,6 +2947,8 @@ export default function WholesaleBillingUI() {
                   bankAccountName={profile.bankAccountName || undefined}
                   bankAccountNumber={profile.bankAccountNumber || undefined}
                   bankIfsc={profile.bankIfsc || undefined}
+                  billingDisplayFields={categoryConfig.attributeSchema.billingDisplayFields}
+                  dualUnitConfig={catSchema.dualUnitConfig}
                   ref={componentRef}
                 />
               </div>
@@ -2577,7 +2988,13 @@ export default function WholesaleBillingUI() {
               {/* Action buttons */}
               <div className="grid grid-cols-3 gap-3">
                 <button
-                  onClick={async () => { if (componentRef.current) await waitForQrCode(componentRef.current, !!profile.upiId); setShowBillModal(false); window.print(); }}
+                  onClick={async () => {
+                    if (componentRef.current) await waitForQrCode(componentRef.current, !!profile.upiId);
+                    // Keep modal in DOM while the browser renders the print layout,
+                    // then close it once the dialog is dismissed.
+                    window.onafterprint = () => { setShowBillModal(false); window.onafterprint = null; };
+                    window.print();
+                  }}
                   className="flex flex-col items-center justify-center gap-1 bg-emerald-500 text-white dark:text-slate-900 py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-sm"
                 >
                   <Printer size={20} /> Print
@@ -2676,79 +3093,239 @@ export default function WholesaleBillingUI() {
         </div>
       )}
 
-      {variantSelectionProduct && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setVariantSelectionProduct(null)} />
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-              <span className="font-bold text-slate-900 dark:text-white">{variantSelectionProduct.name}</span>
-              <button onClick={() => setVariantSelectionProduct(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
-                <X size={22} />
-              </button>
-            </div>
-            <div className="p-5 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {(variantSelectionProduct.variants || []).map((v: any, i: number) => {
-                const key = variantRowKey(v);
-                const stock = Math.max(0, Number(v.stock) || 0);
-                const out = stock <= 0;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={out}
-                    onClick={() => {
-                      setVariantSelectionProduct(null);
-                      addToCart(variantSelectionProduct, key);
-                    }}
-                    className={cn(
-                      "p-3 rounded-xl border text-left transition-colors",
-                      out
-                        ? "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800"
-                        : "border-slate-200 dark:border-slate-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+      {variantSelectionProduct && (() => {
+        const product = variantSelectionProduct;
+        const variants: any[] = product.variants || [];
+        const schema = categoryConfig.attributeSchema;
+        const axes = schema.variantAxes.length > 0 ? schema.variantAxes : null;
+
+        // Helper: get the value of a given axis key from a variant row
+        const getAxisVal = (v: any, key: string) =>
+          key === 'color' ? (v.color ?? '') : key === 'size' ? (v.size ?? '') : (v.extraAttrs?.[key] ?? '');
+
+        // For each axis, collect the distinct non-empty options present in variants
+        const axisOptions: Record<string, string[]> = {};
+        if (axes) {
+          axes.forEach((key: string) => {
+            const vals = [...new Set(variants.map(v => getAxisVal(v, key)).filter(Boolean))];
+            axisOptions[key] = vals as string[];
+          });
+        }
+
+        // Only show axes that actually have values in THIS product's variants.
+        // Footwear schema may have ['color','size'] but a product sold only in
+        // sizes → Color axis has zero options → user can never reach allSelected.
+        const effectiveAxes = axes
+          ? axes.filter((key: string) => (axisOptions[key] || []).length > 0)
+          : null;
+
+        // Find the variant row that exactly matches current selections
+        const matchedVariant = effectiveAxes
+          ? variants.find(v => effectiveAxes.every((key: string) => {
+              const sel = variantPickerSelections[key];
+              return !sel || getAxisVal(v, key) === sel;
+            }) && effectiveAxes.every((key: string) => variantPickerSelections[key]))
+          : null;
+        const allSelected = effectiveAxes ? effectiveAxes.every((key: string) => !!variantPickerSelections[key]) : false;
+        const matchedKey = matchedVariant ? variantRowKey(matchedVariant) : null;
+        const matchedStock = matchedVariant ? Math.max(0, Number(matchedVariant.stock) || 0) : 0;
+        const matchedOut = allSelected && matchedStock <= 0;
+        const matchedPrice = matchedVariant
+          ? (Number(matchedVariant.wholesalePrice) || Number(matchedVariant.sellingPrice) || Number(matchedVariant.mrp) || 0)
+          : 0;
+
+        // Axis label lookup from schema.attributes
+        const getAxisLabel = (key: string) =>
+          schema.attributes.find((a: any) => a.key === key)?.label ?? key;
+
+        // Which options are available given the OTHER axes already selected
+        const availableFor = (axisKey: string): Set<string> => {
+          if (!axes) return new Set();
+          const compatible = variants.filter(v =>
+            axes.every((k: string) => {
+              if (k === axisKey) return true;
+              const sel = variantPickerSelections[k];
+              return !sel || getAxisVal(v, k) === sel;
+            })
+          );
+          return new Set(compatible.map(v => getAxisVal(v, axisKey)).filter(Boolean));
+        };
+
+        const closePicker = () => {
+          setVariantSelectionProduct(null);
+          setVariantPickerSelections({});
+        };
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closePicker} />
+            <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-white block">{product.name}</span>
+                  {product.category && <span className="text-xs text-slate-400">{product.category}</span>}
+                </div>
+                <button onClick={closePicker} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-5">
+                {effectiveAxes ? (
+                  /* ── Dynamic axis picker ─────────────────────────── */
+                  <>
+                    {effectiveAxes.map((axisKey: string) => {
+                      const opts = axisOptions[axisKey] || [];
+                      const available = availableFor(axisKey);
+                      const selected = variantPickerSelections[axisKey];
+                      const label = getAxisLabel(axisKey);
+                      return (
+                        <div key={axisKey}>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                            {label}
+                            {selected && <span className="ml-2 text-emerald-500 normal-case font-semibold tracking-normal">{selected}</span>}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {opts.map(opt => {
+                              const isAvail = available.has(opt);
+                              const isSel = selected === opt;
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  disabled={!isAvail}
+                                  onClick={() => setVariantPickerSelections(prev => ({ ...prev, [axisKey]: isSel ? '' : opt }))}
+                                  className={cn(
+                                    'px-3 py-1.5 rounded-lg border text-sm font-semibold transition-colors',
+                                    isSel
+                                      ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                                      : isAvail
+                                        ? 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                                        : 'opacity-30 cursor-not-allowed border-slate-100 dark:border-slate-800 text-slate-400'
+                                  )}
+                                >
+                                  {axisKey === 'color' && (
+                                    <span
+                                      className="inline-block w-2.5 h-2.5 rounded-full border border-slate-300/60 mr-1.5 align-middle"
+                                      style={{ backgroundColor: opt.toLowerCase() }}
+                                    />
+                                  )}
+                                  {opt}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Matched variant summary */}
+                    {allSelected && (
+                      <div className={cn(
+                        'rounded-xl border p-3 flex items-center justify-between',
+                        matchedOut
+                          ? 'border-rose-200 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800'
+                          : 'border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800'
+                      )}>
+                        <div>
+                          <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                            {effectiveAxes.map((k: string) => variantPickerSelections[k]).filter(Boolean).join(' / ')}
+                          </p>
+                          <p className={cn('text-xs mt-0.5', matchedOut ? 'text-rose-500 font-semibold' : 'text-slate-500')}>
+                            {matchedVariant
+                              ? (matchedOut ? 'Out of stock' : `${matchedStock} in stock`)
+                              : 'No matching variant'}
+                          </p>
+                        </div>
+                        {matchedPrice > 0 && !matchedOut && (
+                          <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">₹{matchedPrice.toFixed(2)}</p>
+                        )}
+                      </div>
                     )}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-sm text-slate-900 dark:text-white">
-                      {v.color && <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: v.color.toLowerCase() }} />}
-                      {[v.color, v.size].filter(Boolean).join(' / ') || `#${i + 1}`}
-                    </div>
-                    <div className={cn("text-xs mt-1", out ? "text-rose-500 font-bold" : "text-slate-500")}>
-                      {out ? 'Out of stock' : `${stock} in stock`}
-                    </div>
-                  </button>
-                );
-              })}
+
+                    <button
+                      type="button"
+                      disabled={!allSelected || !matchedVariant || matchedOut}
+                      onClick={() => {
+                        if (!matchedKey) return;
+                        closePicker();
+                        addToCart(product, matchedKey);
+                      }}
+                      className={cn(
+                        'w-full py-3 rounded-xl font-bold text-sm transition-colors',
+                        allSelected && matchedVariant && !matchedOut
+                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                      )}
+                    >
+                      {!allSelected ? `Select ${effectiveAxes!.map(getAxisLabel).join(' & ')}` : matchedOut ? 'Out of Stock' : 'Add to Cart'}
+                    </button>
+                  </>
+                ) : (
+                  /* ── Fallback: flat grid (no axes configured) ────── */
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {variants.map((v: any, i: number) => {
+                      const key = variantRowKey(v);
+                      const stock = Math.max(0, Number(v.stock) || 0);
+                      const out = stock <= 0;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={out}
+                          onClick={() => { closePicker(); addToCart(product, key); }}
+                          className={cn(
+                            'p-3 rounded-xl border text-left transition-colors',
+                            out
+                              ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800'
+                              : 'border-slate-200 dark:border-slate-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-sm text-slate-900 dark:text-white">
+                            {v.color && <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: v.color.toLowerCase() }} />}
+                            {[v.color, v.size].filter(Boolean).join(' / ') || `#${i + 1}`}
+                          </div>
+                          <div className={cn('text-xs mt-1', out ? 'text-rose-500 font-bold' : 'text-slate-500')}>
+                            {out ? 'Out of stock' : `${stock} in stock`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Lot / Batch Picker — same product/variant can have lots bought at
           different real costs; picking here decides which lot's stock/cost
           this line draws from (sent as batch_id). */}
       {batchSelectionProduct && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} />
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} />
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-xl shadow-xl flex flex-col max-h-[85vh] overflow-hidden border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <div>
-                <span className="font-bold text-slate-900 dark:text-white block">Which lot?</span>
-                <span className="text-xs text-slate-500">{batchSelectionProduct.name}</span>
+                <span className="font-semibold text-slate-900 dark:text-white text-sm block">Change Lot</span>
+                <span className="text-[11px] text-slate-500">
+                  {batchSelectionProduct.name}
+                  {batchSelectionVariant && ` · ${batchSelectionVariant}`}
+                </span>
               </div>
-              <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
-                <X size={22} />
+              <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <X size={18} />
               </button>
             </div>
-            <div className="p-5 overflow-y-auto space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Oldest lot is recommended — sell it first so older stock doesn't sit.</p>
+            <div className="p-3 overflow-y-auto space-y-1.5">
+              <p className="text-[11px] text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit. Profit is calculated from each lot's purchase cost.</p>
               {batchSelectionOptions.map((b, idx) => (
                 <button
                   key={b.id}
                   type="button"
                   onClick={() => {
-                    // The line is already sitting in the cart at the flat
-                    // cost (added optimistically the moment it was first
-                    // clicked) — pin it to the chosen lot's real cost rather
-                    // than adding it again, which would double the quantity.
                     const chosen = batchSelectionProduct; const chosenVariant = batchSelectionVariant;
                     setBatchSelectionProduct(null); setBatchSelectionOptions([]);
                     const gstPercent = Number(chosen.gstPercent ?? chosen.gst_percent ?? 0) || 0;
@@ -2761,19 +3338,19 @@ export default function WholesaleBillingUI() {
                       profit: (linePrice / (1 + gstPercent / 100)) - reconciledCost,
                     });
                   }}
-                  className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-between gap-3"
+                  className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between gap-3"
                 >
                   <div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                       {b.batchNumber || `Lot ${idx + 1}`}
-                      {idx === 0 && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">Recommended</span>}
+                      {idx === 0 && <span className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">FIFO ↑</span>}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {b.quantity} in stock
                       {b.purchaseDate && ` · bought ${new Date(b.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
                     </p>
                   </div>
-                  <span className="text-sm font-black text-slate-900 dark:text-white shrink-0">₹{Number(b.costPrice || 0).toLocaleString('en-IN')}/unit</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white shrink-0 tabular-nums">₹{Number(b.costPrice || 0).toLocaleString('en-IN')}/unit</span>
                 </button>
               ))}
             </div>

@@ -1,24 +1,28 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
 import ModalPortal from '@/components/mill/ModalPortal';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import {
-  Plus, X, Loader2, ArrowRight, CheckCircle2, Factory, Wheat, Package, Percent, Clock, Layers, Search,
+  Plus, X, Loader2, ArrowRight, CheckCircle2, Factory, Wheat, Package, Percent, Clock, Layers, Search, Download, FileText,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { downloadBlob } from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import ProductionStageBuilder, { getProductSmartSuggestions } from './ProductionStageBuilder';
+import StageTimeline from './StageTimeline';
+import StageExecutionPanel from './StageExecutionPanel';
+import DynamicExecutionFields from './DynamicExecutionFields';
 
 // Stage names are the mill's own (rice, wheat, millet … differ). A name is translated only when it happens to be one of these
 // built-in keys; anything the user typed is shown exactly as typed.
 const KNOWN_STAGES = ['cleaning', 'drying', 'shelling', 'polishing', 'packing', 'processing'];
 const stageLabel = (t: any, name: string) => (KNOWN_STAGES.includes(name) ? t(name) : name);
 const DEFAULT_STAGES_TEXT = 'Cleaning, Processing, Packing';
-const OUTPUT_TYPES = ['finished_good', 'by_product', 'rejection'] as const;
+const OUTPUT_TYPES = ['finished_good', 'wip', 'by_product', 'rejection'] as const;
 
 type Stage = {
   id: string; stageName: string; sequence: number;
@@ -30,28 +34,45 @@ type Stage = {
 
 type Batch = {
   id: string; batchNumber: string; status: 'open' | 'in_progress' | 'closed';
+  batchType?: string; rejectionLotId?: string | null;
   currentStage: string; startedAt: string; closedAt: string | null;
   inputKg: number | null; outputKg: number | null; wastageKg: number | null;
   brokenKg: number | null; branKg: number | null; huskKg: number | null; recoveryPct: number | null;
   plannedOutputKg: number | null;
   notes: string | null; outputProductId: string | null;
-  rawLot?: { id: string; lotNumber: string | null; farmerName: string | null; weightKg: number | null; remainingKg?: number | null;
-    moisturePct?: number | null; ratePerKg?: number | null; purchaseDate?: string | null; source?: 'purchase' | 'weighbridge' | 'manual'; sourceRef?: string | null;
+  rawLot?: { id: string; lotNumber: string | null; farmerName: string | null; quantity: number | null; remainingQuantity?: number | null;
+    allocatedKg?: number | null; availableKg?: number | null; consumedKg?: number | null; receivedDate?: string | null;
+    moisturePct?: number | null; ratePerUnit?: number | null; purchaseDate?: string | null; source?: 'purchase' | 'weighbridge' | 'manual'; sourceRef?: string | null;
     product?: { id?: string; name: string } | null; supplier?: { name: string } | null };
   createdAt?: string | null;
   stages: Stage[];
   byProducts?: ByProductRow[];
   outputs?: OutputRow[];
+  jobWorkOrder?: {
+    id: string;
+    orderNumber: string;
+    materialDescription: string;
+    inputWeightKg: number;
+    byproductRetainedByMill: boolean;
+    customer?: { id: string; name: string; mobile?: string | null };
+  } | null;
+  inputLots?: any[];
+  wipLots?: any[];
+  finishedGoodsLots?: any[];
+  byProductLots?: any[];
+  rejectionLots?: any[];
 };
 
 type OutputRow = { id: string; name: string; outputType: string; quantity: number; unit: string; quantityKg: number; outputLotNumber: string | null; notes: string | null; productId: string | null };
-type ByProductRow = { id: string; name: string; quantityKg: number | null; soldKg: number | null; ratePerKg: number | null; product?: { id: string; name: string } | null };
+type ByProductRow = { id: string; name: string; quantityKg: number | null; soldKg: number | null; ratePerUnit: number | null; product?: { id: string; name: string } | null };
 
 type RawLot = {
   id: string; lotNumber: string | null; farmerName: string | null;
-  weightKg: number | null; remainingKg: number | null;
+  quantity: number | null; remainingQuantity: number | null;
+  allocatedKg?: number | null; availableKg?: number | null; consumedKg?: number | null;
   productId?: string | null;
   purchaseDate?: string | null;
+  receivedDate?: string | null;
   source?: 'purchase' | 'weighbridge' | 'manual';
   sourceRef?: string | null;
   product?: { name: string } | null;
@@ -100,6 +121,26 @@ export default function BatchesModule({ mode }: { mode: 'batches' | 'production'
     activeShopId ? ['/mill/raw-lots?status=available', activeShopId] : null,
     ([u]) => fetcher(u),
   );
+  const { mutate: globalMutate } = useSWRConfig();
+
+  // Targeted lot revalidation — only invalidates raw-lots keys, not the entire SWR cache.
+  const mutateAllLots = () => {
+    mutateLots();
+    globalMutate(
+      (key: any) => Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/mill/raw-lots'),
+      undefined,
+      { revalidate: true }
+    );
+  };
+
+  // Optimistic patch: update the SWR batches cache directly from the API response,
+  // avoiding an extra network round-trip for the list re-fetch.
+  const patchBatchInCache = (updated: Batch) => {
+    refetch(
+      (current = []) => current.map(b => (b.id === updated.id ? { ...b, ...updated } : b)),
+      { revalidate: false } // update cache immediately; background revalidation happens via scheduleRevalidateAll
+    );
+  };
   const { data: products = [], mutate: mutateProducts } = useSWR<ProductOption[]>(
     activeShopId ? ['/products', activeShopId] : null,
     ([u]) => fetcher(u),
@@ -226,7 +267,20 @@ export default function BatchesModule({ mode }: { mode: 'batches' | 'production'
                   <td className="px-4 py-2.5 font-black text-slate-900 dark:text-white whitespace-nowrap">{b.batchNumber}</td>
                   <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{b.rawLot?.product?.name || '—'}</td>
                   <td className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">{(b.inputKg || 0).toLocaleString('en-IN')} Kg</td>
-                  <td className="px-3 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-300">{b.rawLot?.lotNumber || '—'}</td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-300">
+                    {b.rawLot?.id ? (
+                      <Link
+                        href={`/raw-material?lot=${b.rawLot.id}` as any}
+                        onClick={e => e.stopPropagation()}
+                        className="text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
+                        title="View Raw Material Lot"
+                      >
+                        {b.rawLot.lotNumber || 'Lot Details'}
+                      </Link>
+                    ) : (
+                      b.rawLot?.lotNumber || '—'
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{b.status === 'closed' && b.outputKg != null ? `${b.outputKg.toLocaleString('en-IN')} Kg` : '—'}</td>
                   <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400">{b.recoveryPct != null ? `${b.recoveryPct}%` : '—'}</td>
                   <td className="px-3 py-2.5"><StatusPill status={b.status} /></td>
@@ -242,7 +296,7 @@ export default function BatchesModule({ mode }: { mode: 'batches' | 'production'
         <ModalPortal><CreateBatchModal
           lots={lots}
           onClose={() => setCreating(false)}
-          onCreated={(id) => { setCreating(false); refetch(); mutateLots(); setSelectedId(id); }}
+          onCreated={(id) => { setCreating(false); refetch(); mutateAllLots(); setSelectedId(id); }}
         /></ModalPortal>
       )}
       {openBatch && (
@@ -251,7 +305,8 @@ export default function BatchesModule({ mode }: { mode: 'batches' | 'production'
           batch={openBatch}
           products={products}
           onClose={() => setSelectedId(null)}
-          onChanged={() => { refetch(); mutateProducts(); mutateLots(); }}
+          onChanged={() => { refetch(); mutateProducts(); mutateAllLots(); }}
+          onBatchUpdated={patchBatchInCache}
         /></ModalPortal>
       )}
     </div>
@@ -289,31 +344,119 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
   lots: RawLot[]; onClose: () => void; onCreated: (id: string) => void;
 }) {
   const t = useTranslations('Mill');
-  const [form, setForm] = useState({ rawLotId: lots[0]?.id || '', inputKg: '', unit: 'kg', plannedOutputKg: '', stages: DEFAULT_STAGES_TEXT, batchNumber: '', notes: '' });
+  const [sourceType, setSourceType] = useState<'raw_lot' | 'job_work'>('raw_lot');
+  const [form, setForm] = useState({ rawLotId: lots[0]?.id || '', inputKg: '', unit: 'kg', plannedOutputKg: '', batchNumber: '', notes: '' });
+  const [jobWorkOrderId, setJobWorkOrderId] = useState<string>('');
+  const [selectedStages, setSelectedStages] = useState<string[]>([]);
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  // The lots list can finish loading after this modal mounts; until the user picks one, the select shows (and we use) the first lot.
+  const [templateLoaded, setTemplateLoaded] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
+
+  // Fetch active Job Work orders
+  const { data: jobWorkOrders = [] } = useSWR<any[]>('/mill/job-work');
+  const activeJwOrders = jobWorkOrders.filter((j: any) => j.status === 'received' || j.status === 'processing');
+
   const rawLotId = form.rawLotId || lots[0]?.id || '';
   const lot = lots.find(l => l.id === rawLotId);
-  const cap = lot?.remainingKg ?? lot?.weightKg ?? 0;
-  // Total on hand of the selected raw material across all its lots (informational — the server re-validates the chosen lot).
-  const materialTotal = lot?.productId ? lots.filter(l => l.productId === lot.productId).reduce((s, l) => s + (l.remainingKg ?? 0), 0) : null;
+  const cap = lot?.availableKg ?? lot?.remainingQuantity ?? lot?.quantity ?? 0;
+  const materialTotal = lot?.productId ? lots.filter(l => l.productId === lot.productId).reduce((s, l) => s + (l.availableKg ?? l.remainingQuantity ?? 0), 0) : null;
+
+  const selectedJw = activeJwOrders.find((j: any) => j.id === jobWorkOrderId);
+
+  // Auto-fill Job Work initial selection
+  useEffect(() => {
+    if (sourceType === 'job_work' && !jobWorkOrderId && activeJwOrders.length > 0) {
+      const first = activeJwOrders[0];
+      setJobWorkOrderId(first.id);
+      setForm(f => ({ ...f, inputKg: String(first.inputWeightKg || '') }));
+      setSelectedStages(getProductSmartSuggestions(first.materialDescription || 'Paddy'));
+    }
+  }, [sourceType, activeJwOrders, jobWorkOrderId]);
+
+  // When selected lot changes (for raw lot source), fetch product stage template or set smart suggestions
+  useEffect(() => {
+    if (sourceType === 'job_work') {
+      if (selectedJw) {
+        setSelectedStages(getProductSmartSuggestions(selectedJw.materialDescription || 'Paddy'));
+      }
+      return;
+    }
+    const productId = lot?.productId;
+    if (!productId) {
+      setTemplateLoaded(false);
+      setSelectedStages(getProductSmartSuggestions(lot?.product?.name));
+      return;
+    }
+    let cancelled = false;
+    setTemplateLoading(true);
+    api.get(`/mill/stage-templates/${productId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const stages: string[] = r.data.stages ?? [];
+        if (stages.length > 0) {
+          setSelectedStages(stages);
+          setTemplateLoaded(true);
+        } else {
+          setSelectedStages(getProductSmartSuggestions(lot?.product?.name));
+          setTemplateLoaded(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedStages(getProductSmartSuggestions(lot?.product?.name));
+          setTemplateLoaded(false);
+        }
+      })
+      .finally(() => { if (!cancelled) setTemplateLoading(false); });
+    return () => { cancelled = true; };
+  }, [lot?.productId, sourceType, selectedJw]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedStages.length === 0) {
+      setError('Please select or add at least one production stage.');
+      return;
+    }
     setSaving(true); setError('');
     try {
-      const res = await api.post('/mill/batches', {
-        rawLotId: rawLotId || null,
-        productId: lot?.productId || undefined,
-        inputQuantity: Number(form.inputKg),
-        unit: form.unit,
-        batchNumber: form.batchNumber.trim() || undefined,
-        plannedOutputKg: form.plannedOutputKg || undefined,
-        stages: form.stages.split(',').map(x => x.trim()).filter(Boolean),
-        notes: form.notes,
-      });
-      onCreated(res.data.id);
+      if (sourceType === 'raw_lot' && saveAsDefault && lot?.productId) {
+        try {
+          await api.put(`/mill/stage-templates/${lot.productId}`, { stages: selectedStages });
+        } catch (err) {
+          // Ignore non-fatal template save error
+        }
+      }
+
+      if (sourceType === 'job_work') {
+        if (!jobWorkOrderId) {
+          setError('Please select an active Job Work order.');
+          return;
+        }
+        const res = await api.post('/mill/batches', {
+          jobWorkOrderId,
+          inputQuantity: Number(form.inputKg),
+          unit: form.unit,
+          batchNumber: form.batchNumber.trim() || undefined,
+          plannedOutputKg: form.plannedOutputKg || undefined,
+          stages: selectedStages,
+          notes: form.notes,
+        });
+        onCreated(res.data.id);
+      } else {
+        const res = await api.post('/mill/batches', {
+          rawLotId: rawLotId || null,
+          productId: lot?.productId || undefined,
+          inputQuantity: Number(form.inputKg),
+          unit: form.unit,
+          batchNumber: form.batchNumber.trim() || undefined,
+          plannedOutputKg: form.plannedOutputKg || undefined,
+          stages: selectedStages,
+          notes: form.notes,
+        });
+        onCreated(res.data.id);
+      }
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToCreate'));
     } finally { setSaving(false); }
@@ -321,39 +464,121 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <h2 className="text-lg font-black">{t('newProductionBatch')}</h2>
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
+          {/* Source Selector: Own Raw Material Lot vs Job Work Order */}
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('rawMaterialLot')}</label>
-            <select
-              value={rawLotId}
-              onChange={e => setForm({ ...form, rawLotId: e.target.value })}
-              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
-              required
-            >
-              {lots.length === 0 && <option value="">{t('noAvailableLots')}</option>}
-              {lots.map(l => (
-                <option key={l.id} value={l.id}>
-                  {l.lotNumber || t('unnamedLot')} | {l.product?.name || 'Raw'} | {(l.remainingKg ?? l.weightKg ?? 0).toLocaleString('en-IN')} Kg {t('avail')} | {t(srcKey(l.source))}
-                  {l.farmerName ? ` | ${l.farmerName}` : ''}{l.purchaseDate ? ` | ${fmtDate(l.purchaseDate)}` : ''}
-                </option>
-              ))}
-            </select>
-            {lot && (
-              <p className="text-[11px] text-slate-500 mt-1">
-                {t('availableInLot', { qty: cap })}{materialTotal != null && lot.product?.name ? ` · ${t('availableMaterial', { name: lot.product.name, qty: materialTotal })}` : ''}
-              </p>
-            )}
-            {lot && !lot.productId && <p className="text-[11px] text-red-500 mt-1">{t('lotNeedsProduct')}</p>}
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Material Source</label>
+            <div className="flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 gap-1">
+              <button
+                type="button"
+                onClick={() => setSourceType('raw_lot')}
+                className={cn(
+                  "flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5",
+                  sourceType === 'raw_lot'
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm border border-slate-200/50 dark:border-slate-700/50"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                )}
+              >
+                🏢 Purchase / Mill Lot
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSourceType('job_work');
+                  if (!jobWorkOrderId && activeJwOrders.length > 0) {
+                    setJobWorkOrderId(activeJwOrders[0].id);
+                    setForm(f => ({ ...f, inputKg: String(activeJwOrders[0].inputWeightKg || '') }));
+                  }
+                }}
+                className={cn(
+                  "flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5",
+                  sourceType === 'job_work'
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm border border-slate-200/50 dark:border-slate-700/50"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                )}
+              >
+                🌾 Job Work (Customer Material)
+              </button>
+            </div>
           </div>
+
+          {sourceType === 'raw_lot' ? (
+            <div>
+              <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('rawMaterialLot')}</label>
+              <select
+                value={rawLotId}
+                onChange={e => setForm({ ...form, rawLotId: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
+                required
+              >
+                {lots.length === 0 && <option value="">{t('noAvailableLots')}</option>}
+                {lots.map(l => (
+                  <option key={l.id} value={l.id}>
+                    {l.lotNumber || t('unnamedLot')} | {l.product?.name || 'Raw'} | {(l.availableKg ?? l.remainingQuantity ?? l.quantity ?? 0).toLocaleString('en-IN')} Kg Available | {t(srcKey(l.source))}
+                    {l.farmerName ? ` | ${l.farmerName}` : ''}{l.receivedDate || l.purchaseDate ? ` | ${fmtDate(l.receivedDate || l.purchaseDate)}` : ''}
+                  </option>
+                ))}
+              </select>
+              {lot && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {t('availableInLot', { qty: cap })}{materialTotal != null && lot.product?.name ? ` · ${t('availableMaterial', { name: lot.product.name, qty: materialTotal })}` : ''}
+                </p>
+              )}
+              {lot && !lot.productId && <p className="text-[11px] text-red-500 mt-1">{t('lotNeedsProduct')}</p>}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Select Job Work Order *</label>
+              <select
+                value={jobWorkOrderId}
+                onChange={e => {
+                  const val = e.target.value;
+                  setJobWorkOrderId(val);
+                  const jw = activeJwOrders.find((j: any) => j.id === val);
+                  if (jw) {
+                    setForm(f => ({ ...f, inputKg: String(jw.inputWeightKg || '') }));
+                  }
+                }}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
+                required
+              >
+                {activeJwOrders.length === 0 && <option value="">No pending Job Work orders</option>}
+                {activeJwOrders.map((j: any) => (
+                  <option key={j.id} value={j.id}>
+                    {j.orderNumber} | {j.customer?.name || 'Customer'} | {j.materialDescription} ({j.inputWeightKg} Kg)
+                  </option>
+                ))}
+              </select>
+              {selectedJw ? (
+                <div className="mt-2 p-3 rounded-xl border border-purple-200 dark:border-purple-800/50 bg-purple-50/50 dark:bg-purple-950/20 text-xs space-y-1">
+                  <div className="flex justify-between font-semibold text-purple-900 dark:text-purple-300">
+                    <span>Customer: {selectedJw.customer?.name || '—'}</span>
+                    <span>Rate: ₹{selectedJw.ratePerKg}/Kg</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Material: {selectedJw.materialDescription}</span>
+                    <span>Received: {selectedJw.inputWeightKg} Kg</span>
+                  </div>
+                  <div className="text-[11px] text-purple-700 dark:text-purple-300 font-medium pt-1 border-t border-purple-100 dark:border-purple-800/30">
+                    🌾 Deal: {selectedJw.byproductRetainedByMill ? 'Mill keeps By-products (Husk/Bran)' : 'Customer receives By-products'}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-amber-600 mt-1">Create an order in Job Work first if none available.</p>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
               {t('inputQuantity')}
-              {lot && <span className="ml-2 font-normal text-slate-400 lowercase">{t('maxKgFromLot', { cap })}</span>}
+              {sourceType === 'raw_lot' && lot && <span className="ml-2 font-normal text-slate-400 lowercase">{t('maxKgFromLot', { cap })}</span>}
+              {sourceType === 'job_work' && selectedJw && <span className="ml-2 font-normal text-purple-600 lowercase">(Total {selectedJw.inputWeightKg} Kg from customer)</span>}
             </label>
             <div className="flex gap-2">
               <input
@@ -379,15 +604,19 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
               placeholder="PB-2026-001"
             />
           </div>
-          <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('processingStages')}</label>
-            <input
-              value={form.stages}
-              onChange={e => setForm({ ...form, stages: e.target.value })}
-              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">{t('processingStagesHint')}</p>
-          </div>
+
+          {/* Configurable Production Stage Workflow Builder */}
+          <ProductionStageBuilder
+            productId={sourceType === 'raw_lot' ? (lot?.productId || undefined) : undefined}
+            productName={sourceType === 'raw_lot' ? (lot?.product?.name || undefined) : (selectedJw?.materialDescription || 'Paddy')}
+            selectedStages={selectedStages}
+            onChange={setSelectedStages}
+            saveAsDefault={saveAsDefault}
+            onSaveAsDefaultChange={setSaveAsDefault}
+            isLoadingTemplate={templateLoading}
+            isTemplateLoaded={templateLoaded}
+          />
+
           <div>
             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('plannedOutputKgOptional')}</label>
             <input
@@ -411,7 +640,7 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
             type="submit"
-            disabled={saving || !rawLotId || !form.inputKg || (lot && !lot.productId)}
+            disabled={saving || (sourceType === 'raw_lot' && (!rawLotId || !form.inputKg || (lot && !lot.productId))) || (sourceType === 'job_work' && (!jobWorkOrderId || !form.inputKg))}
             className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
@@ -432,30 +661,73 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function BatchDetail({ mode, batch, products, onClose, onChanged }: { mode: 'batches' | 'production'; batch: Batch; products: ProductOption[]; onClose: () => void; onChanged: () => void }) {
+
+
+function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated }: {
+  mode: 'batches' | 'production';
+  batch: Batch;
+  products: ProductOption[];
+  onClose: () => void;
+  onChanged: () => void;
+  /** Fast path: patch a single batch in the SWR cache without a full list re-fetch. */
+  onBatchUpdated?: (updated: Batch) => void;
+}) {
   const t = useTranslations('Mill');
   const [saving, setSaving] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+
   const lot = batch.rawLot;
   const patchStage = async (stage: Stage, patch: any) => {
     setSaving(stage.id);
     try {
-      await api.patch(`/mill/batches/${batch.id}/stages/${stage.id}`, patch);
-      onChanged();
+      const res = await api.patch(`/mill/batches/${batch.id}/stages/${stage.id}`, patch);
+      // Use the returned batch to update the cache in-place — avoids a full list re-fetch
+      if (onBatchUpdated) {
+        onBatchUpdated(res.data);
+      } else {
+        onChanged();
+      }
     } catch (err: any) {
       alert(err?.response?.data?.error || t('failedToUpdateStage'));
     } finally { setSaving(null); }
   };
-  // Hand the batch over to Production. Consumes nothing — stock moves only when the batch is finalized.
+
+  /**
+   * Hand the batch to Production: open → in_progress.
+   * Uses optimistic cache patching so the status flips immediately on screen
+   * without waiting for a full list re-fetch.
+   */
   const startProduction = async () => {
     setStarting(true); setStartError('');
     try {
-      await api.post(`/mill/batches/${batch.id}/start`, {});
-      onChanged();
+      const res = await api.post(`/mill/batches/${batch.id}/start`, {});
+      const updated: Batch = res.data;
+      // Fast path: patch only this batch in the SWR list cache, no network round-trip.
+      if (onBatchUpdated) {
+        onBatchUpdated(updated);
+      } else {
+        // Fallback for callers that don't support the fast path.
+        onChanged();
+      }
     } catch (err: any) {
       setStartError(err?.response?.data?.detail || err?.response?.data?.error || t('startFailed'));
     } finally { setStarting(false); }
+  };
+
+  const deleteBatch = async () => {
+    if (!confirm('Cancel and delete this batch? The allocated raw material will be safely released back to available.')) return;
+    setDeleting(true); setDeleteError('');
+    try {
+      await api.delete(`/mill/batches/${batch.id}`);
+      onClose();
+      onChanged();
+    } catch (err: any) {
+      setDeleteError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to delete batch');
+    } finally { setDeleting(false); }
   };
 
   return (
@@ -463,9 +735,14 @@ function BatchDetail({ mode, batch, products, onClose, onChanged }: { mode: 'bat
       <div className="bg-slate-50 dark:bg-slate-900 w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col h-[92vh] sm:h-auto sm:max-h-[92vh]">
         <div className="p-5 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sm:rounded-t-2xl flex items-start justify-between shrink-0">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-black text-slate-900 dark:text-white">{batch.batchNumber}</h2>
               <StatusPill status={batch.status} />
+              {(batch.batchType === 'REPROCESSING' || batch.rejectionLotId) && (
+                <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-full bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300">
+                  REPROCESSING BATCH
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-1">
               {lot?.product?.name && `${lot.product.name} · `}
@@ -473,12 +750,29 @@ function BatchDetail({ mode, batch, products, onClose, onChanged }: { mode: 'bat
               {t('input')} {batch.inputKg || 0} Kg · {t('started')} {new Date(batch.startedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white shrink-0">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <BatchReportButton batchId={batch.id} batchNumber={batch.batchNumber} stages={batch.stages || []} />
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Stage Timeline */}
+          <StageTimeline
+            stages={batch.stages}
+            currentStageId={batch.currentStage}
+            onSelectStage={setSelectedStageId}
+          />
+          {selectedStageId && (
+            <StageExecutionPanel
+              batch={batch}
+              stageId={selectedStageId}
+              products={products}
+              onStageUpdated={onChanged}
+            />
+          )}
           {/* Batch information + raw material (both screens) */}
           <div className="grid sm:grid-cols-2 gap-3" data-testid="batch-info">
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
@@ -486,20 +780,80 @@ function BatchDetail({ mode, batch, products, onClose, onChanged }: { mode: 'bat
               <InfoRow label={t('colBatch')}>{batch.batchNumber}</InfoRow>
               <InfoRow label={t('colDate')}>{fmtDate(batch.startedAt)}</InfoRow>
               <InfoRow label={t('colRawMaterial')}>{lot?.product?.name || '—'}</InfoRow>
-              <InfoRow label={t('colInput')}>{(batch.inputKg || 0).toLocaleString('en-IN')} Kg</InfoRow>
+              <InfoRow label={t('colInput')}>
+                <span>
+                  {(batch.inputKg || 0).toLocaleString('en-IN')} Kg
+                  <span className="ml-1 text-[11px] font-normal text-slate-400">
+                    ({batch.status === 'closed' ? 'Consumed' : 'Allocated / Reserved'})
+                  </span>
+                </span>
+              </InfoRow>
               <InfoRow label={t('colStatus')}><StatusPill status={batch.status} /></InfoRow>
               <InfoRow label={t('createdAt')}>{fmtDate(batch.createdAt || batch.startedAt)}</InfoRow>
               {batch.plannedOutputKg != null && <InfoRow label={t('plannedOutput')}>{batch.plannedOutputKg} Kg</InfoRow>}
               {batch.notes && <InfoRow label={t('notesOptional')}>{batch.notes}</InfoRow>}
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">{t('sectionRawMaterial')}</p>
-              <InfoRow label={t('colLot')}>{lot?.lotNumber || '—'}</InfoRow>
-              <InfoRow label={t('source')}><SourceBadge source={lot?.source} ref_={lot?.sourceRef} /></InfoRow>
-              <InfoRow label={t('vendor')}>{lot?.farmerName || lot?.supplier?.name || '—'}</InfoRow>
-              <InfoRow label={t('lotAvailableNow')}>{lot?.remainingKg != null ? `${lot.remainingKg.toLocaleString('en-IN')} / ${(lot.weightKg ?? 0).toLocaleString('en-IN')} Kg` : '—'}</InfoRow>
-              <InfoRow label={t('rate')}>{lot?.ratePerKg != null ? `₹${lot.ratePerKg}/Kg` : '—'}</InfoRow>
-              <InfoRow label={t('moisture')}>{lot?.moisturePct != null ? `${lot.moisturePct}%` : '—'}</InfoRow>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                {batch.jobWorkOrder ? 'CUSTOMER / JOB WORK MATERIAL' : t('sectionRawMaterial')}
+              </p>
+              {batch.jobWorkOrder ? (
+                <>
+                  <InfoRow label="Job Work Order">
+                    <Link
+                      href={`/job-work` as any}
+                      className="text-purple-600 dark:text-purple-400 hover:underline font-bold font-mono inline-flex items-center gap-1"
+                    >
+                      {batch.jobWorkOrder.orderNumber} →
+                    </Link>
+                  </InfoRow>
+                  <InfoRow label="Customer / Farmer">
+                    {batch.jobWorkOrder.customer?.name || '—'} {batch.jobWorkOrder.customer?.mobile ? `(${batch.jobWorkOrder.customer.mobile})` : ''}
+                  </InfoRow>
+                  <InfoRow label="Customer Material">
+                    {batch.jobWorkOrder.materialDescription} ({batch.jobWorkOrder.inputWeightKg} Kg)
+                  </InfoRow>
+                  <InfoRow label="Byproduct Deal">
+                    <span className={batch.jobWorkOrder.byproductRetainedByMill ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                      {batch.jobWorkOrder.byproductRetainedByMill ? 'Mill keeps By-products' : 'Customer receives By-products'}
+                    </span>
+                  </InfoRow>
+                  <InfoRow label="Material Ownership">
+                    <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                      🌾 Customer-Owned Material
+                    </span>
+                  </InfoRow>
+                </>
+              ) : (
+                <>
+                  <InfoRow label={t('colLot')}>
+                    {lot?.id ? (
+                      <Link
+                        href={`/raw-material?lot=${lot.id}` as any}
+                        className="text-emerald-600 dark:text-emerald-400 hover:underline font-bold font-mono inline-flex items-center gap-1"
+                      >
+                        {lot.lotNumber || 'View Lot Details'} →
+                      </Link>
+                    ) : (
+                      lot?.lotNumber || '—'
+                    )}
+                  </InfoRow>
+                  <InfoRow label={t('source')}><SourceBadge source={lot?.source} ref_={lot?.sourceRef} /></InfoRow>
+                  <InfoRow label={t('vendor')}>{lot?.farmerName || lot?.supplier?.name || '—'}</InfoRow>
+                  <InfoRow label={t('lotAvailableNow')}>
+                    {lot ? (
+                      <span>
+                        <span className="font-bold text-amber-600 dark:text-amber-400">
+                          {(lot.availableKg ?? lot.remainingQuantity ?? 0).toLocaleString('en-IN')} Kg
+                        </span>
+                        <span className="text-slate-400 text-xs font-normal"> / {(lot.quantity ?? 0).toLocaleString('en-IN')} Kg received</span>
+                      </span>
+                    ) : '—'}
+                  </InfoRow>
+                  <InfoRow label={t('rate')}>{lot?.ratePerUnit != null ? `₹${lot.ratePerUnit}/Kg` : '—'}</InfoRow>
+                  <InfoRow label={t('moisture')}>{lot?.moisturePct != null ? `${lot.moisturePct}%` : '—'}</InfoRow>
+                </>
+              )}
             </div>
           </div>
 
@@ -516,6 +870,213 @@ function BatchDetail({ mode, batch, products, onClose, onChanged }: { mode: 'bat
                     {i + 1}. {stageLabel(t, st.stageName)}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* WIP Material Section */}
+          {batch.wipLots && batch.wipLots.length > 0 && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">WIP MATERIAL (WORK IN PROGRESS)</p>
+                <span className="text-xs font-bold text-slate-400">{batch.wipLots.length} Lot(s)</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                      <th className="py-2 px-2">WIP Lot</th>
+                      <th className="py-2 px-2">Product</th>
+                      <th className="py-2 px-2 text-right">Original Qty</th>
+                      <th className="py-2 px-2 text-right">Available Qty</th>
+                      <th className="py-2 px-2">Status</th>
+                      <th className="py-2 px-2">Source Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {batch.wipLots.map((wip: any) => (
+                      <tr key={wip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                        <td className="py-2 px-2 font-mono font-bold text-slate-800 dark:text-slate-200">{wip.lotNumber}</td>
+                        <td className="py-2 px-2 font-medium">{wip.product?.name || 'Intermediate Material'}</td>
+                        <td className="py-2 px-2 text-right font-mono">{wip.quantity} {wip.unit}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">{wip.availableQuantity} {wip.unit}</td>
+                        <td className="py-2 px-2">
+                          <span className={cn(
+                            'px-2 py-0.5 text-[10px] font-bold rounded-full uppercase',
+                            wip.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' :
+                            wip.status === 'PARTIALLY_CONSUMED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300' :
+                            wip.status === 'FULLY_CONSUMED' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400' :
+                            'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300'
+                          )}>
+                            {wip.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-slate-500">{wip.sourceBatchStage?.stageName || 'Stage Output'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Finished Goods Section */}
+          {batch.finishedGoodsLots && batch.finishedGoodsLots.length > 0 && (
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">FINISHED GOODS INVENTORY</p>
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{batch.finishedGoodsLots.length} FG Lot(s)</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                      <th className="py-2 px-2">FG Lot</th>
+                      <th className="py-2 px-2">Product</th>
+                      <th className="py-2 px-2 text-right">Quantity</th>
+                      <th className="py-2 px-2">Godown / Location</th>
+                      <th className="py-2 px-2">Status</th>
+                      <th className="py-2 px-2">Source Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {batch.finishedGoodsLots.map((fg: any) => (
+                      <tr key={fg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                        <td className="py-2 px-2 font-mono font-bold text-emerald-700 dark:text-emerald-300">{fg.lotNumber}</td>
+                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{fg.product?.name || 'Finished Product'}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{fg.quantity} {fg.unit}</td>
+                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{fg.godown?.name || 'Main Stock'}</td>
+                        <td className="py-2 px-2">
+                          <span className={cn(
+                            'px-2 py-0.5 text-[10px] font-bold rounded-full uppercase',
+                            fg.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' :
+                            fg.status === 'PARTIALLY_DISPATCHED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300' :
+                            'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                          )}>
+                            {fg.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName || 'Final Stage'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* By-Products Section */}
+          {batch.byProductLots && batch.byProductLots.length > 0 && (
+            <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">BY-PRODUCTS INVENTORY</p>
+                <span className="text-xs font-bold text-blue-600 dark:text-blue-400">{batch.byProductLots.length} By-Product Lot(s)</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                      <th className="py-2 px-2">Lot</th>
+                      <th className="py-2 px-2">Product</th>
+                      <th className="py-2 px-2 text-right">Quantity</th>
+                      <th className="py-2 px-2 text-right">Available</th>
+                      <th className="py-2 px-2">Godown / Location</th>
+                      <th className="py-2 px-2">Stockable</th>
+                      <th className="py-2 px-2">Source Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {batch.byProductLots.map((bp: any) => (
+                      <tr key={bp.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                        <td className="py-2 px-2 font-mono font-bold text-blue-700 dark:text-blue-300">{bp.lotNumber}</td>
+                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{bp.product?.name || 'By-Product'}</td>
+                        <td className="py-2 px-2 text-right font-mono text-slate-800 dark:text-slate-200">{bp.quantity} {bp.unit}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{bp.availableQuantity} {bp.unit}</td>
+                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{bp.godown?.name || 'Main Stock'}</td>
+                        <td className="py-2 px-2">
+                          <span className={cn('px-2 py-0.5 text-[10px] font-bold rounded-full uppercase', bp.isStockable ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600')}>
+                            {bp.isStockable ? 'Yes' : 'No'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-slate-500">{bp.sourceBatchStage?.stageName || 'Stage Output'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Rejections Section */}
+          {batch.rejectionLots && batch.rejectionLots.length > 0 && (
+            <div className="rounded-xl border border-red-200 dark:border-red-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-red-700 dark:text-red-400">REJECTIONS HOLDING</p>
+                <span className="text-xs font-bold text-red-600 dark:text-red-400">{batch.rejectionLots.length} Rejection Lot(s)</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                      <th className="py-2 px-2">Lot</th>
+                      <th className="py-2 px-2">Product</th>
+                      <th className="py-2 px-2 text-right">Quantity</th>
+                      <th className="py-2 px-2 text-right">Available</th>
+                      <th className="py-2 px-2">Reason</th>
+                      <th className="py-2 px-2">Status</th>
+                      <th className="py-2 px-2">Source Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {batch.rejectionLots.map((rj: any) => (
+                      <tr key={rj.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                        <td className="py-2 px-2 font-mono font-bold text-red-700 dark:text-red-300">{rj.lotNumber}</td>
+                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{rj.product?.name || 'Rejected Material'}</td>
+                        <td className="py-2 px-2 text-right font-mono text-slate-800 dark:text-slate-200">{rj.quantity} {rj.unit}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-red-600 dark:text-red-400">{rj.availableQuantity} {rj.unit}</td>
+                        <td className="py-2 px-2 text-slate-600 dark:text-slate-300">{rj.rejectionReason || 'Quality Failure'}</td>
+                        <td className="py-2 px-2">
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300">
+                            {rj.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-slate-500">{rj.sourceBatchStage?.stageName || 'Stage Output'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Waste / Loss Section */}
+          {batch.outputs && batch.outputs.filter((o: any) => o.outputType === 'WASTE' || o.outputType === 'waste').length > 0 && (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">WASTE / PRODUCTION LOSS</p>
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                  Total: {batch.outputs.filter((o: any) => o.outputType === 'WASTE' || o.outputType === 'waste').reduce((s: number, o: any) => s + (o.quantity || 0), 0)} Kg
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                      <th className="py-2 px-2">Waste Name / Type</th>
+                      <th className="py-2 px-2 text-right">Quantity</th>
+                      <th className="py-2 px-2">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {batch.outputs.filter((o: any) => o.outputType === 'WASTE' || o.outputType === 'waste').map((w: any) => (
+                      <tr key={w.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{w.name || 'Scrap / Loss'}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-amber-600 dark:text-amber-400">{w.quantity} {w.unit || 'kg'}</td>
+                        <td className="py-2 px-2 text-slate-500">{w.notes || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -564,10 +1125,31 @@ function BatchDetail({ mode, batch, products, onClose, onChanged }: { mode: 'bat
                   batchClosed={false}
                   saving={saving === stage.id}
                   onSave={patchStage}
+                  previousStageOutputKg={idx > 0 ? batch.stages[idx - 1].outputKg : null}
+                  batchId={batch.id}
+                  batch={batch}
+                  products={products}
+                  onRefreshBatch={onChanged}
                 />
               ))}
               <FinalizePanel batch={batch} products={products} onDone={onChanged} />
             </>
+          )}
+
+          {/* Cancel / Delete Batch to Release Allocation */}
+          {batch.status !== 'closed' && (
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={deleteBatch}
+                disabled={deleting}
+                className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-900/40 transition-colors flex items-center gap-1.5"
+              >
+                {deleting ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                Cancel Batch & Release Allocation
+              </button>
+              {deleteError && <span className="text-xs text-red-500 font-semibold">{deleteError}</span>}
+            </div>
           )}
         </div>
       </div>
@@ -581,14 +1163,147 @@ const WEIGHT_UNITS = ['kg', 'quintal', 'ton', 'g'];
 const fmtKg = (n: number) => `${Math.round(n * 1000) / 1000}`;
 const toKgClient = (q: number, u: string) => q * ({ kg: 1, g: 0.001, quintal: 100, ton: 1000 } as Record<string, number>)[u];
 
+// Map outputType → millCategory for filtering the product dropdown.
+// finished_good uses null (show all) so the batch's output product is always visible.
+const OUTPUT_TYPE_CATEGORY: Record<string, string | null> = {
+  finished_good: null,        // show all — batch product may not have millCategory set
+  by_product:    'by_product',
+  rejection:     'waste',
+  wip:           null,
+};
+// Map outputType → millCategory when creating a new product on the fly
+const OUTPUT_TYPE_NEW_CATEGORY: Record<string, string> = {
+  finished_good: 'finished_goods',
+  by_product:    'by_product',
+  rejection:     'waste',
+  wip:           'finished_goods',
+};
+
+// Field codes from execution that map to by-product or rejection output types.
+// Add more codes here as new mill workflow templates are created.
+const BY_PRODUCT_EXEC_CODES: Record<string, string> = {
+  bran_byproduct_qty:   'Bran',
+  bran_qty:             'Bran',
+  husk_qty:             'Husk',
+  husk_byproduct_qty:   'Husk',
+  coarse_broken_qty:    'Coarse / Broken',
+  broken_rice_qty:      'Broken Rice',
+  byproduct_qty:        'By-Product',
+  byproduct_1_qty:      'By-Product',
+  byproduct_2_qty:      'By-Product 2',
+  dust_qty:             'Dust',
+  polishing_waste_qty:  'Polishing Waste',
+  stone_qty:            'Stones',
+};
+const REJECTION_EXEC_CODES: Record<string, string> = {
+  rejected_qty:         'Rejection',
+  rejection_qty:        'Rejection',
+  waste_qty:            'Waste',
+  loss_qty:             'Loss',
+};
+
 function FinalizePanel({ batch, products, onDone }: { batch: Batch; products: ProductOption[]; onDone: () => void }) {
   const t = useTranslations('Mill');
-  const [rows, setRows] = useState<OutRow[]>([{ key: 1, outputType: 'finished_good', productId: '', name: '', quantity: '', unit: 'kg', lot: '', notes: '' }]);
-  const [lossKg, setLossKg] = useState('');
+
+  // Pre-populate the first row with the batch's designated output product (if set)
+  const initProductId = batch.outputProductId || '';
+  const initName = products.find(p => p.id === initProductId)?.name || '';
+
+  // Auto-fill quantity from the last completed stage's outputKg (e.g. packed_qty from Packing)
+  const lastCompletedStage = [...(batch.stages || [])].reverse().find((s) => s.completedAt && s.outputKg != null);
+  const autoQty = lastCompletedStage?.outputKg != null ? String(lastCompletedStage.outputKg) : '';
+  const autoLoss = (batch.inputKg != null && lastCompletedStage?.outputKg != null)
+    ? String(Math.max(0, Number(batch.inputKg) - Number(lastCompletedStage.outputKg)))
+    : '';
+
+  const [rows, setRows] = useState<OutRow[]>([{ key: 1, outputType: 'finished_good', productId: initProductId, name: initName, quantity: autoQty, unit: 'kg', lot: '', notes: '' }]);
+  const [lossKg, setLossKg] = useState(autoLoss);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [newFor, setNewFor] = useState<number | null>(null);   // row key that is creating a new product
+  const [newFor, setNewFor] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
+  const byProductsLoaded = useRef(false);
+
+  // Fetch execution fields for all completed stages once on mount and auto-populate by-product / rejection rows.
+  // Quantities for the same fieldCode are SUMMED across stages to avoid duplicate rows.
+  useEffect(() => {
+    if (byProductsLoaded.current) return;
+    byProductsLoaded.current = true;
+    const completedStages = (batch.stages || []).filter((s) => s.completedAt);
+    if (completedStages.length === 0) return;
+
+    const findProduct = (millCat: string, labelHint: string): { id: string; name: string } | null => {
+      const pool = products.filter((p) => p.millCategory === millCat);
+      if (pool.length === 0) return null;
+      const lower = labelHint.toLowerCase();
+      return (
+        pool.find((p) => p.name.toLowerCase() === lower) ||
+        pool.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase())) ||
+        pool[0]
+      );
+    };
+
+    Promise.all(
+      completedStages.map((s) =>
+        api.get(`/mill/batches/${batch.id}/stages/${s.id}/execution`).then((r) => r.data || []).catch(() => [])
+      )
+    ).then((allFieldArrays: any[][]) => {
+      // Aggregate by resolved product identity (product ID or normalized label) — prevents
+      // duplicate rows when multiple field codes resolve to the same by-product (e.g. bran_qty + bran_byproduct_qty → Bran).
+      type AggEntry = { outputType: string; matched: { id: string; name: string } | null; label: string; total: number };
+      const aggregated = new Map<string, AggEntry>();
+
+      for (const fields of allFieldArrays) {
+        for (const f of fields) {
+          const val = Number(f.actualValue);
+          if (isNaN(val) || val <= 0) continue;
+          const code = f.fieldCode as string;
+          const isByProduct = !!BY_PRODUCT_EXEC_CODES[code];
+          const isRejection = !!REJECTION_EXEC_CODES[code];
+          if (!isByProduct && !isRejection) continue;
+
+          const outputType = isByProduct ? 'by_product' : 'rejection';
+          const label = f.fieldLabel || (isByProduct ? BY_PRODUCT_EXEC_CODES[code] : REJECTION_EXEC_CODES[code]);
+          const millCat = isByProduct ? 'by_product' : 'waste';
+          const matched = findProduct(millCat, label);
+          // Key = outputType + product id (if matched) or normalised label — deduplicates across field codes
+          const aggKey = `${outputType}:${matched ? matched.id : label.toLowerCase().replace(/\s+/g, '_')}`;
+
+          const existing = aggregated.get(aggKey);
+          if (existing) {
+            existing.total += val;
+          } else {
+            aggregated.set(aggKey, { outputType, matched, label, total: val });
+          }
+        }
+      }
+
+      const extraRows: OutRow[] = [];
+      let keyCounter = 100;
+      for (const { outputType, matched, label, total } of aggregated.values()) {
+        extraRows.push({
+          key: keyCounter++,
+          outputType,
+          productId: matched?.id || '',
+          name: matched?.name || label,
+          quantity: String(total),
+          unit: 'kg',
+          lot: '',
+          notes: '',
+        });
+      }
+
+      if (extraRows.length > 0) {
+        setRows((prev) => {
+          const merged = [...prev, ...extraRows];
+          const totalOutputs = merged.reduce((s, r) => s + (Number(r.quantity) > 0 ? Number(r.quantity) : 0), 0);
+          setLossKg(String(Math.max(0, Number(batch.inputKg || 0) - totalOutputs)));
+          return merged;
+        });
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batch.id]);
   const [creating, setCreating] = useState(false);
 
   const input = Number(batch.inputKg) || 0;
@@ -606,8 +1321,12 @@ function FinalizePanel({ batch, products, onDone }: { batch: Batch; products: Pr
     if (!name) return;
     setCreating(true); setError('');
     try {
-      const millCategory = row.outputType === 'by_product' ? 'by_product' : 'finished_goods';
-      const res = await api.post('/products', { name, category: millCategory === 'by_product' ? 'By-Products' : 'Finished Goods', millCategory, baseUnit: 'kg', currentStock: 0, sellingPrice: 0 });
+      const millCategory = OUTPUT_TYPE_NEW_CATEGORY[row.outputType] || 'finished_goods';
+      const categoryName =
+        millCategory === 'by_product' ? 'By-Products' :
+        millCategory === 'waste' ? 'Waste / Rejection' :
+        millCategory === 'finished_goods' ? 'Finished Goods' : 'Finished Goods';
+      const res = await api.post('/products', { name, category: categoryName, millCategory, baseUnit: 'kg', currentStock: 0, sellingPrice: 0 });
       setRow(row.key, { productId: res.data.id, name });
       products.push({ id: res.data.id, name, millCategory, baseUnit: 'kg' });
       setNewFor(null); setNewName('');
@@ -632,7 +1351,7 @@ function FinalizePanel({ batch, products, onDone }: { batch: Batch; products: Pr
     } finally { setSaving(false); }
   };
 
-  const canSubmit = rows.length > 0 && rows.every(r => Number(r.quantity) > 0 && (r.outputType !== 'finished_good' || r.productId) && (r.productId || r.name.trim())) && balanced && !saving;
+  const canSubmit = rows.length > 0 && rows.every(r => Number(r.quantity) > 0 && ((r.outputType !== 'finished_good' && r.outputType !== 'wip') || r.productId) && (r.productId || r.name.trim())) && balanced && !saving;
 
   return (
     <div className="rounded-xl border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 p-4 space-y-3" data-testid="finalize-panel">
@@ -654,17 +1373,31 @@ function FinalizePanel({ batch, products, onDone }: { batch: Batch; products: Pr
             </label>
             <label className="block col-span-2">
               <span className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">{t('outputProduct')}</span>
-              <select
-                value={newFor === r.key ? '__new__' : r.productId}
-                onChange={e => {
-                  if (e.target.value === '__new__') { setNewFor(r.key); setNewName(r.name); }
-                  else { setNewFor(null); const p = products.find(x => x.id === e.target.value); setRow(r.key, { productId: e.target.value, name: p?.name || r.name }); }
-                }}
-                className="w-full h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-white dark:bg-slate-950 text-sm">
-                <option value="">{r.outputType === 'finished_good' ? t('selectProduct') : t('notTracked')}</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                <option value="__new__">{t('createNewProduct')}</option>
-              </select>
+              {(() => {
+                const filterCat = OUTPUT_TYPE_CATEGORY[r.outputType];
+                const filtered = filterCat ? products.filter(p => p.millCategory === filterCat) : products;
+                const allCount = products.length;
+                const selectedInFiltered = !r.productId || filtered.some(p => p.id === r.productId);
+                const selectedProduct = !selectedInFiltered ? products.find(p => p.id === r.productId) : null;
+                const showAllFallback = filtered.length < allCount && (r.outputType === 'finished_good' || r.outputType === 'wip');
+                const isOptionalProduct = r.outputType === 'by_product' || r.outputType === 'rejection';
+                return (
+                  <select
+                    value={newFor === r.key ? '__new__' : r.productId}
+                    onChange={e => {
+                      if (e.target.value === '__new__') { setNewFor(r.key); setNewName(r.name); }
+                      else { setNewFor(null); const p = products.find(x => x.id === e.target.value); setRow(r.key, { productId: e.target.value, name: p?.name || r.name }); }
+                    }}
+                    className={`w-full h-9 px-2 border rounded-md bg-white dark:bg-slate-950 text-sm ${!r.productId && !isOptionalProduct ? 'border-amber-400 dark:border-amber-600' : 'border-slate-300 dark:border-slate-700'}`}>
+                    <option value="">{isOptionalProduct ? '— Not tracked as stock (optional) —' : t('selectProduct')}</option>
+                    {selectedProduct && <option key={selectedProduct.id} value={selectedProduct.id}>{selectedProduct.name}</option>}
+                    {filtered.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {showAllFallback && <option disabled>── All Products ──</option>}
+                    {showAllFallback && products.filter(p => !filtered.includes(p) && p.id !== selectedProduct?.id).map(p => <option key={p.id + '_all'} value={p.id}>{p.name}</option>)}
+                    <option value="__new__">{t('createNewProduct')}</option>
+                  </select>
+                );
+              })()}
             </label>
             <div className="flex items-end justify-end">
               {rows.length > 1 && (
@@ -777,34 +1510,29 @@ function ClosedSummary({ batch }: { batch: Batch }) {
   );
 }
 
-function StageCard({ stage, index, isActive, batchClosed, saving, onSave }: {
+function StageCard({ stage, index, isActive, batchClosed, saving, onSave, previousStageOutputKg, batchId, batch, products, onRefreshBatch }: {
   stage: Stage; index: number; isActive: boolean; batchClosed: boolean; saving: boolean;
   onSave: (stage: Stage, patch: any) => void;
+  /** Output kg of the previous stage — used as a suggested input for this stage. */
+  previousStageOutputKg?: number | null;
+  batchId?: string;
+  batch?: any;
+  products?: any[];
+  onRefreshBatch?: () => void;
 }) {
   const t = useTranslations('Mill');
-  const [form, setForm] = useState({
-    inputKg: String(stage.inputKg ?? ''), outputKg: String(stage.outputKg ?? ''),
-    wastageKg: String(stage.wastageKg ?? ''), operatorName: stage.operatorName || '',
-    notes: stage.notes || '',
-    extras: (stage.extras || []).map(e => ({ name: e.name, kg: String(e.kg) })),
-  });
   const isDone = !!stage.completedAt;
-  // The mill's own extra columns for this stage (tukada, kani, bhusa …). The server validates them again.
-  const extrasPayload = form.extras.filter(e => e.name.trim() || e.kg !== '').map(e => ({ name: e.name.trim(), kg: Number(e.kg) }));
-  const extrasKg = form.extras.reduce((a, e) => a + (Number(e.kg) > 0 ? Number(e.kg) : 0), 0);
-  const stageIn = Number(form.inputKg) || 0;
-  const stageLeft = Math.round((stageIn - (Number(form.outputKg) || 0) - (Number(form.wastageKg) || 0) - extrasKg) * 1000) / 1000;
 
   return (
     <div className={cn(
-      'rounded-xl border p-4 space-y-3',
-      isDone ? 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-500/5'
-        : isActive ? 'border-amber-300 dark:border-amber-500/40 bg-amber-50/40 dark:bg-amber-500/5'
+      'rounded-xl border p-4 space-y-4 transition-all',
+      isDone ? 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/20 dark:bg-emerald-500/5'
+        : isActive ? 'border-amber-300 dark:border-amber-500/40 bg-amber-50/20 dark:bg-amber-500/5 shadow-sm ring-1 ring-amber-400/20'
           : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
     )}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={cn('w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
+          <span className={cn('w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shadow-sm',
             isDone ? 'bg-emerald-500 text-white' : isActive ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500')}>
             {isDone ? <CheckCircle2 size={14} /> : index + 1}
           </span>
@@ -821,66 +1549,54 @@ function StageCard({ stage, index, isActive, batchClosed, saving, onSave }: {
           </span>
         )}
       </div>
+
       {!batchClosed && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <NumInput label={t('inputWeightKg')} value={form.inputKg} onChange={v => setForm(f => ({ ...f, inputKg: v }))} />
-            <NumInput label={t('outputKg')} value={form.outputKg} onChange={v => setForm(f => ({ ...f, outputKg: v }))} />
-            <NumInput label={t('wastageKg')} value={form.wastageKg} onChange={v => setForm(f => ({ ...f, wastageKg: v }))} />
-            <TextInput label={t('operatorOptional')} value={form.operatorName} onChange={v => setForm(f => ({ ...f, operatorName: v }))} />
-          </div>
-          <div className="space-y-2" data-testid="stage-extras">
-            {form.extras.map((ex, i) => (
-              <div key={i} className="grid grid-cols-[1fr_7rem_auto] gap-2 items-end">
-                <TextInput label={t('extraName')} value={ex.name} placeholder={t('extraNamePlaceholder')} onChange={v => setForm(f => ({ ...f, extras: f.extras.map((x, j) => j === i ? { ...x, name: v } : x) }))} />
-                <NumInput label="Kg" value={ex.kg} onChange={v => setForm(f => ({ ...f, extras: f.extras.map((x, j) => j === i ? { ...x, kg: v } : x) }))} />
-                <button type="button" onClick={() => setForm(f => ({ ...f, extras: f.extras.filter((_, j) => j !== i) }))} aria-label="Remove"
-                  className="h-9 w-9 flex items-center justify-center rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"><X size={14} /></button>
-              </div>
-            ))}
-            <div className="flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => setForm(f => ({ ...f, extras: [...f.extras, { name: '', kg: '' }] }))}
-                className="text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-emerald-400 text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                <Plus size={12} /> {t('addExtraColumn')}
-              </button>
-              {stageIn > 0 && (
-                <span className={cn('text-[11px] font-semibold', Math.abs(stageLeft) <= 0.005 ? 'text-emerald-600' : stageLeft < 0 ? 'text-red-500' : 'text-slate-500')}>
-                  {stageLeft < -0.005 ? t('stageOver', { qty: Math.abs(stageLeft) }) : t('stageLeft', { qty: stageLeft })}
-                </span>
+        <div className="space-y-4">
+          {/* Dynamic Execution Fields Workflow */}
+          {batchId && (
+            <DynamicExecutionFields
+              batchId={batchId}
+              stageId={stage.id}
+              isReadOnly={batchClosed || isDone}
+              onRefreshBatch={onRefreshBatch || (() => {})}
+              products={products}
+              batch={batch}
+            />
+          )}
+
+          {/* Stage Completion Action Buttons */}
+          <div className="flex gap-2 justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+            {/* Download stage report */}
+            <StageReportButton batchId={batchId!} stageId={stage.id} stageName={stage.stageName} />
+
+            <div className="flex gap-2">
+              {!isDone ? (
+                <button
+                  type="button"
+                  onClick={() => onSave(stage, { completed: true })}
+                  disabled={saving}
+                  className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white flex items-center gap-1.5 shadow transition"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  {t('markAsCompleted')} <ArrowRight size={12} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onSave(stage, { completed: false })}
+                  disabled={saving}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-500/30 transition"
+                >
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : null} Reopen Stage
+                </button>
               )}
             </div>
           </div>
-          <TextInput label={t('notesOptional')} value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} />
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => onSave(stage, { ...form, inputKg: Number(form.inputKg) || null, outputKg: Number(form.outputKg) || null, wastageKg: Number(form.wastageKg) || null, operatorName: form.operatorName || null, notes: form.notes || null, extras: extrasPayload })}
-              disabled={saving}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : t('saveStage')}
-            </button>
-            {!isDone ? (
-              <button
-                onClick={() => onSave(stage, { ...form, inputKg: Number(form.inputKg) || null, outputKg: Number(form.outputKg) || null, wastageKg: Number(form.wastageKg) || null, operatorName: form.operatorName || null, notes: form.notes || null, extras: extrasPayload, completed: true })}
-                disabled={saving || !form.outputKg}
-                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1"
-              >
-                {t('markAsCompleted')} <ArrowRight size={12} />
-              </button>
-            ) : (
-              <button
-                onClick={() => onSave(stage, { ...form, inputKg: Number(form.inputKg) || null, outputKg: Number(form.outputKg) || null, wastageKg: Number(form.wastageKg) || null, operatorName: form.operatorName || null, notes: form.notes || null, extras: extrasPayload, completed: false })}
-                disabled={saving}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-500/30"
-              >
-                Reopen
-              </button>
-            )}
-          </div>
         </div>
       )}
+
       {batchClosed && (
-        <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+        <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg">
           <span>Input: <strong>{stage.inputKg ?? '—'} Kg</strong></span>
           <span>Output: <strong>{stage.outputKg ?? '—'} Kg</strong></span>
           <span>Wastage: <strong>{stage.wastageKg ?? '—'} Kg</strong></span>
@@ -927,6 +1643,134 @@ function StatMini({ label, v, unit, bold }: { label: string; v: number | null; u
         {v != null && <span className="text-[10px] font-normal text-slate-500 ml-0.5">{unit}</span>}
       </p>
       <p className="text-[10px] text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+/** Download a single stage's execution report as PDF. */
+function StageReportButton({ batchId, stageId, stageName }: { batchId: string; stageId: string; stageName: string }) {
+  const [loading, setLoading] = useState(false);
+
+  const download = async () => {
+    setLoading(true);
+    try {
+      const blob = await downloadBlob(`/mill/batches/${batchId}/stages/${stageId}/report?format=pdf`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Stage_${stageName}_Report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download stage report.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={download}
+      disabled={loading}
+      className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 transition disabled:opacity-50"
+      title="Download stage report PDF"
+    >
+      {loading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+      Stage Report
+    </button>
+  );
+}
+
+/** Dropdown button for full batch report (all stages) or per-stage selection. */
+function BatchReportButton({ batchId, batchNumber, stages }: { batchId: string; batchNumber: string; stages: Stage[] }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+
+  const downloadStage = async (stageId: string, stageName: string) => {
+    setLoading(stageId);
+    setOpen(false);
+    try {
+      const blob = await downloadBlob(`/mill/batches/${batchId}/stages/${stageId}/report?format=pdf`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${batchNumber}_${stageName}_Report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download report.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const downloadFull = async () => {
+    setLoading('full');
+    setOpen(false);
+    try {
+      const blob = await downloadBlob(`/mill/batches/${batchId}/report?format=pdf`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${batchNumber}_Full_Process_Report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download full batch report.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        disabled={loading !== null}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition disabled:opacity-50"
+        title="Download batch report"
+      >
+        {loading ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+        Reports
+        <span className="text-[10px]">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden">
+          {/* Full batch report */}
+          <button
+            type="button"
+            onClick={downloadFull}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border-b border-slate-100 dark:border-slate-700"
+          >
+            <Download size={13} /> Full Process Report (All Stages)
+          </button>
+
+          {/* Per-stage */}
+          <div className="py-1">
+            <p className="px-4 py-1 text-[10px] font-bold uppercase text-slate-400 tracking-wide">Individual Stages</p>
+            {stages.map((st, i) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => downloadStage(st.id, st.stageName)}
+                className="w-full flex items-center gap-2 px-4 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+              >
+                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0',
+                  st.completedAt ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700'
+                )}>{i + 1}</span>
+                <span className="capitalize">{st.stageName}</span>
+                {st.completedAt && <span className="ml-auto text-[10px] text-emerald-600">✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Close dropdown on outside click */}
+      {open && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
     </div>
   );
 }

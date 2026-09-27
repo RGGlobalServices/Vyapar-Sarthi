@@ -996,6 +996,122 @@ function MillingTab({ filters }: { filters: any }) {
   );
 }
 
+// ── BALANCE SHEET VIEW ────────────────────────────────────────────────────
+function BalanceSheetView({ data }: { data: any }) {
+  const fmt = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+  const balanced = Math.abs((data.assets?.total || 0) - ((data.liabilities?.total || 0) + (data.equity?.total || 0))) < 2;
+
+  const asOf = data.asOf ? new Date(data.asOf).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+
+  return (
+    <div className="space-y-6">
+      {asOf && <p className="text-xs text-slate-500 dark:text-slate-400">As of {asOf}</p>}
+
+      {!balanced && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 px-4 py-3">
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            Note: Opening balances may not be fully recorded, so Assets may not equal Liabilities + Equity. Record opening stock costs and balances for a balanced sheet.
+          </p>
+        </div>
+      )}
+
+      {/* KPI row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KPICard label="Total Assets" value={fmt(data.assets?.total || 0)} icon={Box} color="emerald" />
+        <KPICard label="Total Liabilities" value={fmt(data.liabilities?.total || 0)} icon={ArrowDownRight} color="rose" />
+        <KPICard label="Net Worth" value={fmt(data.equity?.total || 0)} icon={Scale} color="blue" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ASSETS */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-emerald-50 dark:bg-emerald-900/20">
+            <h3 className="font-black text-sm text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Assets</h3>
+          </div>
+          <div className="p-5 space-y-2">
+            {[
+              { label: 'Cash & Bank', value: data.assets?.cash || 0 },
+              { label: 'Accounts Receivable (Debtors)', value: data.assets?.debtors || 0 },
+              { label: 'Closing Stock (at cost)', value: data.assets?.closingStock || 0 },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center justify-between py-1.5 border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0">
+                <span className="text-sm text-slate-600 dark:text-slate-300">{row.label}</span>
+                <span className="text-sm font-semibold text-slate-900 dark:text-white tabular-nums">{fmt(row.value)}</span>
+              </div>
+            ))}
+            {(data.assets?.uncostedProducts || 0) > 0 && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                {data.assets.uncostedProducts} product(s) have no cost price and are excluded from stock value.
+              </p>
+            )}
+            <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-emerald-300 dark:border-emerald-600">
+              <span className="text-sm font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Total Assets</span>
+              <span className="text-base font-black text-emerald-700 dark:text-emerald-400 tabular-nums">{fmt(data.assets?.total || 0)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* LIABILITIES + EQUITY */}
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-rose-50 dark:bg-rose-900/20">
+              <h3 className="font-black text-sm text-rose-700 dark:text-rose-400 uppercase tracking-wider">Liabilities</h3>
+            </div>
+            <div className="p-5 space-y-2">
+              <div className="flex items-center justify-between py-1.5 border-b border-dashed border-slate-100 dark:border-slate-800">
+                <span className="text-sm text-slate-600 dark:text-slate-300">Accounts Payable (Creditors)</span>
+                <span className="text-sm font-semibold text-slate-900 dark:text-white tabular-nums">{fmt(data.liabilities?.creditors || 0)}</span>
+              </div>
+              {(data.liabilities?.creditorList || []).slice(0, 5).map((c: any) => (
+                <div key={c.name} className="flex items-center justify-between py-0.5 pl-4">
+                  <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[60%]">{c.name}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">{fmt(c.amount)}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-rose-300 dark:border-rose-600">
+                <span className="text-sm font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider">Total Liabilities</span>
+                <span className="text-base font-black text-rose-700 dark:text-rose-400 tabular-nums">{fmt(data.liabilities?.total || 0)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-blue-50 dark:bg-blue-900/20">
+              <h3 className="font-black text-sm text-blue-700 dark:text-blue-400 uppercase tracking-wider">Equity / Net Worth</h3>
+            </div>
+            <div className="p-5 space-y-2">
+              <div className="flex items-center justify-between py-1.5 border-b border-dashed border-slate-100 dark:border-slate-800">
+                <span className="text-sm text-slate-600 dark:text-slate-300">Net Profit (Period)</span>
+                <span className={`text-sm font-semibold tabular-nums ${(data.equity?.netProfit || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>{fmt(data.equity?.netProfit || 0)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-blue-300 dark:border-blue-600">
+                <span className="text-sm font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Net Worth</span>
+                <span className="text-base font-black text-blue-700 dark:text-blue-400 tabular-nums">{fmt(data.equity?.total || 0)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* P&L Summary */}
+      {data.pnlSummary && (
+        <SectionCard title="Period P&L Summary">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: 'Revenue', value: data.pnlSummary.revenue, color: 'emerald' },
+              { label: 'Purchases', value: data.pnlSummary.purchases, color: 'amber' },
+              { label: 'Expenses', value: data.pnlSummary.expenses, color: 'rose' },
+              { label: 'Net Profit', value: data.pnlSummary.netProfit, color: data.pnlSummary.netProfit >= 0 ? 'emerald' : 'rose' },
+            ].map((kpi) => (
+              <KPICard key={kpi.label} label={kpi.label} value={fmt(kpi.value)} icon={IndianRupee} color={kpi.color} />
+            ))}
+          </div>
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
 // ── CA REPORTS TAB ────────────────────────────────────────────────────────
 // The CA/Accountant reporting layer — Sales/Purchase Registers, GST Summary
 // + Monthly, Non-GST report, Data Quality checklist, Trading Account, P&L,
@@ -1089,48 +1205,53 @@ function CATab() {
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>
       ) : (
         <ReportPeriodProvider startDate={dateRange.from} endDate={dateRange.to}>
-          {summaryItems && summaryItems.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              {summaryItems.map((s) => (
-                <KPICard key={s.label} label={s.label} value={s.value} icon={isGstSummary ? Percent : IndianRupee} color="emerald" />
-              ))}
-            </div>
-          )}
+          {activeDef.key === 'balance_sheet' ? (
+            data ? <BalanceSheetView data={data} /> : (
+              <p className="text-sm text-slate-500 text-center py-12">No data available for selected period.</p>
+            )
+          ) : (
+            <>
+              {summaryItems && summaryItems.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  {summaryItems.map((s) => (
+                    <KPICard key={s.label} label={s.label} value={s.value} icon={isGstSummary ? Percent : IndianRupee} color="emerald" />
+                  ))}
+                </div>
+              )}
 
-          {isGstSummary && (
-            <SectionCard title={t('inputGstSection')}>
-              <p className="text-sm text-slate-700 dark:text-slate-300">
-                {t('notes.gstInput')}
-              </p>
-              <p className="text-xs text-slate-500 mt-1 break-words">₹{Math.round(data?.input?.taxable || 0).toLocaleString('en-IN')} &middot; ₹{Math.round(data?.input?.gst || 0).toLocaleString('en-IN')}</p>
-            </SectionCard>
-          )}
+              {isGstSummary && (
+                <SectionCard title={t('inputGstSection')}>
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    {t('notes.gstInput')}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1 break-words">₹{Math.round(data?.input?.taxable || 0).toLocaleString('en-IN')} &middot; ₹{Math.round(data?.input?.gst || 0).toLocaleString('en-IN')}</p>
+                </SectionCard>
+              )}
 
-          {/* Trading Account / P&L / Stock Summary / Cash & Bank each carry
-              their own honesty disclaimer about how the figures were derived
-              — built above from structured data, translated. */}
-          {note && (
-            <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 px-4 py-3">
-              <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{note}</p>
-            </div>
-          )}
+              {note && (
+                <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 px-4 py-3">
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{note}</p>
+                </div>
+              )}
 
-          <SectionCard
-            title={activeDef.label}
-            actions={<ExportButton columns={activeDef.columns} data={rows} filename={activeDef.key} title={activeDef.label} orientation={activeDef.orientation} summary={summaryItems} />}
-          >
-            {isDataQuality && rows.length > 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 flex items-center gap-1.5"><AlertTriangle size={13} /> {t('clickWarningHint')}</p>
-            )}
-            <div className="overflow-x-auto">
-              <ReportTable
-                columns={activeDef.columns.map((c) => ({ ...c, sortable: true, align: c.type === 'currency' || c.type === 'number' ? 'right' as const : 'left' as const }))}
-                rows={rows}
-                onRowClick={isDataQuality ? (row: any) => { if (row.link) window.location.href = row.link; } : undefined}
-                maxHeight="480px"
-              />
-            </div>
-          </SectionCard>
+              <SectionCard
+                title={activeDef.label}
+                actions={<ExportButton columns={activeDef.columns} data={rows} filename={activeDef.key} title={activeDef.label} orientation={activeDef.orientation} summary={summaryItems} />}
+              >
+                {isDataQuality && rows.length > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 flex items-center gap-1.5"><AlertTriangle size={13} /> {t('clickWarningHint')}</p>
+                )}
+                <div className="overflow-x-auto">
+                  <ReportTable
+                    columns={activeDef.columns.map((c) => ({ ...c, sortable: true, align: c.type === 'currency' || c.type === 'number' ? 'right' as const : 'left' as const }))}
+                    rows={rows}
+                    onRowClick={isDataQuality ? (row: any) => { if (row.link) window.location.href = row.link; } : undefined}
+                    maxHeight="480px"
+                  />
+                </div>
+              </SectionCard>
+            </>
+          )}
         </ReportPeriodProvider>
       )}
 

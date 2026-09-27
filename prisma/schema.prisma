@@ -66,137 +66,144 @@ model UserSession {
 }
 
 model Shop {
-  id                      String               @id @default(uuid()) @db.Uuid
-  ownerId                 String?              @map("owner_id") @db.Uuid
-  name                    String?              @db.VarChar
-  address                 String?              @db.VarChar
-  createdAt               DateTime?            @default(now()) @map("created_at") @db.Timestamptz(6)
-  businessType            String?              @default("kirana") @map("business_type") @db.VarChar
+  id                      String    @id @default(uuid()) @db.Uuid
+  ownerId                 String?   @map("owner_id") @db.Uuid
+  name                    String?   @db.VarChar
+  address                 String?   @db.VarChar
+  createdAt               DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  businessType            String?   @default("kirana") @map("business_type") @db.VarChar
   // Sub-type for compound business types — used today by the unified
   // "Mills & Grain Processing" (businessType='millprocessing') to record
   // WHICH kind of mill this shop actually runs (ricemill / dalmill / bhagarmill
   // / flourmill / oilmill / …). Kept generic so other future compound types
   // can reuse the same column without a fresh migration.
-  businessSubtype         String?              @map("business_subtype") @db.VarChar
+  businessSubtype         String?   @map("business_subtype") @db.VarChar
   // Products / raw materials this shop processes — e.g. ["Rice","Wheat","Jowar"]
   // for a mill that does multiple grains. Multi-select so a single shop that
   // handles Rice + Dal + Flour doesn't need three business accounts.
-  businessProducts        String[]             @default([]) @map("business_products")
-  setupComplete           Boolean?             @default(false) @map("setup_complete")
+  businessProducts        String[]  @default([]) @map("business_products")
+  setupComplete           Boolean?  @default(false) @map("setup_complete")
   mobile                  String?
-  logoUrl                 String?              @map("logo_url")
+  logoUrl                 String?   @map("logo_url")
   // Scanned/photographed owner signature or shop stamp, shown above
   // "Authorized Signatory" on printed/PDF bills (A4 + thermal). Same
   // upload-to-storage pattern as logoUrl.
-  signatureUrl            String?              @map("signature_url")
-  shopCode                String?              @unique @map("shop_code") @db.VarChar
-  packageType             String?              @default("dukan") @map("package_type") @db.VarChar
-  subscriptionPlan        String?              @default("trial") @map("subscription_plan") @db.VarChar
-  subscriptionStatus      String?              @default("active") @map("subscription_status") @db.VarChar
-  subscriptionExpiry      DateTime?            @map("subscription_expiry") @db.Timestamptz(6)
-  subscriptionCancelledAt DateTime?            @map("subscription_cancelled_at") @db.Timestamptz(6)
-  cancellationReason      String?              @map("cancellation_reason")
+  signatureUrl            String?   @map("signature_url")
+  shopCode                String?   @unique @map("shop_code") @db.VarChar
+  packageType             String?   @default("dukan") @map("package_type") @db.VarChar
+  subscriptionPlan        String?   @default("trial") @map("subscription_plan") @db.VarChar
+  subscriptionStatus      String?   @default("active") @map("subscription_status") @db.VarChar
+  subscriptionExpiry      DateTime? @map("subscription_expiry") @db.Timestamptz(6)
+  subscriptionCancelledAt DateTime? @map("subscription_cancelled_at") @db.Timestamptz(6)
+  cancellationReason      String?   @map("cancellation_reason")
   // Free trial + auto-debit (PayU Standing Instruction / eMandate)
-  subscriptionTrialEnds   DateTime?            @map("subscription_trial_ends") @db.Timestamptz(6)
-  trialPaused             Boolean?             @default(false) @map("trial_paused")
-  trialPauseStart         DateTime?            @map("trial_pause_start") @db.Timestamptz(6)
-  mandateToken            String?              @map("mandate_token") @db.VarChar
-  mandateStatus           String?              @map("mandate_status") @db.VarChar
-  nextBillingDate         DateTime?            @map("next_billing_date") @db.Timestamptz(6)
-  billingAmount           Float?               @map("billing_amount")
-  billingCycle            String?              @default("monthly") @map("billing_cycle") @db.VarChar
-  lastTxnId               String?              @map("last_txn_id") @db.VarChar
-  firstChargeDate         DateTime?            @map("first_charge_date") @db.Timestamptz(6)
-  gst                     String?              @db.VarChar
-  pan                     String?              @db.VarChar
-  invoiceFormat           String?              @default("thermal80") @map("invoice_format") @db.VarChar
+  subscriptionTrialEnds   DateTime? @map("subscription_trial_ends") @db.Timestamptz(6)
+  trialPaused             Boolean?  @default(false) @map("trial_paused")
+  trialPauseStart         DateTime? @map("trial_pause_start") @db.Timestamptz(6)
+  mandateToken            String?   @map("mandate_token") @db.VarChar
+  mandateStatus           String?   @map("mandate_status") @db.VarChar
+  nextBillingDate         DateTime? @map("next_billing_date") @db.Timestamptz(6)
+  billingAmount           Float?    @map("billing_amount")
+  billingCycle            String?   @default("monthly") @map("billing_cycle") @db.VarChar
+  lastTxnId               String?   @map("last_txn_id") @db.VarChar
+  firstChargeDate         DateTime? @map("first_charge_date") @db.Timestamptz(6)
+  gst                     String?   @db.VarChar
+  pan                     String?   @db.VarChar
+  invoiceFormat           String?   @default("thermal80") @map("invoice_format") @db.VarChar
   // Visual design of the printed/PDF bill — 'standard' (current plain black
   // layout), 'modern' (colored header band), 'stylish' (bold accent-colored
   // side panel), 'advanced_gst' (standard + prominent HSN/SAC summary table).
   // Independent of invoiceFormat, which picks the paper size (thermal/A4).
-  invoiceTheme            String?              @default("standard") @map("invoice_theme") @db.VarChar
+  invoiceTheme            String?   @default("standard") @map("invoice_theme") @db.VarChar
   // Accent hex color for the invoice theme's header/borders/highlights —
   // '' or null means no color (the original plain black-on-white look).
-  invoiceColor            String?              @map("invoice_color") @db.VarChar
-  invoiceFooter           String?              @map("invoice_footer")
-  showQrCode              Boolean?             @default(false) @map("show_qr_code")
+  invoiceColor            String?   @map("invoice_color") @db.VarChar
+  invoiceFooter           String?   @map("invoice_footer")
+  showQrCode              Boolean?  @default(false) @map("show_qr_code")
   // When true, the product-catalog profit preview (Add/Edit modal, product
   // list, product detail) strips GST out of the selling price before
   // comparing to cost — i.e. profit = (sellingPrice / (1 + gst/100)) - cost.
   // Default false: profit = sellingPrice - cost, matching plain shopkeeper
   // markup intuition. Independent of the tax-liability-aware profit used at
   // billing time (lib/financialEngine.ts), which always nets out GST.
-  gstInclusiveProfit      Boolean?             @default(false) @map("gst_inclusive_profit")
+  gstInclusiveProfit      Boolean?  @default(false) @map("gst_inclusive_profit")
   // Which page opens first after login/app-load — a route segment like
   // 'billing' or 'stock', matching the Sidebar's module keys. Null/empty
   // means the normal default (Dashboard) — set from Settings.
-  defaultLandingPage      String?              @map("default_landing_page") @db.VarChar
+  defaultLandingPage      String?   @map("default_landing_page") @db.VarChar
   // Shown on printed/PDF bills (GST and Non-GST, every package tier) as a
   // scan-to-pay UPI QR + bank transfer details — set once in Profile, then
   // reused on every invoice without re-entering it per bill.
-  upiId                   String?              @map("upi_id") @db.VarChar
-  bankName                String?              @map("bank_name") @db.VarChar
-  bankAccountName         String?              @map("bank_account_name") @db.VarChar
-  bankAccountNumber       String?              @map("bank_account_number") @db.VarChar
-  bankIfsc                String?              @map("bank_ifsc") @db.VarChar
+  upiId                   String?   @map("upi_id") @db.VarChar
+  bankName                String?   @map("bank_name") @db.VarChar
+  bankAccountName         String?   @map("bank_account_name") @db.VarChar
+  bankAccountNumber       String?   @map("bank_account_number") @db.VarChar
+  bankIfsc                String?   @map("bank_ifsc") @db.VarChar
   // Which IndustryCategory (Kirana/Garment/Pharmacy/…) this shop picked via
   // Profile's "Change Business Category" wizard. Plain scalar, not a Prisma
   // relation — IndustryCategory is looked up separately by id where needed,
   // to avoid growing this already-large model's relation list. Purely
   // additive: never read by the businessType/packageType engine below.
-  industryCategoryId      String?              @map("industry_category_id") @db.Uuid
+  industryCategoryId      String?   @map("industry_category_id") @db.Uuid
 
-  allowNegativeStock      Boolean?             @default(false) @map("allow_negative_stock")
+  allowNegativeStock Boolean? @default(false) @map("allow_negative_stock")
 
-  customers               Customer[]
-  products                Product[]
-  sales                   Sale[]
-  stockLogs               StockLog[]
-  dailyStockEntries       DailyStockEntry[]
-  dailyRegisterLogs       DailyRegisterLog[]
-  godowns                 Godown[]
-  paymentTransactions     PaymentTransaction[]
-  materialReturns         MaterialReturn[]
-  staff                   Staff[]
-  suppliers               Supplier[]
-  purchaseInvoices        PurchaseInvoice[]
-  purchaseReturns         PurchaseReturn[]
-  batches                 Batch[]
-  expenses                Expense[]
-  orders                  Order[]
-  deliveryChallans        DeliveryChallan[]
-  stockTakeSessions       StockTakeSession[]
-  categories              Category[]
-  brands                  Brand[]
-  units                   Unit[]
-  expenseCategories       ExpenseCategory[]
-  cashBooks               CashBook[]
-  dailyClosings           DailyClosing[]
-  activityLogs            ActivityLog[]
-  importLogs              ImportLog[]
-  rawMaterialLots         RawMaterialLot[]
-  productionBatches       ProductionBatch[]
-  byProducts              ByProduct[]
-  qualityTests            QualityTest[]
-  gateEntries             GateEntry[]
-  weighbridgeEntries      WeighbridgeEntry[]
-  freightEntries          FreightEntry[]
-  dispatchEntries         DispatchEntry[]
-  jobWorkOrders           JobWorkOrder[]
-  commissionEntries       CommissionEntry[]
-  machines                Machine[]
-  maintenanceEntries      MaintenanceEntry[]
-  machineDowntimes        MachineDowntime[]
-  spareParts              SparePart[]
-  sparePartMovements      SparePartMovement[]
-  deletedRecords          DeletedRecord[]
-  collectionSheets        CollectionSheet[]
-  syncRecords             SyncRecord[]
+  customers           Customer[]
+  products            Product[]
+  sales               Sale[]
+  stockLogs           StockLog[]
+  dailyStockEntries   DailyStockEntry[]
+  dailyRegisterLogs   DailyRegisterLog[]
+  godowns             Godown[]
+  paymentTransactions PaymentTransaction[]
+  materialReturns     MaterialReturn[]
+  staff               Staff[]
+  suppliers           Supplier[]
+  purchaseInvoices    PurchaseInvoice[]
+  purchaseReturns     PurchaseReturn[]
+  batches             Batch[]
+  expenses            Expense[]
+  orders              Order[]
+  deliveryChallans    DeliveryChallan[]
+  stockTakeSessions   StockTakeSession[]
+  categories          Category[]
+  brands              Brand[]
+  units               Unit[]
+  expenseCategories   ExpenseCategory[]
+  cashBooks           CashBook[]
+  dailyClosings       DailyClosing[]
+  activityLogs        ActivityLog[]
+  importLogs          ImportLog[]
+  rawMaterialLots     RawMaterialLot[]
+  productionBatches   ProductionBatch[]
+  byProducts          ByProduct[]
+  qualityTests        QualityTest[]
+  gateEntries         GateEntry[]
+  weighbridgeEntries  WeighbridgeEntry[]
+  freightEntries      FreightEntry[]
+  dispatchEntries     DispatchEntry[]
+  jobWorkOrders       JobWorkOrder[]
+  commissionEntries   CommissionEntry[]
+  machines            Machine[]
+  maintenanceEntries  MaintenanceEntry[]
+  machineDowntimes    MachineDowntime[]
+  spareParts          SparePart[]
+  sparePartMovements  SparePartMovement[]
+  deletedRecords      DeletedRecord[]
+  collectionSheets    CollectionSheet[]
+  syncRecords         SyncRecord[]
+  productionOutputs   ProductionOutput[]
+  processStages       ProcessStage[]
+  workflows           Workflow[]
+  batchInputLots      BatchInputLot[]
+  wipLots             WipLot[]
+  finishedGoodsLots   FinishedGoodsLot[]
+  byProductLots       ByProductLot[]
+  rejectionLots       RejectionLot[]
 
   @@index([name], map: "ix_shops_name")
   @@index([ownerId], map: "ix_shops_owner_id")
   @@map("shops")
-  productionOutputs ProductionOutput[]
 }
 
 // Recovery bin — a snapshot taken right before a real (destructive) delete
@@ -213,16 +220,16 @@ model Shop {
 // lib/server/trash.ts): 'product' | 'customer' | 'customer_transaction' |
 // 'supplier' | 'staff' | 'sale'.
 model DeletedRecord {
-  id         String    @id @default(uuid()) @db.Uuid
-  shopId     String    @map("shop_id") @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
+  shopId        String    @map("shop_id") @db.Uuid
   // 'product' | 'customer' | 'supplier' | 'staff'
-  entityType String    @map("entity_type") @db.VarChar
-  entityId   String    @map("entity_id") @db.VarChar
-  label      String?   @db.VarChar
-  data       Json
-  deletedBy  String?   @map("deleted_by") @db.VarChar
-  deletedAt  DateTime  @default(now()) @map("deleted_at") @db.Timestamptz(6)
-  restoredAt DateTime? @map("restored_at") @db.Timestamptz(6)
+  entityType    String    @map("entity_type") @db.VarChar
+  entityId      String    @map("entity_id") @db.VarChar
+  label         String?   @db.VarChar
+  data          Json
+  deletedBy     String?   @map("deleted_by") @db.VarChar
+  deletedAt     DateTime  @default(now()) @map("deleted_at") @db.Timestamptz(6)
+  restoredAt    DateTime? @map("restored_at") @db.Timestamptz(6)
   // Set the first time the purge cron warns the shop owner this record is
   // about to be permanently deleted — purge only ever acts on rows where
   // this is already set, so a row can never be purged without a prior warning.
@@ -239,12 +246,12 @@ model DeletedRecord {
 }
 
 model Expense {
-  id          String   @id @default(uuid()) @db.Uuid
-  shopId      String   @map("shop_id") @db.Uuid
-  category    String   @db.VarChar
-  amount      Float
-  date        DateTime @default(now()) @db.Timestamptz(6)
-  description String?  @db.VarChar
+  id            String   @id @default(uuid()) @db.Uuid
+  shopId        String   @map("shop_id") @db.Uuid
+  category      String   @db.VarChar
+  amount        Float
+  date          DateTime @default(now()) @db.Timestamptz(6)
+  description   String?  @db.VarChar
   paymentMode   String?  @map("payment_mode") @db.VarChar
   attachmentUrl String?  @map("attachment_url") @db.VarChar
   isRecurring   Boolean? @default(false) @map("is_recurring")
@@ -281,10 +288,10 @@ model Order {
   completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
   notes        String?   @db.VarChar
 
-  shop     Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  customer Customer?   @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  supplier Supplier?   @relation(fields: [supplierId], references: [id], onDelete: NoAction)
-  items    OrderItem[]
+  shop             Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  items            OrderItem[]
   deliveryChallans DeliveryChallan[]
 
   @@index([shopId])
@@ -294,14 +301,14 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(uuid()) @db.Uuid
-  orderId   String  @map("order_id") @db.Uuid
-  productId String  @map("product_id") @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  orderId    String  @map("order_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
   // Composite "Colour / Size" (or bare size) key into Product.variants[] JSON —
   // same convention as PurchaseItem.variantKey. Null for a non-variant line.
   variantKey String? @map("variant_key") @db.VarChar
-  quantity  Float
-  price     Float
+  quantity   Float
+  price      Float
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -322,21 +329,40 @@ model OrderItem {
 // it never risks double-counting revenue or drifting from billing/route.ts's
 // carefully-tuned sale-creation logic.
 model DeliveryChallan {
-  id            String    @id @default(uuid()) @db.Uuid
-  shopId        String    @map("shop_id") @db.Uuid
-  challanNumber String    @map("challan_number") @db.VarChar
-  orderId       String?   @map("order_id") @db.Uuid
-  customerId    String?   @map("customer_id") @db.Uuid
-  customerName  String?   @map("customer_name") @db.VarChar
-  customerMobile String?  @map("customer_mobile") @db.VarChar
-  customerAddress String? @map("customer_address")
+  id              String    @id @default(uuid()) @db.Uuid
+  shopId          String    @map("shop_id") @db.Uuid
+  challanNumber   String    @map("challan_number") @db.VarChar
+  orderId         String?   @map("order_id") @db.Uuid
+  customerId      String?   @map("customer_id") @db.Uuid
+  customerName    String?   @map("customer_name") @db.VarChar
+  customerMobile  String?   @map("customer_mobile") @db.VarChar
+  customerAddress String?   @map("customer_address")
   // 'open' = dispatched, not yet invoiced; 'invoiced' = converted to a real
-  // Sale (see saleId); 'cancelled' = stock was restored, void document.
-  status        String    @default("open") @db.VarChar
-  saleId        String?   @map("sale_id") @db.Uuid
-  notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  invoicedAt    DateTime? @map("invoiced_at") @db.Timestamptz(6)
+  // Sale (see saleId); 'cancelled' = stock restored (void); 'returned' = goods
+  // came back from customer, stock restored to inventory.
+  status          String    @default("open") @db.VarChar
+  saleId          String?   @map("sale_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  invoicedAt      DateTime? @map("invoiced_at") @db.Timestamptz(6)
+
+  // Explicit challan date (may differ from DB createdAt for back-dated entry)
+  challanDate     DateTime? @map("challan_date") @db.Date
+  // Dispatch purpose: sale | job_work | sample | transfer | return | other
+  dispatchType    String?   @default("sale") @map("dispatch_type") @db.VarChar
+  dispatchFrom    String?   @map("dispatch_from") @db.VarChar
+
+  // Transport details
+  transporter     String?   @db.VarChar
+  vehicleNumber   String?   @map("vehicle_number") @db.VarChar
+  driverName      String?   @map("driver_name") @db.VarChar
+  driverMobile    String?   @map("driver_mobile") @db.VarChar
+  lrNumber        String?   @map("lr_number") @db.VarChar
+
+  // Reference / compliance
+  jobWorkOrderRef     String?   @map("job_work_order_ref") @db.VarChar
+  eWayBillNo          String?   @map("e_way_bill_no") @db.VarChar
+  expectedInvoiceDate DateTime? @map("expected_invoice_date") @db.Date
 
   shop     Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
   order    Order?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
@@ -361,12 +387,24 @@ model DeliveryChallanItem {
   variantKey String? @map("variant_key") @db.VarChar
   quantity   Float
   price      Float
+  // Lot / batch traceability (Bada Udyog / mill finished-goods dispatch)
+  lotId      String? @map("lot_id") @db.Uuid
+  lotNumber  String? @map("lot_number") @db.VarChar  // snapshot at dispatch
+  godown     String? @db.VarChar                      // godown / location snapshot
+  // Packaging / weight fields (mill grain dispatch)
+  // When unit is Bag/Bundle/Gunny → noOfPacks × packSize = totalWeight (Kg)
+  // When unit is Quintal/Ton        → quantity × toKgFactor = totalWeight (Kg)
+  packSize    Float?  @map("pack_size")    // size of each pack/bag in base unit (usually Kg)
+  noOfPacks   Float?  @map("no_of_packs")  // number of packs/bags dispatched
+  totalWeight Float?  @map("total_weight") // total weight in Kg (informational snapshot)
 
-  challan DeliveryChallan @relation(fields: [challanId], references: [id], onDelete: Cascade)
-  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  challan DeliveryChallan    @relation(fields: [challanId], references: [id], onDelete: Cascade)
+  product Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lot     FinishedGoodsLot?  @relation(fields: [lotId], references: [id], onDelete: SetNull)
 
   @@index([challanId])
   @@index([productId])
+  @@index([lotId])
   @@map("delivery_challan_items")
 }
 
@@ -396,146 +434,157 @@ model PaymentTransaction {
 }
 
 model Product {
-  id               String           @id @default(uuid()) @db.Uuid
-  shopId           String?          @map("shop_id") @db.Uuid
-  name             String?          @db.VarChar
-  category         String?          @db.VarChar
-  baseUnit         String?          @map("base_unit") @db.VarChar
-  mrp              Float?
-  sellingPrice     Float?           @map("selling_price")
+  id                      String                @id @default(uuid()) @db.Uuid
+  shopId                  String?               @map("shop_id") @db.Uuid
+  name                    String?               @db.VarChar
+  category                String?               @db.VarChar
+  baseUnit                String?               @map("base_unit") @db.VarChar
+  mrp                     Float?
+  sellingPrice            Float?                @map("selling_price")
   // Udyog only: wholesaleCost is the price CHARGED when billing in Wholesale
   // mode (to other shopkeepers/dealers) — despite the name, it is a selling
   // price, not a cost basis. costPrice below is the actual amount paid to
   // the vendor, used for margin/profitability, and is separate on purpose —
   // conflating the two previously made profit calculations read the
   // wholesale selling price as if it were COGS.
-  wholesaleCost    Float?           @map("wholesale_cost")
-  costPrice        Float?           @map("cost_price")
+  wholesaleCost           Float?                @map("wholesale_cost")
+  costPrice               Float?                @map("cost_price")
   // 'manual' (default, today's behavior — costPrice typed directly) or
   // 'mrp_based' (costPrice is derived as mrp * (1 - purchaseDiscountPercent/100)
   // and recomputed live in Add/Edit Product; still written into costPrice on
   // save so every existing consumer of that field needs no changes).
-  costPriceMode    String?          @default("manual") @map("cost_price_mode")
-  purchaseDiscountPercent Float?    @map("purchase_discount_percent")
-  conversionFactor Float?           @map("conversion_factor")
-  minStock         Float?           @map("min_stock")
-  currentStock     Float?           @map("current_stock")
+  costPriceMode           String?               @default("manual") @map("cost_price_mode")
+  isRawMaterial           Boolean?              @default(false) @map("is_raw_material")
+  purchaseDiscountPercent Float?                @map("purchase_discount_percent")
+  conversionFactor        Float?                @map("conversion_factor")
+  minStock                Float?                @map("min_stock")
+  currentStock            Float?                @map("current_stock")
   // Uniqueness is per shop (see @@unique below), NOT global. Real EAN/UPC codes
   // are shared by every shop that stocks the product, so a global constraint
   // meant the second shop to add an item hit a unique violation.
   // "Company Barcode" in the UI — the EAN/UPC printed on the item.
-  barcode          String?          @db.VarChar
+  barcode                 String?               @db.VarChar
   // Shop's own stock-keeping code, and the barcode printed on an outer carton.
   // Both are alternative keys the billing scanner can resolve a product by.
-  sku              String?          @db.VarChar
+  sku                     String?               @db.VarChar
   // Free-text code the shopkeeper writes once against a product — no
   // scan/lookup meaning like barcode/sku, purely a printable reference
   // (e.g. a supplier's own item code) so it doesn't need retyping every
   // time a barcode label is printed. Surfaced as a text-field toggle in
   // Barcode Print Settings.
-  otherCode        String?          @map("other_code") @db.VarChar
-  cartonBarcode    String?          @map("carton_barcode") @db.VarChar
+  otherCode               String?               @map("other_code") @db.VarChar
+  cartonBarcode           String?               @map("carton_barcode") @db.VarChar
   // Free-text shelf/rack/bin locator — distinct from the Godown model (a
   // whole warehouse, Udyog-only); this is available to every business tier.
-  location         String?          @db.VarChar
-  expiryDate       String?          @map("expiry_date") @db.VarChar
-  batch_number     String?          @db.VarChar
-  drug_schedule    String?          @db.VarChar
-  model_number     String?          @db.VarChar
-  warranty_months  Int?
-  gender           String?          @db.VarChar
-  size_variants    String?
-  shade            String?          @db.VarChar
-  archived         Boolean?         @default(false)
-  is_loose         Boolean?         @default(false)
-  metadata         Json?            @default("{}")
-  variants         Json?            @default("[]")
-  brand            String?          @db.VarChar
-  hsnCode          String?          @map("hsn_code") @db.VarChar
-  productType      String?          @default("single") @map("product_type") @db.VarChar
+  location                String?               @db.VarChar
+  expiryDate              String?               @map("expiry_date") @db.VarChar
+  batch_number            String?               @db.VarChar
+  drug_schedule           String?               @db.VarChar
+  model_number            String?               @db.VarChar
+  warranty_months         Int?
+  gender                  String?               @db.VarChar
+  size_variants           String?
+  shade                   String?               @db.VarChar
+  archived                Boolean?              @default(false)
+  is_loose                Boolean?              @default(false)
+  metadata                Json?                 @default("{}")
+  variants                Json?                 @default("[]")
+  brand                   String?               @db.VarChar
+  hsnCode                 String?               @map("hsn_code") @db.VarChar
+  productType             String?               @default("single") @map("product_type") @db.VarChar
   // Bada Udyog / Mills only — classifies a product on the mill workflow:
   // 'raw_material' (Paddy, Wheat, Bajra…) / 'finished_goods' (Rice, Flour,
   // Oil…) / 'by_product' (Bran, Husk, Chuni…) / 'waste'. Null for every
   // non-mill shop; existing millprocessing shops can classify their catalogue
   // gradually — no default forces a category on unsorted items.
-  millCategory     String?          @map("mill_category") @db.VarChar
+  millCategory            String?               @map("mill_category") @db.VarChar
   // Bag / pack size for weight-based selling (30 = 30 Kg per bag). Powers
   // the Bag × BagSize = Total Weight auto-calc used by Sales & Purchase
   // billing in the mill workflow. Independent of baseUnit above — the base
   // unit stays Kg / Ltr / Piece; packSize is *how many baseUnits per bag*.
-  packSize         Float?           @map("pack_size")
+  packSize                Float?                @map("pack_size")
   // Unit of packSize itself — usually 'Kg' but a mill that packs oil sells
   // 15 Litre tins ('15' + 'Ltr') or a papad unit sells 250-gram packets
   // ('250' + 'GM'). Stored separately so the label reads "30 Kg Bag" not
   // just "30" and the multiplier is unambiguous during billing.
-  packUnit         String?          @map("pack_unit") @db.VarChar
+  packUnit                String?               @map("pack_unit") @db.VarChar
   // Generic Food-Mill Product Master fields — free text on purpose (same
   // pattern as brand/shade below), so any mill type can type its own values
   // instead of picking from a hard-coded list. Kept separate from `category`
   // (Rice/Wheat/Dal/…) since Grade+Variety describe a QUALITY tier within a
   // category (Category=Rice, Grade=Premium, Variety=Basmati), not the item
   // itself.
-  grade            String?          @db.VarChar
-  variety          String?          @db.VarChar
-  subcategory      String?          @db.VarChar
+  grade                   String?               @db.VarChar
+  variety                 String?               @db.VarChar
+  subcategory             String?               @db.VarChar
   // Distinct from minStock: minStock is "don't let stock go below this"
   // (existing field, used across every business type); reorderLevel is
   // "tell me to reorder at this level" — a mill often wants a heads-up
   // buffer above the hard minimum. Null falls back to minStock in status
   // calculations, so shops that never set it keep today's exact behavior.
-  reorderLevel     Float?           @map("reorder_level")
+  reorderLevel            Float?                @map("reorder_level")
   // Per-product override of the shop-wide bizConfig.hasBatch/hasExpiry
   // flags — null means "inherit the shop's default" (today's behavior,
   // unchanged for every existing product/business type). Only meaningfully
   // settable where the shop-wide flag is already true; lets one mill batch-
   // track its Rice but skip it for a Packaging Material line, without
   // affecting any other business type's Add/Edit form.
-  trackBatch       Boolean?         @map("track_batch")
-  trackExpiry      Boolean?         @map("track_expiry")
-  gstPercent       Float?           @map("gst_percent")
+  trackBatch              Boolean?              @map("track_batch")
+  trackExpiry             Boolean?              @map("track_expiry")
+  gstPercent              Float?                @map("gst_percent")
   // When the product was first added. Backfilled for pre-existing rows from the
   // earliest stock activity, so it reflects real history, not the migration date.
-  createdAt        DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
-  shop             Shop?            @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  saleItems        SaleItem[]
-  stock_logs       StockLog[]
-  godownProducts   GodownProduct[]
-  materialReturns  MaterialReturn[]
-  returnItems      ReturnItem[]
-  productVariants  ProductVariant[]
-  batches          Batch[]
-  purchaseItems    PurchaseItem[]
-  purchaseReturnItems PurchaseReturnItem[]
-  orderItems       OrderItem[]
-  deliveryChallanItems DeliveryChallanItem[]
-  stockTakeItems   StockTakeItem[]
-  dailyStockEntries DailyStockEntry[]
-  dailyRegisterLogs DailyRegisterLog[]
+  createdAt               DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)
+  shop                    Shop?                 @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  saleItems               SaleItem[]
+  stock_logs              StockLog[]
+  godownProducts          GodownProduct[]
+  materialReturns         MaterialReturn[]
+  returnItems             ReturnItem[]
+  productVariants         ProductVariant[]
+  batches                 Batch[]
+  purchaseItems           PurchaseItem[]
+  purchaseReturnItems     PurchaseReturnItem[]
+  orderItems              OrderItem[]
+  challanItems         DeliveryChallanItem[]
+  stockTakeItems          StockTakeItem[]
+  dailyStockEntries       DailyStockEntry[]
+  dailyRegisterLogs       DailyRegisterLog[]
 
   // --- New Master Data Relational Fields ---
-  categoryId            String?          @map("category_id") @db.Uuid
-  brandId               String?          @map("brand_id") @db.Uuid
-  baseUnitId            String?          @map("base_unit_id") @db.Uuid
-  defaultSaleUnitId     String?          @map("default_sale_unit_id") @db.Uuid
-  defaultPurchaseUnitId String?          @map("default_purchase_unit_id") @db.Uuid
-  maxStock              Float?           @map("max_stock")
-  wholesaleMoq          Float?           @map("wholesale_moq")
+  categoryId            String? @map("category_id") @db.Uuid
+  brandId               String? @map("brand_id") @db.Uuid
+  baseUnitId            String? @map("base_unit_id") @db.Uuid
+  defaultSaleUnitId     String? @map("default_sale_unit_id") @db.Uuid
+  defaultPurchaseUnitId String? @map("default_purchase_unit_id") @db.Uuid
+  maxStock              Float?  @map("max_stock")
+  wholesaleMoq          Float?  @map("wholesale_moq")
 
-  masterCategory        Category?        @relation(fields: [categoryId], references: [id], onDelete: NoAction)
-  masterBrand           Brand?           @relation(fields: [brandId], references: [id], onDelete: NoAction)
-  masterBaseUnit        Unit?            @relation("ProductBaseUnit", fields: [baseUnitId], references: [id], onDelete: NoAction)
-  masterSaleUnit        Unit?            @relation("ProductSaleUnit", fields: [defaultSaleUnitId], references: [id], onDelete: NoAction)
-  masterPurchaseUnit    Unit?            @relation("ProductPurchaseUnit", fields: [defaultPurchaseUnitId], references: [id], onDelete: NoAction)
-  rawMaterialLots       RawMaterialLot[]
-  weighbridgeEntries    WeighbridgeEntry[]
-  producedByBatches     ProductionBatch[] @relation("ProductionBatchOutput")
-  byProducts            ByProduct[]
-  dispatchEntries       DispatchEntry[]
+  masterCategory     Category?           @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+  masterBrand        Brand?              @relation(fields: [brandId], references: [id], onDelete: NoAction)
+  masterBaseUnit     Unit?               @relation("ProductBaseUnit", fields: [baseUnitId], references: [id], onDelete: NoAction)
+  masterSaleUnit     Unit?               @relation("ProductSaleUnit", fields: [defaultSaleUnitId], references: [id], onDelete: NoAction)
+  masterPurchaseUnit Unit?               @relation("ProductPurchaseUnit", fields: [defaultPurchaseUnitId], references: [id], onDelete: NoAction)
+  rawMaterialLots    RawMaterialLot[]
+  weighbridgeEntries WeighbridgeEntry[]
+  producedByBatches  ProductionBatch[]   @relation("ProductionBatchOutput")
+  byProducts         ByProduct[]
+  dispatchEntries    DispatchEntry[]
+  productionOutputs  ProductionOutput[]
+  workflows          Workflow[]
+  stageInputConfigs  StageInputConfig[]
+  stageOutputConfigs StageOutputConfig[]
+  batchStageInputs   BatchStageInput[]
+  batchStageOutputs  BatchStageOutput[]
+  wipLots            WipLot[]
+  finishedGoodsLots  FinishedGoodsLot[]
+  byProductLots      ByProductLot[]
+  rejectionLots      RejectionLot[]
 
+  @@unique([shopId, barcode], map: "ix_products_shop_barcode")
   @@index([category], map: "ix_products_category")
   @@index([name], map: "ix_products_name")
   @@index([shopId], map: "ix_products_shop_id")
-  @@unique([shopId, barcode], map: "ix_products_shop_barcode")
   @@index([shopId, sku], map: "ix_products_shop_sku")
   @@index([shopId, cartonBarcode], map: "ix_products_shop_carton")
   @@index([shopId, category], map: "ix_products_shop_category")
@@ -545,30 +594,29 @@ model Product {
   @@index([baseUnitId], map: "ix_products_base_unit_id")
   @@index([shopId, archived], map: "ix_products_shop_archived")
   @@map("products")
-  productionOutputs ProductionOutput[]
 }
 
 model Customer {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  shopId                String?                 @map("shop_id") @db.Uuid
-  name                  String?                 @db.VarChar
-  mobile                String?                 @db.VarChar
-  email                 String?                 @db.VarChar
-  totalDue              Float?                  @map("total_due")
-  
+  id       String  @id @default(uuid()) @db.Uuid
+  shopId   String? @map("shop_id") @db.Uuid
+  name     String? @db.VarChar
+  mobile   String? @db.VarChar
+  email    String? @db.VarChar
+  totalDue Float?  @map("total_due")
+
   // CRM Extended Fields
-  customerType          String?                 @default("customer") @map("customer_type") @db.VarChar
-  shopName              String?                 @map("shop_name") @db.VarChar
-  gst                   String?                 @db.VarChar
-  pan                   String?                 @db.VarChar
-  address               String?                 @db.VarChar
-  creditDays            Int?                    @default(0) @map("credit_days")
-  creditLimit           Float?                  @default(0) @map("credit_limit")
-  birthday              DateTime?               @db.Date
-  notes                 String?                 @db.VarChar
-  brokerType            String?                 @map("broker_type") @db.VarChar // broker only: supplier | customer | both
-  documents             Json?                   @default("[]")
-  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  customerType String?   @default("customer") @map("customer_type") @db.VarChar
+  shopName     String?   @map("shop_name") @db.VarChar
+  gst          String?   @db.VarChar
+  pan          String?   @db.VarChar
+  address      String?   @db.VarChar
+  creditDays   Int?      @default(0) @map("credit_days")
+  creditLimit  Float?    @default(0) @map("credit_limit")
+  birthday     DateTime? @db.Date
+  notes        String?   @db.VarChar
+  brokerType   String?   @map("broker_type") @db.VarChar // broker only: supplier | customer | both
+  documents    Json?     @default("[]")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   customer_transactions customer_transactions[]
   shop                  Shop?                   @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -592,37 +640,37 @@ model Customer {
 }
 
 model Sale {
-  id             String     @id @default(uuid()) @db.Uuid
-  shopId         String?    @map("shop_id") @db.Uuid
-  customerId     String?    @map("customer_id") @db.Uuid
-  totalAmount    Float?     @map("total_amount")
-  totalProfit    Float?     @map("total_profit")
-  paymentType    String?    @map("payment_type") @db.VarChar
-  amountPaid     Float?     @default(0) @map("amount_paid")
-  paymentDetails Json?      @default("{}") @map("payment_details")
-  createdAt      DateTime?  @default(now()) @map("created_at") @db.Timestamptz(6)
-  invoice_number String?    @unique @db.VarChar
+  id               String     @id @default(uuid()) @db.Uuid
+  shopId           String?    @map("shop_id") @db.Uuid
+  customerId       String?    @map("customer_id") @db.Uuid
+  totalAmount      Float?     @map("total_amount")
+  totalProfit      Float?     @map("total_profit")
+  paymentType      String?    @map("payment_type") @db.VarChar
+  amountPaid       Float?     @default(0) @map("amount_paid")
+  paymentDetails   Json?      @default("{}") @map("payment_details")
+  createdAt        DateTime?  @default(now()) @map("created_at") @db.Timestamptz(6)
+  invoice_number   String?    @unique @db.VarChar
   // GST / Non-GST billing. billType: 'gst' | 'non_gst' (default non_gst).
   // gstDetails holds the tax breakdown { taxable, cgst, sgst, igst, rate, interState }.
-  billType       String?    @default("non_gst") @map("bill_type") @db.VarChar
-  gstAmount      Float?     @map("gst_amount")
-  gstDetails     Json?      @map("gst_details")
+  billType         String?    @default("non_gst") @map("bill_type") @db.VarChar
+  gstAmount        Float?     @map("gst_amount")
+  gstDetails       Json?      @map("gst_details")
   // Manual bill upload: reference to the stored bill image/PDF and a manual flag.
-  billImageUrl   String?    @map("bill_image_url") @db.VarChar
-  isManual       Boolean?   @default(false) @map("is_manual")
+  billImageUrl     String?    @map("bill_image_url") @db.VarChar
+  isManual         Boolean?   @default(false) @map("is_manual")
   // Offline reference number (e.g. OFF-20260917-DEVICE-000123) assigned while offline
   offlineRefNumber String?    @map("offline_ref_number") @db.VarChar
   // Mill Billing (Bada Udyog) — all nullable; NULL on every pre-existing row = legacy sale.
   // pricingModel 'mill_v2' = priced by lib/millBilling.ts (GST-exclusive, non-GST add-on
   // charges, round-off). Legacy sales never set any of these.
-  pricingModel   String?     @map("pricing_model") @db.VarChar
-  discountAmount Float?      @map("discount_amount")   // goods discount (₹) as applied by the server
-  charges        Json?                                 // { freight, hamali, loading, unloading, other }
-  chargesTotal   Float?      @map("charges_total")
-  roundOffAmount Float?      @map("round_off_amount")  // signed; totalAmount = pre-round total + roundOffAmount
-  items          SaleItem[]
-  customer       Customer?  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  shop           Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pricingModel     String?    @map("pricing_model") @db.VarChar
+  discountAmount   Float?     @map("discount_amount") // goods discount (₹) as applied by the server
+  charges          Json? // { freight, hamali, loading, unloading, other }
+  chargesTotal     Float?     @map("charges_total")
+  roundOffAmount   Float?     @map("round_off_amount") // signed; totalAmount = pre-round total + roundOffAmount
+  items            SaleItem[]
+  customer         Customer?  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shop             Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([shopId, createdAt(sort: Desc)], map: "ix_sales_shop_created")
   @@index([customerId], map: "ix_sales_customer_id")
@@ -632,18 +680,18 @@ model Sale {
 }
 
 model SaleItem {
-  id            String   @id @default(uuid()) @db.Uuid
-  saleId        String?  @map("sale_id") @db.Uuid
-  productId     String?  @map("product_id") @db.Uuid
-  unit          String?  @db.VarChar
+  id            String          @id @default(uuid()) @db.Uuid
+  saleId        String?         @map("sale_id") @db.Uuid
+  productId     String?         @map("product_id") @db.Uuid
+  unit          String?         @db.VarChar
   quantity      Float?
-  pricePerUnit  Float?   @map("price_per_unit")
-  marginPerUnit Float?   @map("margin_per_unit")
-  variant       String?  @db.VarChar
-  variantId     String?  @map("variant_id") @db.VarChar
-  itemName      String?  @map("item_name") @db.VarChar
-  product       Product? @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  sale          Sale?    @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pricePerUnit  Float?          @map("price_per_unit")
+  marginPerUnit Float?          @map("margin_per_unit")
+  variant       String?         @db.VarChar
+  variantId     String?         @map("variant_id") @db.VarChar
+  itemName      String?         @map("item_name") @db.VarChar
+  product       Product?        @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sale          Sale?           @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   batches       SaleItemBatch[]
 
   @@index([saleId], map: "ix_sale_items_sale_id")
@@ -686,7 +734,7 @@ model StockTakeSession {
   completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
   notes       String?
 
-  shop  Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop  Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
   items StockTakeItem[]
 
   @@index([shopId])
@@ -694,16 +742,16 @@ model StockTakeSession {
 }
 
 model StockTakeItem {
-  id          String   @id @default(uuid()) @db.Uuid
-  sessionId   String   @map("session_id") @db.Uuid
-  productId   String   @map("product_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  sessionId   String    @map("session_id") @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
   // Snapshots at session-start time so a variance stays meaningful even if
   // the product is renamed/sold-against mid-count — the same reasoning as
   // every other line-item snapshot in this schema (PurchaseItem, OrderItem).
-  productName String   @map("product_name") @db.VarChar
-  unit        String?  @db.VarChar
-  systemQty   Float    @map("system_qty")
-  countedQty  Float?   @map("counted_qty")
+  productName String    @map("product_name") @db.VarChar
+  unit        String?   @db.VarChar
+  systemQty   Float     @map("system_qty")
+  countedQty  Float?    @map("counted_qty")
   countedAt   DateTime? @map("counted_at") @db.Timestamptz(6)
 
   session StockTakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -894,15 +942,20 @@ model AdminUser {
 }
 
 model Godown {
-  id         String          @id @default(uuid()) @db.Uuid
-  shopId     String          @map("shop_id") @db.Uuid
-  ownerId    String          @map("owner_id") @db.Uuid
-  name       String          @db.VarChar
-  location   String?         @db.VarChar
-  godownCode String          @unique @map("godown_code") @db.VarChar
-  createdAt  DateTime?       @default(now()) @map("created_at") @db.Timestamptz(6)
-  shop       Shop            @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  inventory  GodownProduct[]
+  id              String           @id @default(uuid()) @db.Uuid
+  shopId          String           @map("shop_id") @db.Uuid
+  ownerId         String           @map("owner_id") @db.Uuid
+  name            String           @db.VarChar
+  location        String?          @db.VarChar
+  godownCode      String           @unique @map("godown_code") @db.VarChar
+  createdAt       DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
+  shop            Shop             @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory       GodownProduct[]
+  rawMaterialLots RawMaterialLot[]
+  wipLots           WipLot[]
+  finishedGoodsLots FinishedGoodsLot[]
+  byProductLots     ByProductLot[]
+  rejectionLots     RejectionLot[]
 
   @@index([shopId])
   @@index([ownerId])
@@ -946,25 +999,25 @@ model Staff {
   warehouseId      String?  @map("warehouse_id") @db.Uuid
 
   // --- Employee Master fields (HR upgrade) ---
-  employeeCode        String?   @map("employee_code") @db.VarChar
-  department          String?   @db.VarChar
-  employeeType        String?   @default("full_time") @map("employee_type") @db.VarChar
-  email               String?   @db.VarChar
-  alternateMobile     String?   @map("alternate_mobile") @db.VarChar
-  dateOfBirth         DateTime? @map("date_of_birth") @db.Date
-  gender              String?   @db.VarChar
-  shift               String?   @db.VarChar
-  reportingManagerId  String?   @map("reporting_manager_id") @db.Uuid
-  preferredPaymentMode String?  @default("Cash") @map("preferred_payment_mode") @db.VarChar
+  employeeCode         String?   @map("employee_code") @db.VarChar
+  department           String?   @db.VarChar
+  employeeType         String?   @default("full_time") @map("employee_type") @db.VarChar
+  email                String?   @db.VarChar
+  alternateMobile      String?   @map("alternate_mobile") @db.VarChar
+  dateOfBirth          DateTime? @map("date_of_birth") @db.Date
+  gender               String?   @db.VarChar
+  shift                String?   @db.VarChar
+  reportingManagerId   String?   @map("reporting_manager_id") @db.Uuid
+  preferredPaymentMode String?   @default("Cash") @map("preferred_payment_mode") @db.VarChar
 
   // Compliance — all optional, never required for shops that don't use them.
-  pan            String?  @db.VarChar
-  aadhaarLast4   String?  @map("aadhaar_last4") @db.VarChar
-  uan            String?  @db.VarChar
-  pfApplicable   Boolean  @default(false) @map("pf_applicable")
-  esiApplicable  Boolean  @default(false) @map("esi_applicable")
-  ptApplicable   Boolean  @default(false) @map("pt_applicable")
-  tdsApplicable  Boolean  @default(false) @map("tds_applicable")
+  pan           String? @db.VarChar
+  aadhaarLast4  String? @map("aadhaar_last4") @db.VarChar
+  uan           String? @db.VarChar
+  pfApplicable  Boolean @default(false) @map("pf_applicable")
+  esiApplicable Boolean @default(false) @map("esi_applicable")
+  ptApplicable  Boolean @default(false) @map("pt_applicable")
+  tdsApplicable Boolean @default(false) @map("tds_applicable")
 
   // Exit / resignation
   resignationDate  DateTime? @map("resignation_date") @db.Date
@@ -973,8 +1026,8 @@ model Staff {
   noticePeriodDays Int?      @map("notice_period_days")
   exitNotes        String?   @map("exit_notes") @db.VarChar
 
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   shop             Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
   attendance       Attendance[]
@@ -1075,17 +1128,17 @@ model customer_transactions {
 // helper crm/payments uses) the moment it's saved, draft or not. Finalizing
 // just locks the sheet and files it into the searchable history.
 model CollectionSheet {
-  id          String            @id @default(uuid()) @db.Uuid
-  shopId      String            @map("shop_id") @db.Uuid
-  name        String            @db.VarChar
-  date        DateTime          @db.Date
-  status      String            @default("draft") @db.VarChar
-  finalizedAt DateTime?         @map("finalized_at") @db.Timestamptz(6)
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String    @id @default(uuid()) @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  name        String    @db.VarChar
+  date        DateTime  @db.Date
+  status      String    @default("draft") @db.VarChar
+  finalizedAt DateTime? @map("finalized_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  entries     CollectionEntry[]
-  shop        Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  entries CollectionEntry[]
+  shop    Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([shopId])
   @@index([shopId, status])
@@ -1099,21 +1152,21 @@ model CollectionSheet {
 // path a directly-deleted payment already uses (see
 // lib/server/customerPayment.ts).
 model CollectionEntry {
-  id                    String          @id @default(uuid()) @db.Uuid
-  sheetId               String          @map("sheet_id") @db.Uuid
-  customerId            String          @map("customer_id") @db.Uuid
+  id                    String   @id @default(uuid()) @db.Uuid
+  sheetId               String   @map("sheet_id") @db.Uuid
+  customerId            String   @map("customer_id") @db.Uuid
   amount                Float
-  paymentMode           String          @map("payment_mode") @db.VarChar
-  note                  String?         @db.VarChar
-  customerTransactionId String?         @map("customer_transaction_id") @db.Uuid
+  paymentMode           String   @map("payment_mode") @db.VarChar
+  note                  String?  @db.VarChar
+  customerTransactionId String?  @map("customer_transaction_id") @db.Uuid
   // Same same-day insertion-order tiebreaker purpose as
   // SupplierTransaction.sequence (see that model for why createdAt alone
   // isn't enough — a date-only picker collapses same-day rows to midnight).
-  sequence              Int             @default(autoincrement())
-  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  sequence              Int      @default(autoincrement())
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  sheet                 CollectionSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
-  customer              Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sheet    CollectionSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  customer Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([sheetId])
   @@index([customerId])
@@ -1121,25 +1174,25 @@ model CollectionEntry {
 }
 
 model SupplierTransaction {
-  id          String    @id @default(uuid()) @db.Uuid
-  supplierId  String?   @map("supplier_id") @db.Uuid
-  type        String?   @db.VarChar
-  amount      Float?
-  note        String?   @db.VarChar
-  billNumber  String?   @map("bill_number") @db.VarChar
+  id            String    @id @default(uuid()) @db.Uuid
+  supplierId    String?   @map("supplier_id") @db.Uuid
+  type          String?   @db.VarChar
+  amount        Float?
+  note          String?   @db.VarChar
+  billNumber    String?   @map("bill_number") @db.VarChar
   // Only meaningful on 'payment' rows (a standalone payment or the
   // auto-generated part-payment leg of a purchase) — a 'purchase' row isn't
   // itself a payment event, so it stays null. 'Cash' | 'UPI' | 'Card'.
-  paymentMethod String? @map("payment_method") @db.VarChar
-  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  paymentMethod String?   @map("payment_method") @db.VarChar
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   // Monotonic insertion-order tiebreaker. createdAt alone is ambiguous once
   // backdated: the date picker sends a date-only string, which parses to
   // midnight — so every row entered against the same business day collapses
   // to the identical timestamp and Postgres has no defined order among them.
   // Sorting by [createdAt desc, sequence desc] keeps "newest activity on top"
   // reliable even when several same-day rows exist.
-  sequence    Int       @default(autoincrement())
-  supplier    Supplier? @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sequence      Int       @default(autoincrement())
+  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([supplierId])
   @@map("supplier_transactions")
@@ -1205,19 +1258,19 @@ model ProductVariant {
 }
 
 model Supplier {
-  id        String    @id @default(uuid()) @db.Uuid
-  shopId    String    @map("shop_id") @db.Uuid
-  name      String    @db.VarChar
-  contact   String?   @db.VarChar
-  mobile    String?   @db.VarChar
-  email     String?   @db.VarChar
-  address   String?   @db.VarChar
-  gst       String?   @db.VarChar
-  balance   Float     @default(0)
-  creditDays  Int?    @default(0) @map("credit_days")
-  creditLimit Float?  @default(0) @map("credit_limit")
-  documents Json?     @default("[]")
-  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String    @id @default(uuid()) @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  name        String    @db.VarChar
+  contact     String?   @db.VarChar
+  mobile      String?   @db.VarChar
+  email       String?   @db.VarChar
+  address     String?   @db.VarChar
+  gst         String?   @db.VarChar
+  balance     Float     @default(0)
+  creditDays  Int?      @default(0) @map("credit_days")
+  creditLimit Float?    @default(0) @map("credit_limit")
+  documents   Json?     @default("[]")
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop                 Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
   purchaseInvoices     PurchaseInvoice[]
@@ -1233,21 +1286,21 @@ model Supplier {
 }
 
 model PurchaseInvoice {
-  id            String    @id @default(uuid()) @db.Uuid
-  shopId        String    @map("shop_id") @db.Uuid
-  supplierId    String    @map("supplier_id") @db.Uuid
-  invoiceNumber String?   @map("invoice_number") @db.VarChar
-  date          DateTime? @default(now()) @db.Timestamptz(6)
-  totalCost     Float?    @map("total_cost")
-  gst           Float?
+  id               String    @id @default(uuid()) @db.Uuid
+  shopId           String    @map("shop_id") @db.Uuid
+  supplierId       String    @map("supplier_id") @db.Uuid
+  invoiceNumber    String?   @map("invoice_number") @db.VarChar
+  date             DateTime? @default(now()) @db.Timestamptz(6)
+  totalCost        Float?    @map("total_cost")
+  gst              Float?
   // Bill-level charges beyond the goods (hamali, freight, loading …): [{ name, amount }]. Already included in totalCost.
-  charges       Json?
+  charges          Json?
   // Bada Udyog weighbridge/kanta-chitthi capture on the bill itself — optional, informational only (Net = gross - tare); never affects totalCost or stock.
-  tareWeightKg  Float?    @map("tare_weight_kg")
-  grossWeightKg Float?    @map("gross_weight_kg")
+  tareWeightKg     Float?    @map("tare_weight_kg")
+  grossWeightKg    Float?    @map("gross_weight_kg")
   // Offline reference number assigned while offline
-  offlineRefNumber String?  @map("offline_ref_number") @db.VarChar
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  offlineRefNumber String?   @map("offline_ref_number") @db.VarChar
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
   supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
@@ -1285,22 +1338,25 @@ model PurchaseItem {
   // Nullable because historical rows predate this link.
   batchId           String? @map("batch_id") @db.Uuid
 
-  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
-  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  batch           Batch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  purchaseInvoice PurchaseInvoice  @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  product         Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant         ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  batch           Batch?           @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  rawMaterialLots RawMaterialLot[]
 
   @@index([purchaseInvoiceId])
   @@index([productId])
   @@map("purchase_items")
 }
 
-/** Records which Batch(es) a Sale line's quantity was actually drawn from,
- *  and the batch's real cost at that moment — a join table rather than a
- *  single FK on SaleItem because a FIFO walk can split one cart line across
- *  two batches with two different costs (e.g. 5 units from a ₹100 lot + 3
- *  from a ₹120 lot on one bill line). This is what makes real per-batch
- *  profit possible instead of always using Product.costPrice. */
+/**
+ * Records which Batch(es) a Sale line's quantity was actually drawn from,
+ * and the batch's real cost at that moment — a join table rather than a
+ * single FK on SaleItem because a FIFO walk can split one cart line across
+ * two batches with two different costs (e.g. 5 units from a ₹100 lot + 3
+ * from a ₹120 lot on one bill line). This is what makes real per-batch
+ * profit possible instead of always using Product.costPrice.
+ */
 model SaleItemBatch {
   id         String    @id @default(uuid()) @db.Uuid
   saleItemId String    @map("sale_item_id") @db.Uuid
@@ -1319,16 +1375,18 @@ model SaleItemBatch {
   @@map("sale_item_batches")
 }
 
-/** Goods sent back to a supplier from a specific purchase (damaged, wrong
- *  item, excess stock, …) — a debit note. Deliberately its own model rather
- *  than reusing MaterialReturn/ReturnItem: those are the SALES side (a
- *  customer's refund — stockRestored: true, money flows OUT via
- *  refundAmount) with no link to a purchase or supplier at all. A purchase
- *  return is the opposite direction (stock DECREASES, money owed to the
- *  supplier decreases) and always belongs to one PurchaseInvoice. The
- *  original PurchaseInvoice/PurchaseItem rows are never edited — this is an
- *  additive record; "net payable" is computed as totalCost minus the sum of
- *  its returns. */
+/**
+ * Goods sent back to a supplier from a specific purchase (damaged, wrong
+ * item, excess stock, …) — a debit note. Deliberately its own model rather
+ * than reusing MaterialReturn/ReturnItem: those are the SALES side (a
+ * customer's refund — stockRestored: true, money flows OUT via
+ * refundAmount) with no link to a purchase or supplier at all. A purchase
+ * return is the opposite direction (stock DECREASES, money owed to the
+ * supplier decreases) and always belongs to one PurchaseInvoice. The
+ * original PurchaseInvoice/PurchaseItem rows are never edited — this is an
+ * additive record; "net payable" is computed as totalCost minus the sum of
+ * its returns.
+ */
 model PurchaseReturn {
   id                String    @id @default(uuid()) @db.Uuid
   shopId            String    @map("shop_id") @db.Uuid
@@ -1396,10 +1454,10 @@ model Batch {
   // because historical rows predate this column.
   barcode         String?   @unique @db.VarChar
 
-  shop          Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  purchaseItems PurchaseItem[]
+  shop            Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  purchaseItems   PurchaseItem[]
   saleItemBatches SaleItemBatch[]
 
   @@index([shopId])
@@ -1457,6 +1515,35 @@ model IndustryCategory {
   @@map("industry_categories")
 }
 
+// Global (admin-managed) config for a business category — drives which
+// product attributes, variant axes, and billing columns appear for shops
+// that belong to that industry category.  No shopId: configs are shared
+// across all shops of a given type, so a new Footwear Wholesale shop gets
+// the right UI immediately without any per-shop setup.
+model CategoryConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  // Short machine-readable key: 'footwear', 'garment', 'grocery', 'fmcg',
+  // 'electronics', 'electrical', 'medical', 'agro', 'general'
+  slug                 String   @unique @db.VarChar
+  name                 String   @db.VarChar
+  nameHi               String?  @map("name_hi") @db.VarChar
+  nameMr               String?  @map("name_mr") @db.VarChar
+  emoji                String?  @db.VarChar
+  // Matches IndustryCategory.name values so the product/billing layer can
+  // look up the config purely from the shop's industry category string.
+  industryCategoryName String?  @map("industry_category_name") @db.VarChar
+  // JSON blob — schema described in lib/categoryConfig.ts
+  attributeSchema      Json     @default("{}") @map("attribute_schema")
+  active               Boolean  @default(true)
+  sortOrder            Int      @default(0) @map("sort_order")
+  createdAt            DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([active])
+  @@index([industryCategoryName])
+  @@map("category_configs")
+}
+
 model Category {
   id        String    @id @default(uuid()) @db.Uuid
   shopId    String    @map("shop_id") @db.Uuid
@@ -1497,12 +1584,12 @@ model Unit {
   conversionFactor Float?    @default(1) @map("conversion_factor")
   createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  baseUnit          Unit?     @relation("UnitConversions", fields: [baseUnitId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  derivedUnits      Unit[]    @relation("UnitConversions")
-  productsBase      Product[] @relation("ProductBaseUnit")
-  productsSale      Product[] @relation("ProductSaleUnit")
-  productsPurchase  Product[] @relation("ProductPurchaseUnit")
+  shop             Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  baseUnit         Unit?     @relation("UnitConversions", fields: [baseUnitId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  derivedUnits     Unit[]    @relation("UnitConversions")
+  productsBase     Product[] @relation("ProductBaseUnit")
+  productsSale     Product[] @relation("ProductSaleUnit")
+  productsPurchase Product[] @relation("ProductPurchaseUnit")
 
   @@index([baseUnitId])
   @@map("units")
@@ -1633,19 +1720,19 @@ model ActivityLog {
 // Tracks every AI-import session: who, when, how many rows succeeded/failed.
 
 model ImportLog {
-  id            String    @id @default(uuid()) @db.Uuid
-  shopId        String    @map("shop_id") @db.Uuid
-  importName    String    @map("import_name") @db.VarChar
-  fileName      String?   @map("file_name") @db.VarChar
-  source        String    @db.VarChar // 'stock' | 'purchase' | 'mixed'
-  totalRows     Int       @map("total_rows")
-  importedCount Int       @default(0) @map("imported_count")
-  updatedCount  Int       @default(0) @map("updated_count")
-  skippedCount  Int       @default(0) @map("skipped_count")
-  failedCount   Int       @default(0) @map("failed_count")
-  errors        Json?     @default("[]")
-  processingMs  Int?      @map("processing_ms")
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  shopId        String   @map("shop_id") @db.Uuid
+  importName    String   @map("import_name") @db.VarChar
+  fileName      String?  @map("file_name") @db.VarChar
+  source        String   @db.VarChar // 'stock' | 'purchase' | 'mixed'
+  totalRows     Int      @map("total_rows")
+  importedCount Int      @default(0) @map("imported_count")
+  updatedCount  Int      @default(0) @map("updated_count")
+  skippedCount  Int      @default(0) @map("skipped_count")
+  failedCount   Int      @default(0) @map("failed_count")
+  errors        Json?    @default("[]")
+  processingMs  Int?     @map("processing_ms")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -1661,28 +1748,37 @@ model ImportLog {
 // costing engine reads from ProductionBatch + BatchStage to derive per-kg cost.
 
 model RawMaterialLot {
-  id            String    @id @default(uuid()) @db.Uuid
-  shopId        String    @map("shop_id") @db.Uuid
-  productId     String?   @map("product_id") @db.Uuid    // links to the raw-material Product row (Paddy, Wheat, …)
-  supplierId    String?   @map("supplier_id") @db.Uuid   // Supplier row for the farmer / vendor
-  lotNumber     String?   @map("lot_number") @db.VarChar
-  farmerName    String?   @map("farmer_name") @db.VarChar
-  purchaseDate  DateTime  @default(now()) @map("purchase_date") @db.Timestamptz(6)
-  weightKg      Float?    @map("weight_kg")
-  moisturePct   Float?    @map("moisture_pct")
-  ratePerKg     Float?    @map("rate_per_kg")
-  totalAmount   Float?    @map("total_amount")
-  remainingKg   Float?    @map("remaining_kg")           // decremented as batches consume this lot
-  notes         String?   @db.VarChar
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String    @id @default(uuid()) @db.Uuid
+  shopId             String    @map("shop_id") @db.Uuid
+  productId          String?   @map("product_id") @db.Uuid // links to the raw-material Product row (Paddy, Wheat, …)
+  supplierId         String?   @map("supplier_id") @db.Uuid // Supplier row for the farmer / vendor
+  lotNumber          String?   @map("lot_number") @db.VarChar
+  farmerName         String?   @map("farmer_name") @db.VarChar
+  purchaseDate       DateTime  @default(now()) @map("purchase_date") @db.Timestamptz(6)
+  quantity           Float?    @map("quantity")
+  moisturePct        Float?    @map("moisture_pct")
+  ratePerUnit        Float?    @map("rate_per_unit")
+  totalAmount        Float?    @map("total_amount")
+  remainingQuantity  Float?    @map("remaining_quantity") // decremented as batches consume this lot
+  unit               String?   @map("unit") @db.VarChar
+  godownId           String?   @map("godown_id") @db.Uuid
+  purchaseItemId     String?   @map("purchase_item_id") @db.Uuid
+  weighbridgeEntryId String?   @map("weighbridge_entry_id") @db.Uuid
+  notes              String?   @db.VarChar
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop       Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  product    Product?           @relation(fields: [productId], references: [id], onDelete: NoAction)
-  supplier   Supplier?          @relation(fields: [supplierId], references: [id], onDelete: NoAction)
-  batches    ProductionBatch[]
+  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product            Product?           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  supplier           Supplier?          @relation(fields: [supplierId], references: [id], onDelete: NoAction)
+  godown             Godown?            @relation(fields: [godownId], references: [id], onDelete: NoAction)
+  purchaseItem       PurchaseItem?      @relation(fields: [purchaseItemId], references: [id], onDelete: NoAction)
+  batches            ProductionBatch[]
   weighbridgeEntries WeighbridgeEntry[]
-  qualityTests QualityTest[]
+  qualityTests       QualityTest[]
+  batchStageInputs   BatchStageInput[]
+  batchInputLots     BatchInputLot[]
 
+  @@unique([shopId, lotNumber])
   @@index([shopId])
   @@index([supplierId])
   @@index([productId])
@@ -1690,48 +1786,223 @@ model RawMaterialLot {
 }
 
 model ProductionBatch {
-  id             String    @id @default(uuid()) @db.Uuid
-  shopId         String    @map("shop_id") @db.Uuid
-  batchNumber    String    @map("batch_number") @db.VarChar
-  rawLotId       String?   @map("raw_lot_id") @db.Uuid   // source lot; null if consumed multiple
-  // The finished-good Product this batch produces (e.g. "Rice" from a
-  // "Paddy" raw lot). Optional so existing batches created before this field
-  // keep working unchanged — closing a batch only credits Product stock when
-  // this is set.
-  outputProductId String? @map("output_product_id") @db.Uuid
-  // The target output set when the batch is started (e.g. "expect ~650 Kg
-  // rice from 1000 Kg paddy at 65% recovery") — what turns this from a bare
-  // activity log into a real planned-vs-actual production order. Null for
-  // batches that don't bother planning ahead; outputKg (actual) is always
-  // what matters for stock/profit, this is purely a variance comparison.
-  plannedOutputKg Float?   @map("planned_output_kg")
-  inputKg        Float?    @map("input_kg")
-  outputKg       Float?    @map("output_kg")             // final finished-good weight
-  wastageKg      Float?    @map("wastage_kg")
-  brokenKg       Float?    @map("broken_kg")             // broken rice
-  branKg         Float?    @map("bran_kg")
-  huskKg         Float?    @map("husk_kg")
-  recoveryPct    Float?    @map("recovery_pct")          // outputKg / inputKg × 100
-  status         String    @default("open") @db.VarChar  // open | in_progress | closed
-  currentStage   String    @default("cleaning") @map("current_stage") @db.VarChar
-  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
-  notes          String?   @db.VarChar
-  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                String    @id @default(uuid()) @db.Uuid
+  shopId            String    @map("shop_id") @db.Uuid
+  batchNumber       String    @map("batch_number") @db.VarChar
+  batchType         String    @default("NORMAL") @map("batch_type") @db.VarChar
+  rawLotId          String?   @map("raw_lot_id") @db.Uuid // source lot; null if consumed multiple
+  rejectionLotId    String?   @map("rejection_lot_id") @db.Uuid
+  outputProductId   String?   @map("output_product_id") @db.Uuid
+  plannedOutputKg   Float?    @map("planned_output_kg")
+  inputKg           Float?    @map("input_kg")
+  outputKg          Float?    @map("output_kg") // final finished-good weight
+  wastageKg         Float?    @map("wastage_kg")
+  brokenKg          Float?    @map("broken_kg") // broken rice
+  branKg            Float?    @map("bran_kg")
+  huskKg            Float?    @map("husk_kg")
+  recoveryPct       Float?    @map("recovery_pct") // outputKg / inputKg × 100
+  status            String    @default("open") @db.VarChar // open | in_progress | closed
+  currentStage      String    @default("cleaning") @map("current_stage") @db.VarChar
+  startedAt         DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz(6)
+  notes             String?   @db.VarChar
+  workflowVersionId String?   @map("workflow_version_id") @db.Uuid
+  createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop         Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  rawLot       RawMaterialLot? @relation(fields: [rawLotId], references: [id], onDelete: NoAction)
-  outputProduct Product?       @relation("ProductionBatchOutput", fields: [outputProductId], references: [id], onDelete: NoAction)
-  stages       BatchStage[]
-  byProducts   ByProduct[]
-  outputs      ProductionOutput[]
-  qualityTests QualityTest[]
+  shop                  Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  rawLot                RawMaterialLot?        @relation(fields: [rawLotId], references: [id], onDelete: NoAction)
+  rejectionLot          RejectionLot?          @relation("ReprocessingBatches", fields: [rejectionLotId], references: [id], onDelete: SetNull)
+  outputProduct         Product?               @relation("ProductionBatchOutput", fields: [outputProductId], references: [id], onDelete: NoAction)
+  stages                BatchStage[]
+  byProducts            ByProduct[]
+  outputs               ProductionOutput[]
+  qualityTests          QualityTest[]
+  workflowVersion       WorkflowVersion?       @relation(fields: [workflowVersionId], references: [id], onDelete: NoAction)
+  batchWorkflowSnapshot BatchWorkflowSnapshot?
+  inputLots             BatchInputLot[]
+  wipLots               WipLot[]
+  finishedGoodsLots     FinishedGoodsLot[]
+  byProductLots         ByProductLot[]
+  rejectionLots         RejectionLot[]
 
   @@unique([shopId, batchNumber])
   @@index([shopId])
   @@index([rawLotId])
+  @@index([rejectionLotId])
   @@index([status])
   @@map("production_batches")
+}
+
+model BatchInputLot {
+  id               String   @id @default(uuid()) @db.Uuid
+  shopId           String   @map("shop_id") @db.Uuid
+  batchId          String   @map("batch_id") @db.Uuid
+  rawMaterialLotId String?  @map("raw_material_lot_id") @db.Uuid
+  rejectionLotId   String?  @map("rejection_lot_id") @db.Uuid
+  quantity         Float
+  unit             String   @default("kg") @db.VarChar
+  sequence         Int      @default(0)
+  notes            String?  @db.VarChar
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop           Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  batch          ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rawMaterialLot RawMaterialLot? @relation(fields: [rawMaterialLotId], references: [id], onDelete: NoAction)
+  rejectionLot   RejectionLot?   @relation(fields: [rejectionLotId], references: [id], onDelete: SetNull)
+  stageInputs    BatchStageInput[]
+
+  @@index([shopId])
+  @@index([batchId])
+  @@index([rawMaterialLotId])
+  @@index([rejectionLotId])
+  @@map("batch_input_lots")
+}
+
+model WipLot {
+  id                 String   @id @default(uuid()) @db.Uuid
+  shopId             String   @map("shop_id") @db.Uuid
+  lotNumber          String   @map("lot_number") @db.VarChar
+  productId          String   @map("product_id") @db.Uuid
+  quantity           Float
+  availableQuantity  Float    @map("available_quantity")
+  unit               String   @default("kg") @db.VarChar
+  batchId            String   @map("batch_id") @db.Uuid
+  sourceBatchStageId String?  @map("source_batch_stage_id") @db.Uuid
+  sourceOutputId     String?  @unique @map("source_output_id") @db.Uuid
+  godownId           String?  @map("godown_id") @db.Uuid
+  status             String   @default("AVAILABLE") @db.VarChar
+  notes              String?  @db.VarChar
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop             Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  batch            ProductionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sourceBatchStage BatchStage?       @relation(fields: [sourceBatchStageId], references: [id], onDelete: SetNull)
+  sourceOutput     BatchStageOutput? @relation(fields: [sourceOutputId], references: [id], onDelete: SetNull)
+  godown           Godown?           @relation(fields: [godownId], references: [id], onDelete: SetNull)
+  stageInputs      BatchStageInput[]
+
+  @@unique([shopId, lotNumber])
+  @@index([shopId])
+  @@index([batchId])
+  @@index([productId])
+  @@index([status])
+  @@index([sourceBatchStageId])
+  @@map("wip_lots")
+}
+
+model FinishedGoodsLot {
+  id                 String   @id @default(uuid()) @db.Uuid
+  shopId             String   @map("shop_id") @db.Uuid
+  lotNumber          String   @map("lot_number") @db.VarChar
+  productId          String   @map("product_id") @db.Uuid
+  quantity           Float
+  availableQuantity  Float    @map("available_quantity")
+  unit               String   @default("kg") @db.VarChar
+  batchId            String   @map("batch_id") @db.Uuid
+  sourceBatchStageId String?  @map("source_batch_stage_id") @db.Uuid
+  sourceOutputId     String?  @unique @map("source_output_id") @db.Uuid
+  godownId           String?  @map("godown_id") @db.Uuid
+  status             String   @default("AVAILABLE") @db.VarChar
+  notes              String?  @db.VarChar
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop             Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  batch            ProductionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sourceBatchStage BatchStage?       @relation(fields: [sourceBatchStageId], references: [id], onDelete: SetNull)
+  sourceOutput     BatchStageOutput? @relation(fields: [sourceOutputId], references: [id], onDelete: SetNull)
+  godown           Godown?           @relation(fields: [godownId], references: [id], onDelete: SetNull)
+  challanItems     DeliveryChallanItem[]
+
+  @@unique([shopId, lotNumber])
+  @@index([shopId])
+  @@index([batchId])
+  @@index([productId])
+  @@index([godownId])
+  @@index([status])
+  @@index([sourceBatchStageId])
+  @@map("finished_goods_lots")
+}
+
+model ByProductLot {
+  id                 String   @id @default(uuid()) @db.Uuid
+  shopId             String   @map("shop_id") @db.Uuid
+  lotNumber          String   @map("lot_number") @db.VarChar
+  productId          String   @map("product_id") @db.Uuid
+  quantity           Float
+  availableQuantity  Float    @map("available_quantity")
+  unit               String   @default("kg") @db.VarChar
+  batchId            String   @map("batch_id") @db.Uuid
+  sourceBatchStageId String?  @map("source_batch_stage_id") @db.Uuid
+  sourceOutputId     String?  @unique @map("source_output_id") @db.Uuid
+  godownId           String?  @map("godown_id") @db.Uuid
+  status             String   @default("AVAILABLE") @db.VarChar
+  isStockable        Boolean  @default(true) @map("is_stockable")
+  notes              String?  @db.VarChar
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop             Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  batch            ProductionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sourceBatchStage BatchStage?       @relation(fields: [sourceBatchStageId], references: [id], onDelete: SetNull)
+  sourceOutput     BatchStageOutput? @relation(fields: [sourceOutputId], references: [id], onDelete: SetNull)
+  godown           Godown?           @relation(fields: [godownId], references: [id], onDelete: SetNull)
+
+  @@unique([shopId, lotNumber])
+  @@index([shopId])
+  @@index([batchId])
+  @@index([productId])
+  @@index([godownId])
+  @@index([status])
+  @@index([sourceBatchStageId])
+  @@map("by_product_lots")
+}
+
+model RejectionLot {
+  id                 String    @id @default(uuid()) @db.Uuid
+  shopId             String    @map("shop_id") @db.Uuid
+  lotNumber          String    @map("lot_number") @db.VarChar
+  productId          String    @map("product_id") @db.Uuid
+  quantity           Float
+  availableQuantity  Float     @map("available_quantity")
+  disposedQuantity   Float     @default(0) @map("disposed_quantity")
+  unit               String    @default("kg") @db.VarChar
+  batchId            String    @map("batch_id") @db.Uuid
+  sourceBatchStageId String?   @map("source_batch_stage_id") @db.Uuid
+  sourceOutputId     String?   @unique @map("source_output_id") @db.Uuid
+  godownId           String?   @map("godown_id") @db.Uuid
+  status             String    @default("AVAILABLE") @db.VarChar
+  rejectionReason    String?   @map("rejection_reason") @db.VarChar
+  disposalReason     String?   @map("disposal_reason") @db.VarChar
+  qualityReference   String?   @map("quality_reference") @db.VarChar
+  notes              String?   @db.VarChar
+  disposedAt         DateTime? @map("disposed_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop                Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product             Product           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  batch               ProductionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sourceBatchStage    BatchStage?       @relation(fields: [sourceBatchStageId], references: [id], onDelete: SetNull)
+  sourceOutput        BatchStageOutput? @relation(fields: [sourceOutputId], references: [id], onDelete: SetNull)
+  godown              Godown?           @relation(fields: [godownId], references: [id], onDelete: SetNull)
+  reprocessingBatches ProductionBatch[] @relation("ReprocessingBatches")
+  batchInputLots      BatchInputLot[]
+  batchStageInputs    BatchStageInput[]
+
+  @@unique([shopId, lotNumber])
+  @@index([shopId])
+  @@index([batchId])
+  @@index([productId])
+  @@index([godownId])
+  @@index([status])
+  @@index([sourceBatchStageId])
+  @@map("rejection_lots")
 }
 
 // One classified result of a production run — user-defined, never a fixed rice list. A run's mass balance is
@@ -1745,10 +2016,10 @@ model ProductionOutput {
   batchId         String    @map("batch_id") @db.Uuid
   productId       String?   @map("product_id") @db.Uuid
   name            String    @db.VarChar
-  outputType      String    @map("output_type") @db.VarChar   // finished_good | by_product | rejection
-  quantity        Float                                       // as entered, in `unit`
+  outputType      String    @map("output_type") @db.VarChar // finished_good | by_product | rejection
+  quantity        Float // as entered, in `unit`
   unit            String    @default("kg") @db.VarChar
-  quantityKg      Float     @map("quantity_kg")               // the same quantity in kg (mass balance)
+  quantityKg      Float     @map("quantity_kg") // the same quantity in kg (mass balance)
   outputLotNumber String?   @map("output_lot_number") @db.VarChar
   notes           String?   @db.VarChar
   createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1764,41 +2035,50 @@ model ProductionOutput {
 }
 
 model BatchStage {
-  id           String    @id @default(uuid()) @db.Uuid
-  batchId      String    @map("batch_id") @db.Uuid
-  stageName    String    @map("stage_name") @db.VarChar  // cleaning | drying | shelling | polishing | packing
-  sequence     Int       @default(0)                     // 1..N — display order + progress calc
-  inputKg      Float?    @map("input_kg")
-  outputKg     Float?    @map("output_kg")
-  wastageKg    Float?    @map("wastage_kg")
-  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
-  operatorName String?   @map("operator_name") @db.VarChar
-  notes        String?   @db.VarChar
+  id             String    @id @default(uuid()) @db.Uuid
+  batchId        String    @map("batch_id") @db.Uuid
+  stageName      String    @map("stage_name") @db.VarChar // cleaning | drying | shelling | polishing | packing
+  sequence       Int       @default(0) // 1..N — display order + progress calc
+  inputKg        Float?    @map("input_kg")
+  outputKg       Float?    @map("output_kg")
+  wastageKg      Float?    @map("wastage_kg")
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(6)
+  operatorName   String?   @map("operator_name") @db.VarChar
+  notes          String?   @db.VarChar
   // User-defined extra results of this stage, e.g. [{"name":"Tukada","kg":120}] — informational; stock moves only at finalize.
-  extras       Json?
-  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  extras         Json?
+  processStageId String?   @map("process_stage_id") @db.Uuid
+  machineId      String?   @map("machine_id") @db.Uuid
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batch        ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  processStage ProcessStage?   @relation(fields: [processStageId], references: [id], onDelete: NoAction)
+  machine      Machine?        @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  wipLots           WipLot[]
+  finishedGoodsLots FinishedGoodsLot[]
+  byProductLots     ByProductLot[]
+  rejectionLots     RejectionLot[]
 
   @@index([batchId])
+  executionFields BatchStageExecutionField[] // inverse relation
   @@map("batch_stages")
 }
 
 model ByProduct {
-  id           String    @id @default(uuid()) @db.Uuid
-  shopId       String    @map("shop_id") @db.Uuid
-  batchId      String?   @map("batch_id") @db.Uuid       // originating batch; null for manual additions
+  id         String    @id @default(uuid()) @db.Uuid
+  shopId     String    @map("shop_id") @db.Uuid
+  batchId    String?   @map("batch_id") @db.Uuid // originating batch; null for manual additions
   // Optional link to a real sellable Product row — when set, recording this
   // by-product credits that product's stock, same as a finished-good batch
   // output. Left null for a by-product the shop doesn't track as inventory.
-  productId    String?   @map("product_id") @db.Uuid
-  name         String    @db.VarChar                     // Bran | Husk | Chuni | Polish | Dust | Broken Rice
-  quantityKg   Float?    @map("quantity_kg")
-  soldKg       Float?    @default(0) @map("sold_kg")
-  ratePerKg    Float?    @map("rate_per_kg")
-  notes        String?   @db.VarChar
-  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  productId  String?   @map("product_id") @db.Uuid
+  name       String    @db.VarChar // Bran | Husk | Chuni | Polish | Dust | Broken Rice
+  quantityKg Float?    @map("quantity_kg")
+  soldKg     Float?    @default(0) @map("sold_kg")
+  ratePerKg  Float?    @map("rate_per_kg")
+  notes      String?   @db.VarChar
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop    Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
   batch   ProductionBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
@@ -1829,8 +2109,8 @@ model QualityTest {
   foreignMatterPct Float?    @map("foreign_matter_pct")
   brokenPct        Float?    @map("broken_pct")
   damagedPct       Float?    @map("damaged_pct")
-  docPct           Float?    @map("doc_pct")          // protein / oil content, grain-dependent
-  flag             String?   @db.VarChar              // green | amber | red
+  docPct           Float?    @map("doc_pct") // protein / oil content, grain-dependent
+  flag             String?   @db.VarChar // green | amber | red
   decision         String    @default("pending") @db.VarChar // pending | accepted | rejected
   certificateUrl   String?   @map("certificate_url") @db.VarChar
   notes            String?   @db.VarChar
@@ -2058,26 +2338,29 @@ model Machine {
   notes        String?   @db.VarChar
   createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  maintenanceEntries MaintenanceEntry[]
-  spareParts         SparePart[]
-  downtimes          MachineDowntime[]
+  shop                Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  maintenanceEntries  MaintenanceEntry[]
+  spareParts          SparePart[]
+  downtimes           MachineDowntime[]
+  workflowStages      WorkflowStage[]
+  batchStages         BatchStage[]
+  batchStageSnapshots BatchStageSnapshot[]
 
   @@index([shopId])
   @@map("machines")
 }
 
 model MaintenanceEntry {
-  id           String    @id @default(uuid()) @db.Uuid
-  shopId       String    @map("shop_id") @db.Uuid
-  machineId    String    @map("machine_id") @db.Uuid
-  description  String    @db.VarChar
-  cost         Float?
-  performedBy  String?   @map("performed_by") @db.VarChar
-  serviceDate  DateTime  @default(now()) @map("service_date") @db.Timestamptz(6)
-  nextDueDate  DateTime? @map("next_due_date") @db.Timestamptz(6)
-  notes        String?   @db.VarChar
-  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String    @id @default(uuid()) @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  machineId   String    @map("machine_id") @db.Uuid
+  description String    @db.VarChar
+  cost        Float?
+  performedBy String?   @map("performed_by") @db.VarChar
+  serviceDate DateTime  @default(now()) @map("service_date") @db.Timestamptz(6)
+  nextDueDate DateTime? @map("next_due_date") @db.Timestamptz(6)
+  notes       String?   @db.VarChar
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
   machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
@@ -2096,15 +2379,15 @@ model MaintenanceEntry {
 // that fixed it, so "why was it down" and "what fixed it" stay connected
 // without forcing every downtime to go through a repair log.
 model MachineDowntime {
-  id            String    @id @default(uuid()) @db.Uuid
-  shopId        String    @map("shop_id") @db.Uuid
-  machineId     String    @map("machine_id") @db.Uuid
-  reason        String?   @db.VarChar
-  startedAt     DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  endedAt       DateTime? @map("ended_at") @db.Timestamptz(6)
-  maintenanceEntryId String? @map("maintenance_entry_id") @db.Uuid
-  notes         String?   @db.VarChar
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String    @id @default(uuid()) @db.Uuid
+  shopId             String    @map("shop_id") @db.Uuid
+  machineId          String    @map("machine_id") @db.Uuid
+  reason             String?   @db.VarChar
+  startedAt          DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt            DateTime? @map("ended_at") @db.Timestamptz(6)
+  maintenanceEntryId String?   @map("maintenance_entry_id") @db.Uuid
+  notes              String?   @db.VarChar
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
   machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
@@ -2167,4 +2450,359 @@ model SyncRecord {
   @@unique([shopId, idempotencyKey], map: "ix_sync_records_shop_idempotency")
   @@index([shopId])
   @@map("sync_records")
+}
+
+model ProcessStage {
+  id          String   @id @default(uuid()) @db.Uuid
+  shopId      String   @map("shop_id") @db.Uuid
+  code        String   @db.VarChar
+  name        String   @db.VarChar
+  description String?  @db.VarChar
+  category    String?  @db.VarChar
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop                Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  workflowStages      WorkflowStage[]
+  batchStages         BatchStage[]
+  batchStageSnapshots BatchStageSnapshot[]
+
+  @@unique([shopId, code])
+  @@index([shopId])
+  @@map("process_stages")
+}
+
+model Workflow {
+  id          String   @id @default(uuid()) @db.Uuid
+  shopId      String   @map("shop_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  code        String   @db.VarChar
+  name        String   @db.VarChar
+  description String?  @db.VarChar
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shop     Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product  Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  versions WorkflowVersion[]
+
+  @@unique([shopId, code])
+  @@index([shopId])
+  @@index([productId])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  workflowId    String   @map("workflow_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  status        String   @default("draft") @db.VarChar // draft | active | archived
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workflow               Workflow                @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stages                 WorkflowStage[]
+  productionBatches      ProductionBatch[]
+  batchWorkflowSnapshots BatchWorkflowSnapshot[]
+
+  @@unique([workflowId, versionNumber])
+  @@index([workflowId])
+  @@map("workflow_versions")
+}
+
+model WorkflowStage {
+  id                String   @id @default(uuid()) @db.Uuid
+  workflowVersionId String   @map("workflow_version_id") @db.Uuid
+  processStageId    String   @map("process_stage_id") @db.Uuid
+  machineId         String?  @map("machine_id") @db.Uuid
+  sequence          Int
+  isRequired        Boolean  @default(true) @map("is_required")
+  instructions      String?  @db.VarChar
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workflowVersion     WorkflowVersion      @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  processStage        ProcessStage         @relation(fields: [processStageId], references: [id], onDelete: NoAction)
+  machine             Machine?             @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  stageInputConfigs   StageInputConfig[]
+  stageOutputConfigs  StageOutputConfig[]
+  stageQualityConfigs StageQualityConfig[]
+  stageExecutionFieldConfigs StageExecutionFieldConfig[] // inverse relation
+  batchStageSnapshots BatchStageSnapshot[]
+
+  @@unique([workflowVersionId, sequence])
+  @@index([workflowVersionId])
+  @@index([processStageId])
+  @@index([machineId])
+  @@map("workflow_stages")
+}
+
+model StageInputConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  workflowStageId  String   @map("workflow_stage_id") @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  inputType        String   @map("input_type") @db.VarChar
+  quantityRuleType String   @map("quantity_rule_type") @db.VarChar
+  quantityValue    Decimal? @map("quantity_value") @db.Decimal(10, 3)
+  unit             String   @db.VarChar
+  isRequired       Boolean  @default(true) @map("is_required")
+  sequence         Int      @default(1)
+  notes            String?  @db.VarChar
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workflowStage    WorkflowStage     @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: NoAction)
+  batchStageInputs BatchStageInput[]
+
+  @@index([workflowStageId])
+  @@index([productId])
+  @@map("stage_input_configs")
+}
+
+model StageOutputConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  workflowStageId  String   @map("workflow_stage_id") @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  outputType       String   @map("output_type") @db.VarChar
+  quantityRuleType String   @map("quantity_rule_type") @db.VarChar
+  quantityValue    Decimal? @map("quantity_value") @db.Decimal(10, 3)
+  unit             String   @db.VarChar
+  expectedQuantity Decimal? @map("expected_quantity") @db.Decimal(10, 3)
+  minimumQuantity  Decimal? @map("minimum_quantity") @db.Decimal(10, 3)
+  maximumQuantity  Decimal? @map("maximum_quantity") @db.Decimal(10, 3)
+  tolerancePercent Decimal? @map("tolerance_percent") @db.Decimal(5, 2)
+  isRequired       Boolean  @default(true) @map("is_required")
+  sequence         Int      @default(1)
+  notes            String?  @db.VarChar
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workflowStage     WorkflowStage      @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  product           Product            @relation(fields: [productId], references: [id], onDelete: NoAction)
+  batchStageOutputs BatchStageOutput[]
+
+  @@index([workflowStageId])
+  @@index([productId])
+  @@map("stage_output_configs")
+}
+
+model StageQualityConfig {
+  id              String   @id @default(uuid()) @db.Uuid
+  workflowStageId String   @map("workflow_stage_id") @db.Uuid
+  parameterName   String   @map("parameter_name") @db.VarChar
+  parameterCode   String?  @map("parameter_code") @db.VarChar
+  dataType        String   @map("data_type") @db.VarChar
+  unit            String?  @db.VarChar
+  minValue        Decimal? @map("min_value") @db.Decimal(10, 3)
+  maxValue        Decimal? @map("max_value") @db.Decimal(10, 3)
+  targetValue     String?  @map("target_value") @db.VarChar
+  isRequired      Boolean  @default(true) @map("is_required")
+  isCritical      Boolean  @default(false) @map("is_critical")
+  failureAction   String   @default("WARNING") @map("failure_action") @db.VarChar
+  instructions    String?  @db.VarChar
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workflowStage               WorkflowStage                @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  batchStageQualityParameters BatchStageQualityParameter[]
+
+  @@index([workflowStageId])
+  @@map("stage_quality_configs")
+}
+
+model BatchWorkflowSnapshot {
+  id                String   @id @default(uuid()) @db.Uuid
+  productionBatchId String   @unique @map("production_batch_id") @db.Uuid
+  workflowVersionId String?  @map("workflow_version_id") @db.Uuid
+  workflowName      String   @map("workflow_name") @db.VarChar
+  versionNumber     Int      @map("version_number")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  batch           ProductionBatch      @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  workflowVersion WorkflowVersion?     @relation(fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  stages          BatchStageSnapshot[]
+
+  @@map("batch_workflow_snapshots")
+}
+
+model BatchStageSnapshot {
+  id                      String    @id @default(uuid()) @db.Uuid
+  batchWorkflowSnapshotId String    @map("batch_workflow_snapshot_id") @db.Uuid
+  sourceWorkflowStageId   String?   @map("source_workflow_stage_id") @db.Uuid
+  processStageId          String?   @map("process_stage_id") @db.Uuid
+  machineId               String?   @map("machine_id") @db.Uuid
+  stageName               String    @map("stage_name") @db.VarChar
+  sequence                Int       @default(1)
+  isRequired              Boolean   @default(true) @map("is_required")
+  instructions            String?   @db.VarChar
+  status                  String    @default("PENDING") @db.VarChar
+  startedAt               DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt             DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  snapshot          BatchWorkflowSnapshot        @relation(fields: [batchWorkflowSnapshotId], references: [id], onDelete: Cascade)
+  sourceStage       WorkflowStage?               @relation(fields: [sourceWorkflowStageId], references: [id], onDelete: SetNull)
+  processStage      ProcessStage?                @relation(fields: [processStageId], references: [id], onDelete: SetNull)
+  machine           Machine?                     @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  inputs            BatchStageInput[]
+  outputs           BatchStageOutput[]
+  qualityParameters BatchStageQualityParameter[]
+
+  @@index([batchWorkflowSnapshotId])
+  @@map("batch_stage_snapshots")
+}
+
+model BatchStageInput {
+  id                      String   @id @default(uuid()) @db.Uuid
+  batchStageSnapshotId    String   @map("batch_stage_snapshot_id") @db.Uuid
+  sourceConfigId          String?  @map("source_config_id") @db.Uuid
+  productId               String   @map("product_id") @db.Uuid
+  inputType               String   @map("input_type") @db.VarChar
+  quantityRuleType        String   @map("quantity_rule_type") @db.VarChar
+  configuredQuantityValue Decimal? @map("configured_quantity_value") @db.Decimal(10, 3)
+  unit                    String   @db.VarChar
+  isRequired              Boolean  @default(true) @map("is_required")
+
+  actualQuantity Decimal? @map("actual_quantity") @db.Decimal(10, 3)
+  actualUnit     String?  @map("actual_unit") @db.VarChar
+  sourceLotId     String?          @map("source_lot_id") @db.Uuid
+  batchInputLotId String?          @map("batch_input_lot_id") @db.Uuid
+  wipLotId        String?          @map("wip_lot_id") @db.Uuid
+  rejectionLotId  String?          @map("rejection_lot_id") @db.Uuid
+  notes           String?          @db.VarChar
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  stageSnapshot BatchStageSnapshot @relation(fields: [batchStageSnapshotId], references: [id], onDelete: Cascade)
+  sourceConfig  StageInputConfig?  @relation(fields: [sourceConfigId], references: [id], onDelete: SetNull)
+  product       Product            @relation(fields: [productId], references: [id], onDelete: NoAction)
+  sourceLot     RawMaterialLot?    @relation(fields: [sourceLotId], references: [id], onDelete: NoAction)
+  batchInputLot BatchInputLot?     @relation(fields: [batchInputLotId], references: [id], onDelete: SetNull)
+  wipLot        WipLot?            @relation(fields: [wipLotId], references: [id], onDelete: SetNull)
+  rejectionLot  RejectionLot?      @relation(fields: [rejectionLotId], references: [id], onDelete: SetNull)
+
+  @@index([batchStageSnapshotId])
+  @@index([productId])
+  @@index([batchInputLotId])
+  @@index([wipLotId])
+  @@index([rejectionLotId])
+  @@map("batch_stage_inputs")
+}
+
+model BatchStageOutput {
+  id                      String   @id @default(uuid()) @db.Uuid
+  batchStageSnapshotId    String   @map("batch_stage_snapshot_id") @db.Uuid
+  sourceConfigId          String?  @map("source_config_id") @db.Uuid
+  productId               String   @map("product_id") @db.Uuid
+  outputType              String   @map("output_type") @db.VarChar
+  quantityRuleType        String   @map("quantity_rule_type") @db.VarChar
+  configuredQuantityValue Decimal? @map("configured_quantity_value") @db.Decimal(10, 3)
+  unit                    String   @db.VarChar
+  expectedQuantity        Decimal? @map("expected_quantity") @db.Decimal(10, 3)
+  minimumQuantity         Decimal? @map("minimum_quantity") @db.Decimal(10, 3)
+  maximumQuantity         Decimal? @map("maximum_quantity") @db.Decimal(10, 3)
+  tolerancePercent        Decimal? @map("tolerance_percent") @db.Decimal(5, 2)
+  isRequired              Boolean  @default(true) @map("is_required")
+
+  actualQuantity Decimal? @map("actual_quantity") @db.Decimal(10, 3)
+  actualUnit     String?  @map("actual_unit") @db.VarChar
+  notes          String?  @db.VarChar
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  stageSnapshot BatchStageSnapshot @relation(fields: [batchStageSnapshotId], references: [id], onDelete: Cascade)
+  sourceConfig  StageOutputConfig? @relation(fields: [sourceConfigId], references: [id], onDelete: SetNull)
+  product       Product            @relation(fields: [productId], references: [id], onDelete: NoAction)
+  wipLot           WipLot?
+  finishedGoodsLot FinishedGoodsLot?
+  byProductLot     ByProductLot?
+  rejectionLot     RejectionLot?
+
+  @@index([batchStageSnapshotId])
+  @@index([productId])
+  @@map("batch_stage_outputs")
+}
+
+model BatchStageQualityParameter {
+  id                   String   @id @default(uuid()) @db.Uuid
+  batchStageSnapshotId String   @map("batch_stage_snapshot_id") @db.Uuid
+  sourceConfigId       String?  @map("source_config_id") @db.Uuid
+  parameterName        String   @map("parameter_name") @db.VarChar
+  parameterCode        String?  @map("parameter_code") @db.VarChar
+  dataType             String   @map("data_type") @db.VarChar
+  unit                 String?  @db.VarChar
+  minValue             Decimal? @map("min_value") @db.Decimal(10, 3)
+  maxValue             Decimal? @map("max_value") @db.Decimal(10, 3)
+  targetValue          String?  @map("target_value") @db.VarChar
+  isRequired           Boolean  @default(true) @map("is_required")
+  isCritical           Boolean  @default(false) @map("is_critical")
+  failureAction        String   @default("WARNING") @map("failure_action") @db.VarChar
+  instructions         String?  @db.VarChar
+
+  actualValue String?   @map("actual_value") @db.VarChar
+  result      String?   @map("result") @db.VarChar // PASS, FAIL, WARNING
+  remarks     String?   @db.VarChar
+  checkedBy   String?   @map("checked_by") @db.Uuid // Optional link to Staff/User
+  checkedAt   DateTime? @map("checked_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  stageSnapshot BatchStageSnapshot  @relation(fields: [batchStageSnapshotId], references: [id], onDelete: Cascade)
+  sourceConfig  StageQualityConfig? @relation(fields: [sourceConfigId], references: [id], onDelete: SetNull)
+
+  @@index([batchStageSnapshotId])
+  @@map("batch_stage_quality_parameters")
+}
+
+model StageExecutionFieldConfig {
+  id               String        @id @default(uuid()) @db.Uuid
+  shopId           String        @map("shop_id") @db.Uuid
+  workflowStageId  String        @map("workflow_stage_id") @db.Uuid
+  workflowStage    WorkflowStage @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  fieldCode        String        @map("field_code") @db.VarChar
+  fieldName        String        @map("field_name") @db.VarChar
+  description      String?       @db.VarChar
+  fieldType        String        @map("field_type") @db.VarChar
+  unit             String?       @db.VarChar
+  isRequired       Boolean       @default(false) @map("is_required")
+  isActive         Boolean       @default(true) @map("is_active")
+  sequence         Int
+  options          Json?
+  defaultValue     String?       @map("default_value") @db.VarChar
+  placeholder      String?       @db.VarChar
+  helpText         String?       @map("help_text") @db.VarChar
+  section          String?       @db.VarChar
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([workflowStageId, fieldCode])
+  @@index([shopId])
+  @@index([workflowStageId])
+  @@map("stage_execution_field_configs")
+}
+
+model BatchStageExecutionField {
+  id             String      @id @default(uuid()) @db.Uuid
+  batchStageId   String      @map("batch_stage_id") @db.Uuid
+  batchStage     BatchStage  @relation(fields: [batchStageId], references: [id], onDelete: Cascade)
+  sourceConfigId String?     @map("source_config_id") @db.Uuid
+  fieldCode      String      @map("field_code") @db.VarChar
+  fieldName      String      @map("field_name") @db.VarChar
+  description    String?     @db.VarChar
+  fieldType      String      @map("field_type") @db.VarChar
+  unit           String?     @db.VarChar
+  isRequired     Boolean     @map("is_required")
+  sequence       Int
+  options        Json?
+  section        String?     @db.VarChar
+  actualValue    Json?       @map("actual_value")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([batchStageId])
+  @@map("batch_stage_execution_fields")
 }

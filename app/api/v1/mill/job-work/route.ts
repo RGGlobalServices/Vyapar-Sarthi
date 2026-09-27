@@ -58,8 +58,9 @@ export const POST = handle(async (req) => {
   const inputWeightKg = Number(body.inputWeightKg);
   if (!isFinite(inputWeightKg) || inputWeightKg <= 0) throw new ApiError(400, 'inputWeightKg must be a positive number');
 
-  const ratePerKg = Number(body.ratePerKg);
-  if (!isFinite(ratePerKg) || ratePerKg <= 0) throw new ApiError(400, 'ratePerKg must be a positive number');
+  const rawRate = body.ratePerKg ?? body.ratePerUnit;
+  const ratePerKg = Number(rawRate);
+  if (!isFinite(ratePerKg) || ratePerKg < 0) throw new ApiError(400, 'ratePerKg must be a non-negative number');
 
   const feeBasis = body.feeBasis === 'output' ? 'output' : 'input';
 

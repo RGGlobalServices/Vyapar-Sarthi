@@ -77,13 +77,44 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       // Auto-seed the next stage's inputKg with this stage's outputKg so the
       // operator doesn't retype it — the whole pipeline is "output of stage N
       // becomes input of stage N+1", minus wastage.
-      if (next !== stage.stageName && updatedStage.outputKg != null) {
-        const nextStage = batch.stages.find((s: any) => s.stageName === next);
-        if (nextStage && nextStage.inputKg == null) {
-          await (prisma as any).batchStage.update({
-            where: { id: nextStage.id },
-            data: { inputKg: updatedStage.outputKg },
+      if (next !== stage.stageName) {
+        // If outputKg isn't set on the stage record, compute it from execution fields
+        // (covers cases where only execution-level fields like grade_1/2/3 were filled)
+        let effectiveOutputKg: number | null = updatedStage.outputKg ?? null;
+        if (effectiveOutputKg == null) {
+          const OUTPUT_CODES = new Set([
+            'output_qty', 'cleaned_output_qty', 'destoned_output_qty', 'milled_output_qty',
+            'fine_main_output_qty', 'accepted_output_qty', 'packed_qty',
+            'grade_1_output_qty', 'grade_2_output_qty', 'grade_3_output_qty',
+          ]);
+          const exFields = await (prisma as any).batchStageExecutionField.findMany({
+            where: { batchStageId: stage.id },
           });
+          let computed = 0;
+          for (const f of exFields) {
+            if (OUTPUT_CODES.has(f.fieldCode) && f.actualValue) {
+              const v = Number(f.actualValue);
+              if (!isNaN(v) && v > 0) computed += v;
+            }
+          }
+          if (computed > 0) {
+            effectiveOutputKg = computed;
+            await (prisma as any).batchStage.update({ where: { id: stage.id }, data: { outputKg: computed } });
+          }
+        }
+
+        if (effectiveOutputKg != null) {
+          const nextStage = batch.stages.find((s: any) => s.stageName === next);
+          if (nextStage) {
+            await (prisma as any).batchStage.update({
+              where: { id: nextStage.id },
+              data: { inputKg: effectiveOutputKg },
+            });
+            await (prisma as any).batchStageExecutionField.updateMany({
+              where: { batchStageId: nextStage.id, fieldCode: 'input_qty' },
+              data: { actualValue: String(effectiveOutputKg) },
+            });
+          }
         }
       }
     }

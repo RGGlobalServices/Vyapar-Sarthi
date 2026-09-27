@@ -153,6 +153,8 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'raw-material',
       'finished-goods',
       'by-products',
+      'wip',
+      'rejections',
       'job-work',
       // Logistics
       'transport',

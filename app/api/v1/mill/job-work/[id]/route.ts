@@ -15,9 +15,9 @@ const INCLUDE = {
 };
 
 /** The fee the server would charge: rate × (input or output weight, by the order's basis). Never taken from the client. */
-function computeFee(order: { feeBasis: string; inputWeightKg: number; ratePerKg: number }, outputWeightKg: number | null): number | null {
+function computeFee(order: { feeBasis: string; inputWeightKg: number; ratePerUnit: number }, outputWeightKg: number | null): number | null {
   const basisWeight = order.feeBasis === 'output' ? outputWeightKg : order.inputWeightKg;
-  return basisWeight == null ? null : Math.round(basisWeight * order.ratePerKg * 100) / 100;
+  return basisWeight == null ? null : Math.round(basisWeight * order.ratePerUnit * 100) / 100;
 }
 
 /**
@@ -134,5 +134,17 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     return json({ ...updated, paymentApplied });
   }
 
-  throw new ApiError(400, 'Unknown action — expected "start" or "complete"');
+  if (action === 'deliver') {
+    if (existing.status !== 'completed') {
+      throw new ApiError(400, 'Order must be completed before it can be marked as delivered/returned', 'INVALID_STATUS');
+    }
+    const delivered = await (prisma as any).jobWorkOrder.update({
+      where: { id },
+      data: { status: 'delivered', deliveredAt: new Date() },
+      include: INCLUDE,
+    });
+    return json(delivered);
+  }
+
+  throw new ApiError(400, 'Unknown action — expected "start", "complete", or "deliver"');
 });

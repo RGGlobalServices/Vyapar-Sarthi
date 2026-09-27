@@ -1,49 +1,152 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import {
   Truck, Plus, Search, X, Printer, Receipt, Ban, Loader2,
-  Package, User, ChevronRight,
+  Package, User, ChevronDown, ChevronUp, MapPin, Navigation,
+  FileText, Hash, Calendar, ArrowRight, RotateCcw,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { performSmartSearch } from '@/lib/smartSearch';
 import { useBusinessStore } from '@/lib/businessStore';
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 type ChallanItem = {
-  id?: string; productId: string; name: string; unit: string;
-  variantKey?: string | null; quantity: number; price: number;
+  id?: string;
+  productId: string;
+  name: string;
+  baseUnit: string;      // product's own base unit (never changes)
+  unit: string;          // dispatch unit (user can switch per item)
+  variantKey?: string | null;
+  quantity: number;      // in dispatch unit; for Bag = noOfPacks × packSize
+  price: number;         // per dispatch unit
+  lotId?: string | null;
+  lotNumber?: string | null;
+  godown?: string | null;
+  packSize?: number | null;    // bag/bundle size in baseUnit (e.g. 50 Kg)
+  noOfPacks?: number | null;   // number of bags/bundles
+  totalWeight?: number | null; // Kg equivalent (informational)
 };
+
 type Challan = {
-  id: string; challanNumber: string; status: 'open' | 'invoiced' | 'cancelled';
-  customerId?: string | null; customerName?: string | null; customerMobile?: string | null;
-  customerAddress?: string | null; notes?: string | null; createdAt: string; invoicedAt?: string | null;
+  id: string;
+  challanNumber: string;
+  challanDate?: string | null;
+  status: 'open' | 'invoiced' | 'cancelled' | 'returned';
+  dispatchType?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  customerMobile?: string | null;
+  customerAddress?: string | null;
+  dispatchFrom?: string | null;
+  transporter?: string | null;
+  vehicleNumber?: string | null;
+  driverName?: string | null;
+  driverMobile?: string | null;
+  lrNumber?: string | null;
+  jobWorkOrderRef?: string | null;
+  eWayBillNo?: string | null;
+  expectedInvoiceDate?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  invoicedAt?: string | null;
   items: ChallanItem[];
 };
 
+type Lot = {
+  id: string;
+  lotNumber: string;
+  availableQuantity: number;
+  unit: string;
+  godownId?: string | null;
+  godown?: { name: string } | null;
+};
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+// ── Unit system ──────────────────────────────────────────────────────────────
+// Single source of truth for dispatch units — add/remove here and everything
+// (UI fields, conversions, print view) updates automatically.
+type UnitKind = 'weight' | 'pack' | 'volume' | 'count';
+type UnitDef = { label: string; kind: UnitKind; toKg?: number };
+
+const UNIT_DEFS: Record<string, UnitDef> = {
+  Kg:      { label: 'Kg',      kind: 'weight', toKg: 1 },
+  Quintal: { label: 'Quintal', kind: 'weight', toKg: 100 },
+  Ton:     { label: 'Ton',     kind: 'weight', toKg: 1000 },
+  Bag:     { label: 'Bag',     kind: 'pack' },
+  Bundle:  { label: 'Bundle',  kind: 'pack' },
+  Gunny:   { label: 'Gunny',   kind: 'pack' },
+  Piece:   { label: 'Piece',   kind: 'count' },
+  Litre:   { label: 'Litre',   kind: 'volume' },
+};
+const ALL_UNITS = Object.keys(UNIT_DEFS);
+
+function unitDef(u: string): UnitDef {
+  return UNIT_DEFS[u] || { label: u, kind: 'count' };
+}
+
+// For a cart item compute the canonical quantity (in dispatch unit) and totalWeight
+function computeItemTotals(it: ChallanItem): { quantity: number; totalWeight: number | null } {
+  const def = unitDef(it.unit);
+  if (def.kind === 'pack') {
+    const bags = Number(it.noOfPacks) || 0;
+    const size = Number(it.packSize) || 0;
+    return { quantity: bags, totalWeight: bags * size || null };
+  }
+  if (def.toKg && def.toKg > 1) {
+    const qty = Number(it.quantity) || 0;
+    return { quantity: qty, totalWeight: qty * def.toKg };
+  }
+  return { quantity: Number(it.quantity) || 0, totalWeight: null };
+}
+
+const DISPATCH_TYPES = [
+  { value: 'sale',       label: 'Sale' },
+  { value: 'job_work',   label: 'Job Work' },
+  { value: 'sample',     label: 'Sample' },
+  { value: 'transfer',   label: 'Transfer' },
+  { value: 'return',     label: 'Return' },
+  { value: 'other',      label: 'Other' },
+];
+
 const STATUS_STYLE: Record<string, string> = {
-  open: 'bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  invoiced: 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  open:      'bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  invoiced:  'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   cancelled: 'bg-slate-200 dark:bg-slate-800 text-slate-500',
+  returned:  'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400',
+};
+
+const DISPATCH_COLOR: Record<string, string> = {
+  sale:     'text-emerald-600',
+  job_work: 'text-blue-600',
+  sample:   'text-purple-600',
+  transfer: 'text-orange-600',
+  return:   'text-red-500',
+  other:    'text-slate-500',
 };
 
 function challanTotal(c: Challan) {
   return c.items.reduce((s, it) => s + it.quantity * it.price, 0);
 }
 
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ChallansPage() {
-  const router = useRouter();
-  const locale = useLocale();
+  const router  = useRouter();
+  const locale  = useLocale();
   const { profile } = useBusinessStore();
-  const [challans, setChallans] = useState<Challan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'invoiced' | 'cancelled'>('all');
-  const [search, setSearch] = useState('');
-  const [showNew, setShowNew] = useState(false);
+  const [challans, setChallans]         = useState<Challan[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'invoiced' | 'cancelled' | 'returned'>('all');
+  const [search, setSearch]             = useState('');
+  const [showNew, setShowNew]           = useState(false);
   const [printChallan, setPrintChallan] = useState<Challan | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyId, setBusyId]             = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,10 +172,19 @@ export default function ChallansPage() {
     finally { setBusyId(null); }
   };
 
-  // Hands off to the normal Billing screen with this challan's items/party
-  // pre-loaded — the actual Sale/GST/ledger/stock-decrement all still go
-  // through the one real billing path (see WholesaleBillingUI's challan
-  // prefill effect); this page never creates a Sale itself.
+  const handleReturn = async (c: Challan) => {
+    const msg = c.status === 'invoiced'
+      ? `Return challan ${c.challanNumber}? This challan was already invoiced — stock will be added back to inventory. The linked invoice is NOT automatically reversed.`
+      : `Return challan ${c.challanNumber}? All dispatched stock will be added back to inventory.`;
+    if (!confirm(msg)) return;
+    setBusyId(c.id);
+    try {
+      await api.patch(`/challans/${c.id}`, { action: 'return' });
+      load();
+    } catch { alert('Failed to process return.'); }
+    finally { setBusyId(null); }
+  };
+
   const handleConvertToInvoice = (c: Challan) => {
     sessionStorage.setItem('pendingChallanInvoice', JSON.stringify(c));
     router.push(`/${locale}/billing`);
@@ -80,12 +192,15 @@ export default function ChallansPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500 pb-20">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Truck className="text-emerald-500" size={28} /> Delivery Challans
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">Dispatch goods now, raise the GST invoice later — stock moves the moment a challan is created.</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">
+            Dispatch goods now, raise the GST invoice later — stock moves the moment a challan is created.
+          </p>
         </div>
         <button
           onClick={() => setShowNew(true)}
@@ -95,15 +210,16 @@ export default function ChallansPage() {
         </button>
       </div>
 
+      {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex gap-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
-          {(['all', 'open', 'invoiced', 'cancelled'] as const).map((s) => (
+          {(['all', 'open', 'invoiced', 'returned', 'cancelled'] as const).map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-colors',
-                statusFilter === s ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'
+                statusFilter === s ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500',
               )}
             >
               {s}
@@ -121,6 +237,7 @@ export default function ChallansPage() {
         </div>
       </div>
 
+      {/* List */}
       {loading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>
       ) : challans.length === 0 ? (
@@ -138,6 +255,7 @@ export default function ChallansPage() {
                   <th className="px-4 py-3">Challan #</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Party</th>
+                  <th className="px-4 py-3">Purpose</th>
                   <th className="px-4 py-3 text-center">Items</th>
                   <th className="px-4 py-3 text-right">Value</th>
                   <th className="px-4 py-3">Status</th>
@@ -148,10 +266,21 @@ export default function ChallansPage() {
                 {challans.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{c.challanNumber}</td>
-                    <td className="px-4 py-3 text-slate-500">{new Date(c.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                      {new Date(c.challanDate || c.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </td>
                     <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{c.customerName || '—'}</td>
+                    <td className="px-4 py-3">
+                      {c.dispatchType && (
+                        <span className={cn('text-xs font-bold capitalize', DISPATCH_COLOR[c.dispatchType] || 'text-slate-500')}>
+                          {DISPATCH_TYPES.find(d => d.value === c.dispatchType)?.label || c.dispatchType}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-center text-slate-500">{c.items.length}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">₹{challanTotal(c).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                      ₹{challanTotal(c).toLocaleString('en-IN')}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase', STATUS_STYLE[c.status])}>{c.status}</span>
                     </td>
@@ -171,6 +300,14 @@ export default function ChallansPage() {
                               <Receipt size={15} />
                             </button>
                             <button
+                              onClick={() => handleReturn(c)}
+                              disabled={busyId === c.id}
+                              title="Return Stock"
+                              className="p-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            >
+                              {busyId === c.id ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                            </button>
+                            <button
                               onClick={() => handleCancel(c)}
                               disabled={busyId === c.id}
                               title="Cancel"
@@ -179,6 +316,16 @@ export default function ChallansPage() {
                               <Ban size={15} />
                             </button>
                           </>
+                        )}
+                        {c.status === 'invoiced' && (
+                          <button
+                            onClick={() => handleReturn(c)}
+                            disabled={busyId === c.id}
+                            title="Return Stock (reverse dispatch)"
+                            className="p-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                          >
+                            {busyId === c.id ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                          </button>
                         )}
                       </div>
                     </td>
@@ -191,63 +338,188 @@ export default function ChallansPage() {
       )}
 
       {showNew && (
-        <NewChallanModal
-          onClose={() => setShowNew(false)}
-          onCreated={() => { setShowNew(false); load(); }}
-        />
+        <NewChallanModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); load(); }} />
       )}
       {printChallan && (
-        <PrintChallanModal challan={printChallan} shopName={profile?.shopName || 'Your Shop'} onClose={() => setPrintChallan(null)} />
+        <PrintChallanModal
+          challan={printChallan}
+          shopName={profile?.shopName || 'Your Shop'}
+          onClose={() => setPrintChallan(null)}
+        />
       )}
     </div>
   );
 }
 
-// ─── New Challan Modal ──────────────────────────────────────────────────────
+// ── Section header helper ─────────────────────────────────────────────────────
+
+function Section({
+  icon, title, collapsible = false, defaultOpen = true, children,
+}: {
+  icon: React.ReactNode; title: string; collapsible?: boolean; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => collapsible && setOpen(v => !v)}
+        className={cn(
+          'w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50',
+          collapsible && 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800',
+        )}
+      >
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+          {icon}{title}
+        </div>
+        {collapsible && (open ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />)}
+      </button>
+      {open && <div className="p-4 space-y-3">{children}</div>}
+    </div>
+  );
+}
+
+function Field({ label, children, half }: { label: string; children: React.ReactNode; half?: boolean }) {
+  return (
+    <div className={half ? 'flex-1 min-w-[140px]' : ''}>
+      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 dark:text-slate-100 placeholder:text-slate-400';
+const selectCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 dark:text-slate-100';
+
+// ── New Challan Modal ─────────────────────────────────────────────────────────
+
 function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   type Party = { id: string; name: string; mobile?: string; address?: string };
-  const [parties, setParties] = useState<Party[]>([]);
-  const [partySearch, setPartySearch] = useState('');
-  const [showPartyDropdown, setShowPartyDropdown] = useState(false);
-  const [selectedParty, setSelectedParty] = useState<Party | null>(null);
 
-  const [products, setProducts] = useState<any[]>([]);
+  // Basic
+  const [challanDate, setChallanDate]     = useState(new Date().toISOString().slice(0, 10));
+  const [dispatchType, setDispatchType]   = useState('sale');
+
+  // Party
+  const [parties, setParties]             = useState<Party[]>([]);
+  const [partySearch, setPartySearch]     = useState('');
+  const [showPartyDrop, setShowPartyDrop] = useState(false);
+  const [selectedParty, setSelectedParty] = useState<Party | null>(null);
+  const partyInputRef = useRef<HTMLInputElement>(null);
+
+  // Items
+  const [products, setProducts]           = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState('');
-  const [cartItems, setCartItems] = useState<ChallanItem[]>([]);
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [showProductDrop, setShowProdDrop]= useState(false);
+  const [cartItems, setCartItems]         = useState<ChallanItem[]>([]);
+  const [lotsByProduct, setLotsByProduct] = useState<Record<string, Lot[]>>({});
+  const prodInputRef = useRef<HTMLInputElement>(null);
+
+  // Transport
+  const [transporter, setTransporter]     = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [driverName, setDriverName]       = useState('');
+  const [driverMobile, setDriverMobile]   = useState('');
+  const [lrNumber, setLrNumber]           = useState('');
+
+  // Dispatch
+  const [dispatchFrom, setDispatchFrom]   = useState('');
+
+  // Reference
+  const [jobWorkOrderRef, setJobWorkOrderRef]           = useState('');
+  const [eWayBillNo, setEWayBillNo]                     = useState('');
+  const [expectedInvoiceDate, setExpectedInvoiceDate]   = useState('');
+
+  // Notes / form
+  const [notes, setNotes]     = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
 
   useEffect(() => {
-    api.get('/crm/customers?type=party').then(r => setParties(Array.isArray(r.data) ? r.data : [])).catch(() => {});
-    api.get('/products').then(r => setProducts(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => {});
+    api.get('/crm/customers?type=all').then(r => setParties(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    api.get('/products?isRawMaterial=false').then(r => setProducts(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => {});
   }, []);
 
-  const searchResults = useMemo(() => {
+  // Fetch lots for a product if not already loaded
+  const fetchLots = useCallback(async (productId: string) => {
+    if (lotsByProduct[productId] !== undefined) return;
+    try {
+      const res = await api.get(`/mill/finished-goods?productId=${productId}&status=AVAILABLE&limit=50`);
+      const lots: Lot[] = (res.data?.lots || res.data?.data || res.data || []).filter((l: Lot) => l.availableQuantity > 0);
+      setLotsByProduct(prev => ({ ...prev, [productId]: lots }));
+    } catch {
+      setLotsByProduct(prev => ({ ...prev, [productId]: [] }));
+    }
+  }, [lotsByProduct]);
+
+  const productResults = useMemo(() => {
     if (productSearch.trim().length < 2) return [];
     return performSmartSearch(products, productSearch).slice(0, 10);
   }, [products, productSearch]);
 
   const addItem = (p: any) => {
+    const base = p.baseUnit || p.base_unit || 'Kg';
     setCartItems(prev => {
-      const existing = prev.find(it => it.productId === p.id);
-      if (existing) {
-        return prev.map(it => it.productId === p.id ? { ...it, quantity: it.quantity + 1 } : it);
-      }
+      if (prev.find(it => it.productId === p.id)) return prev;
       return [...prev, {
-        productId: p.id, name: p.name, unit: p.baseUnit || p.base_unit || 'Unit',
-        quantity: 1, price: Number(p.sellingPrice ?? p.selling_price) || 0,
+        productId: p.id,
+        name: p.name,
+        baseUnit: base,
+        unit: base,
+        quantity: 1,
+        price: Number(p.sellingPrice ?? p.selling_price) || 0,
+        lotId: null,
+        lotNumber: null,
+        godown: '',
+        packSize: null,
+        noOfPacks: null,
+        totalWeight: null,
       }];
     });
+    fetchLots(p.id);
     setProductSearch('');
+    setShowProdDrop(false);
   };
 
   const updateItem = (idx: number, patch: Partial<ChallanItem>) => {
-    setCartItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+    setCartItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      const updated = { ...it, ...patch };
+      // Auto-fill lot details when lot selected
+      if (patch.lotId) {
+        const lots = lotsByProduct[it.productId] || [];
+        const lot = lots.find(l => l.id === patch.lotId);
+        if (lot) {
+          updated.lotNumber = lot.lotNumber;
+          if (lot.godown?.name && !updated.godown) updated.godown = lot.godown.name;
+        }
+      }
+      if (patch.lotId === '') { updated.lotId = null; updated.lotNumber = null; }
+      // When unit changes, reset pack fields
+      if (patch.unit && patch.unit !== it.unit) {
+        updated.packSize = null; updated.noOfPacks = null; updated.totalWeight = null;
+      }
+      // Auto-calc totalWeight for pack units
+      const def = unitDef(updated.unit);
+      if (def.kind === 'pack') {
+        const bags = Number(updated.noOfPacks) || 0;
+        const size = Number(updated.packSize) || 0;
+        updated.quantity = bags;
+        updated.totalWeight = bags * size || null;
+      } else if (def.toKg && def.toKg > 1) {
+        updated.totalWeight = (Number(updated.quantity) || 0) * def.toKg || null;
+      }
+      return updated;
+    }));
   };
+
   const removeItem = (idx: number) => setCartItems(prev => prev.filter((_, i) => i !== idx));
 
-  const total = cartItems.reduce((s, it) => s + it.quantity * it.price, 0);
+  const total = cartItems.reduce((s, it) => {
+    const def = unitDef(it.unit);
+    const qty = def.kind === 'pack' ? (Number(it.noOfPacks) || 0) : (Number(it.quantity) || 0);
+    return s + qty * it.price;
+  }, 0);
 
   const handleSave = async () => {
     if (!selectedParty) { setError('Please select a party.'); return; }
@@ -260,8 +532,36 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
         customerName: selectedParty.name,
         customerMobile: selectedParty.mobile,
         customerAddress: selectedParty.address,
+        challanDate,
+        dispatchType,
+        dispatchFrom: dispatchFrom.trim() || undefined,
+        transporter: transporter.trim() || undefined,
+        vehicleNumber: vehicleNumber.trim() || undefined,
+        driverName: driverName.trim() || undefined,
+        driverMobile: driverMobile.trim() || undefined,
+        lrNumber: lrNumber.trim() || undefined,
+        jobWorkOrderRef: jobWorkOrderRef.trim() || undefined,
+        eWayBillNo: eWayBillNo.trim() || undefined,
+        expectedInvoiceDate: expectedInvoiceDate || undefined,
         notes: notes.trim() || undefined,
-        items: cartItems,
+        items: cartItems.map(it => {
+          const def = unitDef(it.unit);
+          const isPack = def.kind === 'pack';
+          return {
+            productId: it.productId,
+            name: it.name,
+            unit: it.unit,
+            variantKey: it.variantKey || undefined,
+            quantity: isPack ? (Number(it.noOfPacks) || 0) : (Number(it.quantity) || 0),
+            price: it.price,
+            lotId: it.lotId || undefined,
+            lotNumber: it.lotNumber || undefined,
+            godown: it.godown?.trim() || undefined,
+            packSize: it.packSize ?? undefined,
+            noOfPacks: it.noOfPacks ?? undefined,
+            totalWeight: it.totalWeight ?? undefined,
+          };
+        }),
       });
       onCreated();
     } catch (err: any) {
@@ -272,146 +572,310 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl my-4">
+    <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-6">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl my-4">
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-2"><Truck size={18} className="text-emerald-500" /> New Delivery Challan</h2>
+          <h2 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-2">
+            <Truck size={18} className="text-emerald-500" /> New Delivery Challan
+          </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={20} /></button>
         </div>
 
-        <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-          {/* Party */}
-          <div className="relative">
-            <label className="text-xs font-bold text-slate-500 mb-1 block">Party <span className="text-red-500">*</span></label>
-            {selectedParty ? (
-              <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <User size={15} className="text-emerald-600" />
-                  <span className="font-bold text-slate-900 dark:text-white">{selectedParty.name}</span>
-                  {selectedParty.mobile && <span className="text-xs text-slate-500">{selectedParty.mobile}</span>}
-                </div>
-                <button onClick={() => setSelectedParty(null)} className="text-slate-400 hover:text-red-500"><X size={16} /></button>
-              </div>
-            ) : (
-              <>
-                <input
-                  value={partySearch}
-                  onChange={(e) => { setPartySearch(e.target.value); setShowPartyDropdown(true); }}
-                  onFocus={() => setShowPartyDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowPartyDropdown(false), 200)}
-                  placeholder="Search party by name or mobile"
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                {showPartyDropdown && partySearch.trim() && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                    {parties
-                      .filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase()) || (p.mobile || '').includes(partySearch))
-                      .slice(0, 8)
-                      .map(p => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onMouseDown={() => { setSelectedParty(p); setPartySearch(''); setShowPartyDropdown(false); }}
-                          className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0"
-                        >
-                          <div className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</div>
-                          <div className="text-xs text-slate-500">{p.mobile || 'No mobile'}</div>
-                        </button>
-                      ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
 
-          {/* Item search */}
-          <div className="relative">
-            <label className="text-xs font-bold text-slate-500 mb-1 block">Add Items</label>
+          {/* ─ Basic Info ─ */}
+          <Section icon={<FileText size={13} />} title="Basic Info">
+            <div className="flex gap-3 flex-wrap">
+              <Field label="Challan Date" half>
+                <input type="date" value={challanDate} onChange={e => setChallanDate(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Dispatch Purpose" half>
+                <select value={dispatchType} onChange={e => setDispatchType(e.target.value)} className={selectCls}>
+                  {DISPATCH_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </Field>
+            </div>
+          </Section>
+
+          {/* ─ Party ─ */}
+          <Section icon={<User size={13} />} title="Party">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                placeholder="Search product to dispatch"
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-              />
+              {selectedParty ? (
+                <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <User size={15} className="text-emerald-600" />
+                    <span className="font-bold text-slate-900 dark:text-white">{selectedParty.name}</span>
+                    {selectedParty.mobile && <span className="text-xs text-slate-500">{selectedParty.mobile}</span>}
+                    {selectedParty.address && <span className="text-xs text-slate-400 truncate max-w-[200px]">{selectedParty.address}</span>}
+                  </div>
+                  <button onClick={() => setSelectedParty(null)} className="text-slate-400 hover:text-red-500"><X size={16} /></button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    ref={partyInputRef}
+                    value={partySearch}
+                    onChange={e => { setPartySearch(e.target.value); setShowPartyDrop(true); }}
+                    onFocus={() => setShowPartyDrop(true)}
+                    onBlur={() => setTimeout(() => setShowPartyDrop(false), 200)}
+                    placeholder="Search party by name or mobile"
+                    className={inputCls}
+                  />
+                  {showPartyDrop && partySearch.trim() && (() => {
+                    const r = partyInputRef.current?.getBoundingClientRect();
+                    const filtered = parties.filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase()) || (p.mobile || '').includes(partySearch)).slice(0, 8);
+                    if (!r || filtered.length === 0) return null;
+                    return (
+                      <div style={{ position: 'fixed', top: r.bottom + 4, left: r.left, width: r.width, zIndex: 9999 }} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
+                        {filtered.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onMouseDown={() => { setSelectedParty(p); setPartySearch(''); setShowPartyDrop(false); }}
+                            className="w-full text-left px-3 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0"
+                          >
+                            <div className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</div>
+                            <div className="text-xs text-slate-500">{p.mobile || 'No mobile'}{p.address ? ` · ${p.address}` : ''}</div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
             </div>
-            {searchResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                {searchResults.map((p: any) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => addItem(p)}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 flex justify-between items-center"
-                  >
-                    <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
-                    <span className="text-xs text-slate-500">Stock: {p.currentStock ?? p.current_stock ?? '—'}</span>
-                  </button>
-                ))}
+          </Section>
+
+          {/* ─ Items ─ */}
+          <Section icon={<Package size={13} />} title="Items">
+            {/* Product search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <input
+                ref={prodInputRef}
+                value={productSearch}
+                onChange={e => { setProductSearch(e.target.value); setShowProdDrop(true); }}
+                onFocus={() => setShowProdDrop(true)}
+                onBlur={() => setTimeout(() => setShowProdDrop(false), 200)}
+                placeholder="Search product to dispatch…"
+                className={cn(inputCls, 'pl-9')}
+              />
+              {showProductDrop && productResults.length > 0 && (() => {
+                const r = prodInputRef.current?.getBoundingClientRect();
+                if (!r) return null;
+                return (
+                  <div style={{ position: 'fixed', top: r.bottom + 4, left: r.left, width: r.width, zIndex: 9999 }} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
+                    {productResults.map((p: any) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onMouseDown={() => addItem(p)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 flex justify-between items-center"
+                      >
+                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
+                        <span className="text-xs text-slate-500">Stock: {p.currentStock ?? p.current_stock ?? '—'}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Cart — unit-aware item cards */}
+            {cartItems.length > 0 && (
+              <div className="space-y-2 mt-2">
+                {cartItems.map((it, idx) => {
+                  const lots = lotsByProduct[it.productId] || [];
+                  const def = unitDef(it.unit);
+                  const isPack    = def.kind === 'pack';
+                  const isWeight  = !!def.toKg && def.toKg > 1;
+                  const bags      = Number(it.noOfPacks) || 0;
+                  const packSz    = Number(it.packSize) || 0;
+                  const itemTotal = isPack
+                    ? bags * it.price
+                    : (Number(it.quantity) || 0) * it.price;
+
+                  const cellCls = 'px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none w-full dark:text-slate-100';
+
+                  return (
+                    <div key={idx} className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-2.5 bg-slate-50/50 dark:bg-slate-800/30">
+                      {/* Row 1 — product name + remove */}
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Package size={13} className="text-emerald-500 shrink-0" />{it.name}
+                        </span>
+                        <button onClick={() => removeItem(idx)} className="text-slate-400 hover:text-red-500 shrink-0">
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      {/* Row 2 — Lot + Godown */}
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Lot / Batch</label>
+                          {lots.length > 0 ? (
+                            <select value={it.lotId || ''} onChange={e => updateItem(idx, { lotId: e.target.value || null })} className={cellCls}>
+                              <option value="">— No Lot —</option>
+                              {lots.map(l => <option key={l.id} value={l.id}>{l.lotNumber} (Avl: {l.availableQuantity} {l.unit})</option>)}
+                            </select>
+                          ) : (
+                            <input value={it.lotNumber || ''} onChange={e => updateItem(idx, { lotNumber: e.target.value })} placeholder="Lot / Batch #" className={cellCls} />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Godown</label>
+                          <input value={it.godown || ''} onChange={e => updateItem(idx, { godown: e.target.value })} placeholder="Godown / Location" className={cellCls} />
+                        </div>
+                      </div>
+
+                      {/* Row 3 — Unit selector */}
+                      <div className="flex gap-2 items-end">
+                        <div className="w-28 shrink-0">
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Dispatch Unit</label>
+                          <select value={it.unit} onChange={e => updateItem(idx, { unit: e.target.value })} className={cellCls}>
+                            {ALL_UNITS.map(u => <option key={u} value={u}>{UNIT_DEFS[u].label}</option>)}
+                          </select>
+                        </div>
+                        {/* hint: product base unit */}
+                        {it.unit !== it.baseUnit && (
+                          <span className="text-[10px] text-slate-400 pb-1.5">base: {it.baseUnit}</span>
+                        )}
+                      </div>
+
+                      {/* Row 4 — dynamic quantity fields */}
+                      {isPack ? (
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">No. of {it.unit}s</label>
+                            <input type="number" min="0" value={it.noOfPacks ?? ''} onChange={e => updateItem(idx, { noOfPacks: e.target.value === '' ? null : Number(e.target.value) })} placeholder="e.g. 20" className={cellCls} />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{it.unit} Size (Kg)</label>
+                            <input type="number" min="0" value={it.packSize ?? ''} onChange={e => updateItem(idx, { packSize: e.target.value === '' ? null : Number(e.target.value) })} placeholder="e.g. 50" className={cellCls} />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-black uppercase text-emerald-600 mb-0.5">Total Weight</label>
+                            <div className="px-2 py-1.5 text-xs bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg font-bold text-emerald-700 dark:text-emerald-400">
+                              {bags && packSz ? `${(bags * packSz).toLocaleString('en-IN')} Kg` : '— Kg'}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Quantity ({it.unit})</label>
+                            <input type="number" min="0" value={it.quantity || ''} onChange={e => updateItem(idx, { quantity: Number(e.target.value) || 0 })} className={cellCls} />
+                          </div>
+                          {isWeight && (
+                            <div className="flex-1">
+                              <label className="block text-[9px] font-black uppercase text-emerald-600 mb-0.5">≈ Kg Equivalent</label>
+                              <div className="px-2 py-1.5 text-xs bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg font-bold text-emerald-700 dark:text-emerald-400">
+                                {it.quantity ? `${((it.quantity) * (def.toKg || 1)).toLocaleString('en-IN')} Kg` : '— Kg'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Row 5 — Rate + Total */}
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Rate (₹ per {it.unit})</label>
+                          <input type="number" min="0" value={it.price || ''} onChange={e => updateItem(idx, { price: Number(e.target.value) || 0 })} className={cellCls} />
+                        </div>
+                        <div className="flex-1 text-right">
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Item Total</label>
+                          <div className="px-2 py-1.5 text-sm font-black text-slate-900 dark:text-white bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
+                            ₹{itemTotal.toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Grand total */}
+                <div className="flex justify-between items-center px-3 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-sm">
+                  <span className="text-slate-600 dark:text-slate-400">Grand Total</span>
+                  <span className="text-slate-900 dark:text-white text-base">₹{total.toLocaleString('en-IN')}</span>
+                </div>
               </div>
             )}
-          </div>
+          </Section>
 
-          {/* Cart */}
-          {cartItems.length > 0 && (
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Item</th>
-                    <th className="px-3 py-2 text-center w-20">Qty</th>
-                    <th className="px-3 py-2 text-right w-24">Price</th>
-                    <th className="px-3 py-2 text-right w-24">Total</th>
-                    <th className="px-3 py-2 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {cartItems.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-200">{it.name}</td>
-                      <td className="px-3 py-2">
-                        <input type="number" min="0" value={it.quantity}
-                          onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) || 0 })}
-                          className="w-16 px-2 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg" />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input type="number" min="0" value={it.price}
-                          onChange={(e) => updateItem(idx, { price: Number(e.target.value) || 0 })}
-                          className="w-20 px-2 py-1 text-right bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg" />
-                      </td>
-                      <td className="px-3 py-2 text-right font-bold">₹{(it.quantity * it.price).toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-2">
-                        <button onClick={() => removeItem(idx)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 flex justify-between text-sm font-bold border-t border-slate-200 dark:border-slate-800">
-                <span>Total</span>
-                <span>₹{total.toLocaleString('en-IN')}</span>
+          {/* ─ Dispatch Details ─ */}
+          <Section icon={<MapPin size={13} />} title="Dispatch Details" collapsible defaultOpen>
+            <div className="flex gap-3 flex-wrap">
+              <Field label="Dispatch From (Godown / Location)" half>
+                <input value={dispatchFrom} onChange={e => setDispatchFrom(e.target.value)} placeholder="e.g. Main Godown, Warehouse B" className={inputCls} />
+              </Field>
+              <Field label="Delivery Address" half>
+                <input
+                  value={selectedParty?.address || ''}
+                  readOnly
+                  placeholder="Auto-filled from party"
+                  className={cn(inputCls, 'bg-slate-50 dark:bg-slate-800/50 text-slate-500')}
+                />
+              </Field>
+            </div>
+          </Section>
+
+          {/* ─ Transport ─ */}
+          <Section icon={<Truck size={13} />} title="Transport" collapsible defaultOpen={dispatchType !== 'sample'}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Transporter Name">
+                <input value={transporter} onChange={e => setTransporter(e.target.value)} placeholder="e.g. Shivaji Transport" className={inputCls} />
+              </Field>
+              <Field label="Vehicle Number">
+                <input value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="e.g. MH 12 AB 1234" className={inputCls} />
+              </Field>
+              <Field label="Driver Name">
+                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Driver name" className={inputCls} />
+              </Field>
+              <Field label="Driver Mobile">
+                <input value={driverMobile} onChange={e => setDriverMobile(e.target.value)} placeholder="Mobile number" className={inputCls} />
+              </Field>
+              <Field label="LR / Transport Receipt No." half>
+                <input value={lrNumber} onChange={e => setLrNumber(e.target.value)} placeholder="LR Number" className={inputCls} />
+              </Field>
+            </div>
+          </Section>
+
+          {/* ─ Reference ─ */}
+          <Section icon={<Hash size={13} />} title="Reference / Compliance" collapsible defaultOpen={false}>
+            <div className="grid grid-cols-2 gap-3">
+              {dispatchType === 'job_work' && (
+                <Field label="Job Work Order Ref">
+                  <input value={jobWorkOrderRef} onChange={e => setJobWorkOrderRef(e.target.value)} placeholder="JW Order / Ref no." className={inputCls} />
+                </Field>
+              )}
+              <Field label="E-Way Bill No.">
+                <input value={eWayBillNo} onChange={e => setEWayBillNo(e.target.value)} placeholder="If applicable" className={inputCls} />
+              </Field>
+              <Field label="Expected Invoice Date">
+                <input type="date" value={expectedInvoiceDate} onChange={e => setExpectedInvoiceDate(e.target.value)} className={inputCls} />
+              </Field>
+              <div className="col-span-2">
+                <Field label="Notes">
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Any remarks…" className={inputCls} />
+                </Field>
               </div>
             </div>
-          )}
+          </Section>
 
-          <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">Notes (optional)</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
-          </div>
-
-          {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
+          {error && <p className="text-xs text-red-500 font-semibold px-1">{error}</p>}
         </div>
 
+        {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800">
           <button
             onClick={handleSave}
             disabled={saving}
             className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-900 py-3 rounded-xl font-black flex items-center justify-center gap-2 transition-all active:scale-95"
           >
-            {saving ? <Loader2 className="animate-spin" size={18} /> : <Truck size={18} />}
-            {saving ? 'Saving…' : 'Create Challan & Dispatch'}
+            {saving ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+            {saving ? 'Saving…' : 'Create Challan & Dispatch Stock'}
           </button>
         </div>
       </div>
@@ -419,73 +883,176 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
-// ─── Print View ─────────────────────────────────────────────────────────────
+// ── Print View ────────────────────────────────────────────────────────────────
+
 function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; shopName: string; onClose: () => void }) {
+  const dispatchLabel = DISPATCH_TYPES.find(d => d.value === challan.dispatchType)?.label || challan.dispatchType || 'Sale';
+  const hasTransport  = challan.transporter || challan.vehicleNumber || challan.driverName || challan.lrNumber;
+  const hasRef        = challan.eWayBillNo || challan.jobWorkOrderRef || challan.expectedInvoiceDate;
+  const contentRef    = useRef<HTMLDivElement>(null);
+
+  const handleDownloadPdf = async () => {
+    if (!contentRef.current) return;
+    try {
+      const [{ jsPDF }, html2canvasMod] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas-pro'),
+      ]);
+      const html2canvas = html2canvasMod.default;
+      const canvas = await html2canvas(contentRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = (canvas.height * pdfW) / canvas.width;
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
+      pdf.save(`challan-${challan.challanNumber}.pdf`);
+    } catch (e) {
+      console.error('PDF generation failed:', e);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8 print:bg-white print:p-0">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4 print:shadow-none print:rounded-none print:max-w-full">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 print:hidden">
+    <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="font-black text-lg text-slate-900">Delivery Challan</h2>
           <div className="flex items-center gap-2">
-            <button onClick={() => window.print()} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-slate-900 rounded-lg text-sm font-bold"><Printer size={14} /> Print</button>
+            <button onClick={handleDownloadPdf} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-slate-900 rounded-lg text-sm font-bold">
+              <Printer size={14} /> Download PDF
+            </button>
             <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={20} /></button>
           </div>
         </div>
-        <div className="p-8 text-slate-900">
+
+        <div ref={contentRef} className="p-8 text-slate-900">
+          {/* Header */}
           <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-4">
             <div>
               <h1 className="text-xl font-black">{shopName}</h1>
-              <p className="text-xs text-slate-500 mt-1">DELIVERY CHALLAN — Not a Tax Invoice</p>
+              <p className="text-xs text-slate-500 mt-0.5">DELIVERY CHALLAN — Not a Tax Invoice</p>
+              <span className="inline-block mt-1 text-[10px] font-bold uppercase px-2 py-0.5 bg-slate-100 rounded text-slate-600">
+                {dispatchLabel}
+              </span>
             </div>
             <div className="text-right text-sm">
               <p><span className="text-slate-500">Challan #:</span> <span className="font-bold">{challan.challanNumber}</span></p>
-              <p><span className="text-slate-500">Date:</span> {new Date(challan.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-              <p className="mt-1"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', STATUS_STYLE[challan.status])}>{challan.status}</span></p>
+              <p><span className="text-slate-500">Date:</span>{' '}
+                {new Date(challan.challanDate || challan.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </p>
+              <p className="mt-1">
+                <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', STATUS_STYLE[challan.status])}>
+                  {challan.status}
+                </span>
+              </p>
             </div>
           </div>
-          <div className="mb-4">
-            <p className="text-xs font-bold text-slate-500 uppercase">Dispatched To</p>
-            <p className="font-bold">{challan.customerName || '—'}</p>
-            {challan.customerMobile && <p className="text-sm text-slate-600">{challan.customerMobile}</p>}
-            {challan.customerAddress && <p className="text-sm text-slate-600">{challan.customerAddress}</p>}
+
+          {/* Party + Dispatch */}
+          <div className="grid grid-cols-2 gap-6 mb-4">
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Dispatched To</p>
+              <p className="font-bold">{challan.customerName || '—'}</p>
+              {challan.customerMobile && <p className="text-sm text-slate-600">{challan.customerMobile}</p>}
+              {challan.customerAddress && <p className="text-sm text-slate-600">{challan.customerAddress}</p>}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Dispatch From</p>
+              <p className="font-semibold text-sm">{challan.dispatchFrom || '—'}</p>
+            </div>
           </div>
-          <table className="w-full text-sm border border-slate-200">
+
+          {/* Items table */}
+          <table className="w-full text-sm border border-slate-200 mb-4">
             <thead className="bg-slate-100">
               <tr>
                 <th className="px-3 py-2 text-left">#</th>
                 <th className="px-3 py-2 text-left">Item</th>
-                <th className="px-3 py-2 text-center">Unit</th>
-                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-left">Lot / Batch</th>
+                <th className="px-3 py-2 text-left">Godown</th>
+                <th className="px-3 py-2 text-center">Qty / Packs</th>
+                <th className="px-3 py-2 text-center">Wt. (Kg)</th>
                 <th className="px-3 py-2 text-right">Rate</th>
                 <th className="px-3 py-2 text-right">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {challan.items.map((it, i) => (
-                <tr key={i} className="border-t border-slate-200">
-                  <td className="px-3 py-2">{i + 1}</td>
-                  <td className="px-3 py-2 font-semibold">{it.name}{it.variantKey ? ` (${it.variantKey})` : ''}</td>
-                  <td className="px-3 py-2 text-center">{it.unit}</td>
-                  <td className="px-3 py-2 text-right">{it.quantity}</td>
-                  <td className="px-3 py-2 text-right">₹{it.price.toLocaleString('en-IN')}</td>
-                  <td className="px-3 py-2 text-right font-bold">₹{(it.quantity * it.price).toLocaleString('en-IN')}</td>
-                </tr>
-              ))}
+              {challan.items.map((it, i) => {
+                const def = unitDef(it.unit);
+                const isPack = def.kind === 'pack';
+                const qtyDisplay = isPack
+                  ? `${it.noOfPacks ?? it.quantity} ${it.unit}${(it.noOfPacks ?? 1) !== 1 ? 's' : ''} × ${it.packSize ?? '?'} Kg`
+                  : `${it.quantity} ${it.unit}`;
+                const wt = it.totalWeight
+                  ? it.totalWeight.toLocaleString('en-IN')
+                  : (def.toKg && def.toKg > 1 ? (it.quantity * def.toKg).toLocaleString('en-IN') : '—');
+                const lineTotal = isPack
+                  ? (Number(it.noOfPacks) || it.quantity) * it.price
+                  : it.quantity * it.price;
+                return (
+                  <tr key={i} className="border-t border-slate-200">
+                    <td className="px-3 py-2">{i + 1}</td>
+                    <td className="px-3 py-2 font-semibold">{it.name}{it.variantKey ? ` (${it.variantKey})` : ''}</td>
+                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">{it.lotNumber || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 text-xs">{it.godown || '—'}</td>
+                    <td className="px-3 py-2 text-center text-xs">{qtyDisplay}</td>
+                    <td className="px-3 py-2 text-center text-xs">{wt}</td>
+                    <td className="px-3 py-2 text-right">₹{it.price.toLocaleString('en-IN')}/{it.unit}</td>
+                    <td className="px-3 py-2 text-right font-bold">₹{lineTotal.toLocaleString('en-IN')}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-          <div className="flex justify-end mt-3">
+
+          <div className="flex justify-end mb-4">
             <div className="text-right">
               <p className="text-sm text-slate-500">Total Value</p>
               <p className="text-xl font-black">₹{challanTotal(challan).toLocaleString('en-IN')}</p>
             </div>
           </div>
+
+          {/* Transport */}
+          {hasTransport && (
+            <div className="border border-slate-200 rounded-lg p-3 mb-4 text-xs grid grid-cols-2 gap-2">
+              <p className="col-span-2 font-bold text-slate-700 mb-1">Transport Details</p>
+              {challan.transporter && <p><span className="text-slate-500">Transporter: </span>{challan.transporter}</p>}
+              {challan.vehicleNumber && <p><span className="text-slate-500">Vehicle: </span>{challan.vehicleNumber}</p>}
+              {challan.driverName && <p><span className="text-slate-500">Driver: </span>{challan.driverName}{challan.driverMobile ? ` (${challan.driverMobile})` : ''}</p>}
+              {challan.lrNumber && <p><span className="text-slate-500">LR No.: </span>{challan.lrNumber}</p>}
+            </div>
+          )}
+
+          {/* Reference */}
+          {hasRef && (
+            <div className="border border-slate-200 rounded-lg p-3 mb-4 text-xs grid grid-cols-2 gap-2">
+              <p className="col-span-2 font-bold text-slate-700 mb-1">Reference</p>
+              {challan.eWayBillNo && <p><span className="text-slate-500">E-Way Bill: </span>{challan.eWayBillNo}</p>}
+              {challan.jobWorkOrderRef && <p><span className="text-slate-500">JW Order Ref: </span>{challan.jobWorkOrderRef}</p>}
+              {challan.expectedInvoiceDate && (
+                <p><span className="text-slate-500">Expected Invoice Date: </span>
+                  {new Date(challan.expectedInvoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </p>
+              )}
+            </div>
+          )}
+
           {challan.notes && (
-            <div className="mt-4 text-xs text-slate-500">
+            <div className="text-xs text-slate-500 mb-4">
               <p className="font-bold text-slate-700">Notes</p>
               <p>{challan.notes}</p>
             </div>
           )}
-          <p className="mt-8 text-[11px] text-slate-400 text-center">Goods dispatched against this challan — a formal GST invoice follows separately.</p>
+
+          {/* Signatures */}
+          <div className="grid grid-cols-3 gap-6 mt-8 pt-4 border-t border-slate-200 text-xs text-center text-slate-500">
+            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>Prepared By</p></div>
+            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>Authorised Signatory</p></div>
+            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>Receiver Signature</p></div>
+          </div>
+
+          <p className="mt-6 text-[10px] text-slate-400 text-center">
+            Goods dispatched against this challan — a formal GST invoice follows separately.
+          </p>
         </div>
       </div>
     </div>

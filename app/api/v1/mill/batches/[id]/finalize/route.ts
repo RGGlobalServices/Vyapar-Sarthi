@@ -2,6 +2,10 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { checkBalance, kgToProductUnit, parseLossKg, parseOutputs, round3 } from '@/lib/server/millProduction';
+import { createFinishedGoodsLot } from '@/lib/server/finishedGoodsService';
+import { createWipLotFromStageOutput } from '@/lib/server/wipService';
+import { createRejectionLot } from '@/lib/server/rejectionService';
+import { recordStageAuditEvent } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +14,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const MOVEMENT_TYPE: Record<string, string> = {
   finished_good: 'production_output',
+  wip: 'production_wip',
   by_product: 'production_byproduct',
   rejection: 'production_rejection',
 };
@@ -41,6 +46,9 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   const allowNegativeStock = Boolean((shop as any).allowNegativeStock);
 
   // The batch must be this shop's before anything else about the request is examined.
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) throw new ApiError(404, 'Production batch not found');
+
   const owned = await prisma.productionBatch.findFirst({ where: { id, shopId: shop.id }, select: { id: true } });
   if (!owned) throw new ApiError(404, 'Production batch not found');
 
@@ -58,7 +66,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
 
   const finalized = await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<any[]>`
-      SELECT id, batch_number, status, input_kg, raw_lot_id FROM production_batches
+      SELECT id, batch_number, status, input_kg, raw_lot_id, batch_type FROM production_batches
       WHERE id = ${id}::uuid AND shop_id = ${shop.id}::uuid FOR UPDATE`;
     const batch = rows[0];
     if (!batch) throw new ApiError(404, 'Production batch not found');
@@ -79,35 +87,65 @@ export const POST = handle<Ctx>(async (req, { params }) => {
       );
     }
 
-    // Batches started under this workflow carry a `production_start` marker and consume their input here. A batch started
-    // by the older flow already took its kilos out of the lot when it was created, so it is not charged a second time.
-    const marker = await tx.stockMovement.findFirst({ where: { shopId: shop.id, type: 'production_start', referenceId: id }, select: { id: true } });
+    // Batches started under this workflow carry a `production_start` marker and consume their input here.
+    // Job Work batches do NOT consume from mill's purchased raw material lots because the grain is customer-owned.
+    const isJobWork = batch.batch_type === 'JOB_WORK';
+    const marker = !isJobWork ? await tx.stockMovement.findFirst({ where: { shopId: shop.id, type: 'production_start', referenceId: id }, select: { id: true } }) : null;
     const consume = !!marker;
 
-    if (consume) {
+    if (consume && !isJobWork) {
       if (!batch.raw_lot_id) throw new ApiError(400, 'This batch has no raw material lot to consume.', 'RAW_LOT_REQUIRED');
-      const took = await tx.$executeRaw`
-        UPDATE raw_material_lots SET remaining_kg = remaining_kg - ${inputKg}
-        WHERE id = ${batch.raw_lot_id}::uuid AND shop_id = ${shop.id}::uuid AND COALESCE(remaining_kg, 0) >= ${inputKg}`;
-      if (took === 0) {
-        const lot = await tx.$queryRaw<any[]>`SELECT remaining_kg FROM raw_material_lots WHERE id = ${batch.raw_lot_id}::uuid AND shop_id = ${shop.id}::uuid`;
-        throw new ApiError(409, `Only ${round3(Number(lot[0]?.remaining_kg) || 0)} kg is left in the raw material lot — this batch needs ${inputKg} kg.`, 'INSUFFICIENT_RAW_STOCK');
-      }
-      // The raw material's own product stock goes down by the same weight (floored at zero unless the shop allows negative stock,
-      // since lots created by some intake paths never credited the product stock in the first place).
-      const lotRow = await tx.$queryRaw<any[]>`SELECT product_id FROM raw_material_lots WHERE id = ${batch.raw_lot_id}::uuid`;
-      const rawProductId: string | null = lotRow[0]?.product_id ?? null;
-      if (rawProductId) {
-        if (allowNegativeStock) {
-          await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${inputKg} WHERE id = ${rawProductId}::uuid AND shop_id = ${shop.id}::uuid`;
-        } else {
-          await tx.$executeRaw`UPDATE products SET current_stock = GREATEST(COALESCE(current_stock, 0) - ${inputKg}, 0) WHERE id = ${rawProductId}::uuid AND shop_id = ${shop.id}::uuid`;
+      
+      // Structure as an array to naturally support multiple lots without rewriting the core flow.
+      const consumedLots = [{
+        lotId: batch.raw_lot_id,
+        consumedQty: inputKg
+      }];
+
+      for (const cl of consumedLots) {
+        const took = await tx.$executeRaw`
+          UPDATE raw_material_lots SET remaining_quantity = remaining_quantity - ${cl.consumedQty}
+          WHERE id = ${cl.lotId}::uuid AND shop_id = ${shop.id}::uuid AND COALESCE(remaining_quantity, 0) >= ${cl.consumedQty}`;
+        
+        if (took === 0) {
+          const lot = await tx.$queryRaw<any[]>`SELECT remaining_quantity, lot_number FROM raw_material_lots WHERE id = ${cl.lotId}::uuid AND shop_id = ${shop.id}::uuid`;
+          throw new ApiError(409, `Only ${round3(Number(lot[0]?.remaining_quantity) || 0)} left in lot ${lot[0]?.lot_number || cl.lotId} — this batch needs ${cl.consumedQty}.`, 'INSUFFICIENT_RAW_STOCK');
         }
-        await tx.stockMovement.create({ data: { shopId: shop.id, productId: rawProductId, type: 'production_consume', quantity: -inputKg, referenceId: id } });
+        
+        const lotRow = await tx.$queryRaw<any[]>`SELECT product_id, godown_id FROM raw_material_lots WHERE id = ${cl.lotId}::uuid`;
+        const rawProductId: string | null = lotRow[0]?.product_id ?? null;
+        const godownId: string | null = lotRow[0]?.godown_id ?? null;
+        
+        if (rawProductId) {
+          if (allowNegativeStock) {
+            await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${cl.consumedQty} WHERE id = ${rawProductId}::uuid AND shop_id = ${shop.id}::uuid`;
+          } else {
+            await tx.$executeRaw`UPDATE products SET current_stock = GREATEST(COALESCE(current_stock, 0) - ${cl.consumedQty}, 0) WHERE id = ${rawProductId}::uuid AND shop_id = ${shop.id}::uuid`;
+          }
+          await tx.stockMovement.create({ data: { shopId: shop.id, productId: rawProductId, type: 'production_consume', quantity: -cl.consumedQty, referenceId: id } });
+          
+          if (godownId) {
+            const godownIdUuid = String(godownId);
+            const gp = await tx.godownProduct.findUnique({ where: { godownId_productId: { godownId: godownIdUuid, productId: rawProductId } } });
+            const currentGodownQty = gp?.quantity || 0;
+            
+            if (!allowNegativeStock && currentGodownQty < cl.consumedQty) {
+              throw new ApiError(409, `Insufficient stock in Godown. Batch requires ${cl.consumedQty} kg, but only ${currentGodownQty} kg available.`, 'INSUFFICIENT_GODOWN_STOCK');
+            }
+            
+            await tx.godownProduct.upsert({
+              where: { godownId_productId: { godownId: godownIdUuid, productId: rawProductId } },
+              update: { quantity: { decrement: cl.consumedQty } },
+              create: { godownId: godownIdUuid, productId: rawProductId, quantity: -cl.consumedQty }
+            });
+          }
+        }
       }
     }
 
-    // Outputs: the traceable record, the product stock, the per-lot batch stock and (for by-products) the by-product ledger.
+    const jwOrder: any = null; // job_work_order_id column does not exist on production_batches
+
+    // Outputs: the traceable record for this batch
     const lotDefault = String(batch.batch_number);
     await tx.productionOutput.createMany({
       data: credits.map((o) => ({
@@ -116,30 +154,113 @@ export const POST = handle<Ctx>(async (req, { params }) => {
       })),
     });
 
+    // Stock allocation based on ownership:
+    // For normal batches: by_product, rejection, wip outputs increment stock here.
+    //   finished_good is EXCLUDED — createFinishedGoodsLot() below handles its own
+    //   stock increment + godown assignment to avoid double-counting.
+    // For Job Work batches:
+    // - Finished Goods belong to customer (not added to mill stock).
+    // - By-products belong to mill only if byproductRetainedByMill === true.
+    // - WIP is intermediate.
+    const eligibleForMillStock = credits.filter((o) => {
+      if (!o.productId || !o.stockQty) return false;
+      if (o.outputType === 'finished_good') return false; // handled by createFinishedGoodsLot
+      if (!isJobWork) return true;
+      if (o.outputType === 'by_product') {
+        return jwOrder?.byproductRetainedByMill !== false;
+      }
+      return false;
+    });
+
     const perProduct = new Map<string, number>();
-    for (const o of credits) if (o.productId && o.stockQty) perProduct.set(o.productId, round3((perProduct.get(o.productId) || 0) + o.stockQty));
+    for (const o of eligibleForMillStock) {
+      if (o.productId && o.stockQty) {
+        perProduct.set(o.productId, round3((perProduct.get(o.productId) || 0) + o.stockQty));
+      }
+    }
     for (const [pid, qty] of perProduct) {
       await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${pid}::uuid AND shop_id = ${shop.id}::uuid`;
     }
-    const tracked = credits.filter((o) => o.productId && o.stockQty);
-    if (tracked.length) {
+
+    if (eligibleForMillStock.length) {
       await tx.stockMovement.createMany({
-        data: tracked.map((o) => ({ shopId: shop.id, productId: o.productId!, type: MOVEMENT_TYPE[o.outputType], quantity: o.stockQty!, referenceId: id })),
+        data: eligibleForMillStock.map((o) => ({
+          shopId: shop.id,
+          productId: o.productId!,
+          type: MOVEMENT_TYPE[o.outputType],
+          quantity: o.stockQty!,
+          referenceId: id,
+        })),
       });
       // Batch-wise stock: each tracked output becomes a lot of that product carrying the production batch number.
       await tx.batch.createMany({
-        data: tracked.map((o) => ({
-          shopId: shop.id, productId: o.productId!, batchNumber: o.outputLotNumber || lotDefault,
-          quantity: o.stockQty!, initialQuantity: o.stockQty!, mfgDate: new Date(), purchaseDate: new Date(),
+        data: eligibleForMillStock.map((o) => ({
+          shopId: shop.id,
+          productId: o.productId!,
+          batchNumber: o.outputLotNumber || lotDefault,
+          quantity: o.stockQty!,
+          initialQuantity: o.stockQty!,
+          mfgDate: new Date(),
+          purchaseDate: new Date(),
         })),
       });
     }
+
+    // By-products ledger (Mill retained or tracked)
     const byProducts = credits.filter((o) => o.outputType === 'by_product');
-    if (byProducts.length) {
+    if (byProducts.length && (!isJobWork || jwOrder?.byproductRetainedByMill !== false)) {
       await tx.byProduct.createMany({
-        data: byProducts.map((o) => ({ shopId: shop.id, batchId: id, productId: o.productId, name: o.name, quantityKg: o.quantityKg, notes: o.notes })),
+        data: byProducts.map((o) => ({
+          shopId: shop.id,
+          batchId: id,
+          productId: o.productId,
+          name: o.name,
+          quantityKg: o.quantityKg,
+          notes: isJobWork ? `Retained from Job Work Order ${jwOrder?.orderNumber || ''}` : o.notes,
+        })),
       });
     }
+
+    if (!isJobWork) {
+      const fgOutputs = credits.filter((o) => o.outputType === 'finished_good' && o.productId);
+      // Run lot creation concurrently — each is independent
+      await Promise.all(fgOutputs.map((fg) =>
+        createFinishedGoodsLot(
+          { shopId: shop.id, batchId: id, productId: fg.productId!, quantity: fg.quantity, unit: fg.unit, notes: fg.notes },
+          tx
+        )
+      ));
+      // StockMovement records for FG (excluded from eligibleForMillStock block above)
+      if (fgOutputs.filter(o => o.stockQty).length) {
+        await tx.stockMovement.createMany({
+          data: fgOutputs
+            .filter((o) => o.stockQty)
+            .map((o) => ({
+              shopId: shop.id,
+              productId: o.productId!,
+              type: MOVEMENT_TYPE['finished_good'],
+              quantity: o.stockQty!,
+              referenceId: id,
+            })),
+        });
+      }
+    }
+
+    const wipOutputs = credits.filter((o) => o.outputType === 'wip' && o.productId);
+    await Promise.all(wipOutputs.map((wip) =>
+      createWipLotFromStageOutput(
+        { shopId: shop.id, batchId: id, productId: wip.productId!, quantity: wip.quantity, unit: wip.unit, notes: wip.notes },
+        tx
+      )
+    ));
+
+    const rjOutputs = credits.filter((o) => o.outputType === 'rejection' && o.productId);
+    await Promise.all(rjOutputs.map((rj) =>
+      createRejectionLot(
+        { shopId: shop.id, batchId: id, productId: rj.productId!, quantity: rj.quantity, unit: rj.unit, notes: rj.notes },
+        tx
+      )
+    ));
 
     const finishedKg = credits.filter((o) => o.outputType === 'finished_good').reduce((s, o) => s + o.quantityKg, 0);
     const lastStage = await tx.batchStage.findFirst({ where: { batchId: id }, orderBy: { sequence: 'desc' }, select: { stageName: true } });
@@ -153,8 +274,52 @@ export const POST = handle<Ctx>(async (req, { params }) => {
         ...(body.notes ? { notes: String(body.notes).trim().slice(0, 250) } : {}),
       },
     });
-    return { balance: bal, consumed: consume ? inputKg : 0 };
-  }, { timeout: 30000, maxWait: 10000 });
+
+    // If linked to a Job Work Order, complete the order and calculate processing charges
+    if (isJobWork && jwOrder) {
+      const chargeBasis = jwOrder.feeBasis === 'output' ? 'output' : 'input';
+      const billableKg = chargeBasis === 'output' ? finishedKg : Number(jwOrder.inputWeightKg || inputKg);
+      const rate = Number(jwOrder.ratePerKg) || 0;
+      const feeAmount = round3(billableKg * rate);
+
+      await (tx as any).jobWorkOrder.update({
+        where: { id: jwOrder.id },
+        data: {
+          status: 'completed',
+          outputWeightKg: round3(finishedKg),
+          feeAmount,
+          completedAt: new Date(),
+        },
+      });
+
+      if (jwOrder.customerId && feeAmount > 0) {
+        await tx.customer_transactions.create({
+          data: {
+            customer_id: jwOrder.customerId,
+            type: 'charge',
+            amount: feeAmount,
+            note: `Job Work Milling Charge — Order ${jwOrder.orderNumber} (${round3(billableKg)} Kg @ ₹${rate}/Kg)`,
+          },
+        });
+        await tx.customer.update({
+          where: { id: jwOrder.customerId },
+          data: {
+            totalDue: { increment: feeAmount },
+          },
+        });
+      }
+    }
+
+    return { balance: bal, consumed: consume ? inputKg : 0, finishedKg, isJobWork };
+  }, { timeout: 90000, maxWait: 15000 });
+
+  // Audit outside the transaction — non-critical and avoids extending the lock window
+  recordStageAuditEvent({
+    shopId: shop.id,
+    action: 'BATCH_FINALIZED',
+    entityId: id,
+    details: { batchId: id, finishedKg: finalized.finishedKg, lossKg, isJobWork: finalized.isJobWork },
+  }).catch(() => {});
 
   const batch = await prisma.productionBatch.findFirst({
     where: { id, shopId: shop.id },

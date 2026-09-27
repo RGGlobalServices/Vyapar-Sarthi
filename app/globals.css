@@ -3,18 +3,30 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @media print {
-  body * {
-    visibility: hidden;
-  }
-  #print-area, #print-area * {
-    visibility: visible;
-  }
+  /* Hide everything except the bill. */
+  body * { visibility: hidden; }
+  #print-area, #print-area * { visibility: visible; }
+
+  /* position:fixed anchors to the viewport/page origin regardless of where
+     the modal sits in the DOM.  overflow:visible lets the full bill render
+     even when the container has overflow:auto on screen.
+     print-color-adjust keeps the black GST-INVOICE banner and coloured
+     elements from being stripped out by the browser. */
   #print-area {
-    position: absolute;
-    left: 0;
+    position: fixed;
     top: 0;
-    width: 100%;
+    left: 0;
+    right: 0;
+    overflow: visible;
+    height: auto;
+    background: white;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+
+  /* Thermal receipt: 80 mm roll, zero margins so the bill fills the paper. */
+  @page { size: 80mm auto; margin: 0; }
 }
 
 /* Native (Capacitor/ML Kit) barcode scanner: the real device camera is

@@ -61,7 +61,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     patch.moisturePct = body.moisturePct === null || body.moisturePct === ''
       ? null : Math.max(0, Math.min(100, Number(body.moisturePct) || 0));
   }
-  if (body.ratePerKg !== undefined) patch.ratePerKg = body.ratePerKg === null || body.ratePerKg === '' ? null : Number(body.ratePerKg);
+  if (body.ratePerUnit !== undefined) patch.ratePerUnit = body.ratePerUnit === null || body.ratePerUnit === '' ? null : Number(body.ratePerUnit);
   if (body.notes !== undefined) patch.notes = body.notes == null ? null : String(body.notes).trim() || null;
 
   // Second weighment — tare weight — computes net and closes the two-weigh

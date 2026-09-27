@@ -134,6 +134,53 @@ export async function POST(req: Request, { params }: Ctx) {
         })),
       });
 
+      // Decrement lot (Batch) quantities for returned items so FIFO billing
+      // reflects correct remaining stock per lot after the return.
+      const batchsByKey = new Map<string, Array<{ id: string; qty: number }>>();
+      for (const item of purchaseItems) {
+        if ((item as any).batchId) {
+          const k = rowKey(item.productId, item.variantKey);
+          const list = batchsByKey.get(k) || [];
+          list.push({ id: (item as any).batchId, qty: item.quantity });
+          batchsByKey.set(k, list);
+        }
+      }
+      for (const r of requested) {
+        const k = rowKey(r.productId, r.variantKey);
+        const batches = batchsByKey.get(k) || [];
+        let remaining = Number(r.quantity);
+        for (const b of batches) {
+          if (remaining <= 0) break;
+          const toDecrement = Math.min(remaining, b.qty);
+          await tx.batch.update({
+            where: { id: b.id },
+            data: { quantity: { decrement: toDecrement } },
+          });
+          remaining -= toDecrement;
+        }
+      }
+
+      // Decrement godown (warehouse) inventory for Udyog/BadaUdyog shops.
+      // Look up which warehouse the original purchase was stocked into via the
+      // StockMovement that was created at purchase time.
+      const purchaseMovements = await tx.stockMovement.findMany({
+        where: { shopId: auth.shop.id, referenceId: id, type: 'purchase' },
+        select: { productId: true, warehouseId: true },
+      });
+      const warehouseByProduct = new Map<string, string>();
+      for (const m of purchaseMovements) {
+        if (m.warehouseId) warehouseByProduct.set(m.productId, m.warehouseId);
+      }
+      for (const [productId, qty] of [...qtyByProduct.entries()]) {
+        const warehouseId = warehouseByProduct.get(productId);
+        if (warehouseId) {
+          await tx.godownProduct.updateMany({
+            where: { godownId: warehouseId, productId },
+            data: { quantity: { decrement: qty } },
+          });
+        }
+      }
+
       await tx.supplier.update({
         where: { id: invoice.supplier_id },
         data: { balance: { decrement: totalAmount } },

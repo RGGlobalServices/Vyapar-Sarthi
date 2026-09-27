@@ -40,10 +40,10 @@ function scheduleRevalidateAll() {
       .then(({ mutate }) => {
         // Bare matcher form: revalidates in the background and keeps the
         // existing data on screen, so no loading spinner flashes.
-        mutate(() => true);
+        mutate(() => true, undefined, { revalidate: true });
       })
       .catch(() => {});
-  }, 300);
+  }, 400);
 }
 
 async function request(url: string, options: RequestInit = {}) {
@@ -108,7 +108,14 @@ async function request(url: string, options: RequestInit = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+  let cleanUrl = url;
+  if (cleanUrl.startsWith('/api/v1/')) {
+    cleanUrl = cleanUrl.substring(7);
+  } else if (cleanUrl.startsWith('/api/v1')) {
+    cleanUrl = cleanUrl.substring(7);
+  }
+
+  const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${cleanUrl.startsWith('/') ? '' : '/'}${cleanUrl}`;
 
   try {
     const response = await fetch(fullUrl, {
@@ -252,5 +259,37 @@ const api = {
     return request(url, fetchConfig);
   },
 };
+
+/**
+ * Download a binary file (PDF, CSV, …) from an API route.
+ * Uses the same auth headers as the regular `api` client but returns a Blob
+ * instead of parsed JSON, bypassing the JSON-only guard in `request()`.
+ */
+export async function downloadBlob(url: string): Promise<Blob> {
+  const getToken = () => {
+    try {
+      const raw = localStorage.getItem('ks_auth');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed.access_token || parsed.accessToken || null;
+    } catch { return null; }
+  };
+
+  const cleanUrl = url.startsWith('/api/v1/') ? url.substring(7) : url;
+  const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${cleanUrl.startsWith('/') ? '' : '/'}${cleanUrl}`;
+
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const shopId = typeof window !== 'undefined' ? localStorage.getItem('ks_active_shop_id') : null;
+  if (shopId) headers['x-shop-id'] = shopId;
+
+  const res = await fetch(fullUrl, { method: 'GET', headers });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Download failed (${res.status}): ${text.substring(0, 200)}`);
+  }
+  return res.blob();
+}
 
 export default api;

@@ -39,6 +39,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   invoiceFooter,
   billType,
   gstBreakdown,
+  billingDisplayFields,
+  dualUnitConfig,
   upiId,
   qrSvg,
   qrDataUrl: qrDataUrlProp,
@@ -199,9 +201,27 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
               {goodsItems.map((item, idx) => (
                 <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50' : undefined} style={{ borderTop: '1px solid #cbd5e1' }}>
                   <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
-                  {columns.map((col) => (
-                    <td key={col.id} className={`py-2 px-3 text-${col.align}`}>{col.render(item)}</td>
-                  ))}
+                  {columns.map((col) => {
+                    const isItemCol = col.id === 'item';
+                    const attrs = isItemCol && billingDisplayFields?.length
+                      ? (item as any).categoryAttributes as Record<string, string> | undefined
+                      : undefined;
+                    const attrParts = attrs
+                      ? billingDisplayFields!.map(k => attrs[k]).filter(Boolean)
+                      : [];
+                    return (
+                      <td key={col.id} className={`py-2 px-3 text-${col.align}`}>
+                        {col.render(item)}
+                        {isItemCol && item.variant && <div className="text-xs text-slate-400 mt-0.5">{item.variant}</div>}
+                        {isItemCol && attrParts.length > 0 && <div className="text-xs text-violet-500 mt-0.5">{attrParts.join(' · ')}</div>}
+                        {col.id === 'qty' && dualUnitConfig && (
+                          <div className="text-[10px] text-emerald-600 mt-0.5 whitespace-nowrap">
+                            ={(item.quantity * dualUnitConfig.conversionFactor).toLocaleString('en-IN')} {dualUnitConfig.secondaryUnit}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
                   {isGstBill && <td className="py-2 px-3 text-left">{(item as any).hsnCode || '-'}</td>}
                   {isGstBill && <td className="py-2 px-3 text-right">{Number((item as any).gstPercent) || 0}%</td>}
                 </tr>

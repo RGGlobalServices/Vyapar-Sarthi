@@ -1,7 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
-import { lotSource } from '@/lib/server/millProduction';
+import { toKg, lotSource, canonicalReceivedDate, computeLotQuantities, round3 } from '@/lib/server/millProduction';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * PATCH /api/v1/mill/batches/[id] — batch-level edits (stage, notes, planned output, input weight) while the run is open.
  *                                    Closing is NOT done here — use POST /finalize, which consumes the raw material and books
  *                                    the outputs atomically. A finalized batch is read-only.
+ * DELETE /api/v1/mill/batches/[id] — atomic cancellation / deletion releasing lot allocation transactionally.
  */
 
 async function assertOwned(req: Request, id: string) {
@@ -36,17 +37,75 @@ export const GET = handle<Ctx>(async (req, { params }) => {
           product: { select: { id: true, name: true, baseUnit: true } },
           supplier: { select: { name: true, mobile: true } },
           weighbridgeEntries: { select: { slipNumber: true } },
+          batches: { select: { id: true, batchNumber: true, inputKg: true, status: true } },
         },
       },
       stages: { orderBy: { sequence: 'asc' } },
       byProducts: true,
       outputs: { orderBy: { createdAt: 'asc' } },
+      inputLots: {
+        orderBy: { sequence: 'asc' },
+        include: {
+          rawMaterialLot: {
+            include: {
+              product: { select: { id: true, name: true, sku: true, baseUnit: true } },
+            },
+          },
+        },
+      },
+      wipLots: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          sourceBatchStage: { select: { id: true, stageName: true } },
+          godown: { select: { id: true, name: true } },
+        },
+      },
+      finishedGoodsLots: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: { select: { id: true, name: true, sku: true, baseUnit: true } },
+          sourceBatchStage: { select: { id: true, stageName: true } },
+          godown: { select: { id: true, name: true } },
+        },
+      },
+      byProductLots: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: { select: { id: true, name: true, sku: true, baseUnit: true } },
+          sourceBatchStage: { select: { id: true, stageName: true } },
+          godown: { select: { id: true, name: true } },
+        },
+      },
+      rejectionLots: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: { select: { id: true, name: true, sku: true, baseUnit: true } },
+          sourceBatchStage: { select: { id: true, stageName: true } },
+          godown: { select: { id: true, name: true } },
+        },
+      },
     },
   });
   if (!batch) throw new ApiError(404, 'Production batch not found');
   if (batch.rawLot) {
-    const { weighbridgeEntries, ...lot } = batch.rawLot;
-    return json({ ...batch, rawLot: { ...lot, ...lotSource(batch.rawLot) } });
+    const { weighbridgeEntries, batches, ...lot } = batch.rawLot;
+    const src = lotSource(batch.rawLot);
+    const recDate = canonicalReceivedDate(batch.rawLot);
+    const qty = computeLotQuantities(batch.rawLot);
+    return json({
+      ...batch,
+      rawLot: {
+        ...lot,
+        ...src,
+        receivedDate: recDate.toISOString(),
+        receivedKg: qty.quantity,
+        allocatedKg: qty.allocatedKg,
+        consumedKg: qty.consumedKg,
+        availableKg: qty.availableKg,
+        operationalStatus: qty.operationalStatus,
+      },
+    });
   }
   return json(batch);
 });
@@ -62,12 +121,23 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (batch.status === 'closed') {
     throw new ApiError(409, 'This batch is finalized — its stock effects can no longer be edited.', 'BATCH_FINALIZED');
   }
+
+  // Prevent changing the source raw material lot directly on an allocated batch
+  if (body.rawLotId !== undefined && body.rawLotId !== batch.rawLotId) {
+    throw new ApiError(400, 'Cannot change source lot of an allocated batch directly. Cancel or delete this batch and create a new allocation.', 'LOT_CHANGE_NOT_ALLOWED');
+  }
+
   // Recorded results are written by /finalize only; they cannot be typed in here.
   for (const k of ['outputKg', 'wastageKg', 'brokenKg', 'branKg', 'huskKg', 'recoveryPct']) {
     if (body[k] !== undefined) throw new ApiError(400, `${k} is set when the batch is finalized, not edited here.`, 'USE_FINALIZE');
   }
 
   const patch: any = {};
+  if (body.inputQuantity !== undefined && body.inputKg === undefined) {
+    const rawQty = Number(body.inputQuantity);
+    if (!isFinite(rawQty) || rawQty <= 0) throw new ApiError(400, 'inputQuantity must be a positive number', 'INVALID_QUANTITY');
+    patch.inputKg = toKg(rawQty, body.unit ?? 'kg');
+  }
   const numKeys = ['inputKg', 'plannedOutputKg'] as const;
   for (const k of numKeys) {
     if (body[k] !== undefined) patch[k] = body[k] === null || body[k] === '' ? null : Number(body[k]);
@@ -86,14 +156,50 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (patch.inputKg !== undefined && (patch.inputKg === null || !isFinite(patch.inputKg) || patch.inputKg <= 0)) {
     throw new ApiError(400, 'inputKg must be a positive number');
   }
+
+  const ops: any[] = [];
+
+  // Transactional reallocation guard: re-validate available capacity
   if (patch.inputKg !== undefined && batch.rawLotId) {
-    const lot = await (prisma as any).rawMaterialLot.findFirst({ where: { id: batch.rawLotId, shopId: shop.id }, select: { remainingKg: true } });
-    if (lot && (lot.remainingKg ?? 0) < patch.inputKg) {
-      throw new ApiError(400, `Only ${lot.remainingKg ?? 0} kg is left in the raw material lot.`, 'INSUFFICIENT_RAW_STOCK');
+    const lot = await (prisma as any).rawMaterialLot.findFirst({
+      where: { id: batch.rawLotId, shopId: shop.id },
+      select: { id: true, quantity: true, remainingQuantity: true },
+    });
+    if (!lot) throw new ApiError(404, 'Raw material lot not found');
+
+    const unconsumedKg = round3(Number(lot.remainingQuantity ?? lot.quantity ?? 0));
+
+    // Active allocations on this lot by OTHER batches
+    const otherBatches = await (prisma as any).productionBatch.findMany({
+      where: {
+        rawLotId: batch.rawLotId,
+        shopId: shop.id,
+        status: { in: ['open', 'in_progress'] },
+        id: { not: id },
+      },
+      select: { inputKg: true },
+    });
+    const otherAllocatedKg = round3(otherBatches.reduce((s: number, b: any) => s + (Number(b.inputKg) || 0), 0));
+    const maxAllowedForThisBatch = round3(Math.max(0, unconsumedKg - otherAllocatedKg));
+
+    if (patch.inputKg > maxAllowedForThisBatch) {
+      throw new ApiError(
+        400,
+        `Only ${round3(maxAllowedForThisBatch)} kg available for this batch in that lot (${otherAllocatedKg} kg is allocated to other active batches) — cannot allocate ${patch.inputKg} kg.`,
+        'INSUFFICIENT_RAW_STOCK'
+      );
     }
+
+    // Keep stage 1 input in sync if it mirrors batch input
+    ops.push(
+      (prisma as any).batchStage.updateMany({
+        where: { batchId: id, sequence: 1 },
+        data: { inputKg: patch.inputKg },
+      })
+    );
   }
 
-  const ops: any[] = [
+  ops.push(
     (prisma as any).productionBatch.update({
       where: { id },
       data: patch,
@@ -102,36 +208,64 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
           include: {
             product: { select: { name: true, baseUnit: true } },
             supplier: { select: { name: true, mobile: true } },
+            batches: { select: { id: true, batchNumber: true, inputKg: true, status: true } },
           },
         },
         stages: { orderBy: { sequence: 'asc' } },
         byProducts: true,
         outputs: { orderBy: { createdAt: 'asc' } },
       },
-    }),
-  ];
+    })
+  );
 
-  const [updated] = await prisma.$transaction(ops);
+  const results = await prisma.$transaction(ops);
+  let updated = results[results.length - 1];
+
+  if (updated.rawLot) {
+    const qty = computeLotQuantities(updated.rawLot);
+    updated.rawLot = {
+      ...updated.rawLot,
+      receivedDate: canonicalReceivedDate(updated.rawLot).toISOString(),
+      receivedKg: qty.quantity,
+      allocatedKg: qty.allocatedKg,
+      consumedKg: qty.consumedKg,
+      availableKg: qty.availableKg,
+      operationalStatus: qty.operationalStatus,
+    };
+  }
+
   return json(updated);
 });
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
   const { shop, batch } = await assertOwned(req, id);
-  // A finalized run has already moved stock (raw material out, outputs in, and possibly sold on). There is no reversal
-  // workflow yet, so deleting it would silently leave the stock wrong.
+
   if (batch.status === 'closed') {
     throw new ApiError(409, 'A finalized batch cannot be deleted — its stock effects are permanent.', 'BATCH_FINALIZED');
   }
-  // Batches started under the finalize workflow have consumed nothing yet, so there is nothing to give back. Older batches took
-  // their kilos out of the lot when they were created (no `production_start` marker) — return those.
-  const marker = await prisma.stockMovement.findFirst({ where: { shopId: shop.id, type: 'production_start', referenceId: id }, select: { id: true } });
-  await prisma.$transaction(async (tx) => {
-    if (!marker && batch.rawLotId && batch.inputKg) {
-      await (tx as any).rawMaterialLot.update({ where: { id: batch.rawLotId }, data: { remainingKg: { increment: Number(batch.inputKg) || 0 } } });
-    }
-    await tx.stockMovement.deleteMany({ where: { shopId: shop.id, type: 'production_start', referenceId: id } });
-    await (tx as any).productionBatch.delete({ where: { id } });
+
+  const marker = await prisma.stockMovement.findFirst({
+    where: { shopId: shop.id, type: 'production_start', referenceId: id },
+    select: { id: true },
   });
+
+  const ops: any[] = [];
+  if (!marker && batch.rawLotId && batch.inputKg) {
+    ops.push(
+      (prisma as any).rawMaterialLot.update({
+        where: { id: batch.rawLotId },
+        data: { remainingQuantity: { increment: Number(batch.inputKg) || 0 } },
+      })
+    );
+  }
+
+  ops.push(
+    prisma.stockMovement.deleteMany({ where: { shopId: shop.id, referenceId: id } }),
+    (prisma as any).batchStage.deleteMany({ where: { batchId: id } }),
+    (prisma as any).productionBatch.delete({ where: { id } }),
+  );
+
+  await prisma.$transaction(ops);
   return json({ success: true });
 });

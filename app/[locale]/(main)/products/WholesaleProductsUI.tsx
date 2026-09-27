@@ -31,6 +31,10 @@ import useSWR from 'swr';
 import dynamic from 'next/dynamic';
 
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
+import StageTemplateManager from '@/components/mill/StageTemplateManager';
+import DynamicCategoryAttributes from '@/components/products/DynamicCategoryAttributes';
+import DynamicVariantBuilder from '@/components/products/DynamicVariantBuilder';
+import { useCategoryConfig } from '@/lib/hooks/useCategoryConfig';
 
 const fetcher = (url: string | string[]) => {
   const target = Array.isArray(url) ? url[0] : url;
@@ -191,6 +195,7 @@ export default function WholesaleProductsUI() {
   const tv = useTranslations('Variants');
   const { profile, activeShopId, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
+  const { config: categoryConfig } = useCategoryConfig();
 
   // Some Udyog (wholesale-package) accounts still carry a retail-flavoured
   // businessType (e.g. 'shoes' instead of 'footwearwholesale') from before
@@ -350,6 +355,15 @@ export default function WholesaleProductsUI() {
   // doesn't flip on/off as custom sizes are added/removed.
   const baseSizeChart = bizConfig.sizeChart || [];
   const useVariantGrid = form.productType === 'variant' && !!bizConfig.hasColors && baseSizeChart.length > 0;
+  // Whether the dynamic variant builder should be shown: when CategoryConfig has
+  // variantAxes that differ from the legacy color/size-grid path.
+  const dynAxes = categoryConfig.attributeSchema.variantAxes;
+  const useDynamicBuilder = form.productType === 'variant' && !useVariantGrid && dynAxes.length > 0;
+
+  // Read/write categoryAttributes from form.metadata
+  const categoryAttributes: Record<string, string> = (form as any).metadata?.categoryAttributes ?? {};
+  const setCategoryAttributes = (vals: Record<string, string>) =>
+    setForm(f => ({ ...f, metadata: { ...((f as any).metadata ?? {}), categoryAttributes: vals } }));
   // Effective size columns: the business's default chart, plus any sizes the
   // shopkeeper added this session, plus any size already sitting on a variant
   // row (so editing a product never hides an odd/legacy size that isn't on
@@ -758,7 +772,7 @@ export default function WholesaleProductsUI() {
       setWholesaleMode('manual');
       setWholesaleDiscountPercent('');
 
-      let updatedProd;
+      let updatedProd: any;
       if (isEdit) {
         // form still carries the original row's shopId (spread in by
         // handleEdit) — target that shop explicitly, since it may not be the
@@ -1221,9 +1235,9 @@ export default function WholesaleProductsUI() {
                         <th className="p-4 font-semibold">Grade / Variety</th>
                       </>
                     )}
-                    <th className="p-4 font-semibold">
+                    {!isMillShop && <th className="p-4 font-semibold">
                       <div className="flex items-center gap-1"><MapPin size={13}/> {t('productLocation') || 'Location'}</div>
-                    </th>
+                    </th>}
                     {/* Business-type specific columns */}
                     {groupBizConfig.hasExpiry && (
                       <th className="p-4 font-semibold text-orange-500 dark:text-orange-400">
@@ -1357,20 +1371,32 @@ export default function WholesaleProductsUI() {
                             <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
                               {(() => {
                                 const mc = MILL_CATEGORIES.find(m => m.key === p.millCategory);
-                                if (!mc) return <span className="text-slate-400 text-sm">-</span>;
+                                if (!mc) return <span className="text-slate-400 text-sm">—</span>;
+                                const accentBg: Record<string, string> = {
+                                  amber:   'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+                                  emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+                                  blue:    'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+                                  slate:   'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+                                  purple:  'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+                                  rose:    'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300',
+                                };
                                 return (
-                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                  <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', accentBg[mc.accent] || accentBg.slate)}>
                                     {mc.emoji} {mc.label}
                                   </span>
                                 );
                               })()}
                             </td>
-                            <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => openProductDetails(p)}>
-                              {p.grade || p.variety ? `${p.grade || '-'} / ${p.variety || '-'}` : '-'}
+                            <td className="p-4 text-slate-600 dark:text-slate-300 text-xs cursor-pointer" onClick={() => openProductDetails(p)}>
+                              <div className="flex flex-col gap-0.5">
+                                {p.grade && <span className="font-semibold">{p.grade}</span>}
+                                {p.variety && <span className="text-slate-400">{p.variety}</span>}
+                                {!p.grade && !p.variety && <span className="text-slate-400">—</span>}
+                              </div>
                             </td>
                           </>
                         )}
-                        <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => openProductDetails(p)}>{p.location || '-'}</td>
+                        {!isMillShop && <td className="p-4 text-slate-600 dark:text-slate-300 text-sm cursor-pointer" onClick={() => openProductDetails(p)}>{p.location || '-'}</td>}
                         {/* Business-type specific data cells */}
                         {groupBizConfig.hasExpiry && (
                           <td className="p-4 cursor-pointer" onClick={() => openProductDetails(p)}>
@@ -1573,6 +1599,45 @@ export default function WholesaleProductsUI() {
                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('basicInfo') || 'Basic Info'}</p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
+                    {/* Mill Product Type — top of form for mill shops */}
+                    {isMillShop && (
+                      <div className="col-span-1 sm:col-span-2">
+                        <label className="block text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1.5">🌾 Mill Product Type <span className="text-red-500">*</span></label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {MILL_CATEGORIES.map(mc => {
+                            const accentMap: Record<string, string> = {
+                              amber:   'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300',
+                              emerald: 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300',
+                              blue:    'border-blue-400 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300',
+                              slate:   'border-slate-400 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+                              purple:  'border-purple-400 bg-purple-50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300',
+                              rose:    'border-rose-400 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300',
+                            };
+                            const inactiveMap: Record<string, string> = {
+                              amber:   'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-amber-300',
+                              emerald: 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-emerald-300',
+                              blue:    'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-blue-300',
+                              slate:   'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400',
+                              purple:  'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-purple-300',
+                              rose:    'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-rose-300',
+                            };
+                            const isActive = form.millCategory === mc.key;
+                            return (
+                              <button key={mc.key} type="button"
+                                onClick={() => setForm({ ...form, millCategory: isActive ? undefined : mc.key })}
+                                className={cn('flex items-center gap-1.5 px-3 py-2 rounded-lg border-2 text-xs font-bold transition-all', isActive ? accentMap[mc.accent] : inactiveMap[mc.accent])}>
+                                <span>{mc.emoji}</span><span>{mc.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {form.millCategory && (
+                          <p className="text-[10px] text-slate-400 mt-1.5">
+                            {MILL_CATEGORIES.find(mc => mc.key === form.millCategory)?.description}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="col-span-1 sm:col-span-2">
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('productName') || 'Product Name'} <span className="text-red-500">*</span></label>
                       <input required autoFocus className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
@@ -1652,6 +1717,7 @@ export default function WholesaleProductsUI() {
                         <option value={28}>28%</option>
                       </select>
                     </div>
+                    {!isMillShop && (
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                         {t('productLocation') || 'Product Location'} <span className="font-normal normal-case text-slate-400">({t('optional') || 'optional'})</span>
@@ -1660,110 +1726,26 @@ export default function WholesaleProductsUI() {
                         placeholder="e.g. Shelf A3, Rack 2, Bin 14"
                         value={form.location || ''} onChange={e => setForm({...form, location: e.target.value})} />
                     </div>
+                    )}
                   </div>
 
-                  {/* Mills & Grain Processing — only shows when businessType is
-                      the unified 'millprocessing' type. Two mill-only fields
-                      (Product Type classification + Bag/Pack Size) tucked into
-                      the same section so they read as first-class catalogue
-                      fields rather than a separate ad-hoc block. */}
+                  {/* Bada Udyog — Inventory, Units & Pack Configuration */}
                   {profile.businessType === 'millprocessing' && (
                     <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-900/40">
                       <div className="flex items-center gap-2 mb-3">
-                        <span className="text-lg">🌾</span>
-                        <h4 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest">Mill Classification</h4>
+                        <span className="text-lg">📦</span>
+                        <h4 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest">Inventory & Units</h4>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                            Mill Product Type
-                          </label>
-                          <select
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            value={form.millCategory || ''}
-                            onChange={e => setForm({ ...form, millCategory: e.target.value || undefined })}
-                          >
-                            <option value="">— Uncategorised —</option>
-                            {MILL_CATEGORIES.map(mc => (
-                              <option key={mc.key} value={mc.key}>
-                                {mc.emoji} {mc.label}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            {form.millCategory
-                              ? (MILL_CATEGORIES.find(mc => mc.key === form.millCategory)?.description || '')
-                              : 'What role this plays in the mill — Raw Material / Finished Goods / By-Product / Waste / Packaging / Consumable / Other.'}
-                          </p>
-                        </div>
-                        {form.productType !== 'loose' && (
-                          <>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                                Pack Size <span className="font-normal normal-case text-slate-400">(optional)</span>
-                              </label>
-                              <input
-                                type="number" min="0" step="0.01"
-                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                                placeholder="e.g. 1, 5, 10, 25, 30, 50"
-                                value={form.packSize ?? ''}
-                                onChange={e => setForm({ ...form, packSize: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
-                              />
-                              <p className="text-[10px] text-slate-400 mt-1">One bag/pack = this many pack-units.</p>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                                Pack Unit
-                              </label>
-                              <select
-                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                                value={form.packUnit || ''}
-                                onChange={e => setForm({ ...form, packUnit: e.target.value || undefined })}
-                              >
-                                <option value="">— None —</option>
-                                <option value="Kg">Kg</option>
-                                <option value="GM">Gram</option>
-                                <option value="Ltr">Litre</option>
-                                <option value="ML">ML</option>
-                                <option value="Ton">Ton</option>
-                                <option value="Quintal">Quintal</option>
-                              </select>
-                              <p className="text-[10px] text-slate-400 mt-1">
-                                {form.packSize && form.packUnit ? `1 Bag/Pack = ${form.packSize} ${form.packUnit}` : 'Powers Bag × Weight in billing.'}
-                              </p>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      {form.productType === 'loose' && (
-                        <p className="text-[10px] text-slate-400 mt-2">
-                          Loose / Bulk products are tracked directly in their Base Unit (Kg, Quintal, Ton, Litre, …) — Pack Size/Unit is hidden since there's no fixed bag/pack for this format.
-                        </p>
-                      )}
 
-                      {/* Grade / Variety / Subcategory — free text on purpose so
-                          Rice Mill, Flour Mill, Dal Mill, Millet Mill, etc. can
-                          each type their own values; nothing here is a fixed
-                          dropdown of mill-specific names. */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                            Subcategory <span className="font-normal normal-case text-slate-400">(optional)</span>
-                          </label>
-                          <input
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            placeholder="e.g. Basmati Rice, Wheat Flour, Toor Dal"
-                            value={form.subcategory || ''}
-                            onChange={e => setForm({ ...form, subcategory: e.target.value })}
-                          />
-                        </div>
+                      {/* Quality attributes */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                             Grade <span className="font-normal normal-case text-slate-400">(optional)</span>
                           </label>
                           <input
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            placeholder="e.g. Premium, Grade A, Standard"
+                            placeholder="e.g. Grade A, Premium, Standard"
                             value={form.grade || ''}
                             onChange={e => setForm({ ...form, grade: e.target.value })}
                           />
@@ -1774,16 +1756,111 @@ export default function WholesaleProductsUI() {
                           </label>
                           <input
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            placeholder="e.g. Basmati, Lokwan, Barnyard"
+                            placeholder="e.g. Barnyard, Basmati, Lokwan"
                             value={form.variety || ''}
                             onChange={e => setForm({ ...form, variety: e.target.value })}
                           />
                         </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Subcategory <span className="font-normal normal-case text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            placeholder="e.g. Bhagar Grain, Wheat Flour"
+                            value={form.subcategory || ''}
+                            onChange={e => setForm({ ...form, subcategory: e.target.value })}
+                          />
+                        </div>
                       </div>
 
-                      {/* Reorder Level — distinct from Min Stock below; a
-                          heads-up buffer above the hard minimum. */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                      {/* Pack Size / Unit — with live unit conversion display */}
+                      {form.productType !== 'loose' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                              Pack Size <span className="font-normal normal-case text-slate-400">(optional)</span>
+                            </label>
+                            <input
+                              type="number" min="0" step="0.01"
+                              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                              placeholder="e.g. 25, 50"
+                              value={form.packSize ?? ''}
+                              onChange={e => setForm({ ...form, packSize: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                              Pack Unit
+                            </label>
+                            <select
+                              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                              value={form.packUnit || ''}
+                              onChange={e => setForm({ ...form, packUnit: e.target.value || undefined })}
+                            >
+                              <option value="">— None —</option>
+                              <option value="Kg">Kg</option>
+                              <option value="GM">Gram</option>
+                              <option value="Ltr">Litre</option>
+                              <option value="ML">ML</option>
+                              <option value="Ton">Ton</option>
+                              <option value="Quintal">Quintal</option>
+                            </select>
+                          </div>
+                          {/* Live unit conversion display */}
+                          <div className="flex flex-col justify-end">
+                            <label className="block text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1.5">Unit Conversion</label>
+                            {form.packSize && form.packUnit ? (
+                              <div className="px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg text-xs space-y-0.5">
+                                <p className="font-bold text-emerald-800 dark:text-emerald-300">1 Bag = {form.packSize} {form.packUnit}</p>
+                                {form.packUnit === 'Quintal' && <p className="text-emerald-600 dark:text-emerald-400">= {form.packSize * 100} Kg</p>}
+                                {form.packUnit === 'Ton' && <p className="text-emerald-600 dark:text-emerald-400">= {form.packSize * 1000} Kg</p>}
+                                {form.packUnit === 'Kg' && <p className="text-emerald-600 dark:text-emerald-400">= {form.packSize} Kg per bag</p>}
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                Set Pack Size + Unit to see conversion
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {form.productType === 'loose' && (
+                        <p className="text-[10px] text-slate-400 mb-4">
+                          Loose / Bulk — tracked directly in Base Unit (Kg, Quintal, Ton…). Pack Size hidden.
+                        </p>
+                      )}
+
+                      {/* Manufacturing config — Batch, Expiry, Reorder */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Batch Tracking
+                          </label>
+                          <select
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            value={form.trackBatch === undefined ? 'default' : form.trackBatch ? 'on' : 'off'}
+                            onChange={e => setForm({ ...form, trackBatch: e.target.value === 'default' ? undefined : e.target.value === 'on' })}
+                          >
+                            <option value="default">Shop Default</option>
+                            <option value="on">Yes — Track Batches</option>
+                            <option value="off">No — Skip Batch</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            Expiry Tracking
+                          </label>
+                          <select
+                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
+                            value={form.trackExpiry === undefined ? 'default' : form.trackExpiry ? 'on' : 'off'}
+                            onChange={e => setForm({ ...form, trackExpiry: e.target.value === 'default' ? undefined : e.target.value === 'on' })}
+                          >
+                            <option value="default">Shop Default</option>
+                            <option value="on">Yes — Track Expiry</option>
+                            <option value="off">No — Skip Expiry</option>
+                          </select>
+                        </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                             Reorder Level <span className="font-normal normal-case text-slate-400">(optional)</span>
@@ -1791,55 +1868,38 @@ export default function WholesaleProductsUI() {
                           <input
                             type="number" min="0" step="0.01"
                             className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                            placeholder="e.g. 500"
+                            placeholder="e.g. 500 Kg"
                             value={form.reorderLevel ?? ''}
                             onChange={e => setForm({ ...form, reorderLevel: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                           />
-                          <p className="text-[10px] text-slate-400 mt-1">Falls back to Min Stock if left blank.</p>
                         </div>
-
-                        {/* Per-product Batch/Expiry override — only meaningful
-                            (and only shown) where the shop's own default is
-                            already ON, so a mill that batch-tracks Rice but
-                            not a Packaging Material line can turn it off for
-                            just that product without touching every other
-                            shop's Add/Edit form. */}
-                        {bizConfig.hasBatch && (
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                              Batch Tracking
-                            </label>
-                            <select
-                              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                              value={form.trackBatch === undefined ? 'default' : form.trackBatch ? 'on' : 'off'}
-                              onChange={e => setForm({ ...form, trackBatch: e.target.value === 'default' ? undefined : e.target.value === 'on' })}
-                            >
-                              <option value="default">Shop Default (On)</option>
-                              <option value="on">On</option>
-                              <option value="off">Off</option>
-                            </select>
-                          </div>
-                        )}
-                        {bizConfig.hasExpiry && (
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                              Expiry Tracking
-                            </label>
-                            <select
-                              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors"
-                              value={form.trackExpiry === undefined ? 'default' : form.trackExpiry ? 'on' : 'off'}
-                              onChange={e => setForm({ ...form, trackExpiry: e.target.value === 'default' ? undefined : e.target.value === 'on' })}
-                            >
-                              <option value="default">Shop Default (On)</option>
-                              <option value="on">On</option>
-                              <option value="off">Off</option>
-                            </select>
-                          </div>
-                        )}
                       </div>
+
+                      {/* Stage Templates (Raw Material only, existing product) */}
+                      {form.millCategory === 'raw_material' && form.id && !String(form.id).startsWith('temp-') && (
+                        <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-900/40">
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                            Processing Stages Template
+                          </label>
+                          <p className="text-[11px] text-slate-400 mb-3">
+                            Configure standard processing stages for this raw material. These auto-populate when a new batch is created.
+                          </p>
+                          <StageTemplateManager
+                            productId={String(form.id)}
+                            productName={form.name || 'Unnamed Product'}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>
+
+                {/* Dynamic Category Attributes (from CategoryConfig) */}
+                <DynamicCategoryAttributes
+                  schema={categoryConfig.attributeSchema}
+                  values={categoryAttributes}
+                  onChange={setCategoryAttributes}
+                />
 
                 {/* Business-Type Specific Fields */}
                 {(bizConfig.hasExpiry || bizConfig.hasBatch || bizConfig.hasDrugSchedule || bizConfig.hasModel || bizConfig.hasWarranty || bizConfig.hasGender || bizConfig.hasShades || bizConfig.hasFabric || bizConfig.hasSoleMaterial) && (
@@ -2635,6 +2695,13 @@ export default function WholesaleProductsUI() {
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center py-2">
                           Variants are managed in the {tv('colourSizeInventory')} section above — {variants.length} configured.
                         </p>
+                      ) : useDynamicBuilder ? (
+                        <DynamicVariantBuilder
+                          schema={categoryConfig.attributeSchema}
+                          variants={variants}
+                          onChange={setVariants}
+                          samePrice={sameVariantPricing}
+                        />
                       ) : (
                       <div className="space-y-4">
                         {variants.map((v, i) => (

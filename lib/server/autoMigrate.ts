@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { DEFAULT_CATEGORY_CONFIGS } from '@/lib/categoryConfig';
 
 export async function runAutoMigrations() {
   console.log('[AutoMigrate] Checking database schema...');
@@ -242,6 +243,34 @@ export async function runAutoMigrations() {
       CREATE INDEX IF NOT EXISTS ix_by_products_batch ON by_products(batch_id);
     `);
 
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS job_work_orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        order_number VARCHAR NOT NULL,
+        customer_id UUID NOT NULL REFERENCES customers(id),
+        gate_entry_id UUID REFERENCES gate_entries(id) ON DELETE SET NULL,
+        material_description VARCHAR NOT NULL,
+        input_weight_kg DOUBLE PRECISION NOT NULL,
+        output_description VARCHAR,
+        output_weight_kg DOUBLE PRECISION,
+        rate_per_kg DOUBLE PRECISION NOT NULL DEFAULT 0,
+        fee_basis VARCHAR NOT NULL DEFAULT 'input',
+        fee_amount DOUBLE PRECISION,
+        byproduct_retained_by_mill BOOLEAN DEFAULT TRUE,
+        status VARCHAR NOT NULL DEFAULT 'received',
+        notes VARCHAR,
+        received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        delivered_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(shop_id, order_number)
+      );
+      CREATE INDEX IF NOT EXISTS ix_jw_shop ON job_work_orders(shop_id);
+      CREATE INDEX IF NOT EXISTS ix_jw_customer ON job_work_orders(customer_id);
+      CREATE INDEX IF NOT EXISTS ix_jw_status ON job_work_orders(status);
+    `);
+
     // Offline-First Sync & Idempotency
     await prisma.$executeRawUnsafe(`
       DO $$
@@ -254,6 +283,9 @@ export async function runAutoMigrations() {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='purchase_invoices' AND column_name='offline_ref_number') THEN
           ALTER TABLE purchase_invoices ADD COLUMN offline_ref_number VARCHAR;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='production_batches' AND column_name='job_work_order_id') THEN
+          ALTER TABLE production_batches ADD COLUMN job_work_order_id UUID;
         END IF;
       END $$;
     `);
@@ -274,6 +306,51 @@ export async function runAutoMigrations() {
       CREATE UNIQUE INDEX IF NOT EXISTS ix_sync_records_shop_idempotency ON sync_records(shop_id, idempotency_key);
       CREATE INDEX IF NOT EXISTS ix_sync_records_shop_id ON sync_records(shop_id);
     `);
+
+    // category_configs — global admin-managed attribute schemas per industry type
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS category_configs (
+        id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        slug             VARCHAR UNIQUE NOT NULL,
+        name             VARCHAR NOT NULL,
+        name_hi          VARCHAR,
+        name_mr          VARCHAR,
+        emoji            VARCHAR,
+        industry_category_name VARCHAR,
+        attribute_schema JSONB NOT NULL DEFAULT '{}',
+        active           BOOLEAN NOT NULL DEFAULT TRUE,
+        sort_order       INTEGER NOT NULL DEFAULT 0,
+        created_at       TIMESTAMPTZ DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS ix_category_configs_active ON category_configs(active);
+      CREATE INDEX IF NOT EXISTS ix_category_configs_industry ON category_configs(industry_category_name);
+    `);
+
+    // Seed default category configs (upsert — safe to re-run)
+    for (const cfg of DEFAULT_CATEGORY_CONFIGS) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO category_configs (slug, name, name_hi, name_mr, emoji, industry_category_name, attribute_schema, active, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+         ON CONFLICT (slug) DO UPDATE SET
+           name = EXCLUDED.name,
+           name_hi = EXCLUDED.name_hi,
+           name_mr = EXCLUDED.name_mr,
+           emoji = EXCLUDED.emoji,
+           industry_category_name = EXCLUDED.industry_category_name,
+           attribute_schema = EXCLUDED.attribute_schema,
+           updated_at = NOW()`,
+        cfg.slug,
+        cfg.name,
+        cfg.nameHi ?? null,
+        cfg.nameMr ?? null,
+        cfg.emoji ?? null,
+        cfg.industryCategoryName ?? null,
+        JSON.stringify(cfg.attributeSchema),
+        cfg.active,
+        cfg.sortOrder,
+      );
+    }
 
     console.log('[AutoMigrate] Database schema checked successfully.');
   } catch (err) {

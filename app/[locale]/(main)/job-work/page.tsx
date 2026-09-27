@@ -13,8 +13,8 @@ type JobWorkOrder = {
   id: string; orderNumber: string; materialDescription: string; inputWeightKg: number;
   outputDescription: string | null; outputWeightKg: number | null;
   ratePerKg: number; feeBasis: 'input' | 'output'; feeAmount: number | null;
-  byproductRetainedByMill: boolean; status: 'received' | 'processing' | 'completed';
-  notes: string | null; receivedAt: string;
+  byproductRetainedByMill: boolean; status: 'received' | 'processing' | 'completed' | 'delivered';
+  notes: string | null; receivedAt: string; deliveredAt?: string | null;
   customer?: { id: string; name: string; mobile: string | null } | null;
   gateEntry?: { id: string; entryNumber: string } | null;
 };
@@ -24,11 +24,13 @@ type GateEntry = { id: string; entryNumber: string; vehicleNumber: string };
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
-const statusTone = (s: string) => s === 'completed'
-  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-  : s === 'processing'
-    ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
-    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+const statusTone = (s: string) => s === 'delivered'
+  ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+  : s === 'completed'
+    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+    : s === 'processing'
+      ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
+      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
 
 export default function JobWorkPage() {
   const t = useTranslations('JobWork');
@@ -37,6 +39,7 @@ export default function JobWorkPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [completingOrder, setCompletingOrder] = useState<JobWorkOrder | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [deliveringId, setDeliveringId] = useState<string | null>(null);
 
   const { data: orders = [], mutate: refetch, isLoading } = useSWR<JobWorkOrder[]>(
     activeShopId ? ['/mill/job-work', activeShopId] : null,
@@ -55,6 +58,7 @@ export default function JobWorkPage() {
     received: orders.filter(o => o.status === 'received').length,
     processing: orders.filter(o => o.status === 'processing').length,
     completed: orders.filter(o => o.status === 'completed').length,
+    delivered: orders.filter(o => o.status === 'delivered').length,
   };
 
   const startProcessing = async (order: JobWorkOrder) => {
@@ -65,6 +69,17 @@ export default function JobWorkPage() {
     } catch (err: any) {
       alert(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToStart'));
     } finally { setStartingId(null); }
+  };
+
+  const markDelivered = async (order: JobWorkOrder) => {
+    if (!confirm(`Mark Order ${order.orderNumber} as Returned / Delivered to customer ${order.customer?.name || ''}?`)) return;
+    setDeliveringId(order.id);
+    try {
+      await api.patch(`/mill/job-work/${order.id}`, { action: 'deliver' });
+      refetch();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to deliver');
+    } finally { setDeliveringId(null); }
   };
 
   return (
@@ -81,10 +96,11 @@ export default function JobWorkPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label={t('received')} value={stats.received} tone="slate" />
         <StatCard label={t('processing')} value={stats.processing} tone="amber" />
         <StatCard label={t('completed')} value={stats.completed} tone="emerald" />
+        <StatCard label="Delivered / Returned" value={stats.delivered} tone="blue" />
       </div>
 
       {isLoading ? (
@@ -102,7 +118,12 @@ export default function JobWorkPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black text-slate-900 dark:text-white">{o.orderNumber}</span>
-                    <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full', statusTone(o.status))}>{t(o.status)}</span>
+                    <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full', statusTone(o.status))}>
+                      {o.status === 'delivered' ? 'RETURNED / CLOSED' : t(o.status)}
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/30 dark:text-purple-300">
+                      🌾 Customer Grain
+                    </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
                     {o.customer?.name ? `${o.customer.name} · ` : ''}
@@ -111,7 +132,7 @@ export default function JobWorkPage() {
                     {o.feeAmount != null ? ` · ${rupee(o.feeAmount)}` : ` · ₹${o.ratePerKg}/Kg`}
                   </p>
                 </div>
-                <div className="shrink-0" onClick={e => e.stopPropagation()}>
+                <div className="shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
                   {o.status === 'received' && (
                     <button onClick={() => startProcessing(o)} disabled={startingId === o.id}
                       className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 disabled:opacity-50">
@@ -123,6 +144,17 @@ export default function JobWorkPage() {
                       className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100">
                       <CheckCircle2 size={13} /> {t('completeAndCollect')}
                     </button>
+                  )}
+                  {o.status === 'completed' && (
+                    <button onClick={() => markDelivered(o)} disabled={deliveringId === o.id}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-100 disabled:opacity-50">
+                      {deliveringId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Return / Deliver
+                    </button>
+                  )}
+                  {o.status === 'delivered' && (
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                      ✓ Closed
+                    </span>
                   )}
                 </div>
               </li>
@@ -155,8 +187,8 @@ export default function JobWorkPage() {
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: number; tone: 'slate' | 'amber' | 'emerald' }) {
-  const map = { slate: 'text-slate-400', amber: 'text-amber-500', emerald: 'text-emerald-500' };
+function StatCard({ label, value, tone }: { label: string; value: number; tone: 'slate' | 'amber' | 'emerald' | 'blue' }) {
+  const map = { slate: 'text-slate-400', amber: 'text-amber-500', emerald: 'text-emerald-500', blue: 'text-blue-500' };
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <p className={cn('text-2xl font-black', map[tone])}>{value}</p>

@@ -5,7 +5,8 @@ import { useState, useEffect, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store, Plus } from 'lucide-react';
+import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store, Plus, Tag, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -420,6 +421,27 @@ function SettingsPageInner() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Category Config */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
+          <CardHeader>
+            <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400 mb-4">
+              <Tag size={24} />
+            </div>
+            <CardTitle className="text-slate-900 dark:text-white">Category Attribute Config</CardTitle>
+            <CardDescription className="text-slate-500">
+              Configure which product attributes (Color, Size, Batch, Serial…) and billing columns are used for each industry category.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href={`/${locale}/settings/category-config`}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
+            >
+              Open Category Config <ChevronRightIcon size={16} />
+            </Link>
+          </CardContent>
+        </Card>
+
         {/* Security & Access */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
           <CardHeader>

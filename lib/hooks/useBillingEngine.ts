@@ -33,6 +33,9 @@ export function useBillingEngine(
   const updatePriceInStore = useCartStore((state) => state.updatePrice);
   const updateGstPercentInStore = useCartStore((state) => state.updateGstPercent);
   const updateBatchNumberInStore = useCartStore((state) => state.updateBatchNumber);
+  const updateExpiryDateInStore = useCartStore((state) => state.updateExpiryDate);
+  const updateSerialNumberInStore = useCartStore((state) => state.updateSerialNumber);
+  const updateWarrantyDaysInStore = useCartStore((state) => state.updateWarrantyDays);
   const setLineBatchInStore = useCartStore((state) => state.setLineBatch);
   const clearCartInStore = useCartStore((state) => state.clearCart);
 
@@ -145,6 +148,21 @@ export function useBillingEngine(
     updateBatchNumberInStore(shopId, id, batchNumber, variant);
   }, [shopId, updateBatchNumberInStore]);
 
+  const updateExpiryDate = useCallback((id: string | number, expiryDate: string, variant?: string) => {
+    if (!shopId) return;
+    updateExpiryDateInStore(shopId, id, expiryDate, variant);
+  }, [shopId, updateExpiryDateInStore]);
+
+  const updateSerialNumber = useCallback((id: string | number, serialNumber: string, variant?: string) => {
+    if (!shopId) return;
+    updateSerialNumberInStore(shopId, id, serialNumber, variant);
+  }, [shopId, updateSerialNumberInStore]);
+
+  const updateWarrantyDays = useCallback((id: string | number, warrantyDays: number, variant?: string) => {
+    if (!shopId) return;
+    updateWarrantyDaysInStore(shopId, id, warrantyDays, variant);
+  }, [shopId, updateWarrantyDaysInStore]);
+
   const setLineBatch = useCallback((id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number }) => {
     if (!shopId) return;
     setLineBatchInStore(shopId, id, variant, batch);
@@ -196,6 +214,9 @@ export function useBillingEngine(
     updatePrice,
     updateGstPercent,
     updateBatchNumber,
+    updateExpiryDate,
+    updateSerialNumber,
+    updateWarrantyDays,
     setLineBatch,
     clearCart,
   };

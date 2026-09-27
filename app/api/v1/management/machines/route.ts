@@ -33,19 +33,57 @@ export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const body = await readBody<any>(req);
 
-  const name = (body.name || '').toString().trim();
-  if (!name) throw new ApiError(400, 'Machine name is required');
+  // Support bulk creation
+  const items: any[] = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.machines)
+    ? body.machines
+    : [body];
 
-  const machine = await (prisma as any).machine.create({
-    data: {
-      shopId: shop.id,
-      name,
-      machineType: (body.machineType || '').trim() || null,
-      purchaseDate: body.purchaseDate ? new Date(body.purchaseDate) : null,
-      cost: body.cost != null && body.cost !== '' ? Number(body.cost) : null,
-      status: ['working', 'under_maintenance', 'retired'].includes(body.status) ? body.status : 'working',
-      notes: (body.notes || '').trim() || null,
-    },
-  });
-  return json(machine, 201);
+  if (items.length === 0) {
+    throw new ApiError(400, 'No machine data provided');
+  }
+
+  const validStatus = (s?: string) => (['working', 'under_maintenance', 'retired'].includes(s || '') ? s! : 'working');
+
+  if (items.length === 1) {
+    const item = items[0];
+    const name = (item.name || '').toString().trim();
+    if (!name) throw new ApiError(400, 'Machine name is required');
+
+    const machine = await (prisma as any).machine.create({
+      data: {
+        shopId: shop.id,
+        name,
+        machineType: (item.machineType || '').trim() || null,
+        purchaseDate: item.purchaseDate ? new Date(item.purchaseDate) : null,
+        cost: item.cost != null && item.cost !== '' ? Number(item.cost) : null,
+        status: validStatus(item.status),
+        notes: (item.notes || '').trim() || null,
+      },
+    });
+    return json(machine, 201);
+  }
+
+  // Bulk create
+  const created: any[] = [];
+  for (const item of items) {
+    const name = (item.name || '').toString().trim();
+    if (!name) continue;
+
+    const m = await (prisma as any).machine.create({
+      data: {
+        shopId: shop.id,
+        name,
+        machineType: (item.machineType || '').trim() || null,
+        purchaseDate: item.purchaseDate ? new Date(item.purchaseDate) : null,
+        cost: item.cost != null && item.cost !== '' ? Number(item.cost) : null,
+        status: validStatus(item.status),
+        notes: (item.notes || '').trim() || null,
+      },
+    });
+    created.push(m);
+  }
+
+  return json({ count: created.length, machines: created }, 201);
 });

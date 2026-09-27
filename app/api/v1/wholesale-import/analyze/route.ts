@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import { importConfig } from '@/lib/importConfig';
 import { requireShop } from '@/lib/server/auth';
 import { ApiError, errorResponse } from '@/lib/server/http';
@@ -170,9 +171,14 @@ export async function POST(req: NextRequest) {
     if (files.length === 0) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
-    // Multi-key Gemini support: rotate through GEMINI_API_KEY, GEMINI_API_KEY_2,
-    // GEMINI_API_KEY_3 … when one key's daily free quota is exhausted.
-    // All keys are optional — the chain skips missing ones automatically.
+
+    // ── OpenAI (primary) ─────────────────────────────────────────────────────
+    const openaiKey = process.env.OPENAI_API_KEY || '';
+    const openaiClient = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
+    const openaiModel = process.env.IMPORT_OPENAI_MODEL || 'gpt-4o-mini';
+
+    // ── Gemini (secondary / fallback) ────────────────────────────────────────
+    // Multi-key support: rotate through GEMINI_API_KEY, GEMINI_API_KEY_2 … on quota exhaustion.
     const geminiKeys = [
       process.env.GEMINI_API_KEY,
       process.env.GEMINI_API_KEY_2,
@@ -181,12 +187,10 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean) as string[];
     const geminiKey = geminiKeys[0] || '';
 
-    if (!geminiKey) {
-      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY in .env.local.' }, { status: 500 });
+    if (!openaiKey && !geminiKey) {
+      return NextResponse.json({ error: 'No AI provider configured. Set OPENAI_API_KEY (primary) or GEMINI_API_KEY (fallback) in .env.local.' }, { status: 500 });
     }
-    // Gemini provider for the import pipeline
-    // (accurate on messy Indian invoices/handwriting, huge context window).
-    // geminiClients[0] is the primary; rest are rotated on quota exhaustion.
+    // Gemini clients — geminiClients[0] is primary; rest rotated on quota exhaustion.
     const geminiClients = geminiKeys.map(k => new GoogleGenAI({ apiKey: k }));
     const gemini = geminiClients[0] ?? null;
     
@@ -610,6 +614,51 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       'vision',
     );
 
+    // ── OpenAI call helpers ───────────────────────────────────────────────────
+    const callOpenAIText = async (promptText: string): Promise<string> => {
+      if (!openaiClient) throw new Error('OpenAI API key not configured');
+      let timer: any;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`OpenAI text call timed out after ${importConfig.timeoutMs}ms`)), importConfig.timeoutMs);
+      });
+      try {
+        const callPromise = openaiClient.chat.completions.create({
+          model: openaiModel,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: promptText }],
+        }).then(r => r.choices[0]?.message?.content || '');
+        return await Promise.race([callPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const callOpenAIVision = async (promptText: string, mime: string, b64: string): Promise<string> => {
+      if (!openaiClient) throw new Error('OpenAI API key not configured');
+      let timer: any;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`OpenAI vision call timed out after ${importConfig.timeoutMs}ms`)), importConfig.timeoutMs);
+      });
+      try {
+        const callPromise = openaiClient.chat.completions.create({
+          model: openaiModel,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}`, detail: 'high' } },
+            ],
+          }],
+        }).then(r => r.choices[0]?.message?.content || '');
+        return await Promise.race([callPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     // Parse the AI's JSON, with a jsonrepair fallback. Throws on unrecoverable output.
     const parseAiJson = (textOutput: string): any => {
       const extract = (s: string) => {
@@ -688,7 +737,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     type Task = { label: string; run: () => Promise<string> };
     const tasks: Task[] = [];
 
-    // Provider selection — Only Gemini is configured for AI tasks.
+    // Provider selection — OpenAI is primary, Gemini is secondary/fallback.
     const retryCount = Number(process.env.IMPORT_RETRY_COUNT ?? 0);
 
     // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Falls
@@ -906,38 +955,40 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // to the next provider instead of letting the bad response poison
     // downstream `collect()` parsing.
     textChunks.forEach((chunk, idx) => {
+      // OpenAI is primary for text (faster, reliable JSON mode); Gemini is fallback.
+      const openaiText = async () => assertJsonParseable(await callOpenAIText(buildPrompt(chunk)));
       const geminiText = async () => assertJsonParseable(await callGeminiText(buildPrompt(chunk)));
       tasks.push({
         label: `Text chunk ${idx + 1}/${textChunks.length}`,
-        run: () => withFallback(geminiText, []),
+        run: () => withFallback(
+          openaiClient ? openaiText : geminiText,
+          openaiClient ? [{ name: 'gemini', enabled: geminiClients.length > 0, run: geminiText }] : [],
+        ),
       });
     });
 
     const MAX_IMAGES = importConfig.maxImages; // each image = one page of a scanned/photographed doc
     const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
     imagesToProcess.forEach((img: any, idx) => {
+      // OpenAI vision (primary) → Gemini vision (secondary) → Tesseract (last resort).
+      const openaiVision = async () => assertJsonParseable(await callOpenAIVision(buildPrompt(''), img.mimeType, img.b64));
       const geminiVision = async () => assertJsonParseable(await callGeminiVision(buildPrompt(''), img.mimeType, img.b64));
-      
-      // Tesseract tier — zero-API last resort. Runs only when Gemini fails.
-      const tesseractVision = async () => assertJsonParseable(
-        await callTesseractSalvage(img.b64, img.mimeType)
-      );
+      const tesseractVision = async () => assertJsonParseable(await callTesseractSalvage(img.b64, img.mimeType));
 
       const fallbacks = [
+        { name: 'gemini', enabled: geminiClients.length > 0, run: geminiVision },
         { name: 'tesseract', enabled: true, run: tesseractVision },
       ];
       tasks.push({
         label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
-        run: () => withFallback(geminiVision, fallbacks),
+        run: () => withFallback(openaiClient ? openaiVision : geminiVision, openaiClient ? fallbacks : [{ name: 'tesseract', enabled: true, run: tesseractVision }]),
       });
     });
 
-    // Direct-PDF fallback tasks — one call per PDF that text-extraction couldn't
-    // read. Gemini reads the raw PDF including scanned pages via native OCR.
+    // Direct-PDF fallback tasks — one call per PDF that text-extraction couldn't read.
+    // OpenAI vision handles PDFs as images; Gemini handles raw PDF bytes natively.
     pdfFallbackDocs.forEach((doc, idx) => {
-      // Gemini-only path (Nvidia/OpenRouter free vision models don't read raw
-      // PDFs). Still validated so a Markdown-formatted response fails clean
-      // with INVALID_JSON instead of poisoning downstream collect().
+      // OpenAI doesn't support raw PDF bytes natively — Gemini native PDF OCR is primary here.
       tasks.push({
         label: `PDF direct-OCR ${idx + 1}/${pdfFallbackDocs.length} (${doc.name})`,
         run: async () => assertJsonParseable(await callGeminiPdf(buildPrompt(''), doc.b64)),
@@ -992,7 +1043,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         friendly = 'The AI could not read this bill in a structured way — every provider returned prose instead of the required JSON. This usually happens when the image is very unclear, rotated, or contains handwriting the model can\'t parse. Please try a clearer photo, or enter the bill manually.';
       } else if (isAllQuota) {
         code = 'AI_QUOTA_EXHAUSTED';
-        friendly = 'Free AI quota exhausted for today on all configured Gemini keys. Please try again after the daily reset, or add another Gemini API key in .env.local. Your data is safe.';
+        friendly = 'AI quota exhausted on all configured providers. Please check your OpenAI (OPENAI_API_KEY) or Gemini (GEMINI_API_KEY) quota, or add another key in .env.local. Your data is safe.';
       } else if (perCallErrors.length) {
         friendly = `Couldn't read the file. ${perCallErrors[0].split(':').slice(1).join(':').trim().slice(0, 200) || perCallErrors[0]}`;
       } else {

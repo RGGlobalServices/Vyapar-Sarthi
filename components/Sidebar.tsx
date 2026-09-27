@@ -10,7 +10,7 @@ import {
   Warehouse, ChevronDown, ChevronRight, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle,
   // Bada Udyog / Mills icons
   Truck, Scale, Factory, FlaskConical, ClipboardCheck, Handshake, HardHat, Wrench, Cog, Cpu, FileText,
-  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3, Sprout, PanelLeftClose
+  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3, Layers, Sprout, PanelLeftClose, AlertOctagon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -52,12 +52,12 @@ const OPTIONAL_KEYS = new Set(['gate-entry', 'weighbridge', 'quality-lab']);
 const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'main',        label: 'Main',              emoji: '🏭', alwaysExpanded: true, keys: ['dashboard'] },
   { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'party', 'products'] },
-  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'batches', 'production', 'finished-goods', 'by-products', 'job-work'] },
+  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'batches', 'production', 'finished-goods', 'by-products', 'wip', 'rejections', 'job-work'] },
   { id: 'quality',     label: 'Quality',           emoji: '🧪', keys: ['quality-lab'] },
   { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'settlement', 'expenses'] },
   { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers'], defaultCollapsed: true },
-  { id: 'maintenance', label: 'Maintenance',      emoji: '🔧', keys: ['maintenance'], defaultCollapsed: true },
+  { id: 'maintenance', label: 'Machines & Maintenance', emoji: '🔧', keys: ['machines', 'maintenance', 'spare-parts'], defaultCollapsed: false },
   { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
   { id: 'admin',       label: 'Setup',             emoji: '⚙️', keys: ['staff', 'import', 'referral', 'calendar', 'returns', 'settings', 'profile', 'trash'], defaultCollapsed: true },
 ];
@@ -306,6 +306,8 @@ export default function Sidebar({
     { key: 'raw-material',    icon: Wheat,           href: '/raw-material' },
     { key: 'finished-goods',  icon: Boxes,           href: '/finished-goods' },
     { key: 'by-products',     icon: Grid3x3,         href: '/by-products' },
+    { key: 'wip',             icon: Layers,          href: '/wip' },
+    { key: 'rejections',      icon: AlertOctagon,    href: '/rejections' },
     { key: 'job-work',        icon: Sprout,          href: '/job-work' },
     { key: 'quality-lab',     icon: FlaskConical,    href: '/quality-lab' },
     { key: 'batches',         icon: ClipboardCheck,  href: '/batches' },
@@ -574,6 +576,7 @@ export default function Sidebar({
             const itemClass = isBadaUdyog
               ? cn(linkClass, 'py-2 rounded-lg')
               : linkClass;
+            const isMill = isBadaUdyog || profile.businessType === 'millprocessing';
             const label =
               item.key === 'party' || (item.key === 'customers' && currentPackageConfig.id === 'wholesale')
                 ? t('parties')

@@ -200,6 +200,33 @@ export function buildCaReports(t: Tr): ReportDef[] {
         { label: sum('cash_bank_summary', 'netCashFlow'), value: money(d.netCashFlow || 0) },
       ],
     },
+    // ── Balance Sheet ──────────────────────────────────────────────────────
+    {
+      key: 'balance_sheet', label: rn('balance_sheet'), orientation: 'portrait',
+      columns: [
+        { key: 'section', label: 'Section' },
+        { key: 'item', label: 'Item' },
+        { key: 'amount', label: 'Amount', type: 'currency' as const },
+      ],
+      rowsFrom: (d) => {
+        if (!d?.assets) return [];
+        return [
+          { section: 'Assets', item: 'Cash & Bank', amount: d.assets.cash },
+          { section: 'Assets', item: 'Accounts Receivable (Debtors)', amount: d.assets.debtors },
+          { section: 'Assets', item: 'Closing Stock', amount: d.assets.closingStock },
+          { section: 'Assets', item: 'Total Assets', amount: d.assets.total },
+          { section: 'Liabilities', item: 'Accounts Payable (Creditors)', amount: d.liabilities.creditors },
+          { section: 'Liabilities', item: 'Total Liabilities', amount: d.liabilities.total },
+          { section: 'Equity', item: 'Net Profit (Period)', amount: d.equity.netProfit },
+          { section: 'Equity', item: 'Net Worth', amount: d.equity.total },
+        ];
+      },
+      summary: (d) => [
+        { label: 'Total Assets', value: money(d?.assets?.total || 0) },
+        { label: 'Total Liabilities', value: money(d?.liabilities?.total || 0) },
+        { label: 'Net Worth', value: money(d?.equity?.total || 0) },
+      ],
+    },
   ];
 }
 

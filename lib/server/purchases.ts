@@ -57,6 +57,17 @@ export async function reversePurchaseInvoiceEffects(
     for (const m of movements) {
       qtyByProduct.set(m.productId, (qtyByProduct.get(m.productId) || 0) + m.quantity);
     }
+    // Fallback for imported purchases (or any invoice created before the
+    // StockMovement audit trail was added): no movement rows exist, so
+    // derive what to reverse directly from the purchase items themselves.
+    // Without this, editing or deleting an imported purchase silently
+    // skips the stock reversal even though the re-apply step still runs,
+    // leaving the removed items' quantities stuck in the product totals.
+    if (qtyByProduct.size === 0 && invoice.purchaseItems.length > 0) {
+      for (const item of invoice.purchaseItems) {
+        qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + item.quantity);
+      }
+    }
     const productIds = [...qtyByProduct.keys()];
     if (productIds.length) {
       const products = await tx.product.findMany({

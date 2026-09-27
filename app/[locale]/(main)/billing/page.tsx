@@ -38,6 +38,7 @@ import DiscountInput from '@/components/DiscountInput';
 import {splitVariantKey, isColorSizeVariants} from '@/components/ColorSizeVariantGrid';
 import {formatSizeLabel} from '@/components/SizeVariantGrid';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
+import { invalidateProductCaches } from '@/lib/swrInvalidate';
 
 // Short "when was this product added" label for the search dropdown. Recent
 // additions read as "Today"/"Yesterday"/"3d ago" so a shopkeeper can spot a
@@ -339,6 +340,9 @@ function StandardBillingUI() {
   // mean "quantity 2" still works as always).
   const pendingAddKeysRef = useRef<Map<string, number>>(new Map());
   const DUPLICATE_ADD_COOLDOWN_MS = 700;
+  // Cache of product batches fetched during this billing session — avoids
+  // re-fetching the same product's batches on every scan/click.
+  const batchCacheRef = useRef<Map<string, any[]>>(new Map());
 
   // Use SWR for instant cache loading. Also persisted to localStorage so a
   // cold app start with no connection yet still has yesterday's catalogue to
@@ -647,20 +651,25 @@ function StandardBillingUI() {
     // even appears. Only for a genuine first click (not the lot-picker's
     // own forceAdd re-entry, and not a scan that already pinned a batch).
     if (isOriginalClick) {
-      api.get(`/products/${product.id}/batches`).then(res => {
-        const batches = Array.isArray(res.data) ? res.data : [];
-        if (batches.length > 1) {
-          // A real choice to make — surface the picker. The line stays at
-          // its flat cost until the shopkeeper picks a lot below.
-          setBatchSelectionProduct(product);
-          setBatchSelectionVariant(variant);
-          setBatchSelectionOptions(batches);
-        } else if (batches.length === 1) {
-          const only = batches[0];
-          setLineBatch(product.id, variant, { batchId: only.id, batchNumber: only.batchNumber, cost: only.costPrice });
+      const applyBatches = (batches: any[]) => {
+        if (batches.length >= 1) {
+          const first = batches[0];
+          const resolvedCost = Number(first.costPrice) > 0 ? Number(first.costPrice) : undefined;
+          // Use named batchNumber if set; otherwise fall back to positional label ("Lot 1")
+          const displayBatchNumber = first.batchNumber || (batches.length > 1 ? `Lot 1` : null);
+          setLineBatch(product.id, variant, { batchId: first.id, batchNumber: displayBatchNumber, cost: resolvedCost });
         }
-        // 0 batches: nothing to reconcile, the flat-cost line is already correct.
-      }).catch(() => { /* best-effort only — line already added at flat cost */ });
+        // Cache even when empty so repeated adds don't re-fetch
+        batchCacheRef.current.set(String(product.id), batches);
+      };
+      const cached = batchCacheRef.current.get(String(product.id));
+      if (cached !== undefined) {
+        applyBatches(cached);
+      } else {
+        api.get(`/products/${product.id}/batches`).then(res => {
+          applyBatches(Array.isArray(res.data) ? res.data : []);
+        }).catch(() => { /* best-effort only — line already added at flat cost */ });
+      }
     }
   }, [addItem, setLineBatch, bizConfig.hasSizes]);
 
@@ -981,6 +990,9 @@ function StandardBillingUI() {
           undefined,
           { revalidate: true }
         );
+        // Revalidate products so the Products & Stock pages reflect the sale's
+        // stock deduction without requiring a manual page refresh.
+        invalidateProductCaches();
       }
 
       clearCart();
@@ -1492,14 +1504,14 @@ function StandardBillingUI() {
               />
             )}
             {(nonLiquorCartItems.length > 0 || liquorCartLines.length === 0) && (
-            <div className="overflow-x-auto rounded-xl border-2 border-slate-300 dark:border-slate-700">
-              <table className="w-full text-left min-w-[600px] border-collapse">
-              <thead className="bg-slate-800 dark:bg-slate-900 text-white text-xs uppercase font-black sticky top-0 z-10">
-                <tr className="divide-x divide-slate-600">
-                  <th className="px-4 py-3 w-10">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700">
+              <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[11px] uppercase font-semibold tracking-wide sticky top-0 z-10">
+                <tr>
+                  <th className="px-3 py-2.5 w-9">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 dark:border-slate-600 text-slate-700 focus:ring-slate-400 cursor-pointer w-3.5 h-3.5"
                       checked={nonLiquorCartItems.length > 0 && selectedItemIds.size === nonLiquorCartItems.length}
                       onChange={(e) => {
                         if (e.target.checked) setSelectedItemIds(new Set(nonLiquorCartItems.map(i => i.id)));
@@ -1507,19 +1519,12 @@ function StandardBillingUI() {
                       }}
                     />
                   </th>
-                  <th className="px-2 py-3">{t('itemCol') || 'ITEM'}</th>
-                  {bizConfig.hasSizes && <th className="px-4 py-3 whitespace-nowrap">{t('sizeColor') || 'SIZE / COLOR'}</th>}
-                  {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 whitespace-nowrap">{t('ml') || 'ML'}</th>}
-                  {bizConfig.hasGender && <th className="px-4 py-3 whitespace-nowrap">{t('gender') || 'GENDER'}</th>}
-                  {bizConfig.hasBatch && <th className="px-4 py-3 whitespace-nowrap">{t('batch') || 'BATCH'}</th>}
-                  {bizConfig.hasExpiry && <th className="px-4 py-3 whitespace-nowrap">{t('expiry') || 'EXPIRY'}</th>}
-                  {bizConfig.hasWarranty && <th className="px-4 py-3 whitespace-nowrap">{t('warranty') || 'WARRANTY'}</th>}
-                  {isElectronics && <th className="px-4 py-3 whitespace-nowrap">{t('serialNo') || 'SERIAL #'}</th>}
-                  <th className="px-4 py-3 whitespace-nowrap">{t('unitCol') || 'UNIT'}</th>
-                  <th className="px-6 py-3 whitespace-nowrap">{t('qtyCol') || 'QTY'}</th>
-                  <th className="px-6 py-3 text-right whitespace-nowrap">{t('priceCol') || 'PRICE'}</th>
-                  <th className="px-6 py-3 text-right whitespace-nowrap">{t('totalCol') || 'TOTAL'}</th>
-                  <th className="px-4 py-3 text-center whitespace-nowrap">{t('actionCol') || 'ACTION'}</th>
+                  <th className="px-3 py-2.5">{t('itemCol') || 'ITEM'}</th>
+                  {bizConfig.hasLiquorSpecs && <th className="px-3 py-2.5 whitespace-nowrap">{t('ml') || 'ML'}</th>}
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">{t('qtyCol') || 'QTY'}</th>
+                  <th className="px-4 py-2.5 text-right whitespace-nowrap">{t('priceCol') || 'PRICE'}</th>
+                  <th className="px-4 py-2.5 text-right whitespace-nowrap">{t('totalCol') || 'TOTAL'}</th>
+                  <th className="px-3 py-2.5 text-center whitespace-nowrap">{t('actionCol') || 'ACT'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
@@ -1527,11 +1532,11 @@ function StandardBillingUI() {
                   const stockInfo = resolveStockForItem(item, products);
                   const maxQty = stockInfo.known ? stockInfo.qty : undefined;
                   return (
-                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className={cn('text-slate-900 dark:text-slate-200 divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/30 transition-colors', rowIdx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
-                    <td className="px-4 py-4">
+                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className={cn('text-slate-900 dark:text-slate-200 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-0', rowIdx % 2 === 1 && 'bg-slate-50/40 dark:bg-slate-800/20')}>
+                    <td className="px-3 py-3">
                       <input
                         type="checkbox"
-                        className="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+                        className="rounded border-slate-300 dark:border-slate-600 text-slate-700 focus:ring-slate-400 cursor-pointer w-3.5 h-3.5"
                         checked={selectedItemIds.has(item.id)}
                         onChange={(e) => {
                           const newSet = new Set(selectedItemIds);
@@ -1541,83 +1546,109 @@ function StandardBillingUI() {
                         }}
                       />
                     </td>
-                    <td className="px-2 py-4 font-bold min-w-[200px]">
-                      {item.name}
-                      {item.variant && !bizConfig.hasSizes && !bizConfig.hasLiquorSpecs && (
-                        <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
-                          {item.variant}
-                        </span>
-                      )}
-                      {item.variant && bizConfig.hasLiquorSpecs && item.size && (
-                        <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase">
-                          {item.size}
-                        </span>
-                      )}
+                    <td className="px-3 py-3 align-top">
+                      <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">{item.name}</div>
+                      {/* Sub-line: variant · gender · unit */}
                       {(() => {
-                        // Wholesaler cue: the party discount % off MRP the
-                        // shopkeeper is quoting on this line. Shown only when
-                        // an MRP exists and the price is actually below it.
+                        const parts = [
+                          bizConfig.hasSizes && item.color ? `${item.color} / ${item.size || item.variant}` : (item.size || item.variant) || null,
+                          bizConfig.hasGender && item.gender ? item.gender : null,
+                          item.unit || null,
+                        ].filter(Boolean);
                         const mrp = Number(item.mrp) || 0;
-                        if (mrp <= 0 || !(item.price > 0) || item.price >= mrp) return null;
-                        const disc = ((mrp - item.price) / mrp) * 100;
+                        const discPct = (mrp > 0 && item.price > 0 && item.price < mrp) ? ((mrp - item.price) / mrp) * 100 : 0;
                         return (
-                          <span
-                            className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold"
-                            title={`MRP ₹${mrp.toFixed(2)} • Selling ₹${item.price.toFixed(2)}`}
-                          >
-                            {disc.toFixed(disc >= 10 ? 0 : 1)}% off
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            {parts.length > 0 && (
+                              <span className="text-[11px] text-slate-400">{parts.join(' · ')}</span>
+                            )}
+                            {discPct > 0 && (
+                              <span className="text-[10px] px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-medium" title={`MRP ₹${mrp}`}>
+                                {discPct.toFixed(discPct >= 10 ? 0 : 1)}% off
+                              </span>
+                            )}
+                          </div>
                         );
                       })()}
+                      {/* Lot/Batch badge — shown for any item with an assigned batch (auto-FIFO
+                          or barcode-scan). Clickable to switch lots only when the product has >1. */}
+                      {(item as any).batchId && (() => {
+                        const pid = String(item.id);
+                        const cachedBatches = batchCacheRef.current.get(pid);
+                        const idx = cachedBatches ? cachedBatches.findIndex((b: any) => b.id === (item as any).batchId) : -1;
+                        const lotLabel = (item as any).batchNumber || (idx >= 0 ? `Lot ${idx + 1}` : 'Lot 1');
+                        const canChange = !cachedBatches || cachedBatches.length > 1;
+                        if (!canChange) {
+                          return (
+                            <div className="mt-1.5">
+                              <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-medium text-slate-500">
+                                {lotLabel}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="mt-1.5">
+                            <button
+                              type="button"
+                              title="Click to change lot"
+                              onClick={async () => {
+                                let batches = batchCacheRef.current.get(pid);
+                                if (!batches) {
+                                  try {
+                                    const res = await api.get(`/products/${pid}/batches`);
+                                    batches = Array.isArray(res.data) ? res.data : [];
+                                    batchCacheRef.current.set(pid, batches);
+                                  } catch { batches = []; }
+                                }
+                                if (batches.length > 1) {
+                                  const prod = products.find((p: any) => p.id === pid) || { id: pid, name: item.name };
+                                  setBatchSelectionProduct(prod);
+                                  setBatchSelectionVariant(item.variant);
+                                  setBatchSelectionOptions(batches);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-800/30 transition-colors"
+                            >
+                              <span>{lotLabel}</span>
+                              <span className="text-[9px] opacity-60">↕</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      {/* Inline chips: Expiry / Warranty / Serial (Batch chip replaced by Lot badge above) */}
+                      {(bizConfig.hasExpiry || bizConfig.hasWarranty || isElectronics) && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {bizConfig.hasExpiry && (
+                            <label className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5">
+                              <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">Exp</span>
+                              <input type="text" placeholder="MM/YY"
+                                className="bg-transparent outline-none text-[11px] w-12 text-slate-700 dark:text-slate-300 min-w-0" />
+                            </label>
+                          )}
+                          {bizConfig.hasWarranty && (
+                            <label className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5">
+                              <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">Wty</span>
+                              <input type="text" placeholder="mo."
+                                className="bg-transparent outline-none text-[11px] w-10 text-slate-700 dark:text-slate-300 min-w-0" />
+                            </label>
+                          )}
+                          {isElectronics && (
+                            <label className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5">
+                              <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">S/N</span>
+                              <input type="text" placeholder="IMEI/S/N"
+                                className="bg-transparent outline-none text-[11px] w-20 text-slate-700 dark:text-slate-300 min-w-0" />
+                            </label>
+                          )}
+                        </div>
+                      )}
                     </td>
-                    {bizConfig.hasSizes && (
-                      <td className="px-4 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {item.color ? (
-                          <span className="flex flex-col leading-tight">
-                            <span className="text-[10px] uppercase text-slate-500 dark:text-slate-400 font-bold">{item.color}</span>
-                            <span>{item.size || item.variant}</span>
-                          </span>
-                        ) : (item.size || item.variant || '-')}
-                      </td>
-                    )}
                     {bizConfig.hasLiquorSpecs && (
-                      <td className="px-4 py-4 text-sm font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                      <td className="px-3 py-3 text-sm font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap align-top">
                         {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
                       </td>
                     )}
-                    {bizConfig.hasGender && (
-                      <td className="px-4 py-4 text-xs font-semibold text-violet-600 dark:text-violet-400">
-                        {item.gender || '-'}
-                      </td>
-                    )}
-                    {bizConfig.hasBatch && (
-                      <td className="px-4 py-4">
-                        <input
-                          type="text"
-                          value={item.batchNumber || ''}
-                          onChange={e => updateBatchNumber(item.id, e.target.value, item.variant)}
-                          placeholder={t('batchPlaceholder')}
-                          className="w-24 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5"
-                        />
-                      </td>
-                    )}
-                    {bizConfig.hasExpiry && (
-                      <td className="px-4 py-4">
-                        <input type="text" placeholder={t('expiryMMYYPlaceholder')} className="w-20 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
-                      </td>
-                    )}
-                    {bizConfig.hasWarranty && (
-                      <td className="px-4 py-4">
-                        <input type="text" placeholder={t('monthsPlaceholder')} className="w-16 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5 text-center" />
-                      </td>
-                    )}
-                    {isElectronics && (
-                      <td className="px-4 py-4">
-                        <input type="text" placeholder={t('imeiSnPlaceholder')} className="w-28 bg-transparent border-b border-slate-300 dark:border-slate-700 focus:border-emerald-500 outline-none text-xs px-1 py-0.5" />
-                      </td>
-                    )}
-                    <td className="px-6 py-4 text-sm text-slate-400">{item.unit}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3 align-top">
                       {item.is_loose ? (
                         <div className="flex flex-col gap-1.5 min-w-[150px]">
                           {/* Quantity input */}
@@ -1682,13 +1713,13 @@ function StandardBillingUI() {
                         <p className="text-[10px] text-amber-500 font-semibold mt-1">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-4 py-3 text-right align-top">
                       <CartPriceInputRetail item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
                     </td>
-                    <td className="px-6 py-4 text-right font-bold">₹{item.total}</td>
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => removeItem(item.id, item.variant)} className="text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-2 rounded-lg transition-colors">
-                        <Trash2 size={18} />
+                    <td className="px-4 py-3 text-right font-semibold text-sm align-top tabular-nums">₹{item.total}</td>
+                    <td className="px-3 py-3 text-center align-top">
+                      <button onClick={() => removeItem(item.id, item.variant)} className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded transition-colors">
+                        <Trash2 size={15} />
                       </button>
                     </td>
                   </tr>
@@ -1696,7 +1727,7 @@ function StandardBillingUI() {
                 })}
                   {nonLiquorCartItems.length === 0 && liquorCartLines.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-20 text-center text-slate-500">
+                      <td colSpan={6 + (bizConfig.hasLiquorSpecs ? 1 : 0)} className="px-6 py-16 text-center text-slate-400 text-sm">
                         {t('emptyCart') || 'No items in cart. Start scanning or searching!'}
                       </td>
                     </tr>
@@ -1818,20 +1849,15 @@ function StandardBillingUI() {
             )}
 
 
-            <div className="border-t border-slate-200 dark:border-slate-800 pt-4 flex justify-between items-center">
-              <span className="text-xl font-bold text-slate-900 dark:text-slate-200">{t('total')}</span>
-              <span className="text-3xl font-black text-emerald-500">₹{total.toLocaleString('en-IN')}</span>
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-3 flex justify-between items-center">
+              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{t('total')}</span>
+              <span className="text-xl font-bold text-slate-900 dark:text-white tabular-nums">₹{total.toLocaleString('en-IN')}</span>
             </div>
 
-            <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{t('payableAmount') || 'Payable Amount'}</span>
-                  <span className="text-2xl font-black text-slate-900 dark:text-white">₹{total.toLocaleString('en-IN')}</span>
-                </div>
-
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-3 space-y-3">
                 <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('paymentMethod') || 'Payment Method'}</div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-2">{t('paymentMethod') || 'Payment Method'}</div>
+                  <div className="grid grid-cols-3 gap-2">
                     {paymentOptions.map(option => {
                       const isSelected = !isEmi && paymentMethod === option.id;
                       const isUdhar = option.id === 'udhar';
@@ -1842,12 +1868,12 @@ function StandardBillingUI() {
                           onClick={() => { setPaymentMethod(option.id); setIsEmi(false); }}
                           aria-pressed={isSelected}
                           className={cn(
-                            "flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95",
+                            "flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg border text-[11px] font-semibold transition-all active:scale-95",
                             isSelected
                               ? isUdhar
-                                ? "bg-orange-500/10 border-orange-500 text-orange-600 dark:text-orange-400"
-                                : "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400"
-                              : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-300 dark:hover:border-slate-700"
+                                ? "bg-orange-500/10 border-orange-400 text-orange-600 dark:text-orange-400"
+                                : "bg-slate-900 border-slate-900 text-white dark:bg-white dark:border-white dark:text-slate-900 shadow-sm"
+                              : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400"
                           )}
                         >
                           {option.icon}
@@ -1861,13 +1887,13 @@ function StandardBillingUI() {
                         onClick={() => setIsEmi(true)}
                         aria-pressed={isEmi}
                         className={cn(
-                          "flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95",
+                          "flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg border text-[11px] font-semibold transition-all active:scale-95",
                           isEmi
                             ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400"
-                            : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-300 dark:hover:border-slate-700"
+                            : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400"
                         )}
                       >
-                        <Zap size={20} />EMI
+                        <Zap size={16} />EMI
                       </button>
                     )}
                   </div>
@@ -1909,10 +1935,10 @@ function StandardBillingUI() {
                                 onClick={() => setUdharAdvanceMethod(option.id)}
                                 aria-pressed={udharAdvanceMethod === option.id}
                                 className={cn(
-                                  "py-1.5 rounded-lg border font-bold text-xs transition-all active:scale-95",
+                                  "py-1.5 rounded-lg border font-semibold text-xs transition-all active:scale-95",
                                   udharAdvanceMethod === option.id
-                                    ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400"
-                                    : "bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500"
+                                    ? "bg-slate-900 border-slate-900 text-white dark:bg-white dark:border-white dark:text-slate-900 shadow-sm"
+                                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400"
                                 )}
                               >
                                 {option.label}
@@ -1977,7 +2003,7 @@ function StandardBillingUI() {
                 <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-semibold text-slate-500">{isEmi ? (t('financedViaEmi') || 'Financed via EMI') : (t('collectedAmount') || 'Collected')}</span>
-                    <span className="text-lg font-black text-emerald-500">₹{(isEmi ? total : collectedAmount).toLocaleString('en-IN')}</span>
+                    <span className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">₹{(isEmi ? total : collectedAmount).toLocaleString('en-IN')}</span>
                   </div>
 
                   <div className="mt-2 flex justify-between items-center bg-slate-50 dark:bg-slate-950 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
@@ -2011,13 +2037,13 @@ function StandardBillingUI() {
             onClick={handleCreateBillClick}
             disabled={items.length === 0}
             className={cn(
-              "w-full py-5 rounded-2xl font-black text-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3",
-              isEmi 
-                ? "bg-sky-500 text-slate-900 shadow-sky-500/20 hover:bg-sky-400" 
-                : "bg-emerald-500 text-slate-900 shadow-emerald-500/20 hover:bg-emerald-400"
+              "w-full py-3 rounded-lg font-semibold text-sm shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
+              isEmi
+                ? "bg-sky-600 text-white hover:bg-sky-700"
+                : "bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
             )}
           >
-            <CheckCircle size={24} />
+            <CheckCircle size={16} />
             {isEmi ? "Confirm EMI Sale" : "Confirm Sale"}
             <span className="text-xs bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded ml-1">F2</span>
           </button>
@@ -2220,37 +2246,33 @@ function StandardBillingUI() {
           purchase costs; picking here decides which lot's stock/cost this
           line draws from (sent as batch_id). */}
       {batchSelectionProduct && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl flex flex-col max-h-[calc(100vh-2rem)]">
-            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-xl flex flex-col max-h-[calc(100vh-2rem)]">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between shrink-0 py-3 px-4">
               <div>
-                <CardTitle className="text-slate-900 dark:text-slate-200">Which lot?</CardTitle>
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mt-1">{batchSelectionProduct.name}</p>
+                <CardTitle className="text-slate-900 dark:text-slate-200 text-base">Change Lot</CardTitle>
+                <p className="text-xs text-slate-500 mt-0.5">{batchSelectionProduct.name}{batchSelectionVariant ? ` · ${batchSelectionVariant}` : ''}</p>
               </div>
-              <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200">
-                <X size={24} />
+              <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors">
+                <X size={18} />
               </button>
             </CardHeader>
-            <CardContent className="p-4 overflow-y-auto space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit.</p>
+            <CardContent className="p-3 overflow-y-auto space-y-1.5">
+              <p className="text-[11px] text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit. Profit is calculated from each lot's purchase cost.</p>
               {batchSelectionOptions.map((b, idx) => (
                 <button
                   key={b.id}
                   onClick={() => {
-                    // The line is already sitting in the cart at the flat
-                    // cost (added optimistically the moment it was first
-                    // clicked) — pin it to the chosen lot's real cost rather
-                    // than adding it again, which would double the quantity.
                     const chosen = batchSelectionProduct; const chosenVariant = batchSelectionVariant;
                     setBatchSelectionProduct(null); setBatchSelectionOptions([]);
                     setLineBatch(chosen.id, chosenVariant, { batchId: b.id, batchNumber: b.batchNumber, cost: b.costPrice });
                   }}
-                  className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-between gap-3"
+                  className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between gap-3"
                 >
                   <div>
                     <p className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                       {b.batchNumber || `Lot ${idx + 1}`}
-                      {idx === 0 && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">Recommended</span>}
+                      {idx === 0 && <span className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">FIFO ↑</span>}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {b.quantity} in stock
@@ -2271,7 +2293,7 @@ function StandardBillingUI() {
           <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl flex flex-col max-h-[calc(100vh-2rem)]">
             <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
               <CardTitle className="text-slate-900 dark:text-slate-200 flex items-center gap-2">
-                <User size={20} className="text-emerald-500" />
+                <User size={16} className="text-slate-400" />
                 Customer Details
               </CardTitle>
               <button onClick={() => setShowCustomerModal(false)} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200">
@@ -2362,7 +2384,7 @@ function StandardBillingUI() {
                   <input
                     type="text"
                     placeholder={t('customerNamePlaceholder')}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors"
                     value={customerName}
                     onChange={e => {
                       setCustomerName(e.target.value);
@@ -2399,7 +2421,7 @@ function StandardBillingUI() {
                   <label className="block text-xs text-slate-600 dark:text-slate-400 mb-2 uppercase font-bold">
                     {t('whatsappNumberLabel')} <span className="text-emerald-500 dark:text-emerald-400 normal-case font-normal">— {t('billWillBeSent')}</span>
                   </label>
-                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-emerald-500 transition-colors">
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-slate-400 transition-colors">
                     <span className="text-slate-500 dark:text-slate-400 text-sm font-bold select-none">+91</span>
                     <input
                       type="tel"
@@ -2418,7 +2440,7 @@ function StandardBillingUI() {
                   <input
                     type="text"
                     placeholder={t('cityAddressPlaceholder') || 'e.g. Pune, or full address'}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm transition-colors"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm transition-colors"
                     value={customerAddress}
                     onChange={e => setCustomerAddress(e.target.value)}
                   />
@@ -2430,7 +2452,7 @@ function StandardBillingUI() {
                   <input
                     type="email"
                     placeholder={t('customerEmailPlaceholder')}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm transition-colors"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm transition-colors"
                     value={customerEmail}
                     onChange={e => setCustomerEmail(e.target.value)}
                   />
@@ -2467,7 +2489,7 @@ function StandardBillingUI() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setShowCustomerModal(false)}
-                  className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                  className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-lg font-semibold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                 >
                   Cancel
                 </button>
@@ -2475,8 +2497,8 @@ function StandardBillingUI() {
                   onClick={handleConfirmBill}
                   disabled={isGeneratingBill || (remainingAmount > 0 && !customerName.trim())}
                   className={cn(
-                    'flex-[2] py-3 rounded-xl font-black text-base transition-all active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2',
-                    'bg-emerald-500 text-slate-900 hover:bg-emerald-400 shadow-emerald-500/20'
+                    'flex-[2] py-2.5 rounded-lg font-semibold text-sm transition-all active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2',
+                    'bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
                   )}
                 >
                   {isGeneratingBill ? (

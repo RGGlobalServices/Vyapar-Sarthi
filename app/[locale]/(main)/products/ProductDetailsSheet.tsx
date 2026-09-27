@@ -6,7 +6,9 @@ import {
   X, Package, RefreshCw, Loader2, ArrowRightLeft,
   TrendingDown, MapPin, CheckCircle, Edit, Hash,
   IndianRupee, TrendingUp, Warehouse, ArrowUp, ArrowDown,
-  Tag, Trash2, Barcode as BarcodeIcon
+  Tag, Trash2, Barcode as BarcodeIcon, Factory, Layers,
+  GitBranch, ChevronRight, Circle, CheckCircle2, Clock,
+  Boxes, ArrowDownCircle, ArrowUpCircle, Scale
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -64,9 +66,11 @@ export default function ProductDetailsSheet({
 
   const { activeShopId, profile } = useBusinessStore();
   const effectiveShopId = shopId || activeShopId || undefined;
+  const isMillShop = profile.businessType === 'millprocessing';
   const [showReceive, setShowReceive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'production' | 'packing' | 'traceability'>('overview');
   const { data: godowns = [] } = useSWR(effectiveShopId ? ['/godowns', effectiveShopId] : null, fetcher);
 
   useEffect(() => {
@@ -205,6 +209,32 @@ export default function ProductDetailsSheet({
           </div>
         </div>
 
+        {/* ── Tabs (mill only) ── */}
+        {isMillShop && (
+          <div className="flex-shrink-0 flex gap-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
+            {([
+              { key: 'overview',    label: 'Overview',    icon: <Hash size={12} /> },
+              { key: 'inventory',   label: 'Inventory',   icon: <Warehouse size={12} /> },
+              { key: 'production',  label: 'Batches',     icon: <Factory size={12} /> },
+              { key: 'packing',     label: 'Packing',     icon: <Boxes size={12} /> },
+              { key: 'traceability',label: 'Traceability',icon: <GitBranch size={12} /> },
+            ] as const).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  'flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors',
+                  activeTab === tab.key
+                    ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-500/5'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                )}
+              >
+                {tab.icon}{tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-transparent">
           {loading ? (
@@ -219,6 +249,9 @@ export default function ProductDetailsSheet({
             </div>
           ) : (
             <div className="p-5 space-y-5">
+
+            {/* ── MILL TABS: show/hide sections by activeTab ── */}
+            {(!isMillShop || activeTab === 'overview') && (<>
 
               {/* ── Stat Cards ──
                   Vyapar/Dukan and Udyog store cost differently:
@@ -484,13 +517,8 @@ export default function ProductDetailsSheet({
               </Section>
               )}
 
-              {/* Warehouse / Movements are Udyog wholesale concepts — Vyapar/
-                  Dukan shops don't have godowns and don't get StockMovement
-                  rows written for their purchases (see purchases/route.ts),
-                  so these sections would just render permanently empty for
-                  them. Hiding them keeps the sheet focused on what those
-                  shopkeepers actually use. */}
-              {isWholesaleTierPackage(profile.subscriptionPlan) && <>
+              {/* Warehouse / Movements — Udyog + Mill (mill uses Inventory tab, non-mill shows here) */}
+              {isWholesaleTierPackage(profile.subscriptionPlan) && !isMillShop && <>
               {/* ── Stock by Warehouse ── */}
               <Section
                 icon={<Warehouse size={14} className="text-blue-500 dark:text-blue-400" />}
@@ -573,6 +601,304 @@ export default function ProductDetailsSheet({
                 </div>
               </Section>
               </>}
+
+            {/* Close Overview tab fragment */}
+            </>)}
+
+            {/* ══════════════════════════════════════════
+                MILL: INVENTORY TAB
+                ══════════════════════════════════════════ */}
+            {isMillShop && activeTab === 'inventory' && (<>
+              {/* Stock Summary */}
+              <Section icon={<Hash size={14} className="text-blue-500" />} title="Stock Summary">
+                <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-slate-100 dark:divide-slate-700">
+                  {[
+                    { label: 'Total Stock', value: `${data.totalStock} ${data.product.baseUnit || 'Kg'}`, color: 'text-blue-600 dark:text-blue-400' },
+                    { label: 'Stock Value', value: `₹${data.stockValue.toLocaleString('en-IN')}`, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Available', value: data.mill?.fgLots
+                        ? `${data.mill.fgLots.filter((l: any) => l.status === 'AVAILABLE').reduce((s: number, l: any) => s + l.availableQuantity, 0).toFixed(1)} ${data.product.baseUnit || 'Kg'}`
+                        : `${data.totalStock} ${data.product.baseUnit || 'Kg'}`, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Reserved / Dispatched', value: data.mill?.fgLots
+                        ? `${data.mill.fgLots.filter((l: any) => l.status !== 'AVAILABLE').reduce((s: number, l: any) => s + (l.quantity - l.availableQuantity), 0).toFixed(1)} ${data.product.baseUnit || 'Kg'}`
+                        : '—', color: 'text-amber-600 dark:text-amber-400' },
+                  ].map(item => (
+                    <div key={item.label} className="p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-500 font-semibold">{item.label}</p>
+                      <p className={cn('text-lg font-bold mt-1', item.color)}>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+
+              {/* Godown-wise Stock */}
+              <Section icon={<Warehouse size={14} className="text-blue-500 dark:text-blue-400" />} title="Godown-wise Stock">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left min-w-[280px]">
+                    <thead>
+                      <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50">
+                        <th className="px-4 py-2.5 font-semibold"><span className="flex items-center gap-1"><MapPin size={11} /> Godown</span></th>
+                        <th className="px-4 py-2.5 font-semibold text-right">Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {data.warehouses.length === 0 ? (
+                        <tr><td colSpan={2} className="px-4 py-6 text-center text-slate-500 text-sm">Not assigned to any godown</td></tr>
+                      ) : data.warehouses.map((w: any) => (
+                        <tr key={w.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{w.name}</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 px-2 py-0.5 rounded">
+                              {w.quantity} {data.product.baseUnit || 'Kg'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Section>
+
+              {/* FG Lots in Godowns */}
+              {data.mill?.fgLots && data.mill.fgLots.length > 0 && (
+                <Section icon={<Layers size={14} className="text-indigo-500" />} title="Lot-wise Inventory">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left min-w-[500px]">
+                      <thead>
+                        <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50">
+                          <th className="px-4 py-2.5 font-semibold">Lot #</th>
+                          <th className="px-4 py-2.5 font-semibold">Godown</th>
+                          <th className="px-4 py-2.5 font-semibold text-right">Total Qty</th>
+                          <th className="px-4 py-2.5 font-semibold text-right">Available</th>
+                          <th className="px-4 py-2.5 font-semibold">Status</th>
+                          <th className="px-4 py-2.5 font-semibold">Created</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {data.mill.fgLots.map((lot: any) => (
+                          <tr key={lot.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="px-4 py-3 font-mono text-xs font-bold text-indigo-700 dark:text-indigo-400">{lot.lotNumber}</td>
+                            <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-xs">{lot.godown?.name || '—'}</td>
+                            <td className="px-4 py-3 text-right font-mono text-xs">{lot.quantity} {lot.unit}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-xs text-emerald-700 dark:text-emerald-400">{lot.availableQuantity} {lot.unit}</td>
+                            <td className="px-4 py-3">
+                              <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full',
+                                lot.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                lot.status === 'DISPATCHED' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' :
+                                'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              )}>{lot.status}</span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">{new Date(lot.createdAt).toLocaleDateString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Section>
+              )}
+            </>)}
+
+            {/* ══════════════════════════════════════════
+                MILL: BATCHES & PRODUCTION TAB
+                ══════════════════════════════════════════ */}
+            {isMillShop && activeTab === 'production' && (<>
+              {data.mill?.productionBatches?.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+                  <Factory size={40} className="text-slate-200 dark:text-slate-700" />
+                  <p className="text-sm">No production batches yet</p>
+                  <p className="text-xs text-slate-400">Batches will appear here when this product is used as output in a production batch</p>
+                </div>
+              )}
+              {data.mill?.productionBatches?.map((batch: any) => {
+                const inputs = batch.inputLots?.length > 0
+                  ? batch.inputLots.map((il: any) => ({ rawLot: il.rawMaterialLot, quantityUsed: il.quantity }))
+                  : batch.rawLot ? [{ rawLot: batch.rawLot, quantityUsed: batch.inputKg }] : [];
+                const fgLots = batch.finishedGoodsLots || [];
+                return (
+                  <Section
+                    key={batch.id}
+                    icon={
+                      <span className={cn('w-2 h-2 rounded-full flex-shrink-0',
+                        batch.status === 'closed' ? 'bg-emerald-500' :
+                        batch.status === 'in_progress' ? 'bg-amber-500' : 'bg-slate-400'
+                      )} />
+                    }
+                    title={
+                      <span className="flex items-center gap-2">
+                        <span className="font-bold">{batch.batchNumber}</span>
+                        <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-bold',
+                          batch.status === 'closed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                          batch.status === 'in_progress' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                          'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        )}>{batch.status}</span>
+                      </span>
+                    }
+                  >
+                    <div className="p-4 space-y-4">
+                      {/* Dates */}
+                      <div className="flex gap-6 text-xs text-slate-500">
+                        <span><span className="font-semibold text-slate-700 dark:text-slate-300">Started:</span> {new Date(batch.startedAt).toLocaleDateString('en-IN')}</span>
+                        {batch.closedAt && <span><span className="font-semibold text-slate-700 dark:text-slate-300">Completed:</span> {new Date(batch.closedAt).toLocaleDateString('en-IN')}</span>}
+                      </div>
+
+                      {/* Input / Output grid */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-lg p-3">
+                          <p className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400 tracking-wider mb-2 flex items-center gap-1"><ArrowDownCircle size={11} /> Input</p>
+                          {inputs.length > 0 ? inputs.map((inp: any, i: number) => (
+                            <div key={i} className="text-xs text-slate-700 dark:text-slate-300">
+                              <p className="font-semibold font-mono">{inp.rawLot?.lotNumber || '—'}</p>
+                              <p className="text-slate-500">{inp.quantityUsed || batch.inputKg || '—'} {data.product.baseUnit || 'Kg'}</p>
+                              {inp.rawLot?.supplier?.name && <p className="text-slate-400 mt-0.5">Supplier: {inp.rawLot.supplier.name}</p>}
+                            </div>
+                          )) : <p className="text-xs text-slate-400">{batch.inputKg ? `${batch.inputKg} ${data.product.baseUnit || 'Kg'}` : '—'}</p>}
+                        </div>
+                        <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 rounded-lg p-3">
+                          <p className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 tracking-wider mb-2 flex items-center gap-1"><ArrowUpCircle size={11} /> Output</p>
+                          <div className="space-y-1 text-xs">
+                            {batch.outputKg != null && <p className="text-emerald-700 dark:text-emerald-400 font-semibold">Finished: {batch.outputKg} Kg</p>}
+                            {batch.branKg != null && batch.branKg > 0 && <p className="text-slate-500">Bran: {batch.branKg} Kg</p>}
+                            {batch.huskKg != null && batch.huskKg > 0 && <p className="text-slate-500">Husk: {batch.huskKg} Kg</p>}
+                            {batch.brokenKg != null && batch.brokenKg > 0 && <p className="text-amber-600 dark:text-amber-400">Broken: {batch.brokenKg} Kg</p>}
+                            {batch.wastageKg != null && batch.wastageKg > 0 && <p className="text-rose-500">Wastage: {batch.wastageKg} Kg</p>}
+                            {batch.byProducts?.map((bp: any) => (
+                              <p key={bp.id} className="text-blue-500">{bp.name}: {bp.quantityKg ?? '—'} Kg</p>
+                            ))}
+                            {batch.recoveryPct != null && <p className="text-slate-400 mt-1">Recovery: {batch.recoveryPct.toFixed(1)}%</p>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* FG Lots produced */}
+                      {fgLots.length > 0 && (
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-1.5">FG Lots Produced</p>
+                          <div className="flex flex-wrap gap-2">
+                            {fgLots.map((lot: any) => (
+                              <span key={lot.id} className="text-xs font-mono bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/30 px-2 py-0.5 rounded-full">
+                                {lot.lotNumber} · {lot.quantity} {lot.unit} {lot.godown ? `· ${lot.godown.name}` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </Section>
+                );
+              })}
+            </>)}
+
+            {/* ══════════════════════════════════════════
+                MILL: PACKING TAB
+                ══════════════════════════════════════════ */}
+            {isMillShop && activeTab === 'packing' && (<>
+              {/* Packing summary */}
+              {data.mill?.fgLots && (() => {
+                const lots = data.mill.fgLots as any[];
+                const totalProduced = lots.reduce((s, l) => s + l.quantity, 0);
+                const totalAvail = lots.reduce((s, l) => s + l.availableQuantity, 0);
+                const dispatched = totalProduced - totalAvail;
+                const packSize = data.product.packSize;
+                const packUnit = data.product.packUnit;
+                const totalBags = packSize ? Math.floor(totalProduced / packSize) : null;
+                return (
+                  <Section icon={<Boxes size={14} className="text-purple-500" />} title="Packing Summary">
+                    <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-slate-100 dark:divide-slate-700">
+                      {[
+                        { label: 'Total Produced', value: `${totalProduced.toFixed(1)} ${data.product.baseUnit || 'Kg'}`, color: 'text-blue-600 dark:text-blue-400' },
+                        { label: 'Dispatched', value: `${dispatched.toFixed(1)} ${data.product.baseUnit || 'Kg'}`, color: 'text-slate-700 dark:text-slate-300' },
+                        { label: 'Available to Pack / Dispatch', value: `${totalAvail.toFixed(1)} ${data.product.baseUnit || 'Kg'}`, color: 'text-emerald-600 dark:text-emerald-400' },
+                        { label: packSize ? `Total Bags (${packSize} ${packUnit}/bag)` : 'Pack Size', value: totalBags != null ? `${totalBags} bags` : packSize ? `${packSize} ${packUnit}` : 'Not set', color: 'text-amber-600 dark:text-amber-400' },
+                      ].map(item => (
+                        <div key={item.label} className="p-4">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-500 font-semibold">{item.label}</p>
+                          <p className={cn('text-lg font-bold mt-1', item.color)}>{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                );
+              })()}
+
+              {/* Per-lot packing detail */}
+              {data.mill?.fgLots?.length > 0 ? (
+                <Section icon={<Layers size={14} className="text-indigo-500" />} title="Lot-wise Packing Detail">
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {(data.mill.fgLots as any[]).map((lot: any) => {
+                      const packSize = data.product.packSize;
+                      const bags = packSize ? Math.floor(lot.quantity / packSize) : null;
+                      const dispatchedQty = lot.quantity - lot.availableQuantity;
+                      return (
+                        <div key={lot.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-400 text-sm">{lot.lotNumber}</span>
+                              <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full',
+                                lot.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                lot.status === 'DISPATCHED' ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' :
+                                'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              )}>{lot.status}</span>
+                            </div>
+                            <span className="text-xs text-slate-500">{new Date(lot.createdAt).toLocaleDateString('en-IN')}</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3 text-xs">
+                            <div>
+                              <p className="text-slate-500">Total</p>
+                              <p className="font-bold text-slate-800 dark:text-slate-200">{lot.quantity} {lot.unit}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Available</p>
+                              <p className="font-bold text-emerald-700 dark:text-emerald-400">{lot.availableQuantity} {lot.unit}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Dispatched</p>
+                              <p className="font-bold text-slate-600 dark:text-slate-400">{dispatchedQty.toFixed(1)} {lot.unit}</p>
+                            </div>
+                          </div>
+                          {bags != null && (
+                            <p className="text-[11px] text-slate-400 mt-2 flex items-center gap-1">
+                              <Boxes size={11} /> {bags} bags × {data.product.packSize} {data.product.packUnit || 'Kg'}/bag
+                            </p>
+                          )}
+                          {lot.godown && (
+                            <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                              <MapPin size={11} /> {lot.godown.name}
+                            </p>
+                          )}
+                          {/* Challan dispatches */}
+                          {lot.challanItems?.length > 0 && (
+                            <div className="mt-3 border-t border-slate-100 dark:border-slate-700 pt-2">
+                              <p className="text-[10px] uppercase font-bold text-slate-400 mb-1.5">Dispatched Via</p>
+                              <div className="space-y-1">
+                                {lot.challanItems.map((ci: any) => (
+                                  <div key={ci.id} className="flex items-center justify-between text-xs">
+                                    <span className="font-mono text-blue-600 dark:text-blue-400">{ci.challan?.challanNumber}</span>
+                                    <span className="text-slate-500">{ci.challan?.customerName || '—'}</span>
+                                    <span className="text-slate-400">{ci.challan?.createdAt ? new Date(ci.challan.createdAt).toLocaleDateString('en-IN') : '—'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Section>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+                  <Boxes size={40} className="text-slate-200 dark:text-slate-700" />
+                  <p className="text-sm">No finished goods lots yet</p>
+                  <p className="text-xs">Lots are created when a production batch is finalized</p>
+                </div>
+              )}
+            </>)}
+
+            {/* ══════════════════════════════════════════
+                MILL: TRACEABILITY TAB
+                ══════════════════════════════════════════ */}
+            {isMillShop && activeTab === 'traceability' && (
+              <MillTraceabilityTab data={data} product={data.product} />
+            )}
 
             </div>
           )}
@@ -657,6 +983,121 @@ function Section({
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-200">{title}</h3>
       </div>
       {children}
+    </div>
+  );
+}
+
+/* ── Mill Traceability Tab ── */
+function MillTraceabilityTab({ data, product }: { data: any; product: any }) {
+  const fgLots: any[] = data.mill?.fgLots || [];
+  const prodBatches: any[] = data.mill?.productionBatches || [];
+
+  if (fgLots.length === 0 && prodBatches.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+        <GitBranch size={40} className="text-slate-200 dark:text-slate-700" />
+        <p className="text-sm">No traceability data yet</p>
+        <p className="text-xs text-center">Traceability appears after production batches are created and finalized for this product</p>
+      </div>
+    );
+  }
+
+  // Build traceability chains from FG lots
+  const chains = fgLots.map((lot: any) => {
+    const batch = lot.batch;
+    const supplier = batch?.rawLot?.supplier || null;
+    const challanItems = lot.challanItems || [];
+    return { lot, batch, supplier, challanItems };
+  });
+
+  // If no FG lots but production batches exist (e.g. raw material product)
+  if (chains.length === 0) {
+    return (
+      <div className="p-4 space-y-4">
+        <p className="text-xs text-slate-500 text-center py-4">Traceability visible for Finished Goods products. This product has {prodBatches.length} production batch(es) as output.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-6">
+      {chains.map(({ lot, batch, supplier, challanItems }, i) => (
+        <div key={lot.id} className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl overflow-hidden shadow-sm">
+          {/* Chain header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-800/30">
+            <div className="flex items-center gap-2">
+              <GitBranch size={14} className="text-indigo-500" />
+              <span className="font-bold text-indigo-700 dark:text-indigo-400 font-mono text-sm">{lot.lotNumber}</span>
+            </div>
+            <span className="text-xs text-indigo-500">{lot.quantity} {lot.unit}</span>
+          </div>
+
+          {/* Chain steps */}
+          <div className="p-4">
+            <div className="relative pl-5">
+              {/* Vertical line */}
+              <div className="absolute left-2 top-3 bottom-3 w-px bg-slate-200 dark:bg-slate-700" />
+
+              {[
+                supplier && {
+                  icon: '👨‍🌾',
+                  label: 'Farmer / Supplier',
+                  value: supplier.name || '—',
+                  sub: supplier.phone ? `📱 ${supplier.phone}` : null,
+                  color: 'text-amber-700 dark:text-amber-400',
+                },
+                batch?.rawLot && {
+                  icon: '⚖️',
+                  label: 'Raw Material Lot',
+                  value: batch.rawLot.lotNumber || '—',
+                  sub: batch.rawLot.quantity ? `${batch.rawLot.quantity} ${batch.rawLot.unit || 'Kg'} · ${batch.rawLot.purchaseDate ? new Date(batch.rawLot.purchaseDate).toLocaleDateString('en-IN') : ''}` : null,
+                  color: 'text-slate-700 dark:text-slate-300',
+                },
+                batch && {
+                  icon: '🏭',
+                  label: 'Production Batch',
+                  value: batch.batchNumber || '—',
+                  sub: `Input: ${batch.inputKg ?? '—'} Kg → Output: ${batch.outputKg ?? '—'} Kg${batch.recoveryPct != null ? ` (${batch.recoveryPct.toFixed(1)}% recovery)` : ''}`,
+                  color: 'text-blue-700 dark:text-blue-400',
+                },
+                {
+                  icon: '✅',
+                  label: 'Finished Goods Lot',
+                  value: lot.lotNumber,
+                  sub: `${lot.quantity} ${lot.unit} produced · ${lot.availableQuantity} ${lot.unit} available`,
+                  color: 'text-emerald-700 dark:text-emerald-400',
+                },
+                lot.godown && {
+                  icon: '🏬',
+                  label: 'Godown',
+                  value: lot.godown.name,
+                  sub: null,
+                  color: 'text-slate-700 dark:text-slate-300',
+                },
+                ...challanItems.map((ci: any) => ({
+                  icon: '📋',
+                  label: 'Delivery Challan',
+                  value: ci.challan?.challanNumber || '—',
+                  sub: ci.challan?.customerName ? `Customer: ${ci.challan.customerName}` : null,
+                  color: 'text-purple-700 dark:text-purple-400',
+                })),
+              ].filter(Boolean).map((step: any, si) => (
+                <div key={si} className="relative mb-4 last:mb-0">
+                  {/* Dot */}
+                  <div className="absolute -left-5 top-1 w-4 h-4 rounded-full bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-500 tracking-wider">{step.label}</p>
+                    <p className={cn('text-sm font-semibold mt-0.5', step.color)}>{step.icon} {step.value}</p>
+                    {step.sub && <p className="text-xs text-slate-400 mt-0.5">{step.sub}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

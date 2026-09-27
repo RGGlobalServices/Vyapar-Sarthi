@@ -9,7 +9,11 @@ export type Locale = (typeof locales)[number];
 export const routing = defineRouting({
   locales,
   defaultLocale,
-  localePrefix: 'always'
+  localePrefix: 'always',
+  // Persist the user's chosen language across sessions.
+  // next-intl sets NEXT_LOCALE cookie on every response and reads it back
+  // when no locale prefix is present, so the language survives logout/re-login.
+  localeCookie: true,
 });
 
 // Navigation helpers

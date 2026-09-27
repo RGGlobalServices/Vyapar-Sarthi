@@ -56,7 +56,13 @@ export async function POST(req: Request) {
   try {
     const { shop } = await requireShop(req);
     const data = await req.json();
-    const { customerId, customerName, customerMobile, customerAddress, orderId, notes, items } = data;
+    const {
+      customerId, customerName, customerMobile, customerAddress, orderId, notes, items,
+      // new fields
+      challanDate, dispatchType, dispatchFrom,
+      transporter, vehicleNumber, driverName, driverMobile, lrNumber,
+      jobWorkOrderRef, eWayBillNo, expectedInvoiceDate,
+    } = data;
 
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'At least one item is required.' }, { status: 400 });
@@ -66,18 +72,25 @@ export async function POST(req: Request) {
     }
 
     // Client-supplied ids must belong to this shop before any write.
+    const lotIds = items.map((it: any) => it.lotId).filter(Boolean);
     await assertOwned(shop.id, {
       customerId,
       orderId,
       productId: items.map((it: any) => it.productId),
     });
 
+    // Verify lot ids belong to this shop (assertOwned doesn't cover lots)
+    if (lotIds.length > 0) {
+      const count = await prisma.finishedGoodsLot.count({
+        where: { id: { in: lotIds }, shopId: shop.id },
+      });
+      if (count !== lotIds.length) {
+        return NextResponse.json({ error: 'One or more lots are invalid.' }, { status: 400 });
+      }
+    }
+
     const challanNumber = `CH-${randomUUID().substring(0, 8).toUpperCase()}`;
 
-    // One transaction: create the challan + items, and decrement each
-    // product's flat currentStock (COALESCE-first — currentStock is
-    // nullable with no DB default, see billing/route.ts's identical fix).
-    // Same reasoning: a plain Prisma `decrement` on NULL silently no-ops.
     const challan = await prisma.$transaction(async (tx) => {
       const created = await tx.deliveryChallan.create({
         data: {
@@ -89,6 +102,18 @@ export async function POST(req: Request) {
           customerMobile: customerMobile || null,
           customerAddress: customerAddress || null,
           notes: notes || null,
+          // new fields
+          challanDate: challanDate ? new Date(challanDate) : null,
+          dispatchType: dispatchType || 'sale',
+          dispatchFrom: dispatchFrom || null,
+          transporter: transporter || null,
+          vehicleNumber: vehicleNumber || null,
+          driverName: driverName || null,
+          driverMobile: driverMobile || null,
+          lrNumber: lrNumber || null,
+          jobWorkOrderRef: jobWorkOrderRef || null,
+          eWayBillNo: eWayBillNo || null,
+          expectedInvoiceDate: expectedInvoiceDate ? new Date(expectedInvoiceDate) : null,
           items: {
             create: items.map((it: any) => ({
               productId: it.productId,
@@ -97,14 +122,19 @@ export async function POST(req: Request) {
               variantKey: it.variantKey || null,
               quantity: Number(it.quantity) || 0,
               price: Number(it.price) || 0,
+              lotId: it.lotId || null,
+              lotNumber: it.lotNumber || null,
+              godown: it.godown || null,
+              packSize:    it.packSize    != null ? Number(it.packSize)    : null,
+              noOfPacks:   it.noOfPacks   != null ? Number(it.noOfPacks)   : null,
+              totalWeight: it.totalWeight != null ? Number(it.totalWeight) : null,
             })),
           },
         },
         include: { items: true },
       });
 
-      // Net per-product quantity so two lines of the same product in one
-      // challan decrement currentStock once, correctly.
+      // Decrement flat product stock
       const qtyByProduct = new Map<string, number>();
       for (const it of items) {
         qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) || 0) + (Number(it.quantity) || 0));
@@ -112,6 +142,16 @@ export async function POST(req: Request) {
       for (const [productId, qty] of qtyByProduct) {
         if (qty <= 0) continue;
         await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+      }
+
+      // Decrement FinishedGoodsLot.availableQuantity for items linked to a lot
+      for (const it of items) {
+        if (!it.lotId || Number(it.quantity) <= 0) continue;
+        await tx.$executeRaw`
+          UPDATE finished_goods_lots
+          SET available_quantity = GREATEST(0, available_quantity - ${Number(it.quantity)})
+          WHERE id = ${it.lotId}::uuid AND shop_id = ${shop.id}::uuid
+        `;
       }
 
       return created;

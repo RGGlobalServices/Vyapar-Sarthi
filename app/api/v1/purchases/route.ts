@@ -147,21 +147,48 @@ export async function POST(req: Request) {
     }
 
     const purchaseProductIds = [...new Set(processedItems.map((i: any) => i.productId))] as string[];
-    const [purchaseProductsInfo, existingBatchCounts] = await Promise.all([
+    // Batch numbers that need a merge-check (only items that actually carry one)
+    const namedBatchKeys = processedItems
+      .filter((i: any) => i.batchNumber && String(i.batchNumber).trim())
+      .map((i: any) => ({ productId: i.productId, batchNumber: String(i.batchNumber).trim() }));
+
+    const [purchaseProductsInfo, existingBatchCounts, existingNamedBatches] = await Promise.all([
       prisma.product.findMany({ where: { id: { in: purchaseProductIds }, shopId: auth.shop.id }, select: { id: true, barcode: true, sku: true, millCategory: true } }),
       prisma.batch.groupBy({ by: ['productId'], where: { productId: { in: purchaseProductIds }, shopId: auth.shop.id }, _count: { _all: true } }),
+      // Look up any existing batches whose number matches what we're about to receive —
+      // same batch number → same physical lot → merge quantity into it instead of creating a duplicate.
+      namedBatchKeys.length > 0
+        ? prisma.batch.findMany({
+            where: {
+              shopId: auth.shop.id,
+              productId: { in: purchaseProductIds },
+              batchNumber: { in: namedBatchKeys.map((k: any) => k.batchNumber) },
+            },
+            select: { id: true, productId: true, batchNumber: true },
+          })
+        : Promise.resolve([]),
     ]);
     const purchaseProductById = new Map(purchaseProductsInfo.map((p) => [p.id, p]));
     const nextBatchSeq = new Map<string, number>(
       existingBatchCounts.map((r) => [r.productId, r._count._all])
     );
+    // Map of "productId|batchNumber" → existing batch id for merge detection
+    const existingBatchByKey = new Map<string, string>(
+      (existingNamedBatches as any[]).map((b) => [`${b.productId}|${b.batchNumber}`, b.id])
+    );
     const purchaseDate = date ? new Date(date) : new Date();
     const batchPlan = processedItems.map((item: any) => {
+      const named = item.batchNumber ? String(item.batchNumber).trim() : '';
+      const existingId = named ? existingBatchByKey.get(`${item.productId}|${named}`) : undefined;
+      if (existingId) {
+        // Same batch number found — merge into the existing batch, no new row needed
+        return { id: existingId, barcode: null, merge: true };
+      }
       const seq = (nextBatchSeq.get(item.productId) || 0) + 1;
       nextBatchSeq.set(item.productId, seq);
       const p = purchaseProductById.get(item.productId);
       const codeBase = p?.barcode || p?.sku || item.productId.slice(0, 8);
-      return { id: randomUUID(), barcode: `${codeBase}-B${seq}` };
+      return { id: randomUUID(), barcode: `${codeBase}-B${seq}`, merge: false };
     });
 
     const idempotencyOutcome = await prisma.$transaction(async (tx) => {
@@ -188,24 +215,45 @@ export async function POST(req: Request) {
             },
           });
 
-          // 2. Insert Batches
-          await tx.batch.createMany({
-            data: processedItems.map((item: any, i: number) => ({
-              id: batchPlan[i].id,
-              shopId: auth.shop.id,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              batchNumber: item.batchNumber || null,
-              mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
-              expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-              quantity: item.baseQuantity,
-              initialQuantity: item.baseQuantity,
-              costPrice: item.baseCost,
-              sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
-              purchaseDate,
-              barcode: batchPlan[i].barcode,
-            }))
-          });
+          // 2. Insert or merge Batches
+          const newBatchItems = processedItems
+            .map((item: any, i: number) => ({ item, plan: batchPlan[i] }))
+            .filter(({ plan }: any) => !plan.merge);
+          const mergeBatchItems = processedItems
+            .map((item: any, i: number) => ({ item, plan: batchPlan[i] }))
+            .filter(({ plan }: any) => plan.merge);
+
+          if (newBatchItems.length > 0) {
+            await tx.batch.createMany({
+              data: newBatchItems.map(({ item, plan }: any) => ({
+                id: plan.id,
+                shopId: auth.shop.id,
+                productId: item.productId,
+                variantId: item.variantId || null,
+                batchNumber: item.batchNumber || null,
+                mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
+                expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+                quantity: item.baseQuantity,
+                initialQuantity: item.baseQuantity,
+                costPrice: item.baseCost,
+                sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
+                purchaseDate,
+                barcode: plan.barcode,
+              }))
+            });
+          }
+          // Merge: add received quantity to the existing batch
+          for (const { item, plan } of mergeBatchItems) {
+            await tx.batch.update({
+              where: { id: plan.id },
+              data: {
+                quantity: { increment: item.baseQuantity },
+                initialQuantity: { increment: item.baseQuantity },
+                // Update cost to latest purchase price if it changed
+                costPrice: item.baseCost,
+              },
+            });
+          }
 
           // 3. Purchase Items
           await tx.purchaseItem.createMany({
@@ -270,10 +318,11 @@ export async function POST(req: Request) {
                 supplierId,
                 lotNumber: `${invoiceNumber}${processedItems.length > 1 ? `-L${i + 1}` : ''}`,
                 purchaseDate,
-                weightKg: item.baseQuantity,
-                ratePerKg: item.baseCost || null,
+                quantity: item.baseQuantity,
+                unit: item.unit || 'kg',
+                ratePerUnit: item.baseCost || null,
                 totalAmount: Math.round(item.baseQuantity * (item.baseCost || 0) * 100) / 100,
-                remainingKg: item.baseQuantity,
+                remainingQuantity: item.baseQuantity,
                 notes: `Auto-created from Purchase Invoice ${invoiceNumber}`,
               },
             });

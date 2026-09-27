@@ -57,6 +57,15 @@ export async function PATCH(req: Request, ctx: any) {
           if (qty <= 0) continue;
           await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
         }
+        // Restore FinishedGoodsLot.availableQuantity for lot-linked items
+        for (const it of challan.items as any[]) {
+          if (!it.lotId || it.quantity <= 0) continue;
+          await tx.$executeRaw`
+            UPDATE finished_goods_lots
+            SET available_quantity = available_quantity + ${it.quantity}
+            WHERE id = ${it.lotId}::uuid AND shop_id = ${shop.id}::uuid
+          `;
+        }
       });
       try {
         await applyVariantStockDeltas(
@@ -68,6 +77,44 @@ export async function PATCH(req: Request, ctx: any) {
         );
       } catch (e) {
         console.error('[challans PATCH cancel] variant stock restore failed (non-fatal):', e);
+      }
+      const updated = await prisma.deliveryChallan.findUnique({ where: { id }, include: { items: true } });
+      return NextResponse.json(updated);
+    }
+
+    if (body.action === 'return') {
+      if (!['open', 'invoiced'].includes(challan.status)) {
+        return NextResponse.json({ error: `Cannot return a challan that is already ${challan.status}.` }, { status: 400 });
+      }
+      await prisma.$transaction(async (tx) => {
+        await tx.deliveryChallan.update({ where: { id }, data: { status: 'returned' } });
+        const qtyByProduct = new Map<string, number>();
+        for (const it of challan.items) {
+          qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) || 0) + it.quantity);
+        }
+        for (const [productId, qty] of qtyByProduct) {
+          if (qty <= 0) continue;
+          await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+        }
+        for (const it of challan.items as any[]) {
+          if (!it.lotId || it.quantity <= 0) continue;
+          await tx.$executeRaw`
+            UPDATE finished_goods_lots
+            SET available_quantity = available_quantity + ${it.quantity}
+            WHERE id = ${it.lotId}::uuid AND shop_id = ${shop.id}::uuid
+          `;
+        }
+      });
+      try {
+        await applyVariantStockDeltas(
+          prisma,
+          challan.items
+            .filter((it) => it.variantKey)
+            .map((it) => ({ productId: it.productId, variantKey: it.variantKey, delta: it.quantity })),
+          shop.id
+        );
+      } catch (e) {
+        console.error('[challans PATCH return] variant stock restore failed (non-fatal):', e);
       }
       const updated = await prisma.deliveryChallan.findUnique({ where: { id }, include: { items: true } });
       return NextResponse.json(updated);

@@ -282,13 +282,13 @@ export default function PurchasesPage() {
           withVariant.forEach(it => { variantQty[it.variantKey] = String(it.quantity); });
           const first = withVariant[0];
           grouped.push({
-            productId, quantity: 1, cost: first.cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty,
+            productId, quantity: 1, cost: first.cost, batchNumber: first.batch?.batchNumber || '', unitId: '', conversionFactor: 1, variantQty,
             costMode: first.mrp != null ? 'mrp_based' : 'manual', mrp: first.mrp ?? '', discountPercent: first.discountPercent ?? '',
           });
         }
         withoutVariant.forEach(it => {
           grouped.push({
-            productId, quantity: it.quantity, cost: it.cost, batchNumber: '', unitId: '', conversionFactor: 1, variantQty: {},
+            productId, quantity: it.quantity, cost: it.cost, batchNumber: it.batch?.batchNumber || '', unitId: '', conversionFactor: 1, variantQty: {},
             costMode: it.mrp != null ? 'mrp_based' : 'manual', mrp: it.mrp ?? '', discountPercent: it.discountPercent ?? '',
           });
         });
@@ -669,7 +669,7 @@ export default function PurchasesPage() {
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4">{t('itemsLabel') || 'Items'}</h3>
               {editingInvoice && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2 mb-4">
-                  Quantities and costs below are in each product's base unit. Batch numbers aren't editable here — add a new one if this shipment needs one.
+                  {t('editPurchaseNote') || 'Quantities, costs, and batch numbers are in each product\'s base unit. Editing these will update product stock and cost price accordingly.'}
                 </p>
               )}
 

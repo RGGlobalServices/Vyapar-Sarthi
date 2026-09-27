@@ -3,6 +3,8 @@ import { requireShop } from '@/lib/server/auth';
 import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 
+import { lotSource, canonicalReceivedDate, computeLotQuantities } from '@/lib/server/millProduction';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +25,30 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     include: {
       product: { select: { id: true, name: true, baseUnit: true } },
       supplier: { select: { id: true, name: true, mobile: true } },
-      batches: { select: { id: true, batchNumber: true, inputKg: true, status: true, currentStage: true } },
+      batches: {
+        select: { id: true, batchNumber: true, inputKg: true, status: true, currentStage: true, startedAt: true, closedAt: true },
+        orderBy: { startedAt: 'desc' },
+      },
+      weighbridgeEntries: { select: { slipNumber: true } },
     },
   });
   if (!lot) throw new ApiError(404, 'Raw material lot not found');
-  return json(lot);
+
+  const { weighbridgeEntries, ...rest } = lot;
+  const src = lotSource(lot);
+  const recDate = canonicalReceivedDate(lot);
+  const qty = computeLotQuantities(lot);
+
+  return json({
+    ...rest,
+    ...src,
+    receivedDate: recDate.toISOString(),
+    receivedKg: qty.quantity,
+    allocatedKg: qty.allocatedKg,
+    consumedKg: qty.consumedKg,
+    availableKg: qty.availableKg,
+    operationalStatus: qty.operationalStatus,
+  });
 });
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {
@@ -48,8 +69,8 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (body.productId !== undefined)    patch.productId   = body.productId || null;
   if (body.supplierId !== undefined)   patch.supplierId  = body.supplierId || null;
   if (body.purchaseDate !== undefined) patch.purchaseDate = new Date(body.purchaseDate);
-  if (body.weightKg !== undefined)     patch.weightKg    = Number(body.weightKg) || 0;
-  if (body.ratePerKg !== undefined)    patch.ratePerKg   = Number(body.ratePerKg) || null;
+  if (body.quantity !== undefined)     patch.quantity    = Number(body.quantity) || 0;
+  if (body.ratePerUnit !== undefined)    patch.ratePerUnit   = Number(body.ratePerUnit) || null;
   if (body.moisturePct !== undefined) {
     if (body.moisturePct === null || body.moisturePct === '') patch.moisturePct = null;
     else {
@@ -62,23 +83,23 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
   // Stock safety: what production has already taken out of the lot stays taken out. The weight cannot drop below it, and the
   // remaining quantity is derived from it — it can never go negative or exceed the weight.
-  const consumed = Math.max(0, (Number(lot.weightKg) || 0) - (Number(lot.remainingKg ?? lot.weightKg) || 0));
-  if (patch.weightKg !== undefined) {
-    if (!(patch.weightKg > 0)) throw new ApiError(400, 'weightKg must be a positive number', 'INVALID_WEIGHT');
-    if (patch.weightKg < consumed) throw new ApiError(409, `${consumed} kg of this lot is already consumed — the weight cannot be lower than that.`, 'BELOW_CONSUMED');
-    patch.remainingKg = Math.round((patch.weightKg - consumed) * 1000) / 1000;
+  const consumed = Math.max(0, (Number(lot.quantity) || 0) - (Number(lot.remainingQuantity ?? lot.quantity) || 0));
+  if (patch.quantity !== undefined) {
+    if (!(patch.quantity > 0)) throw new ApiError(400, 'quantity must be a positive number', 'INVALID_WEIGHT');
+    if (patch.quantity < consumed) throw new ApiError(409, `${consumed} kg of this lot is already consumed — the weight cannot be lower than that.`, 'BELOW_CONSUMED');
+    patch.remainingQuantity = Math.round((patch.quantity - consumed) * 1000) / 1000;
   }
-  if (body.remainingKg !== undefined) {
-    const w = patch.weightKg ?? (Number(lot.weightKg) || 0);
-    const r = Number(body.remainingKg);
+  if (body.remainingQuantity !== undefined) {
+    const w = patch.quantity ?? (Number(lot.quantity) || 0);
+    const r = Number(body.remainingQuantity);
     if (!isFinite(r) || r < 0 || r > w) throw new ApiError(400, 'Remaining must be between 0 and the lot weight.', 'INVALID_REMAINING');
-    patch.remainingKg = r;
+    patch.remainingQuantity = r;
   }
-  if (patch.ratePerKg !== undefined && (!isFinite(patch.ratePerKg) || patch.ratePerKg < 0)) throw new ApiError(400, 'Invalid rate', 'INVALID_RATE');
+  if (patch.ratePerUnit !== undefined && (!isFinite(patch.ratePerUnit) || patch.ratePerUnit < 0)) throw new ApiError(400, 'Invalid rate', 'INVALID_RATE');
 
-  if (patch.weightKg != null || patch.ratePerKg != null) {
-    const nextWeight = patch.weightKg ?? undefined;
-    const nextRate = patch.ratePerKg ?? undefined;
+  if (patch.quantity != null || patch.ratePerUnit != null) {
+    const nextWeight = patch.quantity ?? undefined;
+    const nextRate = patch.ratePerUnit ?? undefined;
     if (nextWeight != null && nextRate != null) {
       patch.totalAmount = Math.round(nextWeight * nextRate * 100) / 100;
     }

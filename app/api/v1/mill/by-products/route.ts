@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { round3, kgToProductUnit } from '@/lib/server/millProduction';
+import { getByProductLotsService } from '@/lib/server/byProductService';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,27 @@ export const dynamic = 'force-dynamic';
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
   const url = new URL(req.url);
-  const batchId = url.searchParams.get('batchId');
+  const batchId = url.searchParams.get('batchId') || undefined;
+  const lotsOnly = url.searchParams.get('lots') === 'true';
+  const pageParam = url.searchParams.get('page');
+  const limitParam = url.searchParams.get('limit');
+  const statusParam = url.searchParams.get('status') || undefined;
+  const godownIdParam = url.searchParams.get('godownId') || undefined;
+  const searchParam = url.searchParams.get('search') || undefined;
+  const productIdParam = url.searchParams.get('productId') || undefined;
+
+  if (lotsOnly || pageParam || limitParam || statusParam || godownIdParam) {
+    const result = await getByProductLotsService(shop.id, {
+      productId: productIdParam,
+      godownId: godownIdParam,
+      status: statusParam,
+      search: searchParam,
+      batchId,
+      page: pageParam ? parseInt(pageParam, 10) : 1,
+      limit: limitParam ? parseInt(limitParam, 10) : 20,
+    });
+    return json(result);
+  }
 
   const where: any = { shopId: shop.id };
   if (batchId) where.batchId = batchId;
@@ -55,8 +76,8 @@ export const POST = handle(async (req) => {
   if (!isFinite(quantityKg) || quantityKg <= 0 || quantityKg > 1e9) {
     throw new ApiError(400, 'quantityKg must be a positive number', 'INVALID_QUANTITY');
   }
-  const ratePerKg = body.ratePerKg != null && body.ratePerKg !== '' ? Number(body.ratePerKg) : null;
-  if (ratePerKg !== null && (!isFinite(ratePerKg) || ratePerKg < 0)) throw new ApiError(400, 'Rate must be zero or a positive number', 'INVALID_RATE');
+  const ratePerUnit = body.ratePerUnit != null && body.ratePerUnit !== '' ? Number(body.ratePerUnit) : null;
+  if (ratePerUnit !== null && (!isFinite(ratePerUnit) || ratePerUnit < 0)) throw new ApiError(400, 'Rate must be zero or a positive number', 'INVALID_RATE');
 
   const batchId: string | null = body.batchId || null;
   if (batchId) {
@@ -82,7 +103,7 @@ export const POST = handle(async (req) => {
   const stockQty = product ? kgToProductUnit(qty, product.baseUnit, product.name ?? '') : null;
   const created = await prisma.$transaction(async (tx) => {
     const row = await (tx as any).byProduct.create({
-      data: { shopId: shop.id, batchId, productId, name, quantityKg: qty, ratePerKg, notes: (body.notes || '').toString().trim().slice(0, 250) || null },
+      data: { shopId: shop.id, batchId, productId, name, quantityKg: qty, ratePerUnit, notes: (body.notes || '').toString().trim().slice(0, 250) || null },
     });
     if (product && stockQty) {
       await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${stockQty} WHERE id = ${product.id}::uuid AND shop_id = ${shop.id}::uuid`;

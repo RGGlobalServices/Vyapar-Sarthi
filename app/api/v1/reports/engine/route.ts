@@ -1390,6 +1390,136 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
     });
   }
 
+  // ── Balance Sheet ──────────────────────────────────────────────────────────
+  // Snapshot as of `endDate`. Assets = Cash + Debtors + Closing Stock.
+  // Liabilities = Creditors. Equity = Net Profit (period).
+  // Simple but accurate for Dukan/Vyapar/Udyog shops.
+  if (reportType === 'balance_sheet') {
+    const [
+      products,
+      supplierBalances,
+      shopCustomers,
+      cashEntries,
+      expensesAgg,
+      salariesAgg,
+      salesMetrics,
+      purchasesAgg,
+    ] = await Promise.all([
+      prisma.product.findMany({
+        where: { shopId: shop.id, archived: false },
+        select: { id: true, name: true, currentStock: true, costPrice: true, wholesaleCost: true, sellingPrice: true, category: true },
+      }),
+      prisma.supplier.findMany({
+        where: { shopId: shop.id },
+        select: { id: true, name: true, balance: true },
+      }),
+      prisma.customer.findMany({ where: { shopId: shop.id }, select: { id: true } }),
+      prisma.cashBook.findMany({
+        where: { shopId: shop.id, date: { lte: endDate } },
+        select: { type: true, amount: true },
+      }),
+      prisma.expense.aggregate({
+        where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
+        _sum: { amount: true },
+      }),
+      prisma.salaryPayment.aggregate({
+        where: { staff: { shopId: shop.id }, paidAt: { gte: startDate, lte: endDate } },
+        _sum: { netAmount: true },
+      }),
+      getSalesMetrics([shop.id], startDate, endDate),
+      prisma.purchaseItem.findMany({
+        where: { purchaseInvoice: { shopId: shop.id, date: { gte: startDate, lte: endDate } } },
+        select: { quantity: true, cost: true },
+      }),
+    ]);
+
+    // Cash & Bank: net of all cashbook entries up to endDate
+    const cashInTypes = new Set(['sale', 'collection', 'opening_balance', 'deposit']);
+    let cashBalance = 0;
+    for (const e of cashEntries) {
+      cashBalance += cashInTypes.has(e.type) ? e.amount : -e.amount;
+    }
+    cashBalance = Math.max(0, round2(cashBalance));
+
+    // Closing Stock valued at cost
+    let closingStockValue = 0;
+    let uncostedCount = 0;
+    const stockByCategory: Record<string, number> = {};
+    for (const p of products) {
+      const qty = p.currentStock || 0;
+      if (qty === 0) continue;
+      const cost = p.costPrice ?? p.wholesaleCost ?? null;
+      if (cost == null) { uncostedCount++; continue; }
+      const val = round2(qty * cost);
+      closingStockValue += val;
+      const cat = p.category || 'General';
+      stockByCategory[cat] = (stockByCategory[cat] || 0) + val;
+    }
+    closingStockValue = round2(closingStockValue);
+
+    // Accounts Receivable: sum of customer outstanding
+    const shopCustomerIds = shopCustomers.map((c) => c.id);
+    let debtors = 0;
+    if (shopCustomerIds.length > 0) {
+      const [txnIn, txnOut] = await Promise.all([
+        prisma.customer_transactions.aggregate({
+          where: { customer_id: { in: shopCustomerIds }, type: { in: ['sale', 'opening_balance'] } },
+          _sum: { amount: true },
+        }),
+        prisma.customer_transactions.aggregate({
+          where: { customer_id: { in: shopCustomerIds }, type: { in: ['payment', 'refund', 'exchange'] } },
+          _sum: { amount: true },
+        }),
+      ]);
+      debtors = Math.max(0, round2((txnIn._sum.amount ?? 0) - (txnOut._sum.amount ?? 0)));
+    }
+
+    // Accounts Payable: sum of all supplier balances (positive = owed to supplier)
+    const creditors = round2(supplierBalances.reduce((s, sup) => s + Math.max(0, sup.balance || 0), 0));
+
+    // Period P&L
+    const revenue = salesMetrics.netGoodsSales;
+    const grossProfit = salesMetrics.profit;
+    const totalExpenses = round2((expensesAgg._sum.amount || 0) + (salariesAgg._sum.netAmount || 0));
+    const netProfit = round2(grossProfit - totalExpenses);
+    const purchasesTotal = round2(purchasesAgg.reduce((s, i) => s + (i.quantity * i.cost), 0));
+
+    const totalAssets = round2(cashBalance + debtors + closingStockValue);
+    const totalLiabilities = creditors;
+    const equity = round2(totalAssets - totalLiabilities);
+
+    return json({
+      asOf: endDate.toISOString(),
+      assets: {
+        cash: cashBalance,
+        debtors,
+        closingStock: closingStockValue,
+        stockByCategory,
+        uncostedProducts: uncostedCount,
+        total: totalAssets,
+      },
+      liabilities: {
+        creditors,
+        creditorList: supplierBalances
+          .filter(s => (s.balance || 0) > 0)
+          .sort((a, b) => (b.balance || 0) - (a.balance || 0))
+          .map(s => ({ name: s.name, amount: round2(s.balance || 0) })),
+        total: totalLiabilities,
+      },
+      equity: {
+        netProfit,
+        total: equity,
+      },
+      pnlSummary: {
+        revenue,
+        grossProfit,
+        expenses: totalExpenses,
+        netProfit,
+        purchases: purchasesTotal,
+      },
+    });
+  }
+
   if (reportType === 'mill_raw_material' || reportType === 'mill_production' || reportType === 'mill_byproducts') {
     // Gated on the Bada Udyog package rather than the single businessType
     // literal 'millprocessing' — several legacy business types (ricemill,
@@ -1411,11 +1541,11 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
         lotNumber: l.lotNumber || '',
         farmerName: l.farmerName || l.supplier?.name || '',
         purchaseDate: l.purchaseDate,
-        weightKg: l.weightKg || 0,
+        weightKg: (l as any).quantity ?? 0,
         moisturePct: l.moisturePct,
-        ratePerKg: l.ratePerKg || 0,
+        ratePerKg: (l as any).ratePerUnit ?? 0,
         totalAmount: l.totalAmount || 0,
-        remainingKg: l.remainingKg ?? l.weightKg ?? 0,
+        remainingKg: (l as any).remainingQuantity ?? (l as any).quantity ?? 0,
       }));
       return json({
         rows,

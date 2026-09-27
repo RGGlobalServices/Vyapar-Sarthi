@@ -109,7 +109,7 @@ export const POST = handle(async (req) => {
         grossWeightKg,
         moisturePct: body.moisturePct != null && body.moisturePct !== ''
           ? Math.max(0, Math.min(100, Number(body.moisturePct) || 0)) : null,
-        ratePerKg: body.ratePerKg != null && body.ratePerKg !== '' ? Number(body.ratePerKg) : null,
+        ratePerUnit: body.ratePerUnit != null && body.ratePerUnit !== '' ? Number(body.ratePerUnit) : null,
         firstWeighedAt: new Date(),
         status: 'first_weighed',
         notes: (body.notes || '').trim() || null,

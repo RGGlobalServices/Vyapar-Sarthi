@@ -7,6 +7,7 @@ import { getInvoiceColumns, isChargeLineItem } from '@/lib/invoice-helpers';
 import { BusinessType } from '@/lib/businessConfig';
 import { Barcode } from './Barcode';
 import type { GstBreakdown } from '@/lib/gst';
+import type { DualUnitConfig } from '@/lib/categoryConfig';
 import { useUpiQrCode } from './useUpiQrCode';
 
 // Column widths for the thermal items table (table-layout: fixed). The Item
@@ -23,8 +24,8 @@ const THERMAL_COL_WIDTH: Record<string, string> = {
   expiry: '12%',
   serial: '13%',
   warranty: '13%',
-  hsn: '10%',
-  gstPercent: '9%',
+  hsn: '13%',
+  gstPercent: '8%',
 };
 
 export interface BaseInvoiceProps {
@@ -69,6 +70,10 @@ export interface BaseInvoiceProps {
   billType?: 'gst' | 'non_gst' | string;
   gstBreakdown?: GstBreakdown;
   billImageUrl?: string;
+  // Category attribute keys whose values are printed under the item name
+  // (driven by CategoryConfig.attributeSchema.billingDisplayFields).
+  billingDisplayFields?: string[];
+  dualUnitConfig?: DualUnitConfig;
   // Scan-to-pay UPI QR + bank transfer box — set once in Profile, shown on
   // every bill (GST and Non-GST, every package tier) once a shop has a UPI ID.
   upiId?: string;
@@ -121,6 +126,8 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   showQrCode = false,
   billType,
   gstBreakdown,
+  billingDisplayFields,
+  dualUnitConfig,
   upiId,
   qrSvg,
   qrDataUrl: qrDataUrlProp,
@@ -245,20 +252,36 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
               {columns.map(col => (
                 <th key={col.id} className={`py-1.5 ${cellPad} text-${col.align} font-bold`} style={{ width: col.id === 'item' ? undefined : (THERMAL_COL_WIDTH[col.id] || '14%'), whiteSpace: 'nowrap' }}>{t(col.labelKey) || col.labelKey}</th>
               ))}
-              {isGstBill && !is58mm && <th className={`py-1.5 ${cellPad} text-left font-bold`} style={{ width: THERMAL_COL_WIDTH.hsn, whiteSpace: 'nowrap' }}>{t('hsn') || 'HSN'}</th>}
-              {isGstBill && <th className={`py-1.5 ${cellPad} text-right font-bold`} style={{ width: THERMAL_COL_WIDTH.gstPercent, whiteSpace: 'nowrap' }}>GST%</th>}
+              {isGstBill && !is58mm && <th className={`py-1.5 ${cellPad} text-left font-bold`} style={{ width: THERMAL_COL_WIDTH.hsn, whiteSpace: 'nowrap', overflow: 'hidden' }}>{t('hsn') || 'HSN'}</th>}
+              {isGstBill && <th className={`py-1.5 ${cellPad} text-right font-bold`} style={{ width: THERMAL_COL_WIDTH.gstPercent, whiteSpace: 'nowrap', overflow: 'hidden' }}>GST%</th>}
             </tr>
           </thead>
           <tbody>
             {goodsItems.map((item, idx) => (
               <tr key={idx} className="align-top" style={idx < goodsItems.length - 1 ? { borderBottom: '1px solid #ddd' } : undefined}>
-                {columns.map(col => (
-                  <td key={col.id} className={`py-1 ${cellPad} text-${col.align} ${textClass} ${col.id === 'item' ? 'pr-2' : ''}`} style={col.id === 'item' ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap' }}>
-                    {col.render(item)}
-                  </td>
-                ))}
-                {isGstBill && !is58mm && <td className={`py-1 ${cellPad} text-left ${textClass}`} style={{ whiteSpace: 'nowrap' }}>{(item as any).hsnCode || '-'}</td>}
-                {isGstBill && <td className={`py-1 ${cellPad} text-right ${textClass}`} style={{ whiteSpace: 'nowrap' }}>{Number((item as any).gstPercent) || 0}%</td>}
+                {columns.map(col => {
+                  const isItemCol = col.id === 'item';
+                  const attrs = isItemCol && billingDisplayFields?.length
+                    ? (item as any).categoryAttributes as Record<string, string> | undefined
+                    : undefined;
+                  const attrParts = attrs
+                    ? billingDisplayFields!.map(k => attrs[k]).filter(Boolean)
+                    : [];
+                  return (
+                    <td key={col.id} className={`py-1 ${cellPad} text-${col.align} ${textClass} ${isItemCol ? 'pr-2' : ''}`} style={isItemCol ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap' }}>
+                      {col.render(item)}
+                      {isItemCol && item.variant && <div style={{ fontSize: '80%', color: '#555' }}>{item.variant}</div>}
+                      {isItemCol && attrParts.length > 0 && <div style={{ fontSize: '80%', color: '#666' }}>{attrParts.join(' · ')}</div>}
+                      {col.id === 'qty' && dualUnitConfig && (
+                        <div style={{ fontSize: '75%', color: '#22c55e' }}>
+                          ={(item.quantity * dualUnitConfig.conversionFactor).toLocaleString('en-IN')} {dualUnitConfig.secondaryUnit}
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
+                {isGstBill && !is58mm && <td className={`py-1 ${cellPad} text-left ${textClass}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{(item as any).hsnCode || '-'}</td>}
+                {isGstBill && <td className={`py-1 ${cellPad} text-right ${textClass}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{Number((item as any).gstPercent) || 0}%</td>}
               </tr>
             ))}
           </tbody>

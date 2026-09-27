@@ -18,9 +18,7 @@ function getTransporter() {
 export function sendEmail(to: string, subject: string, html: string) {
   const t = getTransporter();
   if (!t) {
-    console.log(`[EMAIL] To: ${to}`);
-    console.log(`[EMAIL] Subject: ${subject}`);
-    console.log(`[EMAIL] Body: ${html.slice(0, 500)}`);
+    // SMTP not configured — email silently dropped (configure SMTP_HOST/USER/PASS to enable)
     return Promise.resolve();
   }
   return t.sendMail({ from: config.smtpUser, to, subject, html });
