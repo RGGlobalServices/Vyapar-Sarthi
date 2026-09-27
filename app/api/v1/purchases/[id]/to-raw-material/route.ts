@@ -38,11 +38,14 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   });
   const converted = new Set(already.map((l: any) => l.productId));
 
+  // Include ALL items when caller doesn't specify productIds — not just
+  // millCategory='raw_material' ones, because imported products may not
+  // have millCategory set even though they are raw materials.
   const candidates = invoice.purchaseItems.filter((it: any) =>
-    it.product && !converted.has(it.productId) && (wanted ? wanted.includes(it.productId) : it.product.millCategory === 'raw_material'),
+    it.product && !converted.has(it.productId) && (wanted ? wanted.includes(it.productId) : true),
   );
   if (candidates.length === 0) {
-    throw new ApiError(400, 'Nothing to convert — either no item on this bill is classed Raw Material, or every one is already in Raw Material.', 'NOTHING_TO_CONVERT');
+    throw new ApiError(400, 'All items on this bill have already been added to Raw Material.', 'NOTHING_TO_CONVERT');
   }
 
   const created = await prisma.$transaction(
@@ -54,10 +57,11 @@ export const POST = handle<Ctx>(async (req, { params }) => {
           supplierId: invoice.supplierId,
           lotNumber: `${invoice.invoiceNumber}${candidates.length > 1 ? `-L${i + 1}` : ''}`,
           purchaseDate: invoice.date,
-          weightKg: it.quantity,
-          ratePerKg: it.cost || null,
+          quantity: it.quantity,
+          unit: it.product?.baseUnit || 'kg',
+          ratePerUnit: it.cost || null,
           totalAmount: Math.round(Number(it.quantity) * Number(it.cost || 0) * 100) / 100,
-          remainingKg: it.quantity,
+          remainingQuantity: it.quantity,
           notes: `Added to Raw Material from Purchase Invoice ${invoice.invoiceNumber}`,
         },
       }),
