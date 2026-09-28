@@ -40,6 +40,9 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    implementation "androidx.credentials:credentials:$credentialManagerVersion"
+    implementation "androidx.credentials:credentials-play-services-auth:$credentialManagerVersion"
+    implementation "com.google.android.libraries.identity.googleid:googleid:$googleIdVersion"
 }
 
 apply from: 'capacitor.build.gradle'
