@@ -21,7 +21,12 @@
     "db:push": "npx dotenv-cli -e .env.local -- prisma db push",
     "db:migrate": "npx dotenv-cli -e .env.local -- prisma migrate dev",
     "postinstall": "prisma generate",
-    "prepare": "husky"
+    "prepare": "husky",
+    "desktop:build:win": "electron-builder --win",
+    "desktop:build:mac": "electron-builder --mac",
+    "desktop:build:linux": "electron-builder --linux",
+    "mobile:open:android": "npx cap open android",
+    "mobile:open:ios": "npx cap open ios"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",
