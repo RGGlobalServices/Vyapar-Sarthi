@@ -54,8 +54,8 @@ const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'party', 'products'] },
   { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'batches', 'production', 'finished-goods', 'by-products', 'wip', 'rejections', 'job-work'] },
   { id: 'quality',     label: 'Quality',           emoji: '🧪', keys: ['quality-lab'] },
-  { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali'] },
-  { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'settlement', 'expenses'] },
+  { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali', 'freight'] },
+  { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'cashbook', 'settlement', 'expenses'] },
   { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers'], defaultCollapsed: true },
   { id: 'maintenance', label: 'Machines & Maintenance', emoji: '🔧', keys: ['machines', 'maintenance', 'spare-parts'], defaultCollapsed: false },
   { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
@@ -269,7 +269,7 @@ export default function Sidebar({
     }
   };
 
-  const masterMenuItems: Array<{ key: string; icon: any; href: string; badge?: number; external?: boolean }> = [
+  const masterMenuItems: Array<{ key: string; icon: any; href: string; badge?: number; external?: boolean; subOf?: string }> = [
     { key: 'dashboard', icon: LayoutDashboard, href: '/' },
     { key: 'profile',   icon: User,            href: '/profile' },
     { key: 'orders',    icon: ClipboardList,   href: '/orders' },
@@ -313,6 +313,7 @@ export default function Sidebar({
     { key: 'batches',         icon: ClipboardCheck,  href: '/batches' },
     { key: 'brokers',         icon: Handshake,       href: '/brokers' },
     { key: 'hamali',          icon: HardHat,         href: '/hamali' },
+    { key: 'freight',         icon: Truck,           href: '/freight' },
     { key: 'machines',        icon: Cog,             href: '/machines' },
     { key: 'maintenance',     icon: Wrench,          href: '/maintenance' },
     { key: 'spare-parts',     icon: Cpu,             href: '/spare-parts', subOf: 'maintenance' },
@@ -320,6 +321,7 @@ export default function Sidebar({
     { key: 'receipts',        icon: ArrowDownToLine, href: '/receipts' },
     { key: 'outstanding',     icon: Hourglass,       href: '/outstanding' },
     { key: 'ledger',          icon: NotebookText,    href: '/ledger' },
+    { key: 'cashbook',        icon: BookOpen,        href: '/cashbook' },
     { key: 'settlement',      icon: Wallet,          href: '/settlement' },
     { key: 'documents',       icon: FileText,        href: '/documents' },
     { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },
