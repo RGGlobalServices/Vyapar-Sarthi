@@ -56,15 +56,17 @@ jobs:
       - name: Delete old 'latest-android' release if exists
         run: gh release delete latest-android --yes --cleanup-tag 2>/dev/null || true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_REPO: RGGlobalServices/vyaparsarthi-releases
 
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
+          repository: RGGlobalServices/vyaparsarthi-releases
           tag_name: latest-android
           name: Vyapar Sarthi Android App
           body: Latest Android APK build. Download and install on your Android device.
           files: android/app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
