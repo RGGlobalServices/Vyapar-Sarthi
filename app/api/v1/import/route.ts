@@ -5,17 +5,52 @@ import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 
 export const maxDuration = 300;
 
-export async function POST(req: NextRequest) {
-  try {
+// Wraps a long-running promise in a ReadableStream that sends keepalive
+// whitespace bytes every 5 seconds so nginx doesn't 504 before AI responds.
+function streamWithKeepalive(work: Promise<any>): Response {
+  const encoder = new TextEncoder();
+  let controller: ReadableStreamDefaultController;
+
+  const stream = new ReadableStream({
+    start(c) {
+      controller = c;
+      const keepalive = setInterval(() => {
+        try { controller.enqueue(encoder.encode(' ')); } catch {}
+      }, 5000);
+
+      work
+        .then((result) => {
+          clearInterval(keepalive);
+          controller.enqueue(encoder.encode('\n' + JSON.stringify(result)));
+          controller.close();
+        })
+        .catch((err) => {
+          clearInterval(keepalive);
+          controller.enqueue(encoder.encode('\n' + JSON.stringify({ error: err.message || 'Failed to process file' })));
+          controller.close();
+        });
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Transfer-Encoding': 'chunked',
+      'X-Accel-Buffering': 'no',
+      'Cache-Control': 'no-cache',
+    },
+  });
+}
+
+async function processImport(req: NextRequest): Promise<any> {
     const fd = await req.formData();
     const file = fd.get('file') as File | null;
     const targetType = fd.get('targetType') as string || 'mixed';
     const businessTypeStr = fd.get('businessType') as string || 'general';
     const bizConfig = getBusinessConfig(businessTypeStr as BusinessType);
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
+    if (!file) throw new Error('No file uploaded');
 
     const openaiKey = process.env.OPENAI_API_KEY || '';
     const geminiKeys = [
@@ -26,7 +61,7 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean) as string[];
 
     if (!openaiKey && !geminiKeys.length) {
-      return NextResponse.json({ error: 'No AI API key configured (set OPENAI_API_KEY or GEMINI_API_KEY)' }, { status: 500 });
+      throw new Error('No AI API key configured (set OPENAI_API_KEY or GEMINI_API_KEY)');
     }
     
     // Convert the File into a base64 buffer for extraction
@@ -212,29 +247,14 @@ ${extractedText}`;
 
     if (!resultData) throw new Error('File could not be read. Please check your GEMINI_API_KEY in .env.local and try again.');
 
-    if (resultData) {
-      resultData.khata = resultData.khata || [];
-      resultData.stock = resultData.stock || [];
-      resultData.sales = resultData.sales || [];
-      resultData.purchase = resultData.purchase || [];
-    }
+    resultData.khata = resultData.khata || [];
+    resultData.stock = resultData.stock || [];
+    resultData.sales = resultData.sales || [];
+    resultData.purchase = resultData.purchase || [];
 
-    if (!resultData) {
-      throw new Error('AI failed to return a valid JSON response. Please try again.');
-    }
+    return resultData;
+}
 
-    const json = JSON.stringify(resultData);
-    return new Response(json, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Transfer-Encoding': 'chunked',
-        'X-Accel-Buffering': 'no',
-      },
-    });
-
-  } catch (error: any) {
-    console.error('Import API error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to process file' }, { status: 500 });
-  }
+export async function POST(req: NextRequest) {
+  return streamWithKeepalive(processImport(req));
 }

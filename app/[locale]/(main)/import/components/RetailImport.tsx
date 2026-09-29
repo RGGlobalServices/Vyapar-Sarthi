@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
@@ -256,8 +256,13 @@ export default function RetailImport() {
         fd.append('targetType', targetType);
         fd.append('businessType', profile.businessType);
         const res  = await fetch('/api/v1/import', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? 'Processing failed');
+        const rawText = await res.text();
+        const trimmed = rawText.trim();
+        const jsonStart = trimmed.lastIndexOf('
+') >= 0 ? trimmed.lastIndexOf('
+') + 1 : 0;
+        const data = JSON.parse(trimmed.slice(jsonStart));
+        if (!res.ok || data.error) throw new Error(data.error ?? 'Processing failed');
         
         if (data.mismatchWarning) {
           hasMismatch = data.mismatchWarning;
