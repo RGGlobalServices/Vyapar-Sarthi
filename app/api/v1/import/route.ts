@@ -3,6 +3,8 @@ import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest) {
   try {
     const fd = await req.formData();
@@ -221,8 +223,16 @@ ${extractedText}`;
       throw new Error('AI failed to return a valid JSON response. Please try again.');
     }
 
-    return NextResponse.json(resultData);
-    
+    const json = JSON.stringify(resultData);
+    return new Response(json, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Transfer-Encoding': 'chunked',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+
   } catch (error: any) {
     console.error('Import API error:', error);
     return NextResponse.json({ error: error.message || 'Failed to process file' }, { status: 500 });
