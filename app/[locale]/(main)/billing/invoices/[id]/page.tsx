@@ -8,7 +8,7 @@ import { Link, useRouter } from '@/i18n/routing';
 import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
 import { isMillInvoice } from '@/lib/millInvoice';
 import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -169,7 +169,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     amountPaid: invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : totalAmount),
     remainingAmount: Math.max(0, totalAmount - (invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : totalAmount))),
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
-    date: new Date(invoice.created_at).toLocaleDateString(),
+    date: fmtDate(invoice.created_at),
     storeName: profile?.shopName || user?.storeName || 'Store',
     storeAddress: profile?.address || undefined,
     storeMobile: profile?.mobile || undefined,
@@ -385,7 +385,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('date')}</p>
-                    <p className="text-slate-900 dark:text-slate-100 font-bold">{new Date(invoice.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-bold">{fmtDate(invoice.created_at)}</p>
                   </div>
                 </div>
               </CardContent>

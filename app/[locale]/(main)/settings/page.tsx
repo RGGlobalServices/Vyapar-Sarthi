@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store, Plus, Tag, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 import { ExportButton } from '@/lib/hooks/useExport';
@@ -497,7 +497,7 @@ function SettingsPageInner() {
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {s.ip} &middot; Active {new Date(s.lastSeen).toLocaleDateString()}
+                          {s.ip} &middot; Active {fmtDate(s.lastSeen)}
                         </p>
                       </div>
                     </div>

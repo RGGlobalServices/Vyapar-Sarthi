@@ -77,19 +77,34 @@ export const PUT = handle(async (req) => {
   if (data.productType !== undefined) updateData.productType = data.productType;
   if (data.gstPercent !== undefined) updateData.gstPercent = data.gstPercent;
 
-  if (Object.keys(updateData).length === 0) {
+  const hasOrmFields = Object.keys(updateData).length > 0;
+  const hasGstInclusive = data.gstInclusive !== undefined;
+
+  if (!hasOrmFields && !hasGstInclusive) {
     throw new ApiError(400, 'No valid fields provided to update');
   }
 
-  const result = await prisma.product.updateMany({
-    where: {
-      id: { in: ids },
-      shopId: shop.id
-    },
-    data: updateData
-  });
+  let count = 0;
 
-  return json({ success: true, count: result.count });
+  if (hasOrmFields) {
+    const result = await prisma.product.updateMany({
+      where: { id: { in: ids }, shopId: shop.id },
+      data: updateData,
+    });
+    count = result.count;
+  }
+
+  if (hasGstInclusive) {
+    const idList = Prisma.join(ids.map((id: string) => Prisma.sql`${id}::uuid`));
+    const val = Boolean(data.gstInclusive);
+    const raw = await prisma.$executeRaw(Prisma.sql`
+      UPDATE products SET gst_inclusive = ${val}
+      WHERE id IN (${idList}) AND shop_id = ${shop.id}::uuid
+    `);
+    count = Math.max(count, raw);
+  }
+
+  return json({ success: true, count });
 });
 
 export const DELETE = handle(async (req) => {

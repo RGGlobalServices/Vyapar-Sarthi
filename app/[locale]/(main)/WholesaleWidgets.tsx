@@ -1,6 +1,6 @@
 import { Package, Clock, Activity, ArrowRightLeft, TrendingDown, Wallet, CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { Link } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 
@@ -77,7 +77,7 @@ export default function WholesaleWidgets({ data }: { data: any }) {
                   <p className="text-[10px] text-slate-500 font-mono mt-0.5">{t('batchNo', { no: b.batchNumber || '-' })}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs font-bold text-amber-600 dark:text-amber-500">{new Date(b.expiryDate).toLocaleDateString()}</p>
+                  <p className="text-xs font-bold text-amber-600 dark:text-amber-500">{fmtDate(b.expiryDate)}</p>
                   <p className="text-[10px] text-slate-500">{t('leftQty', { qty: b.quantity })}</p>
                 </div>
               </div>

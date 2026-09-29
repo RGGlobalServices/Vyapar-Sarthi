@@ -64,6 +64,7 @@
     "job-work": "जॉब वर्क",
     "brokers": "दलाल",
     "hamali": "हमाली / मजुरी",
+    "freight": "भाडे (Freight)",
     "machines": "यंत्रे",
     "maintenance": "देखभाल",
     "spare-parts": "स्पेअर पार्ट्स",
@@ -71,6 +72,7 @@
     "receipts": "पावत्या",
     "outstanding": "थकबाकी",
     "ledger": "खतावणी",
+    "cashbook": "रोख वही",
     "settlement": "सेटलमेंट",
     "documents": "कागदपत्रे",
     "support": "मदत",
@@ -2140,6 +2142,9 @@
     "noteHeader": "टीप",
     "clearBtn": "साफ करा",
     "clearDateFilterTitle": "दिनांक फिल्टर साफ करा",
+    "tabHistory": "खरेदी इतिहास",
+    "tabDeliveries": "डिलिव्हरी",
+    "noDeliveries": "या पुरवठादाराच्या गेट एंट्री सापडल्या नाहीत.",
     "paymentHistoryTitle": "पेमेंट इतिहास",
     "noTransactionsInPeriod": "या कालावधीत कोणतेही व्यवहार नाहीत.",
     "boughtPrefix": "खरेदी {amount}",
@@ -3339,7 +3344,11 @@
     "billNumberOptional": "बिल नंबर (ऐच्छिक)",
     "paymentMode": "पेमेंट पद्धत",
     "notesOptional": "नोट्स (ऐच्छिक)",
-    "failedToSave": "जतन करण्यात अयशस्वी."
+    "failedToSave": "जतन करण्यात अयशस्वी.",
+    "addBrokerBtn": "ब्रोकर जोडा",
+    "brokerName": "ब्रोकरचे नाव",
+    "mobileOptional": "मोबाईल (ऐच्छिक)",
+    "clearFilter": "रद्द करा"
   },
   "Machines": {
     "title": "मशीन्स",

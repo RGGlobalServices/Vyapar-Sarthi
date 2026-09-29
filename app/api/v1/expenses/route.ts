@@ -9,8 +9,9 @@ export const dynamic = 'force-dynamic';
 
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
-  const expenses = await prisma.expense.findMany({
+  const expenses = await (prisma as any).expense.findMany({
     where: { shopId: shop.id },
+    include: { party: { select: { id: true, name: true } } },
     orderBy: { createdAt: 'desc' }
   });
   return json(expenses);
@@ -18,15 +19,15 @@ export const GET = handle(async (req) => {
 
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
-  const data = await readBody<{ category: string, amount: number, description?: string, paymentMode?: string, date?: string, attachmentUrl?: string, isRecurring?: boolean, warehouseId?: string }>(req);
-  await assertOwned(shop.id, { godownId: data.warehouseId });
+  const data = await readBody<{ category: string, amount: number, description?: string, paymentMode?: string, date?: string, attachmentUrl?: string, isRecurring?: boolean, warehouseId?: string, partyId?: string }>(req);
+  await assertOwned(shop.id, { godownId: data.warehouseId, customerId: data.partyId });
   
   if (!data.category || !data.amount) {
     throw new ApiError(400, 'Category and amount are required');
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const expense = await tx.expense.create({
+    const expense = await (tx as any).expense.create({
       data: {
         shopId: shop.id,
         category: data.category,
@@ -37,6 +38,7 @@ export const POST = handle(async (req) => {
         attachmentUrl: data.attachmentUrl || null,
         isRecurring: data.isRecurring || false,
         warehouseId: data.warehouseId || null,
+        partyId: data.partyId || null,
       }
     });
 

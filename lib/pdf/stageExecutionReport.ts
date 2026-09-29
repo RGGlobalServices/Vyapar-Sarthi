@@ -40,11 +40,8 @@ export async function exportStageExecutionReportPDF(
     gst: reportData.shop.gstin,
   };
 
-  const currentDate = new Date().toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  const _now = new Date();
+  const currentDate = `${String(_now.getDate()).padStart(2,'0')}-${String(_now.getMonth()+1).padStart(2,'0')}-${_now.getFullYear()}`;
 
   let y = renderProfessionalHeader(doc, shopHeader, 'Stage Execution Report', currentDate, {
     periodLabel: 'Date',

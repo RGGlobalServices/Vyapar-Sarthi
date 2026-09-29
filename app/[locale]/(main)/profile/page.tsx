@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
@@ -1186,7 +1186,7 @@ function FullBillPreviewModal({ theme, accent, shop, onClose }: { theme: string;
           customerMobile="98765 43210"
           paymentMethod="Cash"
           billNumber="PREVIEW-0001"
-          date={new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+          date={fmtDate(new Date())}
           storeName={shop?.name || 'Your Shop Name'}
           storeAddress={shop?.address || '123 Market Road, Your City'}
           storeMobile={shop?.mobile || '98765 43210'}

@@ -79,7 +79,11 @@ export function planReturn(opts: {
   // 3. Effective discount factor.
   const gross = saleItems.reduce((s, si) => s + (Number(si.quantity) || 0) * (Number(si.pricePerUnit) || 0), 0);
   const originalTotal = saleTotal + priorReturns.filter(p => p.settled).reduce((s, p) => s + p.amount, 0);
-  const factor = gross > 0 ? Math.min(1, Math.max(0, originalTotal / gross)) : 0;
+  // For regular bills: discount makes totalAmount ≤ gross → factor ≤ 1.
+  // For mill (mill_v2) bills: GST + charges make totalAmount > gross → factor > 1
+  // (customer paid more than the base prices, so the refund per unit must also
+  // include the proportional GST+charges portion). No Math.min(1, ...) cap here.
+  const factor = gross > 0 ? Math.max(0, originalTotal / gross) : 0;
 
   // 4. Per-line quantity check + refund.
   const lines: PlannedLine[] = [];

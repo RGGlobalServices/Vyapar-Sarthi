@@ -19,8 +19,12 @@ export interface CustomerBillDetail {
   gstAmount: number | null;
 }
 
-const fmtDate = (v: string | Date | null | undefined) =>
-  v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+const fmtDate = (v: string | Date | null | undefined): string => {
+  if (!v) return '-';
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return '-';
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+};
 
 /**
  * One party/customer ledger row, downloadable on its own — the Party/Customer

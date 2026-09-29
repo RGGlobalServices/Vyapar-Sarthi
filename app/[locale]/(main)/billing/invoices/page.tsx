@@ -11,7 +11,7 @@ import { useMillMode } from '@/lib/hooks/useMillMode';
 import { setMillDuplicate } from '@/lib/millDuplicateHandoff';
 import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
@@ -85,7 +85,7 @@ function getPaymentBadge(type: string) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return fmtDate(d);
 }
 function formatTime(d: string) {
   return new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -1099,11 +1099,10 @@ export default function InvoiceHistoryPage() {
                             <Copy size={13} />
                           </button>
                           <button
-                            onClick={() => (inv as any).pricing_model === 'mill_v2' ? alert(tMill('actionsBlockedMill')) : setReturnInvoice(inv)}
-                            title={(inv as any).pricing_model === 'mill_v2' ? tMill('actionsBlockedMill') : t('returnRefund')}
-                            aria-disabled={(inv as any).pricing_model === 'mill_v2' || undefined}
+                            onClick={() => setReturnInvoice(inv)}
+                            title={t('returnRefund')}
                             data-testid="inv-action-return"
-                            className={cn('w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all', (inv as any).pricing_model === 'mill_v2' && 'opacity-40 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-500')}
+                            className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
                           >
                             <RotateCcw size={13} />
                           </button>

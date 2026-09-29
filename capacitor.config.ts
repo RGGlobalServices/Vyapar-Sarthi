@@ -1,43 +1,39 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.kiranamanager.app',
+  appId: 'com.vyaparsarthii.app',
   appName: 'Vyapar Sarthi',
   webDir: 'out',
   server: {
     androidScheme: 'https',
-    // Points to your hosted production application
     url: 'https://app.vyaparsarthii.com/',
-    cleartext: true
+    cleartext: false,
+  },
+  android: {
+    // Standard Chrome Android UA so Cloudflare doesn't flag the WebView as a bot.
+    // Without this, Cloudflare Bot Fight Mode returns a challenge HTML page
+    // instead of the actual app response.
+    overrideUserAgent: 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    backgroundColor: '#0f172a',
+    allowMixedContent: false,
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 3000,
+      launchShowDuration: 2500,
       launchAutoHide: true,
-      androidSplashResourceName: "splash",
-      androidScaleType: "FIT_CENTER",
-      showSpinner: true,
-      androidSpinnerStyle: "large",
-      iosSpinnerStyle: "small",
-      spinnerColor: "#FF0000",
+      androidSplashResourceName: 'splash',
+      androidScaleType: 'CENTER_CROP',
+      showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true,
-      backgroundColor: "#FFFFFF",
+      backgroundColor: '#0f172a',
     },
     StatusBar: {
-      style: "LIGHT",
-      backgroundColor: "#FFFFFF",
-      overlaysWebView: false
+      style: 'DARK',
+      backgroundColor: '#0f172a',
+      overlaysWebView: false,
     },
-    SocialLogin: {
-      providers: {
-        google: true,
-        facebook: false,
-        apple: false,
-        twitter: false
-      }
-    }
-  }
+  },
 };
 
 export default config;

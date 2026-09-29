@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { Plus, X, Loader2, ArrowDownToLine, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 
 type ReceiptRow = {
@@ -78,7 +78,7 @@ export default function ReceiptsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-slate-900 dark:text-white">{r.entityName}</p>
                   <p className="text-xs text-slate-500 mt-1">
-                    {new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {fmtDate(r.date)}
                     {r.note && ` · ${r.note}`}
                   </p>
                 </div>

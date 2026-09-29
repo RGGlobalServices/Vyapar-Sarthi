@@ -65,6 +65,7 @@
     "job-work": "Job Work",
     "brokers": "Brokers",
     "hamali": "Hamali / Labour",
+    "freight": "Freight",
     "machines": "Machines",
     "maintenance": "Maintenance",
     "spare-parts": "Spare Parts",
@@ -72,6 +73,7 @@
     "receipts": "Receipts",
     "outstanding": "Outstanding",
     "ledger": "Ledger",
+    "cashbook": "Cash Book",
     "settlement": "Settlement",
     "documents": "Documents",
     "support": "Support",
@@ -1653,6 +1655,9 @@
     "noteHeader": "Note",
     "clearBtn": "Clear",
     "clearDateFilterTitle": "Clear date filter",
+    "tabHistory": "Purchase History",
+    "tabDeliveries": "Deliveries",
+    "noDeliveries": "No gate entries found for this supplier.",
     "paymentHistoryTitle": "Payment History",
     "noTransactionsInPeriod": "No transactions in this period.",
     "boughtPrefix": "Bought {amount}",
@@ -3336,7 +3341,11 @@
     "billNumberOptional": "Bill Number (optional)",
     "paymentMode": "Payment Mode",
     "notesOptional": "Notes (optional)",
-    "failedToSave": "Failed to save."
+    "failedToSave": "Failed to save.",
+    "addBrokerBtn": "Add Broker",
+    "brokerName": "Broker Name",
+    "mobileOptional": "Mobile (optional)",
+    "clearFilter": "Clear"
   },
   "Machines": {
     "title": "Machines",

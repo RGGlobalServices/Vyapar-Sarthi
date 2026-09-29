@@ -10,7 +10,7 @@ import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
 // Keeps html5-qrcode out of the server bundle and off the initial payload.
@@ -1591,7 +1591,7 @@ export default function WholesaleBillingUI() {
         paymentMethod: paymentTypeWire[paymentMethod],
         splitPayments: { ...splitPayments, udhar: grandRemaining },
         billNumber,
-        date: new Date().toLocaleDateString(),
+        date: fmtDate(new Date()),
         dueDate: dueDateIso,
         isOfflineBill,
         // GST invoice data (undefined for non-GST → invoice renders normally)

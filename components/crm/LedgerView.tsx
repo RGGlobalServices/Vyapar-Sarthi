@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Loader2, ArrowUpRight, ArrowDownLeft, FileText, Calendar, Search, X, Paperclip, ExternalLink } from 'lucide-react';
 import api from '@/lib/api';
+import { fmtDate } from '@/lib/utils';
 import { ExportButton } from '@/lib/hooks/useExport';
 import TransactionDetailModal from './TransactionDetailModal';
 
@@ -367,7 +368,7 @@ export default function LedgerView({
                     {credit ? '+' : '-'}₹{tx.amount.toLocaleString()}
                   </div>
                   <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1">
-                    <Calendar size={10} /> {tx.date ? new Date(tx.date).toLocaleDateString() : ''}
+                    <Calendar size={10} /> {fmtDate(tx.date)}
                   </div>
                 </div>
                 {/* Direct link to the original invoice detail page. Only for

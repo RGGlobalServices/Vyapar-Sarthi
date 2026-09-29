@@ -6,10 +6,10 @@ import { useLocale } from 'next-intl';
 import {
   Truck, Plus, Search, X, Printer, Receipt, Ban, Loader2,
   Package, User, ChevronDown, ChevronUp, MapPin, Navigation,
-  FileText, Hash, Calendar, ArrowRight, RotateCcw,
+  FileText, Hash, Calendar, ArrowRight, RotateCcw, ArrowUpRight,
 } from 'lucide-react';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { performSmartSearch } from '@/lib/smartSearch';
 import { useBusinessStore } from '@/lib/businessStore';
 
@@ -44,6 +44,9 @@ type Challan = {
   customerAddress?: string | null;
   dispatchFrom?: string | null;
   transporter?: string | null;
+  transporterId?: string | null;
+  freightAmount?: number | null;
+  transporterCustomer?: { id: string; name: string; mobile: string | null } | null;
   vehicleNumber?: string | null;
   driverName?: string | null;
   driverMobile?: string | null;
@@ -147,6 +150,9 @@ export default function ChallansPage() {
   const [showNew, setShowNew]           = useState(false);
   const [printChallan, setPrintChallan] = useState<Challan | null>(null);
   const [busyId, setBusyId]             = useState<string | null>(null);
+  const [dateFilter, setDateFilter]     = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
+  const [customFrom, setCustomFrom]     = useState('');
+  const [customTo, setCustomTo]         = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,6 +167,33 @@ export default function ChallansPage() {
   }, [statusFilter, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  const filteredChallans = useMemo(() => {
+    if (dateFilter === 'all') return challans;
+    const now = new Date();
+    const todayYmd = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return challans.filter(c => {
+      const ymd = new Date(c.challanDate || c.createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      if (dateFilter === 'today') return ymd === todayYmd;
+      if (dateFilter === 'week') {
+        const d = new Date(c.challanDate || c.createdAt);
+        const diff = (now.getTime() - d.getTime()) / 86400000;
+        return diff >= 0 && diff < 7;
+      }
+      if (dateFilter === 'month') return ymd.slice(0, 7) === todayYmd.slice(0, 7);
+      if (dateFilter === 'custom') {
+        if (customFrom && ymd < customFrom) return false;
+        if (customTo && ymd > customTo) return false;
+        return true;
+      }
+      return true;
+    });
+  }, [challans, dateFilter, customFrom, customTo]);
+
+  const openTotal = useMemo(
+    () => filteredChallans.filter(c => c.status === 'open').reduce((s, c) => s + challanTotal(c), 0),
+    [filteredChallans],
+  );
 
   const handleCancel = async (c: Challan) => {
     if (!confirm(`Cancel challan ${c.challanNumber}? Stock will be restored.`)) return;
@@ -183,6 +216,23 @@ export default function ChallansPage() {
       load();
     } catch { alert('Failed to process return.'); }
     finally { setBusyId(null); }
+  };
+
+  const handleDispatch = async (c: Challan) => {
+    setBusyId(c.id);
+    try {
+      const res = await api.patch(`/challans/${c.id}`, { action: 'dispatch' });
+      const dispatchNumber = res.data?.dispatch?.dispatchNumber;
+      if (dispatchNumber) {
+        if (confirm(`Dispatch entry created: ${dispatchNumber}\n\nOpen the Dispatch log to view it?`)) {
+          router.push(`/${locale}/dispatch`);
+        }
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Failed to create dispatch entry.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const handleConvertToInvoice = (c: Challan) => {
@@ -208,6 +258,51 @@ export default function ChallansPage() {
         >
           <Plus size={18} /> New Challan
         </button>
+      </div>
+
+      {/* Date filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(['all', 'today', 'week', 'month'] as const).map(d => (
+          <button
+            key={d}
+            onClick={() => { setDateFilter(d); setCustomFrom(''); setCustomTo(''); }}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
+              dateFilter === d ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700',
+            )}
+          >
+            {d === 'all' ? 'All Time' : d === 'today' ? 'Today' : d === 'week' ? 'This Week' : 'This Month'}
+          </button>
+        ))}
+        <input
+          type="date" value={customFrom}
+          onChange={e => { setCustomFrom(e.target.value); setDateFilter('custom'); }}
+          className={cn('px-2 py-1.5 rounded-lg text-xs font-semibold border outline-none transition-colors',
+            dateFilter === 'custom' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950')}
+        />
+        <span className="text-xs text-slate-400">–</span>
+        <input
+          type="date" value={customTo}
+          onChange={e => { setCustomTo(e.target.value); setDateFilter('custom'); }}
+          className={cn('px-2 py-1.5 rounded-lg text-xs font-semibold border outline-none transition-colors',
+            dateFilter === 'custom' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950')}
+        />
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Challans</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{filteredChallans.length}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Open</p>
+          <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{filteredChallans.filter(c => c.status === 'open').length}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Open Value</p>
+          <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">₹{openTotal.toLocaleString('en-IN')}</p>
+        </div>
       </div>
 
       {/* Filters */}
@@ -240,11 +335,11 @@ export default function ChallansPage() {
       {/* List */}
       {loading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>
-      ) : challans.length === 0 ? (
+      ) : filteredChallans.length === 0 ? (
         <div className="p-16 text-center text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
           <Truck size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="font-bold">No delivery challans yet</p>
-          <p className="text-sm mt-1">Create one when goods go out before the formal invoice.</p>
+          <p className="font-bold">{challans.length === 0 ? 'No delivery challans yet' : 'No challans match the selected filters'}</p>
+          {challans.length === 0 && <p className="text-sm mt-1">Create one when goods go out before the formal invoice.</p>}
         </div>
       ) : (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
@@ -263,13 +358,21 @@ export default function ChallansPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {challans.map((c) => (
+                {filteredChallans.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{c.challanNumber}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
-                      {new Date(c.challanDate || c.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {fmtDate(c.challanDate || c.createdAt)}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{c.customerName || '—'}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900 dark:text-white">{c.customerName || '—'}</p>
+                      {c.transporterCustomer && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          🚛 {c.transporterCustomer.name}
+                          {c.freightAmount ? ` · ₹${c.freightAmount.toLocaleString('en-IN')}` : ''}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       {c.dispatchType && (
                         <span className={cn('text-xs font-bold capitalize', DISPATCH_COLOR[c.dispatchType] || 'text-slate-500')}>
@@ -289,6 +392,16 @@ export default function ChallansPage() {
                         <button onClick={() => setPrintChallan(c)} title="Print" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
                           <Printer size={15} />
                         </button>
+                        {(c.status === 'open' || c.status === 'invoiced') && (
+                          <button
+                            onClick={() => handleDispatch(c)}
+                            disabled={busyId === c.id}
+                            title="Log to Dispatch"
+                            className="p-2 rounded-lg hover:bg-violet-100 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                          >
+                            {busyId === c.id ? <Loader2 size={15} className="animate-spin" /> : <ArrowUpRight size={15} />}
+                          </button>
+                        )}
                         {c.status === 'open' && (
                           <>
                             <button
@@ -416,7 +529,9 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const prodInputRef = useRef<HTMLInputElement>(null);
 
   // Transport
-  const [transporter, setTransporter]     = useState('');
+  const [transporters, setTransporters]   = useState<Party[]>([]);
+  const [transporterId, setTransporterId] = useState('');
+  const [freightAmount, setFreightAmount] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [driverName, setDriverName]       = useState('');
   const [driverMobile, setDriverMobile]   = useState('');
@@ -438,6 +553,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   useEffect(() => {
     api.get('/crm/customers?type=all').then(r => setParties(Array.isArray(r.data) ? r.data : [])).catch(() => {});
     api.get('/products?isRawMaterial=false').then(r => setProducts(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => {});
+    api.get('/crm/customers?type=transporter').then(r => setTransporters(Array.isArray(r.data) ? r.data : [])).catch(() => {});
   }, []);
 
   // Fetch lots for a product if not already loaded
@@ -535,7 +651,8 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
         challanDate,
         dispatchType,
         dispatchFrom: dispatchFrom.trim() || undefined,
-        transporter: transporter.trim() || undefined,
+        transporterId: transporterId || undefined,
+        freightAmount: freightAmount ? Number(freightAmount) : undefined,
         vehicleNumber: vehicleNumber.trim() || undefined,
         driverName: driverName.trim() || undefined,
         driverMobile: driverMobile.trim() || undefined,
@@ -824,8 +941,27 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
           {/* ─ Transport ─ */}
           <Section icon={<Truck size={13} />} title="Transport" collapsible defaultOpen={dispatchType !== 'sample'}>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Transporter Name">
-                <input value={transporter} onChange={e => setTransporter(e.target.value)} placeholder="e.g. Shivaji Transport" className={inputCls} />
+              <Field label="Transporter">
+                <select value={transporterId} onChange={e => setTransporterId(e.target.value)} className={selectCls}>
+                  <option value="">— Select Transporter —</option>
+                  {transporters.map(t => <option key={t.id} value={t.id}>{t.name}{t.mobile ? ` (${t.mobile})` : ''}</option>)}
+                </select>
+                {transporters.length === 0 && (
+                  <p className="text-[10px] text-slate-400 mt-1">Add transporters in CRM → Parties (type: Transporter)</p>
+                )}
+              </Field>
+              <Field label="Freight Amount (₹)">
+                <input
+                  type="number" min="0" step="0.01"
+                  value={freightAmount}
+                  onChange={e => setFreightAmount(e.target.value)}
+                  placeholder="Bhade amount"
+                  disabled={!transporterId}
+                  className={inputCls}
+                />
+                {transporterId && freightAmount && Number(freightAmount) > 0 && (
+                  <p className="text-[10px] text-emerald-600 mt-1">Auto FreightEntry create होईल</p>
+                )}
               </Field>
               <Field label="Vehicle Number">
                 <input value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="e.g. MH 12 AB 1234" className={inputCls} />
@@ -887,7 +1023,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
 function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; shopName: string; onClose: () => void }) {
   const dispatchLabel = DISPATCH_TYPES.find(d => d.value === challan.dispatchType)?.label || challan.dispatchType || 'Sale';
-  const hasTransport  = challan.transporter || challan.vehicleNumber || challan.driverName || challan.lrNumber;
+  const hasTransport  = challan.transporterCustomer || challan.transporter || challan.vehicleNumber || challan.driverName || challan.lrNumber;
   const hasRef        = challan.eWayBillNo || challan.jobWorkOrderRef || challan.expectedInvoiceDate;
   const contentRef    = useRef<HTMLDivElement>(null);
 
@@ -937,7 +1073,7 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
             <div className="text-right text-sm">
               <p><span className="text-slate-500">Challan #:</span> <span className="font-bold">{challan.challanNumber}</span></p>
               <p><span className="text-slate-500">Date:</span>{' '}
-                {new Date(challan.challanDate || challan.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {fmtDate(challan.challanDate || challan.createdAt)}
               </p>
               <p className="mt-1">
                 <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', STATUS_STYLE[challan.status])}>
@@ -1015,7 +1151,12 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
           {hasTransport && (
             <div className="border border-slate-200 rounded-lg p-3 mb-4 text-xs grid grid-cols-2 gap-2">
               <p className="col-span-2 font-bold text-slate-700 mb-1">Transport Details</p>
-              {challan.transporter && <p><span className="text-slate-500">Transporter: </span>{challan.transporter}</p>}
+              {(challan.transporterCustomer?.name || challan.transporter) && (
+                <p><span className="text-slate-500">Transporter: </span>{challan.transporterCustomer?.name || challan.transporter}</p>
+              )}
+              {challan.freightAmount != null && challan.freightAmount > 0 && (
+                <p><span className="text-slate-500">Freight: </span>₹{challan.freightAmount.toLocaleString('en-IN')}</p>
+              )}
               {challan.vehicleNumber && <p><span className="text-slate-500">Vehicle: </span>{challan.vehicleNumber}</p>}
               {challan.driverName && <p><span className="text-slate-500">Driver: </span>{challan.driverName}{challan.driverMobile ? ` (${challan.driverMobile})` : ''}</p>}
               {challan.lrNumber && <p><span className="text-slate-500">LR No.: </span>{challan.lrNumber}</p>}
@@ -1030,7 +1171,7 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
               {challan.jobWorkOrderRef && <p><span className="text-slate-500">JW Order Ref: </span>{challan.jobWorkOrderRef}</p>}
               {challan.expectedInvoiceDate && (
                 <p><span className="text-slate-500">Expected Invoice Date: </span>
-                  {new Date(challan.expectedInvoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {fmtDate(challan.expectedInvoiceDate)}
                 </p>
               )}
             </div>

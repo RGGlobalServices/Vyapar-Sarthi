@@ -28,7 +28,7 @@ export function exportUdharCSV(
       rows.push([
         customer.name,
         customer.mobile || '',
-        new Date(tx.date).toLocaleDateString('en-IN'),
+        (() => { const d = new Date(tx.date); return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`; })(),
         tx.type === 'udhar' ? 'Credit Given' : 'Payment Received',
         tx.amount.toString(),
         tx.note || ''

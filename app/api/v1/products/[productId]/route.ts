@@ -131,6 +131,14 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       }));
     }
     const [updated] = await prisma.$transaction(ops);
+    // gst_inclusive not in cached Prisma client — update via raw SQL
+    if (b.gstInclusive !== undefined || b.gst_inclusive !== undefined) {
+      const val = Boolean(b.gstInclusive ?? b.gst_inclusive);
+      await prisma.$executeRawUnsafe(
+        `UPDATE products SET gst_inclusive = $1 WHERE id = $2::uuid`,
+        val, productId
+      ).catch(() => {});
+    }
     return json(updated);
   } catch (error: any) {
     if (error.code === 'P2002' && error.meta?.target?.includes('barcode')) {

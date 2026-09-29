@@ -75,7 +75,7 @@ export async function generateCAReportPackPdf({
         section.columns.map((col) => {
           const val = row[col.key];
           if (val === null || val === undefined || val === '') return '—';
-          if (col.type === 'date') return new Date(val).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          if (col.type === 'date') { const _d = new Date(val); return `${String(_d.getDate()).padStart(2,'0')}-${String(_d.getMonth()+1).padStart(2,'0')}-${_d.getFullYear()}`; }
           if (col.type === 'currency') return { content: fmtInr(Number(val) || 0), styles: { halign: 'right' as const } };
           if (col.type === 'number') return { content: Number(val).toLocaleString('en-IN'), styles: { halign: 'right' as const } };
           return String(val);

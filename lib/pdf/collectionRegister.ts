@@ -65,7 +65,7 @@ export async function generateCollectionRegisterPDF({
   const doc = new jsPDF({ orientation: 'portrait' }) as any;
   await embedDevanagariFont(doc);
   const today = new Date();
-  const dateLabel = today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const dateLabel = `${String(today.getDate()).padStart(2,'0')}-${String(today.getMonth()+1).padStart(2,'0')}-${today.getFullYear()}`;
   const dayLabel = today.toLocaleDateString('en-IN', { weekday: 'long' }).toUpperCase();
 
   let y = renderProfessionalHeader(doc, shop, 'Collection Register (Outstanding)', `${dateLabel} · ${dayLabel}`, {

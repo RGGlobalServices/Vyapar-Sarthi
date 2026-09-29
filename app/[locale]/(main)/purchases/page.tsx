@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer, Wheat } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { ExportButton } from '@/lib/hooks/useExport';
@@ -1096,7 +1096,7 @@ export default function PurchasesPage() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {invoices.map((inv: any) => (
                   <tr key={inv.id} onClick={() => setSelectedInvoice(inv)} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer">
-                    <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">{new Date(inv.date).toLocaleDateString('en-IN')}</td>
+                    <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">{fmtDate(inv.date)}</td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400 font-mono text-xs">{inv.invoiceNumber || '-'}</td>
                     <td className="px-5 py-4 text-slate-900 dark:text-slate-200 font-bold">{inv.supplier?.name}</td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
@@ -1149,7 +1149,7 @@ export default function PurchasesPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('dateLabel') || 'Date'}</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{new Date(selectedInvoice.date).toLocaleDateString('en-IN')}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{fmtDate(selectedInvoice.date)}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('totalAmount') || 'Total Amount'}</p>
@@ -1492,7 +1492,7 @@ function PurchaseReturnsHistoryModal({ onClose }: { onClose: () => void }) {
                 {rows.map((r: any) => (
                   <>
                     <tr key={r.id} onClick={() => setExpanded(expanded === r.id ? null : r.id)} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 cursor-pointer">
-                      <td className="px-4 py-2.5 text-slate-500">{new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{fmtDate(r.date)}</td>
                       <td className="px-3 py-2.5 font-semibold text-slate-900 dark:text-white">{r.supplier?.name || '—'}</td>
                       <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.purchaseInvoice?.invoiceNumber || '—'}</td>
                       <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.returnNumber || '—'}</td>

@@ -19,7 +19,7 @@ import { generateCollectionRegisterPDF } from '@/lib/pdf/collectionRegister';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { ExportButton } from '@/lib/hooks/useExport';
 
 type TypeTranslator = (key: string) => string;
@@ -108,7 +108,7 @@ function CustomerSalesView({ entityId }: { entityId: string }) {
                 <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-xs">{sale.invoice_number}</span>
               </p>
               <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                <Calendar size={10} /> {new Date(sale.created_at).toLocaleDateString()}
+                <Calendar size={10} /> {fmtDate(sale.created_at)}
               </p>
             </div>
             <div className="text-right">

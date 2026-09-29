@@ -11,8 +11,10 @@ import { useBusinessStore } from '@/lib/businessStore';
 // on the PDF/print letterhead without each callsite having to pass it.
 const ReportPeriodContext = createContext<string | null>(null);
 
-const fmtDate = (v: string | Date) =>
-  new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+const fmtDate = (v: string | Date): string => {
+  const d = v instanceof Date ? v : new Date(v);
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+};
 
 export function ReportPeriodProvider({
   startDate,
@@ -53,7 +55,7 @@ export function useExport() {
       columns.map(col => {
         const val = row[col.key];
         if (val === null || val === undefined) return '';
-        if (col.type === 'date') return new Date(val).toLocaleDateString('en-IN');
+        if (col.type === 'date') return fmtDate(val);
         if (col.type === 'currency' || col.type === 'number') return Number(val).toFixed(2);
         return `"${String(val).replace(/"/g, '""')}"`;
       }).join(',')
@@ -151,7 +153,7 @@ export function useExport() {
       pan: profile.pan || '',
     };
     const reportTitle = title || t('reportFallback');
-    const range = dateRange || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const range = dateRange || fmtDate(new Date());
     const generatedAt = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
     const L = { period: t('period'), generated: t('generated'), prepared: t('preparedBy'), verified: t('verifiedBy'), authorized: t('authorizedSignatory'), disclaimer: t('footerDisclaimer'), noRecords: t('noRecords') };
 
@@ -171,7 +173,7 @@ export function useExport() {
       ? data.map(row => `<tr>${columns.map(col => {
           const val = row[col.key];
           if (val === null || val === undefined || val === '') return '<td>—</td>';
-          if (col.type === 'date') return `<td>${esc(new Date(val).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))}</td>`;
+          if (col.type === 'date') return `<td>${esc(fmtDate(val))}</td>`;
           if (col.type === 'currency') return `<td class="num">₹${Number(val).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>`;
           if (col.type === 'number') return `<td class="num">${Number(val).toLocaleString('en-IN')}</td>`;
           return `<td>${esc(val)}</td>`;
@@ -318,7 +320,7 @@ export function useExport() {
     };
 
     const reportTitle = title || filename.replace(/_/g, ' ');
-    const range = dateRange || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const range = dateRange || fmtDate(new Date());
 
     let y = tpl.renderProfessionalHeader(doc, shop, reportTitle, range, {
       periodLabel: t('period'),
@@ -348,7 +350,7 @@ export function useExport() {
         columns.map(col => {
           const val = row[col.key];
           if (val === null || val === undefined) return '';
-          if (col.type === 'date') return new Date(val).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          if (col.type === 'date') return fmtDate(val);
           if (col.type === 'currency') return { content: tpl.fmtInr(Number(val) || 0), styles: { halign: 'right' } as any };
           if (col.type === 'number') return { content: Number(val).toLocaleString('en-IN'), styles: { halign: 'right' } as any };
           return String(val);

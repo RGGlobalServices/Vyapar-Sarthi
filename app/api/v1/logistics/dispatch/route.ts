@@ -41,7 +41,22 @@ export const GET = handle(async (req) => {
     orderBy: { dispatchedAt: 'desc' },
     take: 200,
   });
-  return json(rows);
+
+  const saleIds: string[] = [...new Set((rows as any[]).map((r: any) => r.saleId).filter(Boolean))];
+  let saleMap: Record<string, { id: string; invoice_number: string | null }> = {};
+  if (saleIds.length > 0) {
+    const sales = await (prisma as any).sale.findMany({
+      where: { id: { in: saleIds }, shopId: shop.id },
+      select: { id: true, invoice_number: true },
+    });
+    for (const s of sales as any[]) saleMap[s.id] = s;
+  }
+
+  const enriched = (rows as any[]).map((r: any) => ({
+    ...r,
+    sale: r.saleId ? (saleMap[r.saleId] ?? null) : null,
+  }));
+  return json(enriched);
 });
 
 export const POST = handle(async (req) => {
@@ -69,6 +84,10 @@ export const POST = handle(async (req) => {
     if (!gate) throw new ApiError(400, 'Gate entry not found for this shop');
   }
 
+  const VALID_TYPES = ['sale', 'sample', 'transfer', 'job_work', 'other'];
+  const dispatchType = VALID_TYPES.includes(body.dispatchType) ? body.dispatchType : 'sale';
+  const noOfBags = body.noOfBags != null && body.noOfBags !== '' ? Math.round(Number(body.noOfBags)) : null;
+
   const ops: any[] = [
     (prisma as any).dispatchEntry.create({
       data: {
@@ -76,11 +95,17 @@ export const POST = handle(async (req) => {
         dispatchNumber,
         partyId: body.partyId || null,
         vehicleNumber: vehicleNumber || null,
+        driverName: (body.driverName || '').trim() || null,
         gateEntryId,
         productId,
         quantity,
         unit: (body.unit || '').trim() || null,
+        noOfBags,
+        lotNumber: (body.lotNumber || '').trim() || null,
+        dispatchType,
+        saleId: body.saleId || null,
         notes: (body.notes || '').trim() || null,
+        status: 'dispatched',
         dispatchedAt: body.dispatchedAt ? new Date(body.dispatchedAt) : new Date(),
       },
       include: {

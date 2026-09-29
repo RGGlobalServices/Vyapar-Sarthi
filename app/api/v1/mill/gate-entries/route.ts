@@ -33,9 +33,12 @@ export const GET = handle(async (req) => {
   const to = url.searchParams.get('to');
   const search = url.searchParams.get('search')?.trim();
 
+  const supplierId = url.searchParams.get('supplierId');
+
   const where: any = { shopId: shop.id };
   if (status) where.status = status;
   if (direction) where.direction = direction;
+  if (supplierId) where.supplierId = supplierId;
   if (from || to) {
     where.enteredAt = {};
     if (from) where.enteredAt.gte = new Date(from);
@@ -62,6 +65,7 @@ export const GET = handle(async (req) => {
       supplier: { select: { id: true, name: true, mobile: true } },
       party: { select: { id: true, name: true, mobile: true } },
       weighbridgeEntries: { select: { id: true, slipNumber: true, status: true, netWeightKg: true } },
+      dispatchEntries: { select: { id: true, dispatchNumber: true, status: true, dispatchedAt: true } },
     },
     orderBy: { enteredAt: 'desc' },
     take: (from || to) ? 5000 : 200,
@@ -82,22 +86,41 @@ export const POST = handle(async (req) => {
 
   const direction = body.direction === 'outward' ? 'outward' : 'inward';
   const entryNumber = (body.entryNumber || '').toString().trim() || await nextEntryNumber(shop.id);
+  const hamaliAmount = body.hamaliAmount != null && body.hamaliAmount !== '' ? Number(body.hamaliAmount) : null;
 
-  const entry = await (prisma as any).gateEntry.create({
-    data: {
-      shopId: shop.id,
-      entryNumber,
-      direction,
-      vehicleNumber,
-      driverName: (body.driverName || '').trim() || null,
-      driverMobile: (body.driverMobile || '').trim() || null,
-      supplierId: body.supplierId || null,
-      partyId: body.partyId || null,
-      materialDescription: (body.materialDescription || '').trim() || null,
-      status: 'at_gate',
-      notes: (body.notes || '').trim() || null,
-    },
-    include: { supplier: { select: { id: true, name: true, mobile: true } }, party: { select: { id: true, name: true, mobile: true } } },
+  const entry = await prisma.$transaction(async (tx) => {
+    const created = await (tx as any).gateEntry.create({
+      data: {
+        shopId: shop.id,
+        entryNumber,
+        direction,
+        vehicleNumber,
+        driverName: (body.driverName || '').trim() || null,
+        driverMobile: (body.driverMobile || '').trim() || null,
+        supplierId: body.supplierId || null,
+        partyId: body.partyId || null,
+        materialDescription: (body.materialDescription || '').trim() || null,
+        status: 'at_gate',
+        notes: (body.notes || '').trim() || null,
+        hamaliAmount: hamaliAmount || null,
+      },
+      include: { supplier: { select: { id: true, name: true, mobile: true } }, party: { select: { id: true, name: true, mobile: true } } },
+    });
+
+    if (hamaliAmount && hamaliAmount > 0) {
+      await (tx as any).expense.create({
+        data: {
+          shopId: shop.id,
+          category: 'Hamali / Labour',
+          amount: hamaliAmount,
+          paymentMode: 'Cash',
+          description: `Hamali - ${entryNumber} (${vehicleNumber})`,
+          date: new Date(),
+        },
+      });
+    }
+
+    return created;
   });
 
   return json(entry, 201);

@@ -11,7 +11,7 @@ import {
   CheckSquare, Square, ChevronRight, Package, IndianRupee,
   Loader2, AlarmClock, FileText,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useUdharStore, UdharCustomer, UdharTransaction } from '@/lib/store';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -108,7 +108,7 @@ async function shareCustomerLedger(customer: UdharCustomer, shopName: string, ch
     ${customer.mobile ? `<div style="font-size:9px;margin-bottom:10px">${t('mobileColonLabel')} ${customer.mobile}</div>` : ''}
     <table style="width:100%;border-top:1px dashed #000;border-bottom:1px dashed #000;margin-bottom:10px">
       <thead><tr style="font-size:9px"><th style="text-align:left;padding:4px 0">${t('dateColHeader')}</th><th>${t('typeColHeader')}</th><th style="text-align:right;padding:4px 0">${t('amtColHeader')}</th></tr></thead>
-      <tbody>${sorted.map((tx: UdharTransaction) => `<tr><td style="font-size:9px;padding:2px 0">${new Date(tx.date).toLocaleDateString()}</td><td style="font-size:9px">${tx.type === 'udhar' ? t('creditType') : t('paymentTypeLabel')}</td><td style="text-align:right;font-size:9px">${tx.type === 'udhar' ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}</td></tr>`).join('')}</tbody>
+      <tbody>${sorted.map((tx: UdharTransaction) => `<tr><td style="font-size:9px;padding:2px 0">${fmtDate(tx.date)}</td><td style="font-size:9px">${tx.type === 'udhar' ? t('creditType') : t('paymentTypeLabel')}</td><td style="text-align:right;font-size:9px">${tx.type === 'udhar' ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}</td></tr>`).join('')}</tbody>
     </table>
     <div style="display:flex;justify-content:space-between;font-weight:900;font-size:14px;border-top:1px solid #000;padding-top:4px">
       <span>${t('outstandingAllCaps')}</span><span>₹${due.toLocaleString('en-IN')}</span>
@@ -429,7 +429,7 @@ export default function UdharPage() {
           start = new Date(exportCustomDates.start);
           end = new Date(exportCustomDates.end);
           end.setHours(23, 59, 59, 999);
-          dateLabel = `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
+          dateLabel = `${fmtDate(start)} to ${fmtDate(end)}`;
         }
 
         // Filter transactions within customer
@@ -659,7 +659,7 @@ export default function UdharPage() {
         storeName: profile.shopName || 'My Store',
         customerName: recentTx.customer.name,
         amount: recentTx.tx.amount,
-        date: new Date(recentTx.tx.date).toLocaleDateString('en-IN'),
+        date: fmtDate(recentTx.tx.date),
         due: recentTx.newDue,
         note: recentTx.tx.note,
         pdfUrl: pdfUrl || undefined,
@@ -954,7 +954,7 @@ export default function UdharPage() {
                   amount={recentTx.tx.amount}
                   customerName={recentTx.customer.name}
                   customerMobile={recentTx.customer.mobile}
-                  date={new Date(recentTx.tx.date).toLocaleDateString('en-IN')}
+                  date={fmtDate(recentTx.tx.date)}
                   note={recentTx.tx.note}
                   storeName={profile.shopName || 'My Store'}
                   due={recentTx.newDue}
@@ -1322,7 +1322,7 @@ export default function UdharPage() {
                                         </div>
                                         <div className="flex flex-wrap gap-x-3 text-xs text-slate-500">
                                           {c.createdAt && <span className="flex items-center gap-1"><Calendar size={11} />{new Date(c.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>}
-                                          {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />Due: {new Date(c.dueDate).toLocaleDateString('en-IN')}</span>}
+                                          {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />Due: {fmtDate(c.dueDate)}</span>}
                                         </div>
                                         {c.items?.length > 0 && (
                                           <div className="flex flex-wrap gap-1 mt-2">
@@ -1399,8 +1399,8 @@ export default function UdharPage() {
                           </p>
                           {c.description && <p className="text-xs text-slate-400 mb-2">{c.description}</p>}
                           <div className="flex flex-wrap gap-x-4 text-xs text-slate-500">
-                            {c.createdAt && <span className="flex items-center gap-1"><Calendar size={11} />{new Date(c.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
-                            {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />Due: {new Date(c.dueDate).toLocaleDateString('en-IN')}</span>}
+                            {c.createdAt && <span className="flex items-center gap-1"><Calendar size={11} />{fmtDate(c.createdAt)}</span>}
+                            {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />Due: {fmtDate(c.dueDate)}</span>}
                           </div>
                           {c.items?.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">

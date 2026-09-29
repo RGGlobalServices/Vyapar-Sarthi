@@ -55,7 +55,25 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
   if (!sale) throw new ApiError(404, 'Invoice not found');
 
-  const returnedQuantities = await getReturnedQuantitiesForSale(prisma, shopId, sale.id);
+  const [returnedQuantities, priorReturnRows] = await Promise.all([
+    getReturnedQuantitiesForSale(prisma, shopId, sale.id),
+    prisma.materialReturn.findMany({
+      where: { shopId, note: { contains: sale.id } },
+      select: { amount: true, note: true },
+    }),
+  ]);
+
+  // Compute the discount factor so the returns UI can display the effective
+  // (post-discount) price per item rather than the raw stored pricePerUnit.
+  // originalTotal = current totalAmount + sum of all prior settled return amounts.
+  const priorReturnTotal = priorReturnRows.reduce((s, r) => {
+    try { const n = JSON.parse(r.note || '{}'); return n?.billId === sale.id && n?.settled === true ? s + (Number(r.amount) || 0) : s; } catch { return s; }
+  }, 0);
+  const grossBeforeDiscount = sale.items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.pricePerUnit) || 0), 0);
+  const originalTotal = Number(sale.totalAmount) + priorReturnTotal;
+  // Regular bills: factor ≤ 1 (discount reduces total below gross).
+  // Mill bills: factor > 1 (GST + charges make total exceed gross base prices).
+  const discountFactor = grossBeforeDiscount > 0 ? Math.max(0, originalTotal / grossBeforeDiscount) : 1;
 
   // Mill (mill_v2) invoices only: the extra detail the Mill invoice template prints (unit, batch numbers, customer
   // contact). Legacy sales get exactly the response they always had.
@@ -101,16 +119,20 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       customer_gst: sale.customer?.gst || null,
     } : {}),
     created_at: sale.createdAt,
+    discount_factor: discountFactor,
     items: sale.items.map((item) => {
       const returnedQty = returnedQuantities[item.id] || returnedQuantities[item.productId || ''] || returnedQuantities[item.product?.name || ''] || 0;
+      const ppu = Number(item.pricePerUnit) || 0;
+      const effectivePpu = Math.round(ppu * discountFactor * 100) / 100;
       return {
         id: item.id,
         product_id: item.productId,
         name: item.product?.name || item.itemName || item.variant || (sale!.isManual ? 'Manual Bill' : 'Unknown'),
-        price_per_unit: item.pricePerUnit,
+        price_per_unit: effectivePpu,
+        original_price_per_unit: ppu,
         quantity: item.quantity,
         returned_quantity: returnedQty,
-        total: (item.pricePerUnit || 0) * (item.quantity || 0),
+        total: effectivePpu * (item.quantity || 0),
         hsnCode: item.product?.hsnCode || '',
         gstPercent: item.product?.gstPercent || 0,
         ...(isMillSale ? { unit: item.unit || null, variant: item.variant || null, batch_numbers: millBatchNames.get(item.id) || [] } : {}),

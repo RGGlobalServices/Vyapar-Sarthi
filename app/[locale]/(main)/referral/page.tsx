@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Gift, Copy, Check, Users, Share2, Award, Clock, ExternalLink } from 'lucide-react';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 
 export default function ReferralPage() {
   const t = useTranslations('Referral');
@@ -228,7 +228,7 @@ ${referralLink}`;
                       </td>
                       <td className="p-3 text-slate-600 dark:text-slate-300 text-sm">
                         {member.subscription_expiry
-                          ? new Date(member.subscription_expiry).toLocaleDateString()
+                          ? fmtDate(member.subscription_expiry)
                           : 'N/A'}
                       </td>
                       <td className="p-3">

@@ -5,6 +5,7 @@ import api from './api';
 import { withOfflineCache } from './offlineCache';
 import { invalidateProductCaches } from './swrInvalidate';
 import { clearLocalSession } from './clientSession';
+import { fmtDate } from './utils';
 
 // ─── Auth / Profile Store ──────────────────────────────────────────────────
 
@@ -126,6 +127,9 @@ export interface CartItem {
   // Carried for GST invoices — set from the product catalog when a line is
   // added, editable per line at billing time (see updateGstPercent below).
   gstPercent?: number;
+  // Whether this line's price is GST-inclusive (true) or exclusive (false).
+  // Drives the Incl/Excl default in CartPriceInputRetail.
+  gstInclusive?: boolean;
   hsnCode?: string;
   [key: string]: any;
 }
@@ -152,6 +156,7 @@ interface CartStore {
    *  pre-computed the same way the line's own addItem() call did, or omit
    *  it to fall back to the simple `price - cost`. */
   setLineBatch: (shopId: string, id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number }) => void;
+  updateColorSize: (shopId: string, id: string | number, variant: string | undefined, fields: { color?: string; size?: string }) => void;
   clearCart: (shopId: string) => void;
 }
 
@@ -249,6 +254,10 @@ export const useCartStore = create<CartStore>((set) => ({
         })
       }
     };
+  }),
+  updateColorSize: (shopId, id, variant, fields) => set((state) => {
+    const shopCart = state.carts[shopId] || [];
+    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, ...fields } : i) } };
   }),
   clearCart: (shopId) => set((state) => ({ carts: { ...state.carts, [shopId]: [] } })),
 }));
@@ -665,7 +674,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
             qty: l.quantity,
             note: l.note,
             time: l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-            date: l.createdAt ? new Date(l.createdAt).toLocaleDateString() : ''
+            date: fmtDate(l.createdAt)
           }));
           set({ log });
         })
@@ -811,7 +820,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       qty: Math.abs(delta),
       note,
       time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      date: now.toLocaleDateString(),
+      date: fmtDate(now),
     };
     set((state) => ({
       items: state.items.map((i) => (i.id === id ? {

@@ -102,7 +102,8 @@ export async function exportProductionSlipPDF({
   }
 
   renderSignatureBlock(doc, after + 6, ['Operator', 'Supervisor', 'Authorized Signatory']);
-  renderProfessionalFooter(doc, `Production Slip — generated ${new Date().toLocaleDateString('en-IN')}`);
+  const _fd = new Date();
+  renderProfessionalFooter(doc, `Production Slip — generated ${String(_fd.getDate()).padStart(2,'0')}-${String(_fd.getMonth()+1).padStart(2,'0')}-${_fd.getFullYear()}`);
 
   const blob: Blob = doc.output('blob');
   return new File([blob], `Production_Slip_${(batchNumber || 'batch').replace(/\s+/g, '_')}.pdf`, { type: 'application/pdf' });

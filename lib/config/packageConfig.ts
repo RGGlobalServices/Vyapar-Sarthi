@@ -106,7 +106,7 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
     // Full mill / grain-processing feature set. All modules below — core
     // (dashboard, billing, products, party, suppliers, purchases, stock,
     // warehouses, transfers, expenses, staff, returns, reports, import,
-    // settings, profile, calendar, referral, dukandar) and mill-specific
+    // settings, profile, calendar, dukandar) and mill-specific
     // (gate-entry, weighbridge, transport, dispatch, production, quality-lab,
     // batches, brokers, hamali, machines, maintenance, spare-parts,
     // settlement, documents, outstanding, payments, receipts, ledger,
@@ -140,7 +140,6 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'profile',
       'calendar',
       'returns',
-      'referral',
       'dukandar',
       'orders',
       'challans',
@@ -160,11 +159,13 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'transport',
       'dispatch',
       'hamali',
+      'freight',
       // Finance
       'payments',
       'receipts',
       'outstanding',
       'ledger',
+      'cashbook',
       'settlement',
       // Management
       'brokers',

@@ -7,7 +7,7 @@ import {
   ArrowLeft, TrendingUp, Clock, ChevronDown, Users,
   AlertCircle, X, Wallet,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
@@ -101,7 +101,7 @@ export default function DukandarCreditPage() {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:bold;margin-bottom:4px">
         <span>Bill: CRD-${credit.id?.slice(0, 8)}</span>
-        <span>${credit.createdAt ? new Date(credit.createdAt).toLocaleDateString() : ''}</span>
+        <span>${credit.createdAt ? fmtDate(credit.createdAt) : ''}</span>
       </div>
       <div style="font-size:9px;margin-bottom:10px">Dukandar: <strong>${credit.retailerShop || credit.retailerName}</strong></div>
       <table style="width:100%;border-top:1px dashed #000;border-bottom:1px dashed #000;margin-bottom:10px">
@@ -111,7 +111,7 @@ export default function DukandarCreditPage() {
       <div style="display:flex;justify-content:space-between;font-weight:900;font-size:14px;border-top:1px solid #000;padding-top:4px">
         <span>TOTAL</span><span>₹${(credit.amount || 0).toLocaleString('en-IN')}</span>
       </div>
-      ${credit.dueDate ? `<div style="font-size:9px;margin-top:6px">Due: ${new Date(credit.dueDate).toLocaleDateString()}</div>` : ''}
+      ${credit.dueDate ? `<div style="font-size:9px;margin-top:6px">Due: ${fmtDate(credit.dueDate)}</div>` : ''}
       <div style="text-align:center;margin-top:16px;padding-top:8px;border-top:1px dashed #000;font-size:8px">THANK YOU — Powered by Vyapar Sarthi</div>
     `;
     document.body.appendChild(div);
@@ -128,7 +128,7 @@ export default function DukandarCreditPage() {
       `*Credit Bill Reminder*`,
       `From: ${credit.wholesalerShop || 'Wholesaler'}`,
       `Amount Due: *₹${(credit.amount || 0).toLocaleString('en-IN')}*`,
-      credit.dueDate ? `Due Date: ${new Date(credit.dueDate).toLocaleDateString()}` : '',
+      credit.dueDate ? `Due Date: ${fmtDate(credit.dueDate)}` : '',
       `Bill No: CRD-${credit.id?.slice(0, 8)}`,
       '',
       'Please arrange payment at the earliest.',
@@ -276,12 +276,12 @@ export default function DukandarCreditPage() {
                                   </div>
                                   {c.description && <p className="text-xs text-slate-400 mb-2">{c.description}</p>}
                                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 mb-2">
-                                    {c.createdAt && <span>Added {new Date(c.createdAt).toLocaleDateString('en-IN')}</span>}
+                                    {c.createdAt && <span>Added {fmtDate(c.createdAt)}</span>}
                                     {c.dueDate && (
                                       <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400 font-medium')}>
                                         {isOverdue && <AlertCircle className="w-3 h-3" />}
                                         <Clock className="w-3 h-3" />
-                                        Due {new Date(c.dueDate).toLocaleDateString('en-IN')}
+                                        Due {fmtDate(c.dueDate)}
                                       </span>
                                     )}
                                   </div>
@@ -361,12 +361,12 @@ export default function DukandarCreditPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-                        {c.createdAt && <span>Added {new Date(c.createdAt).toLocaleDateString('en-IN')}</span>}
+                        {c.createdAt && <span>Added {fmtDate(c.createdAt)}</span>}
                         {c.dueDate && (
                           <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400 font-medium')}>
                             {isOverdue && <AlertCircle className="w-3 h-3" />}
                             <Clock className="w-3 h-3" />
-                            Due {new Date(c.dueDate).toLocaleDateString('en-IN')}
+                            Due {fmtDate(c.dueDate)}
                           </span>
                         )}
                       </div>

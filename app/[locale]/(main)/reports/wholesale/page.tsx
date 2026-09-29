@@ -5,7 +5,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Box, ShoppingCart, TrendingUp, DollarSign, PackageOpen, AlertOctagon, Download, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { exportReportPDF } from '@/lib/pdfExport';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -55,17 +55,17 @@ export default function WholesaleReportsPage() {
     } else if (activeTab === 'expiry') {
       csv = 'Product,Batch,Quantity,Expiry Date\n';
       data.expiry.forEach((e: any) => {
-        csv += `${e.product.name},${e.batchNumber || ''},${e.quantity},${new Date(e.expiryDate).toLocaleDateString()}\n`;
+        csv += `${e.product.name},${e.batchNumber || ''},${e.quantity},${fmtDate(e.expiryDate)}\n`;
       });
     } else if (activeTab === 'purchases') {
       csv = 'Date,Invoice,Supplier,Amount\n';
       data.purchases.forEach((p: any) => {
-        csv += `${new Date(p.date).toLocaleDateString()},${p.invoiceNumber},${p.supplier?.name},${p.totalAmount}\n`;
+        csv += `${fmtDate(p.date)},${p.invoiceNumber},${p.supplier?.name},${p.totalAmount}\n`;
       });
     } else if (activeTab === 'sales') {
       csv = 'Date,Invoice,Amount,Profit\n';
       data.sales.forEach((s: any) => {
-        csv += `${new Date(s.createdAt).toLocaleDateString()},${s.invoice_number},${s.totalAmount},${s.totalProfit}\n`;
+        csv += `${fmtDate(s.createdAt)},${s.invoice_number},${s.totalAmount},${s.totalProfit}\n`;
       });
     }
 
@@ -177,7 +177,7 @@ export default function WholesaleReportsPage() {
                         <td className="px-5 py-4 font-bold text-white">{e.product.name}</td>
                         <td className="px-5 py-4 font-mono text-xs">{e.batchNumber || '-'}</td>
                         <td className="px-5 py-4 text-right font-bold text-amber-500">{e.quantity}</td>
-                        <td className="px-5 py-4 text-right">{new Date(e.expiryDate).toLocaleDateString()}</td>
+                        <td className="px-5 py-4 text-right">{fmtDate(e.expiryDate)}</td>
                         <td className="px-5 py-4">
                           {daysLeft < 0 ? <span className="text-rose-500 font-bold bg-rose-500/10 px-2 py-1 rounded">Expired</span> : 
                            daysLeft <= 30 ? <span className="text-amber-500 font-bold bg-amber-500/10 px-2 py-1 rounded">Expires in {daysLeft} days</span> :
@@ -189,7 +189,7 @@ export default function WholesaleReportsPage() {
 
                   {activeTab === 'purchases' && data.purchases.map((p: any) => (
                     <tr key={p.id} className="hover:bg-slate-800/30">
-                      <td className="px-5 py-4">{new Date(p.date).toLocaleDateString()}</td>
+                      <td className="px-5 py-4">{fmtDate(p.date)}</td>
                       <td className="px-5 py-4 font-mono text-xs">{p.invoiceNumber || '-'}</td>
                       <td className="px-5 py-4 font-bold text-white">{p.supplier?.name || '-'}</td>
                       <td className="px-5 py-4 text-right font-black text-blue-400">₹{p.totalAmount.toLocaleString('en-IN')}</td>
@@ -200,7 +200,7 @@ export default function WholesaleReportsPage() {
                     const margin = s.totalAmount > 0 ? (s.totalProfit / s.totalAmount) * 100 : 0;
                     return (
                       <tr key={s.id} className="hover:bg-slate-800/30">
-                        <td className="px-5 py-4">{new Date(s.createdAt).toLocaleDateString()}</td>
+                        <td className="px-5 py-4">{fmtDate(s.createdAt)}</td>
                         <td className="px-5 py-4 font-mono text-xs">{s.invoice_number || '-'}</td>
                         <td className="px-5 py-4 text-right font-black text-white">₹{s.totalAmount.toLocaleString('en-IN')}</td>
                         <td className="px-5 py-4 text-right font-black text-emerald-400">₹{s.totalProfit.toLocaleString('en-IN')}</td>

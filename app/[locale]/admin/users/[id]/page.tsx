@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import api from '@/lib/api';
 import { Shield, ArrowLeft, RefreshCw, Ban, CheckCircle, Trash2, Package, Users, Phone, Calendar, Store, Globe, Gift, Ticket, IndianRupee, Mail, Clock, AlertTriangle, X, Pencil, Save, User as UserIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 
 function getAdminAuth() {
   if (typeof window === 'undefined') return null;
@@ -358,7 +358,7 @@ export default function AdminUserDetailPage() {
                   <Calendar size={16} className="text-slate-600" />
                   <div>
                     <p className="text-xs text-slate-500 font-semibold">Joined</p>
-                    <p className="text-sm font-bold text-slate-100">{new Date(user.createdAt).toLocaleDateString()}</p>
+                    <p className="text-sm font-bold text-slate-100">{fmtDate(user.createdAt)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -405,7 +405,7 @@ export default function AdminUserDetailPage() {
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-semibold">Expiry</p>
-                <p className="text-sm font-bold text-slate-100 mt-1">{shop.subscriptionExpiry ? new Date(shop.subscriptionExpiry).toLocaleDateString() : '-'}</p>
+                <p className="text-sm font-bold text-slate-100 mt-1">{shop.subscriptionExpiry ? fmtDate(shop.subscriptionExpiry) : '-'}</p>
                 <AdminTrialTracker shop={shop} />
               </div>
             </CardContent>

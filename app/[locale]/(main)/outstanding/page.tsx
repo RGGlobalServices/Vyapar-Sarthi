@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { Loader2, Hourglass, ArrowUpFromLine, ArrowDownToLine, Scale as ScaleIcon, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { useRouter, useParams } from 'next/navigation';
 
@@ -117,8 +117,8 @@ export default function OutstandingPage() {
                       {isOverdue(b.dueDate) && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400">{t('overdue')}</span>}
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      {b.date ? new Date(b.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                      {b.dueDate && ` · ${t('due')} ${new Date(b.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                      {fmtDate(b.date)}
+                      {b.dueDate && ` · ${t('due')} ${fmtDate(b.dueDate)}`}
                     </p>
                   </div>
                   <span className="text-lg font-black text-rose-600 dark:text-rose-400 shrink-0">{rupee(b.remaining)}</span>
@@ -137,8 +137,8 @@ export default function OutstandingPage() {
                       {isOverdue(b.dueDate) && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400">{t('overdue')}</span>}
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      {b.date ? new Date(b.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                      {b.dueDate && ` · ${t('due')} ${new Date(b.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                      {fmtDate(b.date)}
+                      {b.dueDate && ` · ${t('due')} ${fmtDate(b.dueDate)}`}
                     </p>
                   </div>
                   <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 shrink-0">{rupee(b.remaining)}</span>

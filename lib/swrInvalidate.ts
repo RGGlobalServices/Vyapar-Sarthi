@@ -50,4 +50,11 @@ export function invalidateReturnCaches() {
   invalidateApiCache('/cashbook');
   invalidateApiCache('/billing');
   invalidateApiCache('/returns');
+  invalidateApiCache('/crm/pending-bills');
+  // useUdharStore is Zustand (not SWR) — silentRefresh syncs it after a return
+  // clears/reduces a customer's outstanding balance.
+  // Lazy import avoids circular dependency (store.ts → swrInvalidate.ts).
+  import('@/lib/store').then(({ useUdharStore }) => {
+    useUdharStore.getState().silentRefresh();
+  }).catch(() => {});
 }

@@ -7,7 +7,8 @@ export async function exportLiquorMlMatrixPDF(matrix: LiquorMatrix, shopName: st
   const { default: autoTable } = await import('jspdf-autotable');
   const { embedDevanagariFont, smartFont } = await import('./professionalTemplate');
 
-  const dateLabel = new Date().toLocaleDateString('en-IN');
+  const _d = new Date();
+  const dateLabel = `${String(_d.getDate()).padStart(2,'0')}-${String(_d.getMonth()+1).padStart(2,'0')}-${_d.getFullYear()}`;
   const doc = new jsPDF({ orientation: matrix.columns.length > 6 ? 'landscape' : 'portrait' }) as any;
   await embedDevanagariFont(doc);
 

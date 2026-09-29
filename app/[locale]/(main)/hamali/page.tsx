@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, HardHat } from 'lucide-react';
+import { Plus, X, Loader2, HardHat, Truck } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
@@ -10,7 +10,16 @@ import { useTranslations } from 'next-intl';
 
 const HAMALI_CATEGORY = 'Hamali / Labour';
 
-type ExpenseRow = { id: string; category: string; amount: number; description: string | null; paymentMode: string | null; date: string };
+type ExpenseRow = {
+  id: string; category: string; amount: number; description: string | null;
+  paymentMode: string | null; date: string;
+  party?: { id: string; name: string } | null;
+};
+type Party = { id: string; name: string; mobile?: string | null };
+type GateHamaliRow = {
+  id: string; entryNumber: string; vehicleNumber: string; hamaliAmount: number;
+  enteredAt: string; supplier?: { id: string; name: string } | null;
+};
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -18,6 +27,16 @@ const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFra
 function isThisMonth(iso: string) {
   const d = new Date(iso), now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+
+function monthKey(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(key: string) {
+  const [y, m] = key.split('-');
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 }
 
 export default function HamaliPage() {
@@ -30,7 +49,36 @@ export default function HamaliPage() {
     ([u]) => fetcher(u),
   );
   const rows = allExpenses.filter(e => e.category === HAMALI_CATEGORY);
+
+  const gateHamaliQuery = useMemo(() => {
+    const now = new Date();
+    const from = new Date(now); from.setDate(from.getDate() - 89);
+    return `?from=${from.toISOString().slice(0, 10)}&to=${now.toISOString().slice(0, 10)}`;
+  }, []);
+
+  const { data: gateEntries = [] } = useSWR<any[]>(
+    activeShopId ? ['/mill/gate-entries', activeShopId, 'hamali'] : null,
+    () => fetcher(`/mill/gate-entries${gateHamaliQuery}`),
+  );
+  const gateHamaliRows: GateHamaliRow[] = (gateEntries as any[])
+    .filter(e => e.hamaliAmount != null && e.hamaliAmount > 0)
+    .map(e => ({ id: e.id, entryNumber: e.entryNumber, vehicleNumber: e.vehicleNumber, hamaliAmount: e.hamaliAmount, enteredAt: e.enteredAt, supplier: e.supplier }));
+
   const totalThisMonth = rows.filter(e => isThisMonth(e.date)).reduce((s, e) => s + (e.amount || 0), 0);
+  const gateHamaliThisMonth = gateHamaliRows.filter(e => isThisMonth(e.enteredAt)).reduce((s, e) => s + e.hamaliAmount, 0);
+
+  const monthlySummary = useMemo(() => {
+    const map: Record<string, { total: number; count: number }> = {};
+    for (const e of rows) {
+      const k = monthKey(e.date);
+      if (!map[k]) map[k] = { total: 0, count: 0 };
+      map[k].total += e.amount || 0;
+      map[k].count += 1;
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(0, 6);
+  }, [rows]);
 
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
@@ -46,10 +94,35 @@ export default function HamaliPage() {
         </button>
       </div>
 
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-        <p className="text-[11px] text-slate-500">{t('totalThisMonth')}</p>
-        <p className="text-2xl font-black text-yellow-600 dark:text-yellow-400">{rupee(totalThisMonth)}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-[11px] text-slate-500">{t('totalThisMonth')} (Manual)</p>
+          <p className="text-2xl font-black text-yellow-600 dark:text-yellow-400">{rupee(totalThisMonth)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-[11px] text-slate-500">Gate Entry Hamali (This Month)</p>
+          <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{rupee(gateHamaliThisMonth)}</p>
+        </div>
       </div>
+
+      {monthlySummary.length > 1 && (
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+            <p className="text-xs font-bold uppercase text-slate-500 tracking-wider">Monthly Summary</p>
+          </div>
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {monthlySummary.map(([key, data]) => (
+              <li key={key} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{monthLabel(key)}</p>
+                  <p className="text-xs text-slate-400">{data.count} entries</p>
+                </div>
+                <span className="text-base font-black text-yellow-600 dark:text-yellow-400">{rupee(data.total)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
@@ -65,11 +138,38 @@ export default function HamaliPage() {
               <li key={e.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-slate-700 dark:text-slate-300">{e.description || t('title')}</p>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {e.party?.name && <span className="font-medium text-indigo-600 dark:text-indigo-400 mr-1">{e.party.name} ·</span>}
                     {e.paymentMode || 'Cash'} · {new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 </div>
                 <span className="text-lg font-black text-yellow-600 dark:text-yellow-400 shrink-0">−{rupee(e.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {gateHamaliRows.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+            <Truck size={14} className="text-amber-500" />
+            <p className="text-xs font-bold uppercase text-slate-500 tracking-wider">Vehicle / Gate Entry Hamali (Last 90 Days)</p>
+          </div>
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {gateHamaliRows.slice(0, 30).map(e => (
+              <li key={e.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{e.vehicleNumber}</span>
+                    <span className="text-[10px] font-bold text-slate-400">{e.entryNumber}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {e.supplier?.name && <span className="font-medium text-indigo-600 dark:text-indigo-400 mr-1">{e.supplier.name} ·</span>}
+                    {new Date(e.enteredAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <span className="text-lg font-black text-amber-600 dark:text-amber-400 shrink-0">−{rupee(e.hamaliAmount)}</span>
               </li>
             ))}
           </ul>
@@ -85,17 +185,30 @@ export default function HamaliPage() {
 
 function RecordChargeModal({ onClose, onRecorded }: { onClose: () => void; onRecorded: () => void }) {
   const t = useTranslations('Hamali');
+  const activeShopId = useBusinessStore(s => s.activeShopId);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
+  const [partyId, setPartyId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const { data: parties = [] } = useSWR<Party[]>(
+    activeShopId ? ['/crm/customers?type=all', activeShopId] : null,
+    ([u]) => api.get(u).then(r => r.data),
+  );
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      await api.post('/expenses', { category: HAMALI_CATEGORY, amount: Number(amount), description, paymentMode });
+      await api.post('/expenses', {
+        category: HAMALI_CATEGORY,
+        amount: Number(amount),
+        description,
+        paymentMode,
+        partyId: partyId || undefined,
+      });
       onRecorded();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToRecord'));
@@ -114,6 +227,14 @@ function RecordChargeModal({ onClose, onRecorded }: { onClose: () => void; onRec
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('amount')} *</span>
             <input type="number" min="0" step="0.01" autoFocus value={amount} onChange={e => setAmount(e.target.value)}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Thekedar / Labour Contractor</span>
+            <select value={partyId} onChange={e => setPartyId(e.target.value)}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
+              <option value="">No party (optional)</option>
+              {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </label>
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('descriptionOptional')}</span>

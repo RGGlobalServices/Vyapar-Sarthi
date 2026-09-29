@@ -174,7 +174,7 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, 'Customer is required for Udhar / Outstanding amounts');
   }
 
-  const invoice_number = `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
+  const invoice_number = body.invoice_number || `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
 
   let sale;
   try {
@@ -224,18 +224,16 @@ export const POST = handle(async (req) => {
           const billProductIds = Array.from(new Set(items.map((i: any) => i.product_id || i.productId).filter(Boolean))) as string[];
           const sortedProductIds = [...billProductIds].sort();
 
-          for (const pid of sortedProductIds) {
-            await tx.$queryRaw`
-              SELECT id FROM products
-              WHERE id = ${pid}::uuid AND shop_id = ${shopId}::uuid
-              FOR UPDATE
-            `;
-            await tx.$queryRaw`
-              SELECT id FROM batches
-              WHERE product_id = ${pid}::uuid AND shop_id = ${shopId}::uuid AND quantity > 0
-              ORDER BY id ASC
-              FOR UPDATE
-            `;
+          // Batch both locks into single queries (2 round trips instead of 2×N)
+          if (sortedProductIds.length > 0) {
+            await tx.$executeRawUnsafe(
+              `SELECT id FROM products WHERE id = ANY($1::uuid[]) AND shop_id = $2::uuid ORDER BY id ASC FOR UPDATE`,
+              sortedProductIds, shopId
+            );
+            await tx.$executeRawUnsafe(
+              `SELECT id FROM batches WHERE product_id = ANY($1::uuid[]) AND shop_id = $2::uuid AND quantity > 0 ORDER BY id ASC FOR UPDATE`,
+              sortedProductIds, shopId
+            );
           }
 
           if (finalCustomerId) {
@@ -396,13 +394,25 @@ export const POST = handle(async (req) => {
             if (saleItemBatchRows.length) {
               await tx.saleItemBatch.createMany({ data: saleItemBatchRows });
             }
-            for (const b of activeBatches) {
-              const remaining = batchRemaining.get(b.id) ?? b.quantity;
-              const consumed = b.quantity - remaining;
-              if (consumed > 0) {
-                await tx.batch.update({ where: { id: b.id }, data: { quantity: { decrement: consumed } } });
-              }
+            // Batch-update all consumed batches in one query instead of N sequential updates
+            const batchUpdates = activeBatches
+              .map(b => ({ id: b.id, consumed: b.quantity - (batchRemaining.get(b.id) ?? b.quantity) }))
+              .filter(u => u.consumed > 0);
+            if (batchUpdates.length > 0) {
+              const ids = batchUpdates.map(u => u.id);
+              const amounts = batchUpdates.map(u => u.consumed);
+              await tx.$executeRawUnsafe(
+                `UPDATE batches SET quantity = batches.quantity - v.consumed
+                 FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::numeric[]) AS consumed) AS v
+                 WHERE batches.id = v.id::uuid`,
+                ids, amounts
+              );
             }
+
+            // Compute per-product totals and variant JSON updates in JS first
+            const stockDecrements: { id: string; qty: number }[] = [];
+            const variantUpdates: { id: string; size_variants: any; variants: any }[] = [];
+            const stockMovements: { productId: string; qty: number }[] = [];
 
             for (const product of billProducts) {
               const productItems = itemGroups[product.id];
@@ -424,13 +434,11 @@ export const POST = handle(async (req) => {
                       parsed[item.variant] = Math.max(0, (parsed[item.variant] || 0) - item.quantity);
                       newSizeVariants = JSON.stringify(parsed);
                     }
-                  } catch {}
+                  } catch (e) { if (e instanceof ApiError) throw e; }
                 }
                 if (item.variant && newVariants) {
                   const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
                   if (row) {
-                    // Re-checked under the product row lock: the pre-transaction check
-                    // used data another sale may have consumed since.
                     if (!allowNegativeStock && (Number(row.stock) || 0) < item.quantity) {
                       throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${item.variant})`);
                     }
@@ -440,42 +448,55 @@ export const POST = handle(async (req) => {
                 }
               }
 
+              stockDecrements.push({ id: product.id, qty: totalQty });
+              if (newSizeVariants !== product.size_variants || variantsChanged) {
+                variantUpdates.push({ id: product.id, size_variants: newSizeVariants, variants: variantsChanged ? newVariants : undefined });
+              }
+              if (isWholesaleTierPackage(shop.packageType)) {
+                stockMovements.push({ productId: product.id, qty: totalQty });
+              }
+            }
+
+            // Batch current_stock decrements — 1 query instead of N
+            if (stockDecrements.length > 0) {
               if (!allowNegativeStock) {
-                const updatedCount = await tx.$executeRaw`
-                  UPDATE products
-                  SET current_stock = COALESCE(current_stock, 0) - ${totalQty}
-                  WHERE id = ${product.id}::uuid AND shop_id = ${shopId}::uuid AND COALESCE(current_stock, 0) >= ${totalQty}
-                `;
-                if (updatedCount === 0) {
-                  throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name}`);
+                // Must be per-product to detect which one ran out
+                for (const { id, qty } of stockDecrements) {
+                  const updatedCount = await tx.$executeRawUnsafe(
+                    `UPDATE products SET current_stock = COALESCE(current_stock, 0) - $1 WHERE id = $2::uuid AND shop_id = $3::uuid AND COALESCE(current_stock, 0) >= $1`,
+                    qty, id, shopId
+                  );
+                  if (updatedCount === 0) {
+                    const p = billProductMap.get(id);
+                    throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${p?.name ?? id}`);
+                  }
                 }
               } else {
-                await tx.$executeRaw`
-                  UPDATE products
-                  SET current_stock = COALESCE(current_stock, 0) - ${totalQty}
-                  WHERE id = ${product.id}::uuid AND shop_id = ${shopId}::uuid
-                `;
+                // All at once
+                const pids = stockDecrements.map(d => d.id);
+                const qtys = stockDecrements.map(d => d.qty);
+                await tx.$executeRawUnsafe(
+                  `UPDATE products SET current_stock = COALESCE(current_stock, 0) - v.qty
+                   FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::numeric[]) AS qty) AS v
+                   WHERE products.id = v.id::uuid AND shop_id = $3::uuid`,
+                  pids, qtys, shopId
+                );
               }
+            }
 
+            // Variant JSON updates (only products that actually changed)
+            for (const u of variantUpdates) {
               await tx.product.update({
-                where: { id: product.id, shopId },
-                data: {
-                  size_variants: newSizeVariants,
-                  ...(variantsChanged ? { variants: newVariants as any } : {}),
-                },
+                where: { id: u.id, shopId },
+                data: { size_variants: u.size_variants, ...(u.variants !== undefined ? { variants: u.variants as any } : {}) },
               });
+            }
 
-              if (isWholesaleTierPackage(shop.packageType)) {
-                await tx.stockMovement.create({
-                  data: {
-                    shopId: shopId,
-                    productId: product.id,
-                    type: 'sale',
-                    quantity: totalQty,
-                    referenceId: created.id,
-                  }
-                });
-              }
+            // Wholesale stock movements
+            if (stockMovements.length > 0) {
+              await tx.stockMovement.createMany({
+                data: stockMovements.map(m => ({ shopId, productId: m.productId, type: 'sale', quantity: m.qty, referenceId: created.id })),
+              });
             }
           }
 

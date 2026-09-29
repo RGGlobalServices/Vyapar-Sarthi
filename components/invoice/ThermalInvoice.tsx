@@ -270,7 +270,18 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                   return (
                     <td key={col.id} className={`py-1 ${cellPad} text-${col.align} ${textClass} ${isItemCol ? 'pr-2' : ''}`} style={isItemCol ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap' }}>
                       {col.render(item)}
-                      {isItemCol && item.variant && <div style={{ fontSize: '80%', color: '#555' }}>{item.variant}</div>}
+                      {isItemCol && (() => {
+                        const color = (item as any).color || '';
+                        const size = (item as any).size || '';
+                        const variant = item.variant || '';
+                        if (color || size) {
+                          return <div style={{ fontSize: '80%', color: '#555' }}>{[color, size].filter(Boolean).join(' / ')}</div>;
+                        }
+                        if (variant) {
+                          return <div style={{ fontSize: '80%', color: '#555' }}>{variant}</div>;
+                        }
+                        return null;
+                      })()}
                       {isItemCol && attrParts.length > 0 && <div style={{ fontSize: '80%', color: '#666' }}>{attrParts.join(' · ')}</div>}
                       {col.id === 'qty' && dualUnitConfig && (
                         <div style={{ fontSize: '75%', color: '#22c55e' }}>

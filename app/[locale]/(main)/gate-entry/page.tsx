@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, Truck, LogOut, ArrowRight, Search } from 'lucide-react';
+import { Plus, X, Loader2, Truck, LogOut, ArrowRight, Search, ArrowUpFromLine } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
@@ -15,9 +15,11 @@ type GateEntry = {
   vehicleNumber: string; driverName: string | null; driverMobile: string | null;
   materialDescription: string | null; status: 'at_gate' | 'weighed' | 'exited';
   enteredAt: string; exitedAt: string | null; notes: string | null;
+  hamaliAmount?: number | null;
   supplier?: { id: string; name: string } | null;
   party?: { id: string; name: string } | null;
   weighbridgeEntries?: { id: string; slipNumber: string; status: string; netWeightKg: number | null }[];
+  dispatchEntries?: { id: string; dispatchNumber: string; status: string; dispatchedAt: string }[];
 };
 
 type Supplier = { id: string; name: string; mobile?: string | null };
@@ -95,6 +97,7 @@ export default function GateEntryPage() {
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = entries.find(e => e.id === selectedId) || null;
+  const [quickDispatch, setQuickDispatch] = useState<GateEntry | null>(null);
 
   const stats = {
     atGate: entries.filter(e => e.status === 'at_gate').length,
@@ -266,6 +269,11 @@ export default function GateEntryPage() {
                     <span className={cn('ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full', e.direction === 'inward' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400')}>
                       {e.direction === 'inward' ? t('inward') : t('outward')}
                     </span>
+                    {e.dispatchEntries && e.dispatchEntries.length > 0 && (
+                      <span className="ml-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400">
+                        DC
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                     {new Date(e.enteredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -311,6 +319,16 @@ export default function GateEntryPage() {
           onClose={() => setSelectedId(null)}
           onChanged={refetch}
           onSendToWeighbridge={() => router.push(`/${locale}/weighbridge?gateEntryId=${selected.id}`)}
+          onNewDispatch={() => { setQuickDispatch(selected); setSelectedId(null); }}
+        />
+      )}
+
+      {quickDispatch && (
+        <QuickDispatchModal
+          gateEntry={quickDispatch}
+          parties={parties}
+          onClose={() => setQuickDispatch(null)}
+          onCreated={() => { setQuickDispatch(null); refetch(); }}
         />
       )}
     </div>
@@ -339,7 +357,7 @@ function CreateEntryModal({ suppliers, parties, onClose, onCreated }: {
   const t = useTranslations('GateEntry');
   const [form, setForm] = useState({
     vehicleNumber: '', driverName: '', driverMobile: '', direction: 'inward' as 'inward' | 'outward',
-    supplierId: '', partyId: '', materialDescription: '', notes: '',
+    supplierId: '', partyId: '', materialDescription: '', notes: '', hamaliAmount: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -348,7 +366,12 @@ function CreateEntryModal({ suppliers, parties, onClose, onCreated }: {
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      await api.post('/mill/gate-entries', { ...form, supplierId: form.supplierId || null, partyId: form.partyId || null });
+      await api.post('/mill/gate-entries', {
+        ...form,
+        supplierId: form.supplierId || null,
+        partyId: form.partyId || null,
+        hamaliAmount: form.hamaliAmount ? Number(form.hamaliAmount) : null,
+      });
       onCreated();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToCreate'));
@@ -414,6 +437,14 @@ function CreateEntryModal({ suppliers, parties, onClose, onCreated }: {
             <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
           </Field>
+          <Field label="Hamali Amount (₹)">
+            <input type="number" min="0" step="0.01" value={form.hamaliAmount} onChange={e => setForm(f => ({ ...f, hamaliAmount: e.target.value }))}
+              placeholder="0 (optional)"
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+            {form.hamaliAmount && Number(form.hamaliAmount) > 0 && (
+              <p className="text-[11px] text-yellow-600 dark:text-yellow-400 mt-1">Auto Hamali / Labour expense create होईल</p>
+            )}
+          </Field>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button type="submit" disabled={saving || !form.vehicleNumber}
             className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
@@ -426,8 +457,8 @@ function CreateEntryModal({ suppliers, parties, onClose, onCreated }: {
   );
 }
 
-function EntryDetailModal({ entry, onClose, onChanged, onSendToWeighbridge }: {
-  entry: GateEntry; onClose: () => void; onChanged: () => void; onSendToWeighbridge: () => void;
+function EntryDetailModal({ entry, onClose, onChanged, onSendToWeighbridge, onNewDispatch }: {
+  entry: GateEntry; onClose: () => void; onChanged: () => void; onSendToWeighbridge: () => void; onNewDispatch: () => void;
 }) {
   const t = useTranslations('GateEntry');
   const [marking, setMarking] = useState(false);
@@ -444,8 +475,8 @@ function EntryDetailModal({ entry, onClose, onChanged, onSendToWeighbridge }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
           <div>
             <h2 className="text-lg font-black flex items-center gap-2">
               {entry.entryNumber}
@@ -462,10 +493,30 @@ function EntryDetailModal({ entry, onClose, onChanged, onSendToWeighbridge }: {
           <Row label={t('enteredAt')} value={new Date(entry.enteredAt).toLocaleString('en-IN')} />
           {entry.exitedAt && <Row label={t('exitedAt')} value={new Date(entry.exitedAt).toLocaleString('en-IN')} />}
           {entry.notes && <Row label={t('notesOptional')} value={entry.notes} />}
+          {entry.hamaliAmount != null && entry.hamaliAmount > 0 && (
+            <Row label="Hamali Amount" value={`₹${entry.hamaliAmount.toLocaleString('en-IN')}`} />
+          )}
+
+          {entry.dispatchEntries && entry.dispatchEntries.length > 0 && (
+            <div className="mt-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">Dispatches</p>
+              {entry.dispatchEntries.map(d => (
+                <div key={d.id} className="flex items-center justify-between text-xs py-1">
+                  <span className="font-bold text-blue-700 dark:text-blue-400">{d.dispatchNumber}</span>
+                  <span className="text-slate-400">{new Date(d.dispatchedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="p-6 pt-0 flex flex-col gap-2">
+          {entry.direction === 'outward' && (
+            <button onClick={onNewDispatch} className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center justify-center gap-2">
+              <ArrowUpFromLine size={15} /> New Dispatch
+            </button>
+          )}
           {entry.status !== 'exited' && (
-            <button onClick={onSendToWeighbridge} className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center justify-center gap-2">
+            <button onClick={onSendToWeighbridge} className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center justify-center gap-2">
               {t('sendToWeighbridge')} <ArrowRight size={15} />
             </button>
           )}
@@ -495,6 +546,100 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-3">
       <span className="text-xs font-bold uppercase text-slate-400">{label}</span>
       <span className="text-slate-800 dark:text-slate-200 font-semibold text-right">{value}</span>
+    </div>
+  );
+}
+
+const DISPATCH_TYPES = ['sale', 'sample', 'transfer', 'job_work', 'other'];
+const DISPATCH_TYPE_LABELS: Record<string, string> = { sale: 'Sale', sample: 'Sample', transfer: 'Transfer', job_work: 'Job Work', other: 'Other' };
+
+function QuickDispatchModal({ gateEntry, parties, onClose, onCreated }: {
+  gateEntry: GateEntry; parties: Party[]; onClose: () => void; onCreated: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    partyId: '', dispatchType: 'sale', noOfBags: '', quantity: '', notes: '', dispatchedAt: today,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try {
+      await api.post('/logistics/dispatch', {
+        gateEntryId: gateEntry.id,
+        vehicleNumber: gateEntry.vehicleNumber,
+        driverName: gateEntry.driverName || null,
+        partyId: form.partyId || null,
+        dispatchType: form.dispatchType,
+        noOfBags: form.noOfBags ? Number(form.noOfBags) : null,
+        quantity: form.quantity ? Number(form.quantity) : null,
+        notes: form.notes || null,
+        dispatchedAt: form.dispatchedAt || null,
+      });
+      onCreated();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to create dispatch');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-black flex items-center gap-2"><ArrowUpFromLine size={16} className="text-blue-600" /> New Dispatch</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{gateEntry.vehicleNumber} · {gateEntry.entryNumber}</p>
+          </div>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+        <form onSubmit={submit} className="p-6 space-y-4">
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Party</span>
+            <select value={form.partyId} onChange={e => setForm(f => ({ ...f, partyId: e.target.value }))}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
+              <option value="">No Party</option>
+              {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Dispatch Type</span>
+            <select value={form.dispatchType} onChange={e => setForm(f => ({ ...f, dispatchType: e.target.value }))}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
+              {DISPATCH_TYPES.map(t => <option key={t} value={t}>{DISPATCH_TYPE_LABELS[t]}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">No. of Bags</span>
+              <input type="number" min="0" step="1" value={form.noOfBags} onChange={e => setForm(f => ({ ...f, noOfBags: e.target.value }))}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Qty (kg)</span>
+              <input type="number" min="0" step="0.01" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Dispatch Date</span>
+            <input type="date" value={form.dispatchedAt} onChange={e => setForm(f => ({ ...f, dispatchedAt: e.target.value }))}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Notes</span>
+            <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+          </label>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button type="submit" disabled={saving}
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            Create Dispatch
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

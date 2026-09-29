@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { X, Camera, ImagePlus, FileText, Loader2, ArrowLeft, IndianRupee, CreditCard, Smartphone, User, AlertCircle, CheckCircle, Zap } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import api from '@/lib/api';
 import { uploadManualBillFile } from '@/lib/supabaseStorage';
 import { useUdharStore } from '@/lib/store';
@@ -160,7 +160,7 @@ export default function ManualBillUpload({ shopId, businessType, onClose, onSave
         paymentMethod: paymentMode,
         splitPayments: undefined,
         billNumber,
-        date: new Date().toLocaleDateString(),
+        date: fmtDate(new Date()),
         isEmi,
         billType: 'non_gst',
         gstBreakdown: undefined,

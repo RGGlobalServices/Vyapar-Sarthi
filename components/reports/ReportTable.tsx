@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { fmtDate } from '@/lib/utils';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronRight } from 'lucide-react';
 
 interface Column {
@@ -26,7 +27,7 @@ function formatCell(value: any, type?: string) {
     case 'currency': return `₹${Number(value).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
     case 'number': return Number(value).toLocaleString('en-IN');
     case 'percent': return `${Number(value).toFixed(1)}%`;
-    case 'date': return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    case 'date': return fmtDate(value);
     default: return String(value);
   }
 }

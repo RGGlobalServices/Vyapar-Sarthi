@@ -37,10 +37,20 @@ export const GET = handle(async (req) => {
   }
 
   if (q) {
+    // Token-based name search: every word in the query must appear somewhere
+    // in the product name (any order, any position). This lets "TODDLER ZONE 16"
+    // match "TODDLER ZONE 528 16X20 PINK" even though "TODDLER ZONE 16" is not
+    // a contiguous substring of that name.
+    // Barcode/SKU/HSN still match as a single substring (scanner reads).
+    const tokens = q.trim().split(/\s+/).filter(Boolean);
+    const nameCondition = tokens.length > 1
+      ? { AND: tokens.map(t => ({ name: { contains: t, mode: 'insensitive' as const } })) }
+      : { name: { contains: q, mode: 'insensitive' as const } };
+
     where.AND = [
       {
         OR: [
-          { name: { contains: q, mode: 'insensitive' } },
+          nameCondition,
           // `contains` (not `equals`) so a typed/partial code still matches,
           // not only an exact hardware-scanner read. Covers every identifier a
           // shop might key an item by: company barcode, SKU, carton barcode, HSN.
@@ -87,9 +97,23 @@ export const GET = handle(async (req) => {
       take: limit,
       orderBy: { name: 'asc' }
     });
-    const liteData = allShopAccess
+    // gst_inclusive is a new column — the cached Prisma client may not know it
+    // yet, so fetch it via raw SQL and merge in rather than selecting it above.
+    let gstInclusiveMap = new Map<string, boolean>();
+    if (products.length > 0) {
+      try {
+        const ids = products.map(p => p.id);
+        const rows = await prisma.$queryRawUnsafe<{ id: string; gst_inclusive: boolean | null }[]>(
+          `SELECT id, gst_inclusive FROM products WHERE id = ANY($1::uuid[])`,
+          ids
+        );
+        for (const row of rows) gstInclusiveMap.set(row.id, row.gst_inclusive ?? false);
+      } catch { /* ignore if column doesn't exist yet */ }
+    }
+    const liteData = (allShopAccess
       ? products.map(p => ({ ...p, shopName: p.shopId ? shopNameById.get(p.shopId) : undefined, shopBusinessType: p.shopId ? shopBusinessTypeById.get(p.shopId) : undefined }))
-      : products;
+      : products
+    ).map(p => ({ ...p, gstInclusive: gstInclusiveMap.get(p.id as string) ?? false }));
     return json({ data: liteData, page, limit }, 200, {
       'Cache-Control': 'public, max-age=10, stale-while-revalidate=50'
     });
@@ -206,6 +230,12 @@ export const POST = handle(async (req) => {
         conversionFactor: b.conversionFactor ?? b.conversion_factor,
       },
     });
+    // gst_inclusive not in cached Prisma client — update via raw SQL
+    const gstInclusiveVal = b.gstInclusive ?? b.gst_inclusive ?? false;
+    await prisma.$executeRawUnsafe(
+      `UPDATE products SET gst_inclusive = $1 WHERE id = $2::uuid`,
+      Boolean(gstInclusiveVal), product.id
+    ).catch(() => {});
     // Record the opening stock as a stock-in movement so the Products/Stock lists
     // can surface a "+N newly added" badge (and for the audit trail).
     const openingQty = Number(product.currentStock) || 0;

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { IndianRupee, X, CheckCircle2, CreditCard, Landmark, Wallet, Phone, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
+import { fmtDate } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import { generateUdharWhatsAppText } from '@/components/UdharSlip';
 
@@ -75,7 +76,7 @@ export default function PaymentCollectionModal({
       storeName: profile.shopName || 'My Store',
       customerName: entityName,
       amount: paidResult.amount,
-      date: new Date().toLocaleDateString('en-IN'),
+      date: fmtDate(new Date()),
       due: paidResult.newTotalDue,
       t: tSlip,
     });

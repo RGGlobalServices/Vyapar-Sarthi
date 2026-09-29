@@ -15,8 +15,12 @@ export interface PartyHeader {
   gst?: string | null;
 }
 
-const fmtDate = (v: string | Date | null) =>
-  v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+const fmtDate = (v: string | Date | null): string => {
+  if (!v) return '-';
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return '-';
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+};
 
 const daysBetween = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / 86400000);
 

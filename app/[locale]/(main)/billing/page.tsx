@@ -22,7 +22,7 @@ import nextDynamic from 'next/dynamic';
 // out of the server bundle and off the initial billing payload.
 const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { ssr: false });
 import { useIsMobile } from '@/hooks/use-mobile';
-import {cn} from '@/lib/utils';
+import {cn, fmtDate} from '@/lib/utils';
 import { toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 import {BillSlip, generateWhatsAppText} from '@/components/BillSlip';
 import {generateWhatsAppLink} from '@/lib/shareUtils';
@@ -35,7 +35,7 @@ import ManualBillUpload from '@/components/ManualBillUpload';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
 import DiscountInput from '@/components/DiscountInput';
-import {splitVariantKey, isColorSizeVariants} from '@/components/ColorSizeVariantGrid';
+import {splitVariantKey, isColorSizeVariants, colorsFromVariants, sizesFromVariants} from '@/components/ColorSizeVariantGrid';
 import {formatSizeLabel} from '@/components/SizeVariantGrid';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
@@ -167,25 +167,79 @@ const CartQuantityInputRetail = ({ item, updateQuantity, removeItem, maxQty }: a
 
 const GST_SLABS = [0, 5, 12, 18, 28];
 
-// GST invoice only: per-line "price includes GST / price excludes GST" toggle + a GST% override — both scoped to THIS bill's cart
-// line only (never the product's own saved GST%, same as WholesaleBillingUI's identical control). A non-GST bill shows only the
-// plain price box, exactly as before.
+// GST invoice only: per-line GST price mode.
+// Excl = user types BASE price, GST added on top → total increases (e.g. 600 base + 5% = 630 total)
+// Incl = user types TOTAL price (GST already inside) → total unchanged (e.g. 600 total, CGST 14.28, SGST 14.28)
+// item.price is always stored as the GST-inclusive selling price.
 const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }: any) => {
-  const [mode, setMode] = useState<'inclusive' | 'exclusive'>('inclusive');
   const gstPercent = Number(item.gstPercent) || 0;
+  const savedSlabRef = useRef<number>(gstPercent > 0 ? gstPercent : 12);
 
-  const toDisplay = (inclusivePrice: number) =>
-    mode === 'exclusive' ? toExclusivePrice(inclusivePrice, gstPercent) : inclusivePrice;
-
-  const [localVal, setLocalVal] = useState(() => (Math.round(toDisplay(item.price) * 100) / 100).toString());
   useEffect(() => {
-    setLocalVal((Math.round(toDisplay(item.price) * 100) / 100).toString());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.price, mode, gstPercent]);
+    if (gstPercent > 0) savedSlabRef.current = gstPercent;
+  }, [gstPercent]);
 
-  const writePrice = (typed: number) => {
-    const inclusive = mode === 'exclusive' ? toInclusivePrice(typed, gstPercent) : typed;
-    updatePrice(item.id, Math.round(inclusive * 100) / 100, item.variant);
+  // exclusive: input shows base price (GST on top); inclusive: input shows final price (GST inside)
+  // Default from the product's gstInclusive flag set when it was added to the catalog.
+  const [mode, setMode] = useState<'inclusive' | 'exclusive'>(
+    item.gstInclusive ? 'inclusive' : 'exclusive'
+  );
+
+  // What to display in the input field
+  const displayPrice = useMemo(() => {
+    const p = Math.round(item.price * 100) / 100;
+    if (mode === 'exclusive' && gstPercent > 0) {
+      return Math.round(toExclusivePrice(p, gstPercent) * 100) / 100;
+    }
+    return p;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, item.price, gstPercent]);
+
+  const [localVal, setLocalVal] = useState(displayPrice.toString());
+
+  useEffect(() => {
+    setLocalVal(displayPrice.toString());
+  }, [displayPrice]);
+
+  const writePrice = (typedVal: number) => {
+    if (mode === 'exclusive' && gstPercent > 0) {
+      // Typed = base → store inclusive = base * (1 + gst%)
+      updatePrice(item.id, Math.round(toInclusivePrice(typedVal, gstPercent) * 100) / 100, item.variant);
+    } else {
+      // Typed = inclusive (or no GST) → store directly
+      updatePrice(item.id, typedVal, item.variant);
+    }
+  };
+
+  const changeGstSlab = (newSlab: number) => {
+    if (newSlab > 0) savedSlabRef.current = newSlab;
+    if (mode === 'exclusive') {
+      // Keep base price constant; update stored inclusive for new slab
+      const base = gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
+      updateGstPercent(item.id, newSlab, item.variant);
+      const newIncl = newSlab > 0 ? toInclusivePrice(base, newSlab) : base;
+      updatePrice(item.id, Math.round(newIncl * 100) / 100, item.variant);
+    } else {
+      // Incl mode: total stays the same, only breakdown changes
+      updateGstPercent(item.id, newSlab, item.variant);
+    }
+  };
+
+  const switchMode = (newMode: 'inclusive' | 'exclusive') => {
+    if (newMode === mode) return;
+    const slab = gstPercent > 0 ? gstPercent : (savedSlabRef.current || 12);
+    if (gstPercent === 0) updateGstPercent(item.id, slab, item.variant);
+
+    if (newMode === 'exclusive') {
+      // Incl → Excl: the currently visible price becomes the BASE price.
+      // e.g. displayed ₹209 (incl) → now BASE ₹209 → store inclusive ₹209*1.18 = ₹246.62
+      updatePrice(item.id, Math.round(toInclusivePrice(displayPrice, slab) * 100) / 100, item.variant);
+    } else {
+      // Excl → Incl: the currently visible base price becomes the TOTAL.
+      // e.g. displayed ₹177.68 (base) → now TOTAL ₹177.68 → store ₹177.68 directly
+      updatePrice(item.id, Math.round(displayPrice * 100) / 100, item.variant);
+    }
+    setMode(newMode);
   };
 
   return (
@@ -197,12 +251,11 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
         onChange={(e) => {
           setLocalVal(e.target.value);
           const num = Number(e.target.value);
-          if (!isNaN(num)) writePrice(num);
+          if (!isNaN(num) && num >= 0) writePrice(num);
         }}
         onBlur={(e) => {
           if (e.target.value === '') { writePrice(0); return; }
-          const num = Number(e.target.value);
-          setLocalVal((Math.round(num * 100) / 100).toString());
+          setLocalVal(displayPrice.toString());
         }}
         step="any"
         min="0"
@@ -210,22 +263,22 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
       {isGstBill && (
         <div className="flex items-center gap-1">
           <select
-            value={gstPercent}
-            onChange={(e) => updateGstPercent(item.id, Number(e.target.value), item.variant)}
-            title="GST % for this item (this bill only)"
+            value={gstPercent > 0 ? gstPercent : savedSlabRef.current}
+            onChange={(e) => changeGstSlab(Number(e.target.value))}
+            title="GST % for this item"
             className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
           >
-            {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
+            {GST_SLABS.filter(g => g > 0).map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
           <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden shrink-0">
-            {(['inclusive', 'exclusive'] as const).map((m) => (
+            {(['exclusive', 'inclusive'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
-                onClick={() => setMode(m)}
-                title={m === 'inclusive' ? 'Price includes GST' : 'Price excludes GST'}
+                onClick={() => switchMode(m)}
+                title={m === 'inclusive' ? 'Price includes GST — total stays same' : 'GST added on top — total increases'}
                 className={cn(
-                  'px-1 py-0.5 text-[9px] font-bold transition-colors',
+                  'px-1.5 py-0.5 text-[9px] font-bold transition-colors',
                   mode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
                 )}
               >
@@ -249,7 +302,7 @@ function StandardBillingUI() {
   useEffect(() => setMounted(true), []);
   
   const {
-    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, updateBatchNumber, setLineBatch, clearCart,
+    items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent, updateBatchNumber, setLineBatch, updateColorSize, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount,
     remainingAmount, isEmi, setIsEmi,
@@ -637,6 +690,7 @@ function StandardBillingUI() {
       batchNumber: batchInfo?.batchNumber || undefined,
       // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
       gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
+      gstInclusive: !!(product.gstInclusive ?? product.gst_inclusive ?? false),
       hsnCode: product.hsnCode ?? product.hsn_code ?? '',
       // MRP travels with the line so the cart can show the wholesaler's
       // "party discount %" off list price — a reminder of what deal they
@@ -907,18 +961,20 @@ function StandardBillingUI() {
         name: item.name,
         unit: item.unit,
         variant: item.variant || null,
+        color: item.color || null,
+        size: item.size || null,
         quantity: item.quantity,
         price_per_unit: item.price,
         purchase_price: item.cost || 0,
-        // Present only when this line came from a batch-barcode scan — the
-        // billing route draws stock/cost from THIS exact batch instead of
-        // auto-FIFO-picking one when it's set.
         batch_id: item.batchId || undefined,
       }));
 
+      // Generate bill number locally — no waiting for server
+      const billNumber = `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
+
       const salePayload = {
-        customer_id: udharInfo?.type === 'existing' && typeof udharInfo.customer?.id === 'string' && !udharInfo.customer.id.startsWith('temp-') 
-          ? udharInfo.customer.id 
+        customer_id: udharInfo?.type === 'existing' && typeof udharInfo.customer?.id === 'string' && !udharInfo.customer.id.startsWith('temp-')
+          ? udharInfo.customer.id
           : null,
         customer_name: customerName.trim() || null,
         customer_mobile: customerMobile.trim() || null,
@@ -928,29 +984,13 @@ function StandardBillingUI() {
         discount: discount,
         total_amount: total,
         payment_type: isEmi ? 'EMI' : paymentTypeForApi,
-        // Finance provider settles the shop in full on an EMI sale.
         amount_paid: isEmi ? total : collectedAmount,
         payment_details: isEmi ? {} : { ...splitPayments, udhar: remainingAmount },
         bill_type: billType,
         gst_amount: isGstBill ? gst.totalGst : null,
         gst_details: isGstBill ? gst : null,
+        invoice_number: billNumber,
       };
-
-      let billNumber: string;
-      let isOfflineBill = false;
-      try {
-        const res = await api.post('/billing/', salePayload);
-        const dbSale = res.data;
-        billNumber = `INV-${dbSale.id.substring(0, 8).toUpperCase()}`;
-      } catch (err) {
-        if (!isNetworkError(err)) throw err; // a real rejection (bad data, auth, etc.) — surface it below as usual
-        // No connection — save the bill locally instead of blocking the sale.
-        // It's automatically replayed against the server once back online
-        // (see lib/offlineSync.ts), decrementing real stock at that point.
-        const queued = await queueOfflineSale(salePayload, activeShopId || profile.id);
-        billNumber = queued.localId;
-        isOfflineBill = true;
-      }
 
       const billData = {
         customerName: customerName.trim() || undefined,
@@ -965,13 +1005,11 @@ function StandardBillingUI() {
         paymentMethod: isEmi ? 'EMI' : paymentTypeForApi,
         splitPayments: isEmi ? undefined : { ...splitPayments, udhar: remainingAmount },
         billNumber,
-        date: new Date().toLocaleDateString(),
+        date: fmtDate(new Date()),
         isEmi,
-        isOfflineBill,
-        // GST invoice data (undefined for non-GST — invoice components then render normally)
+        isOfflineBill: false,
         billType,
         gstBreakdown: isGstBill ? gst : undefined,
-        // New features
         invoiceFormat: profile.invoiceFormat || 'thermal80',
         invoiceTheme: profile.invoiceTheme || 'standard',
         invoiceColor: profile.invoiceColor || null,
@@ -979,41 +1017,38 @@ function StandardBillingUI() {
         showQrCode: profile.showQrCode || false,
         invoiceFooter: profile.invoiceFooter || undefined,
       };
+
+      // Show bill INSTANTLY — don't wait for DB
       setLastBill(billData);
-
-      // Udhar tracking is now natively processed in the /billing/ route backend
-
-      if (!isOfflineBill) {
-        // Invalidate dashboard caches to ensure new sale/udhar is immediately visible
-        mutate(
-          (key: any) => typeof key === 'string' && key.startsWith('/reports/dashboard'),
-          undefined,
-          { revalidate: true }
-        );
-        // Revalidate products so the Products & Stock pages reflect the sale's
-        // stock deduction without requiring a manual page refresh.
-        invalidateProductCaches();
-      }
-
       clearCart();
       setShowCustomerModal(false);
+      setIsGeneratingBill(false);
       setShowBillModal(true);
 
-      // Auto-send bill via email if provided. WhatsApp is deliberately NOT
-      // auto-triggered — the cashier taps the "WhatsApp" button in the bill
-      // modal (handleWhatsAppPDF) when they actually want to send it, so
-      // nothing pops a browser tab / tries the app on every single sale.
-      // Skipped for an offline bill — it uploads the PDF to Supabase, which
-      // needs a connection the cashier doesn't have right now; they can
-      // send from the bill view once back online.
-      if (!isOfflineBill) {
-        const email = customerEmail.trim();
-        if (email) {
-          autoSendAfterBill(billData, email);
-        }
-      }
+      // Save to DB in background
+      api.post('/billing/', salePayload)
+        .then(() => {
+          mutate(
+            (key: any) => typeof key === 'string' && key.startsWith('/reports/dashboard'),
+            undefined,
+            { revalidate: true }
+          );
+          invalidateProductCaches();
+          const email = customerEmail.trim();
+          if (email) autoSendAfterBill(billData, email);
+        })
+        .catch(async (err) => {
+          if (isNetworkError(err)) {
+            // Queue offline — will sync when back online
+            await queueOfflineSale(salePayload, activeShopId || profile.id).catch(() => {});
+          } else {
+            console.error('Bill save failed:', err);
+          }
+        });
+
+      return; // already handled above
     } catch (err) {
-      console.error('Failed to record sale:', err);
+      console.error('Failed to generate bill:', err);
       alert(t('failedToGenerateBill'));
     } finally {
       setIsGeneratingBill(false);
@@ -1616,6 +1651,88 @@ function StandardBillingUI() {
                           </div>
                         );
                       })()}
+                      {/* Inline Color / Size chips — clothes & footwear */}
+                      {bizConfig.hasSizes && (() => {
+                        const prod = products.find((p: any) => p.id === item.id);
+                        let sv: any = prod?.size_variants ?? prod?.sizeVariants;
+                        if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
+                        const svObj: Record<string, number> = (sv && typeof sv === 'object') ? sv : {};
+                        const isComposite = isColorSizeVariants(svObj);
+                        const availColors = isComposite ? colorsFromVariants(svObj) : [];
+                        // Sizes: for composite keys filter by selected color; for simple keys use all keys
+                        const selectedColor = item.color || '';
+                        const availSizes = isComposite
+                          ? sizesFromVariants(svObj).filter(sz => {
+                              if (!selectedColor) return true;
+                              const key = `${selectedColor} / ${sz}`;
+                              return key in svObj;
+                            })
+                          : Object.keys(svObj);
+                        const stockForSize = (sz: string) => {
+                          const key = isComposite ? `${selectedColor} / ${sz}` : sz;
+                          return Number(svObj[key] ?? 0);
+                        };
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {/* Color chip — text input + quick-select buttons */}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <label className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-700 rounded-md px-1.5 py-0.5 shrink-0">
+                                <span className="text-[10px] text-rose-400 dark:text-rose-300 font-medium whitespace-nowrap">Color</span>
+                                <input
+                                  type="text"
+                                  placeholder="—"
+                                  value={item.color || ''}
+                                  onChange={e => updateColorSize(item.id, { color: e.target.value }, item.variant)}
+                                  className="bg-transparent outline-none text-[11px] w-14 text-slate-700 dark:text-slate-300 min-w-0 font-medium"
+                                />
+                              </label>
+                              {availColors.map(c => (
+                                <button key={c} type="button"
+                                  onClick={() => updateColorSize(item.id, { color: c }, item.variant)}
+                                  className={cn('text-[10px] px-1.5 py-0.5 rounded border font-semibold transition-colors',
+                                    item.color === c
+                                      ? 'bg-rose-500 border-rose-500 text-white'
+                                      : 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-800/30'
+                                  )}>
+                                  {c}
+                                </button>
+                              ))}
+                            </div>
+                            {/* Size chip — text input + stock-aware buttons */}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <label className="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-md px-1.5 py-0.5 shrink-0">
+                                <span className="text-[10px] text-indigo-400 dark:text-indigo-300 font-medium whitespace-nowrap">Size</span>
+                                <input
+                                  type="text"
+                                  placeholder="—"
+                                  value={item.size || ''}
+                                  onChange={e => updateColorSize(item.id, { size: e.target.value }, item.variant)}
+                                  className="bg-transparent outline-none text-[11px] w-10 text-slate-700 dark:text-slate-300 min-w-0 font-medium"
+                                />
+                              </label>
+                              {availSizes.map(sz => {
+                                const stock = stockForSize(sz);
+                                const inStock = stock > 0;
+                                const isSelected = item.size === sz;
+                                return (
+                                  <button key={sz} type="button"
+                                    onClick={() => updateColorSize(item.id, { size: sz }, item.variant)}
+                                    title={inStock ? `${sz}: ${stock} in stock` : `${sz}: out of stock`}
+                                    className={cn('text-[10px] px-1.5 py-0.5 rounded border font-bold transition-colors',
+                                      isSelected
+                                        ? 'bg-indigo-500 border-indigo-500 text-white'
+                                        : inStock
+                                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-800/30'
+                                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 line-through'
+                                    )}>
+                                    {sz}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {/* Inline chips: Expiry / Warranty / Serial (Batch chip replaced by Lot badge above) */}
                       {(bizConfig.hasExpiry || bizConfig.hasWarranty || isElectronics) && (
                         <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -1716,7 +1833,27 @@ function StandardBillingUI() {
                     <td className="px-4 py-3 text-right align-top">
                       <CartPriceInputRetail item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-sm align-top tabular-nums">₹{item.total}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-sm align-top tabular-nums">
+                      ₹{item.total}
+                      {isGstBill && (() => {
+                        const gstPct = Number(item.gstPercent) || 0;
+                        if (!gstPct) return null;
+                        const gstAmt = Math.round((item.total - item.total / (1 + gstPct / 100)) * 100) / 100;
+                        const half = Math.round(gstAmt / 2 * 100) / 100;
+                        return (
+                          <div className="text-[10px] text-violet-500 dark:text-violet-400 font-medium mt-0.5 leading-tight">
+                            {gstInterState ? (
+                              <span>IGST ₹{gstAmt.toLocaleString('en-IN')}</span>
+                            ) : (
+                              <>
+                                <div>CGST ₹{half.toLocaleString('en-IN')}</div>
+                                <div>SGST ₹{half.toLocaleString('en-IN')}</div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-3 py-3 text-center align-top">
                       <button onClick={() => removeItem(item.id, item.variant)} className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded transition-colors">
                         <Trash2 size={15} />

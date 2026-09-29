@@ -212,7 +212,14 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                     return (
                       <td key={col.id} className={`py-2 px-3 text-${col.align}`}>
                         {col.render(item)}
-                        {isItemCol && item.variant && <div className="text-xs text-slate-400 mt-0.5">{item.variant}</div>}
+                        {isItemCol && (() => {
+                          const color = (item as any).color || '';
+                          const size = (item as any).size || '';
+                          const variant = item.variant || '';
+                          if (color || size) return <div className="text-xs text-slate-400 mt-0.5">{[color, size].filter(Boolean).join(' / ')}</div>;
+                          if (variant) return <div className="text-xs text-slate-400 mt-0.5">{variant}</div>;
+                          return null;
+                        })()}
                         {isItemCol && attrParts.length > 0 && <div className="text-xs text-violet-500 mt-0.5">{attrParts.join(' · ')}</div>}
                         {col.id === 'qty' && dualUnitConfig && (
                           <div className="text-[10px] text-emerald-600 mt-0.5 whitespace-nowrap">

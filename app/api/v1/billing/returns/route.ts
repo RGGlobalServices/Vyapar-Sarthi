@@ -2,7 +2,6 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { toPaise } from '@/lib/server/moneyValidation';
-import { assertNotMillSale } from '@/lib/server/millGuards';
 import { planReturn, parsePriorReturns, splitRefund } from '@/lib/server/refunds';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -51,15 +50,19 @@ interface ReturnItemInput {
 
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
-  const { bill_id, items } = await readBody(req) as { bill_id: string; items: ReturnItemInput[] };
+  const body = await readBody(req) as {
+    bill_id: string;
+    items: ReturnItemInput[];
+    cash_refund?: number;   // shopkeeper-chosen cash amount (≤ auto cashRefunded)
+    credit_to_add?: number; // remainder to park as customer credit
+  };
+  const { bill_id, items } = body;
+  const shopkeeperCashRefund = typeof body.cash_refund === 'number' && isFinite(body.cash_refund) ? body.cash_refund : null;
+  const shopkeeperCreditToAdd = typeof body.credit_to_add === 'number' && isFinite(body.credit_to_add) ? body.credit_to_add : null;
 
   if (!bill_id || !items || !items.length) {
     throw new ApiError(400, 'bill_id and items are required');
   }
-
-  // Mill bills (`mill_v2`) are GST-exclusive with charges and round-off; the refund maths below is for legacy
-  // bills only, so returns on a mill bill are refused (409) until they are supported. Legacy bills are unaffected.
-  await assertNotMillSale(shop.id, bill_id, 'return');
 
   const result = await prisma.$transaction(async (tx) => {
     // 1. Lock the target Sale row to serialize concurrent returns on the same bill
@@ -194,7 +197,21 @@ export const POST = handle(async (req) => {
     const paidBefore = Number(saleRow.amount_paid) || 0;
     const totalBefore = Number(saleRow.total_amount) || 0;
     const outstandingOnThisBill = Math.max(0, totalBefore - paidBefore);
-    const { udharCleared, cashRefunded } = splitRefund(totalRefund, outstandingOnThisBill, customerDue);
+    const autoSplit = splitRefund(totalRefund, outstandingOnThisBill, customerDue);
+
+    // If the shopkeeper overrode the cash amount (editable input on the UI),
+    // honour it — but never let cash exceed what the auto-split would pay out
+    // (can't refund more cash than the return is worth) and never negative.
+    const udharCleared = autoSplit.udharCleared;
+    const maxCash = autoSplit.cashRefunded;
+    const cashRefunded = shopkeeperCashRefund !== null
+      ? Math.max(0, Math.min(Math.round(shopkeeperCashRefund * 100) / 100, maxCash))
+      : maxCash;
+    // The portion withheld from cash goes to the customer's credit balance
+    // (negative udhar = shop owes customer; reduces total_due or creates a credit).
+    const creditToAdd = shopkeeperCreditToAdd !== null
+      ? Math.max(0, Math.min(Math.round(shopkeeperCreditToAdd * 100) / 100, maxCash - cashRefunded + 0.001))
+      : Math.max(0, maxCash - cashRefunded);
 
     // 3. materialReturn records
     const created = [] as string[];
@@ -220,6 +237,7 @@ export const POST = handle(async (req) => {
             refundProfit: p.refundProfit,
             udharCleared: udharCleared > 0 && p.refundAmount > 0 ? (udharCleared * p.refundAmount) / totalRefund : 0,
             cashRefunded: cashRefunded > 0 && p.refundAmount > 0 ? (cashRefunded * p.refundAmount) / totalRefund : 0,
+            creditToAdd: creditToAdd > 0 && p.refundAmount > 0 ? (creditToAdd * p.refundAmount) / totalRefund : 0,
             settled: true,
           }),
         }
@@ -251,6 +269,9 @@ export const POST = handle(async (req) => {
     }
 
     // 4. Adjust the Sale row
+    // amountPaid drops by however much physical cash leaves the drawer (cashRefunded).
+    // The credit portion (creditToAdd) is parked on the customer account separately —
+    // it does NOT reduce amountPaid here because no cash actually changes hands.
     const totalProfitRefunded = prepared.reduce((s, p) => s + p.refundProfit, 0);
     await tx.sale.update({
       where: { id: saleRow.id },
@@ -294,7 +315,28 @@ export const POST = handle(async (req) => {
       });
     }
 
-    return { createdReturnIds: created, totalRefund, udharCleared, cashRefunded, totalProfitRefunded };
+    // 6.5. Credit side — shopkeeper chose to give less cash; remainder is
+    // credited to the customer's account (reduces their total_due, or if they
+    // have no udhar, creates a negative balance = store credit they can use
+    // on the next purchase).
+    if (saleRow.customer_id && creditToAdd > 0) {
+      await tx.$executeRaw`
+        UPDATE customers SET total_due = COALESCE(total_due, 0) - ${creditToAdd}
+        WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+      `;
+      await tx.customer_transactions.create({
+        data: {
+          customer_id: saleRow.customer_id,
+          type: 'refund',
+          amount: creditToAdd,
+          note: `Credit note: ${saleRow.invoice_number} (return credit)`,
+          bill_number: saleRow.invoice_number,
+          created_at: new Date(),
+        }
+      });
+    }
+
+    return { createdReturnIds: created, totalRefund, udharCleared, cashRefunded, creditToAdd, totalProfitRefunded };
   }, {
     maxWait: 30000,
     timeout: 60000,

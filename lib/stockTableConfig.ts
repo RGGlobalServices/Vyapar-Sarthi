@@ -1,5 +1,6 @@
 import { getBusinessConfig, MILL_CATEGORIES, type BusinessType } from './businessConfig';
 import { formatMillStock, computeStockStatus, STOCK_STATUS_LABELS } from './millStock';
+import { fmtDate } from './utils';
 
 // ── Column Definition ────────────────────────────────────────────
 export interface StockColumn {
@@ -235,7 +236,7 @@ const COL = {
   expiry: (): StockColumn => ({
     key: 'expiry', labelKey: 'expiry', align: 'left',
     getValue: (i) => i.expiryDate || '',
-    format: (v) => v ? new Date(v).toLocaleDateString('en-IN') : '',
+    format: (v) => fmtDate(v),
     type: 'date',
   }),
   packSize: (): StockColumn => ({

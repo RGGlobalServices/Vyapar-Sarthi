@@ -95,7 +95,7 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
   },
   // Bada Udyog is a single-shop manufacturing tier — one manufacturing business
   // per account, same operational feature set as Udyog (godowns, purchases,
-  // party ledger) otherwise.
+  // party ledger) otherwise. Refer & Earn is hidden for this tier.
   badaudyog: {
     maxProducts: Infinity,
     maxUdharCustomers: Infinity,
@@ -104,7 +104,7 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
     multiShop: false,
     godowns: true,
     dukandar: true,
-    referEarn: true,
+    referEarn: false,
     manpower: true,
   },
 };

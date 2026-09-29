@@ -46,13 +46,23 @@ export const POST = handle(async (req) => {
     return_items: ReturnItemInput[];
     exchange_items: ExchangeItemInput[];
     settlement_method?: 'Cash' | 'UPI' | 'Card' | 'Udhar';
+    mix_payment?: { cash: number; upi: number; card: number };
   };
-  const { bill_id, return_items, exchange_items, settlement_method } = body;
+  const { bill_id, return_items, exchange_items, settlement_method, mix_payment } = body;
 
   if (!bill_id || !return_items?.length) throw new ApiError(400, 'bill_id and return_items are required');
   if (!exchange_items?.length) throw new ApiError(400, 'exchange_items is required — use /billing/returns for a plain refund');
   if (settlement_method !== undefined && !['Cash', 'UPI', 'Card', 'Udhar'].includes(settlement_method as string)) {
     throw new ApiError(400, 'Invalid settlement_method');
+  }
+  if (mix_payment !== undefined && settlement_method !== undefined) {
+    throw new ApiError(400, 'Provide either settlement_method or mix_payment, not both');
+  }
+  if (mix_payment !== undefined) {
+    const cash = Number(mix_payment.cash) || 0;
+    const upi = Number(mix_payment.upi) || 0;
+    const card = Number(mix_payment.card) || 0;
+    if (cash < 0 || upi < 0 || card < 0) throw new ApiError(400, 'Mix payment amounts must be non-negative');
   }
 
   // Mill bills (`mill_v2`) cannot be exchanged yet (the exchange leg is priced GST-inclusive). Legacy bills unaffected.
@@ -189,11 +199,17 @@ export const POST = handle(async (req) => {
     }
 
     const difference = Math.round((exchangeValue - returnValue) * 100) / 100;
-    if (difference > 0 && !settlement_method) {
-      throw new ApiError(400, 'settlement_method is required when the exchange value is more than the return value');
+    if (difference > 0 && !settlement_method && !mix_payment) {
+      throw new ApiError(400, 'settlement_method or mix_payment is required when the exchange value is more than the return value');
     }
     if (difference > 0 && settlement_method === 'Udhar' && !saleRow.customer_id) {
       throw new ApiError(400, 'This bill has no linked customer — cannot add the difference to udhar');
+    }
+    if (difference > 0 && mix_payment) {
+      const mixTotal = Math.round(((Number(mix_payment.cash) || 0) + (Number(mix_payment.upi) || 0) + (Number(mix_payment.card) || 0)) * 100) / 100;
+      if (Math.abs(mixTotal - difference) > 0.5) {
+        throw new ApiError(400, `Mix payment total ₹${mixTotal} does not match the difference ₹${difference}`);
+      }
     }
 
     // 1. Restock the RETURNED items
@@ -250,12 +266,21 @@ export const POST = handle(async (req) => {
 
     let exchangeAmountPaid: number;
     let exchangePaymentType: string;
+    let exchangePaymentDetails: Record<string, number> | null = null;
     if (difference <= 0) {
       exchangeAmountPaid = exchangeValue;
       exchangePaymentType = 'Cash';
     } else if (settlement_method === 'Udhar') {
       exchangeAmountPaid = returnValue;
       exchangePaymentType = 'Udhar';
+    } else if (mix_payment) {
+      exchangeAmountPaid = exchangeValue;
+      exchangePaymentType = 'Mix';
+      exchangePaymentDetails = {
+        cash: Number(mix_payment.cash) || 0,
+        upi: Number(mix_payment.upi) || 0,
+        card: Number(mix_payment.card) || 0,
+      };
     } else {
       exchangeAmountPaid = exchangeValue;
       exchangePaymentType = settlement_method!;
@@ -269,6 +294,7 @@ export const POST = handle(async (req) => {
         totalProfit: totalExchangeProfit,
         paymentType: exchangePaymentType,
         amountPaid: exchangeAmountPaid,
+        paymentDetails: exchangePaymentDetails ? (exchangePaymentDetails as any) : undefined,
         invoice_number: exchangeInvoiceNumber,
         billType: 'non_gst',
         items: {
@@ -419,6 +445,8 @@ export const POST = handle(async (req) => {
       cashRefunded = split.cashRefunded;
     } else if (difference > 0 && settlement_method === 'Udhar') {
       udharAdded = difference;
+    } else if (difference > 0 && mix_payment) {
+      cashCollected = Number(mix_payment.cash) || 0;
     } else if (difference > 0) {
       cashCollected = settlement_method === 'Cash' ? difference : 0;
     }
@@ -478,8 +506,11 @@ export const POST = handle(async (req) => {
       });
     }
     if (cashCollected > 0) {
+      const cashDesc = mix_payment
+        ? `Exchange (Cash ₹${mix_payment.cash}${mix_payment.upi ? ` + UPI ₹${mix_payment.upi}` : ''}${mix_payment.card ? ` + Card ₹${mix_payment.card}` : ''}): ${exchangeInvoiceNumber}`
+        : `Exchange (Cash portion): ${exchangeInvoiceNumber}`;
       await tx.cashBook.create({
-        data: { shopId: shop.id, type: 'sale', amount: cashCollected, referenceId: newSale.id, description: `Exchange (Cash portion): ${exchangeInvoiceNumber}` },
+        data: { shopId: shop.id, type: 'sale', amount: cashCollected, referenceId: newSale.id, description: cashDesc },
       });
     }
 

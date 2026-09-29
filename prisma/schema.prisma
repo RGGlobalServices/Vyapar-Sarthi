@@ -256,11 +256,14 @@ model Expense {
   attachmentUrl String?  @map("attachment_url") @db.VarChar
   isRecurring   Boolean? @default(false) @map("is_recurring")
   warehouseId   String?  @map("warehouse_id") @db.Uuid
+  partyId       String?  @map("party_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop  Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  party Customer? @relation("HamaliParty", fields: [partyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([shopId])
+  @@index([partyId])
   @@index([shopId, date(sort: Desc)], map: "ix_expenses_shop_date")
   @@index([shopId, category], map: "ix_expenses_shop_category")
   @@map("expenses")
@@ -353,7 +356,9 @@ model DeliveryChallan {
   dispatchFrom    String?   @map("dispatch_from") @db.VarChar
 
   // Transport details
-  transporter     String?   @db.VarChar
+  transporter     String?   @db.VarChar           // free-text fallback (legacy / walk-in)
+  transporterId   String?   @map("transporter_id") @db.Uuid  // linked CRM transporter
+  freightAmount   Float?    @map("freight_amount")           // bhade amount for auto FreightEntry
   vehicleNumber   String?   @map("vehicle_number") @db.VarChar
   driverName      String?   @map("driver_name") @db.VarChar
   driverMobile    String?   @map("driver_mobile") @db.VarChar
@@ -364,14 +369,19 @@ model DeliveryChallan {
   eWayBillNo          String?   @map("e_way_bill_no") @db.VarChar
   expectedInvoiceDate DateTime? @map("expected_invoice_date") @db.Date
 
-  shop     Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  order    Order?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  customer Customer?             @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  items    DeliveryChallanItem[]
+  shop                Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  order               Order?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  customer            Customer?             @relation("ChallanCustomer", fields: [customerId], references: [id], onDelete: NoAction)
+  sale                Sale?                 @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  transporterCustomer Customer?             @relation("ChallanTransporter", fields: [transporterId], references: [id], onDelete: SetNull)
+  items               DeliveryChallanItem[]
+  dispatchEntries     DispatchEntry[]
+  freightEntries      FreightEntry[]
 
   @@index([shopId])
   @@index([customerId])
   @@index([orderId])
+  @@index([transporterId])
   @@map("delivery_challans")
 }
 
@@ -532,6 +542,9 @@ model Product {
   trackBatch              Boolean?              @map("track_batch")
   trackExpiry             Boolean?              @map("track_expiry")
   gstPercent              Float?                @map("gst_percent")
+  // true = selling price already includes GST (e.g. ₹600 total with CGST+SGST inside)
+  // false/null = selling price is the base (exclusive); GST is added on top in billing
+  gstInclusive            Boolean?              @default(false) @map("gst_inclusive")
   // When the product was first added. Backfilled for pre-existing rows from the
   // earliest stock activity, so it reflects real history, not the migration date.
   createdAt               DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -622,13 +635,15 @@ model Customer {
   shop                  Shop?                   @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sales                 Sale[]
   orders                Order[]
-  deliveryChallans      DeliveryChallan[]
+  deliveryChallans      DeliveryChallan[]  @relation("ChallanCustomer")
+  challanTransports     DeliveryChallan[]  @relation("ChallanTransporter")
   collectionEntries     CollectionEntry[]
   gateEntriesAsParty    GateEntry[]             @relation("GateEntryParty")
   freightEntries        FreightEntry[]
   dispatchEntries       DispatchEntry[]
   jobWorkOrders         JobWorkOrder[]
   commissionEntries     CommissionEntry[]
+  hamaliExpenses        Expense[]               @relation("HamaliParty")
 
   @@index([mobile], map: "ix_customers_mobile")
   @@index([name], map: "ix_customers_name")
@@ -669,6 +684,8 @@ model Sale {
   chargesTotal     Float?     @map("charges_total")
   roundOffAmount   Float?     @map("round_off_amount") // signed; totalAmount = pre-round total + roundOffAmount
   items            SaleItem[]
+  dispatchEntries  DispatchEntry[]
+  deliveryChallans DeliveryChallan[]
   customer         Customer?  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   shop             Shop?      @relation(fields: [shopId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -2151,6 +2168,7 @@ model GateEntry {
   enteredAt           DateTime  @default(now()) @map("entered_at") @db.Timestamptz(6)
   exitedAt            DateTime? @map("exited_at") @db.Timestamptz(6)
   notes               String?   @db.VarChar
+  hamaliAmount        Float?    @map("hamali_amount")
   createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -2216,16 +2234,19 @@ model FreightEntry {
   amount        Float
   vehicleNumber String?   @map("vehicle_number") @db.VarChar
   gateEntryId   String?   @map("gate_entry_id") @db.Uuid
+  challanId     String?   @map("challan_id") @db.Uuid
   paymentMethod String?   @map("payment_method") @db.VarChar
   note          String?   @db.VarChar
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  shop        Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  transporter Customer   @relation(fields: [transporterId], references: [id], onDelete: Cascade)
-  gateEntry   GateEntry? @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+  shop        Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  transporter Customer         @relation(fields: [transporterId], references: [id], onDelete: Cascade)
+  gateEntry   GateEntry?       @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+  challan     DeliveryChallan? @relation(fields: [challanId], references: [id], onDelete: SetNull)
 
   @@index([shopId])
   @@index([transporterId])
+  @@index([challanId])
   @@map("freight_entries")
 }
 
@@ -2238,18 +2259,29 @@ model DispatchEntry {
   dispatchNumber String    @map("dispatch_number") @db.VarChar
   partyId        String?   @map("party_id") @db.Uuid
   vehicleNumber  String?   @map("vehicle_number") @db.VarChar
+  driverName     String?   @map("driver_name") @db.VarChar
   gateEntryId    String?   @map("gate_entry_id") @db.Uuid
   productId      String?   @map("product_id") @db.Uuid
   quantity       Float?
   unit           String?   @db.VarChar
+  noOfBags       Int?      @map("no_of_bags")
+  lotNumber      String?   @map("lot_number") @db.VarChar
+  dispatchType   String?   @default("sale") @map("dispatch_type") @db.VarChar
+  saleId         String?   @map("sale_id") @db.Uuid
+  challanId      String?   @map("challan_id") @db.Uuid
   notes          String?   @db.VarChar
+  status         String    @default("dispatched") @db.VarChar
+  returnedAt     DateTime? @map("returned_at") @db.Timestamptz(6)
+  returnNotes    String?   @map("return_notes") @db.VarChar
   dispatchedAt   DateTime  @default(now()) @map("dispatched_at") @db.Timestamptz(6)
   createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop      Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
   party     Customer?  @relation(fields: [partyId], references: [id], onDelete: NoAction)
-  gateEntry GateEntry? @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
-  product   Product?   @relation(fields: [productId], references: [id], onDelete: NoAction)
+  gateEntry       GateEntry?       @relation(fields: [gateEntryId], references: [id], onDelete: SetNull)
+  product         Product?         @relation(fields: [productId], references: [id], onDelete: NoAction)
+  sale            Sale?            @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  deliveryChallan DeliveryChallan? @relation(fields: [challanId], references: [id], onDelete: SetNull)
 
   @@unique([shopId, dispatchNumber])
   @@index([shopId])

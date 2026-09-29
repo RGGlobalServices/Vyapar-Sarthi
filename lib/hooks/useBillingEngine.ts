@@ -37,6 +37,7 @@ export function useBillingEngine(
   const updateSerialNumberInStore = useCartStore((state) => state.updateSerialNumber);
   const updateWarrantyDaysInStore = useCartStore((state) => state.updateWarrantyDays);
   const setLineBatchInStore = useCartStore((state) => state.setLineBatch);
+  const updateColorSizeInStore = useCartStore((state) => state.updateColorSize);
   const clearCartInStore = useCartStore((state) => state.clearCart);
 
   const [discount, setDiscount] = useState<number | DiscountInput>(initialDiscount);
@@ -168,6 +169,11 @@ export function useBillingEngine(
     setLineBatchInStore(shopId, id, variant, batch);
   }, [shopId, setLineBatchInStore]);
 
+  const updateColorSize = useCallback((id: string | number, fields: { color?: string; size?: string }, variant?: string) => {
+    if (!shopId) return;
+    updateColorSizeInStore(shopId, id, variant, fields);
+  }, [shopId, updateColorSizeInStore]);
+
   const clearCart = useCallback(() => {
     if (!shopId) return;
     clearCartInStore(shopId);
@@ -218,6 +224,7 @@ export function useBillingEngine(
     updateSerialNumber,
     updateWarrantyDays,
     setLineBatch,
+    updateColorSize,
     clearCart,
   };
 }

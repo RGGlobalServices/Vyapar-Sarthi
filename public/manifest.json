@@ -1,36 +1,28 @@
 {
-  "name": "Vyapar Sarthi",
+  "name": "Vyapar Sarthi - Business & POS",
   "short_name": "Vyapar Sarthi",
-  "description": "Smart POS & store management for Indian Kirana stores",
+  "description": "Smart ERP & POS management for all types of businesses — retail, wholesale, mills & manufacturing",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": [
-    "standalone",
-    "browser"
-  ],
-  "background_color": "#020617",
+  "background_color": "#0f172a",
   "theme_color": "#10b981",
   "orientation": "any",
   "lang": "en-IN",
   "dir": "ltr",
-  "categories": [
-    "business",
-    "finance",
-    "productivity"
-  ],
+  "categories": ["business", "finance", "productivity"],
   "icons": [
     {
       "src": "/icon.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icon.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -38,34 +30,19 @@
       "name": "New Bill",
       "short_name": "Billing",
       "url": "/en/billing",
-      "icons": [
-        {
-          "src": "/icon.png",
-          "sizes": "any"
-        }
-      ]
+      "icons": [{ "src": "/icon.png", "sizes": "any" }]
     },
     {
       "name": "Products",
       "short_name": "Products",
       "url": "/en/products",
-      "icons": [
-        {
-          "src": "/icon.png",
-          "sizes": "any"
-        }
-      ]
+      "icons": [{ "src": "/icon.png", "sizes": "any" }]
     },
     {
       "name": "Reports",
       "short_name": "Reports",
       "url": "/en/reports",
-      "icons": [
-        {
-          "src": "/icon.png",
-          "sizes": "any"
-        }
-      ]
+      "icons": [{ "src": "/icon.png", "sizes": "any" }]
     }
   ],
   "related_applications": [],

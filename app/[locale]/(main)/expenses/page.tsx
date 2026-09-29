@@ -3,17 +3,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
+import { fmtDate } from '@/lib/utils';
+import useSWR from 'swr';
 import { useBusinessStore } from '@/lib/businessStore';
-import { Loader2, Plus, Receipt, Calendar } from 'lucide-react';
+import { Loader2, Plus, Receipt, Calendar, Truck, Handshake, Package, LayoutList } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// Calendar-day helpers in IST — a shop's "today"/"yesterday" must match the
-// Indian calendar day the expense was actually logged on, not a UTC-diff
-// bucket that can silently be off by a day depending on the browser/server
-// clock's own timezone (same reasoning as billing's formatAddedDate).
 const istYmd = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-type FilterMode = 'all' | 'today' | 'yesterday' | 'custom';
+type FilterMode = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+type SourceFilter = 'all' | 'manual' | 'freight' | 'commission' | 'hamali';
+
+const SOURCE_CONFIG: Record<string, { label: string; cls: string; icon: any }> = {
+  manual:     { label: 'Manual',     cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',       icon: Receipt },
+  freight:    { label: 'Freight',    cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',        icon: Truck },
+  commission: { label: 'Commission', cls: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300', icon: Handshake },
+  hamali:     { label: 'Hamali',     cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',    icon: Package },
+};
 
 export default function ExpensesPage() {
   const t = useTranslations('Expenses');
@@ -25,6 +31,7 @@ export default function ExpensesPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
 
   const [category, setCategory] = useState('');
   const [amount, setAmount] = useState('');
@@ -32,15 +39,18 @@ export default function ExpensesPage() {
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchExpenses();
-  }, [activeShopId]);
+  const { data: categoryList = [], mutate: refetchCategories } = useSWR<{ id: string; name: string }[]>(
+    activeShopId ? ['/expenses/categories', activeShopId] : null,
+    ([u]) => api.get(u).then(r => r.data),
+  );
+
+  useEffect(() => { fetchExpenses(); }, [activeShopId]);
 
   async function fetchExpenses() {
     try {
-      const res = await api.get('/expenses');
+      const res = await api.get('/expenses/all');
       setExpenses(res.data);
-    } catch (err) {
+    } catch {
       toast.error(t('loadError'));
     } finally {
       setLoading(false);
@@ -51,20 +61,17 @@ export default function ExpensesPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/expenses', {
-        category,
-        amount: parseFloat(amount),
-        paymentMode,
-        description
-      });
+      const trimmedCategory = category.trim();
+      if (trimmedCategory && !categoryList.some(c => c.name.toLowerCase() === trimmedCategory.toLowerCase())) {
+        await api.post('/expenses/categories', { name: trimmedCategory });
+        refetchCategories();
+      }
+      await api.post('/expenses', { category: trimmedCategory, amount: parseFloat(amount), paymentMode, description });
       toast.success(t('addSuccess'));
       setShowAdd(false);
-      setCategory('');
-      setAmount('');
-      setPaymentMode('Cash');
-      setDescription('');
+      setCategory(''); setAmount(''); setPaymentMode('Cash'); setDescription('');
       fetchExpenses();
-    } catch (err) {
+    } catch {
       toast.error(t('addError'));
     } finally {
       setSaving(false);
@@ -72,29 +79,66 @@ export default function ExpensesPage() {
   }
 
   const filteredExpenses = useMemo(() => {
-    if (filterMode === 'all') return expenses;
-    const todayYmd = istYmd(new Date());
+    let rows = expenses;
+
+    // Source filter
+    if (sourceFilter !== 'all') rows = rows.filter(e => e.source === sourceFilter);
+
+    // Date filter
     if (filterMode === 'today') {
-      return expenses.filter(e => istYmd(new Date(e.date || e.createdAt)) === todayYmd);
+      const todayYmd = istYmd(new Date());
+      rows = rows.filter(e => istYmd(new Date(e.date)) === todayYmd);
+    } else if (filterMode === 'yesterday') {
+      const yYmd = istYmd(new Date(Date.now() - 86400000));
+      rows = rows.filter(e => istYmd(new Date(e.date)) === yYmd);
+    } else if (filterMode === 'week') {
+      const cutoff = new Date(Date.now() - 7 * 86400000);
+      rows = rows.filter(e => new Date(e.date) >= cutoff);
+    } else if (filterMode === 'month') {
+      const now = new Date();
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      rows = rows.filter(e => istYmd(new Date(e.date)).slice(0, 7) === thisMonth);
+    } else if (filterMode === 'custom') {
+      rows = rows.filter(e => {
+        const ymd = istYmd(new Date(e.date));
+        if (customFrom && ymd < customFrom) return false;
+        if (customTo && ymd > customTo) return false;
+        return true;
+      });
     }
-    if (filterMode === 'yesterday') {
-      const y = new Date(Date.now() - 86400000);
-      const yYmd = istYmd(y);
-      return expenses.filter(e => istYmd(new Date(e.date || e.createdAt)) === yYmd);
-    }
-    // custom range — either bound alone still filters (open-ended)
-    return expenses.filter(e => {
-      const ymd = istYmd(new Date(e.date || e.createdAt));
-      if (customFrom && ymd < customFrom) return false;
-      if (customTo && ymd > customTo) return false;
-      return true;
-    });
-  }, [expenses, filterMode, customFrom, customTo]);
+
+    return rows;
+  }, [expenses, filterMode, customFrom, customTo, sourceFilter]);
 
   const filteredTotal = useMemo(
     () => filteredExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
-    [filteredExpenses]
+    [filteredExpenses],
   );
+
+  // Source breakdown counts for filter pills
+  const sourceCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: expenses.length, manual: 0, freight: 0, commission: 0, hamali: 0 };
+    for (const e of expenses) if (counts[e.source] !== undefined) counts[e.source]++;
+    return counts;
+  }, [expenses]);
+
+  const monthlyAnalytics = useMemo(() => {
+    const map: Record<string, { total: number; bySource: Record<string, number> }> = {};
+    for (const e of expenses) {
+      const key = new Date(e.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 7);
+      if (!map[key]) map[key] = { total: 0, bySource: { manual: 0, freight: 0, commission: 0, hamali: 0 } };
+      map[key].total += Number(e.amount) || 0;
+      if (map[key].bySource[e.source] !== undefined) map[key].bySource[e.source] += Number(e.amount) || 0;
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(0, 6)
+      .map(([key, data]) => ({
+        key,
+        label: new Date(key + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+        ...data,
+      }));
+  }, [expenses]);
 
   if (loading) {
     return (
@@ -106,7 +150,8 @@ export default function ExpensesPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800">
             <Receipt size={24} />
@@ -124,13 +169,39 @@ export default function ExpensesPage() {
         </button>
       </div>
 
+      {/* Source filter pills */}
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <LayoutList size={14} className="text-slate-400 shrink-0" />
+        {(['all', 'manual', 'freight', 'commission', 'hamali'] as SourceFilter[]).map(src => {
+          const cfg = src === 'all' ? null : SOURCE_CONFIG[src];
+          const count = sourceCounts[src] || 0;
+          const active = sourceFilter === src;
+          return (
+            <button
+              key={src}
+              onClick={() => setSourceFilter(src)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors border ${
+                active
+                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-400'
+              }`}
+            >
+              {cfg && <cfg.icon size={11} />}
+              {src === 'all' ? 'All' : SOURCE_CONFIG[src].label}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${active ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Date filter */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
         <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
           <Calendar size={16} />
           <span className="text-xs font-bold uppercase tracking-wider">{t('filterLabel')}</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(['all', 'today', 'yesterday'] as const).map(mode => (
+          {(['all', 'today', 'yesterday', 'week', 'month'] as const).map(mode => (
             <button
               key={mode}
               onClick={() => { setFilterMode(mode); setCustomFrom(''); setCustomTo(''); }}
@@ -140,13 +211,12 @@ export default function ExpensesPage() {
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              {mode === 'all' ? t('filterAll') : mode === 'today' ? t('filterToday') : t('filterYesterday')}
+              {mode === 'all' ? t('filterAll') : mode === 'today' ? t('filterToday') : mode === 'yesterday' ? t('filterYesterday') : mode === 'week' ? 'This Week' : 'This Month'}
             </button>
           ))}
           <div className="flex items-center gap-1.5">
             <input
-              type="date"
-              value={customFrom}
+              type="date" value={customFrom}
               onChange={e => { setCustomFrom(e.target.value); setFilterMode('custom'); }}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border outline-none transition-colors ${
                 filterMode === 'custom'
@@ -156,8 +226,7 @@ export default function ExpensesPage() {
             />
             <span className="text-xs text-slate-400">{t('filterTo')}</span>
             <input
-              type="date"
-              value={customTo}
+              type="date" value={customTo}
               onChange={e => { setCustomTo(e.target.value); setFilterMode('custom'); }}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border outline-none transition-colors ${
                 filterMode === 'custom'
@@ -174,13 +243,25 @@ export default function ExpensesPage() {
         )}
       </div>
 
+      {/* Add expense form */}
       {showAdd && (
         <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 mb-8 shadow-sm animate-in slide-in-from-top-4 duration-300">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-slate-100"><Receipt size={18} className="text-slate-400"/> {t('newExpenseEntry')}</h2>
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-slate-100">
+            <Receipt size={18} className="text-slate-400"/> {t('newExpenseEntry')}
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('category')}</label>
-              <input required disabled={saving} value={category} onChange={e => setCategory(e.target.value)} placeholder={t('categoryPlaceholder')} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all disabled:opacity-50" />
+              <input
+                required disabled={saving}
+                list="expense-categories"
+                value={category} onChange={e => setCategory(e.target.value)}
+                placeholder={t('categoryPlaceholder')}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all disabled:opacity-50"
+              />
+              <datalist id="expense-categories">
+                {categoryList.map(c => <option key={c.id} value={c.name} />)}
+              </datalist>
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('amount')}</label>
@@ -188,7 +269,7 @@ export default function ExpensesPage() {
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('paymentMode')}</label>
-              <select disabled={saving} value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+              <select disabled={saving} value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer disabled:opacity-50">
                 <option value="Cash">{t('modeCash')}</option>
                 <option value="UPI">{t('modeUpi')}</option>
                 <option value="Card">{t('modeCard')}</option>
@@ -203,13 +284,14 @@ export default function ExpensesPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
             <button type="button" onClick={() => setShowAdd(false)} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors disabled:opacity-50">{t('cancel')}</button>
             <button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 transition-colors shadow-sm flex items-center gap-2 active:scale-95">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : null}
+              {saving && <Loader2 className="w-4 h-4 animate-spin"/>}
               {saving ? t('adding') : t('saveExpense')}
             </button>
           </div>
         </form>
       )}
 
+      {/* Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
         {expenses.length === 0 ? (
           <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
@@ -228,43 +310,92 @@ export default function ExpensesPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse whitespace-nowrap">
+            <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colDate')}</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colCategory')}</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colDescription')}</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colMode')}</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">{t('colAmount')}</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colDate')}</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Source</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colCategory')}</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colDescription')}</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colMode')}</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">{t('colAmount')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredExpenses.map((expense: any) => (
-                  <tr key={expense.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group">
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium">
-                      {new Date(expense.date || expense.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-slate-100">
-                      {expense.category}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-500">
-                      {expense.description || <span className="text-slate-300 dark:text-slate-700 italic">{t('noNotes')}</span>}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        {expense.paymentMode || 'Cash'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-black text-rose-600 dark:text-rose-400 text-right tabular-nums">
-                      ₹{expense.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))}
+                {filteredExpenses.map((expense: any) => {
+                  const src = SOURCE_CONFIG[expense.source] || SOURCE_CONFIG.manual;
+                  const SrcIcon = src.icon;
+                  return (
+                    <tr key={expense.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-5 py-3.5 text-sm text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                        {fmtDate(expense.date)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${src.cls}`}>
+                          <SrcIcon size={10} />
+                          {src.label}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                        {expense.category}
+                        {expense.partyName && (
+                          <span className="block text-[11px] font-medium text-slate-400">{expense.partyName}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-slate-500 max-w-[220px] truncate">
+                        {expense.description || <span className="text-slate-300 dark:text-slate-700 italic">{t('noNotes')}</span>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          {expense.paymentMode || 'Cash'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm font-black text-rose-600 dark:text-rose-400 text-right tabular-nums whitespace-nowrap">
+                        ₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Monthly analytics */}
+      {monthlyAnalytics.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+            <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Monthly Breakdown</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/50">
+                <tr>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider">Month</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Manual</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Freight</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Commission</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Hamali</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {monthlyAnalytics.map(m => (
+                  <tr key={m.key} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                    <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">{m.label}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.manual > 0 ? `₹${Math.round(m.bySource.manual).toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.freight > 0 ? `₹${Math.round(m.bySource.freight).toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.commission > 0 ? `₹${Math.round(m.bySource.commission).toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.hamali > 0 ? `₹${Math.round(m.bySource.hamali).toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-black text-rose-600 dark:text-rose-400">₹{Math.round(m.total).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

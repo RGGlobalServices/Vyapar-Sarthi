@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { Wallet, X, Loader2, CheckCircle2, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 
 type Bill = {
@@ -87,7 +87,7 @@ export default function SettlementPage() {
                   <p className="font-bold text-slate-900 dark:text-white">{tab === 'payable' ? b.supplierName : b.entityName}</p>
                   <p className="text-xs text-slate-500 mt-1">
                     {b.billNumber && `#${b.billNumber} · `}
-                    {b.date ? new Date(b.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                    {fmtDate(b.date)}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">

@@ -136,6 +136,44 @@ export async function PATCH(req: Request, ctx: any) {
       return NextResponse.json(updated);
     }
 
+    // action: 'dispatch' — create a DispatchEntry from this challan (stock already
+    // debited when the challan was created, so no stock change here).
+    if (body.action === 'dispatch') {
+      if (!['open', 'invoiced'].includes(challan.status)) {
+        return NextResponse.json({ error: `Cannot dispatch a challan that is ${challan.status}.` }, { status: 400 });
+      }
+
+      const d = new Date();
+      const prefix = `DC-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      const sameDay = await (prisma as any).dispatchEntry.count({ where: { shopId: shop.id, dispatchNumber: { startsWith: prefix } } });
+      const dispatchNumber = `${prefix}-${String(sameDay + 1).padStart(3, '0')}`;
+
+      // Use the first item's product as the primary product for the dispatch entry
+      const firstItem = challan.items[0] as any;
+      const totalQty = (challan.items as any[]).reduce((s: number, it: any) => s + (it.quantity || 0), 0);
+
+      const dispatch = await (prisma as any).dispatchEntry.create({
+        data: {
+          shopId: shop.id,
+          dispatchNumber,
+          challanId: challan.id,
+          saleId: (challan as any).saleId || null,
+          partyId: challan.customerId || null,
+          vehicleNumber: challan.vehicleNumber || null,
+          driverName: challan.driverName || null,
+          productId: firstItem?.productId || null,
+          quantity: totalQty || null,
+          unit: firstItem?.unit || null,
+          dispatchType: challan.dispatchType || 'sale',
+          status: 'dispatched',
+          dispatchedAt: (challan as any).challanDate ? new Date((challan as any).challanDate) : new Date(),
+          notes: challan.notes || null,
+        },
+      });
+
+      return NextResponse.json({ dispatch });
+    }
+
     return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
   } catch (err: any) {
     console.error('[challans/[id] PATCH] failed:', err);

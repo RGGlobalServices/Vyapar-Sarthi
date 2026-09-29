@@ -9,6 +9,7 @@ import {
   UploadCloud, Eye, Trash2, FileImage, Pencil, User, AlertTriangle, FileText, ChevronLeft,
 } from 'lucide-react';
 import api from '@/lib/api';
+import { fmtDate } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import DocumentViewerModal from '@/components/DocumentViewerModal';
 import { ExportButton } from '@/lib/hooks/useExport';
@@ -689,11 +690,11 @@ function SupplierRollupView({ mode, onBack, onOpenSupplier }: {
                         {r.billNumber || '-'}
                       </td>
                       <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-300">
-                        {r.date ? new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                        {fmtDate(r.date)}
                       </td>
                       {isPending && (
                         <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-300">
-                          {r.dueDate ? new Date(r.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                          {fmtDate(r.dueDate)}
                         </td>
                       )}
                       {isPending ? (
@@ -1148,6 +1149,9 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   const [billSearch, setBillSearch] = useState('');
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [supplierTab, setSupplierTab] = useState<'history' | 'deliveries'>('history');
+  const [gateEntries, setGateEntries] = useState<any[]>([]);
+  const [loadingGateEntries, setLoadingGateEntries] = useState(false);
   // Password re-verification gate — replaces the old first confirm() "are you
   // sure" dialog. The Trash icon just opens this; the actual delete only
   // fires from ConfirmPasswordModal's onConfirm, after verify-pin succeeds.
@@ -1211,6 +1215,15 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   }, [supplierId, range.from, range.to]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (supplierTab !== 'deliveries') return;
+    setLoadingGateEntries(true);
+    api.get(`/mill/gate-entries?supplierId=${supplierId}`)
+      .then(r => setGateEntries(r.data || []))
+      .catch(() => setGateEntries([]))
+      .finally(() => setLoadingGateEntries(false));
+  }, [supplierTab, supplierId]);
 
   async function handleDownloadPendingBills() {
     if (!data?.supplier) return;
@@ -1506,6 +1519,68 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
           />
         )}
 
+        {/* Tab switcher — history vs deliveries */}
+        <div className="flex gap-1 px-4 pt-3 pb-0 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
+          {(['history', 'deliveries'] as const).map(tab => (
+            <button key={tab} onClick={() => setSupplierTab(tab)}
+              className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors border-b-2 -mb-px ${
+                supplierTab === tab
+                  ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}>
+              {tab === 'history' ? (t('tabHistory') || 'Purchase History') : (t('tabDeliveries') || 'Deliveries')}
+            </button>
+          ))}
+        </div>
+
+        {supplierTab === 'deliveries' ? (
+          <div className="p-4 sm:p-6">
+            {loadingGateEntries ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-7 h-7 animate-spin text-emerald-500" /></div>
+            ) : gateEntries.length === 0 ? (
+              <div className="py-12 text-center">
+                <Truck size={36} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+                <p className="text-sm text-slate-500">{t('noDeliveries') || 'No gate entries found for this supplier.'}</p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {gateEntries.map((ge: any) => (
+                    <li key={ge.id} className="p-4 flex items-start justify-between gap-4 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-slate-800 dark:text-white">{ge.vehicleNumber}</span>
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            ge.status === 'exited' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                            : ge.status === 'weighed' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
+                          }`}>{ge.status}</span>
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">{ge.direction}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {ge.entryNumber} · {new Date(ge.enteredAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {ge.materialDescription && ` · ${ge.materialDescription}`}
+                        </p>
+                        {ge.weighbridgeEntries?.length > 0 && (
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            {ge.weighbridgeEntries.reduce((sum: number, w: any) => sum + (w.netWeightKg || 0), 0).toLocaleString('en-IN')} kg weighed
+                          </p>
+                        )}
+                      </div>
+                      {ge.hamaliAmount > 0 && (
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                          Hamali ₹{Number(ge.hamaliAmount).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+        <div>
+
         {/* Bill photos */}
         <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
           <div className="flex items-center justify-between mb-3">
@@ -1732,7 +1807,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                       #{it.billNumber}
                                     </span>
                                   )}
-                                  <span>{it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+                                  <span>{fmtDate(it.date)}</span>
                                 </p>
                                 {it.dueDate && it.type !== 'payment' && (() => {
                                   // Credit-terms due date derived from supplier.creditDays.
@@ -1753,7 +1828,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
                                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                                     }`}>
                                       <Calendar size={10} />
-                                      Due {due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                      Due {fmtDate(due)}
                                       {overdue
                                         ? ` · ${Math.abs(daysLeft)}d overdue`
                                         : daysLeft === 0
@@ -1815,6 +1890,8 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
             </div>
           )}
         </div>
+        </div>
+        )}
         </div>
       </div>
 
@@ -1979,7 +2056,7 @@ function TransactionDetailModal({ supplierId, supplierName, transaction, billPho
                 {isPayment ? t('paymentType') : t('purchaseType')}
               </span>
               {transaction.billNumber && <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">#{transaction.billNumber}</span>}
-              <span>{transaction.date ? new Date(transaction.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+              <span>{fmtDate(transaction.date)}</span>
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
@@ -2296,7 +2373,7 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
                   {selectedBill.billNumber ? `#${selectedBill.billNumber}` : t('purchaseType')}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {selectedBill.date ? new Date(selectedBill.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                  {fmtDate(selectedBill.date)}
                 </p>
               </div>
               <div className="text-right shrink-0">

@@ -85,6 +85,10 @@ function parseSizeVariants(sv: any): { jsonStr: string | null; totalQty: number 
     const trimmed = sv.trim();
     if (!trimmed) return { jsonStr: null, totalQty: 0 };
 
+    // Size range like "5-12", "5X12", "5 to 12" — not a per-size quantity map.
+    // Return null so the caller uses the product's quantity field instead.
+    if (/^\d+\s*[-Xx–to]+\s*\d+$/.test(trimmed)) return { jsonStr: null, totalQty: 0 };
+
     // Try JSON parse first
     try {
       const parsed = JSON.parse(trimmed);

@@ -70,7 +70,7 @@ export async function exportUdharPDF(
         : (customer.name || '—');
 
       rows.push([
-        new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        (() => { const d = new Date(tx.date); return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`; })(),
         customerCell,
         tx.type === 'udhar' ? 'Credit' : 'Payment',
         {

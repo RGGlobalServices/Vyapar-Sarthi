@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLocale } from 'next-intl';
 import api from '@/lib/api';
 import { Shield, Users, RefreshCw, Search, ChevronLeft, ChevronRight, X, Ban, CheckCircle, Trash2, ArrowLeft } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 
 function getAdminAuth() {
   if (typeof window === 'undefined') return null;
@@ -216,7 +216,7 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm font-semibold text-slate-300">{user.referralCount}</td>
-                    <td className="px-6 py-4 text-xs text-slate-500">{new Date(user.createdAt).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-xs text-slate-500">{fmtDate(user.createdAt)}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => toggleStatus(user.id, user.isActive)}

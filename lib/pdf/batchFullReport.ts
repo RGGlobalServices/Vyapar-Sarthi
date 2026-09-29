@@ -23,7 +23,8 @@ export async function exportBatchFullReportPDF(reportData: { shop: any; batch: a
     gst: shop?.gst || null,
   };
 
-  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const _now = new Date();
+  const currentDate = `${String(_now.getDate()).padStart(2,'0')}-${String(_now.getMonth()+1).padStart(2,'0')}-${_now.getFullYear()}`;
   const L = PDF_LAYOUT.marginX;
   const pageW = doc.internal.pageSize.getWidth();
   const R = pageW - PDF_LAYOUT.marginX;
@@ -51,8 +52,9 @@ export async function exportBatchFullReportPDF(reportData: { shop: any; batch: a
   const batchStatus = (batch.status || '');
   bf('Status', batchStatus.charAt(0).toUpperCase() + batchStatus.slice(1).toLowerCase(), L + col * 2 + 3, y + 6);
 
-  const startedStr = batch.startedAt ? new Date(batch.startedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const closedStr = batch.closedAt ? new Date(batch.closedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'In Progress';
+  const _fmtD = (v: string | null | undefined) => { if (!v) return '—'; const d = new Date(v); return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`; };
+  const startedStr = _fmtD(batch.startedAt);
+  const closedStr = batch.closedAt ? _fmtD(batch.closedAt) : 'In Progress';
   bf('Started', startedStr, L + 3, y + 18);
   bf('Closed / Finalized', closedStr, L + col + 3, y + 18);
   bf('Input (kg)', String(batch.inputKg ?? '—'), L + col * 2 + 3, y + 18);
@@ -107,7 +109,7 @@ export async function exportBatchFullReportPDF(reportData: { shop: any; batch: a
       `${st.inputKg ?? '—'} kg`,
       `${st.outputKg ?? '—'} kg`,
       `${st.wastageKg ?? '—'} kg`,
-      st.completedAt ? new Date(st.completedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—',
+      st.completedAt ? _fmtD(st.completedAt) : '—',
     ]);
 
     autoTable(doc, {
@@ -183,7 +185,7 @@ export async function exportBatchFullReportPDF(reportData: { shop: any; batch: a
       lot.lotNumber || '—',
       `${lot.quantityKg ?? '—'} kg`,
       lot.godown?.name || '—',
-      lot.createdAt ? new Date(lot.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+      lot.createdAt ? _fmtD(lot.createdAt) : '—',
     ]);
 
     autoTable(doc, {
@@ -235,7 +237,7 @@ export async function exportBatchFullReportPDF(reportData: { shop: any; batch: a
     const fmtPct = (v: any) => (v != null ? `${Number(v).toFixed(2)}%` : '—');
 
     const qtRows = qualityTests.map((qt: any) => [
-      qt.testDate ? new Date(qt.testDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+      qt.testDate ? _fmtD(qt.testDate) : '—',
       qt.testedBy || '—',
       fmtPct(qt.moisturePct),
       fmtPct(qt.foreignMatterPct),

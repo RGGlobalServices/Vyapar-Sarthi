@@ -13,8 +13,12 @@ import { cn } from '@/lib/utils';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-const fmtDate = (d: string | Date | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const fmtDate = (d: string | Date | null | undefined): string => {
+  if (!d) return '—';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (isNaN(dt.getTime())) return '—';
+  return `${String(dt.getDate()).padStart(2,'0')}-${String(dt.getMonth()+1).padStart(2,'0')}-${dt.getFullYear()}`;
+};
 const fmtDateTime = (d: string | Date | null | undefined) =>
   d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 

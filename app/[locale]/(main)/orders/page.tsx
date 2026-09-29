@@ -6,7 +6,7 @@ import useSWR from 'swr';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { Loader2, Plus, ClipboardList, Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Filter, X, AlertTriangle, CalendarClock, Search, Package } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
@@ -567,7 +567,7 @@ export default function OrdersPage() {
                 {visibleOrders.map((order: any) => (
                   <tr key={order.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                      {new Date(order.createdAt).toLocaleDateString('en-IN')}
+                      {fmtDate(order.createdAt)}
                     </td>
                     <td className="px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-100">
                       {order.orderNumber}
@@ -589,7 +589,7 @@ export default function OrdersPage() {
                       {order.expectedDate ? (
                         <span className={cn('flex items-center gap-1', isOverdue(order) ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-400')}>
                           {isOverdue(order) && <AlertTriangle size={12} />}
-                          {new Date(order.expectedDate).toLocaleDateString('en-IN')}
+                          {fmtDate(order.expectedDate)}
                         </span>
                       ) : <span className="text-slate-400">—</span>}
                     </td>
@@ -700,7 +700,7 @@ export default function OrdersPage() {
                 <input value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors text-slate-900 dark:text-white" />
               </div>
               {editForm.status === 'completed' && editingOrder.completedAt && (
-                <p className="text-xs text-slate-400">{t('completedOn') || 'Completed on'}: {new Date(editingOrder.completedAt).toLocaleDateString('en-IN')}</p>
+                <p className="text-xs text-slate-400">{t('completedOn') || 'Completed on'}: {fmtDate(editingOrder.completedAt)}</p>
               )}
             </div>
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50 shrink-0">

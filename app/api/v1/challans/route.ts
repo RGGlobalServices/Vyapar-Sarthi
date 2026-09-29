@@ -29,9 +29,12 @@ export async function GET(req: Request) {
       ];
     }
 
-    const challans = await prisma.deliveryChallan.findMany({
+    const challans = await (prisma as any).deliveryChallan.findMany({
       where,
-      include: { items: true },
+      include: {
+        items: true,
+        transporterCustomer: { select: { id: true, name: true, mobile: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -58,9 +61,9 @@ export async function POST(req: Request) {
     const data = await req.json();
     const {
       customerId, customerName, customerMobile, customerAddress, orderId, notes, items,
-      // new fields
       challanDate, dispatchType, dispatchFrom,
-      transporter, vehicleNumber, driverName, driverMobile, lrNumber,
+      transporterId, transporter, freightAmount,
+      vehicleNumber, driverName, driverMobile, lrNumber,
       jobWorkOrderRef, eWayBillNo, expectedInvoiceDate,
     } = data;
 
@@ -78,6 +81,13 @@ export async function POST(req: Request) {
       orderId,
       productId: items.map((it: any) => it.productId),
     });
+
+    // Validate transporterId if provided
+    const parsedFreight = freightAmount != null && freightAmount !== '' ? Number(freightAmount) : null;
+    if (transporterId) {
+      const tCheck = await prisma.customer.findFirst({ where: { id: transporterId, shopId: shop.id, customerType: 'transporter' } });
+      if (!tCheck) return NextResponse.json({ error: 'Transporter not found.' }, { status: 400 });
+    }
 
     // Verify lot ids belong to this shop (assertOwned doesn't cover lots)
     if (lotIds.length > 0) {
@@ -107,6 +117,8 @@ export async function POST(req: Request) {
           dispatchType: dispatchType || 'sale',
           dispatchFrom: dispatchFrom || null,
           transporter: transporter || null,
+          transporterId: transporterId || null,
+          freightAmount: parsedFreight,
           vehicleNumber: vehicleNumber || null,
           driverName: driverName || null,
           driverMobile: driverMobile || null,
@@ -152,6 +164,21 @@ export async function POST(req: Request) {
           SET available_quantity = GREATEST(0, available_quantity - ${Number(it.quantity)})
           WHERE id = ${it.lotId}::uuid AND shop_id = ${shop.id}::uuid
         `;
+      }
+
+      // Auto-create freight charge when a linked transporter + amount is given
+      if (transporterId && parsedFreight && parsedFreight > 0) {
+        await (tx as any).freightEntry.create({
+          data: {
+            shopId: shop.id,
+            transporterId,
+            challanId: created.id,
+            type: 'charge',
+            amount: parsedFreight,
+            vehicleNumber: vehicleNumber || null,
+            note: `Auto from challan ${challanNumber}`,
+          },
+        });
       }
 
       return created;

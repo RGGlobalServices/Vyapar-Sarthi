@@ -8,7 +8,7 @@ import {
   Barcode as BarcodeIcon, ListChecks, Wine,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import api from '@/lib/api';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
@@ -1206,7 +1206,7 @@ export default function WholesaleStockUI() {
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <p className="font-bold text-sm text-slate-900 dark:text-white">{t('batchLabel', { number: b.batchNumber || b.barcode || 'N/A' })}</p>
-                          <p className="text-xs text-slate-500">{t('expLabel', { date: b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : 'N/A' })}</p>
+                          <p className="text-xs text-slate-500">{t('expLabel', { date: b.expiryDate ? fmtDate(b.expiryDate) : 'N/A' })}</p>
                         </div>
                         <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">{t('qtyLabel', { qty: `${b.quantity}${b.initialQuantity != null ? ` / ${b.initialQuantity}` : ''}` })}</span>
                       </div>

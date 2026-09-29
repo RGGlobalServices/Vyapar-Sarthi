@@ -9,8 +9,8 @@ import { waitForImages } from '@/lib/waitForImages';
 import { buildMillInvoiceData, isMillInvoice, millWhatsAppText, type MillInvoiceShop } from '@/lib/millInvoice';
 import MillInvoice from '@/components/invoice/MillInvoice';
 
-const fmtDate = (iso: string) => {
-  try { return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return ''; }
+const fmtDate = (iso: string): string => {
+  try { const d = new Date(iso); return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`; } catch { return ''; }
 };
 
 /**

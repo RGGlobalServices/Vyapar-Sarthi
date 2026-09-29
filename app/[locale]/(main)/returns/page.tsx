@@ -30,7 +30,7 @@ import {
   Plus,
   Trash2
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -114,6 +114,15 @@ export default function ReturnsPage() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<any>(null);
 
+  // Browser back button closes the modal on mobile
+  useEffect(() => {
+    if (!selectedReturn) return;
+    window.history.pushState({ returnModal: true }, '');
+    const onPop = () => setSelectedReturn(null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [selectedReturn]);
+
   // ── Exchange mode ──────────────────────────────────────────────────────
   const [exchangeMode, setExchangeMode] = useState(false);
   const [exchangeLines, setExchangeLines] = useState<ExchangeLine[]>([]);
@@ -121,7 +130,9 @@ export default function ReturnsPage() {
   const [productSearch, setProductSearch] = useState('');
   const [pickedProduct, setPickedProduct] = useState<ExchangeProductRow | null>(null);
   const [pickedVariant, setPickedVariant] = useState<string>('');
-  const [settlementMethod, setSettlementMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Udhar'>('Cash');
+  const [settlementMethod, setSettlementMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Udhar' | 'Mix'>('Cash');
+  const [mixAmounts, setMixAmounts] = useState<{ cash: number; upi: number; card: number }>({ cash: 0, upi: 0, card: 0 });
+  const [cashRefundOverride, setCashRefundOverride] = useState<number | null>(null);
 
   async function loadExchangeProducts(): Promise<ExchangeProductRow[]> {
     if (exchangeProducts) return exchangeProducts;
@@ -179,7 +190,7 @@ export default function ReturnsPage() {
     doc.text('Return Receipt', 14, 22);
 
     doc.setFontSize(10);
-    doc.text(`Date: ${new Date(ret.date).toLocaleDateString()}`, 14, 32);
+    doc.text(`Date: ${fmtDate(ret.date)}`, 14, 32);
     if (noteData.invoiceNumber) {
       doc.text(`Original Invoice: ${noteData.invoiceNumber}`, 14, 38);
     }
@@ -253,14 +264,8 @@ export default function ReturnsPage() {
         throw new Error('Invoice not found or invalid response');
       }
 
-      // Mill (mill_v2) invoices can't be returned/exchanged (the server would answer 409): explain instead.
-      if (res.data.pricing_model === 'mill_v2') {
-        setBill(null); setReturnItems([]);
-        alert(tMill('actionsBlockedMill'));
-        return;
-      }
-
       setBill(res.data);
+      setCashRefundOverride(null);
       // Initialize returnable items (quantity 0 initially)
       if (res.data.items) {
         const availableItems = res.data.items
@@ -311,12 +316,15 @@ export default function ReturnsPage() {
           product_id: item.product_id,
           name: item.name,
           price: item.price_per_unit
-        }))
+        })),
+        cash_refund: actualCashRefund,
+        credit_to_add: creditToAdd,
       });
       alert('Return processed successfully!');
       setBill(null);
       setReturnItems([]);
       setSearchQuery('');
+      setCashRefundOverride(null);
       fetchHistory(); // refresh return history in-page
       // Every screen that reads customer.totalDue, product stock, dashboard
       // KPIs or the cashbook has just been changed by this return — nudge
@@ -324,13 +332,13 @@ export default function ReturnsPage() {
       invalidateReturnCaches();
     } catch (err: any) {
       console.error('Failed to process return detail:', err);
-      const errorDetail = {
-        status: err.response?.status || err.status,
-        data: err.response?.data || err.data,
-        message: err.message || (typeof err === 'string' ? err : JSON.stringify(err))
-      };
-      console.error('Failed to process return error detail:', errorDetail);
-      alert(`Error processing return: ${errorDetail.data?.detail || errorDetail.message || 'Unknown error'}`);
+      const status = err.response?.status || err.status;
+      const detail = err.response?.data?.detail || err.data?.detail || err.message || 'Unknown error';
+      if (status === 409) {
+        alert('Customer udhar balance mismatch. Please refresh the page and try again.\n\nPossible reason: balance was updated from another device.');
+      } else {
+        alert(`Error processing return: ${detail}`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -338,7 +346,31 @@ export default function ReturnsPage() {
 
   const returnValueForExchange = returnItems.reduce((acc, it) => acc + it.returnQty * it.price_per_unit, 0);
   const exchangeValueTotal = exchangeLines.reduce((acc, l) => acc + l.qty * l.price, 0);
-  const exchangeDifference = Math.round((exchangeValueTotal - returnValueForExchange) * 100) / 100;
+
+  // Bill payment breakdown at component level (safe when bill is null)
+  const billTotalAmt = bill ? Number(bill.total_amount) || 0 : 0;
+  const billPaidAmt = bill ? Number(bill.amount_paid ?? bill.amountPaid ?? bill.total_amount) || 0 : 0;
+  const billUdharAmt = Math.max(0, billTotalAmt - billPaidAmt);
+  const billPd = bill ? (bill.payment_details || bill.paymentDetails || {}) : {};
+  const billCashPaid = Number(billPd?.cash) || (bill?.payment_type === 'Cash' ? billPaidAmt : 0);
+  const billUpiPaid = Number(billPd?.upi) || (bill?.payment_type === 'UPI' ? billPaidAmt : 0);
+  const billCardPaid = Number(billPd?.card) || (bill?.payment_type === 'Card' ? billPaidAmt : 0);
+
+  // Simple return: udhar clears first; remaining is cash refund (editable by shopkeeper)
+  const totalRefund = returnValueForExchange;
+  const willClearUdhar = Math.min(totalRefund, billUdharAmt);
+  const willRefundCash = totalRefund - willClearUdhar;
+  const actualCashRefund = cashRefundOverride !== null
+    ? Math.max(0, Math.min(Math.round(cashRefundOverride), willRefundCash))
+    : willRefundCash;
+  const creditToAdd = willRefundCash - actualCashRefund;
+
+  // Exchange: return credit = only the portion the customer actually PAID
+  // (udhar debt is cleared separately but must not count as exchange credit —
+  //  otherwise the shop effectively forgives the unpaid debt for free)
+  const udharForExchange = Math.min(returnValueForExchange, billUdharAmt);
+  const effectiveReturnCredit = returnValueForExchange - udharForExchange;
+  const exchangeDifference = Math.round((exchangeValueTotal - effectiveReturnCredit) * 100) / 100;
 
   const handleExchangeSubmit = async () => {
     const itemsToReturn = returnItems.filter(item => item.returnQty > 0);
@@ -348,8 +380,26 @@ export default function ReturnsPage() {
       return;
     }
 
+    if (exchangeDifference > 0 && settlementMethod === 'Mix') {
+      const mixTotal = Math.round((mixAmounts.cash + mixAmounts.upi + mixAmounts.card) * 100) / 100;
+      if (Math.abs(mixTotal - exchangeDifference) > 0.5) {
+        alert(`Mix payment total ₹${mixTotal.toLocaleString('en-IN')} must equal the difference ₹${exchangeDifference.toLocaleString('en-IN')}`);
+        return;
+      }
+      if (mixTotal <= 0) {
+        alert('Please enter payment amounts for Mix payment');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      const settlementPayload = exchangeDifference > 0
+        ? settlementMethod === 'Mix'
+          ? { mix_payment: { cash: mixAmounts.cash, upi: mixAmounts.upi, card: mixAmounts.card } }
+          : { settlement_method: settlementMethod }
+        : {};
+
       await api.post(`/billing/exchange`, {
         bill_id: bill.id,
         return_items: itemsToReturn.map(item => ({
@@ -367,7 +417,7 @@ export default function ReturnsPage() {
           price: l.price,
           name: l.name
         })),
-        ...(exchangeDifference > 0 ? { settlement_method: settlementMethod } : {})
+        ...settlementPayload
       });
       alert(t('exchangeProcessed') || 'Exchange processed successfully!');
       setBill(null);
@@ -379,13 +429,13 @@ export default function ReturnsPage() {
       invalidateReturnCaches();
     } catch (err: any) {
       console.error('Failed to process exchange detail:', err);
-      const errorDetail = {
-        status: err.response?.status || err.status,
-        data: err.response?.data || err.data,
-        message: err.message || (typeof err === 'string' ? err : JSON.stringify(err))
-      };
-      console.error('Failed to process exchange error detail:', errorDetail);
-      alert(`${t('failedToProcessExchange') || 'Failed to process exchange'}: ${errorDetail.data?.detail || errorDetail.message || 'Unknown error'}`);
+      const status = err.response?.status || err.status;
+      const detail = err.response?.data?.detail || err.data?.detail || err.message || 'Unknown error';
+      if (status === 409) {
+        alert('Customer udhar balance mismatch. Please refresh the page and try again.\n\nPossible reason: balance was updated from another device.');
+      } else {
+        alert(`${t('failedToProcessExchange') || 'Failed to process exchange'}: ${detail}`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -434,24 +484,6 @@ export default function ReturnsPage() {
           </Card>
 
           {bill && (() => {
-            // Payment breakdown for THIS bill. amountPaid is what actually
-            // came into the drawer at bill time; the remainder is Udhar.
-            // Detailed Split breakdown lives in paymentDetails{cash,upi,card}.
-            const totalAmt = Number(bill.total_amount) || 0;
-            const paidAmt = Number(bill.amount_paid ?? bill.amountPaid ?? bill.total_amount) || 0;
-            const udharAmt = Math.max(0, totalAmt - paidAmt);
-            const pd = bill.payment_details || bill.paymentDetails || {};
-            const cashPaid = Number(pd?.cash) || (bill.payment_type === 'Cash' ? paidAmt : 0);
-            const upiPaid = Number(pd?.upi) || (bill.payment_type === 'UPI' ? paidAmt : 0);
-            const cardPaid = Number(pd?.card) || (bill.payment_type === 'Card' ? paidAmt : 0);
-
-            // What the CURRENT ask (returnQty on each line) will do — udhar
-            // clears first, then cash goes out. Same attribution the backend
-            // does, computed here so the shopkeeper sees the plan before OK.
-            const totalRefund = returnItems.reduce((acc, it) => acc + (it.returnQty * it.price_per_unit), 0);
-            const willClearUdhar = Math.min(totalRefund, udharAmt);
-            const willRefundCash = totalRefund - willClearUdhar;
-
             return (
               <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 animate-in slide-in-from-left-4">
                 <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 pb-4">
@@ -469,52 +501,46 @@ export default function ReturnsPage() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">{t('date') || 'Date'}</span>
-                    <span className="text-slate-900 dark:text-slate-200 font-bold">{new Date(bill.created_at).toLocaleDateString()}</span>
+                    <span className="text-slate-900 dark:text-slate-200 font-bold">{fmtDate(bill.created_at)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">{t('billTotal') || 'Bill Total'}</span>
-                    <span className="text-slate-900 dark:text-slate-200 font-bold">₹{totalAmt.toLocaleString('en-IN')}</span>
+                    <span className="text-slate-900 dark:text-slate-200 font-bold">₹{billTotalAmt.toLocaleString('en-IN')}</span>
                   </div>
 
-                  {/* Payment breakdown — the whole point of surfacing this on
-                      the returns page is so a shopkeeper knows what to refund
-                      (cash out the drawer? credit back on the party?). */}
+                  {/* Payment breakdown */}
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5 bg-slate-50 dark:bg-slate-800/40 space-y-1.5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('howBillWasPaid') || 'How this bill was paid'}</p>
-                    {cashPaid > 0 && (
+                    {billCashPaid > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-600 dark:text-slate-300">💵 {t('cashPaidLabel') || 'Cash paid'}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{cashPaid.toLocaleString('en-IN')}</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{billCashPaid.toLocaleString('en-IN')}</span>
                       </div>
                     )}
-                    {upiPaid > 0 && (
+                    {billUpiPaid > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-600 dark:text-slate-300">📱 {t('upiOnlineLabel') || 'UPI / Online'}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{upiPaid.toLocaleString('en-IN')}</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{billUpiPaid.toLocaleString('en-IN')}</span>
                       </div>
                     )}
-                    {cardPaid > 0 && (
+                    {billCardPaid > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-600 dark:text-slate-300">💳 {t('settleCard') || 'Card'}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{cardPaid.toLocaleString('en-IN')}</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">₹{billCardPaid.toLocaleString('en-IN')}</span>
                       </div>
                     )}
-                    {udharAmt > 0 && (
+                    {billUdharAmt > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-orange-600 dark:text-orange-400 font-semibold">🧾 {t('udharUnpaidLabel') || 'Udhar (unpaid)'}</span>
-                        <span className="font-bold text-orange-600 dark:text-orange-400">₹{udharAmt.toLocaleString('en-IN')}</span>
+                        <span className="font-bold text-orange-600 dark:text-orange-400">₹{billUdharAmt.toLocaleString('en-IN')}</span>
                       </div>
                     )}
-                    {paidAmt === 0 && udharAmt === 0 && (
+                    {billPaidAmt === 0 && billUdharAmt === 0 && (
                       <p className="text-[11px] text-slate-500 italic">{t('noPaymentDetailsRecorded') || 'No payment details recorded.'}</p>
                     )}
                   </div>
 
-                  {/* Live plan for what this return will actually do — clears
-                      udhar first, then physical cash back. Matches the
-                      backend attribution one-for-one so the number the
-                      shopkeeper sees before confirming is what actually
-                      happens on save. */}
+                  {/* Live refund plan — udhar clears first, remaining cash is editable */}
                   {!exchangeMode && totalRefund > 0 && (
                     <div className="rounded-lg border border-emerald-300 dark:border-emerald-700 p-2.5 bg-emerald-50 dark:bg-emerald-500/10 space-y-1.5">
                       <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">{t('thisReturnWillLabel') || 'This return will'}</p>
@@ -524,10 +550,37 @@ export default function ReturnsPage() {
                           <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willClearUdhar.toLocaleString('en-IN')}</span>
                         </div>
                       )}
-                      {willRefundCash > 0 && (
+                      {willClearUdhar > 0 && willRefundCash === 0 && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-emerald-800 dark:text-emerald-300">{t('refundCashOut') || '💵 Refund to customer (cash out)'}</span>
-                          <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willRefundCash.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-500 dark:text-slate-400">💵 {t('cashRefundZero') || 'Cash refund to customer'}</span>
+                          <span className="font-black text-slate-400 dark:text-slate-500">₹0</span>
+                        </div>
+                      )}
+                      {willRefundCash > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-emerald-800 dark:text-emerald-300 shrink-0">{t('refundCashOut') || '💵 Cash refund to customer'}</span>
+                            <div className="flex items-center gap-0.5 ml-auto min-w-0">
+                              <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xs shrink-0">₹</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={willRefundCash}
+                                value={actualCashRefund}
+                                onChange={e => {
+                                  const v = Math.round(Math.max(0, Math.min(parseFloat(e.target.value) || 0, willRefundCash)));
+                                  setCashRefundOverride(v);
+                                }}
+                                className="w-28 min-w-0 text-right text-xs font-black text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                              />
+                            </div>
+                          </div>
+                          {creditToAdd > 0 && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-indigo-600 dark:text-indigo-400 shrink-0">💳 {t('addToCustomerCredit') || 'Add to customer credit (udhar)'}</span>
+                              <span className="font-black text-indigo-600 dark:text-indigo-400 ml-2">₹{creditToAdd.toLocaleString('en-IN')}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -566,7 +619,16 @@ export default function ReturnsPage() {
                     <div key={idx} className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors flex items-center justify-between gap-4">
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 dark:text-slate-200">{item.name || `Product #${item.product_id}`}</h4>
-                        <p className="text-xs text-slate-500">{t('price') || 'Price'}: ₹{item.price_per_unit} | {t('purchased') || 'Purchased'}: {item.quantity} {item.returned_quantity > 0 ? `| Returned: ${item.returned_quantity} | Avail: ${item.availableQty}` : ''}</p>
+                        <p className="text-xs text-slate-500">
+                          {t('price') || 'Price'}: ₹{item.price_per_unit}
+                          {item.original_price_per_unit && item.original_price_per_unit !== item.price_per_unit && (bill?.discount_factor ?? 1) <= 1 && (
+                            <span className="line-through text-slate-400 ml-1">₹{item.original_price_per_unit}</span>
+                          )}
+                          {bill?.pricing_model === 'mill_v2' && (
+                            <span className="ml-1 text-indigo-500 dark:text-indigo-400 text-[10px] font-bold">(incl. GST+charges)</span>
+                          )}
+                          {' '}| {t('purchased') || 'Purchased'}: {item.quantity} {item.returned_quantity > 0 ? `| Returned: ${item.returned_quantity} | Avail: ${item.availableQty}` : ''}
+                        </p>
                         {item.returnQty > 0 && (
                           <div className="mt-2">
                             <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">{t('reason') || 'Reason'}</label>
@@ -731,6 +793,18 @@ export default function ReturnsPage() {
                         <span className="text-slate-500">{t('returnValueLabel') || 'Return Value'}</span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">₹{returnValueForExchange.toLocaleString('en-IN')}</span>
                       </div>
+                      {udharForExchange > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-orange-500">{t('udharClearedLabel') || '↓ Udhar cleared (not exchange credit)'}</span>
+                          <span className="font-bold text-orange-500">-₹{udharForExchange.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {udharForExchange > 0 && (
+                        <div className="flex justify-between text-xs border-t border-slate-100 dark:border-slate-800 pt-1">
+                          <span className="text-slate-500 font-semibold">{t('netExchangeCredit') || 'Net Exchange Credit'}</span>
+                          <span className="font-bold text-slate-900 dark:text-slate-100">₹{effectiveReturnCredit.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">{t('exchangeValueLabel') || 'Exchange Value'}</span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">₹{exchangeValueTotal.toLocaleString('en-IN')}</span>
@@ -748,26 +822,14 @@ export default function ReturnsPage() {
 
                       {exchangeDifference < 0 && (() => {
                         const excess = -exchangeDifference;
-                        const totalAmt2 = Number(bill.total_amount) || 0;
-                        const paidAmt2 = Number(bill.amount_paid ?? bill.amountPaid ?? bill.total_amount) || 0;
-                        const udharAmt2 = Math.max(0, totalAmt2 - paidAmt2);
-                        const willClearUdhar2 = Math.min(excess, udharAmt2);
-                        const willRefundCash2 = excess - willClearUdhar2;
+                        // Udhar is already cleared via effectiveReturnCredit; excess is pure cash back
                         return (
                           <div className="pt-1.5 space-y-1">
                             <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">{t('shopRefundsDifference') || 'This exchange will'}</p>
-                            {willClearUdhar2 > 0 && (
-                              <div className="flex justify-between text-xs">
-                                <span className="text-emerald-700 dark:text-emerald-300">{t('clearFromUdhar') || "↓ Clear from party's udhar"}</span>
-                                <span className="font-black text-emerald-600 dark:text-emerald-400">₹{willClearUdhar2.toLocaleString('en-IN')}</span>
-                              </div>
-                            )}
-                            {willRefundCash2 > 0 && (
-                              <div className="flex justify-between text-xs">
-                                <span className="text-emerald-700 dark:text-emerald-300">{t('refundCashOut') || '💵 Refund to customer (cash out)'}</span>
-                                <span className="font-black text-emerald-600 dark:text-emerald-400">₹{willRefundCash2.toLocaleString('en-IN')}</span>
-                              </div>
-                            )}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-emerald-700 dark:text-emerald-300">{t('refundCashOut') || '💵 Refund to customer (cash out)'}</span>
+                              <span className="font-black text-emerald-600 dark:text-emerald-400">₹{excess.toLocaleString('en-IN')}</span>
+                            </div>
                           </div>
                         );
                       })()}
@@ -795,7 +857,55 @@ export default function ReturnsPage() {
                             >
                               {t('settleUdhar') || 'Add to Udhar'}
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSettlementMethod('Mix');
+                                setMixAmounts({ cash: exchangeDifference, upi: 0, card: 0 });
+                              }}
+                              className={cn('px-3 py-1.5 rounded-lg text-xs font-bold border', settlementMethod === 'Mix' ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300')}
+                            >
+                              {t('settleMix') || 'Mix'}
+                            </button>
                           </div>
+
+                          {settlementMethod === 'Mix' && (
+                            <div className="mt-2 space-y-2 p-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                              <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                                {t('mixPaymentBreakdown') || 'Enter amount for each method'}
+                              </p>
+                              {([['cash', '💵 Cash'], ['upi', '📱 UPI'], ['card', '💳 Card']] as const).map(([key, label]) => (
+                                <div key={key} className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-600 dark:text-slate-300 w-16 shrink-0">{label}</span>
+                                  <div className="flex-1 flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                                    <span className="pl-2 text-xs text-slate-400">₹</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      value={mixAmounts[key] || ''}
+                                      onChange={e => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        setMixAmounts(prev => ({ ...prev, [key]: val }));
+                                      }}
+                                      className="flex-1 py-1.5 pr-2 text-xs font-bold text-slate-900 dark:text-white bg-transparent outline-none"
+                                      placeholder="0"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                              {(() => {
+                                const mixTotal = Math.round((mixAmounts.cash + mixAmounts.upi + mixAmounts.card) * 100) / 100;
+                                const remaining = Math.round((exchangeDifference - mixTotal) * 100) / 100;
+                                return (
+                                  <div className={cn('flex justify-between text-xs font-bold pt-1 border-t border-indigo-200 dark:border-indigo-800', remaining === 0 ? 'text-emerald-600 dark:text-emerald-400' : remaining > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400')}>
+                                    <span>{remaining === 0 ? '✓ All set' : remaining > 0 ? `₹${remaining.toLocaleString('en-IN')} remaining` : `₹${Math.abs(remaining).toLocaleString('en-IN')} over`}</span>
+                                    <span>Total: ₹{mixTotal.toLocaleString('en-IN')}</span>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -805,10 +915,30 @@ export default function ReturnsPage() {
                 <div className="flex items-center justify-between">
                   {!exchangeMode && (
                     <div>
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('totalRefundAmount') || 'Total Refund Amount'}</p>
-                      <p className="text-2xl font-black text-slate-900 dark:text-white">
-                        ₹{returnItems.reduce((acc, item) => acc + (item.returnQty * item.price_per_unit), 0).toLocaleString()}
-                      </p>
+                      {willClearUdhar > 0 && willRefundCash === 0 ? (
+                        <>
+                          <p className="text-xs text-orange-500 dark:text-orange-400 font-bold uppercase tracking-wider">{t('udharClearedLabel') || 'Udhar Cleared'}</p>
+                          <p className="text-2xl font-black text-orange-600 dark:text-orange-400">
+                            ₹{willClearUdhar.toLocaleString('en-IN')}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">{t('cashRefundZero') || 'Cash refund: ₹0 (unpaid bill)'}</p>
+                        </>
+                      ) : willClearUdhar > 0 ? (
+                        <>
+                          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('cashRefundLabel') || 'Cash Refund'}</p>
+                          <p className="text-2xl font-black text-slate-900 dark:text-white">
+                            ₹{actualCashRefund.toLocaleString('en-IN')}
+                          </p>
+                          <p className="text-xs text-orange-500 dark:text-orange-400 mt-0.5">{t('plusUdharCleared') || '+ Udhar cleared:'} ₹{willClearUdhar.toLocaleString('en-IN')}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('totalRefundAmount') || 'Total Refund Amount'}</p>
+                          <p className="text-2xl font-black text-slate-900 dark:text-white">
+                            ₹{actualCashRefund.toLocaleString('en-IN')}
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
                   <button
@@ -904,7 +1034,7 @@ export default function ReturnsPage() {
                     try { isExchange = !!(r.note && JSON.parse(r.note)?.exchange); } catch {}
                     return (
                     <tr key={r.id} className="text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">{new Date(r.date).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{fmtDate(r.date)}</td>
                       <td className="px-6 py-4 font-bold">
                         <button
                           onClick={() => setSelectedReturn(r)}
@@ -958,10 +1088,13 @@ export default function ReturnsPage() {
 
       {/* Return Details Modal */}
       {selectedReturn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/50 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setSelectedReturn(null); }}
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92dvh] sm:max-h-[90dvh] animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <div className="flex justify-between items-center p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex-shrink-0">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <FileText className="text-orange-500" size={20} />
@@ -978,7 +1111,7 @@ export default function ReturnsPage() {
             </div>
 
             {/* Modal Content */}
-            <div className="p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1 min-h-0">
               {/* Product Info */}
               <div className="bg-orange-50 dark:bg-orange-900/10 rounded-xl p-4 border border-orange-100 dark:border-orange-900/20">
                 <div className="flex justify-between items-start mb-3">
@@ -1005,7 +1138,7 @@ export default function ReturnsPage() {
                     <p className="text-[10px] text-slate-500 font-bold uppercase">{t('date') || 'Date'}</p>
                     <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
                       <Calendar size={12} className="text-slate-400" />
-                      {new Date(selectedReturn.date).toLocaleDateString()}
+                      {fmtDate(selectedReturn.date)}
                     </p>
                   </div>
                 </div>
@@ -1041,7 +1174,7 @@ export default function ReturnsPage() {
                           <div className="flex justify-between">
                             <span className="text-slate-500">{t('saleDate') || 'Sale Date'}</span>
                             <span className="font-bold text-slate-900 dark:text-white">
-                              {noteData.saleDate ? new Date(noteData.saleDate).toLocaleDateString() : (t('notAvailable') || 'N/A')}
+                              {noteData.saleDate ? fmtDate(noteData.saleDate) : (t('notAvailable') || 'N/A')}
                             </span>
                           </div>
                         </div>
@@ -1083,7 +1216,7 @@ export default function ReturnsPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
+            <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 flex-shrink-0">
               <button
                 onClick={() => setSelectedReturn(null)}
                 className="px-4 py-2 rounded-lg font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
