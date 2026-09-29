@@ -39,7 +39,7 @@ export const GET = handle(async () => {
     }),
 
     // Total bills generated (all time)
-    prisma.billing.count(),
+    prisma.sale.count(),
 
     // Total registered users
     prisma.user.count(),
