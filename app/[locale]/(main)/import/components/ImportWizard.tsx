@@ -369,7 +369,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             : pageCount > 0
               ? `${pageCount} pages`
               : `${filesToSend.length} files`;
-          setLoadingText(`🤖 Scanning ${countLabel} with AI — please wait...`);
+          setLoadingText(`Scanning ${countLabel} with AI — please wait...`);
           const fd = new FormData();
           filesToSend.forEach(f => fd.append('files[]', f));
           fd.append('targetType', importType);
@@ -647,7 +647,17 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         const simInterval = setInterval(() => {
           const elapsed = (Date.now() - simStartedAt) / 1000;
           const simulated = Math.min(simCap, sliceStart + Math.floor(elapsed * assumedRps));
-          setProgress(prev => prev ? { ...prev, processed: simulated, stage: 'Saving products…' } : prev);
+          const simRps = elapsed > 0.5 ? Math.round(simulated / elapsed) : assumedRps;
+          const remaining = total - simulated;
+          const simEta = simRps > 0 ? Math.round(remaining / simRps) : 0;
+          setProgress(prev => prev ? {
+            ...prev,
+            processed: simulated,
+            batch: b + 1,
+            rps: simRps,
+            etaSec: simEta,
+            stage: 'Saving products…',
+          } : prev);
         }, 250);
 
         // Retry the batch up to 2 times; on final failure we stop and offer resume.
@@ -856,33 +866,39 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               onDrop={handleFileDrop}
               onClick={() => !isProcessing && fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-16 flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden ${
-                isProcessing 
-                  ? 'border-emerald-500 bg-slate-900 dark:bg-slate-950 pointer-events-none' 
+                isProcessing
+                  ? 'border-emerald-400/40 bg-slate-50 dark:bg-slate-900/60 pointer-events-none'
                   : 'border-slate-300 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-500/5'
               }`}
             >
               {isProcessing ? (
-                <div className="flex flex-col items-center justify-center py-8 relative z-10 w-full max-w-sm">
-                  {/* Outer Pulsing Rings */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-32 h-32 border-4 border-emerald-500/20 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
-                    <div className="w-48 h-48 border-4 border-blue-500/10 rounded-full animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute"></div>
-                  </div>
-                  
-                  {/* Scanner Graphic */}
-                  <div className="relative w-24 h-24 bg-slate-800 rounded-2xl flex items-center justify-center mb-8 overflow-hidden shadow-[0_0_40px_rgba(16,185,129,0.3)]">
-                    <FileText size={40} className="text-emerald-400 opacity-50" />
-                    {/* Scanner Beam */}
-                    <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-transparent via-emerald-400/50 to-emerald-400/10 animate-[scan_1.5s_ease-in-out_infinite_alternate]" style={{ transform: 'translateY(-100%)' }}>
-                      <div className="w-full h-1 bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,1)]"></div>
+                <div className="flex flex-col items-center justify-center py-10 w-full max-w-xs">
+                  {/* Icon with progress ring */}
+                  <div className="relative mb-6">
+                    <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                      <circle cx="40" cy="40" r="34" fill="none" stroke="currentColor" strokeWidth="4" className="text-slate-200 dark:text-slate-700" />
+                      <circle cx="40" cy="40" r="34" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"
+                        className="text-emerald-500"
+                        strokeDasharray="213"
+                        strokeDashoffset="53"
+                        style={{ animation: 'dash 2s ease-in-out infinite' }}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <FileText size={26} className="text-emerald-600 dark:text-emerald-400" />
                     </div>
                   </div>
 
-                  <h3 className="text-2xl font-bold text-white mb-2 tracking-tight">Vyapar Sarthi AI</h3>
-                  <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
-                    <Loader2 size={16} className="text-emerald-400 animate-spin" />
-                    <p className="text-emerald-400 font-medium text-sm animate-pulse">{loadingText}</p>
-                  </div>
+                  <p className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Analysing your file…</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 text-center leading-relaxed">{loadingText.replace(/^🤖\s*/,'')}</p>
+
+                  <style>{`
+                    @keyframes dash {
+                      0%   { stroke-dashoffset: 213; }
+                      50%  { stroke-dashoffset: 0; }
+                      100% { stroke-dashoffset: -213; }
+                    }
+                  `}</style>
                 </div>
               ) : (
                 <>

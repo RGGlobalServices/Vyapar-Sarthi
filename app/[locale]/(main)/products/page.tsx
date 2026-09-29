@@ -7,7 +7,7 @@ import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
   Loader2, Camera, ShieldCheck, Package,
   Warehouse, Store, MapPin, IndianRupee, Barcode as BarcodeIcon,
-  Percent,
+  Percent, Tag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -82,6 +82,26 @@ type Product = {
   shopName?: string;
   shopBusinessType?: string;
 };
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim() || !text) return <>{text}</>;
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return <>{text}</>;
+  const escaped = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const parts = text.split(new RegExp(`(${escaped.join('|')})`, 'i'));
+  const lowerTokens = tokens.map(t => t.toLowerCase());
+  return (
+    <>
+      {parts.map((part, i) =>
+        lowerTokens.includes(part.toLowerCase()) ? (
+          <mark key={i} className="bg-yellow-200 dark:bg-yellow-500/30 text-yellow-900 dark:text-yellow-200 not-italic rounded px-0.5">{part}</mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
 
 function buildEmptyForm(btype: string) {
   const config = getBusinessConfig(btype);
@@ -258,6 +278,10 @@ function LegacyProductsUI() {
   const [bulkAdjustValue, setBulkAdjustValue] = useState('');
   const [bulkAdjusting, setBulkAdjusting] = useState(false);
   const [bulkAdjustNote, setBulkAdjustNote] = useState('');
+  const [bulkGstOpen, setBulkGstOpen] = useState(false);
+  const [bulkGstMode, setBulkGstMode] = useState<'inclusive' | 'exclusive'>('inclusive');
+  const [bulkGstApplying, setBulkGstApplying] = useState(false);
+  const [bulkGstNote, setBulkGstNote] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -691,10 +715,12 @@ function LegacyProductsUI() {
     const safeCategory = (p.category || '').toLowerCase();
     const safeBarcode = ((p as any).barcode || '').toLowerCase();
 
-    const matchSearch = safeName.includes(safeSearch) ||
+    const searchTokens = safeSearch.trim().split(/\s+/).filter(Boolean);
+    const matchSearch = !safeSearch || (
+      searchTokens.every(t => safeName.includes(t)) ||
       safeCategory.includes(safeSearch) ||
-      safeBarcode.includes(safeSearch) ||
-      (safeName && safeSearch.includes(safeName));
+      safeBarcode.includes(safeSearch)
+    );
     const matchCat = !filterCategory || p.category === filterCategory;
     const isLow = p.stock <= p.minStock && p.stock > 0;
     const isOut = p.stock === 0;
@@ -814,6 +840,7 @@ function LegacyProductsUI() {
         brand: form.brand || null,
         conversion_factor: form.conversion_factor ? Number(form.conversion_factor) : null,
         gstPercent: Number(form.gstPercent) || 0,
+        gstInclusive: spMode === 'inclusive',
         hsnCode: form.hsnCode || null,
         barcode: form.barcode?.trim() || `BAR-${Date.now()}`,
         sku: form.sku?.trim() || null,
@@ -873,9 +900,29 @@ function LegacyProductsUI() {
 
   function startEdit(product: Product) {
     setEditProduct(product);
-    // product.sellingPrice is always stored GST-inclusive, so the editor
-    // always starts in that mode regardless of what was chosen last time.
-    setEditSpMode('inclusive');
+    // Restore the inclusive/exclusive mode from the product's saved flag.
+    setEditSpMode((product as any).gstInclusive ? 'inclusive' : 'exclusive');
+    // Resolve size variants early so both setEditForm and the colour/size
+    // pickers below can reference the same value. Primary: size_variants JSON
+    // string (manually edited via Edit Product). Fallback: variants[] array
+    // (populated by the import execute route) converted to the same shape.
+    const resolvedVariants: Record<string, number> = (() => {
+      const sv = parseSizeVariants(product.size_variants);
+      if (Object.keys(sv).length > 0) return sv;
+      if (Array.isArray((product as any).variants)) {
+        const fallback: Record<string, number> = {};
+        for (const v of (product as any).variants as any[]) {
+          const color = (v.color || '').trim();
+          const size = (v.size || '').trim();
+          const qty = Number(v.stock ?? v.qty ?? 0);
+          if (!size && !color) continue;
+          const key = color && size ? `${color} / ${size}` : size || color;
+          fallback[key] = (fallback[key] || 0) + qty;
+        }
+        if (Object.keys(fallback).length > 0) return fallback;
+      }
+      return sv;
+    })();
     setEditForm({
       name: product.name || '',
       category: product.category || '',
@@ -893,7 +940,7 @@ function LegacyProductsUI() {
       warranty_months: String(product.warranty_months || ''),
       gender: product.gender || 'Unisex',
       shade: product.shade || '',
-      size_variants: parseSizeVariants(product.size_variants),
+      size_variants: resolvedVariants,
       gstPercent: Number(product.gstPercent || 0),
       hsnCode: product.hsnCode || '',
       barcode: (product as any).barcode || '',
@@ -920,8 +967,8 @@ function LegacyProductsUI() {
     const isVariantProduct = !!(bizConfig.hasColors || (bizConfig.hasSpecs && getCategoryVariantSpec(product.category, bizConfig.type)));
     setEditPerSizePricing(hasPrices || isVariantProduct);
     setEditSizePrices(existingPrices);
-    // Colour × size: derive the selected colours from the existing composite variant keys.
-    const parsedVariants = parseSizeVariants(product.size_variants);
+    // Colour × size: derive the selected colours from the resolved composite variant keys.
+    const parsedVariants = resolvedVariants;
     setEditColors(colorsFromVariants(parsedVariants));
     setEditOuterColors(outerColorsFromVariants(parsedVariants));
     // Seed the size picker from whichever chart applies to this product's
@@ -1034,6 +1081,7 @@ function LegacyProductsUI() {
         brand: editForm.brand || null,
         conversion_factor: editForm.conversion_factor ? Number(editForm.conversion_factor) : null,
         gstPercent: Number(editForm.gstPercent) || 0,
+        gstInclusive: editSpMode === 'inclusive',
         hsnCode: editForm.hsnCode || null,
         barcode: editForm.barcode?.trim() || undefined,
         sku: editForm.sku?.trim() || null,
@@ -1128,6 +1176,33 @@ function LegacyProductsUI() {
     } finally {
       setBulkDeleting(false);
       setConfirmBulkDelete(false);
+    }
+  }
+
+  async function applyBulkGstType() {
+    if (selectedProductIds.size === 0) { setBulkGstNote('Select at least one product first'); return; }
+    setBulkGstApplying(true);
+    try {
+      const idsByShop = new Map<string, (string | number)[]>();
+      for (const id of selectedProductIds) {
+        const shopId = products.find(p => p.id === id)?.shopId;
+        const key = shopId || '';
+        if (!idsByShop.has(key)) idsByShop.set(key, []);
+        idsByShop.get(key)!.push(id);
+      }
+      let touched = 0;
+      const results = await Promise.all(
+        Array.from(idsByShop.entries()).map(([shopId, ids]) =>
+          api.put('/products/bulk', { ids, data: { gstInclusive: bulkGstMode === 'inclusive' } }, shopIdHeader(shopId))
+        )
+      );
+      touched = results.reduce((sum, r) => sum + (Number(r.data?.count) || 0), 0);
+      invalidateProductCaches();
+      setBulkGstNote(`Updated ${touched} product(s) to ${bulkGstMode === 'inclusive' ? 'Including GST' : 'Excluding GST'}`);
+    } catch {
+      setBulkGstNote('Failed to update some products.');
+    } finally {
+      setBulkGstApplying(false);
     }
   }
 
@@ -1712,13 +1787,22 @@ function LegacyProductsUI() {
         onClear={() => setSelectedProductIds(new Set())}
         disabled={bulkDeleting}
         extraActions={
-          <button
-            onClick={() => { setBulkAdjustNote(''); setBulkAdjustOpen(true); }}
-            disabled={bulkDeleting}
-            className="text-xs bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
-          >
-            <Percent size={14} /> Adjust Price
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setBulkGstNote(''); setBulkGstOpen(true); }}
+              disabled={bulkDeleting}
+              className="text-xs bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Tag size={14} /> GST Type
+            </button>
+            <button
+              onClick={() => { setBulkAdjustNote(''); setBulkAdjustOpen(true); }}
+              disabled={bulkDeleting}
+              className="text-xs bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Percent size={14} /> Adjust Price
+            </button>
+          </div>
         }
       />
 
@@ -1883,7 +1967,9 @@ function LegacyProductsUI() {
                       </td>
                       <td className="px-6 py-4 font-medium">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <SmartTranslator text={product.name} locale={locale} />
+                          {search
+                            ? <HighlightText text={product.name} query={search} />
+                            : <SmartTranslator text={product.name} locale={locale} />}
                           {product.is_loose && <span className="text-[9px] bg-amber-500/20 text-amber-400 font-black px-1.5 py-0.5 rounded uppercase tracking-wide">{t('looseBadge')}</span>}
                           {product.shade && <span className="text-xs text-pink-500 dark:text-pink-400 bg-pink-100 dark:bg-pink-500/15 px-1.5 py-0.5 rounded-full">{product.shade}</span>}
                         </div>
@@ -3226,6 +3312,50 @@ function LegacyProductsUI() {
         onConfirm={handleBulkDeleteProducts}
         onCancel={() => setConfirmBulkDelete(false)}
       />
+
+      {bulkGstOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
+                  <Tag size={16} className="text-emerald-500 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">Set GST Type</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{selectedProductIds.size} product{selectedProductIds.size === 1 ? '' : 's'} selected</p>
+                </div>
+              </div>
+              <button onClick={() => setBulkGstOpen(false)} className="text-slate-400 hover:text-slate-200 p-1"><X size={18} /></button>
+            </div>
+            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-1">
+              <button type="button" onClick={() => setBulkGstMode('inclusive')}
+                className={cn('flex-1 py-2.5 px-2 rounded-lg text-xs font-bold transition-colors flex flex-col items-center gap-0.5',
+                  bulkGstMode === 'inclusive' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500')}>
+                Including GST
+                <span className="text-[9px] font-normal text-center">e.g. ₹600 = CGST+SGST inside</span>
+              </button>
+              <button type="button" onClick={() => setBulkGstMode('exclusive')}
+                className={cn('flex-1 py-2.5 px-2 rounded-lg text-xs font-bold transition-colors flex flex-col items-center gap-0.5',
+                  bulkGstMode === 'exclusive' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500')}>
+                Excluding GST
+                <span className="text-[9px] font-normal text-center">e.g. ₹600 + CGST+SGST on top</span>
+              </button>
+            </div>
+            {bulkGstNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{bulkGstNote}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setBulkGstOpen(false)} disabled={bulkGstApplying}
+                className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-60">
+                Close
+              </button>
+              <button onClick={applyBulkGstType} disabled={bulkGstApplying}
+                className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold hover:bg-emerald-400 disabled:opacity-60 flex items-center justify-center gap-1.5">
+                {bulkGstApplying && <Loader2 size={14} className="animate-spin" />} Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk price adjust — bump MRP / Cost / Selling on every currently
           selected product by a %/₹, up or down. Writes straight to the

@@ -246,7 +246,7 @@ export function applyTemplate(
   const extraHeaders = fileHeaders.filter(h => !consumed.has(h));
   const headers = [...template.map(c => c.label), ...extraHeaders];
 
-  const rows = rawRows.map(raw => {
+  const mappedRows = rawRows.map(raw => {
     const out: any = {};
     for (const { col, src } of sources) {
       out[col.label] = src != null && raw[src] != null ? raw[src] : '';
@@ -254,6 +254,34 @@ export function applyTemplate(
     for (const h of extraHeaders) out[h] = raw[h] ?? '';
     return out;
   });
+
+  // Expand rows that carry size_variants as a multi-key object (e.g. from AI
+  // parsing "32X36" into {"32":1,"34":1,"36":1}) — the template doesn't have a
+  // size_variants column so it would be silently dropped. Instead expand each
+  // size into its own row so the review table shows them and the execute route
+  // creates per-size variants[] entries as it normally does.
+  const sizeColLabel = template.find(c => c.label === 'Size')?.label;
+  const qtyColLabel = template.find(c => c.label === 'Quantity')?.label;
+  let rows = mappedRows;
+  if (sizeColLabel && qtyColLabel) {
+    const expanded: any[] = [];
+    for (let i = 0; i < mappedRows.length; i++) {
+      const row = mappedRows[i];
+      const rawSv = rawRows[i]?.size_variants;
+      if (
+        rawSv && typeof rawSv === 'object' && !Array.isArray(rawSv) &&
+        Object.keys(rawSv).length > 1 &&
+        !row[sizeColLabel]
+      ) {
+        for (const [size, qty] of Object.entries(rawSv)) {
+          expanded.push({ ...row, [sizeColLabel]: size, [qtyColLabel]: Number(qty) });
+        }
+      } else {
+        expanded.push(row);
+      }
+    }
+    rows = expanded;
+  }
 
   return { rows, headers };
 }

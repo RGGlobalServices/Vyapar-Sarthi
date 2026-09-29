@@ -15,10 +15,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    const apiKey = process.env.NVIDIA_API_KEY || '';
+    const openaiKey = process.env.OPENAI_API_KEY || '';
+    const geminiKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GEMINI_API_KEY_2,
+      process.env.GEMINI_API_KEY_3,
+      process.env.GEMINI_API_KEY_4,
+    ].filter(Boolean) as string[];
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'No Nvidia API key configured in environment' }, { status: 500 });
+    if (!openaiKey && !geminiKeys.length) {
+      return NextResponse.json({ error: 'No AI API key configured (set OPENAI_API_KEY or GEMINI_API_KEY)' }, { status: 500 });
     }
     
     // Convert the File into a base64 buffer for extraction
@@ -35,7 +41,7 @@ export async function POST(req: NextRequest) {
     let extraItemFields = [];
     let extraSchemaFields = '';
     if (bizConfig.hasGender) { extraItemFields.push('gender'); extraSchemaFields += ', "gender": "String"'; }
-    if (bizConfig.hasSizes) { extraItemFields.push('size_variants (as a JSON object e.g. {\\"M\\": 10, \\"L\\": 5} if sizes are grouped, otherwise leave empty)'); extraSchemaFields += ', "size_variants": {}'; }
+    if (bizConfig.hasSizes) { extraItemFields.push('size_variants (CRITICAL RULE for Indian garment/clothing bills — read carefully:\n  CASE 1 — Size range in product name like "20X30", "34X42", "26X36" (two numbers separated by X):\n    This is a RANGE of sizes from start to end in steps of 2.\n    Example: "20X30" → sizes 20,22,24,26,28,30 = 6 sizes.\n    Example: "34X42" → sizes 34,36,38,40,42 = 5 sizes.\n    Example: "26X36" → sizes 26,28,30,32,34,36 = 6 sizes.\n    The QUANTITY on the bill is total pieces (all sizes combined).\n    Divide quantity ÷ number-of-sizes = pieces per size.\n    Set size_variants = each size mapped to that per-size quantity.\n    Example: product "S P LN699 20X30", qty=6 → 6÷6=1 per size → {\\"20\\":1,\\"22\\":1,\\"24\\":1,\\"26\\":1,\\"28\\":1,\\"30\\":1}\n    Example: product "ANY BABY 20X30", qty=12 → 12÷6=2 per size → {\\"20\\":2,\\"22\\":2,\\"24\\":2,\\"26\\":2,\\"28\\":2,\\"30\\":2}\n    If quantity is not perfectly divisible, distribute as evenly as possible.\n  CASE 2 — Explicit per-size quantities listed: "M: 10, L: 5" → {\\"M\\":10,\\"L\\":5}\n  CASE 3 — Single size label like "L", "XL", "38", "Set" with no range → leave size_variants as {} empty\n  NEVER assign the total quantity to all sizes — always divide it.)'); extraSchemaFields += ', "size_variants": {}'; }
     if (bizConfig.hasShades) { extraItemFields.push('shade'); extraSchemaFields += ', "shade": "String"'; }
     if (bizConfig.hasBatch) { extraItemFields.push('batch_number'); extraSchemaFields += ', "batch_number": "String"'; }
     if (bizConfig.hasDrugSchedule) { extraItemFields.push('drug_schedule'); extraSchemaFields += ', "drug_schedule": "String"'; }
@@ -123,61 +129,87 @@ ${extractedText}`;
 
     let resultData = null;
 
-    let messages = [];
-    let modelName = isVision ? "meta/llama-3.2-90b-vision-instruct" : "meta/llama-3.1-70b-instruct";
-
-    if (isVision) {
-      messages = [
-        {
-          role: 'user',
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }
-          ]
-        }
-      ];
-    } else {
-      messages = [
-        { role: 'user', content: prompt }
-      ];
-    }
-
-    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: messages,
-        temperature: 0.2,
-        max_tokens: 8000,
-        response_format: { type: "json_object" }
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || data.detail || 'Unknown Nvidia API Error');
-    }
-
-    const textOutput = data.choices?.[0]?.message?.content;
-    
-    if (textOutput) {
+    function parseJsonOutput(text: string, source: string): any {
       try {
-        resultData = JSON.parse(textOutput);
+        return JSON.parse(text);
       } catch (e: any) {
         try {
           const { jsonrepair } = require('jsonrepair');
-          const repaired = jsonrepair(textOutput);
-          resultData = JSON.parse(repaired);
-        } catch (repairError) {
-          throw new Error('Nvidia AI returned invalid JSON that could not be repaired: ' + e.message);
+          return JSON.parse(jsonrepair(text));
+        } catch {
+          throw new Error(`${source} returned invalid JSON: ` + e.message);
         }
       }
     }
-    
+
+    // ── Primary: Gemini (direct REST API) ────────────────────────────────
+    if (!resultData && geminiKeys.length > 0) {
+      const geminiModels = (process.env.IMPORT_GEMINI_MODELS || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash')
+        .split(',').map((s: string) => s.trim()).filter(Boolean);
+
+      outer: for (const gKey of geminiKeys) {
+        for (const model of geminiModels) {
+          try {
+            const parts: any[] = [{ text: prompt }];
+            if (isVision) parts.push({ inline_data: { mime_type: mimeType, data: buffer.toString('base64') } });
+
+            const gRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': gKey },
+                body: JSON.stringify({
+                  contents: [{ role: 'user', parts }],
+                  generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+                }),
+              }
+            );
+            const gData = await gRes.json();
+            if (!gRes.ok) {
+              const errMsg = gData?.error?.message || gRes.status;
+              console.error(`Gemini REST error [${model}]:`, errMsg);
+              // Auth errors — skip remaining models on this key
+              if (gRes.status === 400 || gRes.status === 401 || gRes.status === 403) break;
+              continue;
+            }
+            const text = gData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text) {
+              const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+              resultData = parseJsonOutput(cleaned, 'Gemini');
+              break outer;
+            }
+          } catch (e: any) {
+            console.error(`Gemini fetch error [${model}]:`, e.message);
+          }
+        }
+      }
+    }
+
+    // ── Fallback: OpenAI ──────────────────────────────────────────────────
+    if (!resultData && openaiKey) {
+      try {
+        const modelName = isVision ? 'gpt-4o' : 'gpt-4o-mini';
+        const messages = isVision
+          ? [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }] }]
+          : [{ role: 'user', content: prompt }];
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+          body: JSON.stringify({ model: modelName, messages, temperature: 0.2, max_tokens: 8000, response_format: { type: 'json_object' } })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || 'OpenAI API Error');
+        const textOutput = data.choices?.[0]?.message?.content;
+        if (textOutput) resultData = parseJsonOutput(textOutput, 'OpenAI');
+      } catch (openaiErr: any) {
+        console.error('OpenAI import fallback failed:', openaiErr.message);
+      }
+    }
+
+    if (!resultData) throw new Error('File could not be read. Please check your GEMINI_API_KEY in .env.local and try again.');
+
     if (resultData) {
       resultData.khata = resultData.khata || [];
       resultData.stock = resultData.stock || [];
@@ -186,7 +218,7 @@ ${extractedText}`;
     }
 
     if (!resultData) {
-      throw new Error('Nvidia AI API failed to return a valid JSON response');
+      throw new Error('AI failed to return a valid JSON response. Please try again.');
     }
 
     return NextResponse.json(resultData);
