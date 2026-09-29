@@ -59,13 +59,13 @@ export default function BrokersPage() {
             filename="commission-statement"
             orientation="landscape"
             columns={[
-              { key: 'date', header: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
-              { key: 'brokerName', header: 'Broker' },
-              { key: 'type', header: 'Type', format: (v: string) => v === 'charge' ? 'Charge' : 'Payment' },
-              { key: 'billNumber', header: 'Bill #', format: (v: any) => v || '—' },
-              { key: 'amount', header: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
-              { key: 'paymentMethod', header: 'Mode', format: (v: any) => v || '—' },
-              { key: 'note', header: 'Note', format: (v: any) => v || '' },
+              { key: 'date', label: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+              { key: 'brokerName', label: 'Broker' },
+              { key: 'type', label: 'Type', format: (v: string) => v === 'charge' ? 'Charge' : 'Payment' },
+              { key: 'billNumber', label: 'Bill #', format: (v: any) => v || '—' },
+              { key: 'amount', label: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
+              { key: 'paymentMethod', label: 'Mode', format: (v: any) => v || '—' },
+              { key: 'note', label: 'Note', format: (v: any) => v || '' },
             ]}
             data={filteredEntries.map(e => ({
               ...e,

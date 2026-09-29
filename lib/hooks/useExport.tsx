@@ -37,6 +37,7 @@ interface ExportColumn {
   key: string;
   label: string;
   type?: 'text' | 'currency' | 'number' | 'date';
+  format?: (v: any) => string;
 }
 
 interface ExportConfig {

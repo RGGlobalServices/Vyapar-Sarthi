@@ -74,13 +74,13 @@ export default function FreightPage() {
             filename="freight-statement"
             orientation="landscape"
             columns={[
-              { key: 'date', header: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
-              { key: 'transporterName', header: 'Transporter' },
-              { key: 'type', header: 'Type', format: (v: string) => v === 'charge' ? 'Charge' : 'Payment' },
-              { key: 'vehicleNumber', header: 'Vehicle #', format: (v: any) => v || '—' },
-              { key: 'amount', header: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
-              { key: 'paymentMethod', header: 'Mode', format: (v: any) => v || '—' },
-              { key: 'note', header: 'Note', format: (v: any) => v || '' },
+              { key: 'date', label: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+              { key: 'transporterName', label: 'Transporter' },
+              { key: 'type', label: 'Type', format: (v: string) => v === 'charge' ? 'Charge' : 'Payment' },
+              { key: 'vehicleNumber', label: 'Vehicle #', format: (v: any) => v || '—' },
+              { key: 'amount', label: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
+              { key: 'paymentMethod', label: 'Mode', format: (v: any) => v || '—' },
+              { key: 'note', label: 'Note', format: (v: any) => v || '' },
             ]}
             data={allEntries.map(e => ({
               ...e,
