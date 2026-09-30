@@ -28,6 +28,7 @@ import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 
 import { QrCode } from 'lucide-react';
+import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import dynamic from 'next/dynamic';
 import WholesaleProductsUI from './WholesaleProductsUI';
 import ProductDetailsSheet from './ProductDetailsSheet';
@@ -244,6 +245,7 @@ function LegacyProductsUI() {
   // the same tick, unlike a state read.
   const submittingRef = useRef(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
 
   // Deep-link: /products?add=1 auto-opens the Add-Product modal. Used by the
   // slimmed Stock In flow so the shopkeeper doesn't have to re-enter the full
@@ -1302,6 +1304,11 @@ function LegacyProductsUI() {
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}
           </button>
+          <button onClick={() => setShowBulkAdd(true)}
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            <Plus size={18} />Bulk Add / Variants
+          </button>
+          {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => invalidateProductCaches()} />}
         </div>
       </div>
 

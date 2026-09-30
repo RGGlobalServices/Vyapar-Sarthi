@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, MILL_CATEGORIES } from '@/lib/businessConfig';
 import SmartTranslator from '@/components/SmartTranslator';
@@ -302,6 +303,7 @@ export default function WholesaleProductsUI() {
   };
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [form, setForm] = useState<Partial<WholesaleProduct>>(emptyProduct);
   const [saving, setSaving] = useState(false);
   // Party (wholesale) Selling Price entry: 'manual' types ₹ directly,
@@ -987,6 +989,14 @@ export default function WholesaleProductsUI() {
             <Plus size={18} />
             {t('createProduct') || 'Create Product'}
           </button>
+          <button
+            onClick={() => setShowBulkAdd(true)}
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
+          >
+            <Plus size={18} />
+            Bulk Add / Variants
+          </button>
+          {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => mutateProducts()} />}
         </div>
       </div>
 
