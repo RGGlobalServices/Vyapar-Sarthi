@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR, { useSWRConfig } from 'swr';
 import { cn } from '@/lib/utils';
-import api from '@/lib/api';
+import api, { downloadBlob } from '@/lib/api';
 import {
   Loader2,
   CheckCircle2,
@@ -298,12 +298,7 @@ export default function StageExecutionPanel({ batch, stageId, products, onStageU
     setDownloadingPdf(true);
     setError('');
     try {
-      const response = await fetch(`/api/v1/mill/batches/${batch.id}/stages/${stage.id}/report?format=pdf`);
-      if (!response.ok) {
-        const errJson = await response.json();
-        throw new Error(errJson?.error || 'Failed to generate PDF report');
-      }
-      const blob = await response.blob();
+      const blob = await downloadBlob(`/mill/batches/${batch.id}/stages/${stage.id}/report?format=pdf`);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
