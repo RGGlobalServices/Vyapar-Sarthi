@@ -8,7 +8,7 @@ import {
   IndianRupee, TrendingUp, Warehouse, ArrowUp, ArrowDown,
   Tag, Trash2, Barcode as BarcodeIcon, Factory, Layers,
   GitBranch, ChevronRight, Circle, CheckCircle2, Clock,
-  Boxes, ArrowDownCircle, ArrowUpCircle, Scale
+  Boxes, ArrowDownCircle, ArrowUpCircle, Scale, Copy
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -46,6 +46,7 @@ export default function ProductDetailsSheet({
   shopId,
   onClose,
   onEdit,
+  onClone,
   onDelete
 }: {
   productId: string;
@@ -56,6 +57,8 @@ export default function ProductDetailsSheet({
   shopId?: string;
   onClose: () => void;
   onEdit: (product: any) => void;
+  /** Same product, new colour/size: opens the Add form pre-filled from this product. */
+  onClone?: (product: any) => void;
   onDelete?: (productId: string) => void;
 }) {
   const t = useTranslations('ProductDetails');
@@ -189,6 +192,16 @@ export default function ProductDetailsSheet({
                 title={t('delete') || 'Delete'}
               >
                 <Trash2 size={13} /> <span className="hidden sm:inline">{t('delete') || 'Delete'}</span>
+              </button>
+            )}
+            {onClone && (
+              <button
+                disabled={loading}
+                onClick={() => onClone(data?.product)}
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-lg hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors disabled:opacity-50"
+                title="Clone — same product, new colour/size"
+              >
+                <Copy size={13} /> <span className="hidden sm:inline">Clone</span>
               </button>
             )}
             <button

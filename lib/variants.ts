@@ -295,3 +295,9 @@ export function variantAvailable(product: { size_variants?: any; variants?: any 
   }
   return null;
 }
+
+/** Human label for a variant key on bills: "Red / M", "22X32", never "Red / " or " / M". */
+export function variantLabel(key: string | null | undefined): string {
+  const { color, size } = splitVariantKey(String(key ?? ''));
+  return [color, size].map((s) => s.trim()).filter(Boolean).join(' / ');
+}

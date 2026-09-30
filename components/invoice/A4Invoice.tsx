@@ -1,5 +1,6 @@
 'use client';
 
+import { variantLabel } from '@/lib/variants';
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { getInvoiceColumns, isChargeLineItem } from '@/lib/invoice-helpers';
@@ -218,7 +219,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                           const size = (item as any).size || '';
                           const variant = item.variant || '';
                           if (color || size) return <div className="text-xs text-slate-400 mt-0.5">{[color, size].filter(Boolean).join(' / ')}</div>;
-                          if (variant) return <div className="text-xs text-slate-400 mt-0.5">{variant}</div>;
+                          if (variant) return <div className="text-xs text-slate-400 mt-0.5">{variantLabel(variant)}</div>;
                           return null;
                         })()}
                         {isItemCol && attrParts.length > 0 && <div className="text-xs text-violet-500 mt-0.5">{attrParts.join(' · ')}</div>}

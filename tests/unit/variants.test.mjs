@@ -111,3 +111,16 @@ test('closeVariantStores derives the missing store', () => {
   const o2 = closeVariantStores(onlyRows);
   assert.deepEqual(JSON.parse(o2.size_variants), { '9': 5 });
 });
+
+import { variantLabel, variantAvailable } from '../../lib/variants.ts';
+
+test('variantLabel and variantAvailable', () => {
+  assert.equal(variantLabel('Red / M'), 'Red / M');
+  assert.equal(variantLabel('Red / '), 'Red');
+  assert.equal(variantLabel('22X32'), '22X32');
+  assert.equal(variantLabel(''), '');
+  const p = { size_variants: '{"Red / M": 4}', variants: [{ color: 'Blue', size: 'S', stock: 9 }] };
+  assert.equal(variantAvailable(p, 'red / m'), 4);
+  assert.equal(variantAvailable(p, 'Blue / S'), 9);
+  assert.equal(variantAvailable(p, 'Green / L'), null);
+});

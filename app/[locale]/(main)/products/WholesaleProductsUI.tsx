@@ -1605,6 +1605,14 @@ export default function WholesaleProductsUI() {
             setSelectedProduct(null);
             handleEdit(p);
           }}
+          onClone={async (p) => {
+            setSelectedProduct(null);
+            await handleEdit(p);
+            // Same product, new colour/size: open as a NEW product — no id, no barcode, zero stock everywhere.
+            setForm(f => ({ ...f, id: undefined as any, barcode: '', name: p.name || f.name }));
+            setVariants(v => v.map(r => ({ ...r, stock: 0 })));
+            setBaseVariantStock({});
+          }}
           onDelete={handleSingleDelete}
         />
       )}

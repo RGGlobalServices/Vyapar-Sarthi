@@ -1,5 +1,6 @@
 'use client';
 
+import { variantLabel } from '@/lib/variants';
 import React from 'react';
 import { CartItem } from '@/lib/store';
 import { useTranslations } from 'next-intl';
@@ -279,7 +280,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                           return <div style={{ fontSize: '80%', color: '#555' }}>{[color, size].filter(Boolean).join(' / ')}</div>;
                         }
                         if (variant) {
-                          return <div style={{ fontSize: '80%', color: '#555' }}>{variant}</div>;
+                          return <div style={{ fontSize: '80%', color: '#555' }}>{variantLabel(variant)}</div>;
                         }
                         return null;
                       })()}
