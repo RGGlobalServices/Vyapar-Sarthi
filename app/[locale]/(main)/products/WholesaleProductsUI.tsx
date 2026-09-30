@@ -19,6 +19,8 @@ import SmartTranslator from '@/components/SmartTranslator';
 import ProductDetailsSheet from './ProductDetailsSheet';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { ColorPicker, makeVariantKey, cssColor } from '@/components/ColorSizeVariantGrid';
+import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
+import { variantKeyOf, variantGridKeys, keysMatch } from '@/lib/variants';
 import { ExportButton } from '@/lib/hooks/useExport';
 import ExpandViewButton from '@/components/ExpandViewButton';
 import { useCategories } from '@/lib/useCategories';
@@ -336,6 +338,9 @@ export default function WholesaleProductsUI() {
 
   // Variant Builder State
   const [variants, setVariants] = useState<any[]>([]);
+  // Stock per variant key when an existing product was opened for edit — new quantities typed in the
+  // simple builder are added on top of it (same 'stock received' behaviour as the Dukan/Vyapar edit).
+  const [baseVariantStock, setBaseVariantStock] = useState<Record<string, number>>({});
   // true = one shared price (form.costPrice/wholesaleCost/sellingPrice/mrp)
   // applies to every row; false = each row keeps its own 4 prices, as before.
   const [sameVariantPricing, setSameVariantPricing] = useState(true);
@@ -386,6 +391,23 @@ export default function WholesaleProductsUI() {
   // hides real data just because `form.colors` (from metadata) drifted from
   // what's actually in `variants[]`.
   const gridColors = Array.from(new Set([...(form.colors || []), ...variants.map(v => v.color).filter(Boolean)]));
+
+  // ── Simple variant builder adapters (colours × sizes -> variants[]) ──────────
+  const builderSizes = Array.from(new Set([...variants.map(v => v.size).filter(Boolean), ...customSizes]));
+  const builderValue: Record<string, number> = Object.fromEntries(variants.map(v => [variantKeyOf(v), Number(v.stock) || 0]));
+  const builderPrices: Record<string, { mrp: number; sellingPrice: number; cost: number }> = Object.fromEntries(
+    variants.map(v => [variantKeyOf(v), { mrp: v.mrp || 0, sellingPrice: v.sellingPrice || 0, cost: v.wholesalePrice || 0 }]),
+  );
+  // Rebuild variants[] for the chosen colours × sizes: existing rows keep their prices, new rows are
+  // seeded from the shared price fields, rows no longer in the grid are dropped.
+  function rebuildVariants(colors: string[], sizes: string[], stock: Record<string, number>) {
+    const seeded = defaultVariantPrices();
+    return variantGridKeys(colors, sizes).map(({ key, color, size }) => {
+      const ex = variants.find(v => keysMatch(variantKeyOf(v), key));
+      const st = stock[key] ?? ex?.stock ?? 0;
+      return ex ? { ...ex, color, size, stock: st } : { color, size, stock: st, ...seeded };
+    });
+  }
 
   function findVariantRow(color: string, size: string) {
     return variants.find(v => v.color === color && v.size === size);
@@ -517,6 +539,7 @@ export default function WholesaleProductsUI() {
       costPrice: v.wholesalePrice !== undefined ? (v.costPrice || 0) : 0,
     }));
     setVariants(loadedVariants);
+    setBaseVariantStock(Object.fromEntries(loadedVariants.map((v: any) => [variantKeyOf(v), Number(v.stock) || 0])));
     // Re-open in "same price" mode only if every row genuinely still agrees —
     // otherwise default to per-variant so nothing existing looks collapsed.
     setSameVariantPricing(
@@ -2223,6 +2246,32 @@ export default function WholesaleProductsUI() {
                           })}
                         </div>
                       </div>
+                    ) : useVariantGrid ? (
+                      <SimpleVariantBuilder
+                        colors={gridColors}
+                        onColorsChange={next => {
+                          setForm(f => ({ ...f, colors: next }));
+                          setVariants(rebuildVariants(next, builderSizes, builderValue));
+                        }}
+                        sizes={builderSizes}
+                        onSizesChange={next => {
+                          setCustomSizes(next);
+                          setVariants(rebuildVariants(gridColors, next, builderValue));
+                        }}
+                        value={builderValue}
+                        onChange={next => setVariants(rebuildVariants(gridColors, builderSizes, next))}
+                        baseValue={form.id ? baseVariantStock : undefined}
+                        sizePrices={builderPrices}
+                        onSizePricesChange={next => setVariants(variants.map(v => {
+                          const pr = next[variantKeyOf(v)];
+                          return pr ? { ...v, mrp: pr.mrp, sellingPrice: pr.sellingPrice, wholesalePrice: pr.cost } : v;
+                        }))}
+                        perSizePricing={!sameVariantPricing}
+                        colorOptions={bizConfig.colorChart || []}
+                        sizeChart={baseSizeChart}
+                        priceLabels={{ cost: 'Wholesale ₹', sellingPrice: 'Retail ₹', mrp: 'MRP ₹' }}
+                        unitLabel="pcs"
+                      />
                     ) : (
                       <div className="space-y-3">
                         <ColorPicker

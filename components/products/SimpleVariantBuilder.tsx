@@ -35,6 +35,8 @@ type Props = {
   sizeChart: string[];
   allowColors?: boolean;
   unitLabel?: string;
+  /** Placeholder labels of the 3 per-variant price boxes (Udyog calls `cost` its Wholesale price). */
+  priceLabels?: { sellingPrice?: string; mrp?: string; cost?: string };
 };
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -61,7 +63,7 @@ export default function SimpleVariantBuilder({
   colors, onColorsChange, sizes, onSizesChange, value, onChange, baseValue,
   sizePrices = {}, onSizePricesChange, perSizePricing = false,
   colorOptions = [], showSwatch = true, colorLabel = 'colour', sizeLabel = 'size',
-  sizeChart, allowColors = true, unitLabel = 'pcs',
+  sizeChart, allowColors = true, unitLabel = 'pcs', priceLabels,
 }: Props) {
   const additive = !!baseValue;
   const [sizeText, setSizeText] = useState('');
@@ -272,7 +274,7 @@ export default function SimpleVariantBuilder({
                       {(['sellingPrice', 'mrp', 'cost'] as const).map((f) => (
                         <div key={f} className="w-20">
                           <QtyInput value={price?.[f] ? String(price[f]) : ''} onCommit={(v) => setPrice(r.key, f, v)}
-                            placeholder={f === 'sellingPrice' ? 'Sell ₹' : f === 'mrp' ? 'MRP ₹' : 'Cost ₹'} className={cn(inp, 'text-xs')} />
+                            placeholder={priceLabels?.[f] ?? (f === 'sellingPrice' ? 'Sell ₹' : f === 'mrp' ? 'MRP ₹' : 'Cost ₹')} className={cn(inp, 'text-xs')} />
                         </div>
                       ))}
                     </div>
