@@ -116,7 +116,7 @@ const CartQuantityInput = ({ item, updateQuantity, removeItem, maxQty }: any) =>
       onChange={(e) => {
         setLocalVal(e.target.value);
         let num = Number(e.target.value);
-        if (!isNaN(num)) {
+        if (!isNaN(num) && num > 0) {
           if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
           updateQuantity(item.id, num, item.variant);
         }
@@ -627,15 +627,13 @@ export default function WholesaleBillingUI() {
     if (!isMill || items.length === 0) return { millCalc: null, millCalcError: null };
     try {
       const result = calculateMillInvoice({
-        lines: items
-          .filter((it: any) => Number(it.quantity) > 0)
-          .map((it: any) => ({
-            quantity: Number(it.quantity),
-            rate: Number(it.price) || 0,
-            gstRate: Number(it.gstPercent) || 0,
-            costTotal: (Number(it.cost) || 0) * Number(it.quantity),
-            hsnCode: it.hsnCode || null,
-          })),
+        lines: items.map((it: any) => ({
+          quantity: Number(it.quantity) || 0,
+          rate: Number(it.price) || 0,
+          gstRate: Number(it.gstPercent) || 0,
+          costTotal: (Number(it.cost) || 0) * (Number(it.quantity) || 0),
+          hsnCode: it.hsnCode || null,
+        })),
         discount: millDiscountNumber > 0 ? { type: 'fixed', value: millDiscountNumber } : null,
         billType,
         interState: gstInterState,
