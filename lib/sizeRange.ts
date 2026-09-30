@@ -79,10 +79,16 @@ function splitNumericSize(raw: string): { prefix: string; num: number | null; su
  * "1 to 1000") from creating a thousand line items. Clamp is intentional
  * silent so the caller doesn't need to handle a special error.
  */
-export function parseSizeRange(raw: string | null | undefined): string[] {
+export function parseSizeRange(raw: string | null | undefined, opts?: { dimensions?: boolean }): string[] {
   if (raw === null || raw === undefined) return [];
   const trimmed = String(raw).trim();
   if (!trimmed) return [];
+
+  // Textile / garment shops write "36X40" for a blanket / bedsheet / waist-by-length
+  // DIMENSION, not "sizes 36 to 40". In that mode NNxNN stays ONE size label.
+  if (opts?.dimensions && /^\d+(?:\.\d+)?\s*[*xX]\s*\d+(?:\.\d+)?$/.test(trimmed)) {
+    return [trimmed.replace(/\s+/g, '').replace('*', 'X').toUpperCase()];
+  }
 
   const pair = splitRange(trimmed);
   if (!pair) return [trimmed];

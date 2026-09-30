@@ -114,6 +114,8 @@ export async function POST(req: NextRequest) {
     // instead of importing as a single flat-stock product with the ML
     // size buried in metadata only (unreachable by the billing ML picker).
     const isLiquorImport = !!getBusinessConfig(auth.shop.businessType as any)?.hasLiquorSpecs;
+    // Textile/garment wholesalers write sizes like 36X40 as a dimension, never as a 36..40 range.
+    const isDimensionSizes = ['textilewholesale', 'garmentwholesale'].includes(String(auth.shop.businessType));
     // Bada Udyog pack: purchase import creates financial records only (PurchaseInvoice +
     // PurchaseItems + Supplier). Stock is tracked through RawMaterialLots and production
     // batches — NOT through product.currentStock. Opening Stock ('stock') still updates stock.
@@ -351,7 +353,7 @@ export async function POST(req: NextRequest) {
         const expandedProductData: any[] = [];
         for (const row of data) {
           const sizeRaw = getVal(row, ['size']);
-          const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '');
+          const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '', { dimensions: isDimensionSizes });
           if (sizes.length <= 1) { expandedProductData.push(row); continue; }
           const sizeKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'size');
           for (const s of sizes) {
@@ -789,7 +791,7 @@ export async function POST(req: NextRequest) {
         const expandedData: any[] = [];
         for (const row of data) {
           const sizeRaw = getVal(row, ['size']);
-          const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '');
+          const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '', { dimensions: isDimensionSizes });
           if (sizes.length <= 1) { expandedData.push(row); continue; }
           for (const s of sizes) {
             // Clone the row and overwrite whichever key the file used for size
