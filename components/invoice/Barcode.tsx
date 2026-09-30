@@ -10,7 +10,11 @@ import { detectBarcodeFormat } from '@/lib/barcode';
 // settings for a thermal printer's DPI. Bumped to values that still fit the
 // tight space next to the bill number but give a scanner something to lock
 // onto.
-export function Barcode({ value, width = 1.5, height = 30, displayValue = false }: { value: string; width?: number; height?: number; displayValue?: boolean }) {
+export function Barcode({ value, width = 1.5, height = 30, displayValue = false, margin = 6, printCrisp = false }: {
+  value: string; width?: number; height?: number; displayValue?: boolean; margin?: number;
+  /** thermal receipts: solid black on white, hard edges, readable number underneath */
+  printCrisp?: boolean;
+}) {
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -20,11 +24,19 @@ export function Barcode({ value, width = 1.5, height = 30, displayValue = false 
         width,
         height,
         displayValue,
-        margin: 6,
-        background: 'transparent',
+        margin,
+        marginTop: printCrisp ? 2 : undefined,
+        marginBottom: printCrisp ? 2 : undefined,
+        fontSize: printCrisp ? 11 : undefined,
+        textMargin: printCrisp ? 1 : undefined,
+        lineColor: '#000000',
+        // A thermal printer rasterises the page: a transparent background can come out grey/black, so the bars get a
+        // solid white field (and the quiet zone around them) instead.
+        background: printCrisp ? '#ffffff' : 'transparent',
       });
     }
-  }, [value, width, height, displayValue]);
+  }, [value, width, height, displayValue, margin, printCrisp]);
 
-  return <svg ref={svgRef} className="max-w-full" />;
+  // crispEdges keeps every bar on whole device pixels (no anti-aliased grey edges a scanner cannot lock on to).
+  return <svg ref={svgRef} className="max-w-full" shapeRendering={printCrisp ? 'crispEdges' : undefined} />;
 }

@@ -164,16 +164,16 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   const qrDataUrl = qrDataUrlProp !== undefined ? qrDataUrlProp : liveQrDataUrl;
   
   const widthClass = is58mm ? 'max-w-[220px]' : 'max-w-[320px]';
-  const textClass = is58mm ? 'text-[9px]' : 'text-[11px]';
-  const smallTextClass = is58mm ? 'text-[7px]' : 'text-[9px]';
-  const headerTextClass = is58mm ? 'text-[13px]' : 'text-[17px]';
+  const textClass = is58mm ? 'text-[10px]' : 'text-[11px]';
+  const smallTextClass = is58mm ? 'text-[8px]' : 'text-[9px]';
+  const headerTextClass = is58mm ? 'text-[14px]' : 'text-[17px]';
   // The items-table column HEADERS run a notch smaller than the row text so
   // long single-word labels (WARRANTY, SERIAL, COLOR) fit their narrow fixed
   // columns on ONE line — the alternative, letting them wrap, breaks the word
   // itself (WARR/ANTY) which reads as broken. Cells and headers use nowrap so
   // currency values never split mid-number (₹5,2/00) either; only the Item
   // name column is allowed to wrap, onto clean extra lines.
-  const tableHeadClass = is58mm ? 'text-[6px]' : 'text-[8px]';
+  const tableHeadClass = is58mm ? 'text-[8px]' : 'text-[8px]';
   const cellPad = is58mm ? 'px-0.5' : 'px-1';
   
   // A thin horizontal rule used between sections — a shared visual weight instead
@@ -191,11 +191,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
       <div style={boxBorder}>
         {/* Header */}
         <div className="text-center px-2 pt-3 pb-2" style={{ borderBottom: '2px solid #000' }}>
-          {logoUrl && (
-            <div className="flex justify-center mb-2">
-              <img src={logoUrl} alt="Logo" crossOrigin="anonymous" style={{ maxHeight: is58mm ? '30px' : '40px', maxWidth: '100px' }} />
-            </div>
-          )}
+          {/* No logo on thermal receipts: a thermal head prints a photo/logo as a solid black box and wastes paper. */}
           <h1 className={`${headerTextClass} font-black uppercase tracking-tight`}>{storeName || t('storeNameFallback')}</h1>
           {storeAddress && <p className={`${smallTextClass} mt-0.5`}>{storeAddress}</p>}
           <div className={`flex justify-center gap-2 flex-wrap ${smallTextClass} mt-0.5`}>
@@ -207,7 +203,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
 
         {/* GST vs normal invoice label — a filled banner instead of a plain line */}
         <div
-          className={`text-center font-black uppercase tracking-wider ${textClass}`}
+          className={`thermal-invert text-center font-black uppercase tracking-wider ${textClass}`}
           style={{ backgroundColor: '#000', color: '#fff', padding: '4px 0' }}
         >
           {isGstBill ? (t('gstInvoice') || 'GST Invoice') : (t('invoiceLabel') || 'Invoice')}
@@ -218,7 +214,10 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
           <div className={`flex justify-between items-start gap-2 ${smallTextClass} font-bold`}>
             <div className="flex flex-col gap-0.5 min-w-0 flex-1">
               <span style={{ overflowWrap: 'anywhere' }}>{t('bill')} {billNumber}</span>
-              <Barcode value={billNumber} height={20} displayValue={false} />
+              {/* The barcode encodes the bill number WITHOUT the fixed "INV-" prefix: 4 fewer characters = ~44 fewer bars, so every bar
+                  can be drawn at a whole pixel width even on a 58 mm roll (a longer code gets squeezed and stops scanning).
+                  Bill lookup accepts both "D2431C95" and "INV-D2431C95". The full number is printed above. */}
+              <Barcode value={billNumber.replace(/^INV[-_]?/i, '') || billNumber} width={is58mm ? 1 : 1.5} height={is58mm ? 36 : 40} margin={10} displayValue printCrisp />
             </div>
             {/* never let the date break into 30- / 09- / 2026 on a narrow roll */}
             <span style={{ whiteSpace: 'nowrap' }}>{date}</span>
@@ -281,21 +280,21 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
               extras.push({ label: 'GST', value: `${Number((item as any).gstPercent) || 0}%` });
             }
             return (
-              <div key={idx} className="px-1 py-1" style={idx < goodsItems.length - 1 ? { borderBottom: '1px solid #ddd' } : undefined}>
+              <div key={idx} className="px-1 py-1" style={idx < goodsItems.length - 1 ? { borderBottom: '1px dashed #000' } : undefined}>
                 <div className={`${textClass} font-semibold`} style={{ overflowWrap: 'anywhere' }}>{byId('item')}</div>
-                {variantLine && <div style={{ fontSize: '80%', color: '#555' }}>{variantLine}</div>}
-                {attrParts.length > 0 && <div style={{ fontSize: '80%', color: '#666' }}>{attrParts.join(' · ')}</div>}
+                {variantLine && <div style={{ fontSize: '80%', color: '#222' }}>{variantLine}</div>}
+                {attrParts.length > 0 && <div style={{ fontSize: '80%', color: '#222' }}>{attrParts.join(' · ')}</div>}
                 <div className={`flex justify-between items-baseline gap-2 ${textClass}`}>
                   <span style={{ whiteSpace: 'nowrap' }}>{byId('qty')} × {byId('rate')}</span>
                   <span className="font-bold" style={{ whiteSpace: 'nowrap' }}>{byId('amt')}</span>
                 </div>
                 {dualUnitConfig && (
-                  <div style={{ fontSize: '75%', color: '#22c55e' }}>
+                  <div style={{ fontSize: '75%', color: '#000' }}>
                     ={(item.quantity * dualUnitConfig.conversionFactor).toLocaleString('en-IN')} {dualUnitConfig.secondaryUnit}
                   </div>
                 )}
                 {extras.length > 0 && (
-                  <div style={{ fontSize: '80%', color: '#555', overflowWrap: 'anywhere' }}>
+                  <div style={{ fontSize: '80%', color: '#222', overflowWrap: 'anywhere' }}>
                     {extras.map(x => `${x.label}: ${x.value}`).join(' · ')}
                   </div>
                 )}

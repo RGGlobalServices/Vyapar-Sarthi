@@ -50,6 +50,12 @@
   }
   #print-root > [data-print-format="a4"] { min-height: 270mm !important; }
   #print-root > [data-print-format^="thermal"] { min-height: 0 !important; padding: 1.5mm !important; }
+  /* Thermal clarity: a thermal head has no grey — light text and thin grey rules drop out. Everything prints pure black
+     (except the inverted black title bar) in a slightly heavier weight. */
+  #print-root > [data-print-format^="thermal"],
+  #print-root > [data-print-format^="thermal"] *:not(.thermal-invert):not(.thermal-invert *) { color: #000 !important; }
+  #print-root > [data-print-format^="thermal"] { font-weight: 600; }
+  #print-root > [data-print-format^="thermal"] svg { max-width: 100%; height: auto; }
   #print-root tr, #print-root img { break-inside: avoid; page-break-inside: avoid; }
   #print-root thead { display: table-header-group; }
 }
