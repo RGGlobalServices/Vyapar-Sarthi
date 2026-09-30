@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { readLotVariantKeys, setLotVariantKey } from '@/lib/server/lotColumns';
+import { ensureOpeningLot } from '@/lib/server/lotCreate';
+import { normKey } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse, ApiError } from '@/lib/server/http';
@@ -175,13 +178,18 @@ export async function POST(req: Request) {
       existingBatchCounts.map((r) => [r.productId, r._count._all])
     );
     // Map of "productId|batchNumber" → existing batch id for merge detection
+    // A lot is identified by product + lot number + the size/colour it was bought for (lots saved before
+    // size/colour was recorded have none and never merge with a variant line).
+    const existingLotVariantKeys = await readLotVariantKeys(prisma as any, (existingNamedBatches as any[]).map((b) => b.id));
+    const lotKey = (productId: string, batchNumber: string, variant: string | null | undefined) =>
+      `${productId}|${batchNumber}|${normKey(variant || '')}`;
     const existingBatchByKey = new Map<string, string>(
-      (existingNamedBatches as any[]).map((b) => [`${b.productId}|${b.batchNumber}`, b.id])
+      (existingNamedBatches as any[]).map((b) => [lotKey(b.productId, b.batchNumber, existingLotVariantKeys.get(b.id)), b.id])
     );
     const purchaseDate = date ? new Date(date) : new Date();
     const batchPlan = processedItems.map((item: any) => {
       const named = item.batchNumber ? String(item.batchNumber).trim() : '';
-      const existingId = named ? existingBatchByKey.get(`${item.productId}|${named}`) : undefined;
+      const existingId = named ? existingBatchByKey.get(lotKey(item.productId, named, item.variant)) : undefined;
       if (existingId) {
         // Same batch number found — merge into the existing batch, no new row needed
         return { id: existingId, barcode: null, merge: true };
@@ -217,6 +225,12 @@ export async function POST(req: Request) {
             },
           });
 
+          // 2a. Stock that predates lots becomes an OPENING lot first, so it still sells before the lots of this purchase.
+          // (Not for mill shops: their lots come from production/raw-material flows and have their own rules.)
+          if (!isMillBillingPackage(auth.shop.packageType)) {
+            for (const pid of purchaseProductIds) await ensureOpeningLot(tx, auth.shop.id, pid);
+          }
+
           // 2. Insert or merge Batches
           const newBatchItems = processedItems
             .map((item: any, i: number) => ({ item, plan: batchPlan[i] }))
@@ -244,6 +258,8 @@ export async function POST(req: Request) {
               }))
             });
           }
+          // Remember which size/colour each new lot is for (no-op until supabase/16_*.sql has been run).
+          for (const { item, plan } of newBatchItems) await setLotVariantKey(tx as any, plan.id, item.variant);
           // Merge: add received quantity to the existing batch
           for (const { item, plan } of mergeBatchItems) {
             await tx.batch.update({
@@ -253,6 +269,10 @@ export async function POST(req: Request) {
                 initialQuantity: { increment: item.baseQuantity },
                 // Update cost to latest purchase price if it changed
                 costPrice: item.baseCost,
+                // The selling price typed on this purchase line now also follows the lot (it used to be ignored),
+                // and so does a newly given expiry. Blank leaves the lot's existing values alone.
+                ...(item.sellingPrice != null && item.sellingPrice !== '' && Number(item.sellingPrice) > 0 ? { sellingPrice: Number(item.sellingPrice) } : {}),
+                ...(item.expiryDate ? { expiryDate: new Date(item.expiryDate) } : {}),
               },
             });
           }

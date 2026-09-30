@@ -21,7 +21,7 @@ const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
 const emptyItem = () => ({
-  productId: '', quantity: 1, cost: 0, batchNumber: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '', toRaw: undefined as boolean | undefined,
+  productId: '', quantity: 1, cost: 0, batchNumber: '', expiryDate: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '', toRaw: undefined as boolean | undefined,
   // One qty per colour/size, keyed the same way as everywhere else — only
   // used when the selected product has variant rows; `quantity` above is
   // still what's used for a plain (non-variant) product.
@@ -325,6 +325,7 @@ export default function PurchasesPage() {
           quantity: Number(qty),
           cost, mrp, discountPercent, sellingPrice,
           batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate || undefined,
           unitId: item.unitId,
           conversionFactor: item.conversionFactor,
         }));
@@ -823,6 +824,14 @@ export default function PurchasesPage() {
                         newItems[index].batchNumber = e.target.value;
                         setItems(newItems);
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="LOT-001" />
+                    </div>
+                    <div className="w-36">
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Expiry (Opt)</label>
+                      <input type="date" value={item.expiryDate || ''} onChange={e => {
+                        const newItems = [...items];
+                        (newItems[index] as any).expiryDate = e.target.value;
+                        setItems(newItems);
+                      }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
                     </div>
                     <div className="w-32">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('sellingPriceOptional') || 'Sell Price (Opt)'}</label>

@@ -46,6 +46,9 @@ export async function receiveLot(tx: Db, input: NewLotInput) {
   const product = await tx.product.findFirst({ where: { id: input.productId, shopId: input.shopId } });
   if (!product) throw new ApiError(404, 'Product not found');
 
+  // Older stock with no lot of its own turns into an OPENING lot first, so it still sells before this new lot.
+  await ensureOpeningLot(tx, input.shopId, input.productId);
+
   const hasVariants = productHasVariantStock(product);
   const variantKey = String(input.variantKey ?? '').trim();
   if (hasVariants && !variantKey) throw new ApiError(400, 'This product has sizes/colours — choose which size/colour this lot is for.');
@@ -125,6 +128,8 @@ export async function createOpeningLots(
     product: { id: string; barcode?: string | null; sku?: string | null; currentStock?: number | null; costPrice?: any; wholesaleCost?: any; sellingPrice?: any; variants?: any; size_variants?: any };
     batchNumber: string;
     expiryDate?: string | Date | null;
+    /** when this stock really arrived (defaults to now); an older date keeps it ahead of newer lots in FIFO order */
+    purchaseDate?: Date | null;
   },
 ) {
   const p = opts.product;
@@ -154,11 +159,33 @@ export async function createOpeningLots(
         costPrice: l.cost,
         sellingPrice: l.sell,
         expiryDate: toDate(opts.expiryDate),
-        purchaseDate: new Date(),
+        purchaseDate: opts.purchaseDate ?? new Date(),
         barcode: `${p.barcode || p.sku || p.id.slice(0, 8)}-L${seq}-${randomUUID().slice(0, 4)}`,
       },
     });
     await setLotVariantKey(tx as any, created.id, l.variantKey);
   }
   return lots.length;
+}
+
+/**
+ * Stock a product already holds but that was never recorded as a lot (added before lots existed, typed into the
+ * Stock field, imported...) becomes an "OPENING" lot the first time a NEW lot arrives. Without this the new lot
+ * would be the only lot and billing would sell it first, at its price, before the older stock — the opposite of
+ * "old pieces first at the old price". The opening lot is dated when the product was created, so it sorts before
+ * any later lot, and carries the product's own cost and selling price at that moment.
+ * Does nothing when the product already has lots (their quantities are the truth) or has no stock.
+ */
+export async function ensureOpeningLot(tx: Db, shopId: string, productId: string): Promise<boolean> {
+  const hasLot = await tx.batch.count({ where: { productId, shopId } });
+  if (hasLot > 0) return false;
+  const product = await tx.product.findFirst({ where: { id: productId, shopId } });
+  if (!product || (Number(product.currentStock) || 0) <= 0) return false;
+  const n = await createOpeningLots(tx, {
+    shopId,
+    product: product as any,
+    batchNumber: 'OPENING',
+    purchaseDate: product.createdAt ?? new Date(Date.now() - 86_400_000),
+  });
+  return n > 0;
 }
