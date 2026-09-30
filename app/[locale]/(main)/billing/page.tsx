@@ -3,7 +3,8 @@ import {useState, useEffect, useRef, useCallback, useMemo} from 'react';
 import useSWR, { mutate } from 'swr';
 import WholesaleBillingUI from './WholesaleBillingUI';
 import {useTranslations, useLocale} from 'next-intl';
-import {useCartStore, useUdharStore, useAuthStore} from '@/lib/store';
+import {useCartStore, useUdharStore, useAuthStore, lineRef} from '@/lib/store';
+import { lotLabel as makeLotLabel } from '@/lib/lots';
 import {useBusinessStore} from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import {useBillingEngine, type PaymentMethod, type CollectedMethod} from '@/lib/hooks/useBillingEngine';
@@ -150,12 +151,12 @@ const CartQuantityInputRetail = ({ item, updateQuantity, removeItem, maxQty }: a
         let num = Number(e.target.value);
         if (!isNaN(num)) {
           if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
-          updateQuantity(item.id, num, item.variant);
+          updateQuantity(item.id, num, lineRef(item));
         }
       }}
       onBlur={(e) => {
         let num = Number(e.target.value);
-        if (num <= 0 || e.target.value === '') removeItem(item.id, item.variant);
+        if (num <= 0 || e.target.value === '') removeItem(item.id, lineRef(item));
         else {
           if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
           setLocalVal(num.toString());
@@ -205,10 +206,10 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
   const writePrice = (typedVal: number) => {
     if (mode === 'exclusive' && gstPercent > 0) {
       // Typed = base → store inclusive = base * (1 + gst%)
-      updatePrice(item.id, Math.round(toInclusivePrice(typedVal, gstPercent) * 100) / 100, item.variant);
+      updatePrice(item.id, Math.round(toInclusivePrice(typedVal, gstPercent) * 100) / 100, lineRef(item));
     } else {
       // Typed = inclusive (or no GST) → store directly
-      updatePrice(item.id, typedVal, item.variant);
+      updatePrice(item.id, typedVal, lineRef(item));
     }
   };
 
@@ -217,28 +218,28 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
     if (mode === 'exclusive') {
       // Keep base price constant; update stored inclusive for new slab
       const base = gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
-      updateGstPercent(item.id, newSlab, item.variant);
+      updateGstPercent(item.id, newSlab, lineRef(item));
       const newIncl = newSlab > 0 ? toInclusivePrice(base, newSlab) : base;
-      updatePrice(item.id, Math.round(newIncl * 100) / 100, item.variant);
+      updatePrice(item.id, Math.round(newIncl * 100) / 100, lineRef(item));
     } else {
       // Incl mode: total stays the same, only breakdown changes
-      updateGstPercent(item.id, newSlab, item.variant);
+      updateGstPercent(item.id, newSlab, lineRef(item));
     }
   };
 
   const switchMode = (newMode: 'inclusive' | 'exclusive') => {
     if (newMode === mode) return;
     const slab = gstPercent > 0 ? gstPercent : (savedSlabRef.current || 12);
-    if (gstPercent === 0) updateGstPercent(item.id, slab, item.variant);
+    if (gstPercent === 0) updateGstPercent(item.id, slab, lineRef(item));
 
     if (newMode === 'exclusive') {
       // Incl → Excl: the currently visible price becomes the BASE price.
       // e.g. displayed ₹209 (incl) → now BASE ₹209 → store inclusive ₹209*1.18 = ₹246.62
-      updatePrice(item.id, Math.round(toInclusivePrice(displayPrice, slab) * 100) / 100, item.variant);
+      updatePrice(item.id, Math.round(toInclusivePrice(displayPrice, slab) * 100) / 100, lineRef(item));
     } else {
       // Excl → Incl: the currently visible base price becomes the TOTAL.
       // e.g. displayed ₹177.68 (base) → now TOTAL ₹177.68 → store ₹177.68 directly
-      updatePrice(item.id, Math.round(displayPrice * 100) / 100, item.variant);
+      updatePrice(item.id, Math.round(displayPrice * 100) / 100, lineRef(item));
     }
     setMode(newMode);
   };
@@ -397,6 +398,15 @@ function StandardBillingUI() {
   // Cache of product batches fetched during this billing session — avoids
   // re-fetching the same product's batches on every scan/click.
   const batchCacheRef = useRef<Map<string, any[]>>(new Map());
+  // Products that currently have more than one lot with stock -> their lots. The search list shows each of these
+  // lots as its own row (lot no., price, left, expiry) so the cashier sells the old lot at the old price.
+  const { data: lotsByProduct = {}, mutate: refreshLots } = useSWR<Record<string, any[]>>(
+    activeShopId ? ['/products/lots', activeShopId] : null,
+    ([url]: [string, string]) => api.get(url).then(res => res.data || {}),
+    { revalidateOnFocus: true },
+  );
+  // Lot chosen in the search list for a product that still needs a size/colour pick first.
+  const variantSelectionLotRef = useRef<any>(null);
 
   // Use SWR for instant cache loading. Also persisted to localStorage so a
   // cold app start with no connection yet still has yesterday's catalogue to
@@ -607,6 +617,7 @@ function StandardBillingUI() {
     } catch { productVariants = {}; }
     const productHasVariants = Object.values(productVariants).some((v: any) => Number(v) > 0);
     if (productHasVariants && !variant) {
+      variantSelectionLotRef.current = batchInfo || null;
       setVariantSelectionProduct(product);
       return;
     }
@@ -664,6 +675,9 @@ function StandardBillingUI() {
     // identical-looking items never ring up at different prices at the
     // counter. (Batch.sellingPrice still exists for reporting.)
     if (batchInfo && Number(batchInfo.costPrice) > 0) cost = Number(batchInfo.costPrice);
+    // The lot's OWN selling price (a lot bought at a different rate keeps its price even after the product's
+    // shelf price changed). No lot price recorded -> the normal shelf price stays.
+    if (batchInfo && Number(batchInfo.sellingPrice) > 0) price = Number(batchInfo.sellingPrice);
     // `variant` is the raw stock key — a plain size ("M") or, for colour/size
     // products, a composite "Colour / Size" key (see ColorSizeVariantGrid). Split
     // it here so the cart row and the printed invoice can show Colour and Size
@@ -712,7 +726,9 @@ function StandardBillingUI() {
           const resolvedCost = Number(first.costPrice) > 0 ? Number(first.costPrice) : undefined;
           // Use named batchNumber if set; otherwise fall back to positional label ("Lot 1")
           const displayBatchNumber = first.batchNumber || (batches.length > 1 ? `Lot 1` : null);
-          setLineBatch(product.id, variant, { batchId: first.id, batchNumber: displayBatchNumber, cost: resolvedCost });
+          // With several lots, the old lot is sold first AT ITS OWN price; a single lot keeps the current shelf price.
+          const lotPrice = batches.length > 1 && Number(first.sellingPrice) > 0 ? Number(first.sellingPrice) : undefined;
+          setLineBatch(product.id, variant, { batchId: first.id, batchNumber: displayBatchNumber, cost: resolvedCost, price: lotPrice });
         }
         // Cache even when empty so repeated adds don't re-fetch
         batchCacheRef.current.set(String(product.id), batches);
@@ -1021,6 +1037,9 @@ function StandardBillingUI() {
 
       // Show bill INSTANTLY — don't wait for DB
       setLastBill(billData);
+      // Lots just sold from: drop the cached lot lists so the next search shows the real remaining quantities.
+      batchCacheRef.current.clear();
+      refreshLots();
       clearCart();
       setShowCustomerModal(false);
       setIsGeneratingBill(false);
@@ -1259,7 +1278,39 @@ function StandardBillingUI() {
             />
             {searchResults.length > 0 && (
               <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
-                {searchResults.map((product) => (
+                {searchResults.map((product) => (lotsByProduct[String(product.id)]?.length > 1) ? (
+                  <div key={product.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                    <div className="px-4 pt-2.5 pb-1">
+                      <p className="font-bold text-slate-900 dark:text-slate-200">{product.name}</p>
+                      <p className="text-[11px] text-slate-500">{product.category} · {lotsByProduct[String(product.id)].length} lots in stock — pick the lot to sell</p>
+                    </div>
+                    {lotsByProduct[String(product.id)].map((lot: any, idx: number) => {
+                      const lotPrice = Number(lot.sellingPrice) > 0 ? Number(lot.sellingPrice) : (Number(product.sellingPrice ?? product.selling_price) || 0);
+                      return (
+                        <button
+                          key={lot.id}
+                          onClick={() => addToCart(product, undefined, false, { id: lot.id, batchNumber: lot.batchNumber || makeLotLabel(lot).replace(/^Lot /, ''), costPrice: lot.costPrice, sellingPrice: lot.sellingPrice })}
+                          className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 flex justify-between items-center gap-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+                              {makeLotLabel(lot)}
+                              {idx === 0 && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">Old · sell first</span>}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {lot.purchaseDate ? `bought ${new Date(lot.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                              {lot.expiryDate ? ` · exp ${new Date(lot.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : ''}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-bold text-emerald-500">₹{lotPrice.toLocaleString('en-IN')}</p>
+                            <p className="text-[10px] font-bold text-slate-500">{lot.quantity} left</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
                   <button
                     key={product.id}
                     onClick={() => { addToCart(product); checkFifoHintOnAdd(product); }}
@@ -1568,7 +1619,7 @@ function StandardBillingUI() {
                   const stockInfo = resolveStockForItem(item, products);
                   const maxQty = stockInfo.known ? stockInfo.qty : undefined;
                   return (
-                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}`} className={cn('text-slate-900 dark:text-slate-200 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-0', rowIdx % 2 === 1 && 'bg-slate-50/40 dark:bg-slate-800/20')}>
+                  <tr key={`${item.id}-${item.unit}-${item.variant || 'none'}-${(item as any).batchId || ''}`} className={cn('text-slate-900 dark:text-slate-200 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-0', rowIdx % 2 === 1 && 'bg-slate-50/40 dark:bg-slate-800/20')}>
                     <td className="px-3 py-3">
                       <input
                         type="checkbox"
@@ -1640,7 +1691,7 @@ function StandardBillingUI() {
                                 if (batches.length > 1) {
                                   const prod = products.find((p: any) => p.id === pid) || { id: pid, name: item.name };
                                   setBatchSelectionProduct(prod);
-                                  setBatchSelectionVariant(item.variant);
+                                  setBatchSelectionVariant(lineRef(item));
                                   setBatchSelectionOptions(batches);
                                 }
                               }}
@@ -1683,13 +1734,13 @@ function StandardBillingUI() {
                                   type="text"
                                   placeholder="—"
                                   value={item.color || ''}
-                                  onChange={e => updateColorSize(item.id, { color: e.target.value }, item.variant)}
+                                  onChange={e => updateColorSize(item.id, { color: e.target.value }, lineRef(item))}
                                   className="bg-transparent outline-none text-[11px] w-14 text-slate-700 dark:text-slate-300 min-w-0 font-medium"
                                 />
                               </label>
                               {availColors.map(c => (
                                 <button key={c} type="button"
-                                  onClick={() => updateColorSize(item.id, { color: c }, item.variant)}
+                                  onClick={() => updateColorSize(item.id, { color: c }, lineRef(item))}
                                   className={cn('text-[10px] px-1.5 py-0.5 rounded border font-semibold transition-colors',
                                     item.color === c
                                       ? 'bg-rose-500 border-rose-500 text-white'
@@ -1707,7 +1758,7 @@ function StandardBillingUI() {
                                   type="text"
                                   placeholder="—"
                                   value={item.size || ''}
-                                  onChange={e => updateColorSize(item.id, { size: e.target.value }, item.variant)}
+                                  onChange={e => updateColorSize(item.id, { size: e.target.value }, lineRef(item))}
                                   className="bg-transparent outline-none text-[11px] w-10 text-slate-700 dark:text-slate-300 min-w-0 font-medium"
                                 />
                               </label>
@@ -1717,7 +1768,7 @@ function StandardBillingUI() {
                                 const isSelected = item.size === sz;
                                 return (
                                   <button key={sz} type="button"
-                                    onClick={() => updateColorSize(item.id, { size: sz }, item.variant)}
+                                    onClick={() => updateColorSize(item.id, { size: sz }, lineRef(item))}
                                     title={inStock ? `${sz}: ${stock} in stock` : `${sz}: out of stock`}
                                     className={cn('text-[10px] px-1.5 py-0.5 rounded border font-bold transition-colors',
                                       isSelected
@@ -1792,7 +1843,7 @@ function StandardBillingUI() {
                             {getLoosePresets(item.unit).filter(p => typeof maxQty !== 'number' || p.v <= maxQty).map(p => (
                               <button
                                 key={p.l}
-                                onClick={() => updateQuantity(item.id, p.v, item.variant)}
+                                onClick={() => updateQuantity(item.id, p.v, lineRef(item))}
                                 className={cn(
                                   'text-[10px] px-1.5 py-0.5 rounded transition-colors font-medium',
                                   item.quantity === p.v
@@ -1807,8 +1858,8 @@ function StandardBillingUI() {
                         <div className="flex items-center gap-2">
                           <button onClick={() => {
                             const newQty = item.quantity - 1;
-                            if (newQty <= 0) removeItem(item.id, item.variant);
-                            else updateQuantity(item.id, newQty, item.variant);
+                            if (newQty <= 0) removeItem(item.id, lineRef(item));
+                            else updateQuantity(item.id, newQty, lineRef(item));
                           }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
                             <Minus size={14}/>
                           </button>
@@ -1817,7 +1868,7 @@ function StandardBillingUI() {
                             onClick={() => {
                               const newQty = item.quantity + 1;
                               if (typeof maxQty === 'number' && newQty > maxQty) return;
-                              updateQuantity(item.id, newQty, item.variant);
+                              updateQuantity(item.id, newQty, lineRef(item));
                             }}
                             disabled={typeof maxQty === 'number' && item.quantity >= maxQty}
                             title={typeof maxQty === 'number' && item.quantity >= maxQty ? (t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`) : undefined}
@@ -1856,7 +1907,7 @@ function StandardBillingUI() {
                       })()}
                     </td>
                     <td className="px-3 py-3 text-center align-top">
-                      <button onClick={() => removeItem(item.id, item.variant)} className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded transition-colors">
+                      <button onClick={() => removeItem(item.id, lineRef(item))} className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded transition-colors">
                         <Trash2 size={15} />
                       </button>
                     </td>
@@ -2331,7 +2382,7 @@ function StandardBillingUI() {
                       <button
                         key={key}
                         onClick={() => {
-                          addToCart(variantSelectionProduct, key);
+                          addToCart(variantSelectionProduct, key, false, variantSelectionLotRef.current);
                           checkFifoHintOnAdd(variantSelectionProduct);
                           setVariantSelectionProduct(null);
                         }}
@@ -2359,7 +2410,7 @@ function StandardBillingUI() {
                   e.preventDefault();
                   const val = new FormData(e.currentTarget).get('custom_size') as string;
                   if (val && val.trim()) {
-                    addToCart(variantSelectionProduct, val.trim());
+                    addToCart(variantSelectionProduct, val.trim(), false, variantSelectionLotRef.current);
                     checkFifoHintOnAdd(variantSelectionProduct);
                     setVariantSelectionProduct(null);
                   }
@@ -2389,35 +2440,39 @@ function StandardBillingUI() {
             <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between shrink-0 py-3 px-4">
               <div>
                 <CardTitle className="text-slate-900 dark:text-slate-200 text-base">Change Lot</CardTitle>
-                <p className="text-xs text-slate-500 mt-0.5">{batchSelectionProduct.name}{batchSelectionVariant ? ` · ${batchSelectionVariant}` : ''}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{batchSelectionProduct.name}{batchSelectionVariant?.split('')[0] ? ` · ${batchSelectionVariant.split('')[0]}` : ''}</p>
               </div>
               <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors">
                 <X size={18} />
               </button>
             </CardHeader>
             <CardContent className="p-3 overflow-y-auto space-y-1.5">
-              <p className="text-[11px] text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit. Profit is calculated from each lot's purchase cost.</p>
+              <p className="text-[11px] text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit. Choosing a lot sets the price to that lot's own selling price; profit uses that lot's purchase cost.</p>
               {batchSelectionOptions.map((b, idx) => (
                 <button
                   key={b.id}
                   onClick={() => {
                     const chosen = batchSelectionProduct; const chosenVariant = batchSelectionVariant;
                     setBatchSelectionProduct(null); setBatchSelectionOptions([]);
-                    setLineBatch(chosen.id, chosenVariant, { batchId: b.id, batchNumber: b.batchNumber, cost: b.costPrice });
+                    setLineBatch(chosen.id, chosenVariant, { batchId: b.id, batchNumber: b.batchNumber || makeLotLabel(b).replace(/^Lot /, ''), cost: b.costPrice, price: Number(b.sellingPrice) > 0 ? Number(b.sellingPrice) : undefined });
                   }}
                   className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between gap-3"
                 >
                   <div>
                     <p className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      {b.batchNumber || `Lot ${idx + 1}`}
+                      {makeLotLabel(b)}
                       {idx === 0 && <span className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">FIFO ↑</span>}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {b.quantity} in stock
                       {b.purchaseDate && ` · bought ${new Date(b.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                      {b.expiryDate && ` · exp ${new Date(b.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`}
                     </p>
                   </div>
-                  <span className="text-sm font-black text-slate-900 dark:text-white shrink-0">₹{Number(b.costPrice || 0).toLocaleString('en-IN')}/unit</span>
+                  <div className="text-right shrink-0">
+                    <span className="block text-sm font-black text-emerald-600 dark:text-emerald-400">{Number(b.sellingPrice) > 0 ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : 'shelf price'}</span>
+                    <span className="block text-[10px] text-slate-500">cost ₹{Number(b.costPrice || 0).toLocaleString('en-IN')}</span>
+                  </div>
                 </button>
               ))}
             </CardContent>

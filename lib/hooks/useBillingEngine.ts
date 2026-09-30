@@ -164,7 +164,7 @@ export function useBillingEngine(
     updateWarrantyDaysInStore(shopId, id, warrantyDays, variant);
   }, [shopId, updateWarrantyDaysInStore]);
 
-  const setLineBatch = useCallback((id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number }) => {
+  const setLineBatch = useCallback((id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number; price?: number | null }) => {
     if (!shopId) return;
     setLineBatchInStore(shopId, id, variant, batch);
   }, [shopId, setLineBatchInStore]);

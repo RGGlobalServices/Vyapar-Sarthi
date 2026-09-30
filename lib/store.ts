@@ -156,27 +156,45 @@ interface CartStore {
    *  price-minus-cost vs. GST-exclusive-price-minus-cost) — pass it
    *  pre-computed the same way the line's own addItem() call did, or omit
    *  it to fall back to the simple `price - cost`. */
-  setLineBatch: (shopId: string, id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number }) => void;
+  setLineBatch: (shopId: string, id: string | number, variant: string | undefined, batch: { batchId?: string; batchNumber?: string | null; cost?: number | null; profit?: number; /** the lot's own selling price */ price?: number | null }) => void;
   updateColorSize: (shopId: string, id: string | number, variant: string | undefined, fields: { color?: string; size?: string }) => void;
   clearCart: (shopId: string) => void;
 }
 
 // A cart line is uniquely identified by product id + unit + variant (size),
 // so the same product can sit in the cart at multiple sizes/prices at once.
-const sameLine = (i: CartItem, id: string | number, variant?: string) =>
-  i.id === id && (variant === undefined || (i.variant ?? undefined) === (variant ?? undefined));
+//
+// Lots: the same product can also sit in the cart once PER LOT (e.g. old lot @150 and new lot @180). Every store
+// action takes `(id, variant)`; for a line that is tied to a lot the caller passes `lineRef(item)` instead of
+// `item.variant`, which appends the lot id after a separator. Plain variants (no separator) behave exactly as before.
+const LOT_SEP = '';
+export const lineRef = (item: { variant?: string; batchId?: string }): string | undefined =>
+  item.batchId ? `${item.variant ?? ''}${LOT_SEP}${item.batchId}` : item.variant;
+const sameLine = (i: CartItem, id: string | number, ref?: string) => {
+  if (i.id !== id) return false;
+  if (ref === undefined) return true;
+  const at = ref.indexOf(LOT_SEP);
+  if (at === -1) return (i.variant ?? undefined) === (ref ?? undefined);
+  const variant = ref.slice(0, at);
+  return (i.variant ?? '') === variant && i.batchId === ref.slice(at + 1);
+};
 
 export const useCartStore = create<CartStore>((set) => ({
   carts: {},
   addItem: (shopId, item) => set((state) => {
     const shopCart = state.carts[shopId] || [];
-    const existing = shopCart.find((i) => i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? ''));
+    // An explicit lot pick (item.batchId set) merges only into the line of THAT lot; an add with no lot merges into
+    // the existing line of the product/variant whatever lot it was auto-pinned to (old behaviour).
+    const sameTarget = (i: CartItem) =>
+      i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? '')
+      && (!item.batchId || i.batchId === item.batchId);
+    const existing = shopCart.find(sameTarget);
     if (existing) {
       return {
         carts: {
           ...state.carts,
           [shopId]: shopCart.map((i) =>
-            i.id === item.id && i.unit === item.unit && (i.variant ?? '') === (item.variant ?? '')
+            i === existing
               ? { ...i, quantity: i.quantity + item.quantity, total: (i.quantity + item.quantity) * i.price }
               : i
           ),
@@ -244,13 +262,19 @@ export const useCartStore = create<CartStore>((set) => ({
         ...state.carts,
         [shopId]: shopCart.map((i) => {
           if (!sameLine(i, id, variant)) return i;
+          // The background FIFO auto-pin (plain variant ref) must never overwrite a line the shopkeeper already
+          // tied to a lot; re-pinning a specific line passes lineRef() so it still matches that line.
+          if ((variant === undefined || !variant.includes(LOT_SEP)) && i.batchId !== undefined) return i;
           const cost = batch.cost !== undefined && batch.cost !== null && batch.cost > 0 ? batch.cost : i.cost;
+          const price = batch.price !== undefined && batch.price !== null && batch.price > 0 ? batch.price : i.price;
           return {
             ...i,
             batchId: batch.batchId,
             batchNumber: batch.batchNumber ?? i.batchNumber,
             cost,
-            profit: batch.profit !== undefined ? batch.profit : i.price - cost,
+            price,
+            total: price !== i.price ? i.quantity * price : i.total,
+            profit: batch.profit !== undefined ? batch.profit : price - cost,
           };
         })
       }

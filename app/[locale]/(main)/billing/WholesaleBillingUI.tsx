@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, lineRef } from '@/lib/store';
 import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
@@ -1902,7 +1902,7 @@ export default function WholesaleBillingUI() {
                                   if (batches.length > 1) {
                                     const prod = products.find((p: any) => p.id === pid) || { id: pid, name: item.name };
                                     setBatchSelectionProduct(prod);
-                                    setBatchSelectionVariant(item.variant);
+                                    setBatchSelectionVariant(lineRef(item));
                                     setBatchSelectionOptions(batches);
                                   }
                                 }}
@@ -2099,7 +2099,7 @@ export default function WholesaleBillingUI() {
                                   if (batches.length > 1) {
                                     const prod = products.find((p: any) => p.id === pid) || { id: pid, name: item.name };
                                     setBatchSelectionProduct(prod);
-                                    setBatchSelectionVariant(item.variant);
+                                    setBatchSelectionVariant(lineRef(item));
                                     setBatchSelectionOptions(batches);
                                   }
                                 }}
@@ -3319,7 +3319,7 @@ export default function WholesaleBillingUI() {
                 <span className="font-semibold text-slate-900 dark:text-white text-sm block">Change Lot</span>
                 <span className="text-[11px] text-slate-500">
                   {batchSelectionProduct.name}
-                  {batchSelectionVariant && ` · ${batchSelectionVariant}`}
+                  {batchSelectionVariant?.split('')[0] && ` · ${batchSelectionVariant.split('')[0]}`}
                 </span>
               </div>
               <button onClick={() => { setBatchSelectionProduct(null); setBatchSelectionOptions([]); }} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
