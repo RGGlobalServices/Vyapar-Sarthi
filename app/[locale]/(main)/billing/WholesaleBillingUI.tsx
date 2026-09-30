@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuthStore, lineRef } from '@/lib/store';
+import { lotLabel as makeLotLabel } from '@/lib/lots';
 import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
@@ -119,12 +120,12 @@ const CartQuantityInput = ({ item, updateQuantity, removeItem, maxQty }: any) =>
         let num = Number(e.target.value);
         if (!isNaN(num) && num > 0) {
           if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
-          updateQuantity(item.id, num, item.variant);
+          updateQuantity(item.id, num, lineRef(item));
         }
       }}
       onBlur={(e) => {
         let num = Number(e.target.value);
-        if (num <= 0 || e.target.value === '') removeItem(item.id, item.variant);
+        if (num <= 0 || e.target.value === '') removeItem(item.id, lineRef(item));
         else {
           if (typeof maxQty === 'number' && num > maxQty) num = maxQty;
           setLocalVal(num.toString());
@@ -169,7 +170,7 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     const naturalSlab = Number(item.gstPercent) || 0;
     if (naturalSlab > 0) {
       savedSlabRef.current = naturalSlab;
-      updateGstPercent(item.id, 0, item.variant);
+      updateGstPercent(item.id, 0, lineRef(item));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,17 +195,17 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
   // Round to whole rupees so totals are always clean integers.
   const writePrice = (typedBase: number) => {
     const inclusive = gstPercent > 0 ? toInclusivePrice(typedBase, gstPercent) : typedBase;
-    updatePrice(item.id, Math.round(inclusive), item.variant);
+    updatePrice(item.id, Math.round(inclusive), lineRef(item));
   };
 
   // Change GST slab while staying in Incl mode — keep the base price, update inclusive.
   const changeGstSlab = (newSlab: number) => {
     const base = getBase();
-    updateGstPercent(item.id, newSlab, item.variant);
+    updateGstPercent(item.id, newSlab, lineRef(item));
     if (newSlab > 0) {
-      updatePrice(item.id, Math.round(toInclusivePrice(base, newSlab)), item.variant);
+      updatePrice(item.id, Math.round(toInclusivePrice(base, newSlab)), lineRef(item));
     } else {
-      updatePrice(item.id, Math.round(base), item.variant);
+      updatePrice(item.id, Math.round(base), lineRef(item));
     }
   };
 
@@ -213,13 +214,13 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     const base = getBase();
     if (newMode === 'exclusive') {
       // Remove GST: price = base, gstPercent = 0
-      updateGstPercent(item.id, 0, item.variant);
-      updatePrice(item.id, Math.round(base), item.variant);
+      updateGstPercent(item.id, 0, lineRef(item));
+      updatePrice(item.id, Math.round(base), lineRef(item));
     } else {
       // Add GST: price = base*(1+slab%), gstPercent = saved slab
       const slab = savedSlabRef.current || 12;
-      updateGstPercent(item.id, slab, item.variant);
-      updatePrice(item.id, Math.round(toInclusivePrice(base, slab)), item.variant);
+      updateGstPercent(item.id, slab, lineRef(item));
+      updatePrice(item.id, Math.round(toInclusivePrice(base, slab)), lineRef(item));
     }
     setMode(newMode);
   };
@@ -721,6 +722,17 @@ export default function WholesaleBillingUI() {
   // Batch lookup cache — avoids re-fetching /products/{id}/batches on every
   // add of the same product (e.g. scanning the same item multiple times).
   const batchCacheRef = useRef<Map<string, any[]>>(new Map());
+  // Products that currently have more than one lot with stock -> their lots, listed as separate search rows
+  // (lot no., price, qty, expiry). Picking a lot pins the bill line to it: stock and cost come from THAT lot.
+  const [lotsByProduct, setLotsByProduct] = useState<Record<string, any[]>>({});
+  const refreshLots = useCallback(() => {
+    api.get('/products/lots').then((r) => setLotsByProduct(r.data || {})).catch(() => { /* keep the last list */ });
+  }, []);
+  useEffect(() => {
+    refreshLots();
+    window.addEventListener('focus', refreshLots);
+    return () => window.removeEventListener('focus', refreshLots);
+  }, [refreshLots]);
 
   // Set when arriving here via a Delivery Challan's "Convert to Invoice"
   // button (app/[locale]/(main)/challans/page.tsx) — after the sale is
@@ -874,7 +886,7 @@ export default function WholesaleBillingUI() {
         if (product) {
           const newPrice = getPrice(product, item.variant || undefined, isWholesale);
           if (item.price !== newPrice) {
-            updatePrice(item.id as any, newPrice, item.variant);
+            updatePrice(item.id as any, newPrice, lineRef(item));
           }
         }
       });
@@ -1623,6 +1635,8 @@ export default function WholesaleBillingUI() {
         upiId: showBillQr ? profile.upiId : undefined,
       };
       setLastBill(billData);
+      batchCacheRef.current.clear();
+      refreshLots();
 
       if (!isOfflineBill) {
         // Revalidate products so the Products & Stock pages reflect the sale's
@@ -1741,7 +1755,34 @@ export default function WholesaleBillingUI() {
             {/* Live Suggestions Dropdown */}
             {search.length > 1 && searchResults.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 max-h-[300px] overflow-y-auto">
-                {searchResults.map((p, i) => (
+                {searchResults.map((p, i) => (lotsByProduct[String(p.id)]?.length > 1) ? (
+                  <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                    <div className="px-4 pt-2.5 pb-1">
+                      <p className="font-bold text-slate-900 dark:text-white">{p.name}</p>
+                      <p className="text-[11px] text-slate-500">{lotsByProduct[String(p.id)].length} lots in stock — pick the lot to sell</p>
+                    </div>
+                    {lotsByProduct[String(p.id)].map((lot: any, idx: number) => (
+                      <button
+                        key={lot.id}
+                        onClick={() => addToCart(p, undefined, false, { id: lot.id, batchNumber: lot.batchNumber || makeLotLabel(lot).replace(/^Lot /, ''), costPrice: lot.costPrice, sellingPrice: lot.sellingPrice })}
+                        className="w-full text-left px-4 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex justify-between items-center gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+                            {makeLotLabel(lot)}
+                            {idx === 0 && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">Old · sell first</span>}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            cost ₹{Number(lot.costPrice || 0).toLocaleString('en-IN')}
+                            {lot.purchaseDate ? ` · bought ${new Date(lot.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                            {lot.expiryDate ? ` · exp ${new Date(lot.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : ''}
+                          </p>
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-500 shrink-0">{lot.quantity} left</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
                   <button
                     key={p.id}
                     onClick={() => addToCart(p)}
@@ -1836,7 +1877,7 @@ export default function WholesaleBillingUI() {
                       isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit || null),
                     ].filter(Boolean);
                     return (
-                    <tr key={`${item.id}-${item.variant}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
+                    <tr key={`${item.id}-${item.variant}-${(item as any).batchId || ''}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
                       <td className="px-4 py-3 text-slate-400 align-top">{idx + 1}</td>
                       <td className="px-4 py-3 align-top">
                         <p className="font-bold text-slate-900 dark:text-white leading-snug">
@@ -1922,7 +1963,7 @@ export default function WholesaleBillingUI() {
                                 <input
                                   type="date"
                                   value={item.expiryDate ? String(item.expiryDate).slice(0, 10) : ''}
-                                  onChange={e => updateExpiryDate(item.id, e.target.value, item.variant)}
+                                  onChange={e => updateExpiryDate(item.id, e.target.value, lineRef(item))}
                                   className="bg-transparent outline-none text-[11px] text-slate-700 dark:text-slate-300 min-w-0 w-28"
                                 />
                               </label>
@@ -1933,7 +1974,7 @@ export default function WholesaleBillingUI() {
                                 <input
                                   type="text"
                                   value={item.serialNumber || ''}
-                                  onChange={e => updateSerialNumber(item.id, e.target.value, item.variant)}
+                                  onChange={e => updateSerialNumber(item.id, e.target.value, lineRef(item))}
                                   placeholder="—"
                                   className="bg-transparent outline-none text-[11px] w-20 text-slate-700 dark:text-slate-300 min-w-0"
                                 />
@@ -1946,7 +1987,7 @@ export default function WholesaleBillingUI() {
                                   type="number"
                                   min={0}
                                   value={item.warrantyDays ?? ''}
-                                  onChange={e => updateWarrantyDays(item.id, Number(e.target.value) || 0, item.variant)}
+                                  onChange={e => updateWarrantyDays(item.id, Number(e.target.value) || 0, lineRef(item))}
                                   placeholder="—"
                                   className="bg-transparent outline-none text-[11px] w-10 text-slate-700 dark:text-slate-300 min-w-0"
                                 />
@@ -1966,8 +2007,8 @@ export default function WholesaleBillingUI() {
                           <div className="flex items-center justify-center gap-2">
                             <button onClick={() => {
                               const newQty = item.quantity - (item.is_loose ? 0.5 : 1);
-                              if (newQty <= 0) removeItem(item.id as any, item.variant);
-                              else updateQuantity(item.id as any, newQty, item.variant);
+                              if (newQty <= 0) removeItem(item.id as any, lineRef(item));
+                              else updateQuantity(item.id as any, newQty, lineRef(item));
                             }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors">
                               <Minus size={14} />
                             </button>
@@ -1976,7 +2017,7 @@ export default function WholesaleBillingUI() {
                               onClick={() => {
                                 const newQty = item.quantity + (item.is_loose ? 0.5 : 1);
                                 if (typeof maxQty === 'number' && newQty > maxQty) return;
-                                updateQuantity(item.id as any, newQty, item.variant);
+                                updateQuantity(item.id as any, newQty, lineRef(item));
                               }}
                               disabled={atMax}
                               title={atMax ? (t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`) : undefined}
@@ -2001,7 +2042,7 @@ export default function WholesaleBillingUI() {
                         ₹{item.total.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-center align-top">
-                        <button onClick={() => removeItem(item.id as any, item.variant)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
+                        <button onClick={() => removeItem(item.id as any, lineRef(item))} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
                           <Trash2 size={16} />
                         </button>
                       </td>
@@ -2060,7 +2101,7 @@ export default function WholesaleBillingUI() {
                             </div>
                           </div>
                           <button
-                            onClick={() => removeItem(item.id as any, item.variant)}
+                            onClick={() => removeItem(item.id as any, lineRef(item))}
                             className="p-1 text-slate-300 hover:text-red-500 transition-colors shrink-0"
                           >
                             <Trash2 size={14} />
@@ -2117,21 +2158,21 @@ export default function WholesaleBillingUI() {
                             {showExpiry && (
                               <label className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5">
                                 <span className="text-[10px] text-slate-400 whitespace-nowrap">Exp</span>
-                                <input type="date" value={item.expiryDate ? String(item.expiryDate).slice(0, 10) : ''} onChange={e => updateExpiryDate(item.id, e.target.value, item.variant)}
+                                <input type="date" value={item.expiryDate ? String(item.expiryDate).slice(0, 10) : ''} onChange={e => updateExpiryDate(item.id, e.target.value, lineRef(item))}
                                   className="bg-transparent outline-none text-[11px] w-24 text-slate-700 dark:text-slate-300" />
                               </label>
                             )}
                             {showSerial && (
                               <label className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5">
                                 <span className="text-[10px] text-slate-400 whitespace-nowrap">S/N</span>
-                                <input type="text" value={item.serialNumber || ''} onChange={e => updateSerialNumber(item.id, e.target.value, item.variant)} placeholder="—"
+                                <input type="text" value={item.serialNumber || ''} onChange={e => updateSerialNumber(item.id, e.target.value, lineRef(item))} placeholder="—"
                                   className="bg-transparent outline-none text-[11px] w-16 text-slate-700 dark:text-slate-300" />
                               </label>
                             )}
                             {showWarranty && (
                               <label className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5">
                                 <span className="text-[10px] text-slate-400 whitespace-nowrap">Warranty</span>
-                                <input type="number" min={0} value={item.warrantyDays ?? ''} onChange={e => updateWarrantyDays(item.id, Number(e.target.value) || 0, item.variant)} placeholder="—"
+                                <input type="number" min={0} value={item.warrantyDays ?? ''} onChange={e => updateWarrantyDays(item.id, Number(e.target.value) || 0, lineRef(item))} placeholder="—"
                                   className="bg-transparent outline-none text-[11px] w-8 text-slate-700 dark:text-slate-300" />
                                 <span className="text-[10px] text-slate-400">d</span>
                               </label>
@@ -2154,8 +2195,8 @@ export default function WholesaleBillingUI() {
                               <button
                                 onClick={() => {
                                   const newQty = item.quantity - (item.is_loose ? 0.5 : 1);
-                                  if (newQty <= 0) removeItem(item.id as any, item.variant);
-                                  else updateQuantity(item.id as any, newQty, item.variant);
+                                  if (newQty <= 0) removeItem(item.id as any, lineRef(item));
+                                  else updateQuantity(item.id as any, newQty, lineRef(item));
                                 }}
                                 className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-red-600 transition-colors"
                               >
@@ -2166,7 +2207,7 @@ export default function WholesaleBillingUI() {
                                 onClick={() => {
                                   const newQty = item.quantity + (item.is_loose ? 0.5 : 1);
                                   if (typeof maxQty === 'number' && newQty > maxQty) return;
-                                  updateQuantity(item.id as any, newQty, item.variant);
+                                  updateQuantity(item.id as any, newQty, lineRef(item));
                                 }}
                                 disabled={atMax}
                                 className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-emerald-600 transition-colors disabled:opacity-40"

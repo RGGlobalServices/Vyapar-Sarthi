@@ -29,6 +29,7 @@ import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusive
 
 import { QrCode } from 'lucide-react';
 import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
+import LotReportModal from '@/components/products/LotReportModal';
 import NewLotModal from '@/components/products/NewLotModal';
 import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
 import VariantCleanupModal from '@/components/products/VariantCleanupModal';
@@ -252,6 +253,7 @@ function LegacyProductsUI() {
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [showVariantCheck, setShowVariantCheck] = useState(false);
   const [newLotProduct, setNewLotProduct] = useState<any>(null);
+  const [showLotReport, setShowLotReport] = useState(false);
 
   // Deep-link: /products?add=1 auto-opens the Add-Product modal. Used by the
   // slimmed Stock In flow so the shopkeeper doesn't have to re-enter the full
@@ -1350,6 +1352,11 @@ function LegacyProductsUI() {
             Check variants
           </button>
           {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => invalidateProductCaches()} />}
+          <button onClick={() => setShowLotReport(true)} title="Lot-wise stock, prices and sales"
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            Lots
+          </button>
+          {showLotReport && <LotReportModal onClose={() => setShowLotReport(false)} />}
           {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => invalidateProductCaches()} />}
         </div>
       </div>

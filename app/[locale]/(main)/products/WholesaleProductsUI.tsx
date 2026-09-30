@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import VariantCleanupModal from '@/components/products/VariantCleanupModal';
+import LotReportModal from '@/components/products/LotReportModal';
 import NewLotModal from '@/components/products/NewLotModal';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -310,6 +311,7 @@ export default function WholesaleProductsUI() {
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [showVariantCheck, setShowVariantCheck] = useState(false);
   const [newLotProduct, setNewLotProduct] = useState<any>(null);
+  const [showLotReport, setShowLotReport] = useState(false);
   const [form, setForm] = useState<Partial<WholesaleProduct>>(emptyProduct);
   const [saving, setSaving] = useState(false);
   // Party (wholesale) Selling Price entry: 'manual' types ₹ directly,
@@ -1032,6 +1034,14 @@ export default function WholesaleProductsUI() {
             Check variants
           </button>
           {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => mutateProducts()} />}
+          <button
+            onClick={() => setShowLotReport(true)}
+            title="Lot-wise stock, prices and sales"
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+          >
+            Lots
+          </button>
+          {showLotReport && <LotReportModal onClose={() => setShowLotReport(false)} />}
           {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => mutateProducts()} />}
         </div>
       </div>
