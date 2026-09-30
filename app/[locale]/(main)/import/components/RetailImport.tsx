@@ -258,12 +258,10 @@ export default function RetailImport() {
         const res  = await fetch('/api/v1/import', { method: 'POST', body: fd });
         const rawText = await res.text();
         const trimmed = rawText.trim();
-        const jsonStart = trimmed.lastIndexOf('
-') >= 0 ? trimmed.lastIndexOf('
-') + 1 : 0;
+        const lastNl=trimmed.lastIndexOf('\n');const jsonStart=lastNl>=0?lastNl+1:0;
+        
         const data = JSON.parse(trimmed.slice(jsonStart));
         if (!res.ok || data.error) throw new Error(data.error ?? 'Processing failed');
-        
         if (data.mismatchWarning) {
           hasMismatch = data.mismatchWarning;
         }
