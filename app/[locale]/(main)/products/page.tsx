@@ -1,4 +1,5 @@
 'use client';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -218,6 +219,7 @@ export default function ProductsPage() {
 }
 
 function LegacyProductsUI() {
+  const [confirmAsync, confirmDialog] = useConfirm();
   const t = useTranslations('Products');
   const tv = useTranslations('Variants');
   const locale = useLocale();
@@ -1072,10 +1074,12 @@ function LegacyProductsUI() {
         }, 0)
       : priorStock;
     if (editVariantActive && stockQty < explainedStock && explainedStock > 0) {
-      const ok = window.confirm(
+      const ok = await confirmAsync(
         stockQty === 0
           ? `Warning: this will set stock to 0.\n\nCurrent stock: ${explainedStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${explainedStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
           : `Warning: this will reduce total stock from ${explainedStock} to ${stockQty}.\n\n${explainedStock - stockQty} unit(s) aren't reflected in any size box and will be dropped.\n\nClick Cancel to go back and account for them, or OK to save as ${stockQty}.`
+      ,
+        { okLabel: 'Save anyway', cancelLabel: 'Go back', title: 'Stock will drop' }
       );
       if (!ok) return;
     }
@@ -1347,6 +1351,7 @@ function LegacyProductsUI() {
             <Plus size={18} />Bulk Add / Variants
           </button>
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => invalidateProductCaches()} />}
+          {confirmDialog}
           <button onClick={() => setShowVariantCheck(true)} title="Find products whose size/colour stock does not match, or one model listed many times"
             className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             Check variants

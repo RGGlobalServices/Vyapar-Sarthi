@@ -52,8 +52,35 @@ export const GET = handle(async (req) => {
     orderBy: { expiryDate: 'asc' },
   });
 
-  type Row = typeof rows[number];
-  const withDelta = rows.map((p: Row) => {
+  // Lot-level expiry: each live lot (stock left) with its own expiry date in the 90-day window. A product that has
+  // such lots is listed by its lots only — its product-level date would count the same stock twice.
+  const lots = await prisma.batch.findMany({
+    where: { shopId: shop.id, quantity: { gt: 0 }, expiryDate: { not: null, lte: in90 }, product: { OR: [{ archived: false }, { archived: null }] } },
+    select: {
+      id: true, productId: true, batchNumber: true, quantity: true, costPrice: true, sellingPrice: true, expiryDate: true, barcode: true,
+      product: { select: { name: true, category: true, wholesaleCost: true, sellingPrice: true, mrp: true, baseUnit: true, brand: true } },
+    },
+    orderBy: { expiryDate: 'asc' },
+  });
+  const productsWithLotExpiry = new Set(lots.map((l) => l.productId));
+  const lotRows = lots.map((l) => ({
+    id: l.id,
+    name: `${l.product.name} · Lot ${l.batchNumber || l.id.slice(0, 4).toUpperCase()}`,
+    category: l.product.category,
+    currentStock: l.quantity,
+    wholesaleCost: l.costPrice ?? l.product.wholesaleCost,
+    sellingPrice: l.sellingPrice ?? l.product.sellingPrice,
+    mrp: l.product.mrp,
+    baseUnit: l.product.baseUnit,
+    batch_number: l.batchNumber,
+    expiryDate: l.expiryDate!.toISOString().slice(0, 10),
+    barcode: l.barcode,
+    brand: l.product.brand,
+  }));
+
+  const allRows: any[] = [...rows.filter((p) => !productsWithLotExpiry.has(p.id)), ...lotRows];
+  type Row = typeof allRows[number];
+  const withDelta = allRows.map((p: Row) => {
     const exp = new Date(p.expiryDate!);
     // Un-parseable / legacy garbage dates land silently in the "already
     // expired" bucket (daysLeft = -Infinity is clamped by the filters).
@@ -64,6 +91,7 @@ export const GET = handle(async (req) => {
     return { ...p, daysLeft: days, stockValue: value };
   });
 
+  withDelta.sort((a: any, b: any) => a.daysLeft - b.daysLeft);
   const expired = withDelta.filter(p => p.daysLeft < 0);
   const within30 = withDelta.filter(p => p.daysLeft >= 0 && p.daysLeft <= 30);
   const within60 = withDelta.filter(p => p.daysLeft > 30 && p.daysLeft <= 60);
