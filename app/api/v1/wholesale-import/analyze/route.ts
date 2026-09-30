@@ -202,6 +202,12 @@ export async function POST(req: NextRequest) {
     if (businessTypeStr === 'clothes' || businessTypeStr === 'boutique') {
       businessSpecificFields = '- Must extract Size, Color, Fabric, Gender, Brand, and Category.';
       businessSpecificSchema = '"size": "string", "color": "string", "fabric": "string", "gender": "string"';
+    } else if (['textilewholesale', 'garmentwholesale', 'fabricdistributor'].includes(businessTypeStr)) {
+      businessSpecificFields = '- If the bill prints Size (e.g. 36X40, 22X32, S/M/L) and/or Colour/Shade/Design in their OWN columns, extract them into "size" and "color". If they are only part of the item description, leave "size"/"color" empty and keep the FULL description in productName — the app splits titles like "ZUNI & ZUNI 21069/A 22X32 COFFI" itself. Never invent a size or colour.';
+      businessSpecificSchema = '"size": "string", "color": "string", "fabric": "string"';
+    } else if (businessTypeStr === 'footwearwholesale') {
+      businessSpecificFields = '- If the bill prints Size (e.g. 6*8, UK 7) and/or Colour in their OWN columns, extract them into "size" and "color"; otherwise leave them empty and keep the FULL description in productName. Never invent a size or colour.';
+      businessSpecificSchema = '"size": "string", "color": "string", "sole_material": "string"';
     } else if (businessTypeStr === 'shoes') {
       businessSpecificFields = '- Must extract Size, Color, Sole Material, Gender, Brand, and Category.';
       businessSpecificSchema = '"size": "string", "color": "string", "sole_material": "string", "gender": "string"';

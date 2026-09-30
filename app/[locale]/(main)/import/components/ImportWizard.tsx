@@ -1,4 +1,5 @@
 'use client';
+import { parseVariantTitle, baseKey } from '@/lib/variantTitleParser';
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
@@ -462,6 +463,54 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setPreviewData(prev => prev.map(row => ({ ...row, [label]: row[label] ?? '' })));
   };
 
+  // ── Split "JAANZARA TG0968CD 36X40 PLAIN" into name + Size + Colour ─────────────────────────────
+  // Suggests, never forces: the shopkeeper clicks the button, sees the new columns in the editable
+  // table, can fix any cell (or undo), and only then imports. Rows that end up with the same
+  // Product Name are saved by the server as ONE product with colour/size variants.
+  const canSplitTitles = ['product', 'purchase', 'stock'].includes(importType)
+    && headers.includes('Product Name') && headers.includes('Colour') && headers.includes('Size');
+  const splittableCount = canSplitTitles
+    ? previewData.filter(r => !String(r['Colour'] ?? '').trim() && !String(r['Size'] ?? '').trim()
+        && parseVariantTitle(String(r['Product Name'] ?? '')).confidence !== 'low').length
+    : 0;
+  const splitDoneCount = canSplitTitles ? previewData.filter(r => r.__origName !== undefined).length : 0;
+  const productCountAfterSplit = canSplitTitles
+    ? new Set(previewData.map(r => baseKey(String(r['Product Name'] ?? ''))).filter(Boolean)).size
+    : 0;
+
+  const refreshMatches = async (rows: any[]) => {
+    setCheckingMatches(true);
+    try {
+      const res = await api.post('/wholesale-import/check-matches', { importType, data: rows });
+      setRowMatches(res.data?.matches || []);
+    } catch { setRowMatches([]); } finally { setCheckingMatches(false); }
+  };
+
+  const splitTitles = async () => {
+    const rows = previewData.map(r => {
+      if (String(r['Colour'] ?? '').trim() || String(r['Size'] ?? '').trim()) return r;
+      const p = parseVariantTitle(String(r['Product Name'] ?? ''));
+      if (p.confidence === 'low') return r;
+      return { ...r, __origName: r['Product Name'], 'Product Name': p.baseName, Size: p.size, Colour: p.color };
+    });
+    setPreviewData(rows);
+    validateData(rows, headers);
+    setRowDecisions(new Array(rows.length).fill(undefined));
+    await refreshMatches(rows);
+  };
+
+  const undoSplitTitles = async () => {
+    const rows = previewData.map(r => {
+      if (r.__origName === undefined) return r;
+      const { __origName, ...rest } = r;
+      return { ...rest, 'Product Name': __origName, Size: '', Colour: '' };
+    });
+    setPreviewData(rows);
+    validateData(rows, headers);
+    setRowDecisions(new Array(rows.length).fill(undefined));
+    await refreshMatches(rows);
+  };
+
   const setDecision = (rowIndex: number, decision: RowDecision) => {
     setRowDecisions(prev => {
       const next = [...prev];
@@ -627,7 +676,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     try {
       for (let b = Math.floor(offset / DB_BATCH_SIZE); offset < total; b++) {
         const sliceStart = offset;
-        const slice = previewData.slice(offset, offset + DB_BATCH_SIZE);
+        const slice = previewData.slice(offset, offset + DB_BATCH_SIZE).map(({ __origName, ...r }: any) => r);
         const sliceDecisions = rowDecisions.slice(offset, offset + DB_BATCH_SIZE);
         const sliceCount = slice.length;
 
@@ -968,6 +1017,28 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
+                )}
+                {canSplitTitles && splittableCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={splitTitles}
+                    disabled={isProcessing}
+                    title="Splits names like 'JAANZARA TG0968CD 36X40 PLAIN' into name + Size + Colour so one model becomes ONE product with variants"
+                    className="flex items-center gap-1.5 px-3 py-2 border border-violet-400 bg-violet-50 dark:bg-violet-500/10 rounded-lg text-violet-700 dark:text-violet-300 font-semibold hover:bg-violet-100 dark:hover:bg-violet-500/20 text-sm"
+                  >
+                    Split size &amp; colour from name ({splittableCount})
+                  </button>
+                )}
+                {canSplitTitles && splitDoneCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={undoSplitTitles}
+                    disabled={isProcessing}
+                    title={`${splitDoneCount} rows split — ${productCountAfterSplit} products after grouping. Click to restore the original names.`}
+                    className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-amber-500 text-sm"
+                  >
+                    Undo split · {productCountAfterSplit} products
+                  </button>
                 )}
                 <button
                   type="button"
