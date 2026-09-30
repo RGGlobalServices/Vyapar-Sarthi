@@ -165,7 +165,7 @@ export function useBarcodeScanner({
       }
 
       // Ignore modifiers, arrows, function keys, and shortcut combinations.
-      if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!e.key || e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
 
       if (gap > maxKeyGapMs) {
         // Too slow to be part of a scan — treat as the potential first
