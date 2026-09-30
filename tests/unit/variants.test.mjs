@@ -60,3 +60,16 @@ test('round trip map <-> rows, bad JSON safe', () => {
   assert.deepEqual(variantsToSizeMap(rows), { 'A / 1': 2, '9': 3 });
   assert.deepEqual(parseSizeVariantsMap('not json'), {});
 });
+
+import { variantGridKeys, splitList } from '../../lib/variants.ts';
+
+test('variantGridKeys: colour x size, sizes only, colour only', () => {
+  assert.deepEqual(variantGridKeys(['Red', 'Blue'], ['S', 'M']).map(r => r.key), ['Red / S', 'Red / M', 'Blue / S', 'Blue / M']);
+  assert.deepEqual(variantGridKeys([], ['S', 'M']).map(r => r.key), ['S', 'M']);
+  assert.deepEqual(variantGridKeys(['Red'], []).map(r => r.key), ['Red / Free Size']);
+  assert.deepEqual(variantGridKeys([], []), []);
+});
+
+test('splitList dedupes and trims', () => {
+  assert.deepEqual(splitList('S, m ,s;  XL\nL'), ['S', 'm', 'XL', 'L']);
+});

@@ -28,6 +28,7 @@ import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 
 import { QrCode } from 'lucide-react';
+import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import dynamic from 'next/dynamic';
 import WholesaleProductsUI from './WholesaleProductsUI';
@@ -404,9 +405,7 @@ function LegacyProductsUI() {
   // behaviour, but gated on an explicit "touched" flag instead of "array is
   // still empty" so a category typed after modal-open still upgrades the chart.
   useEffect(() => {
-    if (showAddModal && addVariantDim && sizeSelectionAuto) {
-      setSizeSelection(addVariantDim.sizeChart);
-    }
+    // Sizes are no longer pre-selected: the shopkeeper picks / types only the sizes this product has.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAddModal, addVariantDim?.sizeChart?.join(',')]);
 
@@ -440,7 +439,7 @@ function LegacyProductsUI() {
   // selection instead means the flat Stock Qty field shows until a colour/
   // size is chosen, then the grid takes over — same fix already applied to
   // editVariantActive below for the identical reason.
-  const addVariantActive = addThreeWayActive ? (outerColors.length > 0) : addVariantDim ? (colors.length > 0) : bizConfig.hasSizes ? (sizeSelection.length > 0) : false;
+  const addVariantActive = addThreeWayActive ? (outerColors.length > 0) : addVariantDim ? (colors.length > 0 || sizeSelection.length > 0) : bizConfig.hasSizes ? (sizeSelection.length > 0) : false;
   // EDIT differs from ADD on purpose: a hasColors business (clothes/shoes)
   // still has real products with NO colour/size breakdown — created via
   // bulk import, or before the shop had size tracking — carrying only a
@@ -455,7 +454,7 @@ function LegacyProductsUI() {
   // shopkeeper adds a colour to mid-edit) still gets the full grid. The
   // colour/size picker section itself isn't gated on this flag, so the
   // option to add colours to a flat product is never hidden either way.
-  const editVariantActive = bizConfig.hasColors ? (editColors.length > 0) : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && editColors.length > 0) : bizConfig.hasSizes;
+  const editVariantActive = bizConfig.hasColors ? (editColors.length > 0 || editSizeSelection.length > 0) : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && (editColors.length > 0 || editSizeSelection.length > 0)) : editSizeSelection.length > 0;
 
   // ── Add-product godown/shop assignment ──────────────────────────────────
   const [addToGodownId, setAddToGodownId] = useState('');
@@ -781,7 +780,6 @@ function LegacyProductsUI() {
     });
     setSizePrices(p => pruneByColors(p, next));
     // Variant products use per-spec pricing by default (apparel always; electricals once a type is picked).
-    setPerSizePricing(bizConfig.hasColors || next.length > 0);
   }
   function handleEditColorsChange(next: string[]) {
     setEditColors(next);
@@ -967,7 +965,7 @@ function LegacyProductsUI() {
     const existingPrices = parseSizePrices(product.metadata);
     const hasPrices = Object.keys(existingPrices).length > 0;
     const isVariantProduct = !!(bizConfig.hasColors || (bizConfig.hasSpecs && getCategoryVariantSpec(product.category, bizConfig.type)));
-    setEditPerSizePricing(hasPrices || isVariantProduct);
+    setEditPerSizePricing(hasPrices);
     setEditSizePrices(existingPrices);
     // Colour × size: derive the selected colours from the resolved composite variant keys.
     const parsedVariants = resolvedVariants;
@@ -992,10 +990,8 @@ function LegacyProductsUI() {
         setEditSizeSystem(footwearSizeSystem);
       }
       const productVariantDim = buildVariantDim(product.category || '', product.gender || '', footwearSizeSystem);
-      setEditSizeSelection(Array.from(new Set([
-        ...((productVariantDim?.sizeChart) || bizConfig.sizeChart || []),
-        ...existingSizes,
-      ])));
+      // Only the sizes this product actually has — not the whole chart (less clutter).
+      setEditSizeSelection(existingSizes);
     }
     setEditBaseVariants(parsedVariants);
     setShowEditModal(true);
@@ -1300,7 +1296,7 @@ function LegacyProductsUI() {
             ]}
             data={products}
           />
-          <button onClick={() => { setColors([]); setOuterColors([]); setSizeSelection(bizConfig.sizeChart || []); setSizeSelectionAuto(true); setSizeSystem('uk'); setPerSizePricing(!!bizConfig.hasColors); setSizePrices({}); setShowAddModal(true); }}
+          <button onClick={() => { setColors([]); setOuterColors([]); setSizeSelection([]); setSizeSelectionAuto(true); setSizeSystem('uk'); setPerSizePricing(false); setSizePrices({}); setShowAddModal(true); }}
             className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
             <Plus size={20} />{t('addProduct')}
           </button>
@@ -2444,40 +2440,26 @@ function LegacyProductsUI() {
                       additiveMode
                       baseValue={editBaseVariants}
                     />
-                  ) : editVariantDim ? (
-                    <div className="space-y-3">
-                      <ColorPicker colorChart={editVariantDim!.options} value={editColors} onChange={handleEditColorsChange} showSwatch={editVariantDim!.swatch} />
-                      <SizePicker sizeChart={editVariantDim!.sizeChart} value={editSizeSelection} onChange={setEditSizeSelection} />
-                      <ColorSizeVariantGrid
-                        colors={editColors}
-                        sizeChart={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
-                        value={editForm.size_variants}
-                        onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
-                        unitLabel={editForm.unit?.toLowerCase() || 'units'}
-                        perSizePricing={editPerSizePricing}
-                        sizePrices={editSizePricesEffective}
-                        onSizePricesChange={setEditSizePrices}
-                        showSwatch={editVariantDim!.swatch}
-                        dimensionLabel={editVariantDim!.label}
-                        additiveMode
-                        baseValue={editBaseVariants}
-                      />
-                    </div>
                   ) : (
-                  <div className="space-y-3">
-                    <SizePicker sizeChart={bizConfig.sizeChart || []} value={editSizeSelection} onChange={setEditSizeSelection} />
-                    <SizeVariantGrid
-                      sizeChart={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
+                    <SimpleVariantBuilder
+                      colors={editColors}
+                      onColorsChange={handleEditColorsChange}
+                      sizes={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
+                      onSizesChange={setEditSizeSelection}
                       value={editForm.size_variants}
                       onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
-                      unitLabel={editForm.unit?.toLowerCase() || 'units'}
-                      perSizePricing={editPerSizePricing}
+                      baseValue={editBaseVariants}
                       sizePrices={editSizePricesEffective}
                       onSizePricesChange={setEditSizePrices}
-                      additiveMode
-                      baseValue={editBaseVariants}
+                      perSizePricing={editPerSizePricing}
+                      colorOptions={editVariantDim?.options || []}
+                      showSwatch={editVariantDim?.swatch ?? true}
+                      colorLabel={editVariantDim?.label || 'colour'}
+                      sizeLabel={(editVariantDim as any)?.sizeLabel || 'size'}
+                      sizeChart={editVariantDim?.sizeChart || bizConfig.sizeChart || []}
+                      allowColors={!!editVariantDim}
+                      unitLabel={editForm.unit?.toLowerCase() || 'units'}
                     />
-                  </div>
                   )}
                 </section>
               )}
@@ -2952,36 +2934,25 @@ function LegacyProductsUI() {
                       innerRowLabel={addVariantDim!.typeLabel || addVariantDim!.label}
                       innerColLabel={addVariantDim!.sizeLabel || 'Size'}
                     />
-                  ) : addVariantDim ? (
-                    <div className="space-y-3">
-                      <ColorPicker colorChart={addVariantDim!.options} value={colors} onChange={handleAddColorsChange} showSwatch={addVariantDim!.swatch} />
-                      <SizePicker sizeChart={addVariantDim!.sizeChart} value={sizeSelection} onChange={sizes => { setSizeSelection(sizes); setSizeSelectionAuto(false); }} />
-                      <ColorSizeVariantGrid
-                        colors={colors}
-                        sizeChart={sizeSelection}
-                        value={form.size_variants}
-                        onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
-                        unitLabel={form.unit?.toLowerCase() || 'units'}
-                        perSizePricing={perSizePricing}
-                        sizePrices={sizePricesEffective}
-                        onSizePricesChange={setSizePrices}
-                        showSwatch={addVariantDim!.swatch}
-                        dimensionLabel={addVariantDim!.label}
-                      />
-                    </div>
                   ) : (
-                  <div className="space-y-3">
-                    <SizePicker sizeChart={bizConfig.sizeChart || []} value={sizeSelection} onChange={setSizeSelection} />
-                    <SizeVariantGrid
-                      sizeChart={sizeSelection}
+                    <SimpleVariantBuilder
+                      colors={colors}
+                      onColorsChange={handleAddColorsChange}
+                      sizes={sizeSelection}
+                      onSizesChange={sizes => { setSizeSelection(sizes); setSizeSelectionAuto(false); }}
                       value={form.size_variants}
-                      onChange={variants => setForm(f => ({ ...f, size_variants: variants }))}
-                      unitLabel={form.unit?.toLowerCase() || 'units'}
-                      perSizePricing={perSizePricing}
+                      onChange={variants => setForm(f => ({ ...f, size_variants: variants, stock: String(totalFromSizes(variants)) }))}
                       sizePrices={sizePricesEffective}
                       onSizePricesChange={setSizePrices}
+                      perSizePricing={perSizePricing}
+                      colorOptions={addVariantDim?.options || []}
+                      showSwatch={addVariantDim?.swatch ?? true}
+                      colorLabel={addVariantDim?.label || 'colour'}
+                      sizeLabel={(addVariantDim as any)?.sizeLabel || 'size'}
+                      sizeChart={addVariantDim?.sizeChart || bizConfig.sizeChart || []}
+                      allowColors={!!addVariantDim}
+                      unitLabel={form.unit?.toLowerCase() || 'units'}
                     />
-                  </div>
                   )}
                 </section>
               )}

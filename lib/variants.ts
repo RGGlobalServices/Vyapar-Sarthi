@@ -176,3 +176,33 @@ export function applyDelta(
   const map = variantsToSizeMap(list);
   return { variants: list, sizeVariantsJson: JSON.stringify(map), currentStock: sumStock(list), next: row.stock };
 }
+
+/**
+ * Keys of the colour × size table shown by the simple variant builder.
+ * Colours only  -> each colour gets a "Free Size" row; sizes only -> bare size keys.
+ */
+export const FREE_SIZE = 'Free Size';
+export function variantGridKeys(colors: string[], sizes: string[]): Array<{ key: string; color: string; size: string }> {
+  const cs = colors.map((c) => c.trim()).filter(Boolean);
+  const ss = sizes.map((s) => s.trim()).filter(Boolean);
+  const sizeList = ss.length ? ss : cs.length ? [FREE_SIZE] : [];
+  const colorList = cs.length ? cs : [''];
+  const out: Array<{ key: string; color: string; size: string }> = [];
+  for (const color of colorList) {
+    for (const size of sizeList) out.push({ key: color ? makeVariantKey(color, size) : size, color, size });
+  }
+  return out;
+}
+
+/** Splits a typed list ("S, M  L;XL") into distinct trimmed values, keeping first-seen order. */
+export function splitList(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of text.split(/[,;\n]+/)) {
+    const v = part.trim().replace(/\s+/g, ' ');
+    if (!v) continue;
+    const k = v.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); out.push(v); }
+  }
+  return out;
+}
