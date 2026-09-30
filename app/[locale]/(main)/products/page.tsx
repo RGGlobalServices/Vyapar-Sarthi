@@ -30,6 +30,7 @@ import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusive
 import { QrCode } from 'lucide-react';
 import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
 import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
+import VariantCleanupModal from '@/components/products/VariantCleanupModal';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import dynamic from 'next/dynamic';
 import WholesaleProductsUI from './WholesaleProductsUI';
@@ -248,6 +249,7 @@ function LegacyProductsUI() {
   const submittingRef = useRef(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [showVariantCheck, setShowVariantCheck] = useState(false);
 
   // Deep-link: /products?add=1 auto-opens the Add-Product modal. Used by the
   // slimmed Stock In flow so the shopkeeper doesn't have to re-enter the full
@@ -1336,6 +1338,11 @@ function LegacyProductsUI() {
             <Plus size={18} />Bulk Add / Variants
           </button>
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => invalidateProductCaches()} />}
+          <button onClick={() => setShowVariantCheck(true)} title="Find products whose size/colour stock does not match, or one model listed many times"
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            Check variants
+          </button>
+          {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => invalidateProductCaches()} />}
         </div>
       </div>
 

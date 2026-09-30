@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import VariantCleanupModal from '@/components/products/VariantCleanupModal';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, MILL_CATEGORIES } from '@/lib/businessConfig';
@@ -306,6 +307,7 @@ export default function WholesaleProductsUI() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [showVariantCheck, setShowVariantCheck] = useState(false);
   const [form, setForm] = useState<Partial<WholesaleProduct>>(emptyProduct);
   const [saving, setSaving] = useState(false);
   // Party (wholesale) Selling Price entry: 'manual' types ₹ directly,
@@ -1020,6 +1022,14 @@ export default function WholesaleProductsUI() {
             Bulk Add / Variants
           </button>
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => mutateProducts()} />}
+          <button
+            onClick={() => setShowVariantCheck(true)}
+            title="Find products whose size/colour stock does not match, or one model listed many times"
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
+          >
+            Check variants
+          </button>
+          {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => mutateProducts()} />}
         </div>
       </div>
 
