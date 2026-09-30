@@ -165,7 +165,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   
   const widthClass = is58mm ? 'max-w-[220px]' : 'max-w-[320px]';
   const textClass = is58mm ? 'text-[10px]' : 'text-[11px]';
-  const smallTextClass = is58mm ? 'text-[8px]' : 'text-[9px]';
+  const smallTextClass = is58mm ? 'text-[8px]' : 'text-[10px]';
   const headerTextClass = is58mm ? 'text-[14px]' : 'text-[17px]';
   // The items-table column HEADERS run a notch smaller than the row text so
   // long single-word labels (WARRANTY, SERIAL, COLOR) fit their narrow fixed
@@ -173,7 +173,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   // itself (WARR/ANTY) which reads as broken. Cells and headers use nowrap so
   // currency values never split mid-number (₹5,2/00) either; only the Item
   // name column is allowed to wrap, onto clean extra lines.
-  const tableHeadClass = is58mm ? 'text-[8px]' : 'text-[8px]';
+  const tableHeadClass = is58mm ? 'text-[8px]' : 'text-[9px]';
   const cellPad = is58mm ? 'px-0.5' : 'px-1';
   
   // A thin horizontal rule used between sections — a shared visual weight instead

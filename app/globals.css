@@ -56,6 +56,22 @@
   #print-root > [data-print-format^="thermal"] *:not(.thermal-invert):not(.thermal-invert *) { color: #000 !important; }
   #print-root > [data-print-format^="thermal"] { font-weight: 600; }
   #print-root > [data-print-format^="thermal"] svg { max-width: 100%; height: auto; }
+  /* A4 clarity: pale greys (slate 400-600) and hairline borders wash out on a laser/inkjet page and on photocopies.
+     Print them dark, slightly larger for the tiniest labels, with solid-black bars on the barcode. */
+  #print-root > [data-print-format="a4"] .text-slate-300,
+  #print-root > [data-print-format="a4"] .text-slate-400,
+  #print-root > [data-print-format="a4"] .text-slate-500 { color: #334155 !important; }
+  #print-root > [data-print-format="a4"] .text-slate-600,
+  #print-root > [data-print-format="a4"] .text-slate-700 { color: #1e293b !important; }
+  #print-root > [data-print-format="a4"] .text-slate-800,
+  #print-root > [data-print-format="a4"] .text-slate-900 { color: #000 !important; }
+  #print-root > [data-print-format="a4"] .border-slate-100,
+  #print-root > [data-print-format="a4"] .border-slate-200,
+  #print-root > [data-print-format="a4"] .border-slate-300 { border-color: #64748b !important; }
+  #print-root > [data-print-format="a4"] .text-\[10px\] { font-size: 11px !important; }
+  #print-root > [data-print-format="a4"] .text-\[11px\] { font-size: 12px !important; }
+  #print-root > [data-print-format="a4"] .text-xs { font-size: 12.5px !important; }
+  #print-root > [data-print-format="a4"] svg { shape-rendering: crispEdges; }
   #print-root tr, #print-root img { break-inside: avoid; page-break-inside: avoid; }
   #print-root thead { display: table-header-group; }
 }

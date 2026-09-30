@@ -144,7 +144,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
               {isGstBill ? (t('gstInvoice') || 'Tax Invoice') : (t('invoiceLabel') || 'Invoice')}
             </h2>
             <div className={`flex flex-col items-end gap-1 text-xs ${isModern ? '' : ''}`}>
-              <Barcode value={billNumber} height={26} displayValue={false} />
+              <Barcode value={billNumber} width={1.5} height={38} margin={8} displayValue={false} printCrisp />
               <p><span className={isModern ? 'opacity-90 mr-2' : 'text-slate-500 mr-2'}>{t('bill')}:</span><strong className="text-sm">{billNumber}</strong></p>
               <p><span className={isModern ? 'opacity-90 mr-2' : 'text-slate-500 mr-2'}>Date:</span><strong>{date}</strong></p>
             </div>
