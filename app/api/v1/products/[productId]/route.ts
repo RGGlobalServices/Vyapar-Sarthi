@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { normalizeVariants } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { recordDeletion } from '@/lib/server/trash';
@@ -48,12 +49,25 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
     // "not-working" symptom the size_variants merge above caused.
     const finalVariants = b.variants;
 
+    // Reconcile variants[] / size_variants / currentStock so all stay consistent.
+    // Whichever store the caller sent drives the other; when they send neither
+    // (or an empty array without asking for a non-variant type) existing
+    // variant data is left untouched instead of being wiped.
+    const reqType = b.productType ?? b.product_type;
+    const clearingVariants = Array.isArray(b.variants) && b.variants.length === 0
+      && (reqType === 'single' || reqType === 'loose');
+    const nv = normalizeVariants({
+      variants: b.variants,
+      sizeVariants: finalSizeVariants,
+      existingVariants: product.variants,
+    });
+
     // If the caller changed currentStock via product-edit, emit a matching
     // StockLog row so downstream views (Daily Register live re-baselining,
     // Stock recent-activity feed, "+N added today" badge) can see it. Without
     // this the product row updates silently and Receive/Close on the Daily
     // Register never move.
-    const nextStockRaw = b.current_stock ?? b.currentStock;
+    const nextStockRaw = nv.hasVariants ? nv.currentStock : (b.current_stock ?? b.currentStock);
     const stockProvided = nextStockRaw !== undefined && nextStockRaw !== null && nextStockRaw !== '';
     const nextStock = stockProvided ? Number(nextStockRaw) : null;
     const prevStock = product.currentStock ?? 0;
@@ -64,7 +78,7 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
     const updateData = {
       name: b.name,
       category: b.category,
-      currentStock: b.current_stock ?? b.currentStock,
+      currentStock: nv.hasVariants ? nv.currentStock : (b.current_stock ?? b.currentStock),
       minStock: b.min_stock ?? b.minStock,
       mrp: b.mrp,
       sellingPrice: b.selling_price ?? b.sellingPrice,
@@ -86,12 +100,12 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       warranty_months: b.warranty_months ?? b.warrantyMonths,
       gender: b.gender,
       shade: b.shade,
-      size_variants: finalSizeVariants,
+      size_variants: nv.hasVariants ? nv.sizeVariantsJson : (clearingVariants ? null : (Array.isArray(b.variants) ? undefined : finalSizeVariants)),
       metadata: b.metadata !== undefined ? b.metadata : undefined,
-      variants: finalVariants,
+      variants: nv.hasVariants ? (nv.variants as any) : (clearingVariants ? [] : undefined),
       brand: b.brand,
       hsnCode: b.hsnCode ?? b.hsn_code,
-      productType: b.productType ?? b.product_type,
+      productType: nv.hasVariants && (!reqType || reqType === 'single') && !(product as any).productType?.match(/loose/) ? 'variant' : reqType,
       gstPercent: b.gstPercent ?? b.gst_percent,
       // Mill classification + pack spec (Bada Udyog). All three nullable
       // so a shopkeeper can also *clear* a wrong pick by sending null.

@@ -1,15 +1,12 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { ApiError } from '@/lib/server/http';
+import { keysMatch, variantKeyOf, cleanVariants, sizeMapToVariants, parseSizeVariantsMap, variantsToSizeMap } from '@/lib/variants';
 
 export type VariantStockDelta = { productId: string; variantKey: string | null | undefined; delta: number };
 
-// Same "Colour / Size" (or bare size when the row has no colour) composite
-// used by the Purchases and Billing UIs — see makeVariantKey/splitVariantKey
-// in components/ColorSizeVariantGrid.tsx. Duplicated here (not imported)
-// since that file is a 'use client' component and this runs server-only.
-function rowKey(v: any): string {
-  return v.color ? `${v.color} / ${v.size || ''}` : (v.size || '');
-}
+// "Colour / Size" (or bare size when the row has no colour) composite — shared
+// with the UIs via lib/variants.ts (pure module, safe server-side).
+const rowKey = (v: any): string => variantKeyOf(v);
 
 /**
  * Applies signed stock deltas to Product.variants[] JSON rows, batched and
@@ -43,23 +40,26 @@ export async function applyVariantStockDeltas(
     if (!perVariant) continue;
 
     // Lock product row to prevent read-modify-write lost update on the variants JSON
-    const lockedRows = await db.$queryRaw<Array<{ id: string; variants: any }>>`
-      SELECT id, variants FROM products
+    const lockedRows = await db.$queryRaw<Array<{ id: string; variants: any; size_variants: any }>>`
+      SELECT id, variants, size_variants FROM products
       WHERE id = ${productId}::uuid AND shop_id = ${shopId}::uuid
       FOR UPDATE
     `;
     if (!lockedRows.length) continue;
 
     const rawVariants = lockedRows[0].variants;
-    const variants = Array.isArray(rawVariants)
-      ? (rawVariants as any[]).map((v) => ({ ...v }))
+    let variants: any[] = Array.isArray(rawVariants)
+      ? cleanVariants(rawVariants)
       : [];
+    // Dukan/Vyapar products only carry size_variants — bridge it so purchases
+    // and stock adjustments update those products' variants too.
+    if (!variants.length) variants = sizeMapToVariants(parseSizeVariantsMap(lockedRows[0].size_variants), []);
     if (!variants.length) continue;
 
     let changed = false;
     for (const [variantKey, netDelta] of perVariant) {
       if (!netDelta) continue;
-      const row = variants.find((v) => rowKey(v) === variantKey);
+      const row = variants.find((v) => keysMatch(rowKey(v), variantKey));
       if (!row) continue;
       const next = (Number(row.stock) || 0) + netDelta;
       // Manual stock adjustments must reject, not silently clamp: clamping would leave the
@@ -69,7 +69,7 @@ export async function applyVariantStockDeltas(
       changed = true;
     }
     if (changed) {
-      await db.product.update({ where: { id: productId, shopId }, data: { variants } });
+      await db.product.update({ where: { id: productId, shopId }, data: { variants, size_variants: JSON.stringify(variantsToSizeMap(variants)) } });
     }
   }
 }

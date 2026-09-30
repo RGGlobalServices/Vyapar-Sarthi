@@ -1,5 +1,6 @@
 'use client';
 
+import { variantKeyOf } from '@/lib/variants';
 import { create } from 'zustand';
 import api from './api';
 import { withOfflineCache } from './offlineCache';
@@ -257,7 +258,16 @@ export const useCartStore = create<CartStore>((set) => ({
   }),
   updateColorSize: (shopId, id, variant, fields) => set((state) => {
     const shopCart = state.carts[shopId] || [];
-    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => sameLine(i, id, variant) ? { ...i, ...fields } : i) } };
+    return { carts: { ...state.carts, [shopId]: shopCart.map((i) => {
+      if (!sameLine(i, id, variant)) return i;
+      const next = { ...i, ...fields };
+      // A line that is tied to a stock variant must keep its `variant` key in step with
+      // color/size — the server decrements stock by that key, so a stale key sells the wrong variant.
+      if (i.variant && ('color' in fields || 'size' in fields)) {
+        next.variant = variantKeyOf({ color: next.color, size: next.size }) || i.variant;
+      }
+      return next;
+    }) } };
   }),
   clearCart: (shopId) => set((state) => ({ carts: { ...state.carts, [shopId]: [] } })),
 }));

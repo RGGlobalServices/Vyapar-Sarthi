@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { normalizeVariants } from '@/lib/variants';
 import { requireShop, requireShopScope } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { startOfDay } from '@/lib/server/dates';
@@ -173,13 +174,15 @@ export const POST = handle(async (req) => {
   // Uuid FK columns reject '' (the "-- Select --" empty option's value) —
   // only null/a real uuid is valid, so coerce the empty-string case.
   const uuidOrNull = (v: any) => (v === '' ? null : v);
+  // One consistent write of the three variant stores (variants[], size_variants, currentStock).
+  const nv = normalizeVariants({ variants: b.variants, sizeVariants: b.size_variants ?? b.sizeVariants });
   try {
     const product = await prisma.product.create({
       data: {
         shopId: shop.id,
         name: b.name,
         category: b.category,
-        currentStock: b.current_stock ?? b.currentStock,
+        currentStock: nv.hasVariants ? nv.currentStock : (b.current_stock ?? b.currentStock),
         minStock: b.min_stock ?? b.minStock,
         mrp: b.mrp,
         sellingPrice: b.selling_price ?? b.sellingPrice,
@@ -202,12 +205,12 @@ export const POST = handle(async (req) => {
         warranty_months: b.warranty_months ?? b.warrantyMonths,
         gender: b.gender,
         shade: b.shade,
-        size_variants: b.size_variants ?? b.sizeVariants,
+        size_variants: nv.hasVariants ? nv.sizeVariantsJson : (b.size_variants ?? b.sizeVariants),
         metadata: b.metadata,
-        variants: b.variants,
+        variants: nv.hasVariants ? (nv.variants as any) : b.variants,
         brand: b.brand,
         hsnCode: b.hsnCode ?? b.hsn_code,
-        productType: b.productType ?? b.product_type,
+        productType: nv.hasVariants && (!(b.productType ?? b.product_type) || (b.productType ?? b.product_type) === 'single') ? 'variant' : (b.productType ?? b.product_type),
         gstPercent: b.gstPercent ?? b.gst_percent,
         // Bada Udyog / mill classification + bag-packaging spec — all
         // nullable so non-mill shops POST products exactly as before.

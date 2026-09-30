@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
 import { parseCharges, chargesTotal } from '@/lib/server/purchaseCharges';
 import { logBrokerCommission } from '@/lib/server/brokerCommission';
 import prisma from '@/lib/server/prisma';
@@ -43,7 +44,7 @@ function mergeVariantIntoArray(
   const c = (colour || '').trim();
   const sz = (size || '').trim();
   const idx = arr.findIndex((v: any) =>
-    (String(v.color || '').trim() === c) && (String(v.size || '').trim() === sz)
+    (String(v.color || '').trim().toLowerCase() === c.toLowerCase()) && (String(v.size || '').trim().toLowerCase() === sz.toLowerCase())
   );
   if (idx >= 0) {
     arr[idx].stock = (Number(arr[idx].stock) || 0) + qty;
@@ -415,6 +416,10 @@ export async function POST(req: NextRequest) {
                   rowColour, rowSize, quantity, cost, mrp,
                 );
                 upd.variants = merged as any;
+                // Mirror into size_variants (Dukan/Vyapar screens + billing read it) and
+                // mark the product as a variant product so the pickers offer its variants.
+                upd.size_variants = JSON.stringify(variantsToSizeMap(cleanVariants(merged)));
+                upd.productType = 'variant';
                 productVariantsCache.set(matchId, merged);
                 // currentStock rollup mirrors the sum of variant stocks —
                 // increment by this row's qty (not SET to it), so a
@@ -474,7 +479,11 @@ export async function POST(req: NextRequest) {
                   baseUnit: getVal(row, ['unit']) || (masterUnits.length > 0 ? masterUnits[0].name : 'pcs'),
                   variants: initialVariants.length ? (initialVariants as any) : undefined,
                   metadata: meta,
-                  ...extras
+                  ...extras,
+                  ...(initialVariants.length ? {
+                    size_variants: JSON.stringify(variantsToSizeMap(cleanVariants(initialVariants))),
+                    productType: 'variant',
+                  } : {}),
                 }
               });
               matchId = newProd.id;

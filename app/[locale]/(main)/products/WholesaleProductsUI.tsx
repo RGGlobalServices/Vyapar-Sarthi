@@ -686,7 +686,11 @@ export default function WholesaleProductsUI() {
       // Wholesale bill screen too.
       const sizePrices = isVariantProduct
         ? effectiveVariants.reduce((acc: Record<string, any>, v: any) => {
-            if (v.size) acc[v.size] = { cost: v.wholesalePrice || 0, sellingPrice: v.sellingPrice || 0, mrp: v.mrp || 0 };
+            const entry = { cost: v.wholesalePrice || 0, sellingPrice: v.sellingPrice || 0, mrp: v.mrp || 0 };
+            // Full "Colour / Size" key so two colours of one size keep their own price; the bare
+            // size key stays for the billing lookup, first colour winning instead of last overwriting.
+            if (v.color && v.size) acc[`${v.color} / ${v.size}`] = entry;
+            if (v.size && !acc[v.size]) acc[v.size] = entry;
             return acc;
           }, {})
         : undefined;
@@ -705,7 +709,10 @@ export default function WholesaleProductsUI() {
       const payload = {
         ...form,
         barcode: form.barcode?.trim() || null,
-        variants: isVariantProduct ? effectiveVariants : [],
+        // Never send `variants: []` for a non-variant-typed product: imported/older products can
+        // still carry variant rows, and an empty array wipes them. Omit the key so the server
+        // leaves them untouched (it clears only when the type is explicitly single/loose AND [] is sent).
+        variants: isVariantProduct ? effectiveVariants : undefined,
         // `...form` above still carries whatever `currentStock` this product
         // had when the modal opened (spread in from `handleEdit`) — nothing
         // in this form edits it directly since a variant product's stock
@@ -759,7 +766,7 @@ export default function WholesaleProductsUI() {
       
       // Optimistic update
       const isEdit = !!form.id;
-      const optimisticProduct = { ...payload, id: form.id || 'temp-' + Date.now(), variants: [] };
+      const optimisticProduct = { ...payload, id: form.id || 'temp-' + Date.now(), variants: payload.variants ?? (form as any).variants ?? [] };
       
       mutateProducts((prev: any[] = []) => {
         if (isEdit) return prev.map(p => p.id === form.id ? { ...p, ...optimisticProduct } : p);

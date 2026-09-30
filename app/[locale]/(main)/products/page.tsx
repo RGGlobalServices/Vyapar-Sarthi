@@ -1076,7 +1076,11 @@ function LegacyProductsUI() {
         warranty_months: editForm.warranty_months ? Number(editForm.warranty_months) : null,
         gender: editForm.gender || null,
         shade: editForm.shade || null,
-        size_variants: sizeVariantsJson || null,
+        // A product whose saved variants have no colour (bare sizes, e.g. from an import) opens with
+        // the flat Stock field (editVariantActive=false) — sending null here used to wipe those
+        // variants. Keep them as-is; the server then keeps stock = sum of variants.
+        size_variants: sizeVariantsJson
+          ?? (Object.keys(editForm.size_variants || {}).length > 0 ? serializeSizeVariants(editForm.size_variants) : null),
         metadata: editMetadata,
         brand: editForm.brand || null,
         conversion_factor: editForm.conversion_factor ? Number(editForm.conversion_factor) : null,
