@@ -623,23 +623,29 @@ export default function WholesaleBillingUI() {
   const dupRestrictionActive = dupForceNonGst && items.some((it: any) => dupOriginalRates[dupKey(it)] !== undefined && Math.round((Number(it.price) || 0) * 100) === Math.round(dupOriginalRates[dupKey(it)] * 100));
   const millDiscountNumber = Math.round((Number(typeof discount === 'number' ? discount : (discount as any)?.value) || 0) * 100) / 100;
   // The SAME engine the server runs (lib/millBilling.ts) → this preview equals what the server will store.
-  const millCalc: MillResult | null = useMemo(() => {
-    if (!isMill || items.length === 0) return null;
+  const { millCalc, millCalcError } = useMemo<{ millCalc: MillResult | null; millCalcError: string | null }>(() => {
+    if (!isMill || items.length === 0) return { millCalc: null, millCalcError: null };
     try {
-      return calculateMillInvoice({
-        lines: items.map((it: any) => ({
-          quantity: Number(it.quantity) || 0,
-          rate: Number(it.price) || 0,
-          gstRate: Number(it.gstPercent) || 0,
-          costTotal: (Number(it.cost) || 0) * (Number(it.quantity) || 0),
-          hsnCode: it.hsnCode || null,
-        })),
+      const result = calculateMillInvoice({
+        lines: items
+          .filter((it: any) => Number(it.quantity) > 0)
+          .map((it: any) => ({
+            quantity: Number(it.quantity),
+            rate: Number(it.price) || 0,
+            gstRate: Number(it.gstPercent) || 0,
+            costTotal: (Number(it.cost) || 0) * Number(it.quantity),
+            hsnCode: it.hsnCode || null,
+          })),
         discount: millDiscountNumber > 0 ? { type: 'fixed', value: millDiscountNumber } : null,
         billType,
         interState: gstInterState,
         charges: millChargesParsed.value,
       });
-    } catch { return null; }
+      return { millCalc: result, millCalcError: null };
+    } catch (e: any) {
+      console.error('millCalc error:', e?.message);
+      return { millCalc: null, millCalcError: e?.message || 'Billing calculation failed' };
+    }
   }, [isMill, items, millDiscountNumber, billType, gstInterState, millChargesParsed]);
 
   const grandTotal = isMill ? (millCalc?.grandTotal ?? 0) : total + chargesTotal;
@@ -1320,7 +1326,9 @@ export default function WholesaleBillingUI() {
     charges: c.charges, round_off: c.roundOff, grand_total: c.grandTotal,
   });
   const handleMillCheckout = async () => {
-    if (items.length === 0 || !millCalc) return;
+    if (items.length === 0) return;
+    if (millCalcError) { alert(`Billing error: ${millCalcError}`); return; }
+    if (!millCalc) return;
     if (millChargesParsed.error) { alert(`${tMill('chargesInvalid')}: ${millChargesParsed.error}`); return; }
     if (isWholesale && !selectedParty) { alert(t('partyRequiredToSave') || 'Please select a party before saving the invoice.'); return; }
     if (!isWholesale && grandRemaining > 0 && !customerName.trim()) {
