@@ -367,8 +367,21 @@ export const POST = handle(async (req) => {
           // line actually drew from, at that batch's real cost.
           const saleItemBatchRows: { saleItemId: string; batchId: string; quantity: number; costAtSale: number }[] = [];
           const priceAtSaleRows: { saleItemId: string; batchId: string; price: number }[] = [];
-          created.items.forEach((saleItem, idx) => {
-            for (const draw of batchDrawsByOriginalIndex[idx] || []) {
+          // `created.items` is NOT guaranteed to come back in the order the lines were sent (rows have random uuids),
+          // so each saved line is paired with its own input line by product + variant + quantity + price. Trusting the
+          // index attached one line's lot draws to a different line — wrong cost, wrong price, and a bill delete/return
+          // then put the quantity back on the wrong lot.
+          const usedInputs = new Set<number>();
+          created.items.forEach((saleItem, posIdx) => {
+            let origIdx = items.findIndex((it: any, i: number) =>
+              !usedInputs.has(i)
+              && (it.product_id || it.productId || null) === saleItem.productId
+              && ((it.variant || null) === (saleItem.variant || null))
+              && Math.abs((Number(it.quantity) || 0) - (Number(saleItem.quantity) || 0)) < 1e-6
+              && Math.abs((Number(it.price_per_unit ?? it.pricePerUnit ?? it.price) || 0) - (Number(saleItem.pricePerUnit) || 0)) < 1e-6);
+            if (origIdx < 0) origIdx = posIdx;
+            usedInputs.add(origIdx);
+            for (const draw of batchDrawsByOriginalIndex[origIdx] || []) {
               saleItemBatchRows.push({ saleItemId: saleItem.id, batchId: draw.batchId, quantity: draw.quantity, costAtSale: draw.costAtSale });
               priceAtSaleRows.push({ saleItemId: saleItem.id, batchId: draw.batchId, price: draw.priceAtSale });
             }

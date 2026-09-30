@@ -1,4 +1,6 @@
 import { resolveAmountPaid, validatePaymentDetails, resolveLineCost } from '@/lib/server/moneyValidation';
+import { allocateFromLots } from '@/lib/lots';
+import { readLotVariantKeys, savePriceAtSale } from '@/lib/server/lotColumns';
 import { openVariantStores, adjustVariantStores, closeVariantStores, variantAvailable } from '@/lib/variants';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
@@ -388,6 +390,25 @@ export async function createSaleEffects(
     await Promise.all(promises);
   }
 
+  // Lot quantities: an edited bill draws from lots again (its old draws were restored by reverseSaleEffects).
+  // created.items comes back in no guaranteed order, so pair every saved line with its own input line by
+  // product + variant + quantity + price instead of trusting the index.
+  {
+    const used = new Set<number>();
+    const pairedInputs: any[] = [];
+    for (const si of created.items) {
+      const k = items.findIndex((it: any, i: number) =>
+        !used.has(i)
+        && (it.product_id || it.productId || null) === si.productId
+        && ((it.variant || null) === (si.variant || null))
+        && Number(it.quantity) === Number(si.quantity)
+        && Number(it.price_per_unit ?? it.pricePerUnit ?? it.price) === Number(si.pricePerUnit));
+      if (k >= 0) used.add(k);
+      pairedInputs.push(k >= 0 ? items[k] : null);
+    }
+    await recordLotDraws(tx, shopId, created.items, pairedInputs, productMap);
+  }
+
   if (outstandingAmount > 0 && finalCustomerId) {
     const custData = await tx.customer.findFirst({ where: { id: finalCustomerId, shopId } });
     if (custData && (custData.creditLimit ?? 0) > 0) {
@@ -489,9 +510,79 @@ export async function restoreBatchQuantities(
 }
 
 /** Puts quantity back on the exact lots a deleted/edited sale drew from. Lots that no longer exist are skipped. */
-export async function restoreToDrawnLots(prisma: PrismaClient, shopId: string, lotRestores: Map<string, number>) {
-  for (const [batchId, qty] of lotRestores.entries()) {
-    if (qty <= 0) continue;
-    await prisma.batch.updateMany({ where: { id: batchId, shopId }, data: { quantity: { increment: qty } } });
+export async function restoreToDrawnLots(prisma: Prisma.TransactionClient | PrismaClient, shopId: string, lotRestores: Map<string, number>) {
+  const entries = [...lotRestores.entries()].filter(([, qty]) => qty > 0);
+  if (!entries.length) return;
+  // One statement for all lots (the DB sits behind a pooler: every round trip counts inside a transaction).
+  await (prisma as any).$executeRawUnsafe(
+    `UPDATE batches SET quantity = batches.quantity + v.qty
+       FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::numeric[]) AS qty) AS v
+      WHERE batches.id = v.id::uuid AND batches.shop_id = $3::uuid`,
+    entries.map(([id]) => id), entries.map(([, qty]) => qty), shopId,
+  );
+}
+
+/**
+ * Lot draws for a sale that createSaleEffects just created (the bill-edit flow): takes each line's quantity from
+ * the shop's live lots — the line's own lot when one is named (batch_id), otherwise oldest lot first — and writes
+ * SaleItemBatch rows (qty, cost, selling price) plus the lot quantity decrement, exactly like a fresh POST /billing.
+ * Edit never fails on a lot shortfall: a stale lot just falls back to old-lot-first, and stock no lot can cover
+ * stays untracked (product-level stock was already handled by the caller).
+ */
+export async function recordLotDraws(
+  tx: Prisma.TransactionClient,
+  shopId: string,
+  createdItems: Array<{ id: string; productId: string | null }>,
+  inputItems: any[],
+  productById: Map<string, any>,
+) {
+  const productIds = Array.from(new Set(createdItems.map((i) => i.productId).filter(Boolean))) as string[];
+  if (!productIds.length) return;
+  const live = await tx.batch.findMany({ where: { shopId, productId: { in: productIds }, quantity: { gt: 0 } }, orderBy: { createdAt: 'asc' } });
+  if (!live.length) return;
+  const variantKeys = await readLotVariantKeys(tx as any, live.map((b) => b.id));
+  const byProduct = new Map<string, Array<(typeof live)[number] & { variantKey?: string | null }>>();
+  for (const b of live) byProduct.set(b.productId, [...(byProduct.get(b.productId) || []), { ...b, variantKey: variantKeys.get(b.id) ?? null }]);
+  const remaining = new Map<string, number>(live.map((b) => [b.id, b.quantity]));
+
+  const drawRows: Array<{ saleItemId: string; batchId: string; quantity: number; costAtSale: number }> = [];
+  const priceRows: Array<{ saleItemId: string; batchId: string; price: number }> = [];
+  createdItems.forEach((saleItem, idx) => {
+    const raw = inputItems[idx];
+    if (!saleItem.productId || !raw) return;
+    const lots = byProduct.get(saleItem.productId) || [];
+    if (!lots.length) return;
+    const qty = Number(raw.quantity) || 0;
+    const variant = (typeof raw.variant === 'string' ? raw.variant : '') || null;
+    const price = Number(raw.price_per_unit ?? raw.pricePerUnit ?? raw.price) || 0;
+    const pinned = raw.batch_id || raw.batchId || null;
+    const pinnedLive = pinned ? lots.find((l) => l.id === pinned && (remaining.get(l.id) || 0) > 0) : null;
+    let alloc = allocateFromLots(lots as any, remaining, qty, { pinnedId: pinnedLive ? pinned : null, variantKey: variant });
+    if (pinnedLive && alloc.shortfall > 0) {
+      const rest = allocateFromLots(lots as any, remaining, alloc.shortfall, { variantKey: variant });
+      alloc = { draws: [...alloc.draws, ...rest.draws], shortfall: rest.shortfall, pinnedShort: false };
+    }
+    const dbProduct = productById.get(saleItem.productId);
+    for (const d of alloc.draws) {
+      const lot = lots.find((l) => l.id === d.batchId)!;
+      const cost = Number(lot.costPrice) || Number(dbProduct?.costPrice) || Number(dbProduct?.wholesaleCost) || 0;
+      drawRows.push({ saleItemId: saleItem.id, batchId: d.batchId, quantity: d.quantity, costAtSale: cost });
+      priceRows.push({ saleItemId: saleItem.id, batchId: d.batchId, price });
+    }
+  });
+  if (!drawRows.length) return;
+
+  await tx.saleItemBatch.createMany({ data: drawRows });
+  await savePriceAtSale(tx as any, priceRows);
+  const consumed = live
+    .map((b) => ({ id: b.id, used: b.quantity - (remaining.get(b.id) ?? b.quantity) }))
+    .filter((u) => u.used > 0);
+  if (consumed.length) {
+    await tx.$executeRawUnsafe(
+      `UPDATE batches SET quantity = batches.quantity - v.used
+         FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::numeric[]) AS used) AS v
+        WHERE batches.id = v.id::uuid`,
+      consumed.map((u) => u.id), consumed.map((u) => u.used),
+    );
   }
 }

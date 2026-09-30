@@ -2,7 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { recordDeletion } from '@/lib/server/trash';
-import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, createSaleEffects, restoreBatchQuantities } from '@/lib/server/sales';
+import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, createSaleEffects, restoreBatchQuantities, restoreToDrawnLots } from '@/lib/server/sales';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { assertSaleEditable } from '@/lib/server/millGuards';
 
@@ -198,6 +198,9 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       const reversed = await reverseSaleEffects(tx, shop.id, existing.id);
       netQuantitiesByProduct = reversed.netQuantitiesByProduct;
       lotRestores = reversed.lotRestores;
+      // The lots the OLD bill drew from get their quantity back INSIDE this transaction, before the edited bill
+      // draws again — so the new draw sees the real quantities (and a crash cannot leave lots half-restored).
+      await restoreToDrawnLots(tx as any, shop.id, reversed.lotRestores);
       // Delete the OLD wholesale-tier stock movement rows before re-creating
       // the sale under the same id — createSaleEffects below inserts fresh
       // ones with that same referenceId, so this must happen first or the
@@ -208,7 +211,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
         invoiceNumber: existing.invoice_number || undefined,
         createdAt: existing.createdAt,
       });
-    }, { timeout: 20000, maxWait: 10000 });
+    }, { timeout: 45000, maxWait: 15000 });
   } catch (err: any) {
     if (err instanceof ApiError) throw err;
     throw new ApiError(400, err?.message || 'Failed to update bill');
@@ -218,9 +221,9 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   // referenceId, which would wipe out the brand-new ones createSaleEffects
   // just inserted above. Only restore batch quantities from the reversal.
   try {
-    // Edit re-creates the sale WITHOUT drawing from lots again, so restoring the drawn lots here would inflate
-    // lot stock: edits keep the previous convention (no exact-lot restore). Deleting a bill (below) does restore exactly.
-    await restoreBatchQuantities(prisma, shop.id, shop.packageType, netQuantitiesByProduct);
+    // Old bills without lot records keep the previous wholesale-tier "latest lot" convention; bills that had
+    // lot draws were restored exactly inside the transaction above.
+    if (lotRestores.size === 0) await restoreBatchQuantities(prisma, shop.id, shop.packageType, netQuantitiesByProduct);
   } catch (e) { console.error('Batch quantity restore after edit failed:', e); }
 
   invalidateDashboardCacheForShop(shop.id);
