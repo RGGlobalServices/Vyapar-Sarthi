@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { readLotVariantKeys } from '@/lib/server/lotColumns';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json } from '@/lib/server/http';
 import { orderLots } from '@/lib/lots';
@@ -31,8 +32,10 @@ export const GET = handle(async (req) => {
     },
   });
 
-  const byProduct: Record<string, typeof lots> = {};
-  for (const l of lots) (byProduct[l.productId] ||= []).push(l);
+  // size/colour each lot was bought for (only once the optional migration 16 has been run)
+  const variantKeys = await readLotVariantKeys(prisma, lots.map((l) => l.id));
+  const byProduct: Record<string, Array<(typeof lots)[number] & { variantKey?: string | null }>> = {};
+  for (const l of lots) (byProduct[l.productId] ||= []).push({ ...l, variantKey: variantKeys.get(l.id) ?? null });
   for (const id of Object.keys(byProduct)) byProduct[id] = orderLots(byProduct[id] as any) as any;
   return json(byProduct);
 });

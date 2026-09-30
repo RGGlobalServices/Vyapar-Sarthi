@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { readLotVariantKeys } from '@/lib/server/lotColumns';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, ApiError } from '@/lib/server/http';
 
@@ -34,5 +35,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     },
   });
 
-  return json(batches);
+  // size/colour each lot was bought for (only once the optional migration 16 has been run)
+  const variantKeys = await readLotVariantKeys(prisma, batches.map((b) => b.id));
+  return json(batches.map((b) => ({ ...b, variantKey: variantKeys.get(b.id) ?? null })));
 });

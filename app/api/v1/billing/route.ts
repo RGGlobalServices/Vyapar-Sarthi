@@ -1,5 +1,6 @@
 import { resolveAmountPaid, validatePaymentDetails, resolveLineCost } from '@/lib/server/moneyValidation';
 import { allocateFromLots, lotLabel } from '@/lib/lots';
+import { readLotVariantKeys, savePriceAtSale } from '@/lib/server/lotColumns';
 import crypto from 'crypto';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
@@ -238,10 +239,13 @@ export const POST = handle(async (req) => {
             tx.batch.findMany({ where: { productId: { in: billProductIds }, shopId, quantity: { gt: 0 } }, orderBy: { createdAt: 'asc' } }),
           ]);
           const billProductMap = new Map(billProducts.map((p) => [p.id, p]));
-          const batchesByProduct = new Map<string, typeof activeBatches>();
+          // Which size/colour each lot was bought for (lots with none serve every variant). Empty until
+          // supabase/16_lot_variant_key_and_price_at_sale.sql has been run — then billing behaves as before.
+          const lotVariantKeys = await readLotVariantKeys(tx as any, activeBatches.map((b) => b.id));
+          const batchesByProduct = new Map<string, Array<(typeof activeBatches)[number] & { variantKey?: string | null }>>();
           for (const b of activeBatches) {
             if (!batchesByProduct.has(b.productId)) batchesByProduct.set(b.productId, []);
-            batchesByProduct.get(b.productId)!.push(b);
+            batchesByProduct.get(b.productId)!.push({ ...b, variantKey: lotVariantKeys.get(b.id) ?? null });
           }
           const batchRemaining = new Map<string, number>();
           for (const b of activeBatches) batchRemaining.set(b.id, b.quantity);
@@ -262,7 +266,7 @@ export const POST = handle(async (req) => {
 
           const batchAwareLineItems: InputLineItem[] = [];
           const originalIndexByLineIndex: number[] = [];
-          const batchDrawsByOriginalIndex: { batchId: string; quantity: number; costAtSale: number }[][] = items.map(() => []);
+          const batchDrawsByOriginalIndex: { batchId: string; quantity: number; costAtSale: number; priceAtSale: number }[][] = items.map(() => []);
 
           items.forEach((i: any, origIdx: number) => {
             const pid = i.product_id || i.productId;
@@ -302,7 +306,7 @@ export const POST = handle(async (req) => {
               const batch = pBatches.find((b) => b.id === d.batchId)!;
               const cost = Number(batch.costPrice) || fallbackCost(dbProduct, variant);
               pushLine(d.quantity, cost);
-              batchDrawsByOriginalIndex[origIdx].push({ batchId: d.batchId, quantity: d.quantity, costAtSale: cost });
+              batchDrawsByOriginalIndex[origIdx].push({ batchId: d.batchId, quantity: d.quantity, costAtSale: cost, priceAtSale: sp });
             }
             if (alloc.shortfall > 0) pushLine(alloc.shortfall, fallbackCost(dbProduct, variant));
           });
@@ -362,9 +366,11 @@ export const POST = handle(async (req) => {
           // SaleItemBatch rows — the durable record of which batch(es) each
           // line actually drew from, at that batch's real cost.
           const saleItemBatchRows: { saleItemId: string; batchId: string; quantity: number; costAtSale: number }[] = [];
+          const priceAtSaleRows: { saleItemId: string; batchId: string; price: number }[] = [];
           created.items.forEach((saleItem, idx) => {
             for (const draw of batchDrawsByOriginalIndex[idx] || []) {
               saleItemBatchRows.push({ saleItemId: saleItem.id, batchId: draw.batchId, quantity: draw.quantity, costAtSale: draw.costAtSale });
+              priceAtSaleRows.push({ saleItemId: saleItem.id, batchId: draw.batchId, price: draw.priceAtSale });
             }
           });
 
@@ -380,6 +386,8 @@ export const POST = handle(async (req) => {
           if (productIds.length > 0) {
             if (saleItemBatchRows.length) {
               await tx.saleItemBatch.createMany({ data: saleItemBatchRows });
+              // The price each lot sold at (lot-wise revenue/profit). No-op until the migration has been run.
+              await savePriceAtSale(tx as any, priceAtSaleRows);
             }
             // Batch-update all consumed batches in one query instead of N sequential updates
             const batchUpdates = activeBatches
