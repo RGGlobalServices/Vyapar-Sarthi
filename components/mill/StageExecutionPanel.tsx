@@ -293,20 +293,119 @@ export default function StageExecutionPanel({ batch, stageId, products, onStageU
     }
   };
 
-  // Download PDF Report
+  // Download PDF Report — generated client-side from already-loaded reportSummary
   const handleDownloadReportPdf = async () => {
     setDownloadingPdf(true);
     setError('');
     try {
-      const blob = await downloadBlob(`/mill/batches/${batch.id}/stages/${stage.id}/report?format=pdf`);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Stage_Report_${batch.batchNumber}_${stage.stageName}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      const data = reportSummary;
+      if (!data) throw new Error('Report data not loaded yet. Please wait a moment and try again.');
+
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+      const doc = new (jsPDF as any)({ orientation: 'portrait' });
+
+      const now = new Date();
+      const dateStr = `${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}`;
+
+      // Header
+      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
+      doc.text('Stage Execution Report', 105, 18, { align: 'center' });
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+      doc.text(`${data.shop?.name || ''}`, 105, 25, { align: 'center' });
+      doc.text(`Date: ${dateStr}`, 105, 31, { align: 'center' });
+
+      // Batch info
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.text('BATCH DETAILS', 14, 42);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      const b = data.batch || {};
+      const s = data.stage || {};
+      doc.text(`Batch: ${b.batchNumber || '-'}   Stage: ${s.stageName || '-'}   Status: ${s.status || '-'}`, 14, 48);
+      doc.text(`Product: ${b.productName || '-'}   Workflow: ${b.workflowName || '-'}   Started: ${s.startedAt ? new Date(s.startedAt).toLocaleDateString('en-IN') : '-'}`, 14, 54);
+      if (s.operatorName) doc.text(`Operator: ${s.operatorName}   Machine: ${s.machineName || '-'}   Duration: ${s.durationMinutes ? s.durationMinutes + ' min' : '-'}`, 14, 60);
+
+      let y = 62;
+
+      // Mass Balance
+      if (data.balance) {
+        const mb = data.balance;
+        const an = data.analytics || {};
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        doc.text('MASS BALANCE & YIELD', 14, y); y += 6;
+        (autoTable as any)(doc, {
+          startY: y,
+          head: [['Total Input', 'Total Output', 'Loss/Waste', 'Difference', 'Yield %', 'Recovery %', 'Status']],
+          body: [[
+            `${mb.totalInputKg ?? 0} kg`, `${mb.totalOutputKg ?? 0} kg`,
+            `${mb.wastageKg ?? 0} kg`, `${mb.differenceKg ?? 0} kg`,
+            `${an.yieldPercent ?? 0}%`, `${an.recoveryPercent ?? 0}%`,
+            mb.balanceStatus || '-',
+          ]],
+          styles: { fontSize: 8 }, headStyles: { fillColor: [30, 60, 80] },
+          margin: { left: 14, right: 14 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Inputs
+      if (data.inputs?.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        doc.text('INPUTS', 14, y); y += 4;
+        (autoTable as any)(doc, {
+          startY: y,
+          head: [['Source Lot', 'Product', 'Type', 'Qty', 'Unit', 'Notes']],
+          body: data.inputs.map((i: any) => [i.sourceLotNumber || '-', i.productName || '-', i.inputType || '-', i.quantity ?? '-', i.unit || 'kg', i.notes || '-']),
+          styles: { fontSize: 8 }, headStyles: { fillColor: [60, 90, 50] },
+          margin: { left: 14, right: 14 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Outputs
+      if (data.outputs?.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        doc.text('OUTPUTS', 14, y); y += 4;
+        (autoTable as any)(doc, {
+          startY: y,
+          head: [['Product', 'Type', 'Qty', 'Unit', 'WIP Lot', 'Notes']],
+          body: data.outputs.map((o: any) => [o.productName || '-', o.outputType || '-', o.quantity ?? '-', o.unit || 'kg', o.wipLotNumber || '-', o.notes || '-']),
+          styles: { fontSize: 8 }, headStyles: { fillColor: [80, 50, 30] },
+          margin: { left: 14, right: 14 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Quality
+      if (data.quality?.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        doc.text('QUALITY TESTS', 14, y); y += 4;
+        (autoTable as any)(doc, {
+          startY: y,
+          head: [['Parameter', 'Actual Value', 'Unit', 'Target', 'Result', 'Critical']],
+          body: data.quality.map((q: any) => [q.parameterName || '-', q.actualValue ?? '-', q.unit || '-', q.targetValue || '-', q.result || '-', q.isCritical ? 'Yes' : 'No']),
+          styles: { fontSize: 8 }, headStyles: { fillColor: [70, 30, 80] },
+          margin: { left: 14, right: 14 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Execution Fields
+      if (data.executionFields?.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        doc.text('EXECUTION DATA', 14, y); y += 4;
+        (autoTable as any)(doc, {
+          startY: y,
+          head: [['Field', 'Value', 'Unit']],
+          body: data.executionFields.map((f: any) => [f.fieldName || '-', f.actualValue ?? '-', f.unit || '-']),
+          styles: { fontSize: 8 }, headStyles: { fillColor: [40, 40, 80] },
+          margin: { left: 14, right: 14 },
+        });
+      }
+
+      doc.save(`Stage_Report_${batch.batchNumber}_${stage.stageName}.pdf`);
     } catch (err: any) {
       setError(err.message || 'Failed to download PDF report');
     } finally {
