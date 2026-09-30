@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { splitAcrossDraws } from '@/lib/lots';
 import { openVariantStores, adjustVariantStores, closeVariantStores } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
@@ -237,7 +238,19 @@ export const POST = handle(async (req) => {
         },
       });
 
-      if (isWholesaleTierPackage(shop.packageType)) {
+      // Returned units go back to the lot(s) the original bill line drew from (all packages);
+      // bills without lot records keep the old wholesale-tier "latest lot" convention.
+      let restoredToDrawnLots = false;
+      for (const p of preparedReturns) {
+        if (p.saleItem.productId !== productId) continue;
+        const draws = await tx.saleItemBatch.findMany({ where: { saleItemId: p.saleItem.id } });
+        const parts = splitAcrossDraws(draws.map((d) => ({ batchId: d.batchId, quantity: d.quantity })), p.qty);
+        for (const part of parts) {
+          await tx.batch.updateMany({ where: { id: part.batchId, shopId: shop.id }, data: { quantity: { increment: part.quantity } } });
+        }
+        if (parts.length) restoredToDrawnLots = true;
+      }
+      if (!restoredToDrawnLots && isWholesaleTierPackage(shop.packageType)) {
         const latestBatch = await tx.batch.findFirst({ where: { productId, shopId: shop.id }, orderBy: { createdAt: 'desc' } });
         if (latestBatch) await tx.batch.update({ where: { id: latestBatch.id }, data: { quantity: { increment: totalQty } } });
       }

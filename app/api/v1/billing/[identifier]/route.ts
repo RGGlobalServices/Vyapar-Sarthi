@@ -192,10 +192,12 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
   let result;
   let netQuantitiesByProduct = new Map<string, number>();
+  let lotRestores = new Map<string, number>();
   try {
     result = await prisma.$transaction(async (tx) => {
       const reversed = await reverseSaleEffects(tx, shop.id, existing.id);
       netQuantitiesByProduct = reversed.netQuantitiesByProduct;
+      lotRestores = reversed.lotRestores;
       // Delete the OLD wholesale-tier stock movement rows before re-creating
       // the sale under the same id — createSaleEffects below inserts fresh
       // ones with that same referenceId, so this must happen first or the
@@ -216,6 +218,8 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   // referenceId, which would wipe out the brand-new ones createSaleEffects
   // just inserted above. Only restore batch quantities from the reversal.
   try {
+    // Edit re-creates the sale WITHOUT drawing from lots again, so restoring the drawn lots here would inflate
+    // lot stock: edits keep the previous convention (no exact-lot restore). Deleting a bill (below) does restore exactly.
     await restoreBatchQuantities(prisma, shop.id, shop.packageType, netQuantitiesByProduct);
   } catch (e) { console.error('Batch quantity restore after edit failed:', e); }
 
@@ -260,13 +264,13 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
     deletedBy: user.email,
   });
 
-  const { netQuantitiesByProduct } = await prisma.$transaction(
+  const { netQuantitiesByProduct, lotRestores } = await prisma.$transaction(
     (tx) => reverseSaleEffects(tx, shop.id, sale.id),
     { timeout: 15000, maxWait: 10000 }
   );
 
   try {
-    await cleanupSaleBatches(prisma, shop.id, sale.id, shop.packageType, netQuantitiesByProduct);
+    await cleanupSaleBatches(prisma, shop.id, sale.id, shop.packageType, netQuantitiesByProduct, lotRestores);
   } catch (e) {
     console.error('Sale batch/movement cleanup failed:', e);
   }

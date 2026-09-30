@@ -1,4 +1,5 @@
 import { resolveAmountPaid, validatePaymentDetails, resolveLineCost } from '@/lib/server/moneyValidation';
+import { allocateFromLots, lotLabel } from '@/lib/lots';
 import crypto from 'crypto';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
@@ -286,24 +287,24 @@ export const POST = handle(async (req) => {
               return;
             }
 
+            // A bill line pinned to one lot (the shopkeeper picked "Lot A31 @ its own price") draws ONLY from that
+            // lot — the line has a single price, so overflowing into another lot would sell that lot at the wrong
+            // price. A stale/sold-out pinned lot, or a line with no lot, falls back to old-lot-first (FIFO).
             const targetId = i.batch_id || i.batchId || null;
-            const ordered = targetId
-              ? [...pBatches.filter((b) => b.id === targetId), ...pBatches.filter((b) => b.id !== targetId)]
-              : pBatches;
-
-            let remainingQty = qty;
-            for (const batch of ordered) {
-              if (remainingQty <= 0) break;
-              const avail = batchRemaining.get(batch.id) || 0;
-              if (avail <= 0) continue;
-              const take = Math.min(avail, remainingQty);
-              batchRemaining.set(batch.id, avail - take);
-              const cost = Number(batch.costPrice) || fallbackCost(dbProduct, variant);
-              pushLine(take, cost);
-              batchDrawsByOriginalIndex[origIdx].push({ batchId: batch.id, quantity: take, costAtSale: cost });
-              remainingQty -= take;
+            const pinnedLot = targetId ? pBatches.find((b) => b.id === targetId) : null;
+            const usePinned = !!(pinnedLot && (batchRemaining.get(pinnedLot.id) || 0) > 0);
+            const alloc = allocateFromLots(pBatches as any, batchRemaining, qty, { pinnedId: usePinned ? targetId : null, variantKey: variant });
+            if (usePinned && alloc.pinnedShort && !allowNegativeStock) {
+              const took = alloc.draws.reduce((sx, d) => sx + d.quantity, 0);
+              throw new ApiError(409, `STOCK_CONFLICT: ${lotLabel(pinnedLot as any)} of ${dbProduct?.name ?? 'this product'} has only ${took} left but the bill needs ${qty}. Add the rest as a separate line from another lot.`);
             }
-            if (remainingQty > 0) pushLine(remainingQty, fallbackCost(dbProduct, variant));
+            for (const d of alloc.draws) {
+              const batch = pBatches.find((b) => b.id === d.batchId)!;
+              const cost = Number(batch.costPrice) || fallbackCost(dbProduct, variant);
+              pushLine(d.quantity, cost);
+              batchDrawsByOriginalIndex[origIdx].push({ batchId: d.batchId, quantity: d.quantity, costAtSale: cost });
+            }
+            if (alloc.shortfall > 0) pushLine(alloc.shortfall, fallbackCost(dbProduct, variant));
           });
 
           const batchAwareCalc = calculateInvoice(batchAwareLineItems, discountInput, billType);

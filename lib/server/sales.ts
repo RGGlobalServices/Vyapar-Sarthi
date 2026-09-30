@@ -52,7 +52,7 @@ export async function reverseSaleEffects(
   tx: Prisma.TransactionClient,
   shopId: string,
   saleId: string
-): Promise<{ sale: ReversedSale; netQuantitiesByProduct: Map<string, number> }> {
+): Promise<{ sale: ReversedSale; netQuantitiesByProduct: Map<string, number>; lotRestores: Map<string, number> }> {
   const sale = await tx.sale.findFirst({
     where: { id: saleId, shopId },
     include: { items: true },
@@ -142,10 +142,30 @@ export async function reverseSaleEffects(
   // daily register.
   await tx.cashBook.deleteMany({ where: { shopId, referenceId: saleId, type: { in: ['sale', 'refund'] } } });
 
+  // Which lots did each line actually draw from? Read BEFORE the SaleItem rows (and their SaleItemBatch children)
+  // go away, so the quantity can go back to those exact lots, not "the latest lot". A partly returned line
+  // restores only its net share (returns already put their share back).
+  const lotRestores = new Map<string, number>();
+  const draws = await tx.saleItemBatch.findMany({ where: { saleItemId: { in: sale.items.map((i) => i.id) } } });
+  const drawsByItem = new Map<string, typeof draws>();
+  for (const d of draws) drawsByItem.set(d.saleItemId, [...(drawsByItem.get(d.saleItemId) || []), d]);
+  for (const item of sale.items) {
+    const net = netByItem.get(item.id) || 0;
+    const total = Number(item.quantity) || 0;
+    const list = drawsByItem.get(item.id) || [];
+    if (net <= 0 || total <= 0 || !list.length) continue;
+    let left = net;
+    list.forEach((d, idx) => {
+      const share = idx === list.length - 1 ? left : Math.min(left, Math.round(((Number(d.quantity) || 0) * net / total) * 1e4) / 1e4);
+      left -= share;
+      if (share > 0) lotRestores.set(d.batchId, (lotRestores.get(d.batchId) || 0) + share);
+    });
+  }
+
   await tx.saleItem.deleteMany({ where: { saleId } });
   await tx.sale.delete({ where: { id: saleId } });
 
-  return { sale, netQuantitiesByProduct };
+  return { sale, netQuantitiesByProduct, lotRestores };
 }
 
 /**
@@ -417,10 +437,14 @@ export async function cleanupSaleBatches(
   shopId: string,
   saleId: string,
   packageType: string | null | undefined,
-  netQuantitiesByProduct: Map<string, number>
+  netQuantitiesByProduct: Map<string, number>,
+  lotRestores?: Map<string, number>
 ) {
   await prisma.stockMovement.deleteMany({ where: { shopId, referenceId: saleId, type: 'sale' } });
 
+  // Exact: the lots the sale really drew from (all packages). Only when the sale has no lot record at all
+  // does the old "latest lot" convention apply (wholesale tier only).
+  if (lotRestores && lotRestores.size) { await restoreToDrawnLots(prisma, shopId, lotRestores); return; }
   if (!isWholesaleTierPackage(packageType)) return;
 
   for (const [productId, qty] of netQuantitiesByProduct.entries()) {
@@ -450,8 +474,10 @@ export async function restoreBatchQuantities(
   prisma: PrismaClient,
   shopId: string,
   packageType: string | null | undefined,
-  netQuantitiesByProduct: Map<string, number>
+  netQuantitiesByProduct: Map<string, number>,
+  lotRestores?: Map<string, number>
 ) {
+  if (lotRestores && lotRestores.size) { await restoreToDrawnLots(prisma, shopId, lotRestores); return; }
   if (!isWholesaleTierPackage(packageType)) return;
   for (const [productId, qty] of netQuantitiesByProduct.entries()) {
     if (qty <= 0) continue;
@@ -459,5 +485,13 @@ export async function restoreBatchQuantities(
     if (latestBatch) {
       await prisma.batch.update({ where: { id: latestBatch.id }, data: { quantity: { increment: qty } } });
     }
+  }
+}
+
+/** Puts quantity back on the exact lots a deleted/edited sale drew from. Lots that no longer exist are skipped. */
+export async function restoreToDrawnLots(prisma: PrismaClient, shopId: string, lotRestores: Map<string, number>) {
+  for (const [batchId, qty] of lotRestores.entries()) {
+    if (qty <= 0) continue;
+    await prisma.batch.updateMany({ where: { id: batchId, shopId }, data: { quantity: { increment: qty } } });
   }
 }

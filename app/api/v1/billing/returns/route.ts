@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { splitAcrossDraws } from '@/lib/lots';
 import { openVariantStores, adjustVariantStores, closeVariantStores } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
@@ -227,9 +228,21 @@ export const POST = handle(async (req) => {
       });
       created.push(row.id);
 
+      // Lot restore: the returned units go back to the lot(s) this bill line drew from (all packages).
+      // Sales made before lots were recorded have no draw rows and keep the old wholesale-only convention below.
+      let restoredToDrawnLots = false;
+      if (p.saleItem.productId) {
+        const draws = await tx.saleItemBatch.findMany({ where: { saleItemId: p.saleItem.id } });
+        const parts = splitAcrossDraws(draws.map((d) => ({ batchId: d.batchId, quantity: d.quantity })), p.qty);
+        for (const part of parts) {
+          await tx.batch.updateMany({ where: { id: part.batchId, shopId: shop.id }, data: { quantity: { increment: part.quantity } } });
+        }
+        restoredToDrawnLots = parts.length > 0;
+      }
+
       // Wholesale batch restore + stock_movement for audit
       if (isWholesaleTierPackage(shop.packageType) && p.saleItem.productId) {
-        const latestBatch = await tx.batch.findFirst({
+        const latestBatch = restoredToDrawnLots ? null : await tx.batch.findFirst({
           where: { productId: p.saleItem.productId, shopId: shop.id },
           orderBy: { createdAt: 'desc' }
         });

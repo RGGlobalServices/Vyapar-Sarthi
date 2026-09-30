@@ -38,13 +38,13 @@ export const DELETE = handle(async (req) => {
         deletedBy: user.email,
       });
 
-      const { netQuantitiesByProduct } = await prisma.$transaction(
+      const { netQuantitiesByProduct, lotRestores } = await prisma.$transaction(
         (tx) => reverseSaleEffects(tx, shop.id, sale.id),
         { timeout: 15000, maxWait: 10000 }
       );
 
       try {
-        await cleanupSaleBatches(prisma, shop.id, sale.id, shop.packageType, netQuantitiesByProduct);
+        await cleanupSaleBatches(prisma, shop.id, sale.id, shop.packageType, netQuantitiesByProduct, lotRestores);
       } catch (e) {
         console.error('Sale batch/movement cleanup failed:', e);
       }
