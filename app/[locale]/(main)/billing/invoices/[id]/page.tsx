@@ -14,6 +14,7 @@ import { useAuthStore } from '@/lib/store';
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
+import { printBill } from '@/lib/printBill';
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const t = useTranslations('Invoices');
@@ -106,7 +107,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   const handlePrint = async () => {
     if (componentRef.current) await waitForQrCode(componentRef.current, !!billData.upiId);
-    window.print();
+    printBill();
   };
 
   if (loading) {

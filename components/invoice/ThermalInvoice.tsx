@@ -183,6 +183,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   return (
     <div
       ref={ref}
+      data-print-format={is58mm ? 'thermal58' : 'thermal80'}
       style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: 'Calibri, sans-serif' }}
       className={`p-3 w-full mx-auto ${widthClass} ${textClass} leading-snug`}
     >

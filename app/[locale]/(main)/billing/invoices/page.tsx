@@ -13,6 +13,7 @@ import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModa
 import { BillSlip, generateWhatsAppText } from '@/components/BillSlip';
 import { cn, fmtDate } from '@/lib/utils';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
+import { printBill } from '@/lib/printBill';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { useRowSelection } from '@/lib/hooks/useRowSelection';
@@ -383,7 +384,7 @@ function InvoicePreviewModal({ invoice, onClose, storeName, storeAddress, storeM
 
         {/* Actions */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 gap-2 shrink-0">
-          <button onClick={async () => { if (componentRef.current) await waitForQrCode(componentRef.current, !!billData.upiId); window.print(); }} className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+          <button onClick={async () => { if (componentRef.current) await waitForQrCode(componentRef.current, !!billData.upiId); printBill(); }} className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             <Printer size={16} />Print
           </button>
           <button

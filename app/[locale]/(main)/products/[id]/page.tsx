@@ -16,7 +16,7 @@ import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 
 const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   ssr: false,
-  loading: () => <div className="h-[300px] bg-slate-900/50 rounded-xl animate-pulse border border-slate-800" />,
+  loading: () => <div className="h-[300px] bg-slate-100 dark:bg-slate-900/50 rounded-xl animate-pulse border border-slate-200 dark:border-slate-800" />,
 });
 
 export default function ProductInsightsPage({ params }: { params: Promise<{ locale: string, id: string }> }) {
@@ -83,7 +83,7 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)]">
         <RefreshCw className="animate-spin text-emerald-500 mb-4" size={40} />
-        <p className="text-slate-400 font-medium">Loading insights...</p>
+        <p className="text-slate-500 dark:text-slate-400 font-medium">Loading insights...</p>
       </div>
     );
   }
@@ -92,7 +92,7 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
     return (
       <div className="py-20 flex flex-col items-center justify-center text-center">
         <Package size={48} className="text-slate-800 mb-4" />
-        <p className="text-lg text-slate-300 font-bold">Product not found</p>
+        <p className="text-lg text-slate-700 dark:text-slate-300 font-bold">Product not found</p>
         <Link href="/" className="text-emerald-500 hover:text-emerald-400 mt-4 font-medium flex items-center gap-2">
           <ArrowLeft size={16} /> Back to Dashboard
         </Link>
@@ -110,13 +110,13 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-slate-800 pb-6">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
         <div className="flex items-center gap-4">
-          <Link href="/" className="p-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors">
+          <Link href="/" className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl transition-colors">
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               {product.name}
             </h1>
             <p className="text-emerald-500 text-sm font-bold uppercase tracking-wider mt-1">{product.category}</p>
@@ -125,14 +125,14 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
         
         {/* Timeframe Controls */}
         <div className="flex flex-col items-end gap-3">
-          <div className="flex flex-wrap gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 shadow-sm">
+          <div className="flex flex-wrap gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
             {['Last 7 Days', 'Weekly', 'Monthly', 'Custom'].map(tf => (
               <button 
                 key={tf} 
                 onClick={() => setTimeframe(tf)} 
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-bold transition-all", 
-                  timeframe === tf ? "bg-emerald-500 text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-200"
+                  timeframe === tf ? "bg-emerald-500 text-slate-900 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 )}
               >
                 {tf}
@@ -140,17 +140,17 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
             ))}
           </div>
           {timeframe === 'Custom' && (
-            <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in slide-in-from-top-2">
               <input 
                 type="date" 
-                className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
                 value={customDates.start} 
                 onChange={e => setCustomDates({...customDates, start: e.target.value})} 
               />
               <span className="text-slate-500 text-xs font-medium">to</span>
               <input 
                 type="date" 
-                className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" 
                 value={customDates.end} 
                 onChange={e => setCustomDates({...customDates, end: e.target.value})} 
               />
@@ -168,34 +168,34 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Product Details Card */}
-        <Card className="bg-slate-900 border-slate-800 rounded-2xl overflow-hidden flex flex-col">
-          <CardHeader className="bg-slate-800/20 py-4 border-b border-slate-800/50">
-            <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 border-b border-slate-200 dark:border-slate-800/50">
+            <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <Package size={16} className="text-indigo-400" /> Inventory Details
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/50">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Current Stock</p>
-                <p className="text-2xl font-black text-white">{product.stock} <span className="text-sm text-slate-400 font-medium">{product.unit}</span></p>
+                <p className="text-2xl font-black text-slate-900 dark:text-white">{product.stock} <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">{product.unit}</span></p>
               </div>
-              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/50">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Min. Stock</p>
-                <p className="text-2xl font-black text-slate-300">{product.minStock}</p>
+                <p className="text-2xl font-black text-slate-700 dark:text-slate-300">{product.minStock}</p>
               </div>
             </div>
             <div className="space-y-3 pt-2">
-              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                <span className="text-sm text-slate-400 font-medium">Selling Price</span>
-                <span className="text-sm font-bold text-white">₹{(product.price || product.sellingPrice || 0).toLocaleString('en-IN')}</span>
+              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Selling Price</span>
+                <span className="text-sm font-bold text-slate-900 dark:text-white">₹{(product.price || product.sellingPrice || 0).toLocaleString('en-IN')}</span>
               </div>
-              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                <span className="text-sm text-slate-400 font-medium">Wholesale Cost</span>
-                <span className="text-sm font-bold text-amber-400">₹{(product.cost || product.wholesaleCost || 0).toLocaleString('en-IN')}</span>
+              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Wholesale Cost</span>
+                <span className="text-sm font-bold text-amber-600 dark:text-amber-400">₹{(product.cost || product.wholesaleCost || 0).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-slate-400 font-medium">Profit Margin</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Profit Margin</span>
                 <span className={cn('text-sm font-bold', (() => {
                   // Matches the products list's Profit % column — see lib/profitCalc.ts.
                   const cost = product.cost || product.wholesaleCost || 0;
@@ -219,7 +219,7 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
 
         {/* Insight Stats */}
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-slate-900 border-slate-800 rounded-2xl">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl">
             <CardHeader className="pb-2">
               <CardTitle className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
                 Total Revenue
@@ -227,12 +227,12 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-black text-white">₹{stats.revenue.toLocaleString('en-IN')}</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white">₹{stats.revenue.toLocaleString('en-IN')}</div>
               <p className="text-xs font-medium text-emerald-500/80 mt-1">For selected timeframe</p>
             </CardContent>
           </Card>
           
-          <Card className="bg-slate-900 border-slate-800 rounded-2xl">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl">
             <CardHeader className="pb-2">
               <CardTitle className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
                 Units Sold
@@ -240,12 +240,12 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-black text-white">{stats.unitsSold}</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.unitsSold}</div>
               <p className="text-xs font-medium text-slate-500 mt-1">units moved</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-900 border-slate-800 rounded-2xl">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl">
             <CardHeader className="pb-2">
               <CardTitle className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
                 Total Profit
@@ -253,15 +253,15 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-black text-white">₹{stats.profit.toLocaleString('en-IN')}</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white">₹{stats.profit.toLocaleString('en-IN')}</div>
               <p className="text-xs font-medium text-slate-500 mt-1">from sales</p>
             </CardContent>
           </Card>
 
           {/* Daily Trend Table / Simple Chart */}
-          <Card className="md:col-span-3 bg-slate-900 border-slate-800 rounded-2xl overflow-hidden">
-            <CardHeader className="bg-slate-800/20 py-4 border-b border-slate-800/50">
-              <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
+          <Card className="md:col-span-3 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 border-b border-slate-200 dark:border-slate-800/50">
+              <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Calendar size={16} className="text-blue-400" /> Daily Sales Trend
               </CardTitle>
             </CardHeader>
@@ -269,19 +269,19 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               {trend.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-800/30 text-slate-400 text-[10px] uppercase tracking-widest">
+                    <thead className="bg-slate-50 dark:bg-slate-800/30 text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-widest">
                       <tr>
                         <th className="px-6 py-3 font-bold">Date</th>
                         <th className="px-6 py-3 font-bold text-right">Units Sold</th>
                         <th className="px-6 py-3 font-bold text-right">Revenue</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/50">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
                       {trend.map((t: any, i: number) => (
-                        <tr key={i} className="hover:bg-slate-800/20 transition-colors">
-                          <td className="px-6 py-3 text-sm font-bold text-slate-200">{t.date}</td>
-                          <td className="px-6 py-3 text-sm font-bold text-emerald-400 text-right">{t.qty}</td>
-                          <td className="px-6 py-3 text-sm font-black text-white text-right">₹{t.revenue.toLocaleString('en-IN')}</td>
+                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                          <td className="px-6 py-3 text-sm font-bold text-slate-800 dark:text-slate-200">{t.date}</td>
+                          <td className="px-6 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">{t.qty}</td>
+                          <td className="px-6 py-3 text-sm font-black text-slate-900 dark:text-white text-right">₹{t.revenue.toLocaleString('en-IN')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -298,17 +298,17 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
       </div>
       
       {/* Recent Transactions List */}
-      <Card className="bg-slate-900 border-slate-800 rounded-2xl overflow-hidden">
-        <CardHeader className="bg-slate-800/20 py-4 border-b border-slate-800/50">
-          <CardTitle className="text-sm font-bold text-slate-200 flex items-center gap-2">
-            <TrendingUp size={16} className="text-emerald-400" /> Recent Sales Involving this Product
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+        <CardHeader className="bg-slate-50 dark:bg-slate-800/20 py-4 border-b border-slate-200 dark:border-slate-800/50">
+          <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <TrendingUp size={16} className="text-emerald-600 dark:text-emerald-400" /> Recent Sales Involving this Product
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {recentSales.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-slate-800/30 text-slate-400 text-[10px] uppercase tracking-widest">
+                <thead className="bg-slate-50 dark:bg-slate-800/30 text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-widest">
                   <tr>
                     <th className="px-6 py-3 font-bold">Date & Time</th>
                     <th className="px-6 py-3 font-bold text-right">Quantity</th>
@@ -316,13 +316,13 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
                     <th className="px-6 py-3 font-bold text-right">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/50">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50">
                   {recentSales.map((s: any, i: number) => (
-                    <tr key={i} className="hover:bg-slate-800/20 transition-colors">
-                      <td className="px-6 py-4 text-sm font-medium text-slate-300">{s.date}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-emerald-400 text-right">{s.qty}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-slate-400 text-right">₹{s.price.toLocaleString('en-IN')}</td>
-                      <td className="px-6 py-4 text-sm font-black text-white text-right">₹{s.total.toLocaleString('en-IN')}</td>
+                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{s.date}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">{s.qty}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 text-right">₹{s.price.toLocaleString('en-IN')}</td>
+                      <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-white text-right">₹{s.total.toLocaleString('en-IN')}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -27,6 +27,31 @@
 
   /* Thermal receipt: 80 mm roll, zero margins so the bill fills the paper. */
   @page { size: 80mm auto; margin: 0; }
+
+  /* Bill print mode (lib/printBill.ts): the bill is cloned into #print-root in
+     normal flow so A4 bills paginate properly and thermal bills fill the roll.
+     The page size itself is injected per format by printBill(). */
+  body.printing-bill > *:not(#print-root) { display: none !important; }
+  body.printing-bill { background: #fff !important; margin: 0 !important; }
+  #print-root, #print-root * {
+    visibility: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    text-rendering: geometricPrecision;
+  }
+  #print-root { position: static; width: 100%; background: #fff; }
+  #print-root > [data-print-format] {
+    display: block !important;
+    position: static !important;
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+  }
+  #print-root > [data-print-format="a4"] { min-height: 270mm !important; }
+  #print-root > [data-print-format^="thermal"] { min-height: 0 !important; padding: 1.5mm !important; }
+  #print-root tr, #print-root img { break-inside: avoid; page-break-inside: avoid; }
+  #print-root thead { display: table-header-group; }
 }
 
 /* Native (Capacitor/ML Kit) barcode scanner: the real device camera is

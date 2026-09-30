@@ -31,6 +31,7 @@ import Calculator from '@/components/Calculator';
 import {performSmartSearch} from '@/lib/smartSearch';
 import {computeGst} from '@/lib/gst';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
+import { printBill } from '@/lib/printBill';
 import ManualBillUpload from '@/components/ManualBillUpload';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
@@ -419,7 +420,7 @@ function StandardBillingUI() {
 
   const handlePrint = async () => {
     if (componentRef.current) await waitForQrCode(componentRef.current, !!profile.upiId);
-    window.print();
+    printBill();
   };
 
   const generatePDFBlob = async () => {

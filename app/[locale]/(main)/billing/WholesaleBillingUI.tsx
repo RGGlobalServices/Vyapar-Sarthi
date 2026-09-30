@@ -27,6 +27,7 @@ import { generateWhatsAppLink } from '@/lib/shareUtils';
 import { uploadInvoiceToSupabase } from '@/lib/supabaseStorage';
 import { computeGst } from '@/lib/gst';
 import { waitForImages, waitForQrCode } from '@/lib/waitForImages';
+import { printBill } from '@/lib/printBill';
 import { generateUpiQrSvg } from '@/lib/upi';
 import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
@@ -2999,7 +3000,7 @@ export default function WholesaleBillingUI() {
                     // Keep modal in DOM while the browser renders the print layout,
                     // then close it once the dialog is dismissed.
                     window.onafterprint = () => { setShowBillModal(false); window.onafterprint = null; };
-                    window.print();
+                    printBill();
                   }}
                   className="flex flex-col items-center justify-center gap-1 bg-emerald-500 text-white dark:text-slate-900 py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-sm"
                 >

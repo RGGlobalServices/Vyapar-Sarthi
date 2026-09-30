@@ -31,6 +31,7 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
     <div
       ref={ref}
       data-testid="mill-invoice"
+      data-print-format={a4 ? 'a4' : 'thermal80'}
       data-variant={variant}
       style={{ width: a4 ? 800 : 320, backgroundColor: '#ffffff', color: '#111111' }}
       className={`${fs} leading-snug font-sans ${a4 ? 'p-8' : 'p-3'} box-border`}

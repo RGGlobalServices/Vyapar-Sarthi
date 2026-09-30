@@ -101,6 +101,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   return (
     <div
       ref={ref}
+      data-print-format="a4"
       style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Calibri, sans-serif', borderColor: isMinimal ? hairline : (isModern ? accent : '#0f172a') }}
       className={`w-full max-w-[800px] mx-auto text-sm leading-snug min-h-[1056px] flex flex-col ${isMinimal ? 'border' : 'border-2'}`}
     >

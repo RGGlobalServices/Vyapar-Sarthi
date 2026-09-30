@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { printBill } from '@/lib/printBill';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, MessageCircle, Printer, X, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
@@ -47,7 +48,7 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
   }), [profile]);
   const data = useMemo(() => (sale ? buildMillInvoiceData(sale, shop, fmtDate(sale.created_at)) : null), [sale, shop]);
 
-  const handlePrint = () => { window.print(); };
+  const handlePrint = () => { printBill(); };
 
   const handlePdf = async () => {
     if (!previewRef.current || !data) return;
