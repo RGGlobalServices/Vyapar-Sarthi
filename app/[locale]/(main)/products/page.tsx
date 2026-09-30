@@ -3339,6 +3339,8 @@ function LegacyProductsUI() {
           productId={String(selectedProduct.id)}
           shopId={selectedProduct.shopId}
           onClose={() => setSelectedProduct(null)}
+          onNewLot={() => { const row = selectedProduct; setSelectedProduct(null); setNewLotProduct(row); }}
+          onClone={() => { const row = selectedProduct; setSelectedProduct(null); startClone(row); }}
           onEdit={() => {
             // Deliberately ignore the Sheet's own callback argument — it's the
             // raw erp-details response (Prisma field names: currentStock,

@@ -74,6 +74,25 @@ export default function ProductDetailsSheet({
   const effectiveShopId = shopId || activeShopId || undefined;
   const isMillShop = profile.businessType === 'millprocessing';
   const [showReceive, setShowReceive] = useState(false);
+  // Inline edit of ONE lot's own details (lot no., prices, expiry) — never its quantity, never other lots.
+  const [editLot, setEditLot] = useState<null | { id: string; batchNumber: string; sellingPrice: string; costPrice: string; expiry: string }>(null);
+  const [savingLot, setSavingLot] = useState(false);
+  const saveLot = async () => {
+    if (!editLot) return;
+    setSavingLot(true);
+    try {
+      await api.patch(`/products/${productId}/batches/${editLot.id}`, {
+        batchNumber: editLot.batchNumber.trim() || undefined,
+        sellingPrice: editLot.sellingPrice === '' ? null : Number(editLot.sellingPrice),
+        costPrice: editLot.costPrice === '' ? null : Number(editLot.costPrice),
+        expiryDate: editLot.expiry || null,
+      }, shopIdHeader(shopId));
+      setEditLot(null);
+      await fetchDetails();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not save the lot');
+    } finally { setSavingLot(false); }
+  };
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'production' | 'packing' | 'traceability'>('overview');
@@ -497,7 +516,7 @@ export default function ProductDetailsSheet({
                 title={t("activeBatches")}
               >
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left min-w-[620px]">
+                  <table className="w-full text-sm text-left min-w-[700px]">
                     <thead>
                       <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50">
                         <th className="px-4 py-2.5 font-semibold">{t("batchNo")}</th>
@@ -507,19 +526,29 @@ export default function ProductDetailsSheet({
                         <th className="px-4 py-2.5 font-semibold text-right">{t("qty")}</th>
                         <th className="px-4 py-2.5 font-semibold">{t("expiry")}</th>
                         <th className="px-4 py-2.5 font-semibold">{t("purchaseDateCol") || 'Purchased'}</th>
+                        <th className="px-2 py-2.5" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {data.batches.map((b: any) => (
+                      {data.batches.map((b: any) => {
+                        const editing = editLot?.id === b.id;
+                        const inp = 'w-full min-w-[4.5rem] h-8 px-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white';
+                        return (
                         <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="px-4 py-3 font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {b.batchNumber || b.barcode || '—'}
+                            {editing
+                              ? <input className={inp} value={editLot!.batchNumber} onChange={(e) => setEditLot({ ...editLot!, batchNumber: e.target.value })} />
+                              : (b.batchNumber || b.barcode || '—')}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-xs text-slate-600 dark:text-slate-400">
-                            {b.costPrice != null ? `₹${Number(b.costPrice).toLocaleString('en-IN')}` : '—'}
+                            {editing
+                              ? <input className={inp} type="number" min="0" step="any" value={editLot!.costPrice} onChange={(e) => setEditLot({ ...editLot!, costPrice: e.target.value })} />
+                              : (b.costPrice != null ? `₹${Number(b.costPrice).toLocaleString('en-IN')}` : '—')}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-xs text-emerald-700 dark:text-emerald-400">
-                            {b.sellingPrice != null ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : '—'}
+                            {editing
+                              ? <input className={inp} type="number" min="0" step="any" value={editLot!.sellingPrice} onChange={(e) => setEditLot({ ...editLot!, sellingPrice: e.target.value })} />
+                              : (b.sellingPrice != null ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : '—')}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-xs text-slate-500 dark:text-slate-500">
                             {b.initialQuantity ?? '—'}
@@ -530,13 +559,29 @@ export default function ProductDetailsSheet({
                             </span>
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                            {b.expiryDate ? new Date(b.expiryDate).toLocaleDateString('en-IN') : '—'}
+                            {editing
+                              ? <input className={inp} type="date" value={editLot!.expiry} onChange={(e) => setEditLot({ ...editLot!, expiry: e.target.value })} />
+                              : (b.expiryDate ? new Date(b.expiryDate).toLocaleDateString('en-IN') : '—')}
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500">
                             {new Date(b.purchaseDate || b.createdAt).toLocaleDateString('en-IN')}
                           </td>
+                          <td className="px-2 py-3 text-right whitespace-nowrap">
+                            {editing ? (
+                              <>
+                                <button type="button" disabled={savingLot} onClick={saveLot} className="text-[11px] font-bold text-emerald-600 hover:underline mr-2">Save</button>
+                                <button type="button" onClick={() => setEditLot(null)} className="text-[11px] font-bold text-slate-500 hover:underline">Cancel</button>
+                              </>
+                            ) : (
+                              <button type="button" title="Edit this lot's lot no., prices, expiry (other lots are not affected)" onClick={() => setEditLot({
+                                id: b.id, batchNumber: b.batchNumber || '', sellingPrice: b.sellingPrice != null ? String(b.sellingPrice) : '',
+                                costPrice: b.costPrice != null ? String(b.costPrice) : '', expiry: b.expiryDate ? String(b.expiryDate).slice(0, 10) : '',
+                              })} className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Edit</button>
+                            )}
+                          </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
