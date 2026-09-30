@@ -215,12 +215,13 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
 
         {/* Bill meta & Barcode */}
         <div className="px-2 pt-2">
-          <div className={`flex justify-between items-start ${smallTextClass} font-bold`}>
-            <div className="flex flex-col gap-0.5">
-              <span>{t('bill')} {billNumber}</span>
+          <div className={`flex justify-between items-start gap-2 ${smallTextClass} font-bold`}>
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+              <span style={{ overflowWrap: 'anywhere' }}>{t('bill')} {billNumber}</span>
               <Barcode value={billNumber} height={20} displayValue={false} />
             </div>
-            <span>{date}</span>
+            {/* never let the date break into 30- / 09- / 2026 on a narrow roll */}
+            <span style={{ whiteSpace: 'nowrap' }}>{date}</span>
           </div>
 
           {(customerName || customerMobile || customerAddress || customerGst) && (
@@ -248,57 +249,60 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
             hand it and wrap instead. HSN drops out at 58mm specifically —
             least useful column on a slip this narrow, and freeing its share
             keeps the others (esp. Item name) legible. */}
-        <table className="w-full border-collapse" style={{ ...rule, tableLayout: 'fixed' }}>
-          <thead>
-            <tr className={`${tableHeadClass} uppercase`} style={{ backgroundColor: '#eee', borderBottom: '1.5px solid #000' }}>
-              {columns.map(col => (
-                <th key={col.id} className={`py-1.5 ${cellPad} text-${col.align} font-bold`} style={{ width: col.id === 'item' ? undefined : (THERMAL_COL_WIDTH[col.id] || '14%'), whiteSpace: 'nowrap' }}>{t(col.labelKey) || col.labelKey}</th>
-              ))}
-              {isGstBill && !is58mm && <th className={`py-1.5 ${cellPad} text-left font-bold`} style={{ width: THERMAL_COL_WIDTH.hsn, whiteSpace: 'nowrap', overflow: 'hidden' }}>{t('hsn') || 'HSN'}</th>}
-              {isGstBill && <th className={`py-1.5 ${cellPad} text-right font-bold`} style={{ width: THERMAL_COL_WIDTH.gstPercent, whiteSpace: 'nowrap', overflow: 'hidden' }}>GST%</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {goodsItems.map((item, idx) => (
-              <tr key={idx} className="align-top" style={idx < goodsItems.length - 1 ? { borderBottom: '1px solid #ddd' } : undefined}>
-                {columns.map(col => {
-                  const isItemCol = col.id === 'item';
-                  const attrs = isItemCol && billingDisplayFields?.length
-                    ? (item as any).categoryAttributes as Record<string, string> | undefined
-                    : undefined;
-                  const attrParts = attrs
-                    ? billingDisplayFields!.map(k => attrs[k]).filter(Boolean)
-                    : [];
-                  return (
-                    <td key={col.id} className={`py-1 ${cellPad} text-${col.align} ${textClass} ${isItemCol ? 'pr-2' : ''}`} style={isItemCol ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap' }}>
-                      {col.render(item)}
-                      {isItemCol && (() => {
-                        const color = (item as any).color || '';
-                        const size = (item as any).size || '';
-                        const variant = item.variant || '';
-                        if (color || size) {
-                          return <div style={{ fontSize: '80%', color: '#555' }}>{[color, size].filter(Boolean).join(' / ')}</div>;
-                        }
-                        if (variant) {
-                          return <div style={{ fontSize: '80%', color: '#555' }}>{variantLabel(variant)}</div>;
-                        }
-                        return null;
-                      })()}
-                      {isItemCol && attrParts.length > 0 && <div style={{ fontSize: '80%', color: '#666' }}>{attrParts.join(' · ')}</div>}
-                      {col.id === 'qty' && dualUnitConfig && (
-                        <div style={{ fontSize: '75%', color: '#22c55e' }}>
-                          ={(item.quantity * dualUnitConfig.conversionFactor).toLocaleString('en-IN')} {dualUnitConfig.secondaryUnit}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-                {isGstBill && !is58mm && <td className={`py-1 ${cellPad} text-left ${textClass}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{(item as any).hsnCode || '-'}</td>}
-                {isGstBill && <td className={`py-1 ${cellPad} text-right ${textClass}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{Number((item as any).gstPercent) || 0}%</td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Stacked item rows instead of a column table. A real thermal roll is 58 mm / 72 mm printable (and printers
+            differ), so a table of 7-8 fixed columns (Item, Serial, Warranty, Qty, Rate, Amt, HSN, GST%) overlapped its own
+            headers and squeezed the item name into one letter per line. Name on its own full-width line, then
+            "Qty x Rate ........ Amount", then a small grey line for the extras — readable at ANY width, and the same on
+            screen, in the PDF and on paper. */}
+        <div style={rule}>
+          <div className={`flex justify-between gap-2 ${tableHeadClass} uppercase font-bold px-1 py-1.5`} style={{ backgroundColor: '#eee', borderBottom: '1.5px solid #000' }}>
+            <span>{t('item')}</span>
+            <span>{t('qty')} × {t('rate')}</span>
+            <span>{t('amt')}</span>
+          </div>
+          {goodsItems.map((item, idx) => {
+            const attrs = billingDisplayFields?.length
+              ? (item as any).categoryAttributes as Record<string, string> | undefined
+              : undefined;
+            const attrParts = attrs ? billingDisplayFields!.map(k => attrs[k]).filter(Boolean) : [];
+            const color = (item as any).color || '';
+            const size = (item as any).size || '';
+            const variant = item.variant || '';
+            const variantLine = (color || size) ? [color, size].filter(Boolean).join(' / ') : (variant ? variantLabel(variant) : '');
+            const byId = (id: string) => columns.find(col => col.id === id)?.render(item);
+            // Everything that is not name / qty / rate / amount goes into one small extras line (serial, warranty,
+            // batch, expiry, HSN, GST %). Colour/size are already shown under the name.
+            const extras = columns
+              .filter(col => !['item', 'qty', 'rate', 'amt', 'color', 'size'].includes(col.id))
+              .map(col => ({ label: t(col.labelKey) || col.labelKey, value: String(col.render(item) ?? '') }))
+              .filter(x => x.value && x.value !== '-');
+            if (isGstBill) {
+              if (!is58mm && (item as any).hsnCode) extras.push({ label: t('hsn') || 'HSN', value: String((item as any).hsnCode) });
+              extras.push({ label: 'GST', value: `${Number((item as any).gstPercent) || 0}%` });
+            }
+            return (
+              <div key={idx} className="px-1 py-1" style={idx < goodsItems.length - 1 ? { borderBottom: '1px solid #ddd' } : undefined}>
+                <div className={`${textClass} font-semibold`} style={{ overflowWrap: 'anywhere' }}>{byId('item')}</div>
+                {variantLine && <div style={{ fontSize: '80%', color: '#555' }}>{variantLine}</div>}
+                {attrParts.length > 0 && <div style={{ fontSize: '80%', color: '#666' }}>{attrParts.join(' · ')}</div>}
+                <div className={`flex justify-between items-baseline gap-2 ${textClass}`}>
+                  <span style={{ whiteSpace: 'nowrap' }}>{byId('qty')} × {byId('rate')}</span>
+                  <span className="font-bold" style={{ whiteSpace: 'nowrap' }}>{byId('amt')}</span>
+                </div>
+                {dualUnitConfig && (
+                  <div style={{ fontSize: '75%', color: '#22c55e' }}>
+                    ={(item.quantity * dualUnitConfig.conversionFactor).toLocaleString('en-IN')} {dualUnitConfig.secondaryUnit}
+                  </div>
+                )}
+                {extras.length > 0 && (
+                  <div style={{ fontSize: '80%', color: '#555', overflowWrap: 'anywhere' }}>
+                    {extras.map(x => `${x.label}: ${x.value}`).join(' · ')}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <div className="px-2">
           {/* Totals */}
