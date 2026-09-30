@@ -37,7 +37,7 @@ import ManualBillUpload from '@/components/ManualBillUpload';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
 import DiscountInput from '@/components/DiscountInput';
-import {splitVariantKey, isColorSizeVariants, colorsFromVariants, sizesFromVariants} from '@/components/ColorSizeVariantGrid';
+import {splitVariantKey, isColorSizeVariants, colorsFromVariants, sizesFromVariants, cssColor} from '@/components/ColorSizeVariantGrid';
 import {formatSizeLabel} from '@/components/SizeVariantGrid';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
@@ -2275,8 +2275,8 @@ function StandardBillingUI() {
       {/* Variant Selection Modal */}
       {variantSelectionProduct && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-sm shadow-2xl">
-            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between py-4">
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full max-w-md shadow-2xl flex flex-col max-h-[calc(100dvh-2rem)]">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between py-4 shrink-0">
               <CardTitle className="text-slate-900 dark:text-slate-200 text-lg flex items-center gap-2">
                 {(() => {
                   let sizes: Record<string, number> = {};
@@ -2292,10 +2292,10 @@ function StandardBillingUI() {
                 <X size={20} />
               </button>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
+            <CardContent className="p-4 sm:p-6 space-y-4 overflow-y-auto">
               <div>
                 <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{variantSelectionProduct.name}</p>
-                <p className="text-xs text-slate-500 mt-1">Available Inventory:</p>
+                <p className="text-xs text-slate-500 mt-1">Tap every size / colour you want — each tap adds it to the bill. Use − / + to change the quantity. Press Done when finished.</p>
               </div>
               {(() => {
                 // Data-integrity banner: a variant product whose per-size counts
@@ -2321,7 +2321,7 @@ function StandardBillingUI() {
                   </div>
                 );
               })()}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-3">
                 {(() => {
                   let sizes: Record<string, number> = {};
                   try {
@@ -2367,7 +2367,12 @@ function StandardBillingUI() {
                   const unitLabel = bizUnit[bizConfig.type]
                     || String(variantSelectionProduct.baseUnit ?? variantSelectionProduct.base_unit ?? '').trim().toLowerCase()
                     || 'available';
-                  return Object.entries(sizes).map(([key, qty]) => {
+                  // Colour x size products: one section per colour, sizes underneath - so "28 Black + 28 Red + 30 Black"
+                  // is three taps without losing track of which colour a size belongs to.
+                  const groupByColour = Object.keys(sizes).some((k) => !!splitVariantKey(k).color);
+                  // The bill line (if any) already holding this variant of this product - drives the xN badge and the - / + stepper.
+                  const lineFor = (key: string) => items.find((i: any) => String(i.id) === String(variantSelectionProduct.id) && (i.variant ?? '') === key);
+                  const renderTile = ([key, qty]: [string, any]) => {
                     const stock = Number(qty) || 0;
                     const isOutOfStock = stock <= 0 && !hasUnassignedPool;
                     const { color, size } = splitVariantKey(key);
@@ -2378,30 +2383,54 @@ function StandardBillingUI() {
                     const label = stock > 0
                       ? `${stock} ${unitLabel}`
                       : (hasUnassignedPool ? `~${aggregate} ${unitLabel}` : 'Out');
+                    const line: any = lineFor(key);
+                    const inCart = line ? Number(line.quantity) || 0 : 0;
                     return (
-                      <button
-                        key={key}
-                        onClick={() => {
-                          addToCart(variantSelectionProduct, key, false, variantSelectionLotRef.current);
-                          checkFifoHintOnAdd(variantSelectionProduct);
-                          setVariantSelectionProduct(null);
-                        }}
-                        className={cn(
-                          'py-3 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition-colors active:scale-95',
-                          isOutOfStock
-                            ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-60 hover:opacity-100'
-                            : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30 hover:border-emerald-500 dark:hover:border-emerald-500 text-slate-900 dark:text-slate-100 shadow-sm'
+                      <div key={key} className={cn('rounded-xl border flex flex-col overflow-hidden transition-colors', inCart > 0 ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-50/60 dark:bg-emerald-500/10' : (isOutOfStock ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-70' : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30'))}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (line) { updateQuantity(line.id, inCart + 1, lineRef(line)); return; }
+                            addToCart(variantSelectionProduct, key, false, variantSelectionLotRef.current);
+                            checkFifoHintOnAdd(variantSelectionProduct);
+                          }}
+                          className="py-2.5 flex flex-col items-center justify-center gap-0.5 active:scale-95 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-900 dark:text-slate-100"
+                        >
+                          {color && !groupByColour && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{color}</span>}
+                          <span className="font-bold">{formatSizeLabel(size)}</span>
+                          {sizePrice > 0 && <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">₹{sizePrice}</span>}
+                          <span className={cn('text-[10px] font-semibold', isOutOfStock ? 'text-red-400' : 'text-slate-400 dark:text-slate-500')}>{label}</span>
+                        </button>
+                        {inCart > 0 && (
+                          <div className="flex items-center justify-between bg-emerald-500 text-white dark:text-slate-900 text-sm font-black">
+                            <button type="button" aria-label="Decrease" className="px-3 py-1 hover:bg-emerald-600"
+                              onClick={() => { if (inCart <= 1) removeItem(line.id, lineRef(line)); else updateQuantity(line.id, inCart - 1, lineRef(line)); }}>−</button>
+                            <span>×{inCart}</span>
+                            <button type="button" aria-label="Increase" className="px-3 py-1 hover:bg-emerald-600" onClick={() => updateQuantity(line.id, inCart + 1, lineRef(line))}>+</button>
+                          </div>
                         )}
-                      >
-                        {color && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{color}</span>}
-                        <span className="font-bold">{formatSizeLabel(size)}</span>
-                        {sizePrice > 0 && <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">₹{sizePrice}</span>}
-                        <span className={cn('text-[10px] font-semibold', isOutOfStock ? 'text-red-400' : 'text-slate-400 dark:text-slate-500')}>
-                          {label}
-                        </span>
-                      </button>
+                      </div>
                     );
-                  });
+                  };
+                  const entries = Object.entries(sizes);
+                  if (!groupByColour) return <div className="grid grid-cols-3 gap-3">{entries.map(renderTile)}</div>;
+                  const byColour = new Map<string, Array<[string, any]>>();
+                  for (const e of entries) {
+                    const col = splitVariantKey(e[0]).color || 'Other';
+                    byColour.set(col, [...(byColour.get(col) || []), e]);
+                  }
+                  return (
+                    <>
+                      {[...byColour.entries()].map(([col, list]) => (
+                        <div key={col}>
+                          <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{ background: cssColor(col) }} />{col}
+                          </p>
+                          <div className="grid grid-cols-3 gap-3">{list.map(renderTile)}</div>
+                        </div>
+                      ))}
+                    </>
+                  );
                 })()}
               </div>
 
@@ -2412,7 +2441,7 @@ function StandardBillingUI() {
                   if (val && val.trim()) {
                     addToCart(variantSelectionProduct, val.trim(), false, variantSelectionLotRef.current);
                     checkFifoHintOnAdd(variantSelectionProduct);
-                    setVariantSelectionProduct(null);
+                    (e.currentTarget as HTMLFormElement).reset();
                   }
                 }} className="flex gap-2">
                   <input 
@@ -2426,6 +2455,16 @@ function StandardBillingUI() {
                   </button>
                 </form>
               </div>
+
+              {(() => {
+                const added = items.filter((i: any) => String(i.id) === String(variantSelectionProduct.id)).reduce((t: number, i: any) => t + (Number(i.quantity) || 0), 0);
+                return (
+                  <button type="button" onClick={() => setVariantSelectionProduct(null)}
+                    className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 font-black text-sm transition-colors">
+                    Done{added > 0 ? ` — ${added} added to bill` : ''}
+                  </button>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
