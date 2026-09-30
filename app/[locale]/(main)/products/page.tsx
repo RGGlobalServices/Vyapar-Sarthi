@@ -7,7 +7,7 @@ import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
   Loader2, Camera, ShieldCheck, Package,
   Warehouse, Store, MapPin, IndianRupee, Barcode as BarcodeIcon,
-  Percent, Tag,
+  Percent, Tag, Copy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -23,11 +23,12 @@ import { CategoryPicker } from '@/components/CategoryPicker';
 import ThreeWayVariantGrid from '@/components/ThreeWayVariantGrid';
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
-import { getBusinessConfig, getCategoryVariantSpec, resolveClothingSizeChart, FootwearSizeSystem } from '@/lib/businessConfig';
+import { getBusinessConfig, supportsLooseMaterial, getCategoryVariantSpec, resolveClothingSizeChart, FootwearSizeSystem } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 
 import { QrCode } from 'lucide-react';
+import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
 import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import dynamic from 'next/dynamic';
@@ -896,6 +897,36 @@ function LegacyProductsUI() {
       submittingRef.current = false;
       setSaving(false);
     }
+  }
+
+  // Clone: opens the Add form pre-filled from an existing product (same prices/category/sizes),
+  // with colours, quantities and barcode left empty — for "same product, new colour".
+  function startClone(product: Product) {
+    const sv = parseSizeVariants(product.size_variants);
+    const map = Object.keys(sv).length ? sv : variantsToSizeMap(cleanVariants((product as any).variants));
+    setForm({
+      ...buildEmptyForm(profile.businessType),
+      name: product.name || '',
+      category: product.category || '',
+      unit: product.unit || bizConfig.defaultUnits[0] || 'Unit',
+      minStock: String(product.minStock ?? '5'),
+      mrp: String(product.mrp || ''),
+      sellingPrice: String(product.sellingPrice || ''),
+      cost: String(product.cost || ''),
+      gstPercent: Number(product.gstPercent || 0),
+      hsnCode: product.hsnCode || '',
+      brand: product.brand || '',
+      gender: product.gender || 'Unisex',
+      shade: product.shade || '',
+      is_loose: product.is_loose || false,
+      model_number: product.model_number || '',
+      conversion_factor: String(product.conversionFactor ?? product.conversion_factor ?? ''),
+    });
+    setColors([]); setOuterColors([]);
+    setSizeSelection(sizesFromVariants(map)); setSizeSelectionAuto(false);
+    setPerSizePricing(false); setSizePrices({});
+    setShowAddModal(true);
+    toast('Copied — set the new colour / size and quantity', { icon: '📋' });
   }
 
   function startEdit(product: Product) {
@@ -2118,6 +2149,10 @@ function LegacyProductsUI() {
                             className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <QrCode size={14} />
                           </button>
+                          <button onClick={() => startClone(product)} title="Clone — same product, new colour/size"
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700">
+                            <Copy size={14} />
+                          </button>
                           <button onClick={() => startEdit(product)} title={t('edit')}
                             className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <Pencil size={14} />
@@ -2733,7 +2768,9 @@ function LegacyProductsUI() {
                   </div>
                 </div>
 
-                {/* Loose Material toggle */}
+                {/* Loose Material toggle — only for businesses that sell by weight/volume
+                    (kirana, grocery, agro, mills…); hidden for clothes, shoes, electronics, etc. */}
+                {supportsLooseMaterial(bizConfig.type) && (
                 <label className="flex items-center gap-3 p-3 bg-slate-100 dark:bg-slate-700/40 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-amber-300 dark:hover:border-amber-500/40 transition-colors">
                   <div className="relative">
                     <input type="checkbox" className="sr-only" checked={form.is_loose}
@@ -2747,6 +2784,7 @@ function LegacyProductsUI() {
                   </div>
                   {form.is_loose && <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-400 font-black px-2 py-0.5 rounded uppercase">{t('looseBadge')}</span>}
                 </label>
+                )}
 
                 {/* Gender — shoes/clothes */}
                 {bizConfig.hasGender && (

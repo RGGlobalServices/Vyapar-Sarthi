@@ -2879,3 +2879,20 @@ export function getCategoryVariantSpec(category: string | undefined | null, busi
   }
   return null;
 }
+
+/**
+ * Loose / bulk material (sold by weight or volume, decimal qty) makes sense for grocery, agro, mills, hardware…
+ * but not for fashion, footwear, electronics, jewellery, furniture, liquor or service businesses.
+ */
+const NO_LOOSE_TYPES: string[] = [
+  'boutique', 'shoes', 'clothes', 'electric', 'electronics', 'liquor',
+  'textilewholesale', 'garmentwholesale', 'fabricdistributor', 'footwearwholesale',
+  'electricaldistributor', 'electricalwholesale', 'electronicsdistributor', 'electronicswholesale',
+  'wineliquordistributor', 'wineliquorwholesale', 'cosmeticsdistributor', 'beautywholesale',
+  'jewellery', 'furniture', 'autoparts', 'salonspa', 'repairservices', 'restauranthotel',
+  'laundryservice', 'coachingtraining', 'rentingleasing', 'fitnesscenter', 'realestate',
+  'ngotrust', 'toursandtravel', 'accountingca', 'interiordesign',
+];
+export function supportsLooseMaterial(type: string | null | undefined): boolean {
+  return !NO_LOOSE_TYPES.includes(String(type || ''));
+}
