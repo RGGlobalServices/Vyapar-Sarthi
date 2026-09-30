@@ -100,7 +100,12 @@ export function buildMillInvoiceData(sale: any, shop: MillInvoiceShop, dateText:
 
   const lines: MillInvoiceLine[] = (sale.items || []).map((i: any) => {
     const qty = Number(i.quantity) || 0;
-    const ratePaise = paise(i.price_per_unit);
+    // Use original_price_per_unit (raw base rate) — the API also returns price_per_unit which has a
+    // discountFactor baked in (factor > 1 for mill bills because GST+charges inflate the total above
+    // base goods prices). Using the inflated figure here would make linesSum equal the grand total
+    // rather than the goods subtotal, triggering a false inconsistency warning.
+    const baseRate = Number(i.original_price_per_unit ?? i.price_per_unit) || 0;
+    const ratePaise = Math.round((baseRate + Number.EPSILON) * 100);
     return {
       name: String(i.name || 'Item') + (i.variant ? ` (${i.variant})` : ''),
       batch: Array.isArray(i.batch_numbers) ? i.batch_numbers.join(', ') : '',
@@ -108,7 +113,7 @@ export function buildMillInvoiceData(sale: any, shop: MillInvoiceShop, dateText:
       qty,
       ratePaise,
       // same per-line rounding as the billing engine (lib/millBilling.ts: toPaise(rate × qty))
-      amountPaise: Math.round(((Number(i.price_per_unit) || 0) * qty + Number.EPSILON) * 100),
+      amountPaise: Math.round((baseRate * qty + Number.EPSILON) * 100),
     };
   });
   const linesSum = lines.reduce((s, l) => s + l.amountPaise, 0);

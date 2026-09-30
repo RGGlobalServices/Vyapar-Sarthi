@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, MessageCircle, Printer, X, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
@@ -24,23 +24,8 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
-  // Track whether the user has manually toggled the format so we don't override their choice.
-  const userToggledRef = useRef(false);
-  const profileVariant = (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale') && !(typeof window !== 'undefined' && window.innerWidth < 640) ? 'a4' : 'thermal';
-  const [variant, setVariant] = useState<'a4' | 'thermal'>(profileVariant);
-
-  // Re-apply the saved format whenever profile finishes loading (covers the async hydration case).
-  useEffect(() => {
-    if (!userToggledRef.current) {
-      setVariant(profileVariant);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.invoiceFormat]);
-
-  const handleVariantChange = useCallback((v: 'a4' | 'thermal') => {
-    userToggledRef.current = true;
-    setVariant(v);
-  }, []);
+  // Format is driven entirely by profile settings (A4/Thermal toggle is not shown to the user).
+  const variant: 'a4' | 'thermal' = (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale') && !(typeof window !== 'undefined' && window.innerWidth < 640) ? 'a4' : 'thermal';
 
   useEffect(() => {
     let cancelled = false;
@@ -112,12 +97,6 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
         <div className="flex items-center justify-between gap-2 p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <h2 className="font-black text-slate-900 dark:text-white">Mill Invoice</h2>
           <div className="flex items-center gap-2">
-            <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-xs font-bold">
-              {(['a4', 'thermal'] as const).map((v) => (
-                <button key={v} type="button" data-testid={`mill-fmt-${v}`} onClick={() => handleVariantChange(v)}
-                  className={`px-3 py-1.5 ${variant === v ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>{v === 'a4' ? 'A4' : 'Thermal'}</button>
-              ))}
-            </div>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={20} /></button>
           </div>
         </div>
