@@ -53,6 +53,7 @@ async function processImport(req: NextRequest): Promise<any> {
     if (!file) throw new Error('No file uploaded');
 
     const openaiKey = process.env.OPENAI_API_KEY || '';
+    const openaiModel = process.env.IMPORT_OPENAI_MODEL || 'gpt-4o';
     const geminiKeys = [
       process.env.GEMINI_API_KEY,
       process.env.GEMINI_API_KEY_2,
@@ -179,7 +180,30 @@ ${extractedText}`;
       }
     }
 
-    // ── Primary: Gemini (direct REST API) ────────────────────────────────
+    // ── Primary: OpenAI ───────────────────────────────────────────────────
+    if (!resultData && openaiKey) {
+      try {
+        const modelName = isVision ? openaiModel : openaiModel;
+        const messages = isVision
+          ? [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }] }]
+          : [{ role: 'user', content: prompt }];
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+          body: JSON.stringify({ model: modelName, messages, temperature: 0.2, max_tokens: 8000, response_format: { type: 'json_object' } })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || 'OpenAI API Error');
+        const textOutput = data.choices?.[0]?.message?.content;
+        if (textOutput) resultData = parseJsonOutput(textOutput, 'OpenAI');
+      } catch (openaiErr: any) {
+        console.error('OpenAI import primary failed:', openaiErr.message);
+      }
+    }
+
+    // ── Fallback: Gemini (rotational keys) ───────────────────────────────
     if (!resultData && geminiKeys.length > 0) {
       const geminiModels = (process.env.IMPORT_GEMINI_MODELS || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash')
         .split(',').map((s: string) => s.trim()).filter(Boolean);
@@ -219,29 +243,6 @@ ${extractedText}`;
             console.error(`Gemini fetch error [${model}]:`, e.message);
           }
         }
-      }
-    }
-
-    // ── Fallback: OpenAI ──────────────────────────────────────────────────
-    if (!resultData && openaiKey) {
-      try {
-        const modelName = isVision ? 'gpt-4o' : 'gpt-4o-mini';
-        const messages = isVision
-          ? [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }] }]
-          : [{ role: 'user', content: prompt }];
-
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
-          body: JSON.stringify({ model: modelName, messages, temperature: 0.2, max_tokens: 8000, response_format: { type: 'json_object' } })
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error?.message || 'OpenAI API Error');
-        const textOutput = data.choices?.[0]?.message?.content;
-        if (textOutput) resultData = parseJsonOutput(textOutput, 'OpenAI');
-      } catch (openaiErr: any) {
-        console.error('OpenAI import fallback failed:', openaiErr.message);
       }
     }
 
