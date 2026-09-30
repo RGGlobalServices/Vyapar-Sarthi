@@ -1,4 +1,5 @@
 'use client';
+import { pickCaptureScale } from '@/lib/pdfCapture';
 import {useState, useEffect, useRef, useCallback, useMemo} from 'react';
 import useSWR, { mutate } from 'swr';
 import WholesaleBillingUI from './WholesaleBillingUI';
@@ -464,13 +465,13 @@ function StandardBillingUI() {
       // thin borders and text, which JPEG compresses far better than
       // lossless PNG; only the QR/barcode's fine detail resists it much.
       const canvas = await html2canvas(clone, {
-        scale: 2.2,
+        scale: pickCaptureScale(clone.scrollWidth, clone.scrollHeight),
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.82);
+      const imgData = canvas.toDataURL('image/png');
       const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
@@ -484,7 +485,7 @@ function StandardBillingUI() {
         format: [pdfWidth, pdfHeight]
       });
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
 
       return { pdf, blob: pdf.output('blob') };
     } finally {

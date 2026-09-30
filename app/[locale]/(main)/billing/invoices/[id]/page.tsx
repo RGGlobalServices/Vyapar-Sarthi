@@ -1,5 +1,6 @@
 'use client';
 
+import { pickCaptureScale } from '@/lib/pdfCapture';
 import { useState, useEffect, use, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
@@ -78,13 +79,13 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       // thin borders and text, which JPEG compresses far better than
       // lossless PNG; only the QR/barcode's fine detail resists it much.
       const canvas = await html2canvas(clone, {
-        scale: 2.2,
+        scale: pickCaptureScale(clone.scrollWidth, clone.scrollHeight),
         useCORS: true,
         backgroundColor: '#ffffff',
         windowWidth: isA4 ? 800 : 320
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.82);
+      const imgData = canvas.toDataURL('image/png');
       const pdfWidth = isA4 ? 210 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
@@ -94,7 +95,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         format: [pdfWidth, pdfHeight]
       });
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`bill-${invoice.id.substring(0, 8)}.pdf`);
     } catch (err) {
       console.error('PDF Download Error', err);

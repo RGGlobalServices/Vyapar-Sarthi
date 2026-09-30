@@ -106,16 +106,26 @@ export function getInvoiceColumns(businessType: BusinessType | string): InvoiceC
       id: 'rate',
       labelKey: 'rate',
       align: 'right',
-      render: (item) => `₹${item.price.toLocaleString('en-IN')}`
+      render: (item) => `₹${inr(item.price)}`
     },
     {
       id: 'amt',
       labelKey: 'amt',
       align: 'right',
       width: 'w-16',
-      render: (item) => `₹${item.total.toLocaleString('en-IN')}`
+      render: (item) => `₹${inr(item.total)}`
     }
   );
 
   return cols;
+}
+
+/**
+ * Money for bills: whole rupees print without decimals (599), anything with paise prints TWO decimals (2,307.20) —
+ * toLocaleString alone gives "2,307.2", which reads as a cut-off number on a receipt.
+ */
+export function inr(n: number | string | null | undefined): string {
+  const v = Number(n) || 0;
+  const hasPaise = Math.abs(v - Math.round(v)) > 0.004;
+  return v.toLocaleString('en-IN', hasPaise ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 });
 }

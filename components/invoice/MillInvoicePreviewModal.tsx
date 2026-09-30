@@ -1,5 +1,6 @@
 'use client';
 
+import { pickCaptureScale } from '@/lib/pdfCapture';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { printBill } from '@/lib/printBill';
 import { createPortal } from 'react-dom';
@@ -60,21 +61,21 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
       document.body.appendChild(clone);
       try {
         await waitForImages(clone);
-        const canvas = await html2canvas(clone, { scale: 2.2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-        const img = canvas.toDataURL('image/jpeg', 0.85);
+        const canvas = await html2canvas(clone, { scale: pickCaptureScale(clone.scrollWidth, clone.scrollHeight), useCORS: true, backgroundColor: '#ffffff', logging: false });
+        const img = canvas.toDataURL('image/png');
         if (variant === 'a4') {
           const w = 210; const h = (canvas.height * w) / canvas.width; const pageH = 297;
           const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
           // Multi-page A4: the same tall image is placed at a negative offset on each page — nothing is clipped.
           for (let off = 0, first = true; off < h - 0.5; off += pageH, first = false) {
             if (!first) pdf.addPage();
-            pdf.addImage(img, 'JPEG', 0, -off, w, h);
+            pdf.addImage(img, 'PNG', 0, -off, w, h);
           }
           pdf.save(`${data.invoiceNumber}.pdf`);
         } else {
           const w = 80; const h = (canvas.height * w) / canvas.width;
           const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [w, h] });
-          pdf.addImage(img, 'JPEG', 0, 0, w, h);
+          pdf.addImage(img, 'PNG', 0, 0, w, h);
           pdf.save(`${data.invoiceNumber}.pdf`);
         }
       } finally { document.body.removeChild(clone); }

@@ -4,7 +4,7 @@ import { variantLabel } from '@/lib/variants';
 import React from 'react';
 import { CartItem } from '@/lib/store';
 import { useTranslations } from 'next-intl';
-import { getInvoiceColumns, isChargeLineItem } from '@/lib/invoice-helpers';
+import { getInvoiceColumns, isChargeLineItem, inr } from '@/lib/invoice-helpers';
 import { BusinessType } from '@/lib/businessConfig';
 import { Barcode } from './Barcode';
 import type { GstBreakdown } from '@/lib/gst';
@@ -308,24 +308,24 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
           <div className="space-y-0.5 pt-2">
             <div className={`flex justify-between ${smallTextClass}`}>
               <span>{t('subtotal')}</span>
-              <span>₹{subtotal.toLocaleString('en-IN')}</span>
+              <span>₹{inr(subtotal)}</span>
             </div>
             {discount > 0 && (
               <div className={`flex justify-between ${smallTextClass}`}>
                 <span>{t('discount')}</span>
-                <span>- ₹{discount.toLocaleString('en-IN')}</span>
+                <span>- ₹{inr(discount)}</span>
               </div>
             )}
             {chargeItems.map((item, idx) => (
               <div key={idx} className={`flex justify-between ${smallTextClass}`}>
                 <span>{item.name}</span>
-                <span>₹{item.total.toLocaleString('en-IN')}</span>
+                <span>₹{inr(item.total)}</span>
               </div>
             ))}
           </div>
           <div className="flex justify-between font-black text-[15px] mt-1 py-1.5 px-2 -mx-2" style={{ ...rule, borderBottom: '1px solid #000', backgroundColor: '#f5f5f5' }}>
             <span>{t('total')}</span>
-            <span>₹{total.toLocaleString('en-IN')}</span>
+            <span>₹{inr(total)}</span>
           </div>
 
           {/* GST tax summary (rate-wise). Prices are GST-inclusive, so this is the
@@ -352,17 +352,17 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                   {gstBreakdown.groups.map(g => (
                     <tr key={g.rate} className={smallTextClass}>
                       <td className="text-left py-0.5">{g.rate}%</td>
-                      <td className="text-right py-0.5">₹{g.taxable.toLocaleString('en-IN')}</td>
+                      <td className="text-right py-0.5">₹{inr(g.taxable)}</td>
                       {gstBreakdown.interState
-                        ? <td className="text-right py-0.5">₹{g.igst.toLocaleString('en-IN')}</td>
-                        : <><td className="text-right py-0.5">₹{g.cgst.toLocaleString('en-IN')}</td><td className="text-right py-0.5">₹{g.sgst.toLocaleString('en-IN')}</td></>}
+                        ? <td className="text-right py-0.5">₹{inr(g.igst)}</td>
+                        : <><td className="text-right py-0.5">₹{inr(g.cgst)}</td><td className="text-right py-0.5">₹{inr(g.sgst)}</td></>}
                     </tr>
                   ))}
                 </tbody>
               </table>
               <div className={`flex justify-between font-bold mt-1 ${smallTextClass}`} style={{ borderTop: '1px solid #000', paddingTop: '2px' }}>
                 <span>{t('totalGst') || 'Total GST'}</span>
-                <span>₹{gstBreakdown.totalGst.toLocaleString('en-IN')}</span>
+                <span>₹{inr(gstBreakdown.totalGst)}</span>
               </div>
             </div>
           )}
@@ -373,11 +373,11 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
               <div className={`${smallTextClass} font-bold text-center mb-1 uppercase tracking-wide`}>{t('emiDetails')}</div>
               <div className={`flex justify-between ${smallTextClass}`}>
                 <span>{t('downPayment')}</span>
-                <span className="font-bold">₹{(emiDownPayment ?? 0).toLocaleString('en-IN')}</span>
+                <span className="font-bold">₹{inr((emiDownPayment ?? 0))}</span>
               </div>
               <div className={`flex justify-between ${smallTextClass}`}>
                 <span>{t('monthlyEmi')} &times; {emiMonths}:</span>
-                <span className="font-bold">₹{emiMonthlyAmount.toLocaleString('en-IN')}{t('mo')}</span>
+                <span className="font-bold">₹{inr(emiMonthlyAmount)}{t('mo')}</span>
               </div>
               {emiInterestRate !== undefined && (
                 <div className={`flex justify-between ${smallTextClass}`}>
@@ -387,7 +387,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
               )}
               <div className={`flex justify-between ${smallTextClass} font-bold`} style={{ borderTop: '1px solid #000', paddingTop: '2px' }}>
                 <span>{t('totalPayable')}</span>
-                <span>₹{(emiTotalAmount ?? 0).toLocaleString('en-IN')}</span>
+                <span>₹{inr((emiTotalAmount ?? 0))}</span>
               </div>
             </div>
           ) : (() => {
@@ -411,29 +411,29 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                   <>
                     {cashAmt > 0 && (
                       <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('cash')}</span><span>₹{cashAmt.toLocaleString('en-IN')}</span>
+                        <span>{t('cash')}</span><span>₹{inr(cashAmt)}</span>
                       </div>
                     )}
                     {upiAmt > 0 && (
                       <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('upi')}</span><span>₹{upiAmt.toLocaleString('en-IN')}</span>
+                        <span>{t('upi')}</span><span>₹{inr(upiAmt)}</span>
                       </div>
                     )}
                     {cardAmt > 0 && (
                       <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('card')}</span><span>₹{cardAmt.toLocaleString('en-IN')}</span>
+                        <span>{t('card')}</span><span>₹{inr(cardAmt)}</span>
                       </div>
                     )}
                     {udharAmount > 0 && (
                       <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('udhar')}</span><span>₹{udharAmount.toLocaleString('en-IN')}</span>
+                        <span>{t('udhar')}</span><span>₹{inr(udharAmount)}</span>
                       </div>
                     )}
                   </>
                 ) : (
                   <div className={`flex justify-between ${smallTextClass}`}>
                     <span>{paymentMethod === 'Cash' ? t('cash') : paymentMethod === 'UPI' ? t('upi') : paymentMethod === 'Card' ? t('card') : paymentMethod === 'Udhar' ? t('udhar') : paymentMethod}</span>
-                    <span>₹{paymentMethod === 'Udhar' ? '0' : paid.toLocaleString('en-IN')}</span>
+                    <span>₹{paymentMethod === 'Udhar' ? '0' : inr(paid)}</span>
                   </div>
                 )}
 
@@ -441,16 +441,16 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                 <div style={{ borderTop: '1px dashed #000', paddingTop: '2px' }} className="mt-1">
                   <div className={`flex justify-between ${smallTextClass} font-bold`}>
                     <span>{t('collected')}</span>
-                    <span>₹{paid.toLocaleString('en-IN')}</span>
+                    <span>₹{inr(paid)}</span>
                   </div>
                   <div className={`flex justify-between ${smallTextClass} font-bold`}>
                     <span>{t('remainingDue')}</span>
-                    <span>₹{(remainingAmount > 0 ? remainingAmount : 0).toLocaleString('en-IN')}</span>
+                    <span>₹{inr((remainingAmount > 0 ? remainingAmount : 0))}</span>
                   </div>
                   {paid > total && (
                     <div className={`flex justify-between ${smallTextClass}`}>
                       <span>{t('changeReturn')}</span>
-                      <span>₹{(paid - total).toLocaleString('en-IN')}</span>
+                      <span>₹{inr((paid - total))}</span>
                     </div>
                   )}
                 </div>
