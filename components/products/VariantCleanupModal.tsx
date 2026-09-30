@@ -23,6 +23,8 @@ export default function VariantCleanupModal({ onClose, onDone }: { onClose: () =
   const [pickDrift, setPickDrift] = useState<Set<string>>(new Set());
   const [pickMerge, setPickMerge] = useState<Set<string>>(new Set());
   const [alignTotal, setAlignTotal] = useState<Set<string>>(new Set());
+  // In-modal confirmation (window.confirm is silently blocked in embedded/desktop browsers).
+  const [confirming, setConfirming] = useState<null | 'fix' | 'merge'>(null);
 
   const load = async () => {
     setLoading(true);
@@ -46,7 +48,7 @@ export default function VariantCleanupModal({ onClose, onDone }: { onClose: () =
 
   const fixDrift = async () => {
     if (!pickDrift.size) return;
-    if (!window.confirm(`Fix the size/colour lists of ${pickDrift.size} product(s)? Product totals stay as they are unless you ticked "change the total". Old values are saved in the activity log.`)) return;
+    setConfirming(null);
     setBusy(true);
     try {
       const res = await api.post('/products/variant-audit', { action: 'resync', ids: [...pickDrift], alignTotalIds: [...alignTotal].filter((id) => pickDrift.has(id)) });
@@ -58,7 +60,7 @@ export default function VariantCleanupModal({ onClose, onDone }: { onClose: () =
   const doMerge = async () => {
     const groups = merges.filter((g) => pickMerge.has(g.baseName)).map((g) => ({ baseName: g.baseName, ids: g.items.map((i) => i.id) }));
     if (!groups.length) return;
-    if (!window.confirm(`Merge ${groups.length} group(s) into single products with size/colour variants? The extra products are archived (recoverable from Trash); bills already made are not changed.`)) return;
+    setConfirming(null);
     setBusy(true);
     try {
       const res = await api.post('/products/variant-audit', { action: 'merge', groups });
@@ -91,7 +93,7 @@ export default function VariantCleanupModal({ onClose, onDone }: { onClose: () =
               <section className={`${box} p-3 space-y-2`}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2"><Wrench size={15} className="text-amber-500" /> Stock numbers that do not match ({drift.length})</p>
-                  <button onClick={fixDrift} disabled={busy || !pickDrift.size} className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-900 text-xs font-bold disabled:opacity-50">Fix selected ({pickDrift.size})</button>
+                  <button onClick={() => setConfirming('fix')} disabled={busy || !pickDrift.size} className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-900 text-xs font-bold disabled:opacity-50">Fix selected ({pickDrift.size})</button>
                 </div>
                 {drift.length === 0 && <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">All good — every product&apos;s size/colour stock adds up.</p>}
                 {drift.map((d) => (
@@ -115,7 +117,7 @@ export default function VariantCleanupModal({ onClose, onDone }: { onClose: () =
               <section className={`${box} p-3 space-y-2`}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2"><Layers size={15} className="text-violet-500" /> Same product listed many times ({merges.length})</p>
-                  <button onClick={doMerge} disabled={busy || !pickMerge.size} className="px-3 py-1.5 rounded-lg bg-violet-500 text-white text-xs font-bold disabled:opacity-50">Merge selected ({pickMerge.size})</button>
+                  <button onClick={() => setConfirming('merge')} disabled={busy || !pickMerge.size} className="px-3 py-1.5 rounded-lg bg-violet-500 text-white text-xs font-bold disabled:opacity-50">Merge selected ({pickMerge.size})</button>
                 </div>
                 {merges.length === 0 && <p className="text-xs text-slate-500">No products found that look like one model split into many.</p>}
                 {merges.map((g) => (
@@ -131,6 +133,21 @@ export default function VariantCleanupModal({ onClose, onDone }: { onClose: () =
             </>
           )}
         </div>
+
+        {confirming && (
+          <div className="border-t border-slate-200 dark:border-slate-800 p-4 bg-amber-50 dark:bg-amber-500/10 space-y-2">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {confirming === 'fix'
+                ? `Fix the size/colour lists of ${pickDrift.size} product(s)? Product totals stay as they are unless you ticked "Also change the product total". Old values are saved in the activity log.`
+                : `Merge ${pickMerge.size} group(s) into single products with size/colour variants? The extra products are archived (recoverable from Trash); bills already made are not changed.`}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirming(null)} className="px-4 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm font-bold">Cancel</button>
+              <button onClick={confirming === 'fix' ? fixDrift : doMerge} className="px-4 py-1.5 rounded-lg bg-emerald-500 text-slate-900 text-sm font-bold">Yes, apply</button>
+            </div>
+          </div>
+        )}
+        {busy && <div className="border-t border-slate-200 dark:border-slate-800 p-3 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><Loader2 size={16} className="animate-spin" /> Working... this can take a little while on a slow connection.</div>}
       </div>
     </div>
   );
