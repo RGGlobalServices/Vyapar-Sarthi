@@ -1261,8 +1261,8 @@ function LegacyProductsUI() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-500">{t('title')}</h1>
-          <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-emerald-500">{t('title')}</h1>
+          <p className="text-sm text-slate-400 mt-1 flex flex-wrap items-center gap-2">
             <span className="text-lg">{bizConfig.emoji}</span>
             {bizConfig.label} Mode
             {bizConfig.hasExpiry && (
@@ -1277,7 +1277,7 @@ function LegacyProductsUI() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="text-right">
             <p className="text-xs font-bold text-slate-400">
               {products.length.toLocaleString('en-IN')} / Unlimited products
@@ -2203,9 +2203,9 @@ function LegacyProductsUI() {
 
       {/* ── Edit Product Modal ── */}
       {showEditModal && editProduct && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 sticky top-0 z-10">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl lg:max-w-3xl shadow-2xl max-h-[100dvh] sm:max-h-[92dvh] overflow-y-auto overflow-x-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{bizConfig.emoji}</span>
                 <div>
@@ -2222,7 +2222,7 @@ function LegacyProductsUI() {
               </div>
             </div>
 
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleEditSubmit} className="p-4 sm:p-6 space-y-5 min-w-0">
               {/* Basic Info */}
               <section className="space-y-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -2686,9 +2686,9 @@ function LegacyProductsUI() {
 
       {/* Add/Edit Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 sticky top-0 z-10">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl lg:max-w-3xl shadow-2xl max-h-[100dvh] sm:max-h-[92dvh] overflow-y-auto overflow-x-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{bizConfig.emoji}</span>
                 <div>
@@ -2702,7 +2702,7 @@ function LegacyProductsUI() {
               <button onClick={() => { setShowAddModal(false); setForm(buildEmptyForm(profile.businessType)); setAddToGodownId(''); }} className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"><X size={20} /></button>
             </div>
 
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-5 relative">
+            <form onSubmit={handleAddSubmit} className="p-4 sm:p-6 space-y-5 relative min-w-0">
               {scanning && (
                 <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center space-y-3 rounded-b-2xl">
                   <Loader2 className="animate-spin text-emerald-500" size={48} />
@@ -3038,7 +3038,7 @@ function LegacyProductsUI() {
                 {perSizePricing && (
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1">{tv('fallbackPriceHint')}</p>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('fieldMRP')}</label>
                     <LocalInput required={!perSizePricing} type="number" min="0" className={modalInp} placeholder="0"

@@ -52,7 +52,7 @@ export default function CostMarkupControl({
       <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1">
         <IndianRupee size={11} /> {t('title') || 'Add extra cost (freight/loading)'}
       </p>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <input
           type="number" inputMode="decimal" value={value}
           onChange={e => { setValue(e.target.value); setNote(''); }}

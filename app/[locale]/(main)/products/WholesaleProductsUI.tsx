@@ -1592,10 +1592,10 @@ export default function WholesaleProductsUI() {
 
       {/* Add / Edit Product Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setShowAddModal(false)} />
-          <div className="relative w-full max-w-4xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center flex-shrink-0 bg-white dark:bg-slate-900">
+          <div className="relative w-full max-w-4xl xl:max-w-5xl max-h-[100dvh] sm:max-h-[92dvh] h-auto bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center flex-shrink-0 bg-white dark:bg-slate-900">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                 <span className="text-2xl">{bizConfig.emoji}</span>
                 {form.id ? (t('editProduct') || 'Edit Product') : (t('createNewProduct') || 'Create New Product')}
