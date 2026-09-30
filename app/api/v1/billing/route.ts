@@ -10,7 +10,7 @@ import { isMillBillingPackage, isWholesaleTierPackage } from '@/lib/config/packa
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 import { assertOwned } from '@/lib/server/ownership';
 import { handleMillSale } from '@/lib/server/millSale';
-import { keysMatch, variantKeyOf as variantKeyOfRow, sizeMapToVariants, parseSizeVariantsMap, variantsToSizeMap, cleanVariants } from '@/lib/variants';
+import { keysMatch, variantKeyOf as variantKeyOfRow, openVariantStores, adjustVariantStores, closeVariantStores, variantAvailable } from '@/lib/variants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,19 +86,7 @@ export const POST = handle(async (req) => {
     const dbP: any = productMap.get(pid);
     if (!dbP) { shortages.push(`Unknown product ${pid}`); continue; }
 
-    let available: number | null = null;
-    if (vKey) {
-      const sv: any = typeof dbP.size_variants === 'string'
-        ? (() => { try { return JSON.parse(dbP.size_variants); } catch { return null; } })()
-        : dbP.size_variants;
-      const svKey = sv && typeof sv === 'object' ? Object.keys(sv).find((k) => keysMatch(k, vKey)) : undefined;
-      if (svKey !== undefined) {
-        available = Number(sv[svKey]) || 0;
-      } else if (Array.isArray(dbP.variants) && dbP.variants.length > 0) {
-        const row = dbP.variants.find((v: any) => keysMatch(variantKeyOfRow(v), vKey));
-        if (row) available = Number(row.stock) || 0;
-      }
-    }
+    let available: number | null = vKey ? variantAvailable(dbP, vKey) : null;
     if (available === null) {
       available = Number(dbP.currentStock ?? 0);
     }
@@ -263,8 +251,7 @@ export const POST = handle(async (req) => {
             if (dbProduct) {
               if (variant && Array.isArray(dbProduct.variants)) {
                 for (const v of dbProduct.variants as any[]) {
-                  const key = v.color ? `${v.color} / ${v.size || ''}` : (v.size || '');
-                  if (key === variant) { cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0; break; }
+                  if (keysMatch(variantKeyOfRow(v), variant)) { cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0; break; }
                 }
               }
               if (!cp) cp = Number(dbProduct.costPrice) || Number(dbProduct.wholesaleCost) || 0;
@@ -410,62 +397,26 @@ export const POST = handle(async (req) => {
 
             // Compute per-product totals and variant JSON updates in JS first
             const stockDecrements: { id: string; qty: number }[] = [];
-            const variantUpdates: { id: string; size_variants: any; variants: any }[] = [];
+            const variantUpdates: { id: string; size_variants?: string; variants?: any }[] = [];
             const stockMovements: { productId: string; qty: number }[] = [];
 
             for (const product of billProducts) {
               const productItems = itemGroups[product.id];
               if (!productItems) continue;
               let totalQty = 0;
-              let newSizeVariants = product.size_variants;
-              const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
-              let variantsChanged = false;
-              let sizeMapChanged = false;
-
+              const stores = openVariantStores(product);
               for (const item of productItems) {
                 totalQty += item.quantity;
-                if (item.variant && newSizeVariants) {
-                  try {
-                    const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-                    const pk = Object.keys(parsed).find((k) => keysMatch(k, item.variant));
-                    if (pk !== undefined) {
-                      if (!allowNegativeStock && (Number(parsed[pk]) || 0) < item.quantity) {
-                        throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${item.variant})`);
-                      }
-                      parsed[pk] = Math.max(0, (parsed[pk] || 0) - item.quantity);
-                      newSizeVariants = JSON.stringify(parsed);
-                      sizeMapChanged = true;
-                    }
-                  } catch (e) { if (e instanceof ApiError) throw e; }
-                }
-                if (item.variant && newVariants) {
-                  const row = newVariants.find((v: any) => keysMatch(variantKeyOfRow(v), item.variant));
-                  if (row) {
-                    if (!allowNegativeStock && (Number(row.stock) || 0) < item.quantity) {
-                      throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${item.variant})`);
-                    }
-                    row.stock = Math.max(0, (Number(row.stock) || 0) - item.quantity);
-                    variantsChanged = true;
-                  }
+                if (item.variant) {
+                  const r = adjustVariantStores(stores, item.variant, -item.quantity, { rejectNegative: !allowNegativeStock });
+                  if (r === 'insufficient') throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${item.variant})`);
+                  if (r === 'missing') console.warn(`[billing] variant "${item.variant}" not found on product ${product.id}; only total stock reduced`);
                 }
               }
-
-              // Keep the two variant stores mirrored: if only one of them exists on this
-              // product, derive the other from the just-decremented one.
-              let mirroredVariants: any[] | null = null;
-              if (sizeMapChanged && !(newVariants && newVariants.length)) {
-                mirroredVariants = sizeMapToVariants(parseSizeVariantsMap(newSizeVariants), []);
-              }
-              if (variantsChanged && newVariants && Object.keys(parseSizeVariantsMap(newSizeVariants)).length === 0) {
-                newSizeVariants = JSON.stringify(variantsToSizeMap(cleanVariants(newVariants)));
-              }
-
+              const storeWrite = closeVariantStores(stores);
+              
               stockDecrements.push({ id: product.id, qty: totalQty });
-              if (mirroredVariants) {
-                variantUpdates.push({ id: product.id, size_variants: newSizeVariants, variants: mirroredVariants });
-              } else if (newSizeVariants !== product.size_variants || variantsChanged) {
-                variantUpdates.push({ id: product.id, size_variants: newSizeVariants, variants: variantsChanged ? newVariants : undefined });
-              }
+              if (Object.keys(storeWrite).length > 0) variantUpdates.push({ id: product.id, ...storeWrite });
               if (isWholesaleTierPackage(shop.packageType)) {
                 stockMovements.push({ productId: product.id, qty: totalQty });
               }
@@ -502,7 +453,10 @@ export const POST = handle(async (req) => {
             for (const u of variantUpdates) {
               await tx.product.update({
                 where: { id: u.id, shopId },
-                data: { size_variants: u.size_variants, ...(u.variants !== undefined ? { variants: u.variants as any } : {}) },
+                data: {
+                  ...(u.size_variants !== undefined ? { size_variants: u.size_variants } : {}),
+                  ...(u.variants !== undefined ? { variants: u.variants as any } : {}),
+                },
               });
             }
 

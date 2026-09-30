@@ -206,3 +206,92 @@ export function splitList(text: string): string[] {
   }
   return out;
 }
+
+// ── Shared stock-adjustment across BOTH variant stores ─────────────────────────
+// Billing, returns, exchange, sale delete/restore, mill sales and trash restore all
+// move per-variant stock. They used to each hand-roll the same JSON juggling with an
+// exact-string key match (so "Red / M" vs "red / m" silently skipped) and no mirroring.
+
+export type VariantStoreState = {
+  map: Record<string, number> | null;
+  rows: VariantRow[] | null;
+  mapDirty: boolean;
+  rowsDirty: boolean;
+};
+
+/** Reads size_variants (JSON string/object) + variants[] of a product into a mutable working state. */
+export function openVariantStores(product: { size_variants?: any; variants?: any }): VariantStoreState {
+  const parsed = parseSizeVariantsMap(product.size_variants);
+  const map = Object.keys(parsed).length ? parsed : null;
+  const rows = Array.isArray(product.variants) && product.variants.length
+    ? (product.variants as any[]).map((v) => ({ ...v })) as VariantRow[]
+    : null;
+  return { map, rows, mapDirty: false, rowsDirty: false };
+}
+
+/**
+ * Adds `delta` (negative = sell) to one variant in whichever store(s) hold it (case/space-insensitive key match).
+ * Returns 'missing' when neither store has the key (nothing changed unless createIfMissing),
+ * 'insufficient' when rejectNegative and it would go below 0 (nothing changed), else 'ok'.
+ * Stock never goes below 0.
+ */
+export function adjustVariantStores(
+  st: VariantStoreState,
+  variantKey: string,
+  delta: number,
+  opts?: { rejectNegative?: boolean; createIfMissing?: boolean },
+): 'ok' | 'missing' | 'insufficient' {
+  const mapKey = st.map ? Object.keys(st.map).find((k) => keysMatch(k, variantKey)) : undefined;
+  const row = st.rows ? st.rows.find((r) => keysMatch(variantKeyOf(r), variantKey)) : undefined;
+  if (mapKey === undefined && !row) {
+    if (opts?.createIfMissing && st.map) {
+      st.map[variantKey] = Math.max(0, delta);
+      st.mapDirty = true;
+      return 'ok';
+    }
+    return 'missing';
+  }
+  if (opts?.rejectNegative) {
+    if (mapKey !== undefined && (Number(st.map![mapKey]) || 0) + delta < 0) return 'insufficient';
+    if (row && (Number(row.stock) || 0) + delta < 0) return 'insufficient';
+  }
+  if (mapKey !== undefined) {
+    st.map![mapKey] = Math.max(0, (Number(st.map![mapKey]) || 0) + delta);
+    st.mapDirty = true;
+  }
+  if (row) {
+    row.stock = Math.max(0, (Number(row.stock) || 0) + delta);
+    st.rowsDirty = true;
+  }
+  return 'ok';
+}
+
+/**
+ * Fields to write back after adjustments. When only one store exists it is used to derive the other,
+ * so a product never ends up with one store fresh and the other empty. Only changed fields are returned.
+ */
+export function closeVariantStores(st: VariantStoreState): { size_variants?: string; variants?: VariantRow[] } {
+  const out: { size_variants?: string; variants?: VariantRow[] } = {};
+  let map = st.map;
+  let rows = st.rows;
+  let mapDirty = st.mapDirty;
+  let rowsDirty = st.rowsDirty;
+  if (mapDirty && !rows) { rows = sizeMapToVariants(map || {}, []); rowsDirty = true; }
+  if (rowsDirty && !map && rows) { map = variantsToSizeMap(rows); mapDirty = true; }
+  if (mapDirty && map) out.size_variants = JSON.stringify(map);
+  if (rowsDirty && rows) out.variants = rows;
+  return out;
+}
+
+/** Stock of one variant of a product (looks in size_variants then variants[]); null when neither has the key. */
+export function variantAvailable(product: { size_variants?: any; variants?: any }, variantKey: string): number | null {
+  if (!variantKey) return null;
+  const map = parseSizeVariantsMap(product.size_variants);
+  const mk = Object.keys(map).find((k) => keysMatch(k, variantKey));
+  if (mk !== undefined) return Number(map[mk]) || 0;
+  if (Array.isArray(product.variants)) {
+    const row = (product.variants as any[]).find((v) => keysMatch(variantKeyOf(v), variantKey));
+    if (row) return Number(row.stock) || 0;
+  }
+  return null;
+}

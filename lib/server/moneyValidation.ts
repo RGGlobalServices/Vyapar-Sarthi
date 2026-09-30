@@ -1,4 +1,5 @@
 import { ApiError } from '@/lib/server/http';
+import { keysMatch } from '@/lib/variants';
 
 // Server-side money validation shared by every sale-creation path
 // (POST /billing and the invoice-edit re-create). The frontend already checks
@@ -122,7 +123,7 @@ export function serverCostFor(dbProduct: any, variantKey: string | null | undefi
   let cp = 0;
   if (variantKey && Array.isArray(dbProduct.variants)) {
     for (const v of dbProduct.variants as any[]) {
-      if (variantKeyOfRow(v) === variantKey) { cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0; break; }
+      if (keysMatch(variantKeyOfRow(v), variantKey)) { cp = Number(v.costPrice) || Number(v.wholesalePrice) || 0; break; }
     }
   }
   if (!cp) cp = Number(dbProduct.costPrice) || Number(dbProduct.wholesaleCost) || 0;
@@ -149,7 +150,7 @@ export function serverSellingPriceFor(dbProduct: any, variantKey: string | null 
   if (!dbProduct) return 0;
   if (variantKey && Array.isArray(dbProduct.variants)) {
     for (const v of dbProduct.variants as any[]) {
-      if (variantKeyOfRow(v) === variantKey) {
+      if (keysMatch(variantKeyOfRow(v), variantKey)) {
         const vp = Number(v.sellingPrice);
         if (Number.isFinite(vp) && vp > 0) return vp;
         break;

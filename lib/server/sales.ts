@@ -1,4 +1,5 @@
 import { resolveAmountPaid, validatePaymentDetails, resolveLineCost } from '@/lib/server/moneyValidation';
+import { openVariantStores, adjustVariantStores, closeVariantStores, variantAvailable } from '@/lib/variants';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
@@ -85,38 +86,20 @@ export async function reverseSaleEffects(
       // Reverse the same size_variants/variants JSON mutation billing/route.ts
       // applies at creation, item-by-item, using each item's own net (not
       // aggregate) quantity — symmetric with how creation decrements it.
-      let newSizeVariants = product.size_variants;
-      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
-      let variantsChanged = false;
-
+      const stores = openVariantStores(product);
       for (const item of sale.items) {
         if (item.productId !== productId || !item.variant) continue;
         const net = netByItem.get(item.id) || 0;
         if (net <= 0) continue;
-        if (newSizeVariants) {
-          try {
-            const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-            if (parsed[item.variant] !== undefined) {
-              parsed[item.variant] = (parsed[item.variant] || 0) + net;
-              newSizeVariants = JSON.stringify(parsed);
-            }
-          } catch {}
-        }
-        if (newVariants) {
-          const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
-          if (row) {
-            row.stock = (Number(row.stock) || 0) + net;
-            variantsChanged = true;
-          }
-        }
+        adjustVariantStores(stores, item.variant, net);
       }
+      const storeWrite = closeVariantStores(stores);
 
       await tx.product.update({
         where: { id: productId, shopId },
         data: {
           ...(product.currentStock !== null ? { currentStock: { increment: netQuantitiesByProduct.get(productId) } } : {}),
-          size_variants: newSizeVariants,
-          ...(variantsChanged ? { variants: newVariants as any } : {}),
+          ...(storeWrite as any),
         },
       });
     }
@@ -229,18 +212,7 @@ export async function createSaleEffects(
     const [pid, vKey] = key.split('|');
     const dbP: any = productMap.get(pid);
     if (!dbP) { shortages.push(`Unknown product ${pid}`); continue; }
-    let available: number | null = null;
-    if (vKey) {
-      const sv: any = typeof dbP.size_variants === 'string'
-        ? (() => { try { return JSON.parse(dbP.size_variants); } catch { return null; } })()
-        : dbP.size_variants;
-      if (sv && Object.prototype.hasOwnProperty.call(sv, vKey)) {
-        available = Number(sv[vKey]) || 0;
-      } else if (Array.isArray(dbP.variants) && dbP.variants.length > 0) {
-        const row = dbP.variants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === vKey);
-        if (row) available = Number(row.stock) || 0;
-      }
-    }
+    let available: number | null = vKey ? variantAvailable(dbP, vKey) : null;
     if (available === null) available = Number(dbP.currentStock ?? 0);
     if (available < wanted) {
       const label = vKey ? `${dbP.name} (${vKey})` : dbP.name;
@@ -374,31 +346,17 @@ export async function createSaleEffects(
       const productItems = itemGroups[product.id];
       if (!productItems) continue;
       let totalQty = 0;
-      let newSizeVariants = product.size_variants;
-      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v: any) => ({ ...v })) : null;
-      let variantsChanged = false;
-
+      const stores = openVariantStores(product);
       for (const item of productItems) {
         totalQty += item.quantity;
-        if (item.variant && newSizeVariants) {
-          try {
-            const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-            if (parsed[item.variant] !== undefined) {
-              parsed[item.variant] = Math.max(0, (parsed[item.variant] || 0) - item.quantity);
-              newSizeVariants = JSON.stringify(parsed);
-            }
-          } catch {}
-        }
-        if (item.variant && newVariants) {
-          const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
-          if (row) { row.stock = Math.max(0, (Number(row.stock) || 0) - item.quantity); variantsChanged = true; }
-        }
+        if (item.variant) adjustVariantStores(stores, item.variant, -item.quantity);
       }
+      const storeWrite = closeVariantStores(stores);
 
       promises.push(tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${product.id}::uuid AND shop_id = ${shopId}::uuid`);
       promises.push(tx.product.update({
         where: { id: product.id, shopId },
-        data: { size_variants: newSizeVariants, ...(variantsChanged ? { variants: newVariants as any } : {}) },
+        data: { ...(storeWrite as any), },
       }));
 
       if (isWholesaleTierPackage(shop.packageType)) {

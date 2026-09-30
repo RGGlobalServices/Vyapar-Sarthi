@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { variantAvailable } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse } from '@/lib/server/http';
@@ -40,13 +41,10 @@ export async function POST(req: Request) {
     await assertOwned(auth.shop.id, { productId, godownId: warehouseId });
 
     if (variantDeltas.length > 0) {
-      const product = await prisma.product.findFirst({ where: { id: productId, shopId: auth.shop.id }, select: { variants: true } });
-      const variants = Array.isArray(product?.variants) ? (product!.variants as any[]) : [];
-      const rowKey = (v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || ''));
+      const product = await prisma.product.findFirst({ where: { id: productId, shopId: auth.shop.id }, select: { variants: true, size_variants: true } });
       for (const d of variantDeltas) {
         if (d.delta >= 0) continue;
-        const row = variants.find((v) => rowKey(v) === d.variantKey);
-        const currentQty = Number(row?.stock) || 0;
+        const currentQty = product ? (variantAvailable(product, d.variantKey) ?? 0) : 0;
         if (currentQty + d.delta < 0) {
           return NextResponse.json({ error: `Negative stock is not allowed for "${d.variantKey}".` }, { status: 400 });
         }

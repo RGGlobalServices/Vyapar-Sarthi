@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { openVariantStores, adjustVariantStores, closeVariantStores } from '@/lib/variants';
 import { ApiError } from '@/lib/server/http';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -178,40 +179,21 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
           if (!product) { skipped.push(`Product no longer exists — stock not restored for one line.`); continue; }
 
           let totalQty = 0;
-          let newSizeVariants = product.size_variants;
-          const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map(v => ({ ...v })) : null;
-          let variantsChanged = false;
-
+          const stores = openVariantStores(product);
           for (const item of productItems) {
-            // Sale item quantity is nullable in Prisma (`Float?`). Coerce
-            // once here so `next build`'s strict null check is satisfied
-            // and downstream Math never sees `null - number = NaN`.
+            // Sale item quantity is nullable in Prisma (`Float?`). Coerce once so strict null
+            // checks pass and downstream Math never sees `null - number = NaN`.
             const qty = Number(item.quantity) || 0;
             totalQty += qty;
-            if (item.variant && newSizeVariants) {
-              try {
-                const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-                if (parsed[item.variant] !== undefined) {
-                  parsed[item.variant] = Math.max(0, (Number(parsed[item.variant]) || 0) - qty);
-                  newSizeVariants = JSON.stringify(parsed);
-                }
-              } catch {}
-            }
-            if (item.variant && newVariants) {
-              const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === item.variant);
-              if (row) {
-                row.stock = Math.max(0, (Number(row.stock) || 0) - qty);
-                variantsChanged = true;
-              }
-            }
+            if (item.variant) adjustVariantStores(stores, item.variant, -qty);
           }
+          const storeWrite = closeVariantStores(stores);
 
           await prisma.product.update({
             where: { id: product.id },
             data: {
               ...(product.currentStock !== null ? { currentStock: { decrement: totalQty } } : {}),
-              size_variants: newSizeVariants,
-              ...(variantsChanged ? { variants: newVariants as any } : {}),
+              ...(storeWrite as any),
             },
           });
 
@@ -344,30 +326,17 @@ export async function restoreDeletedRecord(shopId: string, recordId: string): Pr
             const product = await prisma.product.findFirst({ where: { id: productId, shopId } });
             if (!product) { skipped.push('Product no longer exists — stock not restored for one line.'); continue; }
 
-            let newSizeVariants: any = product.size_variants;
-            const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
-            let variantsChanged = false;
-
+            const stores = openVariantStores(product);
             for (const [variantKey, qty] of bucket.byVariant.entries()) {
-              if (newSizeVariants) {
-                try {
-                  const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-                  parsed[variantKey] = (Number(parsed[variantKey]) || 0) + qty;
-                  newSizeVariants = JSON.stringify(parsed);
-                } catch {}
-              }
-              if (newVariants) {
-                const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === variantKey);
-                if (row) { row.stock = (Number(row.stock) || 0) + qty; variantsChanged = true; }
-              }
+              adjustVariantStores(stores, variantKey, qty, { createIfMissing: true });
             }
+            const storeWrite = closeVariantStores(stores);
 
             await prisma.product.update({
               where: { id: product.id },
               data: {
                 ...(product.currentStock !== null ? { currentStock: { increment: bucket.total } } : {}),
-                size_variants: newSizeVariants,
-                ...(variantsChanged ? { variants: newVariants as any } : {}),
+                ...(storeWrite as any),
               },
             });
           } catch (e) { skipped.push('Stock not restored for one product line.'); }

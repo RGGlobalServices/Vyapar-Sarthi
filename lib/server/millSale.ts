@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { openVariantStores, adjustVariantStores, closeVariantStores, variantAvailable } from '@/lib/variants';
 import prisma from '@/lib/server/prisma';
 import { ApiError, json } from '@/lib/server/http';
 import { assertOwned } from '@/lib/server/ownership';
@@ -110,15 +111,7 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
     const [pid, vKey] = key.split('|');
     const dbP: any = productMap.get(pid);
     if (!dbP) { shortages.push(`Unknown product ${pid}`); continue; }
-    let available: number | null = null;
-    if (vKey) {
-      const sv: any = typeof dbP.size_variants === 'string' ? (() => { try { return JSON.parse(dbP.size_variants); } catch { return null; } })() : dbP.size_variants;
-      if (sv && Object.prototype.hasOwnProperty.call(sv, vKey)) available = Number(sv[vKey]) || 0;
-      else if (Array.isArray(dbP.variants) && dbP.variants.length > 0) {
-        const row = dbP.variants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === vKey);
-        if (row) available = Number(row.stock) || 0;
-      }
-    }
+    let available: number | null = vKey ? variantAvailable(dbP, vKey) : null;
     if (available === null) available = Number(dbP.currentStock ?? 0);
     if (available < wanted) shortages.push(`${vKey ? `${dbP.name} (${vKey})` : dbP.name}: only ${available} in stock, bill needs ${wanted}`);
   }
@@ -324,31 +317,16 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
             const lines = byProduct.get(product.id);
             if (!lines) continue;
             let totalQty = 0;
-            let newSizeVariants: any = product.size_variants;
-            const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
-            let variantsChanged = false;
+            const stores = openVariantStores(product);
             for (const p of lines) {
               totalQty += p.qty;
               const variant = p.raw.variant;
-              if (variant && newSizeVariants) {
-                try {
-                  const sv = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-                  if (sv[variant] !== undefined) {
-                    if (!allowNegativeStock && (Number(sv[variant]) || 0) < p.qty) throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${variant})`, 'STOCK_CONFLICT');
-                    sv[variant] = Math.max(0, (sv[variant] || 0) - p.qty);
-                    newSizeVariants = JSON.stringify(sv);
-                  }
-                } catch (e) { if (e instanceof ApiError) throw e; }
-              }
-              if (variant && newVariants) {
-                const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === variant);
-                if (row) {
-                  if (!allowNegativeStock && (Number(row.stock) || 0) < p.qty) throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${variant})`, 'STOCK_CONFLICT');
-                  row.stock = Math.max(0, (Number(row.stock) || 0) - p.qty);
-                  variantsChanged = true;
-                }
+              if (variant) {
+                const r = adjustVariantStores(stores, variant, -p.qty, { rejectNegative: !allowNegativeStock });
+                if (r === 'insufficient') throw new ApiError(409, `STOCK_CONFLICT: Insufficient stock for ${product.name} (${variant})`, 'STOCK_CONFLICT');
               }
             }
+            const storeWrite = closeVariantStores(stores);
             if (!allowNegativeStock) {
               const updated = await tx.$executeRaw`
                 UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty}
@@ -359,7 +337,7 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
             }
             await tx.product.update({
               where: { id: product.id, shopId },
-              data: { size_variants: newSizeVariants, ...(variantsChanged ? { variants: newVariants as any } : {}) },
+              data: { ...(storeWrite as any), },
             });
             if (wholesaleTier) {
               await tx.stockMovement.create({ data: { shopId, productId: product.id, type: 'sale', quantity: totalQty, referenceId: created.id } });

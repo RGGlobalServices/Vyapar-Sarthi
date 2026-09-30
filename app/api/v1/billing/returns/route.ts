@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { openVariantStores, adjustVariantStores, closeVariantStores } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { toPaise } from '@/lib/server/moneyValidation';
@@ -142,36 +143,18 @@ export const POST = handle(async (req) => {
       if (!product) continue;
       const totalQty = qtyByProduct.get(productId) || 0;
 
-      let newSizeVariants = product.size_variants;
-      const newVariants = Array.isArray(product.variants) ? (product.variants as any[]).map((v) => ({ ...v })) : null;
-      let variantsChanged = false;
-
+      const stores = openVariantStores(product);
       for (const p of prepared) {
         if (p.saleItem.productId !== productId || !p.variantKey) continue;
-        if (newSizeVariants) {
-          try {
-            const parsed = typeof newSizeVariants === 'string' ? JSON.parse(newSizeVariants) : newSizeVariants;
-            if (parsed[p.variantKey] !== undefined) {
-              parsed[p.variantKey] = (Number(parsed[p.variantKey]) || 0) + p.qty;
-              newSizeVariants = JSON.stringify(parsed);
-            }
-          } catch {}
-        }
-        if (newVariants) {
-          const row = newVariants.find((v: any) => (v.color ? `${v.color} / ${v.size || ''}` : (v.size || '')) === p.variantKey);
-          if (row) {
-            row.stock = (Number(row.stock) || 0) + p.qty;
-            variantsChanged = true;
-          }
-        }
+        adjustVariantStores(stores, p.variantKey, p.qty);
       }
+      const storeWrite = closeVariantStores(stores);
 
       await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${totalQty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
       await tx.product.update({
         where: { id: productId },
         data: {
-          size_variants: newSizeVariants,
-          ...(variantsChanged ? { variants: newVariants as any } : {}),
+          ...(storeWrite as any),
         },
       });
     }

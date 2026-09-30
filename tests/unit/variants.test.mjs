@@ -73,3 +73,41 @@ test('variantGridKeys: colour x size, sizes only, colour only', () => {
 test('splitList dedupes and trims', () => {
   assert.deepEqual(splitList('S, m ,s;  XL\nL'), ['S', 'm', 'XL', 'L']);
 });
+
+import { openVariantStores, adjustVariantStores, closeVariantStores } from '../../lib/variants.ts';
+
+test('adjustVariantStores: sell decrements both stores, case-insensitive key', () => {
+  const st = openVariantStores({
+    size_variants: JSON.stringify({ 'Red / M': 5 }),
+    variants: [{ color: 'Red', size: 'M', stock: 5, sellingPrice: 100 }],
+  });
+  assert.equal(adjustVariantStores(st, 'red / m', -2), 'ok');
+  const out = closeVariantStores(st);
+  assert.deepEqual(JSON.parse(out.size_variants), { 'Red / M': 3 });
+  assert.equal(out.variants[0].stock, 3);
+  assert.equal(out.variants[0].sellingPrice, 100);
+});
+
+test('adjustVariantStores: insufficient / missing / clamp / createIfMissing', () => {
+  const st = openVariantStores({ size_variants: '{"S":1}', variants: null });
+  assert.equal(adjustVariantStores(st, 'S', -5, { rejectNegative: true }), 'insufficient');
+  assert.equal(st.mapDirty, false);
+  assert.equal(adjustVariantStores(st, 'XL', -1), 'missing');
+  assert.equal(adjustVariantStores(st, 'S', -5), 'ok');
+  assert.deepEqual(JSON.parse(closeVariantStores(st).size_variants), { S: 0 });
+  const st2 = openVariantStores({ size_variants: '{"S":1}', variants: null });
+  assert.equal(adjustVariantStores(st2, 'M', 3, { createIfMissing: true }), 'ok');
+  assert.deepEqual(JSON.parse(closeVariantStores(st2).size_variants), { S: 1, M: 3 });
+});
+
+test('closeVariantStores derives the missing store', () => {
+  const onlyMap = openVariantStores({ size_variants: '{"Blue / S":4}', variants: null });
+  adjustVariantStores(onlyMap, 'Blue / S', -1);
+  const o1 = closeVariantStores(onlyMap);
+  assert.equal(o1.variants[0].color, 'Blue');
+  assert.equal(o1.variants[0].stock, 3);
+  const onlyRows = openVariantStores({ size_variants: null, variants: [{ color: '', size: '9', stock: 2 }] });
+  adjustVariantStores(onlyRows, '9', 3);
+  const o2 = closeVariantStores(onlyRows);
+  assert.deepEqual(JSON.parse(o2.size_variants), { '9': 5 });
+});
