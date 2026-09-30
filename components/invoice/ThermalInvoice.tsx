@@ -191,7 +191,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
         <div className="text-center px-2 pt-3 pb-2" style={{ borderBottom: '2px solid #000' }}>
           {logoUrl && (
             <div className="flex justify-center mb-2">
-              <img src={logoUrl} alt="Logo" style={{ maxHeight: is58mm ? '30px' : '40px', maxWidth: '100px' }} />
+              <img src={logoUrl} alt="Logo" crossOrigin="anonymous" style={{ maxHeight: is58mm ? '30px' : '40px', maxWidth: '100px' }} />
             </div>
           )}
           <h1 className={`${headerTextClass} font-black uppercase tracking-tight`}>{storeName || t('storeNameFallback')}</h1>
@@ -486,7 +486,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
         <div className="mt-1 pt-3 pb-3 px-2 text-center" style={rule}>
           {ownerSignature && (
             <div className="mb-2">
-              <img src={ownerSignature} alt="Signature" className="mx-auto" style={{ maxHeight: '30px' }} />
+              <img src={ownerSignature} alt="Signature" crossOrigin="anonymous" className="mx-auto" style={{ maxHeight: '30px' }} />
             </div>
           )}
           <p className={`font-black ${textClass} mb-1 uppercase tracking-wide`}>{t('thankYou')}</p>

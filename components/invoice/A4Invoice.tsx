@@ -120,7 +120,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
           className={`flex justify-between items-start gap-6 pb-5 mb-6 ${isModern ? 'rounded-xl p-5 border-b-0' : (isMinimal ? 'border-b' : 'border-b-2')} ${isStylish ? 'pl-5' : ''}`}
         >
           <div className="flex gap-4">
-            {logoUrl && <img src={logoUrl} alt="Logo" className="max-h-20 object-contain" />}
+            {logoUrl && <img src={logoUrl} alt="Logo" crossOrigin="anonymous" className="max-h-20 object-contain" />}
             <div>
               <h1 style={{ color: isMinimal && accent !== '#0f172a' ? accent : undefined }} className={`font-black uppercase tracking-tight ${isStylish ? 'text-4xl' : 'text-3xl'}`}>{storeName || t('storeNameFallback')}</h1>
               <div className={`mt-1.5 space-y-0.5 text-xs ${isModern ? 'opacity-90' : 'text-slate-600'}`}>
@@ -535,7 +535,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
             {/* Signature */}
             <div className="mt-8 text-center">
               {ownerSignature ? (
-                <img src={ownerSignature} alt="Signature" className="mx-auto max-h-14 mb-2" />
+                <img src={ownerSignature} alt="Signature" crossOrigin="anonymous" className="mx-auto max-h-14 mb-2" />
               ) : (
                 <div className="h-14 mb-2" />
               )}
