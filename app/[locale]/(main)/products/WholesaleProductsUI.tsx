@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import VariantCleanupModal from '@/components/products/VariantCleanupModal';
+import NewLotModal from '@/components/products/NewLotModal';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, MILL_CATEGORIES } from '@/lib/businessConfig';
@@ -308,6 +309,7 @@ export default function WholesaleProductsUI() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [showVariantCheck, setShowVariantCheck] = useState(false);
+  const [newLotProduct, setNewLotProduct] = useState<any>(null);
   const [form, setForm] = useState<Partial<WholesaleProduct>>(emptyProduct);
   const [saving, setSaving] = useState(false);
   // Party (wholesale) Selling Price entry: 'manual' types ₹ directly,
@@ -1029,6 +1031,7 @@ export default function WholesaleProductsUI() {
           >
             Check variants
           </button>
+          {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => mutateProducts()} />}
           {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => mutateProducts()} />}
         </div>
       </div>
@@ -1605,6 +1608,7 @@ export default function WholesaleProductsUI() {
             setSelectedProduct(null);
             handleEdit(p);
           }}
+          onNewLot={(p) => { setSelectedProduct(null); setNewLotProduct(p); }}
           onClone={async (p) => {
             setSelectedProduct(null);
             await handleEdit(p);

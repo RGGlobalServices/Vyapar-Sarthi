@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { cleanVariants, normalizeVariants, variantKeyOf, keysMatch, sumStock } from '@/lib/variants';
+import { createOpeningLots } from '@/lib/server/lotCreate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,8 @@ export const POST = handle(async (req) => {
     if (!name) { results.push({ index: i, name: '', status: 'error', error: 'Product name is required' }); continue; }
     try {
       const incoming = cleanVariants(p.variants);
+      // Optional lot number for the stock added in this call ("Lot A31"): recorded as real lots with their prices.
+      const lotNumber = String(p.lotNumber ?? '').trim();
       const key = name.toLowerCase();
       const prior = byName.get(key) || seenThisCall.get(key);
 
@@ -65,6 +68,13 @@ export const POST = handle(async (req) => {
         });
         if (addedStock > 0) {
           await prisma.stockLog.create({ data: { shopId: shop.id, productId: prior.id, type: 'in', quantity: addedStock, note: 'Bulk add' } }).catch(() => {});
+        }
+        if (lotNumber && addedStock > 0) {
+          await createOpeningLots(prisma, {
+            shopId: shop.id,
+            product: { ...(prior as any), variants: incoming, size_variants: null, currentStock: addedStock },
+            batchNumber: lotNumber, expiryDate: p.lotExpiry,
+          }).catch((e) => console.error('bulk-create lot failed:', e));
         }
         seenThisCall.set(key, { ...prior, variants: updated.variants, currentStock: updated.currentStock });
         results.push({ index: i, name, status: 'updated', id: prior.id });
@@ -98,6 +108,10 @@ export const POST = handle(async (req) => {
       });
       if (stock > 0) {
         await prisma.stockLog.create({ data: { shopId: shop.id, productId: created.id, type: 'in', quantity: stock, note: 'Opening stock (bulk add)' } }).catch(() => {});
+      }
+      if (lotNumber && stock > 0) {
+        await createOpeningLots(prisma, { shopId: shop.id, product: created as any, batchNumber: lotNumber, expiryDate: p.lotExpiry })
+          .catch((e) => console.error('bulk-create lot failed:', e));
       }
       seenThisCall.set(key, { id: created.id, variants: created.variants, currentStock: created.currentStock });
       results.push({ index: i, name, status: 'created', id: created.id });

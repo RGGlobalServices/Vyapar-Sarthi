@@ -6,10 +6,10 @@ import { X, Plus, Copy, Trash2, Wand2, ClipboardPaste, Sparkles, Loader2 } from 
 import api from '@/lib/api';
 import { parseVariantTitle, baseKey } from '@/lib/variantTitleParser';
 
-type Row = { id: number; name: string; color: string; size: string; stock: string; cost: string; price: string; mrp: string };
+type Row = { id: number; name: string; color: string; size: string; stock: string; cost: string; price: string; mrp: string; lot: string; expiry: string };
 
 const emptyRow = (id: number, from?: Partial<Row>): Row => ({
-  id, name: from?.name ?? '', color: '', size: '', stock: '', cost: from?.cost ?? '', price: from?.price ?? '', mrp: from?.mrp ?? '',
+  id, name: from?.name ?? '', color: '', size: '', stock: '', cost: from?.cost ?? '', price: from?.price ?? '', mrp: from?.mrp ?? '', lot: from?.lot ?? '', expiry: from?.expiry ?? '',
 });
 
 const num = (v: string) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -39,7 +39,7 @@ export default function BulkVariantAddModal({
   const [saving, setSaving] = useState(false);
 
   const update = (id: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const addRow = (from?: Row) => setRows((rs) => [...rs, emptyRow(nextId(), from ? { name: from.name, cost: from.cost, price: from.price, mrp: from.mrp } : undefined)]);
+  const addRow = (from?: Row) => setRows((rs) => [...rs, emptyRow(nextId(), from ? { name: from.name, cost: from.cost, price: from.price, mrp: from.mrp, lot: from.lot, expiry: from.expiry } : undefined)]);
 
   const generateFamily = () => {
     const name = famName.trim();
@@ -62,7 +62,7 @@ export default function BulkVariantAddModal({
       const c = line.split(/\t|\s{2,}|\s*\|\s*/).map((x) => x.trim());
       // skip a header line (Qty column not numeric)
       if (i === 0 && c.length >= 4 && c[3] !== '' && Number.isNaN(Number(c[3]))) return;
-      made.push({ ...emptyRow(nextId()), name: c[0] || '', color: c[1] || '', size: c[2] || '', stock: c[3] || '', cost: c[4] || '', price: c[5] || '', mrp: c[6] || '' });
+      made.push({ ...emptyRow(nextId()), name: c[0] || '', color: c[1] || '', size: c[2] || '', stock: c[3] || '', cost: c[4] || '', price: c[5] || '', mrp: c[6] || '', lot: c[7] || '', expiry: c[8] || '' });
     });
     setRows((rs) => [...rs.filter((r) => r.name || r.color || r.size || r.stock), ...made]);
     setPasteText(''); setShowPaste(false);
@@ -115,6 +115,9 @@ export default function BulkVariantAddModal({
         wholesaleCost: num(first.cost) || undefined,
         sellingPrice: num(first.price) || undefined,
         mrp: num(first.mrp) || undefined,
+        // Lot no. (+ expiry) typed on any row of this product: its stock is saved as real lot(s) with these prices.
+        lotNumber: (g.find((r) => r.lot.trim())?.lot || '').trim() || undefined,
+        lotExpiry: g.find((r) => r.expiry)?.expiry || undefined,
         stock: multi ? undefined : num(first.stock),
         variants: g.filter((r) => r.color.trim() || r.size.trim()).map((r) => ({
           color: r.color.trim(), size: r.size.trim(), stock: num(r.stock),
@@ -181,7 +184,7 @@ export default function BulkVariantAddModal({
 
           {showPaste && (
             <div className="space-y-2">
-              <p className="text-xs text-slate-500">Columns in order: <b>Name, Colour, Size, Qty, Cost, Price, MRP</b> (copy the cells from Excel / Google Sheets and paste here).</p>
+              <p className="text-xs text-slate-500">Columns in order: <b>Name, Colour, Size, Qty, Cost, Price, MRP, Lot no., Expiry</b> (copy the cells from Excel / Google Sheets and paste here).</p>
               <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={5} className={`${cell} font-mono`} placeholder={'K BEAUTY 7273\tOff White\t32X34\t6\t945\t1100\t1200'} />
               <button onClick={applyPaste} className="bg-emerald-500 text-slate-900 font-bold text-sm px-4 py-1.5 rounded-lg">Add pasted rows</button>
             </div>
@@ -193,7 +196,7 @@ export default function BulkVariantAddModal({
               <thead>
                 <tr className="text-[10px] uppercase tracking-widest text-slate-500">
                   <th className="px-1 py-1">Product name</th><th className="px-1 py-1 w-28">Colour</th><th className="px-1 py-1 w-24">Size</th>
-                  <th className="px-1 py-1 w-20">Qty</th><th className="px-1 py-1 w-24">Cost</th><th className="px-1 py-1 w-24">Sell price</th><th className="px-1 py-1 w-24">MRP</th><th className="w-16" />
+                  <th className="px-1 py-1 w-20">Qty</th><th className="px-1 py-1 w-24">Cost</th><th className="px-1 py-1 w-24">Sell price</th><th className="px-1 py-1 w-24">MRP</th><th className="px-1 py-1 w-24">Lot no.</th><th className="px-1 py-1 w-32">Expiry</th><th className="w-16" />
                 </tr>
               </thead>
               <tbody>
@@ -205,7 +208,9 @@ export default function BulkVariantAddModal({
                     <td className="p-1"><input className={cell} inputMode="decimal" value={r.stock} onChange={(e) => update(r.id, { stock: e.target.value })} /></td>
                     <td className="p-1"><input className={cell} inputMode="decimal" value={r.cost} onChange={(e) => update(r.id, { cost: e.target.value })} /></td>
                     <td className="p-1"><input className={cell} inputMode="decimal" value={r.price} onChange={(e) => update(r.id, { price: e.target.value })} /></td>
-                    <td className="p-1"><input className={cell} inputMode="decimal" value={r.mrp} onChange={(e) => update(r.id, { mrp: e.target.value })}
+                    <td className="p-1"><input className={cell} inputMode="decimal" value={r.mrp} onChange={(e) => update(r.id, { mrp: e.target.value })} /></td>
+                    <td className="p-1"><input className={cell} value={r.lot} onChange={(e) => update(r.id, { lot: e.target.value })} placeholder="optional" /></td>
+                    <td className="p-1"><input className={cell} type="date" value={r.expiry} onChange={(e) => update(r.id, { expiry: e.target.value })}
                       onKeyDown={(e) => { if (e.key === 'Enter' && idx === rows.length - 1) { e.preventDefault(); addRow(r); } }} /></td>
                     <td className="p-1 whitespace-nowrap">
                       <button title="Duplicate row" onClick={() => setRows((rs) => { const i = rs.findIndex((x) => x.id === r.id); const c = { ...r, id: nextId() }; return [...rs.slice(0, i + 1), c, ...rs.slice(i + 1)]; })} className="p-1.5 text-slate-500 hover:text-emerald-500"><Copy size={14} /></button>

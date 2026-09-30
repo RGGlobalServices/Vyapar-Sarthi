@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { normalizeVariants } from '@/lib/variants';
+import { createOpeningLots } from '@/lib/server/lotCreate';
 import { requireShop, requireShopScope } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { startOfDay } from '@/lib/server/dates';
@@ -246,6 +247,19 @@ export const POST = handle(async (req) => {
       await prisma.stockLog.create({
         data: { shopId: shop.id, productId: product.id, type: 'in', quantity: openingQty, note: 'Opening stock' },
       }).catch((e) => console.error('Failed to write opening StockLog:', e));
+    }
+    // Opening stock with a lot number ("Lot A31, 10 pcs @ ₹150") -> record it as a real lot, so billing can list
+    // this lot by number with its own price once newer lots arrive. Nothing is created when no lot number is given.
+    const lotNumber = String(b.lot_number ?? b.lotNumber ?? '').trim();
+    if (lotNumber && (Number(product.currentStock) || 0) > 0) {
+      try {
+        await createOpeningLots(prisma, {
+          shopId: shop.id,
+          product: product as any,
+          batchNumber: lotNumber,
+          expiryDate: b.lot_expiry ?? b.lotExpiry ?? b.expiry_date ?? b.expiryDate,
+        });
+      } catch (e) { console.error('Failed to record opening lot:', e); }
     }
     return json(product, 201);
   } catch (error: any) {

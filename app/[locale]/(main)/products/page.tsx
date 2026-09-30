@@ -7,7 +7,7 @@ import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
   Loader2, Camera, ShieldCheck, Package,
   Warehouse, Store, MapPin, IndianRupee, Barcode as BarcodeIcon,
-  Percent, Tag, Copy,
+  Percent, Tag, Copy, PackagePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -29,6 +29,7 @@ import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusive
 
 import { QrCode } from 'lucide-react';
 import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
+import NewLotModal from '@/components/products/NewLotModal';
 import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
 import VariantCleanupModal from '@/components/products/VariantCleanupModal';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
@@ -121,7 +122,7 @@ function buildEmptyForm(btype: string) {
     // — see effectiveCostPrice() below, used at both display and submit time.
     costPriceMode: 'manual' as 'manual' | 'mrp_based', purchaseDiscountPercent: '',
     is_loose: false,
-    expiry_date: '', batch_number: '', drug_schedule: 'OTC',
+    expiry_date: '', batch_number: '', lot_number: '', lot_expiry: '', drug_schedule: 'OTC',
     model_number: '', warranty_months: '', gender: 'Unisex',
     shade: '', size_variants: {} as Record<string, number>,
     gstPercent: 0, hsnCode: '',
@@ -250,6 +251,7 @@ function LegacyProductsUI() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [showVariantCheck, setShowVariantCheck] = useState(false);
+  const [newLotProduct, setNewLotProduct] = useState<any>(null);
 
   // Deep-link: /products?add=1 auto-opens the Add-Product modal. Used by the
   // slimmed Stock In flow so the shopkeeper doesn't have to re-enter the full
@@ -833,6 +835,9 @@ function LegacyProductsUI() {
         is_loose: form.is_loose,
         expiry_date: form.expiry_date || null,
         batch_number: form.batch_number || null,
+        // Lot no. typed for the opening stock -> saved as a real lot (own price, qty, expiry) — see POST /products
+        lot_number: (form.lot_number || form.batch_number || '').trim() || undefined,
+        lot_expiry: form.lot_expiry || form.expiry_date || undefined,
         drug_schedule: form.drug_schedule || null,
         model_number: form.model_number || null,
         warranty_months: form.warranty_months ? Number(form.warranty_months) : null,
@@ -968,6 +973,8 @@ function LegacyProductsUI() {
       is_loose: product.is_loose || false,
       expiry_date: product.expiry_date || '',
       batch_number: product.batch_number || '',
+      lot_number: '',
+      lot_expiry: '',
       drug_schedule: product.drug_schedule || 'OTC',
       model_number: product.model_number || '',
       warranty_months: String(product.warranty_months || ''),
@@ -1342,6 +1349,7 @@ function LegacyProductsUI() {
             className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             Check variants
           </button>
+          {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => invalidateProductCaches()} />}
           {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => invalidateProductCaches()} />}
         </div>
       </div>
@@ -2155,6 +2163,10 @@ function LegacyProductsUI() {
                           <button onClick={() => setQrProduct(product)} title={t('barcodeQrTitle')}
                             className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
                             <QrCode size={14} />
+                          </button>
+                          <button onClick={() => setNewLotProduct(product)} title="New lot / stock in — same product at a new price"
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-500/20 hover:text-sky-600 dark:hover:text-sky-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700">
+                            <PackagePlus size={14} />
                           </button>
                           <button onClick={() => startClone(product)} title="Clone — same product, new colour/size"
                             className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700">
@@ -3033,6 +3045,23 @@ function LegacyProductsUI() {
                   {perSizePricing && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{tv('minStockFallbackHint')}</p>
                   )}
+                </div>
+              )}
+
+              {/* ── Lot / Batch (optional) ── the opening stock becomes a real lot with its own price, so when a newer
+                  lot arrives at a different price, billing lists both lots by number. Hidden where the shop already
+                  has its own Batch field (hasBatch). */}
+              {!bizConfig.hasBatch && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Lot / Batch no. <span className="font-medium normal-case text-slate-400">(optional)</span></label>
+                    <LocalInput className={modalInp} placeholder="e.g. A31 — this stock's lot" value={form.lot_number} onCommit={v => setForm(f => ({ ...f, lot_number: v }))} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Lot expiry <span className="font-medium normal-case text-slate-400">(optional)</span></label>
+                    <input type="date" className={modalInp} value={form.lot_expiry} onChange={e => setForm(f => ({ ...f, lot_expiry: e.target.value }))} />
+                  </div>
+                  <p className="sm:col-span-2 text-[10px] text-slate-500">Fill this when the same product comes again at a new price — each lot keeps its own price and is sold oldest-first.</p>
                 </div>
               )}
 
