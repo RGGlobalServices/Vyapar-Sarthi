@@ -20,8 +20,10 @@ export const fmtPaise = (p: number) => {
 
 export interface MillInvoiceShop {
   name?: string; address?: string; mobile?: string; gst?: string; pan?: string; email?: string;
-  signatureUrl?: string; footer?: string; upiId?: string;
+  logoUrl?: string; signatureUrl?: string; footer?: string; upiId?: string;
   bankName?: string; bankAccountName?: string; bankAccountNumber?: string; bankIfsc?: string;
+  /** Hex accent colour from profile (invoiceColor). Drives the header strip on both A4 and thermal. */
+  accentColor?: string | null;
 }
 
 export interface MillInvoiceLine {

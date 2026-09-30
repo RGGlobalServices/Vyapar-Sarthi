@@ -23,6 +23,10 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
     </div>
   );
 
+  const accent = d.shop.accentColor || null;
+  const headerStyle = accent ? { backgroundColor: accent, color: '#ffffff', borderColor: accent } : {};
+  const headerBorder = accent ? 'border-b-0' : 'border-b border-black';
+
   return (
     <div
       ref={ref}
@@ -31,13 +35,20 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
       style={{ width: a4 ? 800 : 320, backgroundColor: '#ffffff', color: '#111111' }}
       className={`${fs} leading-snug font-sans ${a4 ? 'p-8' : 'p-3'} box-border`}
     >
-      {/* Business */}
-      <div className={`text-center border-b border-black pb-2 ${a4 ? 'mb-3' : 'mb-2'}`}>
+      {/* Business header */}
+      <div
+        className={`text-center pb-2 ${a4 ? 'mb-3' : 'mb-2'} ${headerBorder} ${accent ? 'rounded px-3 py-2' : ''}`}
+        style={headerStyle}
+      >
+        {d.shop.logoUrl && a4 && (
+          <img src={d.shop.logoUrl} alt="" crossOrigin="anonymous" className="h-12 mx-auto mb-1 object-contain" />
+        )}
         <div className={`${a4 ? 'text-2xl' : 'text-base'} font-black uppercase tracking-wide`}>{d.shop.name || 'Business'}</div>
         {d.shop.address && <div>{d.shop.address}</div>}
         <div>{[d.shop.mobile && `Ph: ${d.shop.mobile}`, d.shop.email].filter(Boolean).join('  |  ')}</div>
         <div>{[d.shop.gst && `GSTIN: ${d.shop.gst}`, d.shop.pan && `PAN: ${d.shop.pan}`].filter(Boolean).join('  |  ')}</div>
       </div>
+      {accent && <div className="border-b border-black mb-3" />}
 
       <div className={`text-center font-black ${a4 ? 'text-lg mb-2' : 'text-sm mb-1'}`}>{d.gstBilled ? 'TAX INVOICE' : 'INVOICE'}</div>
 

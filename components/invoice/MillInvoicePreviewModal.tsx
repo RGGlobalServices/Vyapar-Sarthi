@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, MessageCircle, Printer, X, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
@@ -24,9 +24,23 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
-  const defaultA4 = profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale';
-  // Narrow screens default to the thermal layout (the 800px A4 sheet would need sideways scrolling).
-  const [variant, setVariant] = useState<'a4' | 'thermal'>(defaultA4 && !(typeof window !== 'undefined' && window.innerWidth < 640) ? 'a4' : 'thermal');
+  // Track whether the user has manually toggled the format so we don't override their choice.
+  const userToggledRef = useRef(false);
+  const profileVariant = (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale') && !(typeof window !== 'undefined' && window.innerWidth < 640) ? 'a4' : 'thermal';
+  const [variant, setVariant] = useState<'a4' | 'thermal'>(profileVariant);
+
+  // Re-apply the saved format whenever profile finishes loading (covers the async hydration case).
+  useEffect(() => {
+    if (!userToggledRef.current) {
+      setVariant(profileVariant);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.invoiceFormat]);
+
+  const handleVariantChange = useCallback((v: 'a4' | 'thermal') => {
+    userToggledRef.current = true;
+    setVariant(v);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,10 +53,12 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
 
   const shop: MillInvoiceShop = useMemo(() => ({
     name: profile?.shopName || undefined, address: profile?.address || undefined, mobile: profile?.mobile || undefined,
-    gst: profile?.gst || undefined, pan: profile?.pan || undefined, signatureUrl: profile?.signatureUrl || undefined,
+    gst: profile?.gst || undefined, pan: profile?.pan || undefined,
+    logoUrl: profile?.logoUrl || undefined, signatureUrl: profile?.signatureUrl || undefined,
     footer: profile?.invoiceFooter || undefined, upiId: profile?.upiId || undefined,
     bankName: profile?.bankName || undefined, bankAccountName: profile?.bankAccountName || undefined,
     bankAccountNumber: profile?.bankAccountNumber || undefined, bankIfsc: profile?.bankIfsc || undefined,
+    accentColor: profile?.invoiceColor || null,
   }), [profile]);
   const data = useMemo(() => (sale ? buildMillInvoiceData(sale, shop, fmtDate(sale.created_at)) : null), [sale, shop]);
 
@@ -98,7 +114,7 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-xs font-bold">
               {(['a4', 'thermal'] as const).map((v) => (
-                <button key={v} type="button" data-testid={`mill-fmt-${v}`} onClick={() => setVariant(v)}
+                <button key={v} type="button" data-testid={`mill-fmt-${v}`} onClick={() => handleVariantChange(v)}
                   className={`px-3 py-1.5 ${variant === v ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>{v === 'a4' ? 'A4' : 'Thermal'}</button>
               ))}
             </div>
