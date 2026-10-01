@@ -3,11 +3,13 @@
 import { useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
-import { CheckCircle2, ChevronDown, Loader2, Plus, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, FileText, Loader2, Plus, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import ModalPortal from '@/components/mill/ModalPortal';
+import { downloadProductionSlip } from '@/lib/productionSlipClient';
 import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance, unitToKg, yieldPct } from '@/lib/quickEntry';
 
 /**
@@ -108,7 +110,9 @@ export default function QuickProductionForm({ onClose, onSaved }: { onClose: () 
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState<null | { batchNumber: string; finishedKg: number; yieldPct: number | null }>(null);
+  const [done, setDone] = useState<null | { batchId: string; batchNumber: string; finishedKg: number; yieldPct: number | null }>(null);
+  const [slipBusy, setSlipBusy] = useState(false);
+  const profile = useBusinessStore((s) => s.profile);
 
   const list = options[source];
   const picked = list.find((o) => o.id === sourceId) || null;
@@ -200,7 +204,7 @@ export default function QuickProductionForm({ onClose, onSaved }: { onClose: () 
       }, { headers: { 'x-idempotency-key': idemKey.current } });
       const r = res.data;
       if (picked) saveRecipe(activeShopId, picked.recipe, filled);
-      setDone({ batchNumber: r.batchNumber, finishedKg: r.finishedKg, yieldPct: r.yieldPct ?? yieldPct(r.finishedKg, inputKg) });
+      setDone({ batchId: r.batchId, batchNumber: r.batchNumber, finishedKg: r.finishedKg, yieldPct: r.yieldPct ?? yieldPct(r.finishedKg, inputKg) });
       // every list the run touches
       globalMutate((key: any) => Array.isArray(key) && typeof key[0] === 'string' && (key[0].startsWith('/mill/') || key[0].startsWith('/products')), undefined, { revalidate: true });
       onSaved?.();
@@ -233,7 +237,16 @@ export default function QuickProductionForm({ onClose, onSaved }: { onClose: () 
               <CheckCircle2 size={48} className="mx-auto text-emerald-500" />
               <h3 className="text-lg font-black text-slate-900 dark:text-white">{t('qp_saved')}</h3>
               <p className="text-sm text-slate-600 dark:text-slate-300">{t('qp_savedLine', { batch: done.batchNumber, finished: fmt(done.finishedKg), pct: done.yieldPct ?? '—' })}</p>
-              <div className="flex gap-2 justify-center pt-2">
+              <div className="flex gap-2 justify-center pt-2 flex-wrap">
+                <button disabled={slipBusy} data-testid="qp-slip"
+                  onClick={async () => {
+                    setSlipBusy(true);
+                    try { await downloadProductionSlip(done.batchId, { name: profile.shopName || 'Vyapar Sarthi', address: profile.address || null, mobile: profile.mobile || null, gst: profile.gst || null, pan: profile.pan || null }); }
+                    catch { toast.error(t('qp_slipFailed')); } finally { setSlipBusy(false); }
+                  }}
+                  className="h-10 px-5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-bold flex items-center gap-1.5 disabled:opacity-50">
+                  {slipBusy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} {t('qp_slip')}
+                </button>
                 <button onClick={reset} className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold">{t('qp_another')}</button>
                 <button onClick={onClose} className="h-10 px-5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-bold">{t('qp_close')}</button>
               </div>

@@ -3,12 +3,15 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
-import { ChevronDown, Factory, Plus } from 'lucide-react';
+import { ChevronDown, Factory, FileText, Loader2, Plus } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import BatchesModule from '@/components/mill/BatchesModule';
 import QuickProductionForm from '@/components/mill/QuickProductionForm';
+import ProductionReports from '@/components/mill/ProductionReports';
+import { downloadProductionSlip } from '@/lib/productionSlipClient';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const kg = (n: number | null | undefined) => `${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
@@ -23,6 +26,18 @@ export default function ProductionHome() {
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const [showForm, setShowForm] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState<boolean | null>(null);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [slipFor, setSlipFor] = useState<string | null>(null);
+  const profile = useBusinessStore((s) => s.profile);
+
+  const slip = async (id: string) => {
+    setSlipFor(id);
+    try {
+      await downloadProductionSlip(id, { name: profile.shopName || 'Vyapar Sarthi', address: profile.address || null, mobile: profile.mobile || null, gst: profile.gst || null, pan: profile.pan || null });
+    } catch {
+      toast.error(t('qp_slipFailed'));
+    } finally { setSlipFor(null); }
+  };
 
   // same key BatchesModule uses, so the list is shared (one request)
   const { data: batches = [] } = useSWR<any[]>(activeShopId ? ['/mill/batches', activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: true });
@@ -57,11 +72,26 @@ export default function ProductionHome() {
                   <span className="text-emerald-600">{t('qp_finished')} <b className="font-mono">{kg(b.outputKg)}</b></span>
                   <span className="text-rose-500">{t('qp_loss')} <b className="font-mono">{kg(b.wastageKg)}</b></span>
                   {b.recoveryPct != null && <span className="font-black text-slate-700 dark:text-slate-200">{b.recoveryPct}%</span>}
+                  <button onClick={() => slip(b.id)} disabled={slipFor === b.id} title={t('qp_slip')}
+                    className="h-8 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1 disabled:opacity-50">
+                    {slipFor === b.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} {t('qp_slip')}
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800">
+        <button onClick={() => setReportsOpen(!reportsOpen)} className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left" data-testid="rp-toggle">
+          <span>
+            <span className="block text-sm font-black text-slate-800 dark:text-slate-100">{t('rp_title')}</span>
+            <span className="block text-xs text-slate-500">{t('rp_hint')}</span>
+          </span>
+          <ChevronDown size={18} className={cn('text-slate-400 transition-transform', reportsOpen && 'rotate-180')} />
+        </button>
+        {reportsOpen && <div className="px-4 pb-4 border-t border-slate-100 dark:border-slate-800 pt-4"><ProductionReports /></div>}
       </section>
 
       <section className="rounded-2xl border border-slate-200 dark:border-slate-800">
