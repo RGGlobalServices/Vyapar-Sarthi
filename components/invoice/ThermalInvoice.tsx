@@ -215,7 +215,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
 
         {/* Bill meta & Barcode */}
         <div className="px-2 pt-2">
-          <div className={`flex justify-between items-baseline gap-2 ${smallTextClass} font-bold`}>
+          <div className={`flex flex-wrap justify-between items-baseline gap-x-2 ${smallTextClass} font-bold`}>
             <span style={{ whiteSpace: 'nowrap' }}>{t('bill')} {billNumber}</span>
             <span style={{ whiteSpace: 'nowrap' }}>{date}</span>
           </div>
