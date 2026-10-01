@@ -974,7 +974,7 @@ export default function WholesaleProductsUI() {
           </p>
         </div>
         <div className="flex gap-2">
-          <ExpandViewButton />
+          {!isMillShop && <ExpandViewButton />}
           <ExportButton
             filename="products"
             title="Product List"
@@ -1011,6 +1011,23 @@ export default function WholesaleProductsUI() {
               ? filteredProducts.map((p: any) => ({ ...p, millCategoryLabel: MILL_CATEGORIES.find(mc => mc.key === p.millCategory)?.label || '' }))
               : filteredProducts}
           />
+          {isMillShop ? (
+            // Mills add each kind of product directly: ready (finished) goods, raw material or by-products — the type is
+            // pre-selected in the form, so there is nothing to hunt for.
+            <>
+              {([
+                { cat: 'finished_goods', label: 'Ready Product', cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' },
+                { cat: 'raw_material', label: 'Raw Material', cls: 'bg-amber-500 hover:bg-amber-600 text-white' },
+                { cat: 'by_product', label: 'By-Product', cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
+              ] as const).map(b => (
+                <button key={b.cat}
+                  onClick={() => { setForm({ ...emptyProduct, millCategory: b.cat }); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setWholesaleMode('manual'); setWholesaleDiscountPercent(''); setShowAddModal(true); }}
+                  className={cn('px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2', b.cls)}>
+                  <Plus size={18} />{b.label}
+                </button>
+              ))}
+            </>
+          ) : (
           <button
             onClick={() => { setForm(emptyProduct); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setWholesaleMode('manual'); setWholesaleDiscountPercent(''); setShowAddModal(true); }}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
@@ -1018,6 +1035,8 @@ export default function WholesaleProductsUI() {
             <Plus size={18} />
             {t('createProduct') || 'Create Product'}
           </button>
+          )}
+          {!isMillShop && (
           <button
             onClick={() => setShowBulkAdd(true)}
             className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
@@ -1025,7 +1044,9 @@ export default function WholesaleProductsUI() {
             <Plus size={18} />
             Bulk Add / Variants
           </button>
+          )}
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => mutateProducts()} />}
+          {!isMillShop && (
           <button
             onClick={() => setShowVariantCheck(true)}
             title="Find products whose size/colour stock does not match, or one model listed many times"
@@ -1033,7 +1054,9 @@ export default function WholesaleProductsUI() {
           >
             Check variants
           </button>
+          )}
           {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => mutateProducts()} />}
+          {!isMillShop && (
           <button
             onClick={() => setShowLotReport(true)}
             title="Lot-wise stock, prices and sales"
@@ -1041,6 +1064,7 @@ export default function WholesaleProductsUI() {
           >
             Lots
           </button>
+          )}
           {showLotReport && <LotReportModal onClose={() => setShowLotReport(false)} />}
           {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => mutateProducts()} />}
         </div>
