@@ -281,12 +281,12 @@ function CreateOrderModal({ customers, gateEntries, onClose, onCreated, onCustom
             {addingCustomer && (
               <div className="mt-2 p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 space-y-2">
                 <p className="text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-400">{t('newCustomerTitle')}</p>
-                <input value={newCust.name} onChange={e => setNewCust(n => ({ ...n, name: e.target.value }))} placeholder={t('customerName')} autoFocus
+                <input value={newCust.name} onChange={e => setNewCust(n => ({ ...n, name: e.target.value }))} placeholder={t('customerName')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveCustomer(); } }} autoFocus
                   className="w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
                 <div className="grid grid-cols-2 gap-2">
-                  <input value={newCust.mobile} onChange={e => setNewCust(n => ({ ...n, mobile: e.target.value }))} placeholder={t('customerMobile')} inputMode="tel"
+                  <input value={newCust.mobile} onChange={e => setNewCust(n => ({ ...n, mobile: e.target.value }))} placeholder={t('customerMobile')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveCustomer(); } }} inputMode="tel"
                     className="w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
-                  <input value={newCust.village} onChange={e => setNewCust(n => ({ ...n, village: e.target.value }))} placeholder={t('customerVillage')}
+                  <input value={newCust.village} onChange={e => setNewCust(n => ({ ...n, village: e.target.value }))} placeholder={t('customerVillage')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveCustomer(); } }}
                     className="w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
                 </div>
                 <button type="button" onClick={saveCustomer} disabled={savingCust || !newCust.name.trim()}
