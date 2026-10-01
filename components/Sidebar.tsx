@@ -52,7 +52,7 @@ const OPTIONAL_KEYS = new Set(['gate-entry', 'weighbridge', 'quality-lab']);
 const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'main',        label: 'Main',              emoji: '🏭', alwaysExpanded: true, keys: ['dashboard'] },
   { id: 'business',    label: 'Business',          emoji: '💼', keys: ['billing', 'orders', 'challans', 'party', 'products'] },
-  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'batches', 'production', 'finished-goods', 'by-products', 'wip', 'rejections', 'job-work'] },
+  { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'batches', 'finished-goods', 'by-products', 'wip', 'rejections', 'job-work'] },
   { id: 'quality',     label: 'Quality',           emoji: '🧪', keys: ['quality-lab'] },
   { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali', 'freight'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'cashbook', 'settlement', 'expenses'] },

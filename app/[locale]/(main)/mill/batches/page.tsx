@@ -1,10 +1,9 @@
 'use client';
 
-import { Suspense } from 'react';
-import BatchesModule from '@/components/mill/BatchesModule';
+import BatchesHub from '@/components/mill/BatchesHub';
 
-// Batches — create and manage production batch records: the raw material lot, the input, the status and the result.
-// Processing itself (stages, finalize) happens on the Production screen.
+// Batches — the record of production: every finished run with its Slip and the reports, plus the optional stage-wise batches.
+// Direct production is started from Raw Material.
 export default function MillBatchesPage() {
-  return <Suspense fallback={null}><BatchesModule mode="batches" /></Suspense>;
+  return <BatchesHub />;
 }

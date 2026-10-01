@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
 import { CheckCircle2, ChevronDown, FileText, Loader2, Plus, X } from 'lucide-react';
@@ -56,7 +56,7 @@ function saveRecipe(shop: string | null, k: string, rows: OutRow[]) {
   } catch { /* private mode: ignore */ }
 }
 
-export default function QuickProductionForm({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
+export default function QuickProductionForm({ onClose, onSaved, initialSource }: { onClose: () => void; onSaved?: () => void; initialSource?: { type: QuickSource; id?: string } }) {
   const t = useTranslations('Mill');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const { mutate: globalMutate } = useSWRConfig();
@@ -93,7 +93,7 @@ export default function QuickProductionForm({ onClose, onSaved }: { onClose: () 
     return { raw_lot: raw, job_work: jw, wip, rejection: rj } as Record<QuickSource, Array<{ id: string; kg: number; productId: string; label: string; recipe: string }>>;
   }, [lots, jwOrders, wipData, rjData]);
 
-  const [source, setSource] = useState<QuickSource>('raw_lot');
+  const [source, setSource] = useState<QuickSource>(initialSource?.type ?? 'raw_lot');
   const [sourceId, setSourceId] = useState('');
   const [inputQty, setInputQty] = useState('');
   const [inputUnit, setInputUnit] = useState('kg');
@@ -139,6 +139,17 @@ export default function QuickProductionForm({ onClose, onSaved }: { onClose: () 
     } else setInputQty('');
     setLossTouched(false);
   };
+
+  // Opened from a lot / order / WIP / rejected row: that source is already chosen (once its data has loaded).
+  const appliedInitial = useRef(false);
+  useEffect(() => {
+    if (!initialSource?.id || appliedInitial.current) return;
+    if (options[initialSource.type].some((o) => o.id === initialSource.id)) {
+      appliedInitial.current = true;
+      pickSource(initialSource.type, initialSource.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options]);
 
   const setRow = (key: number, patch: Partial<OutRow>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const addRow = (kind: OutKind) => setRows((rs) => [...rs, newRow(kind)]);

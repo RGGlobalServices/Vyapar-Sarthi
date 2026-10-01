@@ -14,6 +14,10 @@ import { cn } from '@/lib/utils';
 import ModalPortal from '@/components/mill/ModalPortal';
 import { ExportButton } from '@/lib/hooks/useExport';
 import ProductionStageBuilder, { getProductSmartSuggestions } from '@/components/mill/ProductionStageBuilder';
+import { useTranslations } from 'next-intl';
+import QuickProductionForm from '@/components/mill/QuickProductionForm';
+import ProductionSources from '@/components/mill/ProductionSources';
+import type { QuickSource } from '@/lib/quickEntry';
 
 type Lot = {
   id: string;
@@ -73,7 +77,11 @@ const statusLabel = (status?: string) => {
 };
 
 export default function RawMaterialPage() {
+  const tm = useTranslations('Mill');
   const searchParams = useSearchParams();
+  // Where production starts: raw material lots here, the customer's grain (Job Work), and WIP / rejected material to reprocess.
+  const [view, setView] = useState<'raw' | 'job_work' | 'reprocess'>('raw');
+  const [startFor, setStartFor] = useState<{ type: QuickSource; id?: string } | null>(null);
   const activeShopId = useBusinessStore(s => s.activeShopId);
 
   // Filter & Sort States
@@ -254,6 +262,13 @@ export default function RawMaterialPage() {
             summary={exportSummary}
           />
           <button
+            onClick={() => setStartFor({ type: view === 'job_work' ? 'job_work' : view === 'reprocess' ? 'wip' : 'raw_lot' })}
+            data-testid="start-production"
+            className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Factory size={18} /> {tm('rm_startProduction')}
+          </button>
+          <button
             onClick={() => setAdding(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm"
           >
@@ -262,6 +277,17 @@ export default function RawMaterialPage() {
         </div>
       </div>
 
+      {/* Where production starts from */}
+      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 overflow-x-auto" data-testid="rm-views">
+        {([['raw', tm('rm_viewRaw')], ['job_work', tm('rm_viewJob')], ['reprocess', tm('rm_viewReprocess')]] as const).map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setView(id)}
+            className={cn('px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors', view === id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300')}>{label}</button>
+        ))}
+      </div>
+
+      {view !== 'raw' && <ProductionSources view={view} onStart={(type, id) => setStartFor({ type, id })} />}
+
+      {view === 'raw' && (<>
       {/* Summary KPI Cards upholding Received = Consumed + Allocated + Available */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="rm-cards">
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
@@ -540,13 +566,23 @@ export default function RawMaterialPage() {
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       {l.availableKg > 0 ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setStartFor({ type: 'raw_lot', id: l.id })}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1 transition-colors shadow-sm"
+                        >
+                          <Factory size={13} /> {tm('rm_startProduction')}
+                        </button>
                         <button
                           type="button"
                           onClick={() => setAllocatingLot(l)}
-                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 transition-colors ml-auto shadow-sm"
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                          title="Batch-wise (stages)"
                         >
-                          <Factory size={13} /> Allocate
+                          Allocate
                         </button>
+                        </div>
                       ) : (
                         <span className="text-[11px] text-slate-400 italic">Fully allocated</span>
                       )}
@@ -557,6 +593,17 @@ export default function RawMaterialPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      </>)}
+
+      {/* Start Production (one-form entry) */}
+      {startFor && (
+        <QuickProductionForm
+          initialSource={{ type: startFor.type, id: startFor.id }}
+          onClose={() => setStartFor(null)}
+          onSaved={() => { refetch(); }}
+        />
       )}
 
       {/* Lot Details Modal */}

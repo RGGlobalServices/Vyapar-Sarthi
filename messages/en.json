@@ -3609,7 +3609,22 @@
     "rp_c_finishedItems": "Finished goods",
     "rp_c_byProductItems": "By-products",
     "rp_none": "No production in this period.",
-    "rp_truncated": "Showing the latest 1000 runs — narrow the dates."
+    "rp_truncated": "Showing the latest 1000 runs — narrow the dates.",
+    "rm_startProduction": "Start Production",
+    "rm_viewRaw": "Raw material",
+    "rm_viewJob": "Customer's grain (Job Work)",
+    "rm_viewReprocess": "Reprocess (WIP / Rejected)",
+    "rm_jobHint": "Customer's grain received on Job Work orders — start production straight from here.",
+    "rm_noJob": "No open Job Work orders.",
+    "rm_newJob": "New Job Work order",
+    "rm_reprocessHint": "Half-made (WIP) and rejected material waiting to be processed again.",
+    "rm_noReprocess": "Nothing waiting for reprocessing.",
+    "rm_wipTitle": "WIP (half-made)",
+    "rm_rejTitle": "Rejected",
+    "br_tabRuns": "Production runs & reports",
+    "br_tabStages": "Stage-wise batches (advanced)",
+    "br_openStages": "Open stage-wise production",
+    "br_stagesHint": "For mills that work step by step: create a batch here, then run its stages in stage-wise production."
   },
   "Brokers": {
     "title": "Brokers",
