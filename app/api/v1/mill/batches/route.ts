@@ -4,6 +4,7 @@ import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { toKg, lotSource, canonicalReceivedDate, computeLotQuantities, round3 } from '@/lib/server/millProduction';
 import { validateInputLots } from '@/lib/server/batchMaterialService';
 import { randomUUID } from 'crypto';
+import { setBatchJobWork } from '@/lib/server/jobWorkLink';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -482,6 +483,9 @@ export const POST = handle(async (req) => {
     if (e?.code === 'P2002') throw new ApiError(409, `Batch number ${batchNumber} already exists.`, 'BATCH_NUMBER_EXISTS');
     throw e;
   });
+
+  // Permanent batch -> Job Work order link (no-op until supabase/17 is run; the order number in the notes covers it meanwhile).
+  if (jobWorkOrderId) await setBatchJobWork(prisma as any, newBatchId, jobWorkOrderId).catch((e: any) => console.error('job work link failed', e?.message));
 
   const full = await (prisma as any).productionBatch.findUnique({
     where: { id: newBatchId },

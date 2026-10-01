@@ -3,6 +3,7 @@ import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { applyCustomerPayment } from '@/lib/server/customerPayment';
 import { round3, kgToProductUnit, BALANCE_TOLERANCE_KG } from '@/lib/server/millProduction';
+import { findLinkedBatches, loadMaterialFlow } from '@/lib/server/jobWorkFlow';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,9 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     where: { shopId: shop.id, notes: { startsWith: `Job work ${order.orderNumber}` } },
     select: { id: true, name: true, quantityKg: true, productId: true },
   });
-  return json({ ...order, feeCalculated: order.feeAmount ?? computeFee(order, order.outputWeightKg), byProductsKept: kept });
+  const batches = await findLinkedBatches(shop.id, [order]);
+  const materialFlow = await loadMaterialFlow(shop.id, [order], batches);
+  return json({ ...order, feeCalculated: order.feeAmount ?? computeFee(order, order.outputWeightKg), byProductsKept: kept, materialFlow });
 });
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {

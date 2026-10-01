@@ -8,6 +8,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import ModalPortal from '@/components/mill/ModalPortal';
+import MaterialFlowCard from '@/components/mill/MaterialFlowCard';
 
 type JobWorkOrder = {
   id: string; orderNumber: string; materialDescription: string; inputWeightKg: number;
@@ -509,6 +510,7 @@ function OrderDetailModal({ id, onClose }: { id: string; onClose: () => void }) 
               <Row k={t('byProductsTitle')}>{o.byproductRetainedByMill ? t('byProductsKeptShort') : t('byProductsReturnedShort')}</Row>
               {o.byProductsKept?.length > 0 && <Row k={t('byProductsKeptList')}>{o.byProductsKept.map((b: any) => `${b.name} ${b.quantityKg} Kg`).join(', ')}</Row>}
             </div>
+            <MaterialFlowCard flow={o.materialFlow} />
             <div className={box}>
               <p className={head}>{t('detailCharges')}</p>
               <Row k={t('feeBasis')}>{o.feeBasis === 'output' ? t('feeBasisOutput') : t('feeBasisInput')}</Row>
