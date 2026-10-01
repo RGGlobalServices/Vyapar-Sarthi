@@ -54,8 +54,9 @@
      (except the inverted black title bar) in a slightly heavier weight. */
   #print-root > [data-print-format^="thermal"],
   #print-root > [data-print-format^="thermal"] *:not(.thermal-invert):not(.thermal-invert *) { color: #000 !important; }
-  #print-root > [data-print-format^="thermal"] { font-weight: 600; }
+  #print-root > [data-print-format^="thermal"] { font-weight: 500; }
   #print-root > [data-print-format^="thermal"] svg { max-width: 100%; height: auto; }
+  #print-root > [data-print-format^="thermal"] svg text { font-weight: 700; }
   /* A4 clarity: pale greys (slate 400-600) and hairline borders wash out on a laser/inkjet page and on photocopies.
      Print them dark, slightly larger for the tiniest labels, with solid-black bars on the barcode. */
   #print-root > [data-print-format="a4"] .text-slate-300,

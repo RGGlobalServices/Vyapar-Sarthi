@@ -211,16 +211,15 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
 
         {/* Bill meta & Barcode */}
         <div className="px-2 pt-2">
-          <div className={`flex justify-between items-start gap-2 ${smallTextClass} font-bold`}>
-            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-              <span style={{ overflowWrap: 'anywhere' }}>{t('bill')} {billNumber}</span>
-              {/* The barcode encodes the bill number WITHOUT the fixed "INV-" prefix: 4 fewer characters = ~44 fewer bars, so every bar
-                  can be drawn at a whole pixel width even on a 58 mm roll (a longer code gets squeezed and stops scanning).
-                  Bill lookup accepts both "D2431C95" and "INV-D2431C95". The full number is printed above. */}
-              <Barcode value={billNumber.replace(/^INV[-_]?/i, '') || billNumber} width={is58mm ? 1 : 1.5} height={is58mm ? 36 : 40} margin={10} displayValue printCrisp />
-            </div>
-            {/* never let the date break into 30- / 09- / 2026 on a narrow roll */}
+          <div className={`flex justify-between items-baseline gap-2 ${smallTextClass} font-bold`}>
+            <span style={{ whiteSpace: 'nowrap' }}>{t('bill')} {billNumber}</span>
             <span style={{ whiteSpace: 'nowrap' }}>{date}</span>
+          </div>
+          {/* Barcode on its own full-width line, as large as the roll allows, with the number printed big underneath.
+              It encodes the bill number WITHOUT the fixed "INV-" prefix (fewer bars = wider bars = reliable scan);
+              bill lookup accepts both "D2431C95" and "INV-D2431C95". */}
+          <div className="flex justify-center mt-1" style={{ background: '#fff' }}>
+            <Barcode value={billNumber.replace(/^INV[-_]?/i, '') || billNumber} width={is58mm ? 1.25 : 2.2} height={is58mm ? 56 : 70} margin={4} displayValue printCrisp />
           </div>
 
           {(customerName || customerMobile || customerAddress || customerGst) && (

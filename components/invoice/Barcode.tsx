@@ -27,8 +27,10 @@ export function Barcode({ value, width = 1.5, height = 30, displayValue = false,
         margin,
         marginTop: printCrisp ? 2 : undefined,
         marginBottom: printCrisp ? 2 : undefined,
-        fontSize: printCrisp ? 11 : undefined,
-        textMargin: printCrisp ? 1 : undefined,
+        fontSize: printCrisp ? 20 : undefined,
+        font: 'monospace',
+        fontOptions: printCrisp ? 'bold' : undefined,
+        textMargin: printCrisp ? 2 : undefined,
         lineColor: '#000000',
         // A thermal printer rasterises the page: a transparent background can come out grey/black, so the bars get a
         // solid white field (and the quiet zone around them) instead.
