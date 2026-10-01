@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { stageLabel } from '@/lib/millLabels';
 import { Clock } from 'lucide-react';
 
 type Stage = {
@@ -43,7 +44,7 @@ export default function StageTimeline({ stages, currentStageId, onSelectStage }:
               )}
               onClick={() => onSelectStage(stage.id)}
             >
-              <span className="font-medium text-slate-900 dark:text-slate-100">{stage.stageName}</span>
+              <span className="font-medium text-slate-900 dark:text-slate-100">{stageLabel(t, stage.stageName)}</span>
               <span className="text-xs font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                 {status}
               </span>

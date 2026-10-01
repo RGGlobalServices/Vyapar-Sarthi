@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, X, GripVertical, Search, Check, ChevronUp, ChevronDown, Sparkles, Bookmark, Layers } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
+import { stageLabel } from '@/lib/millLabels';
 
 const STANDARD_LIBRARY = [
   'Cleaning',
@@ -60,6 +62,7 @@ export default function ProductionStageBuilder({
   isLoadingTemplate = false,
   isTemplateLoaded = false,
 }: Props) {
+  const t = useTranslations('Mill');
   const [showLibrary, setShowLibrary] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCustomModal, setShowCustomModal] = useState(false);
@@ -148,7 +151,8 @@ export default function ProductionStageBuilder({
 
   const filteredLibrary = fullLibrary.filter(
     (stage) =>
-      stage.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      (stage.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        stageLabel(t, stage).toLowerCase().includes(searchQuery.toLowerCase())) &&
       !selectedStages.some((s) => s.toLowerCase() === stage.toLowerCase())
   );
 
@@ -158,11 +162,11 @@ export default function ProductionStageBuilder({
       <div className="flex items-center justify-between">
         <label className="block text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5">
           <Layers size={14} className="text-amber-500" />
-          Production Stages
+          {t('bld_title')}
         </label>
         {isTemplateLoaded && !isLoadingTemplate && (
           <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 flex items-center gap-1">
-            <Check size={10} /> Product Master Template
+            <Check size={10} /> {t('bld_masterTemplate')}
           </span>
         )}
       </div>
@@ -172,7 +176,7 @@ export default function ProductionStageBuilder({
         <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
           <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
             <Sparkles size={12} className="text-amber-500" />
-            Suggested for {productName || 'Raw Material'}:
+            {t('bld_suggestedFor', { name: productName || t('bld_rawMaterial') })}
           </span>
           <div className="flex flex-wrap gap-1.5">
             {smartSuggestions.map((stg) => {
@@ -190,7 +194,7 @@ export default function ProductionStageBuilder({
                   }`}
                 >
                   {isAdded ? <Check size={12} /> : <Plus size={12} />}
-                  {stg}
+                  {stageLabel(t, stg)}
                 </button>
               );
             })}
@@ -201,13 +205,13 @@ export default function ProductionStageBuilder({
       {/* Selected Stages List */}
       <div className="space-y-2">
         <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center justify-between">
-          <span>Selected Workflow Sequence ({selectedStages.length})</span>
-          <span className="text-[10px] text-slate-400 font-normal">Drag ☰ or use arrows to reorder</span>
+          <span>{t('bld_selectedSeq', { n: selectedStages.length })}</span>
+          <span className="text-[10px] text-slate-400 font-normal">{t('bld_reorderHint')}</span>
         </span>
 
         {selectedStages.length === 0 ? (
           <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center text-xs text-slate-400 bg-slate-50/50 dark:bg-slate-900/20">
-            No stages added yet. Pick from suggestions above or click <b>+ Add Stage</b>.
+            {t('bld_noStages')}
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -234,7 +238,7 @@ export default function ProductionStageBuilder({
 
                 {/* Stage Name */}
                 <span className="flex-1 text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
-                  {stageName}
+                  {stageLabel(t, stageName)}
                 </span>
 
                 {/* Reorder Buttons */}
@@ -244,7 +248,7 @@ export default function ProductionStageBuilder({
                     disabled={idx === 0}
                     onClick={() => moveStage(idx, idx - 1)}
                     className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400"
-                    title="Move up"
+                    title={t('bld_moveUp')}
                   >
                     <ChevronUp size={14} />
                   </button>
@@ -253,7 +257,7 @@ export default function ProductionStageBuilder({
                     disabled={idx === selectedStages.length - 1}
                     onClick={() => moveStage(idx, idx + 1)}
                     className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400"
-                    title="Move down"
+                    title={t('bld_moveDown')}
                   >
                     <ChevronDown size={14} />
                   </button>
@@ -264,7 +268,7 @@ export default function ProductionStageBuilder({
                   type="button"
                   onClick={() => removeStage(idx)}
                   className="p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/50 transition"
-                  title="Remove stage"
+                  title={t('bld_remove')}
                 >
                   <X size={16} />
                 </button>
@@ -282,7 +286,7 @@ export default function ProductionStageBuilder({
           className="flex-1 h-9 px-3 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 text-xs font-bold rounded-xl border border-amber-200 dark:border-amber-800/80 transition flex items-center justify-center gap-1.5"
         >
           <Plus size={14} />
-          {showLibrary ? 'Close Stage Library' : '+ Add Stage from Library'}
+          {showLibrary ? t('bld_closeLibrary') : t('bld_addFromLibrary')}
         </button>
 
         <button
@@ -291,7 +295,7 @@ export default function ProductionStageBuilder({
           className="h-9 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 transition flex items-center justify-center gap-1.5"
         >
           <Plus size={14} />
-          + Custom Stage
+          {t('bld_customStage')}
         </button>
       </div>
 
@@ -302,7 +306,7 @@ export default function ProductionStageBuilder({
             <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search stage library..."
+              placeholder={t('bld_searchLibrary')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg outline-none focus:border-amber-500"
@@ -311,7 +315,7 @@ export default function ProductionStageBuilder({
 
           <div className="max-h-36 overflow-y-auto flex flex-wrap gap-1.5 p-1">
             {filteredLibrary.length === 0 ? (
-              <p className="text-xs text-slate-400 py-2 w-full text-center">No matching stages found.</p>
+              <p className="text-xs text-slate-400 py-2 w-full text-center">{t('bld_noMatch')}</p>
             ) : (
               filteredLibrary.map((stage) => (
                 <button
@@ -321,7 +325,7 @@ export default function ProductionStageBuilder({
                   className="text-xs px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-500 dark:hover:text-white text-slate-700 dark:text-slate-200 rounded-lg transition font-medium flex items-center gap-1"
                 >
                   <Plus size={12} />
-                  {stage}
+                  {stageLabel(t, stage)}
                 </button>
               ))
             )}
@@ -336,7 +340,7 @@ export default function ProductionStageBuilder({
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Plus size={16} className="text-amber-500" />
-                Add Custom Production Stage
+                {t('bld_customTitle')}
               </h3>
               <button
                 type="button"
@@ -350,12 +354,12 @@ export default function ProductionStageBuilder({
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                  Stage Name <span className="text-red-500">*</span>
+                  {t('bld_stageName')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Quality Inspection"
+                  placeholder={t('bld_namePh')}
                   value={customStageName}
                   onChange={(e) => setCustomStageName(e.target.value)}
                   onKeyDown={(e) => {
@@ -372,11 +376,11 @@ export default function ProductionStageBuilder({
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                  Description <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                  {t('bld_description')} <span className="text-slate-400 font-normal lowercase">{t('bld_optional')}</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Checks moisture and impurity levels"
+                  placeholder={t('bld_descPh')}
                   value={customStageDesc}
                   onChange={(e) => setCustomStageDesc(e.target.value)}
                   onKeyDown={(e) => {
@@ -400,7 +404,7 @@ export default function ProductionStageBuilder({
                 />
                 <label htmlFor="saveToLibrary" className="text-xs text-slate-600 dark:text-slate-300 cursor-pointer flex items-center gap-1">
                   <Bookmark size={12} className="text-amber-500" />
-                  Save to Stage Library for future reuse
+                  {t('bld_saveToLibrary')}
                 </label>
               </div>
 
@@ -410,14 +414,14 @@ export default function ProductionStageBuilder({
                   onClick={() => setShowCustomModal(false)}
                   className="px-4 h-9 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl"
                 >
-                  Cancel
+                  {t('bld_cancel')}
                 </button>
                 <button
                   type="button"
                   onClick={handleAddCustomStage}
                   className="px-4 h-9 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-md transition"
                 >
-                  Add Stage
+                  {t('bld_addStage')}
                 </button>
               </div>
             </div>
@@ -436,11 +440,11 @@ export default function ProductionStageBuilder({
               className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
             />
             <span className="text-xs text-slate-700 dark:text-slate-300 font-medium group-hover:text-amber-600 dark:group-hover:text-amber-400 transition">
-              Save this workflow as default template for <b>{productName}</b>
+              {t('bld_saveDefault', { name: productName })}
             </span>
           </label>
           <p className="text-[10px] text-slate-400 ml-6 mt-0.5">
-            Future production batches for {productName} will automatically suggest this stage sequence.
+            {t('bld_saveDefaultHint', { name: productName })}
           </p>
         </div>
       )}

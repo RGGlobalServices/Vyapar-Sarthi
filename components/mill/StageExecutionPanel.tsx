@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR, { useSWRConfig } from 'swr';
 import { cn } from '@/lib/utils';
+import { stageLabel } from '@/lib/millLabels';
 import api, { downloadBlob } from '@/lib/api';
 import {
   Loader2,
@@ -498,7 +499,7 @@ export default function StageExecutionPanel({ batch, stageId, products, onStageU
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold tracking-tight text-white">{stage.stageName}</h2>
+              <h2 className="text-xl font-bold tracking-tight text-white">{stageLabel(t, stage.stageName)}</h2>
               <button
                 type="button"
                 onClick={() => setShowStageInfo((v) => !v)}
@@ -518,11 +519,11 @@ export default function StageExecutionPanel({ batch, stageId, products, onStageU
                   isCompleted ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                 )}
               >
-                {isCompleted ? 'COMPLETED' : 'IN PROGRESS'}
+                {isCompleted ? t('pnl_completed') : t('pnl_inProgress')}
               </span>
               {batch.batchType === 'REPROCESSING' && (
                 <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/30 text-purple-200 border border-purple-400/30 uppercase">
-                  REPROCESSING
+                  {t('pnl_reprocessing')}
                 </span>
               )}
             </div>
@@ -572,7 +573,7 @@ export default function StageExecutionPanel({ batch, stageId, products, onStageU
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-1">
-              {stage.stageName} — Ya Stage la Kay Hote?
+              {stageLabel(t, stage.stageName)} — Ya Stage la Kay Hote?
             </p>
             <p className="text-sm text-indigo-700 dark:text-indigo-300 leading-relaxed">{stageInfo.desc}</p>
             <div className="mt-2 rounded-lg bg-white/60 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-500/20 px-3 py-2">

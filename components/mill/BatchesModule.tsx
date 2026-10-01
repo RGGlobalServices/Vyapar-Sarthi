@@ -12,6 +12,7 @@ import api, { downloadBlob } from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { stageLabel } from '@/lib/millLabels';
 import ProductionStageBuilder, { getProductSmartSuggestions } from './ProductionStageBuilder';
 import StageTimeline from './StageTimeline';
 import StageExecutionPanel from './StageExecutionPanel';
@@ -19,8 +20,6 @@ import DynamicExecutionFields from './DynamicExecutionFields';
 
 // Stage names are the mill's own (rice, wheat, millet … differ). A name is translated only when it happens to be one of these
 // built-in keys; anything the user typed is shown exactly as typed.
-const KNOWN_STAGES = ['cleaning', 'drying', 'shelling', 'polishing', 'packing', 'processing'];
-const stageLabel = (t: any, name: string) => (KNOWN_STAGES.includes(name) ? t(name) : name);
 const DEFAULT_STAGES_TEXT = 'Cleaning, Processing, Packing';
 const OUTPUT_TYPES = ['finished_good', 'wip', 'by_product', 'rejection'] as const;
 
@@ -911,7 +910,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {wip.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{wip.sourceBatchStage?.stageName || 'Stage Output'}</td>
+                        <td className="py-2 px-2 text-slate-500">{wip.sourceBatchStage?.stageName ? stageLabel(t, wip.sourceBatchStage.stageName) : 'Stage Output'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -956,7 +955,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {fg.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName || 'Final Stage'}</td>
+                        <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName ? stageLabel(t, fg.sourceBatchStage.stageName) : 'Final Stage'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -998,7 +997,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {bp.isStockable ? 'Yes' : 'No'}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{bp.sourceBatchStage?.stageName || 'Stage Output'}</td>
+                        <td className="py-2 px-2 text-slate-500">{bp.sourceBatchStage?.stageName ? stageLabel(t, bp.sourceBatchStage.stageName) : 'Stage Output'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1040,7 +1039,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {rj.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{rj.sourceBatchStage?.stageName || 'Stage Output'}</td>
+                        <td className="py-2 px-2 text-slate-500">{rj.sourceBatchStage?.stageName ? stageLabel(t, rj.sourceBatchStage.stageName) : 'Stage Output'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1684,6 +1683,7 @@ function StageReportButton({ batchId, stageId, stageName }: { batchId: string; s
 
 /** Dropdown button for full batch report (all stages) or per-stage selection. */
 function BatchReportButton({ batchId, batchNumber, stages }: { batchId: string; batchNumber: string; stages: Stage[] }) {
+  const t = useTranslations('Mill');
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -1761,7 +1761,7 @@ function BatchReportButton({ batchId, batchNumber, stages }: { batchId: string; 
                 <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0',
                   st.completedAt ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700'
                 )}>{i + 1}</span>
-                <span className="capitalize">{st.stageName}</span>
+                <span className="capitalize">{stageLabel(t, st.stageName)}</span>
                 {st.completedAt && <span className="ml-auto text-[10px] text-emerald-600">✓</span>}
               </button>
             ))}

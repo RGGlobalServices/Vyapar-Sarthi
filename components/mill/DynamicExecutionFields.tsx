@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import useSWR from 'swr';
+import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
+import { fieldLabel, optionLabel, sectionLabel } from '@/lib/millLabels';
 import { cn } from '@/lib/utils';
 import { Check, Loader2, Layers, Cpu, ShieldCheck, Scale, PackageCheck, FileText, AlertTriangle } from 'lucide-react';
 
@@ -37,6 +39,7 @@ export default function DynamicExecutionFields({
   products = [],
   batch,
 }: Props) {
+  const t = useTranslations('Mill');
   const { data: rawFields, mutate: mutateFields } = useSWR<any[]>(
     `/mill/batches/${batchId}/stages/${stageId}/execution`,
     fetcher
@@ -92,7 +95,7 @@ export default function DynamicExecutionFields({
     return (
       <div className="flex items-center justify-center p-6 text-slate-500 text-xs gap-2">
         <Loader2 className="animate-spin text-indigo-600" size={18} />
-        <span>Loading stage workflow fields...</span>
+        <span>{t('exec_loading')}</span>
       </div>
     );
   }
@@ -100,7 +103,7 @@ export default function DynamicExecutionFields({
   if (fields.length === 0) {
     return (
       <div className="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
-        No execution fields configured for this stage.
+        {t('exec_noFields')}
       </div>
     );
   }
@@ -114,16 +117,16 @@ export default function DynamicExecutionFields({
   });
 
   const sectionOrderMap: { [key: string]: { order: number; icon: any; title: string } } = {
-    INPUT: { order: 1, icon: Layers, title: '1. Input Details' },
-    PROCESS: { order: 2, icon: Cpu, title: '2. Process & Execution' },
-    MACHINE: { order: 2, icon: Cpu, title: '2. Machine & Equipment' },
-    OPERATOR: { order: 2, icon: Cpu, title: '2. Operator Details' },
-    TIMING: { order: 2, icon: Cpu, title: '2. Process Timing' },
-    OUTPUT: { order: 3, icon: Scale, title: '3. Output Quantities' },
-    QUALITY: { order: 4, icon: ShieldCheck, title: '4. Quality Checks & Control' },
-    PACKAGING: { order: 5, icon: PackageCheck, title: '5. Packaging Details' },
-    NOTES: { order: 6, icon: FileText, title: '6. Operational Notes' },
-    GENERAL: { order: 7, icon: Layers, title: 'General Stage Details' },
+    INPUT: { order: 1, icon: Layers, title: t('sec_input') },
+    PROCESS: { order: 2, icon: Cpu, title: t('sec_process') },
+    MACHINE: { order: 2, icon: Cpu, title: t('sec_machine') },
+    OPERATOR: { order: 2, icon: Cpu, title: t('sec_operator') },
+    TIMING: { order: 2, icon: Cpu, title: t('sec_timing') },
+    OUTPUT: { order: 3, icon: Scale, title: t('sec_output') },
+    QUALITY: { order: 4, icon: ShieldCheck, title: t('sec_quality') },
+    PACKAGING: { order: 5, icon: PackageCheck, title: t('sec_packaging') },
+    NOTES: { order: 6, icon: FileText, title: t('sec_notes') },
+    GENERAL: { order: 7, icon: Layers, title: t('sec_general') },
   };
 
   const sortedSections = Object.entries(sections).sort(([a], [b]) => {
@@ -185,7 +188,7 @@ export default function DynamicExecutionFields({
       onRefreshBatch();
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err: any) {
-      setError(err?.response?.data?.error || err.message || 'Failed to save execution details');
+      setError(err?.response?.data?.error || err.message || t('exec_saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -232,10 +235,10 @@ export default function DynamicExecutionFields({
               disabled && 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-800/60'
             )}
           >
-            <option value="">-- Select Option --</option>
+            <option value="">{t('exec_selectOption')}</option>
             {opts.map((opt: string) => (
               <option key={opt} value={opt}>
-                {opt}
+                {optionLabel(t, opt)}
               </option>
             ))}
           </select>
@@ -253,7 +256,7 @@ export default function DynamicExecutionFields({
               disabled && 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-800/60'
             )}
           >
-            <option value="">-- Select Product --</option>
+            <option value="">{t('exec_selectProduct')}</option>
             {productList.map((p: any) => (
               <option key={p.id} value={p.id}>
                 {p.name} {p.baseUnit ? `(${p.baseUnit})` : ''}
@@ -274,10 +277,10 @@ export default function DynamicExecutionFields({
               disabled && 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-800/60'
             )}
           >
-            <option value="">-- Select Lot --</option>
+            <option value="">{t('exec_selectLot')}</option>
             {rawLots.map((l: any) => (
               <option key={l.id} value={l.id}>
-                {l.lotNumber || 'Lot'} – {l.product?.name || ''} ({l.remainingQuantity ?? l.quantity} kg)
+                {l.lotNumber || t('exec_lot')} – {l.product?.name || ''} ({l.remainingQuantity ?? l.quantity} kg)
               </option>
             ))}
           </select>
@@ -295,10 +298,10 @@ export default function DynamicExecutionFields({
               disabled && 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-800/60'
             )}
           >
-            <option value="">-- Select Machine --</option>
+            <option value="">{t('exec_selectMachine')}</option>
             {machines.map((m: any) => (
               <option key={m.id} value={m.id}>
-                {m.name} {m.machineType ? `· ${m.machineType}` : ''} {m.status === 'under_maintenance' ? '⚠️ [In Service]' : ''}
+                {m.name} {m.machineType ? `· ${m.machineType}` : ''} {m.status === 'under_maintenance' ? t('exec_inService') : ''}
               </option>
             ))}
           </select>
@@ -329,7 +332,7 @@ export default function DynamicExecutionFields({
                     }}
                     className="rounded text-indigo-600 focus:ring-indigo-500"
                   />
-                  {opt}
+                  {optionLabel(t, opt)}
                 </label>
               );
             })}
@@ -348,7 +351,7 @@ export default function DynamicExecutionFields({
               className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
             />
             <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-              {field.helpText || (val ? 'Yes' : 'No')}
+              {field.helpText || (val ? t('exec_yes') : t('exec_no'))}
             </span>
           </div>
         );
@@ -387,7 +390,7 @@ export default function DynamicExecutionFields({
             rows={2}
             disabled={disabled}
             value={val}
-            placeholder={field.placeholder || 'Enter notes or remarks...'}
+            placeholder={field.placeholder || t('exec_notesPh')}
             onChange={(e) => handleChange(field.fieldCode, e.target.value)}
             className={cn(
               'mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800',
@@ -404,7 +407,7 @@ export default function DynamicExecutionFields({
             type="text"
             disabled={disabled}
             value={val}
-            placeholder={field.placeholder || (field.fieldType === 'OPERATOR' ? 'Enter operator name' : '')}
+            placeholder={field.placeholder || (field.fieldType === 'OPERATOR' ? t('exec_operatorPh') : '')}
             onChange={(e) => handleChange(field.fieldCode, e.target.value)}
             className={cn(
               'mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none',
@@ -419,7 +422,7 @@ export default function DynamicExecutionFields({
     <div className="space-y-4">
       {savedSuccess && (
         <div className="flex items-center text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
-          <Check className="w-4 h-4 mr-1.5 text-emerald-600" /> Operational execution details saved successfully!
+          <Check className="w-4 h-4 mr-1.5 text-emerald-600" /> {t('exec_saved')}
         </div>
       )}
 
@@ -429,7 +432,7 @@ export default function DynamicExecutionFields({
         </div>
       )}
 
-      <LiveBalanceBar formValues={formValues} />
+      <LiveBalanceBar formValues={formValues} t={t} />
 
       {sortedSections.map(([secName, secFields]) => {
         const secMeta = sectionOrderMap[secName.toUpperCase()] || { icon: Layers, title: secName };
@@ -441,7 +444,7 @@ export default function DynamicExecutionFields({
               <div className="flex items-center gap-2">
                 <IconComponent className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                 <h3 className="font-bold text-sm uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                  {secMeta.title || secName}
+                  {secMeta.title || sectionLabel(t, secName.toLowerCase(), secName)}
                 </h3>
               </div>
             </div>
@@ -450,7 +453,7 @@ export default function DynamicExecutionFields({
               {secFields.map((field) => (
                 <div key={field.id} className="bg-slate-50/70 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {field.fieldName}
+                    {fieldLabel(t, field.fieldName)}
                     {field.unit && <span className="ml-1 text-slate-400 font-normal">({field.unit})</span>}
                     {field.isRequired && <span className="text-red-500 font-bold ml-1">*</span>}
                   </label>
@@ -476,7 +479,7 @@ export default function DynamicExecutionFields({
             disabled={saving}
             className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50 shadow transition"
           >
-            {saving ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} Save Execution Details
+            {saving ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} {t('exec_save')}
           </button>
         </div>
       )}
@@ -502,7 +505,7 @@ function computeBalance(formValues: Record<string, any>) {
 }
 
 /** Compact live balance bar — sits at the TOP of the form so it updates in view as the user types. */
-function LiveBalanceBar({ formValues }: { formValues: Record<string, any> }) {
+function LiveBalanceBar({ formValues, t }: { formValues: Record<string, any>; t: (k: string) => string }) {
   const { inputKg, outputKg, wasteKg, remaining, isOver, isBalanced } = computeBalance(formValues);
   const hasAny = inputKg > 0 || outputKg > 0 || wasteKg > 0;
   if (!hasAny) return null;
@@ -528,22 +531,22 @@ function LiveBalanceBar({ formValues }: { formValues: Record<string, any> }) {
           : isBalanced ? 'text-emerald-700 dark:text-emerald-400'
           : 'text-amber-700 dark:text-amber-400'
         )}>
-          {isOver ? 'Output exceeds input — recheck' : isBalanced ? 'Stage Balanced ✓' : 'Material Balance'}
+          {isOver ? t('exec_overInput') : isBalanced ? t('exec_balanced') : t('exec_materialBalance')}
         </span>
       </div>
 
       {/* Inline equation */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
         <span className="text-slate-600 dark:text-slate-400">
-          Input <span className="text-base font-black text-slate-800 dark:text-white">{inputKg > 0 ? inputKg.toLocaleString() : '—'}</span> kg
+          {t('exec_input')} <span className="text-base font-black text-slate-800 dark:text-white">{inputKg > 0 ? inputKg.toLocaleString() : '—'}</span> kg
         </span>
         <span className="text-slate-400">=</span>
         <span className="text-blue-600 dark:text-blue-400">
-          Output <span className="text-base font-black">{outputKg > 0 ? outputKg.toLocaleString() : '—'}</span> kg
+          {t('exec_output')} <span className="text-base font-black">{outputKg > 0 ? outputKg.toLocaleString() : '—'}</span> kg
         </span>
         <span className="text-slate-400">+</span>
         <span className="text-orange-500 dark:text-orange-400">
-          Waste <span className="text-base font-black">{wasteKg > 0 ? wasteKg.toLocaleString() : '—'}</span> kg
+          {t('exec_waste')} <span className="text-base font-black">{wasteKg > 0 ? wasteKg.toLocaleString() : '—'}</span> kg
         </span>
         {inputKg > 0 && (
           <>
@@ -554,7 +557,7 @@ function LiveBalanceBar({ formValues }: { formValues: Record<string, any> }) {
             <span className={cn('text-[10px] font-semibold',
               isOver ? 'text-red-500' : isBalanced ? 'text-emerald-600' : 'text-amber-500'
             )}>
-              {isOver ? 'OVER' : isBalanced ? 'balanced' : 'unaccounted'}
+              {isOver ? t('exec_over') : isBalanced ? t('exec_balancedLabel') : t('exec_unaccounted')}
             </span>
           </>
         )}
