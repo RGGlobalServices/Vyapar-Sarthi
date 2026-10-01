@@ -13,10 +13,14 @@ import {
 // engine's validation errors into HTTP 400s. Nothing here trusts a client-supplied package, total, GST amount or
 // round-off. Mill Billing is part of the Bada Udyog package itself: there is no per-shop activation or confirmation.
 
-/** Internal platform/deployment kill-switch. Off by default; nobody can bill as mill_v2 unless it is 'true'. Not customer-facing. */
+/**
+ * Internal platform kill-switch. ON by default: Mill Billing is part of the Bada Udyog package itself, and a missing
+ * env var on a new deployment used to silently block every Bada Udyog shop's billing ("not enabled on this server").
+ * Set MILL_V2_ENABLED=false (or 0/off/no) to switch it off deliberately. Not customer-facing.
+ */
 export function isMillV2Enabled(): boolean {
   const v = (process.env.MILL_V2_ENABLED || '').trim().toLowerCase();
-  return v === 'true' || v === '1';
+  return !(v === 'false' || v === '0' || v === 'off' || v === 'no');
 }
 
 /**
