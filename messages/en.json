@@ -3694,7 +3694,15 @@
     "byProductsReturnedShort": "Returned to customer",
     "byProductsKeptList": "Mill's by-products",
     "feePreview": "Fee (preview)",
-    "feeAfterOutput": "Calculated when the output is recorded"
+    "feeAfterOutput": "Calculated when the output is recorded",
+    "addCustomer": "Add customer",
+    "newCustomerTitle": "New customer / farmer",
+    "customerName": "Name",
+    "customerMobile": "Mobile (optional)",
+    "customerVillage": "Village / address (optional)",
+    "saveCustomer": "Save & select",
+    "customerAdded": "Customer added",
+    "failedToAddCustomer": "Could not add customer"
   },
   "Hamali": {
     "title": "Hamali / Labour",

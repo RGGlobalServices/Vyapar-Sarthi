@@ -3697,7 +3697,15 @@
     "byProductsReturnedShort": "ग्राहकाला परत",
     "byProductsKeptList": "मिलची उप-उत्पादने",
     "feePreview": "शुल्क (अंदाज)",
-    "feeAfterOutput": "आउटपुट नोंदल्यावर काढले जाईल"
+    "feeAfterOutput": "आउटपुट नोंदल्यावर काढले जाईल",
+    "addCustomer": "ग्राहक जोडा",
+    "newCustomerTitle": "नवीन ग्राहक / शेतकरी",
+    "customerName": "नाव",
+    "customerMobile": "मोबाईल (ऐच्छिक)",
+    "customerVillage": "गाव / पत्ता (ऐच्छिक)",
+    "saveCustomer": "सेव्ह करा आणि निवडा",
+    "customerAdded": "ग्राहक जोडला",
+    "failedToAddCustomer": "ग्राहक जोडता आला नाही"
   },
   "Hamali": {
     "title": "हमाली / मजुरी",

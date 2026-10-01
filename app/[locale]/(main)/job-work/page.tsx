@@ -45,7 +45,7 @@ export default function JobWorkPage() {
     activeShopId ? ['/mill/job-work', activeShopId] : null,
     ([u]) => fetcher(u),
   );
-  const { data: customers = [] } = useSWR<Customer[]>(
+  const { data: customers = [], mutate: refetchCustomers } = useSWR<Customer[]>(
     activeShopId ? ['/crm/customers?type=party', activeShopId] : null,
     ([u]) => fetcher(u),
   );
@@ -169,6 +169,7 @@ export default function JobWorkPage() {
           customers={customers}
           gateEntries={gateEntries}
           onClose={() => setCreating(false)}
+          onCustomerAdded={() => refetchCustomers()}
           onCreated={() => { setCreating(false); refetch(); }}
         /></ModalPortal>
       )}
@@ -197,8 +198,8 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
   );
 }
 
-function CreateOrderModal({ customers, gateEntries, onClose, onCreated }: {
-  customers: Customer[]; gateEntries: GateEntry[]; onClose: () => void; onCreated: () => void;
+function CreateOrderModal({ customers, gateEntries, onClose, onCreated, onCustomerAdded }: {
+  customers: Customer[]; gateEntries: GateEntry[]; onClose: () => void; onCreated: () => void; onCustomerAdded: () => void;
 }) {
   const t = useTranslations('JobWork');
   const [form, setForm] = useState({
@@ -208,6 +209,37 @@ function CreateOrderModal({ customers, gateEntries, onClose, onCreated }: {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Quick "Add customer" — creates the same Party record the Party section lists, so it shows up there too.
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [newCust, setNewCust] = useState({ name: '', mobile: '', village: '' });
+  const [savingCust, setSavingCust] = useState(false);
+  const [extraCustomers, setExtraCustomers] = useState<Customer[]>([]);
+
+  const saveCustomer = async () => {
+    if (!newCust.name.trim()) return;
+    setSavingCust(true); setError('');
+    try {
+      const res = await api.post('/crm/customers', {
+        name: newCust.name.trim(),
+        mobile: newCust.mobile.trim() || undefined,
+        village: newCust.village.trim() || undefined,
+        address: newCust.village.trim() || undefined,
+        customerType: 'party',
+      });
+      const created = res.data?.customer ?? res.data;
+      if (created?.id) {
+        setExtraCustomers(list => [...list, { id: created.id, name: created.name || newCust.name.trim(), mobile: created.mobile }]);
+        setForm(f => ({ ...f, customerId: created.id }));
+      }
+      onCustomerAdded();
+      setNewCust({ name: '', mobile: '', village: '' });
+      setAddingCustomer(false);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToAddCustomer'));
+    } finally { setSavingCust(false); }
+  };
+
+  const customerOptions = [...customers, ...extraCustomers.filter(x => !customers.some(c => c.id === x.id))];
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,14 +265,36 @@ function CreateOrderModal({ customers, gateEntries, onClose, onCreated }: {
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
-          <label className="block">
-            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('customer')} *</span>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="block text-xs font-bold uppercase text-slate-500">{t('customer')} *</span>
+              <button type="button" onClick={() => setAddingCustomer(v => !v)} className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                <Plus size={13} /> {t('addCustomer')}
+              </button>
+            </div>
             <select value={form.customerId} onChange={e => setForm(f => ({ ...f, customerId: e.target.value }))}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required>
               <option value="">{t('selectCustomer')}</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {customerOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </label>
+            {addingCustomer && (
+              <div className="mt-2 p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 space-y-2">
+                <p className="text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-400">{t('newCustomerTitle')}</p>
+                <input value={newCust.name} onChange={e => setNewCust(n => ({ ...n, name: e.target.value }))} placeholder={t('customerName')} autoFocus
+                  className="w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={newCust.mobile} onChange={e => setNewCust(n => ({ ...n, mobile: e.target.value }))} placeholder={t('customerMobile')} inputMode="tel"
+                    className="w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
+                  <input value={newCust.village} onChange={e => setNewCust(n => ({ ...n, village: e.target.value }))} placeholder={t('customerVillage')}
+                    className="w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
+                </div>
+                <button type="button" onClick={saveCustomer} disabled={savingCust || !newCust.name.trim()}
+                  className="w-full h-9 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5">
+                  {savingCust ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} {t('saveCustomer')}
+                </button>
+              </div>
+            )}
+          </div>
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('material')} *</span>
             <input value={form.materialDescription} onChange={e => setForm(f => ({ ...f, materialDescription: e.target.value }))}

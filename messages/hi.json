@@ -3697,7 +3697,15 @@
     "byProductsReturnedShort": "ग्राहक को लौटाए",
     "byProductsKeptList": "मिल के उप-उत्पाद",
     "feePreview": "शुल्क (अनुमान)",
-    "feeAfterOutput": "आउटपुट दर्ज होने पर निकलेगा"
+    "feeAfterOutput": "आउटपुट दर्ज होने पर निकलेगा",
+    "addCustomer": "ग्राहक जोड़ें",
+    "newCustomerTitle": "नया ग्राहक / किसान",
+    "customerName": "नाम",
+    "customerMobile": "मोबाइल (वैकल्पिक)",
+    "customerVillage": "गाँव / पता (वैकल्पिक)",
+    "saveCustomer": "सेव करें और चुनें",
+    "customerAdded": "ग्राहक जोड़ा गया",
+    "failedToAddCustomer": "ग्राहक जोड़ नहीं सका"
   },
   "Hamali": {
     "title": "हमाली / मजदूरी",
