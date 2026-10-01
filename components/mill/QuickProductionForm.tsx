@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import ModalPortal from '@/components/mill/ModalPortal';
 import { downloadProductionSlip } from '@/lib/productionSlipClient';
+import { defaultOutputPicks, rankProducts } from '@/lib/millSuggest';
 import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance, unitToKg, yieldPct } from '@/lib/quickEntry';
 
 /**
@@ -74,23 +75,23 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
   // ---- the four places the input can come from, each as { id, label, kg (what is left), productId, recipeKey } ----
   const options = useMemo(() => {
     const raw = lots.filter((l) => (l.availableKg ?? l.remainingQuantity ?? 0) > 0).map((l) => ({
-      id: l.id as string, kg: Number(l.availableKg ?? l.remainingQuantity ?? 0), productId: (l.productId || '') as string,
+      id: l.id as string, kg: Number(l.availableKg ?? l.remainingQuantity ?? 0), productId: (l.productId || '') as string, name: String(l.product?.name || ''),
       label: `${l.product?.name || '—'} · ${l.lotNumber || l.id.slice(0, 6)}${l.farmerName ? ' · ' + l.farmerName : ''}`, recipe: `p:${l.productId || ''}`,
     }));
     const jw = jwOrders.filter((j) => j.status === 'received' || j.status === 'processing').map((j) => ({
-      id: j.id as string, kg: Number(j.inputWeightKg || 0), productId: '',
+      id: j.id as string, kg: Number(j.inputWeightKg || 0), productId: '', name: String(j.materialDescription || ''),
       label: `${j.orderNumber} · ${j.customer?.name || ''} · ${j.materialDescription}`, recipe: `jw:${String(j.materialDescription || '').toLowerCase()}`,
     }));
     const usable = (s: string) => !['BLOCKED', 'FULLY_CONSUMED', 'DISPOSED', 'FULLY_REPROCESSED'].includes(String(s));
     const wip = (wipData?.items || []).filter((w: any) => usable(w.status) && Number(w.availableQuantity) > 0).map((w: any) => ({
-      id: w.id as string, kg: Number(unitToKg(Number(w.availableQuantity), w.unit) ?? w.availableQuantity), productId: (w.productId || '') as string,
+      id: w.id as string, kg: Number(unitToKg(Number(w.availableQuantity), w.unit) ?? w.availableQuantity), productId: (w.productId || '') as string, name: String(w.product?.name || ''),
       label: `${w.lotNumber} · ${w.product?.name || ''}`, recipe: `p:${w.productId || ''}`,
     }));
     const rj = (rjData?.items || []).filter((r: any) => usable(r.status) && Number(r.availableQuantity) > 0).map((r: any) => ({
-      id: r.id as string, kg: Number(r.availableQuantity), productId: (r.productId || '') as string,
+      id: r.id as string, kg: Number(r.availableQuantity), productId: (r.productId || '') as string, name: String(r.product?.name || ''),
       label: `${r.lotNumber} · ${r.product?.name || ''}`, recipe: `p:${r.productId || ''}`,
     }));
-    return { raw_lot: raw, job_work: jw, wip, rejection: rj } as Record<QuickSource, Array<{ id: string; kg: number; productId: string; label: string; recipe: string }>>;
+    return { raw_lot: raw, job_work: jw, wip, rejection: rj } as Record<QuickSource, Array<{ id: string; kg: number; productId: string; name: string; label: string; recipe: string }>>;
   }, [lots, jwOrders, wipData, rjData]);
 
   const [source, setSource] = useState<QuickSource>(initialSource?.type ?? 'raw_lot');
@@ -117,6 +118,31 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
   const list = options[source];
   const picked = list.find((o) => o.id === sourceId) || null;
 
+  // What this mill produced from this material before -> pre-selects the output products (weights stay empty).
+  const matProductId = picked?.productId || '';
+  const { data: history } = useSWR<Partial<Record<OutKind, string[]>>>(
+    matProductId && activeShopId ? [`/mill/production-suggestions?productId=${matProductId}`, activeShopId] : null,
+    ([u]) => fetcher(u),
+  );
+  const recipeIds = useMemo(() => {
+    const m: Partial<Record<OutKind, string[]>> = {};
+    if (picked) for (const r of loadRecipe(activeShopId, picked.recipe)) (m[r.kind] ||= []).push(r.productId);
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked?.id, picked?.recipe, activeShopId]);
+
+  const touched = useRef(false);        // the user changed a row: never overwrite it
+  const appliedKey = useRef('');
+  useEffect(() => {
+    if (!picked || touched.current || products.length === 0) return;
+    const key = `${source}:${picked.id}:${history ? 'h' : 'n'}:${products.length}`;
+    if (appliedKey.current === key) return;
+    appliedKey.current = key;
+    const picks = defaultOutputPicks(picked.name, picked.productId || null, products, history || {}, recipeIds);
+    setRows(picks.map((p) => newRow(p.kind, { productId: p.productId, name: products.find((x) => x.id === p.productId)?.name || '' })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked?.id, history, products.length, recipeIds]);
+
   const rowKg = (r: OutRow) => (r.bagMode ? packsToKg(r.packs, r.packKg) : unitToKg(num(r.qty), r.unit) ?? 0);
   const outputsKg = rows.reduce((s, r) => s + rowKg(r), 0);
   const inputKg = unitToKg(num(inputQty), inputUnit) ?? 0;
@@ -129,13 +155,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
     const o = options[type].find((x) => x.id === id);
     if (o) {
       setInputQty(String(Math.round(o.kg * 1000) / 1000)); setInputUnit('kg');
-      // repeat of a known material -> the product rows come back
-      const recipe = loadRecipe(activeShopId, o.recipe);
-      if (recipe.length) {
-        setRows(recipe.map((r) => newRow(r.kind, { productId: r.productId, name: r.name })));
-      } else if (o.productId && (type === 'wip' || type === 'rejection')) {
-        setRows([newRow('finished_good'), newRow('by_product')]);
-      }
+      touched.current = false; appliedKey.current = '';
     } else setInputQty('');
     setLossTouched(false);
   };
@@ -151,8 +171,8 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options]);
 
-  const setRow = (key: number, patch: Partial<OutRow>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const addRow = (kind: OutKind) => setRows((rs) => [...rs, newRow(kind)]);
+  const setRow = (key: number, patch: Partial<OutRow>) => { touched.current = true; setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r))); };
+  const addRow = (kind: OutKind) => { touched.current = true; setRows((rs) => [...rs, newRow(kind)]); };
 
   const productsFor = (kind: OutKind) => {
     const cat = KIND_CATEGORY[kind];
@@ -226,7 +246,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
 
   const reset = () => {
     idemKey.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `qp-${Date.now()}-${Math.random()}`;
-    setDone(null); setSourceId(''); setInputQty(''); setRows([newRow('finished_good'), newRow('by_product')]); setLossKg(''); setLossTouched(false); setNotes(''); setError('');
+    touched.current = false; appliedKey.current = ''; setDone(null); setSourceId(''); setInputQty(''); setRows([newRow('finished_good'), newRow('by_product')]); setLossKg(''); setLossTouched(false); setNotes(''); setError('');
   };
 
   const balanceTone = bal.state === 'balanced' ? 'text-emerald-600' : bal.state === 'over' ? 'text-red-500' : 'text-amber-600';
@@ -301,6 +321,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
                   <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">{t('qp_stepOut')}</h3>
                   {KINDS.map((kind) => {
                     const mine = rows.filter((r) => r.kind === kind);
+                    const ranked = rankProducts(kind, picked?.name || '', picked?.productId || null, products, history?.[kind] || [], recipeIds[kind] || []);
                     return (
                       <div key={kind} className={cn('rounded-xl border p-3 space-y-2', KIND_TONE[kind])}>
                         <div className="flex items-center justify-between">
@@ -320,7 +341,14 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
                                   }}
                                   className={cn(inputCls, !r.productId && (kind === 'finished_good' || kind === 'wip') && 'border-amber-400')}>
                                   <option value="">{kind === 'by_product' || kind === 'rejection' ? t('qp_notTracked') : t('qp_selectProduct')}</option>
-                                  {productsFor(kind).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  {ranked.suggested.length > 0 && (
+                                    <optgroup label={t('qp_suggested', { name: picked?.name || '' })}>
+                                      {ranked.suggested.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </optgroup>
+                                  )}
+                                  <optgroup label={t('qp_allProducts')}>
+                                    {ranked.rest.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </optgroup>
                                   <option value="__new__">{t('qp_newProduct')}</option>
                                 </select>
                               </label>
@@ -361,7 +389,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
                               <div className="flex items-center gap-3">
                                 {rowKg(r) > 0 && <span className="text-[11px] font-mono text-slate-500">= {fmt(rowKg(r))} kg</span>}
                                 {mine.length > 1 || r.productId || r.qty || r.packs ? (
-                                  <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="text-[11px] font-semibold text-red-500">{t('qp_remove')}</button>
+                                  <button type="button" onClick={() => { touched.current = true; setRows((rs) => rs.filter((x) => x.key !== r.key)); }} className="text-[11px] font-semibold text-red-500">{t('qp_remove')}</button>
                                 ) : null}
                               </div>
                             </div>
