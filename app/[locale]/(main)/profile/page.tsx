@@ -1,5 +1,6 @@
 'use client';
 
+import { useBillLanguage, setBillLanguage, type BillLanguage } from '@/lib/billLanguage';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +25,7 @@ import IndustryOnboardingWizard from '@/components/profile/IndustryOnboardingWiz
 
 export default function ProfilePage() {
   const t = useTranslations('Profile');
+  const billLanguage = useBillLanguage();
   const { profile, fetchProfile, updateProfile } = useBusinessStore();
   const { user, updateUser } = useAuthStore();
   const router = useRouter();
@@ -770,6 +772,22 @@ export default function ProfilePage() {
                   <option value="a4">A4 / Professional Tax Invoice</option>
                 </select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase">Bill Language (customer bill)</label>
+              <div className="relative">
+                <Printer className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <select
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
+                  value={billLanguage}
+                  onChange={e => setBillLanguage(e.target.value as BillLanguage)}>
+                  <option value="app">Same as app language</option>
+                  <option value="en">English</option>
+                  <option value="mr">मराठी (Marathi)</option>
+                  <option value="hi">हिन्दी (Hindi)</option>
+                </select>
+              </div>
+              <p className="text-[11px] text-slate-500">Printed and PDF bills use this language, even if the app is shown in another one. Applies instantly on this device.</p>
             </div>
           </div>
 

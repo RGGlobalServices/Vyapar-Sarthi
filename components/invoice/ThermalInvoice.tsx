@@ -3,7 +3,7 @@
 import { variantLabel } from '@/lib/variants';
 import React from 'react';
 import { CartItem } from '@/lib/store';
-import { useTranslations } from 'next-intl';
+import { useBillT, useBillLocale } from '@/lib/billLanguage';
 import { getInvoiceColumns, isChargeLineItem, inr } from '@/lib/invoice-helpers';
 import { BusinessType } from '@/lib/businessConfig';
 import { Barcode } from './Barcode';
@@ -133,7 +133,9 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   qrSvg,
   qrDataUrl: qrDataUrlProp,
 }, ref) => {
-  const t = useTranslations('BillSlip');
+  const t = useBillT('BillSlip');
+  const billLang = useBillLocale();
+  const devaFont = billLang === 'hi' || billLang === 'mr' ? "var(--font-deva), 'Noto Sans Devanagari', 'Nirmala UI', Mangal, sans-serif" : "Calibri, sans-serif";
   const isGstBill = billType === 'gst';
 
   // Transport/Loading/Packing/Other charges ride in the same items array (so
@@ -164,8 +166,9 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   const qrDataUrl = qrDataUrlProp !== undefined ? qrDataUrlProp : liveQrDataUrl;
   
   const widthClass = is58mm ? 'max-w-[220px]' : 'max-w-[320px]';
-  const textClass = is58mm ? 'text-[10px]' : 'text-[11px]';
-  const smallTextClass = is58mm ? 'text-[8px]' : 'text-[10px]';
+  const isDeva = billLang === 'hi' || billLang === 'mr'; // Devanagari needs a bigger size to stay legible on thermal paper
+  const textClass = is58mm ? (isDeva ? 'text-[11px]' : 'text-[10px]') : (isDeva ? 'text-[12px]' : 'text-[11px]');
+  const smallTextClass = is58mm ? (isDeva ? 'text-[10px]' : 'text-[8px]') : (isDeva ? 'text-[11px]' : 'text-[10px]');
   const headerTextClass = is58mm ? 'text-[14px]' : 'text-[17px]';
   // The items-table column HEADERS run a notch smaller than the row text so
   // long single-word labels (WARRANTY, SERIAL, COLOR) fit their narrow fixed
@@ -173,7 +176,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   // itself (WARR/ANTY) which reads as broken. Cells and headers use nowrap so
   // currency values never split mid-number (₹5,2/00) either; only the Item
   // name column is allowed to wrap, onto clean extra lines.
-  const tableHeadClass = is58mm ? 'text-[8px]' : 'text-[9px]';
+  const tableHeadClass = is58mm ? (isDeva ? 'text-[10px]' : 'text-[8px]') : (isDeva ? 'text-[11px]' : 'text-[9px]');
   const cellPad = is58mm ? 'px-0.5' : 'px-1';
   
   // A thin horizontal rule used between sections — a shared visual weight instead
@@ -184,8 +187,9 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   return (
     <div
       ref={ref}
+      data-bill-lang={billLang}
       data-print-format={is58mm ? 'thermal58' : 'thermal80'}
-      style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: 'Calibri, sans-serif' }}
+      style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: devaFont }}
       className={`p-3 w-full mx-auto ${widthClass} ${textClass} leading-snug`}
     >
       <div style={boxBorder}>

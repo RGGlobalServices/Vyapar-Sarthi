@@ -2,7 +2,7 @@
 
 import { variantLabel } from '@/lib/variants';
 import React from 'react';
-import { useTranslations } from 'next-intl';
+import { useBillT, useBillLocale } from '@/lib/billLanguage';
 import { getInvoiceColumns, isChargeLineItem, inr } from '@/lib/invoice-helpers';
 import { BaseInvoiceProps } from './ThermalInvoice';
 import { Barcode } from './Barcode';
@@ -52,7 +52,9 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   invoiceTheme = 'standard',
   invoiceColor,
 }, ref) => {
-  const t = useTranslations('BillSlip');
+  const t = useBillT('BillSlip');
+  const billLang = useBillLocale();
+  const devaFont = billLang === 'hi' || billLang === 'mr' ? "var(--font-deva), 'Noto Sans Devanagari', 'Nirmala UI', Mangal, sans-serif" : "Calibri, sans-serif";
   const isGstBill = billType === 'gst';
   const columns = getInvoiceColumns(businessType);
   // '#0f172a' is literally slate-900's hex — picking no color renders
@@ -102,8 +104,9 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   return (
     <div
       ref={ref}
+      data-bill-lang={billLang}
       data-print-format="a4"
-      style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Calibri, sans-serif', borderColor: isMinimal ? hairline : (isModern ? accent : '#0f172a') }}
+      style={{ backgroundColor: '#ffffff', color: '#0f172a', fontFamily: devaFont, borderColor: isMinimal ? hairline : (isModern ? accent : '#0f172a') }}
       className={`w-full max-w-[800px] mx-auto text-sm leading-snug min-h-[1056px] flex flex-col ${isMinimal ? 'border' : 'border-2'}`}
     >
       <div className="p-8 flex flex-col flex-1">
