@@ -64,10 +64,110 @@ export const GET = handle(async (req, { params }: any) => {
   const totalPaid = txs.filter((t: any) => t.type === 'payment' || t.type === 'credit' || t.type === 'advance').reduce((s: number, t: any) => s + (Number(t.amount) || 0), 0);
   const netDue = Number(customer.totalDue) || 0;
 
+  // ---- Material flow for this customer's job work (read-only, all computed on the server) ----
+  // Job work orders carry the customer's grain in and the finished weight out; the production batches linked to them
+  // (by order number in the batch notes) carry the detail: wastage, broken/bran/husk, and the WIP / rejected /
+  // by-product / finished lots each batch produced, plus reprocessing batches started from its rejected lots.
+  const r3 = (n: number) => Math.round((Number(n) || 0) * 1000) / 1000;
+  const sum = (rows: any[], pick: (r: any) => number) => r3(rows.reduce((a: number, r: any) => a + (Number(pick(r)) || 0), 0));
+  const batchIds: string[] = linkedBatches.map((b: any) => b.id);
+  const [wipLots, rejectLots, byproductLots, finishedLots] = batchIds.length
+    ? await Promise.all([
+        (prisma as any).wipLot.findMany({ where: { shopId: shop.id, batchId: { in: batchIds } }, select: { batchId: true, quantity: true, availableQuantity: true } }),
+        (prisma as any).rejectionLot.findMany({ where: { shopId: shop.id, batchId: { in: batchIds } }, select: { id: true, batchId: true, quantity: true, availableQuantity: true, disposedQuantity: true } }),
+        (prisma as any).byProductLot.findMany({ where: { shopId: shop.id, batchId: { in: batchIds } }, select: { batchId: true, quantity: true } }),
+        (prisma as any).finishedGoodsLot.findMany({ where: { shopId: shop.id, batchId: { in: batchIds } }, select: { batchId: true, quantity: true } }),
+      ])
+    : [[], [], [], []];
+  const rejectLotIds: string[] = rejectLots.map((r: any) => r.id);
+  const reprocessBatches = rejectLotIds.length
+    ? await (prisma as any).productionBatch.findMany({
+        where: { shopId: shop.id, rejectionLotId: { in: rejectLotIds } },
+        select: { id: true, batchNumber: true, rejectionLotId: true, inputKg: true, outputKg: true, status: true },
+      })
+    : [];
+  const keptByProducts = jwOrderNumbers.length
+    ? await (prisma as any).byProduct.findMany({
+        where: { shopId: shop.id, OR: jwOrderNumbers.map((num: string) => ({ notes: { startsWith: `Job work ${num}` } })) },
+        select: { name: true, quantityKg: true, notes: true },
+      })
+    : [];
+
+  const jwOrders: any[] = customer.jobWorkOrders || [];
+  const done = jwOrders.filter((j: any) => j.status === 'completed' || j.status === 'delivered');
+  const byProductKeptKg = sum(keptByProducts, (r) => r.quantityKg);
+  const jwReceivedKg = sum(jwOrders, (j) => j.inputWeightKg);
+  const jwFinishedKg = sum(done, (j) => j.outputWeightKg);
+  const jwDoneInputKg = sum(done, (j) => j.inputWeightKg);
+  const byProductBreakdown: Record<string, number> = {};
+  for (const r of keptByProducts) byProductBreakdown[r.name] = r3((byProductBreakdown[r.name] || 0) + (Number(r.quantityKg) || 0));
+
+  const perBatch = linkedBatches.map((b: any) => {
+    const mine = (rows: any[]) => rows.filter((r: any) => r.batchId === b.id);
+    const myReject = mine(rejectLots);
+    const myRejectIds = new Set(myReject.map((r: any) => r.id));
+    const myReprocess = reprocessBatches.filter((x: any) => myRejectIds.has(x.rejectionLotId));
+    return {
+      id: b.id,
+      batchNumber: b.batchNumber,
+      status: b.status,
+      currentStage: b.currentStage,
+      inputKg: r3(b.inputKg),
+      outputKg: b.outputKg == null ? null : r3(b.outputKg),
+      wastageKg: r3(b.wastageKg),
+      brokenKg: r3(b.brokenKg),
+      branKg: r3(b.branKg),
+      huskKg: r3(b.huskKg),
+      finishedKg: sum(mine(finishedLots), (r) => r.quantity),
+      wipKg: sum(mine(wipLots), (r) => r.availableQuantity),
+      rejectedKg: sum(myReject, (r) => r.quantity),
+      rejectedOpenKg: sum(myReject, (r) => r.availableQuantity),
+      byProductKg: sum(mine(byproductLots), (r) => r.quantity),
+      reprocessedKg: sum(myReprocess, (r) => r.inputKg),
+      reprocessBatches: myReprocess.map((x: any) => ({ id: x.id, batchNumber: x.batchNumber, status: x.status, inputKg: r3(x.inputKg), outputKg: x.outputKg == null ? null : r3(x.outputKg) })),
+    };
+  });
+  const tot = (k: string) => r3(perBatch.reduce((a: number, b: any) => a + (Number(b[k]) || 0), 0));
+  const materialFlow = {
+    jobWork: {
+      orders: jwOrders.length,
+      byStatus: {
+        received: jwOrders.filter((j: any) => j.status === 'received').length,
+        processing: jwOrders.filter((j: any) => j.status === 'processing').length,
+        completed: jwOrders.filter((j: any) => j.status === 'completed').length,
+        delivered: jwOrders.filter((j: any) => j.status === 'delivered').length,
+      },
+      receivedKg: jwReceivedKg,
+      finishedKg: jwFinishedKg,
+      byProductKeptKg,
+      byProductBreakdown,
+      // Anything that went in on a completed order and neither came back as finished grain nor stayed as a kept by-product.
+      wasteKg: Math.max(0, r3(jwDoneInputKg - jwFinishedKg - byProductKeptKg)),
+      yieldPct: jwDoneInputKg > 0 ? Math.round((jwFinishedKg / jwDoneInputKg) * 1000) / 10 : null,
+      pendingKg: sum(jwOrders.filter((j: any) => j.status === 'received' || j.status === 'processing'), (j) => j.inputWeightKg),
+    },
+    batches: {
+      count: perBatch.length,
+      inputKg: tot('inputKg'),
+      finishedKg: tot('finishedKg'),
+      wastageKg: tot('wastageKg'),
+      wipKg: tot('wipKg'),
+      rejectedKg: tot('rejectedKg'),
+      rejectedOpenKg: tot('rejectedOpenKg'),
+      byProductKg: tot('byProductKg'),
+      reprocessedKg: tot('reprocessedKg'),
+      brokenKg: tot('brokenKg'),
+      branKg: tot('branKg'),
+      huskKg: tot('huskKg'),
+    },
+    perBatch,
+  };
+
   return json({
     customer,
     jobWorkOrders: customer.jobWorkOrders,
     linkedBatches,
+    materialFlow,
     rawLots,
     finance: {
       totalDue: netDue,
