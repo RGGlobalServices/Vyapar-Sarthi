@@ -574,14 +574,6 @@ export default function RawMaterialPage() {
                         >
                           <Factory size={13} /> {tm('rm_startProduction')}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setAllocatingLot(l)}
-                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                          title="Batch-wise (stages)"
-                        >
-                          Allocate
-                        </button>
                         </div>
                       ) : (
                         <span className="text-[11px] text-slate-400 italic">Fully allocated</span>
@@ -615,7 +607,7 @@ export default function RawMaterialPage() {
             onAllocate={() => {
               const l = viewingLot;
               setViewingId(null);
-              setAllocatingLot(l);
+              setStartFor({ type: 'raw_lot', id: l.id });
             }}
           />
         </ModalPortal>
