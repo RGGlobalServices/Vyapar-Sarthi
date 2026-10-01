@@ -135,7 +135,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
 }, ref) => {
   const t = useBillT('BillSlip');
   const billLang = useBillLocale();
-  const devaFont = billLang === 'hi' || billLang === 'mr' ? "var(--font-deva), 'Noto Sans Devanagari', 'Nirmala UI', Mangal, sans-serif" : "Calibri, sans-serif";
+  const devaFont = "var(--font-deva), 'Noto Sans Devanagari', 'Nirmala UI', Mangal, Calibri, sans-serif";
   const isGstBill = billType === 'gst';
 
   // Transport/Loading/Packing/Other charges ride in the same items array (so

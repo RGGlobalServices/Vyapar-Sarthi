@@ -54,7 +54,10 @@
      (except the inverted black title bar) in a slightly heavier weight. */
   #print-root > [data-print-format^="thermal"],
   #print-root > [data-print-format^="thermal"] *:not(.thermal-invert):not(.thermal-invert *) { color: #000 !important; }
-  #print-root > [data-print-format^="thermal"] { font-weight: 500; }
+  #print-root > [data-print-format^="thermal"] { font-weight: 600; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Thermal heads under-burn thin edges: fatten every barcode bar a hair (and keep them hard-edged) so they never fade. */
+  #print-root > [data-print-format^="thermal"] svg rect,
+  #print-root > [data-print-format^="thermal"] svg path { fill: #000 !important; stroke: #000; stroke-width: 0.2px; shape-rendering: crispEdges; }
   /* Marathi / Hindi on a thermal roll: Devanagari has fine joins and matras that vanish at Latin weights — print heavier. */
   #print-root > [data-print-format^="thermal"][data-bill-lang="mr"],
   #print-root > [data-print-format^="thermal"][data-bill-lang="hi"] { font-weight: 600; }
