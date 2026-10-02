@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import ModalPortal from '@/components/mill/ModalPortal';
 import RawLotPicker from '@/components/mill/RawLotPicker';
-import { downloadProductionSlip } from '@/lib/productionSlipClient';
+import { downloadProductionSlipOf, warmUpSlip, type SlipBatch } from '@/lib/productionSlipClient';
 import { defaultOutputPicks, rankProducts, suggestedFinishedName } from '@/lib/millSuggest';
 import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance, unitToKg, yieldPct } from '@/lib/quickEntry';
 
@@ -114,7 +114,8 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState<null | { batchId: string; batchNumber: string; finishedKg: number; yieldPct: number | null }>(null);
+  const [done, setDone] = useState<null | { batchId: string; batchNumber: string; finishedKg: number; yieldPct: number | null; slip: SlipBatch }>(null);
+  useEffect(() => { warmUpSlip(); }, []);
   const [slipBusy, setSlipBusy] = useState(false);
   const profile = useBusinessStore((s) => s.profile);
 
@@ -258,7 +259,16 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
       }, { headers: { 'x-idempotency-key': idemKey.current } });
       const r = batch ? { ...res.data, batchId: batch.id, batchNumber: batch.batchNumber } : res.data;
       if (picked) saveRecipe(activeShopId, picked.recipe, filled);
-      setDone({ batchId: r.batchId, batchNumber: r.batchNumber, finishedKg: r.finishedKg, yieldPct: r.yieldPct ?? yieldPct(r.finishedKg, inputKg) });
+      setDone({
+        batchId: r.batchId, batchNumber: r.batchNumber, finishedKg: r.finishedKg, yieldPct: r.yieldPct ?? yieldPct(r.finishedKg, inputKg),
+        // everything the slip needs is already here — no round trip to the server when it is printed
+        slip: {
+          batchNumber: r.batchNumber, startedAt: when ? new Date(when).toISOString() : new Date().toISOString(), closedAt: new Date().toISOString(),
+          inputKg, outputKg: r.finishedKg, wastageKg: loss, notes: notes.trim() || null,
+          rawLot: { product: { name: picked?.name || '' } }, stages: [{ operatorName: operatorName.trim() || null }],
+          outputs: filled.map((row) => ({ outputType: row.kind, name: row.name || products.find((x) => x.id === row.productId)?.name || '', quantityKg: rowKg(row), notes: row.bagMode ? `${row.packs} × ${row.packKg} kg` : (row.reason || null) })),
+        },
+      });
       // every list the run touches
       globalMutate((key: any) => Array.isArray(key) && typeof key[0] === 'string' && (key[0].startsWith('/mill/') || key[0].startsWith('/products')), undefined, { revalidate: true });
       onSaved?.();
@@ -295,7 +305,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                 <button disabled={slipBusy} data-testid="qp-slip"
                   onClick={async () => {
                     setSlipBusy(true);
-                    try { await downloadProductionSlip(done.batchId, { name: profile.shopName || 'Vyapar Sarthi', address: profile.address || null, mobile: profile.mobile || null, gst: profile.gst || null, pan: profile.pan || null }); }
+                    try { await downloadProductionSlipOf(done.slip, { name: profile.shopName || 'Vyapar Sarthi', address: profile.address || null, mobile: profile.mobile || null, gst: profile.gst || null, pan: profile.pan || null }); }
                     catch { toast.error(t('qp_slipFailed')); } finally { setSlipBusy(false); }
                   }}
                   className="h-10 px-5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-bold flex items-center gap-1.5 disabled:opacity-50">

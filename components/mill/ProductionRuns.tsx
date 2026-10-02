@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { FileText, Loader2 } from 'lucide-react';
@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import ProductionReports from '@/components/mill/ProductionReports';
-import { downloadProductionSlip } from '@/lib/productionSlipClient';
+import { downloadProductionSlipOf, warmUpSlip } from '@/lib/productionSlipClient';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const kg = (n: number | null | undefined) => `${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
@@ -29,10 +29,12 @@ export default function ProductionRuns() {
   const { data: batches = [] } = useSWR<any[]>(activeShopId ? ['/mill/batches', activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: true });
   const recent = batches.filter((b) => b.status === 'closed').slice(0, 10);
 
-  const slip = async (id: string) => {
-    setSlipFor(id);
+  useEffect(() => { warmUpSlip(); }, []);
+
+  const slip = async (b: any) => {
+    setSlipFor(b.id);
     try {
-      await downloadProductionSlip(id, { name: profile.shopName || 'Vyapar Sarthi', address: profile.address || null, mobile: profile.mobile || null, gst: profile.gst || null, pan: profile.pan || null });
+      await downloadProductionSlipOf(b, { name: profile.shopName || 'Vyapar Sarthi', address: profile.address || null, mobile: profile.mobile || null, gst: profile.gst || null, pan: profile.pan || null });
     } catch {
       toast.error(t('qp_slipFailed'));
     } finally { setSlipFor(null); }
@@ -57,7 +59,7 @@ export default function ProductionRuns() {
                   <span className="text-emerald-600">{t('qp_finished')} <b className="font-mono">{kg(b.outputKg)}</b></span>
                   <span className="text-rose-500">{t('qp_loss')} <b className="font-mono">{kg(b.wastageKg)}</b></span>
                   {b.recoveryPct != null && <span className="font-black text-slate-700 dark:text-slate-200">{b.recoveryPct}%</span>}
-                  <button onClick={() => slip(b.id)} disabled={slipFor === b.id} title={t('qp_slip')}
+                  <button onClick={() => slip(b)} disabled={slipFor === b.id} title={t('qp_slip')}
                     className="h-8 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1 disabled:opacity-50">
                     {slipFor === b.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} {t('qp_slip')}
                   </button>

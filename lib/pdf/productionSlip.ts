@@ -1,6 +1,6 @@
 import {
   PDF_LAYOUT, renderProfessionalHeader, renderProfessionalFooter, renderSectionTitle,
-  renderSignatureBlock, embedDevanagariFont, setSmartFont, type ShopHeader,
+  renderSignatureBlock, embedDevanagariFont, setSmartFont, hasDevanagari, type ShopHeader,
 } from './professionalTemplate';
 
 /**
@@ -39,7 +39,9 @@ export async function exportProductionSlipPDF({
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
 
   const doc = new jsPDF({ orientation: 'portrait' }) as any;
-  await embedDevanagariFont(doc);
+  // The Devanagari font is ~0.6 MB of data to parse and embed: only worth it when a name on this slip is actually in Devanagari.
+  const texts = [shopInfo.name, shopInfo.address, batchNumber, rawMaterial, operatorName, notes, ...outputs.map((o) => o.label)];
+  if (texts.some((t) => hasDevanagari(t))) await embedDevanagariFont(doc);
 
   let y = renderProfessionalHeader(doc, shopInfo, 'Production Slip', date, { periodLabel: 'Date' });
   const L = PDF_LAYOUT.marginX;
