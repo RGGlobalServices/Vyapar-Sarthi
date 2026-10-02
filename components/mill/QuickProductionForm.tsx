@@ -58,7 +58,7 @@ function saveRecipe(shop: string | null, k: string, rows: OutRow[]) {
   } catch { /* private mode: ignore */ }
 }
 
-export default function QuickProductionForm({ onClose, onSaved, initialSource, batch }: { onClose: () => void; onSaved?: () => void; initialSource?: { type: QuickSource; id?: string }; batch?: { id: string; batchNumber: string; inputKg: number; materialName: string; materialProductId: string; lotsText: string } }) {
+export default function QuickProductionForm({ onClose, onSaved, initialSource, batch, editId }: { onClose: () => void; onSaved?: () => void; /** Edit a finished run (raw-material runs): the form opens filled; saving undoes the old run and books the corrected one together. */ editId?: string; initialSource?: { type: QuickSource; id?: string }; batch?: { id: string; batchNumber: string; inputKg: number; materialName: string; materialProductId: string; lotsText: string } }) {
   const t = useTranslations('Mill');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const { mutate: globalMutate } = useSWRConfig();
@@ -70,12 +70,21 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
   const { data: rjData } = useSWR<any>(activeShopId ? ['/mill/rejections?limit=100', activeShopId] : null, ([u]) => fetcher(u));
   const { data: productsData, mutate: mutateProducts } = useSWR<Product[]>(activeShopId ? ['/products', activeShopId] : null, ([u]) => fetcher(u));
   const { data: machinesData } = useSWR<any[]>(activeShopId ? ['/mill/machines', activeShopId] : null, ([u]) => fetcher(u));
+  const { data: editData } = useSWR<any>(editId && activeShopId ? [`/mill/production-entry/${editId}`, activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: false, revalidateOnReconnect: false });
+  const lotsEff = useMemo(() => {
+    const mine: any[] = editData?.source?.lots || [];
+    if (!mine.length) return lots;
+    const byId = new Map(mine.map((l: any) => [l.id, l]));
+    const merged = lots.map((l) => (byId.has(l.id) ? { ...l, availableKg: Number(l.availableKg ?? l.remainingQuantity ?? 0) + Number(byId.get(l.id).kg) } : l));
+    for (const l of mine) if (!lots.some((x) => x.id === l.id)) merged.push({ id: l.id, lotNumber: l.lotNumber, farmerName: null, productId: l.productId, product: { name: l.productName }, availableKg: Number(l.remainingNow) + Number(l.kg) });
+    return merged;
+  }, [lots, editData]);
   const products: Product[] = Array.isArray(productsData) ? productsData : [];
   const machines: any[] = Array.isArray(machinesData) ? machinesData : [];
 
   // ---- the four places the input can come from, each as { id, label, kg (what is left), productId, recipeKey } ----
   const options = useMemo(() => {
-    const raw = lots.filter((l) => (l.availableKg ?? l.remainingQuantity ?? 0) > 0).map((l) => ({
+    const raw = lotsEff.filter((l) => (l.availableKg ?? l.remainingQuantity ?? 0) > 0).map((l) => ({
       id: l.id as string, kg: Number(l.availableKg ?? l.remainingQuantity ?? 0), productId: (l.productId || '') as string, name: String(l.product?.name || ''),
       label: `${l.product?.name || '—'} · ${l.lotNumber || l.id.slice(0, 6)}${l.farmerName ? ' · ' + l.farmerName : ''}`, recipe: `p:${l.productId || ''}`,
     }));
@@ -93,7 +102,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
       label: `${r.lotNumber} · ${r.product?.name || ''}`, recipe: `p:${r.productId || ''}`,
     }));
     return { raw_lot: raw, job_work: jw, wip, rejection: rj } as Record<QuickSource, Array<{ id: string; kg: number; productId: string; name: string; label: string; recipe: string }>>;
-  }, [lots, jwOrders, wipData, rjData]);
+  }, [lotsEff, jwOrders, wipData, rjData]);
 
   const [source, setSource] = useState<QuickSource>(initialSource?.type ?? 'raw_lot');
   // raw material: one or more lots of one material, each with its own kg
@@ -191,6 +200,24 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options]);
 
+  const appliedEdit = useRef(false);
+  useEffect(() => {
+    if (!editData || appliedEdit.current || !editData.source?.lots?.length || products.length === 0) return;
+    appliedEdit.current = true;
+    touched.current = true; appliedKey.current = 'edit';
+    const sel: Record<string, string> = {};
+    for (const l of editData.source.lots) sel[l.id] = String(Math.round(Number(l.kg) * 1000) / 1000);
+    setSource('raw_lot'); setRawSel(sel); setSourceId(editData.source.lots[0].id);
+    setInputQty(String(Math.round(Number(editData.inputKg) * 1000) / 1000)); setInputUnit('kg');
+    setRows((editData.outputs || []).map((o: any) => newRow(o.outputType as OutKind, {
+      productId: o.productId || '', name: o.name || '', qty: String(Math.round(Number(o.quantity) * 1000) / 1000), unit: o.unit || 'kg', reason: o.notes || '',
+    })));
+    setLossKg(String(Math.round(Number(editData.lossKg) * 1000) / 1000)); setLossTouched(true);
+    setOperatorName(editData.operatorName || ''); setMachineId(editData.machineId || ''); setNotes(editData.notes || '');
+    if (editData.startedAt) { const d = new Date(editData.startedAt); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); setWhen(d.toISOString().slice(0, 16)); }
+    if (editData.operatorName || editData.machineId || editData.notes) setShowMore(true);
+  }, [editData, products.length]);
+
   const setRow = (key: number, patch: Partial<OutRow>) => { touched.current = true; setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r))); };
   const addRow = (kind: OutKind) => { touched.current = true; setRows((rs) => [...rs, newRow(kind)]); };
 
@@ -246,7 +273,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
       });
       const res = batch
         ? await api.post(`/mill/batches/${batch.id}/finalize`, { outputs, lossKg: loss, notes: notes.trim() || undefined })
-        : await api.post('/mill/production-entry', {
+        : await api.post(editId ? `/mill/production-entry/${editId}` : '/mill/production-entry', {
         source: source === 'raw_lot'
           ? { type: source, id: sourceId, lots: Object.entries(rawSel).filter(([, v]) => num(v) > 0).map(([id, v]) => ({ id, quantityKg: num(v) })) }
           : { type: source, id: sourceId },
@@ -290,8 +317,8 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
         <div className="bg-white dark:bg-slate-900 w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[96dvh] sm:max-h-[92vh] flex flex-col">
           <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-slate-900 dark:text-white">{t('qp_title')}</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{t('qp_subtitle')}</p>
+              <h2 className="text-lg font-black text-slate-900 dark:text-white">{editId ? `${t('pe_editTitle')}${editData?.batchNumber ? ' · ' + editData.batchNumber : ''}` : t('qp_title')}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{editId ? t('pe_editSub') : t('qp_subtitle')}</p>
             </div>
             <button onClick={onClose} aria-label={t('qp_close')}><X size={20} className="text-slate-400" /></button>
           </div>
@@ -338,7 +365,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                     ))}
                   </div>
                   {source === 'raw_lot' ? (
-                    <RawLotPicker lots={lots} selected={rawSel} onChange={onRawChange} inputCls={inputCls} labelCls={labelCls} />
+                    <RawLotPicker lots={lotsEff} selected={rawSel} onChange={onRawChange} inputCls={inputCls} labelCls={labelCls} />
                   ) : list.length === 0 ? (
                     <p className="text-xs text-slate-400 py-2">{t('qp_noSource')}</p>
                   ) : (

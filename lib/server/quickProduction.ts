@@ -6,6 +6,7 @@ import { parseLossKg, parseOutputs, toKg, kgPerUnit, round3 } from '@/lib/server
 import { prepareOutputCredits, finalizeBatchTx, afterBatchFinalized } from '@/lib/server/productionFinalize';
 import { recordAuditEvents } from '@/lib/server/productionWrites';
 import { setBatchJobWork } from '@/lib/server/jobWorkLink';
+import { reverseProductionTx } from '@/lib/server/productionReverse';
 import { QUICK_SOURCES, type QuickSource } from '@/lib/quickEntry';
 
 /**
@@ -66,7 +67,11 @@ export type QuickEntryResult = {
   source: QuickSource;
 };
 
-export async function createQuickEntry(shop: any, body: any, idempotencyKey?: string | null): Promise<{ result: QuickEntryResult; isDuplicate: boolean }> {
+/**
+ * `opts.replaceBatchId`: Edit-with-changes of a finished run — the old run is undone (productionReverse.ts) and the corrected one booked in the SAME
+ * transaction, so either both happen or neither; the run keeps its batch number.
+ */
+export async function createQuickEntry(shop: any, body: any, idempotencyKey?: string | null, opts: { replaceBatchId?: string | null } = {}): Promise<{ result: QuickEntryResult; isDuplicate: boolean }> {
   const shopId: string = shop.id;
   const allowNegativeStock = Boolean(shop.allowNegativeStock);
 
@@ -103,6 +108,11 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
       handler: async () => {
         const batchId = randomUUID();
         let batchNumber = String(body.batchNumber ?? '').trim().slice(0, 40);
+        if (opts.replaceBatchId) {
+          const rev = await reverseProductionTx(tx, { shopId, batchId: opts.replaceBatchId, allowNegativeStock });
+          if (!batchNumber) batchNumber = rev.batchNumber;
+          events.push(...rev.events);
+        }
         // a raw-lot run learns today's batch count from the same query that locks the lot; the other sources ask for it here
         if (!batchNumber && source.type !== 'raw_lot') batchNumber = await nextBatchNumber(tx, shopId);
 
