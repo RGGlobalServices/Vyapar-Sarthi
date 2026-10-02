@@ -1,12 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
-import { Factory, Trash2 } from 'lucide-react';
+import { Factory, Loader2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import ProductionRuns from '@/components/mill/ProductionRuns';
+import { useConfirm } from '@/components/ConfirmDialog';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const kg = (n: number | null | undefined) => `${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
@@ -18,7 +20,10 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
   const t = useTranslations('Mill');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const { mutate: globalMutate } = useSWRConfig();
-  const { data: batches = [] } = useSWR<any[]>(activeShopId ? ['/mill/batches', activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: true });
+  // window.confirm is silently blocked in embedded browsers / desktop shells (the button then looks dead) — use the in-app dialog
+  const [confirm, confirmDialog] = useConfirm();
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const { data: batches = [], mutate: mutateBatches } = useSWR<any[]>(activeShopId ? ['/mill/batches', activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: true });
   const open = batches.filter((b) => b.status === 'open' || b.status === 'in_progress');
 
   const info = (b: any): BatchInfo => {
@@ -33,13 +38,19 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
   };
 
   const cancel = async (b: any) => {
-    if (!window.confirm(t('bt_cancelConfirm'))) return;
+    if (!(await confirm(t('bt_cancelConfirm'), { okLabel: t('bt_cancel'), cancelLabel: t('qp_close'), title: b.batchNumber }))) return;
+    setCancelling(b.id);
+    // the server can take a while: take the card off the list at once, put it back if the cancel fails
+    const before = batches;
+    mutateBatches(batches.filter((x) => x.id !== b.id), { revalidate: false });
     try {
       await api.delete(`/mill/batches/${b.id}`);
+      toast.success(t('bt_cancelled'));
       globalMutate((key: any) => Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/mill/'), undefined, { revalidate: true });
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed');
-    }
+      mutateBatches(before, { revalidate: true });
+      toast.error(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('bt_cancelFailed'));
+    } finally { setCancelling(null); }
   };
 
   return (
@@ -63,7 +74,7 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
                     <button onClick={() => onStartBatch(i)} className="h-9 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
                       <Factory size={13} /> {t('bt_start')}
                     </button>
-                    <button onClick={() => cancel(b)} title={t('bt_cancel')} className="h-9 w-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 flex items-center justify-center"><Trash2 size={14} /></button>
+                    <button onClick={() => cancel(b)} disabled={cancelling === b.id} title={t('bt_cancel')} aria-label={t('bt_cancel')} className="h-9 w-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 flex items-center justify-center disabled:opacity-50">{cancelling === b.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button>
                   </div>
                 </div>
               );
@@ -74,6 +85,7 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
       )}
 
       <ProductionRuns />
+      {confirmDialog}
     </div>
   );
 }

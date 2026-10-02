@@ -3651,7 +3651,9 @@
     "bt_for": "Batch {n} — {material}",
     "bt_fixedInput": "Material is fixed by the batch",
     "rm_pageTitle": "Milling",
-    "rm_pageSubtitle": "The whole milling process in one place — raw material in, production, batches, reprocessing and reports."
+    "rm_pageSubtitle": "The whole milling process in one place — raw material in, production, batches, reprocessing and reports.",
+    "bt_cancelled": "Batch cancelled",
+    "bt_cancelFailed": "Could not cancel the batch"
   },
   "Brokers": {
     "title": "Brokers",
