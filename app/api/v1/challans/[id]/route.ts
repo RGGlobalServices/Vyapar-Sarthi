@@ -3,6 +3,8 @@ import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import prisma from '@/lib/server/prisma';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { billTagColumns } from '@/lib/server/billTags';
 
 async function getOwnedChallan(req: Request, id: string) {
   const { shop } = await requireShop(req);
@@ -77,6 +79,18 @@ export async function PATCH(req: Request, ctx: any) {
         );
       } catch (e) {
         console.error('[challans PATCH cancel] variant stock restore failed (non-fatal):', e);
+      }
+      // Bada Udyog: the sale freight, sale hamali and sale broker commission booked with this challan go with it
+      if (isMillBillingPackage((shop as any).packageType)) {
+        try {
+          await prisma.$executeRawUnsafe(`DELETE FROM freight_entries WHERE shop_id = $1::uuid AND challan_id = $2::uuid AND type = 'charge'`, shop.id, id);
+          if (await billTagColumns()) {
+            await prisma.$executeRawUnsafe(`DELETE FROM expenses WHERE shop_id = $1::uuid AND challan_id = $2::uuid AND direction = 'sale'`, shop.id, id);
+            await prisma.$executeRawUnsafe(`DELETE FROM commission_entries WHERE shop_id = $1::uuid AND challan_id = $2::uuid AND direction = 'sale'`, shop.id, id);
+          }
+        } catch (e) {
+          console.error('[challans PATCH cancel] linked freight / hamali / commission cleanup failed (non-fatal):', e);
+        }
       }
       const updated = await prisma.deliveryChallan.findUnique({ where: { id }, include: { items: true } });
       return NextResponse.json(updated);

@@ -111,12 +111,31 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  await assertOwned(req, id);
+  const { shop, lot } = await assertOwned(req, id);
+  // Material already used in production cannot be taken back out of the books.
+  const qty = Number(lot.quantity) || 0;
+  const remaining = lot.remainingQuantity == null ? qty : Number(lot.remainingQuantity);
+  if (remaining < qty - 0.0005) {
+    throw new ApiError(409, `${Math.round((qty - remaining) * 1000) / 1000} of this lot has already been used in production, so it cannot be deleted. Delete those production runs first.`, 'LOT_IN_USE');
+  }
+  // A lot added by hand put its quantity into stock (a 'raw_material_receipt' movement); deleting it takes that stock out again.
+  // A lot imported from a purchase did not (the purchase counted the stock) — its stock stays with the purchase.
+  const receipt = await prisma.stockMovement.findFirst({ where: { shopId: shop.id, type: 'raw_material_receipt', referenceId: id }, select: { id: true, productId: true, quantity: true } });
   // FK on ProductionBatch.rawLotId is NO ACTION — Prisma will refuse if any
   // batch still points to this lot. Return a friendly 409 instead of leaking
   // the raw P2003 text (same UX we shipped for supplier deletes earlier).
   try {
-    await (prisma as any).rawMaterialLot.delete({ where: { id } });
+    await prisma.$transaction(async (tx: any) => {
+      if (receipt?.productId && Number(receipt.quantity) > 0) {
+        const took = await tx.$executeRaw`UPDATE products SET current_stock = current_stock - ${Number(receipt.quantity)} WHERE id = ${receipt.productId}::uuid AND shop_id = ${shop.id}::uuid AND COALESCE(current_stock, 0) >= ${Number(receipt.quantity)} - 0.0005`;
+        if (took === 0) throw new ApiError(409, 'This lot\'s stock has already been sold or used elsewhere, so it cannot be deleted.', 'INSUFFICIENT_STOCK');
+        if (lot.godownId) {
+          await tx.$executeRaw`UPDATE godown_products SET quantity = quantity - ${Number(receipt.quantity)}, updated_at = now() WHERE godown_id = ${lot.godownId}::uuid AND product_id = ${receipt.productId}::uuid`;
+        }
+        await tx.stockMovement.create({ data: { shopId: shop.id, productId: receipt.productId, type: 'raw_material_reversal', quantity: -Number(receipt.quantity), referenceId: id } });
+      }
+      await tx.rawMaterialLot.delete({ where: { id } });
+    }, { timeout: 30000, maxWait: 10000 });
   } catch (err: any) {
     if (err?.code === 'P2003') {
       throw new ApiError(409, 'Cannot delete: one or more production batches were made from this lot. Close or reassign those batches first.');

@@ -151,3 +151,21 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
   throw new ApiError(400, 'Unknown action — expected "start", "complete", or "deliver"');
 });
+
+/**
+ * DELETE /api/v1/mill/job-work/[id] — remove an order that has not started. Once it is processing (production is booked against it) or
+ * completed / delivered (money was charged), it cannot be deleted: undo its production run first.
+ */
+export const DELETE = handle<Ctx>(async (req, { params }) => {
+  const { id } = await params;
+  const { shop } = await requireShop(req);
+  const existing = await (prisma as any).jobWorkOrder.findFirst({ where: { id, shopId: shop.id } });
+  if (!existing) throw new ApiError(404, 'Job work order not found');
+  if (existing.status !== 'received') {
+    throw new ApiError(409, `This order is already ${existing.status}. Only an order that has not started can be deleted — to remove a processed one, delete its production run first.`, 'INVALID_STATUS');
+  }
+  const linked = await findLinkedBatches(shop.id, [existing]).catch(() => []);
+  if ((linked as any[]).length > 0) throw new ApiError(409, 'A production run was made from this order — delete that run first.', 'HAS_PRODUCTION');
+  await (prisma as any).jobWorkOrder.delete({ where: { id } });
+  return json({ success: true });
+});

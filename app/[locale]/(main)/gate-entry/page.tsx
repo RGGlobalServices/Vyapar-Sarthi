@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
+import DeleteButton from '@/components/mill/DeleteButton';
 import { Plus, X, Loader2, Truck, LogOut, ArrowRight, Search, ArrowUpFromLine } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -293,9 +294,12 @@ export default function GateEntryPage() {
                       ? `${e.weighbridgeEntries[0].netWeightKg} Kg` : '—'}
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap', statusTone(e.status))}>
-                      {t(e.status)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap', statusTone(e.status))}>
+                        {t(e.status)}
+                      </span>
+                      <DeleteButton url={`/mill/gate-entries/${e.id}`} name={e.entryNumber} onDone={() => refetch()} />
+                    </div>
                   </td>
                 </tr>
               ))}

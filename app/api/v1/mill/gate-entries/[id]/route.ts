@@ -69,7 +69,16 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
 
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { id } = await params;
-  await assertOwned(req, id);
-  await (prisma as any).gateEntry.delete({ where: { id } });
+  const { shop, entry } = await assertOwned(req, id);
+  // A truck that was already weighed is part of the weighbridge record — delete that slip first.
+  const slips = await (prisma as any).weighbridgeEntry.count({ where: { shopId: shop.id, gateEntryId: id } });
+  if (slips > 0) throw new ApiError(409, 'This truck has a weighbridge slip. Delete the slip first, then the gate entry.', 'HAS_WEIGHBRIDGE_SLIP');
+  await prisma.$transaction(async (tx: any) => {
+    // The hamali the gate entry booked as an expense goes with it. Freight entries stay (money owed to the transporter) — they are just unlinked.
+    if (Number(entry.hamaliAmount) > 0) {
+      await tx.expense.deleteMany({ where: { shopId: shop.id, category: 'Hamali / Labour', description: { startsWith: `Hamali - ${entry.entryNumber} (` } } });
+    }
+    await tx.gateEntry.delete({ where: { id } });
+  }, { timeout: 30000, maxWait: 10000 });
   return json({ success: true });
 });

@@ -16,6 +16,7 @@ import { ExportButton } from '@/lib/hooks/useExport';
 import ProductionStageBuilder, { getProductSmartSuggestions } from '@/components/mill/ProductionStageBuilder';
 import { useTranslations } from 'next-intl';
 import QuickProductionForm from '@/components/mill/QuickProductionForm';
+import DeleteButton from '@/components/mill/DeleteButton';
 import ProductionSources from '@/components/mill/ProductionSources';
 import ProductionRuns from '@/components/mill/ProductionRuns';
 import type { QuickSource } from '@/lib/quickEntry';
@@ -623,6 +624,10 @@ export default function RawMaterialPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <DeleteButton url={`/mill/raw-lots/${l.id}`} name={l.lotNumber || l.product?.name || 'lot'}
+                          extra={l.source === 'purchase' ? 'This lot came from a purchase: the purchase and its stock stay as they are, only this lot is removed.' : undefined}
+                          onDone={() => { refetch(); globalMutate((key: any) => Array.isArray(key) && typeof key[0] === 'string' && (key[0].startsWith('/mill/') || key[0].startsWith('/products')), undefined, { revalidate: true }); }} />
                       {l.availableKg > 0 ? (
                         <div className="flex items-center justify-end gap-1.5">
                         <button
@@ -636,6 +641,7 @@ export default function RawMaterialPage() {
                       ) : (
                         <span className="text-[11px] text-slate-400 italic">Fully allocated</span>
                       )}
+                      </div>
                     </td>
                   </tr>
                 );

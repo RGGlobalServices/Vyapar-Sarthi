@@ -89,6 +89,7 @@ export const POST = handle(async (req) => {
   const entryNumber = (body.entryNumber || '').toString().trim() || await nextEntryNumber(shop.id);
   const hamaliAmount = body.hamaliAmount != null && body.hamaliAmount !== '' ? Number(body.hamaliAmount) : null;
 
+  let hamaliExpenseId: string | null = null;
   const entry = await prisma.$transaction(async (tx) => {
     const created = await (tx as any).gateEntry.create({
       data: {
@@ -119,12 +120,17 @@ export const POST = handle(async (req) => {
           date: new Date(),
         },
       });
-      // inward truck = purchase hamali, outward truck = sale hamali
-      await tagRows(tx as any, 'expenses', [hx.id], { direction: direction === 'outward' ? 'sale' : 'purchase', purchaseInvoiceId: body.purchaseInvoiceId || null, challanId: body.challanId || null });
+      hamaliExpenseId = hx.id;
     }
 
     return created;
-  });
+  }, { timeout: 60000, maxWait: 15000 });
+
+  // inward truck = purchase hamali, outward truck = sale hamali (after the entry is saved; a tag can never lose the entry)
+  if (hamaliExpenseId) {
+    try { await tagRows(prisma as any, 'expenses', [hamaliExpenseId], { direction: direction === 'outward' ? 'sale' : 'purchase', purchaseInvoiceId: body.purchaseInvoiceId || null, challanId: body.challanId || null }); }
+    catch (e) { console.error('[gate-entries POST] hamali tag failed (non-fatal):', e); }
+  }
 
   return json(entry, 201);
 });

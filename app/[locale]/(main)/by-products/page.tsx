@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
+import DeleteButton from '@/components/mill/DeleteButton';
 import { Plus, X, Loader2, Recycle, IndianRupee } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -143,12 +144,15 @@ export default function ByProductsPage() {
                     <td className="px-3 py-2.5 text-right font-bold text-amber-600 dark:text-amber-400">{remaining.toLocaleString('en-IN')} Kg</td>
                     <td className="px-3 py-2.5 text-right text-slate-500">{r.ratePerKg != null ? rupee(r.ratePerKg) : '—'}</td>
                     <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1">
+                      {r.source !== 'production' && sold <= 0 && <DeleteButton url={`/mill/by-products/${r.id}`} name={r.name} onDone={() => refetch()} />}
                       {remaining > 0 && (
                         <button onClick={() => setSellingId(r.id)} title="Record a sale or use"
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10">
                           <IndianRupee size={14} />
                         </button>
                       )}
+                      </div>
                     </td>
                   </tr>
                 );

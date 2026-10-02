@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
+import DeleteButton from '@/components/mill/DeleteButton';
 import { Plus, X, Loader2, Scale, CheckCircle2, ArrowRight, Search, LogOut } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -281,9 +282,12 @@ export default function WeighbridgePage() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    {e.status === 'completed' && (
-                      <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 text-white">{t('addToRawMaterial')}</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {e.status === 'completed' && (
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 text-white">{t('addToRawMaterial')}</span>
+                      )}
+                      {e.status !== 'converted' && <DeleteButton url={`/mill/weighbridge/${e.id}`} name={e.slipNumber} onDone={() => refetch()} />}
+                    </div>
                   </td>
                 </tr>
               ))}

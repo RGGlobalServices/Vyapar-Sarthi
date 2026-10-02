@@ -13,6 +13,7 @@ import { cn, fmtDate } from '@/lib/utils';
 import { performSmartSearch } from '@/lib/smartSearch';
 import { useBusinessStore } from '@/lib/businessStore';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { useConfirm } from '@/components/ConfirmDialog';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,6 +145,7 @@ export default function ChallansPage() {
   const router  = useRouter();
   const locale  = useLocale();
   const { profile } = useBusinessStore();
+  const [confirmAsync, confirmDialog] = useConfirm();
   const [challans, setChallans]         = useState<Challan[]>([]);
   const [loading, setLoading]           = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'invoiced' | 'cancelled' | 'returned'>('all');
@@ -197,7 +199,7 @@ export default function ChallansPage() {
   );
 
   const handleCancel = async (c: Challan) => {
-    if (!confirm(`Cancel challan ${c.challanNumber}? Stock will be restored.`)) return;
+    if (!(await confirmAsync(`Cancel challan ${c.challanNumber}? Stock will be restored.`, { okLabel: 'Cancel challan', cancelLabel: 'Keep it' }))) return;
     setBusyId(c.id);
     try {
       await api.patch(`/challans/${c.id}`, { action: 'cancel' });
@@ -243,6 +245,7 @@ export default function ChallansPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500 pb-20">
+      {confirmDialog}
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
+import DeleteButton from '@/components/mill/DeleteButton';
 import { Plus, X, Loader2, FlaskConical, Check, Ban } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -132,6 +133,7 @@ export default function QualityLabPage() {
                     {r.flag && <span className={cn('text-[10px] font-black uppercase px-2 py-0.5 rounded-full', FLAG_STYLES[r.flag])}>{r.flag}</span>}
                   </td>
                   <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1">
                     {r.decision === 'pending' ? (
                       <div className="flex items-center gap-1">
                         <button onClick={() => setDecision(r, 'accepted')} title="Accept" className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"><Check size={14} /></button>
@@ -142,6 +144,8 @@ export default function QualityLabPage() {
                         {r.decision}
                       </span>
                     )}
+                    <DeleteButton url={`/mill/quality-tests/${r.id}`} name={'quality test'} onDone={() => refetch()} />
+                    </div>
                   </td>
                 </tr>
               ))}

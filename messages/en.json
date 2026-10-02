@@ -3563,6 +3563,8 @@
     "qp_errProduct": "Pick a product for every ready-product and WIP row.",
     "qp_errBalance": "Input must equal outputs + waste.",
     "qp_failed": "Could not save the production entry",
+    "pe_confirmGeneric": "Delete {name}? This cannot be undone.",
+    "pe_removed": "{name} deleted",
     "pe_edit": "Edit",
     "pe_delete": "Delete",
     "pe_editTitle": "Edit production",

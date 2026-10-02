@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
+import DeleteButton from '@/components/mill/DeleteButton';
 import { Plus, X, Loader2, Wheat, PlayCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -134,6 +135,7 @@ export default function JobWorkPage() {
                   </p>
                 </div>
                 <div className="shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                  {o.status === 'received' && <DeleteButton url={`/mill/job-work/${o.id}`} name={o.orderNumber} onDone={() => refetch()} />}
                   {o.status === 'received' && (
                     <button onClick={() => startProcessing(o)} disabled={startingId === o.id}
                       className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 disabled:opacity-50">
