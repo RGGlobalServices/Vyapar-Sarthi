@@ -1,26 +1,23 @@
 'use client';
 
-import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
-import { Factory, Plus, Trash2 } from 'lucide-react';
+import { Factory, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import ProductionRuns from '@/components/mill/ProductionRuns';
-import NewBatchModal from '@/components/mill/NewBatchModal';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const kg = (n: number | null | undefined) => `${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
 
 export type BatchInfo = { id: string; batchNumber: string; inputKg: number; materialName: string; materialProductId: string; lotsText: string };
 
-/** Batches inside Raw Material: plan a batch (one or several lots), start its production later, and see every finished run with its reports. */
+/** Batches inside Milling: every finished run with its Slip and reports, plus any still-open batch (to finish or cancel). Production starts from a lot. */
 export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: BatchInfo) => void }) {
   const t = useTranslations('Mill');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const { mutate: globalMutate } = useSWRConfig();
-  const [creating, setCreating] = useState(false);
   const { data: batches = [] } = useSWR<any[]>(activeShopId ? ['/mill/batches', activeShopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: true });
   const open = batches.filter((b) => b.status === 'open' || b.status === 'in_progress');
 
@@ -47,18 +44,11 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <p className="text-xs text-slate-500 max-w-xl">{t('bt_hint')}</p>
-        <button onClick={() => setCreating(true)} data-testid="new-batch" className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center gap-1.5 shadow-sm">
-          <Plus size={16} /> {t('bt_new')}
-        </button>
-      </div>
-
+      {/* Batches planned or begun earlier (stage-wise) that are still open: shown only while there are any, so they can be finished or cancelled. */}
+      {open.length > 0 && (
       <section className="space-y-2">
         <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">{t('bt_open')}</h2>
-        {open.length === 0 ? (
-          <p className="text-sm text-slate-400 py-5 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">{t('bt_none')}</p>
-        ) : (
+        {(
           <div className="grid gap-2">
             {open.map((b) => {
               const i = info(b);
@@ -81,9 +71,9 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
           </div>
         )}
       </section>
+      )}
 
       <ProductionRuns />
-      {creating && <NewBatchModal onClose={() => setCreating(false)} />}
     </div>
   );
 }
