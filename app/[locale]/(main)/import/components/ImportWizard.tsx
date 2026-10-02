@@ -9,6 +9,7 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useUdharStore } from '@/lib/store';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { EMPTY_MILL_BILL, freightMismatch, type MillBill } from '@/lib/millBill';
 import { CHARGE_COLUMNS, getImportTemplate, applyTemplate, getAddableColumns } from '@/lib/importTemplates';
 import { printLabelSheet } from '@/lib/printLabels';
 
@@ -16,6 +17,8 @@ type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' |
 type Step = 'upload' | 'preview' | 'importing' | 'done';
 type RowMatch = { status: 'new' | 'existing'; existingName?: string };
 type RowDecision = 'update' | 'skip' | undefined;
+
+function MillField({ label, children }: { label: string; children: any }) { return (<label className="block text-[11px] font-semibold text-slate-500">{label}<div className="mt-0.5">{children}</div></label>); }
 
 export default function ImportWizard({ importType, onBack }: { importType: ImportType; onBack: () => void }) {
   const t = useTranslations('Import');
@@ -64,6 +67,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   // Bill-level charges read from the bill (hamali, freight, loading …) — editable here, stored on the purchase, never as products.
   const [purchaseBroker, setPurchaseBroker] = useState({ name: '', commission: '' });
   const [purchaseCharges, setPurchaseCharges] = useState<{ name: string; amount: string }[]>([]);
+  // Bada Udyog only: truck / driver / freight read from the mill purchase bill. Stays empty (and unused) for every other package.
+  const [millBill, setMillBill] = useState<MillBill | null>(null);
+  const [millOpts, setMillOpts] = useState({ gateEntry: true, freight: true, lots: true, advancePaidBy: 'seller' as 'seller' | 'mill' | 'skip' });
   const [supplierMatch, setSupplierMatch] = useState<null | {
     id: string; name: string; balance: number; creditLimit: number; creditDays: number;
   }>(null);
@@ -380,6 +386,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             const res = await api.post('/wholesale-import/analyze', fd);
             const data = res.data;
             if (data.stats) setExtractionStats(data.stats);
+            if (importType === 'purchase' && isMillBillingPackage(profile?.packageType) && data.millBill) {
+              const mb: MillBill = { ...EMPTY_MILL_BILL, ...data.millBill, sellerBank: { ...EMPTY_MILL_BILL.sellerBank, ...(data.millBill.sellerBank || {}) } };
+              setMillBill(mb);
+              setPurchaseSupplier(prev => ({ ...prev, mobile: prev.mobile || mb.supplierMobile, gst: prev.gst || mb.supplierGstin, address: prev.address || mb.supplierAddress }));
+              if (mb.broker) setPurchaseBroker(b => ({ ...b, name: b.name || mb.broker }));
+            }
             if (importType === 'purchase') setPurchaseCharges((Array.isArray(data.charges) ? data.charges : []).map((c: any) => ({ name: String(c.name || ''), amount: String(c.amount ?? '') })));
 
             if (data.items && data.items.length > 0) {
@@ -654,6 +666,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     const allProductIds: string[] = [];
     const allErrors: string[] = [];
     let billPhotoAttachFailed = false;
+    let millSupplierId: string | null = null;
+    let millExtrasResult: any = null;
     // Plain local var, NOT the `progress` state — this whole function runs as
     // one long-lived async closure, so reading React state mid-function only
     // ever sees the value from when the function was first called (state
@@ -741,6 +755,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         }
         const s = res.data.summary || {};
         importLogId = s.importLogId || importLogId;
+        if (s.supplierId && !millSupplierId) millSupplierId = s.supplierId;
         acc.created += s.created || 0; acc.updated += s.updated || 0;
         acc.skipped += s.skipped || 0; acc.failed += (s.failed ?? (s.rowErrors?.length || 0));
         if (Array.isArray(s.rowErrors)) allErrors.push(...s.rowErrors);
@@ -816,9 +831,20 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         try { localStorage.setItem(RESUME_KEY, JSON.stringify({ importLogId, offset, total, fileName: files[0]?.name || null })); } catch {}
       }
 
+      if (importType === 'purchase' && isMillBillingPackage(profile?.packageType) && millBill && millSupplierId && (millOpts.gateEntry || millOpts.freight || millOpts.lots)) {
+        try {
+          const first = previewData[0] || {};
+          const invKey = Object.keys(first).find(k => ['invoicenumber', 'billnumber', 'invoice'].includes(k.toLowerCase().replace(/[\s_-]/g, '')));
+          const inv = invKey ? String(first[invKey] ?? '').trim() : '';
+          const mr = await api.post('/mill/purchase-extras', { supplierId: millSupplierId, invoiceNumber: inv || undefined, millBill, options: millOpts });
+          millExtrasResult = { ok: true, ...mr.data };
+        } catch (me: any) {
+          millExtrasResult = { ok: false, error: me?.response?.data?.error || me?.message || 'Failed', supplierId: millSupplierId };
+        }
+      }
       localStorage.removeItem(RESUME_KEY);
       try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
-      setSummary({ totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed });
+      setSummary({ millExtras: millExtrasResult, totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed });
       setStep('done');
       import('swr').then(({ mutate }) => {
         mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
@@ -1264,6 +1290,51 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               </div>
             )}
 
+            {importType === 'purchase' && isMillBillingPackage(profile?.packageType) && millBill && (() => {
+              const set = (k: keyof MillBill, v: any) => setMillBill(b => (b ? { ...b, [k]: v } : b));
+              const num = (v: string) => (v === '' ? null : Number(v));
+              const inp = 'h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0 w-full';
+              const bad = freightMismatch(millBill);
+              return (
+                <div className="mb-5 p-5 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-500/5" data-testid="import-mill-bill">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Mill purchase details — truck, driver &amp; freight</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 mb-3">Read from the bill. Handwriting can be misread — please check names, mobile numbers and amounts before importing. Empty fields are simply skipped.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <MillField label="Truck number"><input className={inp} value={millBill.vehicleNumber} onChange={e => set('vehicleNumber', e.target.value.toUpperCase())} /></MillField>
+                    <MillField label="Driver name"><input className={inp} value={millBill.driverName} onChange={e => set('driverName', e.target.value)} /></MillField>
+                    <MillField label="Driver mobile"><input className={inp} inputMode="numeric" value={millBill.driverMobile} onChange={e => set('driverMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
+                    <MillField label="Truck owner"><input className={inp} value={millBill.truckOwnerName} onChange={e => set('truckOwnerName', e.target.value)} /></MillField>
+                    <MillField label="Owner mobile"><input className={inp} inputMode="numeric" value={millBill.truckOwnerMobile} onChange={e => set('truckOwnerMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
+                    <MillField label="Transport company"><input className={inp} value={millBill.transportCompany} onChange={e => set('transportCompany', e.target.value)} /></MillField>
+                    <MillField label="Total freight ₹"><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => set('freightTotal', num(e.target.value))} /></MillField>
+                    <MillField label="Advance ₹"><input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => set('freightAdvance', num(e.target.value))} /></MillField>
+                    <MillField label="Balance ₹"><input className={inp} type="number" min="0" value={millBill.freightBalance ?? ''} onChange={e => set('freightBalance', num(e.target.value))} /></MillField>
+                    <MillField label="Hamali ₹"><input className={inp} type="number" min="0" value={millBill.hamali ?? ''} onChange={e => set('hamali', num(e.target.value))} /></MillField>
+                    <MillField label="Total bags"><input className={inp} type="number" min="0" value={millBill.totalBags ?? ''} onChange={e => set('totalBags', num(e.target.value))} /></MillField>
+                    <MillField label="Broker (commission is set in the Broker box above)"><input className={inp} value={millBill.broker} onChange={e => { set('broker', e.target.value); setPurchaseBroker(b => ({ ...b, name: e.target.value })); }} /></MillField>
+                  </div>
+                  {bad && <p className="mt-2 text-xs font-semibold text-red-600">Freight total must equal advance + balance — fix one of them.</p>}
+                  {(millBill.sellerBank.bankName || millBill.sellerBank.accountNo) && (
+                    <p className="mt-2 text-[11px] text-slate-500">Seller bank on the bill: {[millBill.sellerBank.bankName, millBill.sellerBank.branch, millBill.sellerBank.accountNo, millBill.sellerBank.ifsc].filter(Boolean).join(' · ')}</p>
+                  )}
+                  <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-500/20 space-y-1.5 text-sm">
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.gateEntry} onChange={e => setMillOpts(o => ({ ...o, gateEntry: e.target.checked }))} /> Create inward Gate Entry (truck, driver{millBill.hamali ? ', hamali' : ''})</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.freight} onChange={e => setMillOpts(o => ({ ...o, freight: e.target.checked }))} /> Record freight in the transporter's account</label>
+                    {millOpts.freight && (millBill.freightAdvance ?? 0) > 0 && (
+                      <div className="pl-6 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Advance was paid by
+                        <select className="h-8 px-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900" value={millOpts.advancePaidBy} onChange={e => setMillOpts(o => ({ ...o, advancePaidBy: e.target.value as any }))}>
+                          <option value="seller">the seller (no cash out of the mill)</option>
+                          <option value="mill">the mill (cash)</option>
+                          <option value="skip">don't record the advance</option>
+                        </select>
+                      </div>
+                    )}
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.lots} onChange={e => setMillOpts(o => ({ ...o, lots: e.target.checked }))} /> Create Raw Material lot(s) for the milling stock</label>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Price % Adjust — increase/decrease MRP / Cost / Selling by a %
                 or ₹, either for every ticked row at once, or per-row via the
                 +/- next to that row's own price cell (see the header note
@@ -1574,6 +1645,27 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 <ul className="list-disc pl-6 text-sm text-slate-600 dark:text-slate-400 max-h-48 overflow-y-auto space-y-1">
                   {summary.rowErrors.map((e: string, i: number) => <li key={i}>{e}</li>)}
                 </ul>
+              </div>
+            )}
+
+            {summary.millExtras && (
+              <div className={'mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border rounded-xl ' + (summary.millExtras.ok ? 'border-emerald-500/30' : 'border-red-500/30')} data-testid="import-mill-result">
+                {summary.millExtras.ok ? (
+                  <>
+                    <h4 className="font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2"><CheckCircle size={16} /> Mill records created</h4>
+                    <ul className="text-sm text-slate-600 dark:text-slate-300 list-disc pl-5 space-y-0.5">
+                      {summary.millExtras.gateEntry && <li>Gate Entry {summary.millExtras.gateEntry.entryNumber} — {summary.millExtras.gateEntry.vehicleNumber}</li>}
+                      {summary.millExtras.freight && !summary.millExtras.freight.alreadyRecorded && <li>Freight ₹{Number(summary.millExtras.freight.total).toLocaleString('en-IN')} to {summary.millExtras.freight.transporter}{summary.millExtras.freight.advance > 0 ? ` (advance ₹${Number(summary.millExtras.freight.advance).toLocaleString('en-IN')}, balance ₹${Number(summary.millExtras.freight.balance).toLocaleString('en-IN')})` : ''}</li>}
+                      {(summary.millExtras.lots || []).map((l: any) => <li key={l.id}>Raw material lot {l.lotNumber} — {l.product}, {Number(l.quantity).toLocaleString('en-IN')} {l.unit}</li>)}
+                    </ul>
+                    {(summary.millExtras.skipped || []).length > 0 && <p className="text-xs text-amber-600 mt-2">Skipped: {summary.millExtras.skipped.join(' ')}</p>}
+                  </>
+                ) : (
+                  <>
+                    <h4 className="font-bold flex items-center gap-2 text-red-600 mb-2"><AlertCircle size={16} /> Truck / freight details not saved</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">The purchase itself saved correctly, but the mill records (gate entry, freight, lot) could not be created: {summary.millExtras.error}. Add them from Gate Entry / Freight / Raw Material.</p>
+                  </>
+                )}
               </div>
             )}
 

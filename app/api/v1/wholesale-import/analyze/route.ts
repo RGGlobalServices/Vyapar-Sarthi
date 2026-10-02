@@ -7,6 +7,8 @@ import { importConfig } from '@/lib/importConfig';
 import { requireShop } from '@/lib/server/auth';
 import { ApiError, errorResponse } from '@/lib/server/http';
 import { parseCharges, scanChargesFromText, mergeCharges, type PurchaseCharge } from '@/lib/server/purchaseCharges';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { normalizeMillBill, mergeMillBills, reconcileBillLine, type MillBill } from '@/lib/millBill';
 
 /* ─── Deterministic table reader ─────────────────────────────────────────────
  *
@@ -151,8 +153,10 @@ function parseInvoiceHeader(text: string): Record<string, string> {
 export async function POST(req: NextRequest) {
   // Was fully unauthenticated while spending paid Gemini quota. Its only
   // in-app caller (ImportWizard) goes through lib/api.ts, which sends the token.
+  let isMillShop = false;
   try {
-    await requireShop(req);
+    const { shop } = await requireShop(req);
+    isMillShop = isMillBillingPackage((shop as any).packageType);
   } catch (e) {
     if (e instanceof ApiError) return errorResponse(e.message, e.status, e.code);
     throw e;
@@ -167,6 +171,9 @@ export async function POST(req: NextRequest) {
     }
     const targetType = fd.get('targetType') as string || 'mixed';
     const businessTypeStr = fd.get('businessType') as string || 'general';
+    // Mill purchase bills (grain merchant bill + motor challan) are read for vehicle, driver, freight, broker, bags … — ONLY for Bada Udyog shops
+    // (decided here on the server from the shop's package). Every other package gets exactly the reading it always had.
+    const millPurchase = targetType === 'purchase' && isMillShop;
 
     if (files.length === 0) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
@@ -259,6 +266,18 @@ export async function POST(req: NextRequest) {
         'Also output discount and taxableAmount when the invoice shows them; they are used to cross-check each row.',
         'ALSO output a top-level "charges" array (next to "items") for every bill-level extra charge printed on the bill that is NOT a goods row, NOT GST/tax, NOT discount and NOT round-off — for example Hamali, Freight / Transport, Loading, Unloading, Packing, Weighment / Weighbridge, Commission, Mandi fee, Other charges. Each entry is { "name": the label as printed, "amount": the number printed }. Use [] when there are none. Never put these charges inside "items".',
       ].join(' ');
+      if (millPurchase) {
+        specificInstructions += ' ' + [
+          'MILL PURCHASE BILL EXTRAS — this is a grain / agro-commodity merchant bill that may carry a motor challan (truck details and freight) at the bottom.',
+          'ALSO output a top-level "millBill" object with these fields. Use "" (or null for numbers) when a field is NOT printed or not legible — never guess and never copy one field into another:',
+          '{ "supplierMobile", "supplierGstin", "supplierAddress", "buyerName" (the party the bill is made out to — "श्रीमान / Shriman / M/s"), "broker" (दलाल / dalal / agent name), "vehicleNumber" (truck number as printed, e.g. MH 40 CM 4784), "driverName", "driverMobile", "truckOwnerName" (ट्रक मालिक), "truckOwnerMobile", "transportCompany", "freightTotal" (कुल भाड़ा / total freight), "freightAdvance" (अग्रिम भाड़ा / advance freight), "freightBalance" (बकाया राशि / balance), "hamali", "totalBags" (sum of all bags / बोरी), "sellerBank": { "bankName", "branch", "ifsc", "accountNo" } }.',
+          'Numbers as plain numbers (no commas, no "/-", no "=00"). Handwritten Devanagari digits (०-९) must be converted to normal digits. Mobile numbers are 10 digits.',
+          'LAYOUT OF THESE BILLS (read each field from ITS OWN place; the handwriting is hard, so copy only what you can actually see and leave the rest empty): (1) The printed letterhead at the TOP is the SELLER: trade name, address, mobile numbers, and the SELLER GSTIN printed in the top corner — that is supplierGstin / supplierMobile / supplierAddress and the "supplier" name. (2) The handwritten party line "श्रीमान/श्रीमती …  GSTIN …" is the BUYER (buyerName) — the GSTIN written beside it is the BUYER’s and must NOT be used as supplierGstin. (3) "दलाल" (dalal) is the BROKER. (4) In the motor-challan block at the bottom: "ट्रक मालिक" = truckOwnerName with its "मोबा. नं." = truckOwnerMobile; "ट्रक ड्राइवर" = driverName with its mobile = driverMobile; "ट्रांसपोर्ट कम्पनी" = transportCompany; "कुल भाड़ा" = freightTotal; "अग्रिम भाड़ा" = freightAdvance; "बकाया राशि" = freightBalance. Owner and driver are two DIFFERENT people on two different lines — never put the owner’s name in driverName. (5) The TRUCK NUMBER is written next to "ट्रक नं." in the party block (e.g. MH 40 CM 4784).',
+          'COMMODITY NAMES — the item is a grain / pulse / seed written by hand in Hindi or Marathi. Read it letter by letter and prefer one of the common names when it fits what is written: कोदो (Kodo), कुटकी (Kutki), सावा, भगर / वरई (Bhagar), रागी / नाचणी, ज्वारी, बाजरा, गेहूं, धान, चावल, मक्का, तुअर / तूर, चना, मूंग, उड़द, मसूर, सोयाबीन, मूंगफली, तिल, सरसों. Do not replace a word you can read with a more familiar grain.',
+          'For EACH item ALSO output: "bags" (number of bags / बोरी printed on that row), "printedWeight" (the number in the WEIGHT column exactly as printed), "printedWeightUnit" ("quintal" or "kg" — if the weight is a small number like 123.00 next to a rate in the thousands (e.g. 3350) the unit is QUINTAL; if the rate is a two-digit figure the unit is kg), "printedRate" (the rate exactly as printed).',
+          'Then set "quantity" = the weight in KG (quintal x 100) and "unitCost" = the price per KG (a printed per-quintal rate divided by 100), so that quantity x unitCost is approximately the row amount; keep unit "kg". Example: 123.00 quintal at 3350 = 4,12,050 -> quantity 12300, unitCost 33.5, printedWeight 123, printedWeightUnit "quintal", printedRate 3350, bags 270.',
+        ].join(' ');
+      }
     } else {
       specificInstructions = `Extract all data relevant to the ${targetType} category. The document may be a photo of a handwritten notebook, an informal note, a kacha bill, or a structured table. Extract what you can logically infer. DO NOT skip rows just because some fields (like price or quantity) are missing or illegible.`;
     }
@@ -700,6 +719,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     const aggregatedItems: any[] = [];
     let header: Record<string, any> = {}; // purchase-only top-level fields
     let aiCharges: PurchaseCharge[] = [];   // purchase-only: bill-level charges the model read (hamali, freight …)
+    const millBills: MillBill[] = [];       // mill purchase only: truck / driver / freight / broker read from each page
     const perCallErrors: string[] = [];
     let lastRaw = '';
 
@@ -714,6 +734,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         for (const k of ['supplier', 'invoiceNumber', 'invoiceDate', 'warehouse']) {
           if (!header[k] && r?.[k]) header[k] = r[k];
         }
+        if (millPurchase && r?.millBill) millBills.push(normalizeMillBill(r.millBill));
         if (Array.isArray(r?.charges)) {
           try { aiCharges = mergeCharges(aiCharges, parseCharges(r.charges)); } catch { /* an unreadable charges block is simply ignored — the user can add charges by hand */ }
         }
@@ -1210,6 +1231,22 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       }
     }
 
+    // Mill bills: from the PRINTED weight, unit and rate work out kg and Rs/kg ourselves (123 quintal at 3350 -> 12,300 kg at 33.50) and use them
+    // only when they reproduce the printed amount; otherwise the row stays as the model read it.
+    if (millPurchase) {
+      for (const it of dedupedItems as any[]) {
+        if (!it || typeof it !== 'object') continue;
+        const rec = reconcileBillLine({ printedWeight: it.printedWeight, printedWeightUnit: it.printedWeightUnit, printedRate: it.printedRate, amount: it.amount ?? it.total });
+        if (rec) {
+          it.quantity = rec.quantityKg;
+          it.unit = 'kg';
+          it.unitCost = rec.ratePerKg;
+          delete it._warning;
+        }
+        delete it.printedWeight; delete it.printedWeightUnit; delete it.printedRate;
+      }
+    }
+
     return NextResponse.json({
       summary: (usedDeterministicTable
         ? `Read ${tableItems.length} rows directly from the document's table layout (exact values, no AI guessing)`
@@ -1238,6 +1275,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       // Bill-level charges (hamali, freight …): what the model read plus what a text scan of the bill found. Reviewed and edited by the
       // user before import; they are stored on the purchase, never as products.
       ...(targetType === 'purchase' ? { charges: mergeCharges(aiCharges, scanChargesFromText(extractedText)) } : {}),
+      ...(millPurchase ? { millBill: mergeMillBills(millBills) } : {}),
       items: dedupedItems,
       partialErrors: perCallErrors.length ? perCallErrors : undefined,
     });
