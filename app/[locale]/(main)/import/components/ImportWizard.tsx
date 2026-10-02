@@ -18,6 +18,9 @@ type Step = 'upload' | 'preview' | 'importing' | 'done';
 type RowMatch = { status: 'new' | 'existing'; existingName?: string };
 type RowDecision = 'update' | 'skip' | undefined;
 
+/** Freight / hamali style charge names (English, Hindi, Marathi) — the mill's own truck and labour cost. */
+const MILL_OWN_COST = /freight|hamali|haamali|transport|bhade|bhada|loading|unloading|हमाली|भाड|भाडे|मालs*भाड/i;
+
 function MillField({ label, children }: { label: string; children: any }) { return (<label className="block text-[11px] font-semibold text-slate-500">{label}<div className="mt-0.5">{children}</div></label>); }
 
 export default function ImportWizard({ importType, onBack }: { importType: ImportType; onBack: () => void }) {
@@ -392,7 +395,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               setPurchaseSupplier(prev => ({ ...prev, mobile: prev.mobile || mb.supplierMobile, gst: prev.gst || mb.supplierGstin, address: prev.address || mb.supplierAddress }));
               if (mb.broker) setPurchaseBroker(b => ({ ...b, name: b.name || mb.broker }));
             }
-            if (importType === 'purchase') setPurchaseCharges((Array.isArray(data.charges) ? data.charges : []).map((c: any) => ({ name: String(c.name || ''), amount: String(c.amount ?? '') })));
+            // Bada Udyog: freight and hamali on a mill bill are the MILL's own cost (truck / labour), recorded by the mill panel below — not
+            // supplier charges added to what the supplier is owed. Every other package keeps all charges exactly as before.
+            if (importType === 'purchase') setPurchaseCharges((Array.isArray(data.charges) ? data.charges : []).filter((ch: any) => !(isMillBillingPackage(profile?.packageType) && MILL_OWN_COST.test(String(ch?.name || '')))).map((c: any) => ({ name: String(c.name || ''), amount: String(c.amount ?? '') })));
 
             if (data.items && data.items.length > 0) {
               const aiHeaders = Object.keys(data.items[0]);
@@ -743,7 +748,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 charges: (importType === 'purchase' && offset === 0) ? [
                   ...purchaseCharges.filter(c => c.name.trim() || c.amount !== '').map(c => ({ name: c.name.trim(), amount: c.amount })),
                   // Charge columns added to the review table (Hamali, Freight …): one bill per import, so each column's total is one bill charge.
-                  ...CHARGE_COLUMNS.filter(l => headers.includes(l)).map(l => ({ name: l, amount: previewData.reduce((a, r) => a + (parseFloat(String(r[l] ?? '').replace(/[₹,\s]/g, '')) || 0), 0) })).filter(c => c.amount > 0),
+                  ...CHARGE_COLUMNS.filter(l => headers.includes(l) && !(isMillBillingPackage(profile?.packageType) && MILL_OWN_COST.test(l))).map(l => ({ name: l, amount: previewData.reduce((a, r) => a + (parseFloat(String(r[l] ?? '').replace(/[₹,\s]/g, '')) || 0), 0) })).filter(c => c.amount > 0),
                 ] : undefined,
               });
             } catch (e) {
