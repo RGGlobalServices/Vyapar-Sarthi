@@ -49,7 +49,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
     { timeout: 90000, maxWait: 15000 },
   );
 
-  afterBatchFinalized({ shopId: shop.id, batchId: id, finishedKg: finalized.finishedKg, lossKg, isJobWork: finalized.isJobWork });
+  afterBatchFinalized({ shopId: shop.id, batchId: id, finishedKg: finalized.finishedKg, lossKg, isJobWork: finalized.isJobWork, events: finalized.events });
 
   const batch = await prisma.productionBatch.findFirst({
     where: { id, shopId: shop.id },

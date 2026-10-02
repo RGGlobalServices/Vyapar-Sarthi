@@ -4,9 +4,8 @@ import { ApiError } from '@/lib/server/http';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 import { parseLossKg, parseOutputs, toKg, kgPerUnit, round3 } from '@/lib/server/millProduction';
 import { prepareOutputCredits, finalizeBatchTx, afterBatchFinalized } from '@/lib/server/productionFinalize';
-import { recordStageAuditEvent } from '@/lib/server/audit';
+import { recordAuditEvents } from '@/lib/server/productionWrites';
 import { setBatchJobWork } from '@/lib/server/jobWorkLink';
-import { allocatedByLot } from '@/lib/server/lotAllocation';
 import { QUICK_SOURCES, type QuickSource } from '@/lib/quickEntry';
 
 /**
@@ -103,7 +102,9 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
       entityType: 'quick_production',
       handler: async () => {
         const batchId = randomUUID();
-        const batchNumber = String(body.batchNumber ?? '').trim().slice(0, 40) || (await nextBatchNumber(tx, shopId));
+        let batchNumber = String(body.batchNumber ?? '').trim().slice(0, 40);
+        // a raw-lot run learns today's batch count from the same query that locks the lot; the other sources ask for it here
+        if (!batchNumber && source.type !== 'raw_lot') batchNumber = await nextBatchNumber(tx, shopId);
 
         let batchType = 'NORMAL';
         let rawLotId: string | null = null;
@@ -120,9 +121,21 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
           const ordered = [...wanted].sort((a, b) => (a.id < b.id ? -1 : 1));
           const nameById = new Map<string, string>();
           for (const w of ordered) {
+            // lock the lot and read what is reserved by open batches (and today's batch count) in ONE query
+            const d = new Date();
+            const bnPrefix = `B-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
             const lots = await tx.$queryRaw<any[]>`
-              SELECT id, product_id, quantity, remaining_quantity, lot_number FROM raw_material_lots
-              WHERE id = ${w.id}::uuid AND shop_id = ${shopId}::uuid FOR UPDATE`;
+              SELECT l.id, l.product_id, l.quantity, l.remaining_quantity, l.lot_number,
+                     COALESCE((SELECT SUM(CASE WHEN bil.id IS NOT NULL
+                                               THEN bil.quantity * CASE lower(bil.unit) WHEN 'quintal' THEN 100 WHEN 'qtl' THEN 100 WHEN 'ton' THEN 1000 WHEN 'tons' THEN 1000 WHEN 'g' THEN 0.001 ELSE 1 END
+                                               ELSE b.input_kg END)
+                                 FROM production_batches b
+                                 LEFT JOIN batch_input_lots bil ON bil.batch_id = b.id AND bil.raw_material_lot_id = l.id
+                                WHERE b.shop_id = l.shop_id AND b.status IN ('open', 'in_progress') AND (bil.id IS NOT NULL OR b.raw_lot_id = l.id)), 0)::float8 AS allocated_kg,
+                     (SELECT count(*)::int FROM production_batches WHERE shop_id = l.shop_id AND batch_number LIKE ${bnPrefix + '%'}) AS bn_count
+                FROM raw_material_lots l
+               WHERE l.id = ${w.id}::uuid AND l.shop_id = ${shopId}::uuid FOR UPDATE OF l`;
+            if (!batchNumber && lots[0]) batchNumber = `${bnPrefix}-${String((Number(lots[0].bn_count) || 0) + 1).padStart(3, '0')}`;
             const lot = lots[0];
             if (!lot) throw new ApiError(404, 'Source raw material lot not found for this shop', 'LOT_NOT_FOUND');
             if (!lot.product_id) throw new ApiError(400, 'Link this raw material lot to its raw material product (Raw Material screen) before producing from it — that is the stock the run consumes.', 'RAW_PRODUCT_REQUIRED');
@@ -130,7 +143,7 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
             rawProductId = lot.product_id;
             const unconsumed = round3(Number(lot.remaining_quantity ?? lot.quantity ?? 0));
             if (unconsumed <= 0) throw new ApiError(400, `Lot ${lot.lot_number || ''} is fully consumed — choose an available lot.`, 'LOT_UNAVAILABLE');
-            const allocated = (await allocatedByLot(tx, shopId, [w.id])).get(w.id)?.kg ?? 0;
+            const allocated = round3(Number(lot.allocated_kg) || 0);
             const available = round3(Math.max(0, unconsumed - allocated));
             if (available < w.kg) throw new ApiError(400, `Only ${available} kg remaining in lot ${lot.lot_number || ''} — cannot use ${w.kg} kg.`, 'INSUFFICIENT_RAW_STOCK');
             nameById.set(w.id, String(lot.lot_number || w.id.slice(0, 8)));
@@ -186,33 +199,51 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
         const firstFinished = credits.find((o) => o.outputType === 'finished_good' && o.productId);
         const batchNotes = [sourceNote, userNotes].filter(Boolean).join(' · ').slice(0, 250) || null;
 
+        // The batch, its input rows, its single completed stage and the 'production_start' marker (what makes the engine consume a raw
+        // lot) go in as ONE statement — one round trip instead of four.
         try {
-          await tx.productionBatch.create({
-            data: {
-              id: batchId, shopId, batchNumber, batchType, rawLotId, rejectionLotId,
-              outputProductId: firstFinished?.productId ?? null,
-              inputKg, status: 'in_progress', currentStage: STAGE_NAME, startedAt, notes: batchNotes,
-            },
-          });
+          await tx.$executeRawUnsafe(
+            `WITH b AS (
+               INSERT INTO production_batches (id, shop_id, batch_number, batch_type, raw_lot_id, rejection_lot_id, output_product_id, input_kg, status, current_stage, started_at, notes)
+               VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid, $6::uuid, $7::uuid, $8::float8, 'in_progress', $9, $10::timestamptz, $11) RETURNING 1),
+             il AS (
+               INSERT INTO batch_input_lots (id, shop_id, batch_id, raw_material_lot_id, rejection_lot_id, quantity, unit, sequence, notes)
+               SELECT id, shop_id, batch_id, raw_material_lot_id, rejection_lot_id, quantity, unit, sequence, notes
+                 FROM jsonb_to_recordset($12::jsonb) AS x(id uuid, shop_id uuid, batch_id uuid, raw_material_lot_id uuid, rejection_lot_id uuid, quantity float8, unit text, sequence int, notes text)
+               RETURNING 1),
+             st AS (
+               INSERT INTO batch_stages (id, batch_id, stage_name, sequence, input_kg, output_kg, wastage_kg, started_at, completed_at, operator_name, notes, machine_id)
+               VALUES ($13::uuid, $1::uuid, $9, 1, $8::float8, $14::float8, $15::float8, $10::timestamptz, now(), $16, $17, $18::uuid) RETURNING 1),
+             mk AS (
+               INSERT INTO stock_movements (id, shop_id, product_id, type, quantity, reference_id)
+               SELECT $19::uuid, $2::uuid, $20::uuid, 'production_start', 0, $1::uuid WHERE $20::uuid IS NOT NULL RETURNING 1)
+             SELECT 1`,
+            batchId, shopId, batchNumber, batchType, rawLotId, rejectionLotId, firstFinished?.productId ?? null, inputKg, STAGE_NAME,
+            startedAt.toISOString(), batchNotes,
+            JSON.stringify(inputLotRows.map((r) => ({ id: r.id, shop_id: r.shopId, batch_id: r.batchId, raw_material_lot_id: r.rawMaterialLotId ?? null, rejection_lot_id: r.rejectionLotId ?? null, quantity: r.quantity, unit: r.unit, sequence: r.sequence, notes: r.notes ?? null }))),
+            randomUUID(), finishedKg, lossKg, operatorName, userNotes, machineId,
+            randomUUID(), rawLotId && rawProductId ? rawProductId : null,
+          );
         } catch (e: any) {
-          if (e?.code === 'P2002') throw new ApiError(409, `Batch number ${batchNumber} already exists.`, 'BATCH_NUMBER_EXISTS');
+          if (/23505|unique constraint|production_batches_shop_id_batch_number_key/i.test(String(e?.message || '') + String(e?.meta?.message || '') + String(e?.code || ''))) {
+            throw new ApiError(409, `Batch number ${batchNumber} already exists.`, 'BATCH_NUMBER_EXISTS');
+          }
           throw e;
-        }
-        if (inputLotRows.length) await tx.batchInputLot.createMany({ data: inputLotRows });
-        await tx.batchStage.create({
-          data: {
-            batchId, stageName: STAGE_NAME, sequence: 1, inputKg, operatorName, machineId, startedAt,
-            outputKg: finishedKg, wastageKg: lossKg, completedAt: new Date(), notes: userNotes,
-          },
-        });
-        // Raw-lot runs carry the `production_start` marker — it is what makes the engine consume the lot at the end.
-        if (rawLotId && rawProductId) {
-          await tx.stockMovement.create({ data: { shopId, productId: rawProductId, type: 'production_start', quantity: 0, referenceId: batchId } });
         }
         if (jwOrder) await setBatchJobWork(tx, batchId, jwOrder.id);
 
         // ---------------- close the run with the shared engine ----------------
-        const fin = await finalizeBatchTx(tx, { shopId, batchId, credits, lossKg, notes: null, allowNegativeStock, jwOrder });
+        const consumeRaw = batchType !== 'JOB_WORK' && !!(rawLotId && rawProductId);
+        const fin = await finalizeBatchTx(tx, {
+          shopId, batchId, credits, lossKg, notes: null, allowNegativeStock, jwOrder,
+          // everything about the batch is known (we have just created it) — no need to read it back
+          prefetched: {
+            batchNumber, inputKg, batchType, consume: consumeRaw,
+            lots: inputLotRows.filter((r) => r.rawMaterialLotId).map((r) => ({ lotId: r.rawMaterialLotId as string, qtyKg: r.quantity })),
+            lastStageName: STAGE_NAME,
+          },
+        });
+        events.push(...fin.events);
         events.push({ action: 'QUICK_PRODUCTION_ENTRY', entityId: batchId, details: { batchNumber, source: source.type, inputKg, finishedKg: fin.finishedKg, lossKg } });
         if (batchType === 'REPROCESSING') events.push({ action: 'REPROCESSING_BATCH_CREATED', entityId: batchId, details: { batchNumber, rejectionLotId, quantity: inputKg } });
 
@@ -228,7 +259,7 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
   if (!outcome.isDuplicate) {
     const r = outcome.result;
     afterBatchFinalized({ shopId, batchId: r.batchId, finishedKg: r.finishedKg, lossKg: r.lossKg, isJobWork: r.source === 'job_work' });
-    for (const ev of events) recordStageAuditEvent({ shopId, action: ev.action, entityId: ev.entityId, details: ev.details }).catch(() => {});
+    recordAuditEvents(shopId, events).catch(() => {});
   }
   return { result: outcome.result, isDuplicate: outcome.isDuplicate };
 }
