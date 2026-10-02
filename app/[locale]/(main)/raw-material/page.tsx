@@ -114,6 +114,21 @@ export default function RawMaterialPage() {
     }
   );
 
+  // storage / reserved / available per raw material (all lots, not only the filtered ones)
+  const materialSummary = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; total: number; reserved: number; available: number; lots: number; firstLotId: string | null }>();
+    for (const l of allLots) {
+      const unconsumed = (l.availableKg || 0) + (l.allocatedKg || 0);
+      if (unconsumed <= 0) continue;
+      const id = l.productId || '';
+      const cur = m.get(id) || { id, name: l.product?.name || '—', total: 0, reserved: 0, available: 0, lots: 0, firstLotId: null };
+      cur.total += unconsumed; cur.reserved += l.allocatedKg || 0; cur.available += l.availableKg || 0; cur.lots += 1;
+      if (!cur.firstLotId && (l.availableKg || 0) > 0) cur.firstLotId = l.id;
+      m.set(id, cur);
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [allLots]);
+
   // Dynamically derive viewingLot from allLots so modal reflects real-time updates immediately
   const viewingLot = useMemo(() => {
     return viewingId ? allLots.find(l => l.id === viewingId) || null : null;
@@ -329,6 +344,35 @@ export default function RawMaterialPage() {
           <p className="text-[10px] text-slate-400 mt-0.5">Available × Rate</p>
         </div>
       </div>
+
+      {/* Per material: what is in storage, how much of it is reserved by open batches, how much can go straight into production */}
+      {materialSummary.length > 0 && (
+        <section className="space-y-2" data-testid="rm-by-material">
+          <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">{tm('ms_title')}</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {materialSummary.map((m) => (
+              <div key={m.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-black text-slate-900 dark:text-white truncate">{m.name}</p>
+                  <span className="text-[10px] font-bold text-slate-400">{tm('ms_lots', { n: m.lots })}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div><p className="text-[10px] font-bold uppercase text-slate-400">{tm('ms_total')}</p><p className="text-sm font-black font-mono text-slate-800 dark:text-slate-100">{m.total.toLocaleString('en-IN')}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-blue-500">{tm('ms_reserved')}</p><p className="text-sm font-black font-mono text-blue-600">{m.reserved.toLocaleString('en-IN')}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-emerald-600">{tm('ms_available')}</p><p className="text-sm font-black font-mono text-emerald-600">{m.available.toLocaleString('en-IN')}</p></div>
+                </div>
+                <p className="text-[10px] text-slate-400 text-center">kg</p>
+                {m.available > 0 && m.firstLotId && (
+                  <button type="button" onClick={() => setStartFor({ type: 'raw_lot', id: m.firstLotId as string })}
+                    className="w-full h-9 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                    <Factory size={13} /> {tm('rm_startProduction')}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Filter and Sorting Controls */}
       <div className="space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">

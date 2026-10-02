@@ -12,6 +12,10 @@ import { downloadProductionSlip } from '@/lib/productionSlipClient';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const kg = (n: number | null | undefined) => `${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
+// How a run was made: direct (the one-form entry), stage-wise, a customer's Job Work, or reprocessing
+const modeOf = (b: any): 'pm_direct' | 'pm_stages' | 'pm_jobwork' | 'pm_reprocess' =>
+  b.batchType === 'JOB_WORK' ? 'pm_jobwork' : b.batchType === 'REPROCESSING' ? 'pm_reprocess'
+    : (b.stages || []).length === 1 && b.stages[0].stageName === 'Production' ? 'pm_direct' : 'pm_stages';
 const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '');
 
 /** Every finished production run (quick entries and stage-wise batches alike): the latest ones with a Slip each, and the reports. */
@@ -45,7 +49,7 @@ export default function ProductionRuns() {
             {recent.map((b) => (
               <div key={b.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
-                  <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">{b.batchNumber} <span className="font-sans font-medium text-xs text-slate-400">{fmtDate(b.closedAt || b.startedAt)}</span></p>
+                  <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">{b.batchNumber} <span className="font-sans font-medium text-xs text-slate-400">{fmtDate(b.closedAt || b.startedAt)}</span> <span className="font-sans text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 align-middle">{t(modeOf(b))}</span></p>
                   <p className="text-xs text-slate-500 truncate max-w-[22rem]">{b.notes || b.rawLot?.product?.name || ''}</p>
                 </div>
                 <div className="flex items-center gap-4 text-xs flex-wrap">
