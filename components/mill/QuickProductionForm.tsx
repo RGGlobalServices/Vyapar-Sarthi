@@ -11,7 +11,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import ModalPortal from '@/components/mill/ModalPortal';
 import RawLotPicker from '@/components/mill/RawLotPicker';
 import { downloadProductionSlip } from '@/lib/productionSlipClient';
-import { defaultOutputPicks, rankProducts } from '@/lib/millSuggest';
+import { defaultOutputPicks, rankProducts, suggestedFinishedName } from '@/lib/millSuggest';
 import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance, unitToKg, yieldPct } from '@/lib/quickEntry';
 
 /**
@@ -369,7 +369,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                                 <span className={labelCls}>{t('qp_product')}</span>
                                 <select value={newFor === r.key ? '__new__' : r.productId}
                                   onChange={(e) => {
-                                    if (e.target.value === '__new__') { setNewFor(r.key); setNewName(r.name); }
+                                    if (e.target.value === '__new__') { setNewFor(r.key); setNewName(r.name || (kind === 'finished_good' ? suggestedFinishedName(picked?.name || '') || '' : '')); }
                                     else { setNewFor(null); const p = products.find((x) => x.id === e.target.value); setRow(r.key, { productId: e.target.value, name: p?.name || '' }); }
                                   }}
                                   className={cn(inputCls, !r.productId && (kind === 'finished_good' || kind === 'wip') && 'border-amber-400')}>

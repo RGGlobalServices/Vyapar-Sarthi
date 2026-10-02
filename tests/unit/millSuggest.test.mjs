@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nameTokens, byProductHints, rankProducts, defaultOutputPicks } from '../../lib/millSuggest.ts';
+import { nameTokens, byProductHints, rankProducts, defaultOutputPicks, finishedHints, suggestedFinishedName } from '../../lib/millSuggest.ts';
 
 const P = (id, name, millCategory) => ({ id, name, millCategory });
 const products = [
@@ -69,4 +69,34 @@ test('the material itself is never suggested as its own by-product, even from hi
   const r = rankProducts('by_product', 'Bhagar', 'raw', products, ['raw', 'konda']);
   assert.ok(!r.suggested.some((p) => p.id === 'raw'));
   assert.equal(r.suggested[0].id, 'konda');
+});
+
+test('Dal as raw material -> a ready product called Dal comes first (even for the spelling "Dali")', () => {
+  const prods = [P('raw', 'Dali', 'raw_material'), P('d', 'Dal', 'finished_goods'), P('r', 'Rice', 'finished_goods'), P('o', 'Oil', 'finished_goods')];
+  assert.equal(rankProducts('finished_good', 'Dali', 'raw', prods).suggested[0].id, 'd');
+  assert.ok(finishedHints('Toor Dal').includes('dal'));
+});
+
+test('an oil seed suggests Oil, and khal/cake as its by-product', () => {
+  const prods = [P('raw', 'Groundnut', 'raw_material'), P('o', 'Groundnut Oil', 'finished_goods'), P('r', 'Rice', 'finished_goods'), P('k', 'Khal', 'by_product')];
+  assert.equal(rankProducts('finished_good', 'Groundnut', 'raw', prods).suggested[0].id, 'o');
+  assert.equal(rankProducts('by_product', 'Groundnut', 'raw', prods).suggested[0].id, 'k');
+});
+
+test('wheat suggests atta / flour, paddy suggests rice', () => {
+  const prods = [P('raw', 'Wheat', 'raw_material'), P('a', 'Chakki Atta', 'finished_goods'), P('r', 'Basmati Rice', 'finished_goods')];
+  assert.equal(rankProducts('finished_good', 'Wheat', 'raw', prods).suggested[0].id, 'a');
+  assert.equal(rankProducts('finished_good', 'Paddy', null, prods).suggested[0].id, 'r');
+});
+
+test('Marathi names work too', () => {
+  const prods = [P('raw', 'तूर', 'raw_material'), P('d', 'डाळ', 'finished_goods'), P('t', 'तेल', 'finished_goods')];
+  assert.equal(rankProducts('finished_good', 'तूर', 'raw', prods).suggested[0].id, 'd');
+});
+
+test('a name is offered when no ready product exists yet', () => {
+  assert.equal(suggestedFinishedName('Dali'), 'Dal');
+  assert.equal(suggestedFinishedName('Groundnut'), 'Groundnut Oil');
+  assert.equal(suggestedFinishedName('Wheat'), 'Wheat Atta');
+  assert.equal(suggestedFinishedName('Zzz'), null);
 });
