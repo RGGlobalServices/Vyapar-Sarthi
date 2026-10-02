@@ -3654,7 +3654,7 @@
     "rm_pageSubtitle": "The whole milling process in one place — raw material in, production, batches, reprocessing and reports.",
     "bt_cancelled": "Reservation released",
     "bt_cancelFailed": "Could not cancel the batch",
-    "ms_title": "Stock by material",
+    "ms_title": "Raw material in stock",
     "ms_total": "In storage",
     "ms_reserved": "Reserved in batches",
     "ms_available": "Available for production",
@@ -3662,7 +3662,9 @@
     "pm_direct": "Direct",
     "pm_stages": "Stage-wise",
     "pm_jobwork": "Job Work",
-    "pm_reprocess": "Reprocess"
+    "pm_reprocess": "Reprocess",
+    "rm_registerTitle": "Lot register — every lot, filters, totals",
+    "rm_registerHint": "The full list with dates, suppliers and used-up lots. Not needed for daily work."
   },
   "Brokers": {
     "title": "Brokers",

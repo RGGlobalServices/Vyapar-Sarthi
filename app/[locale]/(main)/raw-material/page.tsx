@@ -87,6 +87,7 @@ export default function RawMaterialPage() {
   const [startFor, setStartFor] = useState<{ type: QuickSource; id?: string } | null>(null);
   const [startBatch, setStartBatch] = useState<BatchInfo | null>(null);
   const [reserveFor, setReserveFor] = useState<{ lotId?: string } | null>(null);
+  const [showRegister, setShowRegister] = useState(false); // the full lot register is folded away by default
   const activeShopId = useBusinessStore(s => s.activeShopId);
 
   // Filter & Sort States
@@ -316,6 +317,55 @@ export default function RawMaterialPage() {
       {view === 'batches' && <ProductionRuns />}
 
       {view === 'raw' && (<>
+      {/* Per material: what is in storage, how much of it is reserved by open batches, how much can go straight into production */}
+      {materialSummary.length > 0 && (
+        <section className="space-y-2" data-testid="rm-by-material">
+          <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">{tm('ms_title')}</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {materialSummary.map((m) => (
+              <div key={m.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-black text-slate-900 dark:text-white truncate">{m.name}</p>
+                  <span className="text-[10px] font-bold text-slate-400">{tm('ms_lots', { n: m.lots })}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div><p className="text-[10px] font-bold uppercase text-slate-400">{tm('ms_total')}</p><p className="text-sm font-black font-mono text-slate-800 dark:text-slate-100">{m.total.toLocaleString('en-IN')}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-blue-500">{tm('ms_reserved')}</p><p className="text-sm font-black font-mono text-blue-600">{m.reserved.toLocaleString('en-IN')}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-emerald-600">{tm('ms_available')}</p><p className="text-sm font-black font-mono text-emerald-600">{m.available.toLocaleString('en-IN')}</p></div>
+                </div>
+                <p className="text-[10px] text-slate-400 text-center">kg</p>
+                {m.available > 0 && m.firstLotId && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setStartFor({ type: 'raw_lot', id: m.firstLotId as string })}
+                      className="h-9 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                      <Factory size={13} /> {tm('rm_startProduction')}
+                    </button>
+                    <button type="button" onClick={() => setReserveFor({ lotId: m.firstLotId as string })}
+                      className="h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                      {tm('bt_new')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <ReservedBatches onStartBatch={(b) => setStartBatch(b)} />
+
+      {/* The full lot register (totals, filters, every lot) — the daily work happens above; this is for looking things up */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800">
+        <button type="button" onClick={() => setShowRegister((v) => !v)} className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left" data-testid="rm-register-toggle">
+          <span>
+            <span className="block text-sm font-black text-slate-800 dark:text-slate-100">{tm('rm_registerTitle')}</span>
+            <span className="block text-xs text-slate-500">{tm('rm_registerHint')}</span>
+          </span>
+          <ChevronRight size={18} className={cn('text-slate-400 transition-transform', showRegister && 'rotate-90')} />
+        </button>
+      </section>
+
+      {showRegister && (<>
       {/* Summary KPI Cards upholding Received = Consumed + Allocated + Available */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="rm-cards">
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
@@ -355,42 +405,6 @@ export default function RawMaterialPage() {
         </div>
       </div>
 
-      {/* Per material: what is in storage, how much of it is reserved by open batches, how much can go straight into production */}
-      {materialSummary.length > 0 && (
-        <section className="space-y-2" data-testid="rm-by-material">
-          <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">{tm('ms_title')}</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {materialSummary.map((m) => (
-              <div key={m.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-black text-slate-900 dark:text-white truncate">{m.name}</p>
-                  <span className="text-[10px] font-bold text-slate-400">{tm('ms_lots', { n: m.lots })}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div><p className="text-[10px] font-bold uppercase text-slate-400">{tm('ms_total')}</p><p className="text-sm font-black font-mono text-slate-800 dark:text-slate-100">{m.total.toLocaleString('en-IN')}</p></div>
-                  <div><p className="text-[10px] font-bold uppercase text-blue-500">{tm('ms_reserved')}</p><p className="text-sm font-black font-mono text-blue-600">{m.reserved.toLocaleString('en-IN')}</p></div>
-                  <div><p className="text-[10px] font-bold uppercase text-emerald-600">{tm('ms_available')}</p><p className="text-sm font-black font-mono text-emerald-600">{m.available.toLocaleString('en-IN')}</p></div>
-                </div>
-                <p className="text-[10px] text-slate-400 text-center">kg</p>
-                {m.available > 0 && m.firstLotId && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => setStartFor({ type: 'raw_lot', id: m.firstLotId as string })}
-                      className="h-9 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
-                      <Factory size={13} /> {tm('rm_startProduction')}
-                    </button>
-                    <button type="button" onClick={() => setReserveFor({ lotId: m.firstLotId as string })}
-                      className="h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
-                      {tm('bt_new')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <ReservedBatches onStartBatch={(b) => setStartBatch(b)} />
 
       {/* Filter and Sorting Controls */}
       <div className="space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
@@ -659,6 +673,7 @@ export default function RawMaterialPage() {
         </div>
       )}
 
+      </>)}
       </>)}
 
       {reserveFor && <NewBatchModal lotsHint={allLots.filter((l) => (l.availableKg || 0) > 0)} initialLotId={reserveFor.lotId} onClose={() => setReserveFor(null)} onCreated={() => { refetch(); }} />}
