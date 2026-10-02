@@ -9,6 +9,8 @@ import {
   ReceiptText, Wallet, ArrowLeft,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DeleteButton from '@/components/mill/DeleteButton';
+import EditEntryModal, { EditButton } from '@/components/mill/EditEntryModal';
 import { ExportButton } from '@/lib/hooks/useExport';
 
 type Transporter = { id: string; name: string; mobile?: string | null; balance: number; entryCount: number };
@@ -35,6 +37,7 @@ export default function FreightPage() {
   const [showAddTransporter, setShowAddTransporter] = useState(false);
   const [addMode, setAddMode] = useState<'charge' | 'payment' | null>(null);
   const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
+  const [editing, setEditing] = useState<FreightEntry | null>(null);
 
   const { data, mutate, isLoading } = useSWR<{ transporters: Transporter[]; entries: FreightEntry[] }>(
     activeShopId ? ['/logistics/freight', activeShopId] : null,
@@ -252,9 +255,13 @@ export default function FreightPage() {
                         {e.note && <p className="text-xs text-slate-400 mt-1">{e.note}</p>}
                         <p className="text-xs text-slate-400 mt-0.5">{fmtDate(e.date)}</p>
                       </div>
-                      <span className={`text-sm font-black shrink-0 ${e.type === 'charge' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                        {e.type === 'charge' ? '−' : '+'}{rupee(e.amount)}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className={`text-sm font-black mr-1 ${e.type === 'charge' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          {e.type === 'charge' ? '−' : '+'}{rupee(e.amount)}
+                        </span>
+                        <EditButton onClick={() => setEditing(e)} />
+                        <DeleteButton url={`/logistics/freight/${e.id}`} name={`${e.type === 'charge' ? 'freight charge' : 'freight payment'} ${rupee(e.amount)}`} onDone={() => mutate()} />
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -263,6 +270,18 @@ export default function FreightPage() {
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditEntryModal url={`/logistics/freight/${editing.id}`} title={editing.type === 'charge' ? 'Edit freight charge' : 'Edit freight payment'} onClose={() => setEditing(null)} onDone={() => { setEditing(null); mutate(); }}
+          initial={{ amount: editing.amount, vehicleNumber: editing.vehicleNumber || '', note: editing.note || '', direction: editing.direction || '', paymentMethod: editing.paymentMethod || 'Cash' }}
+          fields={[
+            { key: 'amount', label: 'Amount (₹)', type: 'number' },
+            { key: 'direction', label: 'Freight for', type: 'choice', options: [{ value: 'purchase', label: 'Purchase' }, { value: 'sale', label: 'Sale' }] },
+            { key: 'vehicleNumber', label: 'Vehicle number' },
+            ...(editing.type === 'payment' ? [{ key: 'paymentMethod', label: 'Paid by', type: 'select' as const, options: ['Cash', 'UPI', 'Card', 'Bank', 'Cheque', 'Seller'].map(v => ({ value: v, label: v })) }] : []),
+            { key: 'note', label: 'Note' },
+          ]} />
+      )}
 
       {/* Add Transporter modal */}
       {showAddTransporter && (

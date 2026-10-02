@@ -3568,6 +3568,7 @@
     "qp_failed": "उत्पादन प्रविष्टि सेव नहीं हो पाई",
     "pe_confirmGeneric": "{name} हटाएँ? यह वापस नहीं होगा।",
     "pe_removed": "{name} हटा दिया गया",
+    "pe_saved": "सेव हो गया",
     "pe_edit": "बदलें",
     "pe_delete": "हटाएँ",
     "pe_editTitle": "उत्पादन बदलें",

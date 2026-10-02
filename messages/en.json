@@ -3565,6 +3565,7 @@
     "qp_failed": "Could not save the production entry",
     "pe_confirmGeneric": "Delete {name}? This cannot be undone.",
     "pe_removed": "{name} deleted",
+    "pe_saved": "Saved",
     "pe_edit": "Edit",
     "pe_delete": "Delete",
     "pe_editTitle": "Edit production",

@@ -3568,6 +3568,7 @@
     "qp_failed": "उत्पादन नोंद सेव्ह करता आली नाही",
     "pe_confirmGeneric": "{name} काढायचे? हे परत होणार नाही.",
     "pe_removed": "{name} काढले",
+    "pe_saved": "सेव्ह झाले",
     "pe_edit": "बदला",
     "pe_delete": "काढा",
     "pe_editTitle": "उत्पादन बदला",

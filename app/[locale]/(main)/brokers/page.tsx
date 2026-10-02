@@ -7,6 +7,8 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import DeleteButton from '@/components/mill/DeleteButton';
+import EditEntryModal, { EditButton } from '@/components/mill/EditEntryModal';
 import { ExportButton } from '@/lib/hooks/useExport';
 
 type Broker = { id: string; name: string; mobile: string | null; balance: number; entryCount: number };
@@ -24,6 +26,7 @@ export default function BrokersPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
+  const [editing, setEditing] = useState<CommissionRow | null>(null);
 
   const { data, mutate: refetch, isLoading } = useSWR<{ brokers: Broker[]; entries: CommissionRow[] }>(
     activeShopId ? ['/management/commission', activeShopId] : null,
@@ -192,15 +195,31 @@ export default function BrokersPage() {
                       {e.note && ` · ${e.note}`}
                     </p>
                   </div>
-                  <span className={cn('text-lg font-black shrink-0', e.type === 'charge' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-                    {e.type === 'charge' ? '+' : '−'}{rupee(e.amount)}
-                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className={cn('text-lg font-black mr-1', e.type === 'charge' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                      {e.type === 'charge' ? '+' : '−'}{rupee(e.amount)}
+                    </span>
+                    <EditButton onClick={() => setEditing(e)} />
+                    <DeleteButton url={`/management/commission/${e.id}`} name={`${e.type === 'charge' ? 'commission' : 'commission payment'} ${rupee(e.amount)}`} onDone={() => refetch()} />
+                  </div>
                 </li>
               ))}
             </ul>
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditEntryModal url={`/management/commission/${editing.id}`} title={editing.type === 'charge' ? 'Edit commission' : 'Edit commission payment'} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refetch(); }}
+          initial={{ amount: editing.amount, billNumber: editing.billNumber || '', note: editing.note || '', direction: editing.direction || '', paymentMethod: editing.paymentMethod || 'Cash' }}
+          fields={[
+            { key: 'amount', label: 'Amount (₹)', type: 'number' },
+            ...(editing.type === 'charge' ? [{ key: 'direction', label: 'Commission for', type: 'choice' as const, options: [{ value: 'purchase', label: 'Purchase' }, { value: 'sale', label: 'Sale' }] }] : []),
+            { key: 'billNumber', label: 'Bill number' },
+            ...(editing.type === 'payment' ? [{ key: 'paymentMethod', label: 'Paid by', type: 'select' as const, options: ['Cash', 'UPI', 'Card'].map(v => ({ value: v, label: v })) }] : []),
+            { key: 'note', label: 'Note' },
+          ]} />
+      )}
 
       {entryModal && (
         <CommissionEntryModal

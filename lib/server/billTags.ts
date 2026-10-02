@@ -83,3 +83,27 @@ export async function withBillTags<T extends { id: string }>(shopId: string, tab
     return { ...r, direction: t?.direction ?? null, billType, billId, billLabel };
   });
 }
+
+/** Change Purchase/Sale of a row. The bill link of the OLD direction is dropped (a sale row must not point at a purchase bill). No-op until the columns exist. */
+export async function setDirection(db: Db, table: BillTable, id: string, direction: Direction) {
+  if (!UUID.test(id) || !(await billTagColumns())) return;
+  await db.$executeRawUnsafe(
+    `UPDATE ${table} SET direction = $1,
+       purchase_invoice_id = CASE WHEN $1 = 'purchase' THEN purchase_invoice_id ELSE NULL END,
+       challan_id = CASE WHEN $1 = 'sale' THEN challan_id ELSE NULL END
+     WHERE id = $2::uuid`, direction, id);
+}
+
+/**
+ * The cash-book row written together with a payment / expense that has no id link of its own (freight and commission payments):
+ * same shop, type, amount and wording, written within a few minutes of the entry. Returns null when it cannot be found for certain.
+ */
+export async function findCashRow(db: any, shopId: string, p: { type: string; description: string; amount: number; at: Date }): Promise<string | null> {
+  const rows = (await db.$queryRawUnsafe(
+    `SELECT id::text AS id FROM cash_books WHERE shop_id = $1::uuid AND type = $2 AND description = $3 AND abs(amount - $4::float8) < 0.005
+        AND created_at BETWEEN $5::timestamptz - interval '10 minutes' AND $5::timestamptz + interval '10 minutes'
+      ORDER BY abs(extract(epoch FROM (created_at - $5::timestamptz))) ASC LIMIT 2`,
+    shopId, p.type, p.description, p.amount, p.at.toISOString(),
+  )) as Array<{ id: string }>;
+  return rows.length === 1 ? rows[0].id : rows.length > 1 ? rows[0].id : null;
+}

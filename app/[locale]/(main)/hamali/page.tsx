@@ -7,6 +7,8 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import DeleteButton from '@/components/mill/DeleteButton';
+import EditEntryModal, { EditButton } from '@/components/mill/EditEntryModal';
 
 const HAMALI_CATEGORY = 'Hamali / Labour';
 
@@ -45,6 +47,7 @@ export default function HamaliPage() {
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [recording, setRecording] = useState(false);
   const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
+  const [editing, setEditing] = useState<ExpenseRow | null>(null);
 
   const { data: allExpenses = [], mutate: refetch, isLoading } = useSWR<ExpenseRow[]>(
     activeShopId ? ['/expenses', activeShopId] : null,
@@ -151,11 +154,27 @@ export default function HamaliPage() {
                     {e.paymentMode || 'Cash'} · {new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 </div>
-                <span className="text-lg font-black text-yellow-600 dark:text-yellow-400 shrink-0">−{rupee(e.amount)}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-lg font-black text-yellow-600 dark:text-yellow-400 mr-1">−{rupee(e.amount)}</span>
+                  <EditButton onClick={() => setEditing(e)} />
+                  <DeleteButton url={`/expenses/${e.id}`} name={`hamali ${rupee(e.amount)}`} onDone={() => refetch()} />
+                </div>
               </li>
             ))}
           </ul>
         </div>
+      )}
+
+      {editing && (
+        <EditEntryModal url={`/expenses/${editing.id}`} title="Edit hamali" onClose={() => setEditing(null)} onDone={() => { setEditing(null); refetch(); }}
+          initial={{ amount: editing.amount, description: editing.description || '', date: editing.date ? String(editing.date).slice(0, 10) : '', paymentMode: editing.paymentMode || 'Cash', direction: editing.direction || '' }}
+          fields={[
+            { key: 'amount', label: 'Amount (₹)', type: 'number' },
+            { key: 'direction', label: 'Hamali for', type: 'choice', options: [{ value: 'purchase', label: 'Purchase' }, { value: 'sale', label: 'Sale' }] },
+            { key: 'description', label: 'Description' },
+            { key: 'date', label: 'Date', type: 'date' },
+            { key: 'paymentMode', label: 'Paid by', type: 'select', options: ['Cash', 'UPI', 'Card', 'Bank'].map(v => ({ value: v, label: v })) },
+          ]} />
       )}
 
       {recording && (
