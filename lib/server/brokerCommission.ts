@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { tagRows } from '@/lib/server/billTags';
 
 export type BrokerKind = 'supplier' | 'customer';
 
@@ -7,7 +8,7 @@ export type BrokerKind = 'supplier' | 'customer';
  * `kind` tags the entry: 'supplier' = arranged a purchase, 'customer' = arranged a sale. A broker can be both.
  * Commission is a payable to the broker — it never touches the supplier's / customer's balance.
  */
-export async function logBrokerCommission(shopId: string, o: { name: string; commission?: any; billNumber: string; kind: BrokerKind; party?: string }) {
+export async function logBrokerCommission(shopId: string, o: { name: string; commission?: any; billNumber: string; kind: BrokerKind; party?: string; purchaseInvoiceId?: string | null; challanId?: string | null }) {
   const name = String(o.name ?? '').trim().slice(0, 80);
   if (!name) return null;
   let broker = await prisma.customer.findFirst({ where: { shopId, customerType: 'broker', name: { equals: name, mode: 'insensitive' } } });
@@ -16,9 +17,11 @@ export async function logBrokerCommission(shopId: string, o: { name: string; com
   else if (!(broker as any).brokerType) await prisma.customer.update({ where: { id: broker.id }, data: { brokerType: o.kind } as any });
   const comm = parseFloat(String(o.commission ?? '').replace(/[₹,\s]/g, ''));
   if (isFinite(comm) && comm > 0) {
-    await (prisma as any).commissionEntry.create({
+    const ce = await (prisma as any).commissionEntry.create({
       data: { shopId, brokerId: broker.id, type: 'charge', amount: comm, billNumber: o.billNumber, note: `[${o.kind === 'supplier' ? 'Supplier broker' : 'Customer broker'}] ${o.kind === 'supplier' ? 'Purchase' : 'Sale'} ${o.billNumber}${o.party ? ` — ${o.party}` : ''}` },
     });
+    // Purchase broker (kind supplier) or Sale broker (kind customer), linked to its bill
+    await tagRows(prisma as any, 'commission_entries', [ce.id], { direction: o.kind === 'supplier' ? 'purchase' : 'sale', purchaseInvoiceId: o.purchaseInvoiceId, challanId: o.challanId });
   }
   return broker.id;
 }

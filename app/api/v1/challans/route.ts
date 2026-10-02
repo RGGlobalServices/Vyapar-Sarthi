@@ -4,6 +4,9 @@ import { assertOwned } from '@/lib/server/ownership';
 import prisma from '@/lib/server/prisma';
 import { randomUUID } from 'crypto';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
+import { tagRows } from '@/lib/server/billTags';
+import { logBrokerCommission } from '@/lib/server/brokerCommission';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 
 /**
  * GET /api/v1/challans
@@ -65,7 +68,11 @@ export async function POST(req: Request) {
       transporterId, transporter, freightAmount,
       vehicleNumber, driverName, driverMobile, lrNumber,
       jobWorkOrderRef, eWayBillNo, expectedInvoiceDate,
+      hamaliAmount, brokerName, brokerCommission,
     } = data;
+    // Sale hamali / sale broker are Bada Udyog (mill) fields — ignored for every other package
+    const isMill = isMillBillingPackage((shop as any).packageType);
+    const saleHamali = isMill && Number(hamaliAmount) > 0 ? Number(hamaliAmount) : 0;
 
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'At least one item is required.' }, { status: 400 });
@@ -101,6 +108,7 @@ export async function POST(req: Request) {
 
     const challanNumber = `CH-${randomUUID().substring(0, 8).toUpperCase()}`;
 
+    let freightEntryId: string | null = null;
     const challan = await prisma.$transaction(async (tx) => {
       const created = await tx.deliveryChallan.create({
         data: {
@@ -168,7 +176,7 @@ export async function POST(req: Request) {
 
       // Auto-create freight charge when a linked transporter + amount is given
       if (transporterId && parsedFreight && parsedFreight > 0) {
-        await (tx as any).freightEntry.create({
+        const fe = await (tx as any).freightEntry.create({
           data: {
             shopId: shop.id,
             transporterId,
@@ -179,10 +187,29 @@ export async function POST(req: Request) {
             note: `Auto from challan ${challanNumber}`,
           },
         });
+        freightEntryId = fe.id;
       }
 
       return created;
-    });
+    }, { timeout: 60000, maxWait: 15000 });
+
+    // Sale freight / sale hamali: tagged Sale and linked to this challan. Done after the challan is saved (the challan transaction is
+    // already close to its time limit on a distant database), and best-effort — the challan itself is never lost over a tag.
+    try {
+      if (freightEntryId) await tagRows(prisma as any, 'freight_entries', [freightEntryId], { direction: 'sale', challanId: challan.id });
+      if (saleHamali > 0) {
+        const hx = await (prisma as any).expense.create({ data: { shopId: shop.id, category: 'Hamali / Labour', amount: saleHamali, paymentMode: 'Cash', description: `Sale hamali - challan ${challanNumber}${vehicleNumber ? ` (${vehicleNumber})` : ''}`, date: new Date() } });
+        await tagRows(prisma as any, 'expenses', [hx.id], { direction: 'sale', challanId: challan.id });
+      }
+    } catch (e) {
+      console.error('[challans POST] sale hamali / freight tag failed (non-fatal):', e);
+    }
+
+    // Sale broker (kind customer) — commission owed to the broker, linked to this challan; best-effort, the challan is already saved
+    if (isMill && String(brokerName ?? '').trim()) {
+      try { await logBrokerCommission(shop.id, { name: brokerName, commission: brokerCommission, billNumber: challanNumber, kind: 'customer', party: customerName || undefined, challanId: challan.id }); }
+      catch (e) { console.error('[challans POST] broker commission failed (non-fatal):', e); }
+    }
 
     // Variant-row stock (Product.variants[] JSON) — same best-effort,
     // after-the-transaction pattern Purchases already uses via this helper,

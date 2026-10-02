@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { tagRows } from '@/lib/server/billTags';
 import { normalizeMillBill, freightMismatch } from '@/lib/millBill';
 
 export const runtime = 'nodejs';
@@ -47,6 +48,8 @@ export const POST = handle(async (req) => {
   const skipped: string[] = [];
 
   const result = await prisma.$transaction(async (tx: any) => {
+    // two clicks / two tabs at once must not both create the records: one runs, the other waits and then finds them
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', marker);
     // ---------------- Gate Entry ----------------
     let gate: any = null;
     if (want.gateEntry) {
@@ -71,7 +74,8 @@ export const POST = handle(async (req) => {
             },
           });
           if (mb.hamali && mb.hamali > 0) {
-            await tx.expense.create({ data: { shopId: shop.id, category: 'Hamali / Labour', amount: mb.hamali, paymentMode: 'Cash', description: `Hamali - ${entryNumber} (${mb.vehicleNumber})`, date: new Date() } });
+            const hx = await tx.expense.create({ data: { shopId: shop.id, category: 'Hamali / Labour', amount: mb.hamali, paymentMode: 'Cash', description: `Hamali - ${entryNumber} (${mb.vehicleNumber}) · Purchase bill ${invoiceNumber}`, date: new Date() } });
+            await tagRows(tx, 'expenses', [hx.id], { direction: 'purchase', purchaseInvoiceId: invoice.id });
           }
         }
       }
@@ -94,12 +98,13 @@ export const POST = handle(async (req) => {
             if (!transporter) {
               transporter = await tx.customer.create({ data: { shopId: shop.id, name: tName, mobile: mb.truckOwnerMobile || mb.driverMobile || null, customerType: 'transporter' } as any });
             }
-            await tx.freightEntry.create({
+            const fc = await tx.freightEntry.create({
               data: { shopId: shop.id, transporterId: transporter.id, type: 'charge', amount: total, vehicleNumber: mb.vehicleNumber || null, gateEntryId: gate?.id ?? null, note: `${marker} Freight — purchase bill ${invoiceNumber}` },
             });
+            await tagRows(tx, 'freight_entries', [fc.id], { direction: 'purchase', purchaseInvoiceId: invoice.id });
             const adv = mb.freightAdvance ?? 0;
             if (adv > 0 && advancePaidBy !== 'skip') {
-              await tx.freightEntry.create({
+              const fp = await tx.freightEntry.create({
                 data: {
                   shopId: shop.id, transporterId: transporter.id, type: 'payment', amount: adv, vehicleNumber: mb.vehicleNumber || null, gateEntryId: gate?.id ?? null,
                   // an advance the SELLER paid the driver is not a cash movement of the mill; one the mill paid is
@@ -107,6 +112,7 @@ export const POST = handle(async (req) => {
                   note: `${marker} Advance freight${advancePaidBy === 'seller' ? ' (paid by seller)' : ''} — purchase bill ${invoiceNumber}`,
                 },
               });
+              await tagRows(tx, 'freight_entries', [fp.id], { direction: 'purchase', purchaseInvoiceId: invoice.id });
               if (advancePaidBy === 'mill') {
                 await tx.cashBook.create({ data: { shopId: shop.id, type: 'withdrawal', amount: adv, description: `Freight payment to ${transporter.name}` } });
               }
@@ -156,6 +162,10 @@ export const POST = handle(async (req) => {
         lots.push({ id: lot.id, lotNumber, product: p.name, quantity: qty, unit: p.baseUnit || 'kg' });
       }
     }
+
+    // the broker commission the import logged for this bill (kind 'supplier') — link it to the purchase
+    const comm = await tx.commissionEntry.findMany({ where: { shopId: shop.id, billNumber: invoiceNumber, note: { startsWith: '[Supplier broker]' } }, select: { id: true } });
+    if (comm.length) await tagRows(tx, 'commission_entries', comm.map((c: any) => c.id), { direction: 'purchase', purchaseInvoiceId: invoice.id });
 
     return { gateEntry: gate ? { id: gate.id, entryNumber: gate.entryNumber, vehicleNumber: gate.vehicleNumber } : null, freight, lots };
   }, { timeout: 60000, maxWait: 15000 });

@@ -10,7 +10,7 @@ import { useTranslations } from 'next-intl';
 import { ExportButton } from '@/lib/hooks/useExport';
 
 type Broker = { id: string; name: string; mobile: string | null; balance: number; entryCount: number };
-type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment'; amount: number; billNumber: string | null; paymentMethod: string | null; note: string | null; date: string };
+type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment'; amount: number; billNumber: string | null; paymentMethod: string | null; note: string | null; date: string; direction?: 'purchase' | 'sale' | null; billLabel?: string | null };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -23,6 +23,7 @@ export default function BrokersPage() {
   const [showAddBroker, setShowAddBroker] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
 
   const { data, mutate: refetch, isLoading } = useSWR<{ brokers: Broker[]; entries: CommissionRow[] }>(
     activeShopId ? ['/management/commission', activeShopId] : null,
@@ -32,10 +33,12 @@ export default function BrokersPage() {
   const brokers = data?.brokers || [];
   const entries = data?.entries || [];
   const totalOwed = brokers.reduce((s, b) => s + Math.max(0, b.balance), 0);
+  const chargeSum = (d: 'purchase' | 'sale') => entries.filter(e => e.type === 'charge' && e.direction === d).reduce((a, e) => a + e.amount, 0);
   const selectedBroker = brokers.find(b => b.id === selectedBrokerId);
 
   const filteredEntries = entries
     .filter(e => !selectedBrokerId || e.brokerId === selectedBrokerId)
+    .filter(e => dirFilter === 'all' || e.direction === dirFilter)
     .filter(e => {
       if (!dateFrom && !dateTo) return true;
       const d = new Date(e.date);
@@ -84,6 +87,17 @@ export default function BrokersPage() {
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
         <p className="text-[11px] text-slate-500">{t('totalOwedLabel')}</p>
         <p className="text-2xl font-black text-rose-600 dark:text-rose-400">{rupee(totalOwed)}</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-sky-200 dark:border-sky-900/40 bg-white dark:bg-slate-900 p-4">
+          <p className="text-[11px] text-sky-600 font-bold uppercase">Purchase commission</p>
+          <p className="text-xl font-black text-slate-900 dark:text-white">{rupee(chargeSum('purchase'))}</p>
+        </div>
+        <div className="rounded-xl border border-violet-200 dark:border-violet-900/40 bg-white dark:bg-slate-900 p-4">
+          <p className="text-[11px] text-violet-600 font-bold uppercase">Sale commission</p>
+          <p className="text-xl font-black text-slate-900 dark:text-white">{rupee(chargeSum('sale'))}</p>
+        </div>
       </div>
 
       {isLoading ? (
@@ -149,6 +163,14 @@ export default function BrokersPage() {
             </button>
           )}
         </div>
+        <div className="flex gap-1.5 mb-3">
+          {(['all', 'purchase', 'sale'] as const).map(k => (
+            <button key={k} type="button" onClick={() => setDirFilter(k)}
+              className={'text-xs font-bold px-3 py-1 rounded-full border ' + (dirFilter === k ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
+              {k === 'all' ? 'All' : k === 'purchase' ? 'Purchase broker' : 'Sale broker'}
+            </button>
+          ))}
+        </div>
         {filteredEntries.length === 0 ? (
           <p className="text-sm text-slate-500">{t('noEntries')}</p>
         ) : (
@@ -162,6 +184,7 @@ export default function BrokersPage() {
                         e.type === 'charge' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300')}>
                         {e.type === 'charge' ? t('commission') : t('payment')}
                       </span>
+                      {e.direction && <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ' + (e.direction === 'purchase' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700')}>{e.direction === 'purchase' ? 'Purchase' : 'Sale'}{e.billLabel ? ' · ' + e.billLabel : ''}</span>}
                       {e.billNumber && <span className="text-xs font-semibold text-slate-500">#{e.billNumber}</span>}
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
@@ -261,6 +284,7 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
   const t = useTranslations('Brokers');
   const [amount, setAmount] = useState('');
   const [billNumber, setBillNumber] = useState('');
+  const [direction, setDirection] = useState<'purchase' | 'sale'>('purchase');
   const [billAmount, setBillAmount] = useState('');
   const [rate, setRate] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
@@ -285,6 +309,7 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
         billNumber: type === 'charge' ? billNumber : undefined,
         paymentMethod: type === 'payment' ? paymentMethod : undefined,
         note,
+        direction: type === 'charge' ? direction : undefined,
       });
       onSaved();
     } catch (err: any) {
@@ -330,6 +355,19 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
             <input type="number" min="0" step="0.01" autoFocus={type !== 'charge'} value={amount} onChange={e => setAmount(e.target.value)}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
           </label>
+          {type === 'charge' && (
+            <div>
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Commission for</span>
+              <div className="grid grid-cols-2 gap-2">
+                {(['purchase', 'sale'] as const).map(k => (
+                  <button key={k} type="button" onClick={() => setDirection(k)}
+                    className={cn('h-9 rounded-lg text-sm font-bold border-2 transition-colors', direction === k ? 'border-rose-500 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
+                    {k === 'purchase' ? 'Purchase' : 'Sale'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {type === 'charge' ? (
             <label className="block">
               <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('billNumberOptional')}</span>

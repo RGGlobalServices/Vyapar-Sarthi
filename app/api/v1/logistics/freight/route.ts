@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { withBillTags, tagRows } from '@/lib/server/billTags';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
 
@@ -43,10 +44,10 @@ export const GET = handle(async (req) => {
 
   return json({
     transporters: Array.from(byTransporter.values()),
-    entries: entries.map((e: any) => ({
+    entries: (await withBillTags(shop.id, 'freight_entries', entries.map((e: any) => ({
       id: e.id, transporterId: e.transporterId, type: e.type, amount: Number(e.amount) || 0,
       vehicleNumber: e.vehicleNumber, paymentMethod: e.paymentMethod, note: e.note, date: e.createdAt,
-    })),
+    })))),
   });
 });
 
@@ -94,5 +95,14 @@ export const POST = handle(async (req) => {
   }
 
   const [created] = await prisma.$transaction(ops);
+
+  // Purchase or Sale freight: as chosen on the form, else from the gate entry (inward = purchase, outward = sale) or the challan (sale)
+  let direction: 'purchase' | 'sale' | null = body.direction === 'purchase' || body.direction === 'sale' ? body.direction : null;
+  if (!direction && body.gateEntryId) {
+    const g = await (prisma as any).gateEntry.findFirst({ where: { id: body.gateEntryId, shopId: shop.id }, select: { direction: true } });
+    if (g) direction = g.direction === 'outward' ? 'sale' : 'purchase';
+  }
+  if (!direction && body.challanId) direction = 'sale';
+  if (direction) await tagRows(prisma as any, 'freight_entries', [(created as any).id], { direction, purchaseInvoiceId: direction === 'purchase' ? body.purchaseInvoiceId : null, challanId: direction === 'sale' ? body.challanId : null });
   return json(created, 201);
 });

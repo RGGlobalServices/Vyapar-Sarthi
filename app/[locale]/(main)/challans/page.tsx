@@ -12,6 +12,7 @@ import api from '@/lib/api';
 import { cn, fmtDate } from '@/lib/utils';
 import { performSmartSearch } from '@/lib/smartSearch';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -508,6 +509,11 @@ const selectCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border-sla
 
 function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   type Party = { id: string; name: string; mobile?: string; address?: string };
+  const isMill = isMillBillingPackage(useBusinessStore().profile?.packageType);
+  // Bada Udyog only: this challan is a SALE, so its hamali and broker are saved as Sale hamali / Sale broker
+  const [hamaliAmount, setHamaliAmount] = useState('');
+  const [brokerName, setBrokerName] = useState('');
+  const [brokerCommission, setBrokerCommission] = useState('');
 
   // Basic
   const [challanDate, setChallanDate]     = useState(new Date().toISOString().slice(0, 10));
@@ -653,6 +659,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
         dispatchFrom: dispatchFrom.trim() || undefined,
         transporterId: transporterId || undefined,
         freightAmount: freightAmount ? Number(freightAmount) : undefined,
+        ...(isMill ? { hamaliAmount: hamaliAmount ? Number(hamaliAmount) : undefined, brokerName: brokerName.trim() || undefined, brokerCommission: brokerCommission ? Number(brokerCommission) : undefined } : {}),
         vehicleNumber: vehicleNumber.trim() || undefined,
         driverName: driverName.trim() || undefined,
         driverMobile: driverMobile.trim() || undefined,
@@ -969,6 +976,21 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
               <Field label="Driver Name">
                 <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Driver name" className={inputCls} />
               </Field>
+              {isMill && (
+                <>
+                  <Field label="Sale Hamali (₹)">
+                    <input type="number" min="0" step="0.01" value={hamaliAmount} onChange={e => setHamaliAmount(e.target.value)} placeholder="Loading hamali for this sale" className={inputCls} />
+                    <p className="text-[10px] text-slate-400 mt-1">Saved as Sale hamali</p>
+                  </Field>
+                  <Field label="Sale Broker">
+                    <input value={brokerName} onChange={e => setBrokerName(e.target.value)} placeholder="Broker name" className={inputCls} />
+                  </Field>
+                  <Field label="Broker Commission (₹)">
+                    <input type="number" min="0" step="0.01" value={brokerCommission} onChange={e => setBrokerCommission(e.target.value)} placeholder="Commission" disabled={!brokerName.trim()} className={inputCls} />
+                    <p className="text-[10px] text-slate-400 mt-1">Saved as Sale (customer) broker</p>
+                  </Field>
+                </>
+              )}
               <Field label="Driver Mobile">
                 <input value={driverMobile} onChange={e => setDriverMobile(e.target.value)} placeholder="Mobile number" className={inputCls} />
               </Field>

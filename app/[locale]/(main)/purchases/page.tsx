@@ -402,7 +402,7 @@ export default function PurchasesPage() {
         // Broker + commission: best-effort, after the purchase is safely saved (a failure never undoes the bill).
         if (isMill && broker.name.trim()) {
           const inv = res?.data?.invoice;
-          api.post('/mill/broker-commission', { name: broker.name, commission: broker.commission, billNumber: inv?.invoiceNumber || invoiceNumber || inv?.id, kind: 'supplier' })
+          api.post('/mill/broker-commission', { name: broker.name, commission: broker.commission, billNumber: inv?.invoiceNumber || invoiceNumber || inv?.id, kind: 'supplier', purchaseInvoiceId: inv?.id })
             .catch((e: any) => console.error('Broker commission not saved:', e));
         }
       }

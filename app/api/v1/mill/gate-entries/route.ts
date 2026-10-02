@@ -1,3 +1,4 @@
+import { tagRows } from '@/lib/server/billTags';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
@@ -108,7 +109,7 @@ export const POST = handle(async (req) => {
     });
 
     if (hamaliAmount && hamaliAmount > 0) {
-      await (tx as any).expense.create({
+      const hx = await (tx as any).expense.create({
         data: {
           shopId: shop.id,
           category: 'Hamali / Labour',
@@ -118,6 +119,8 @@ export const POST = handle(async (req) => {
           date: new Date(),
         },
       });
+      // inward truck = purchase hamali, outward truck = sale hamali
+      await tagRows(tx as any, 'expenses', [hx.id], { direction: direction === 'outward' ? 'sale' : 'purchase', purchaseInvoiceId: body.purchaseInvoiceId || null, challanId: body.challanId || null });
     }
 
     return created;

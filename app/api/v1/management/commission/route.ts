@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { withBillTags, tagRows } from '@/lib/server/billTags';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
 
@@ -41,10 +42,10 @@ export const GET = handle(async (req) => {
 
   return json({
     brokers: Array.from(byBroker.values()),
-    entries: entries.map((e: any) => ({
+    entries: (await withBillTags(shop.id, 'commission_entries', entries.map((e: any) => ({
       id: e.id, brokerId: e.brokerId, type: e.type, amount: Number(e.amount) || 0,
       billNumber: e.billNumber, paymentMethod: e.paymentMethod, note: e.note, date: e.createdAt,
-    })),
+    })))),
   });
 });
 
@@ -84,5 +85,8 @@ export const POST = handle(async (req) => {
   }
 
   const [created] = await prisma.$transaction(ops);
+  if (body.direction === 'purchase' || body.direction === 'sale') {
+    await tagRows(prisma as any, 'commission_entries', [(created as any).id], { direction: body.direction, purchaseInvoiceId: body.purchaseInvoiceId, challanId: body.challanId });
+  }
   return json(created, 201);
 });

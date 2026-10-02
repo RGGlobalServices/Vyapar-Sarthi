@@ -11,6 +11,6 @@ export const POST = handle(async (req) => {
   const b = await readBody<any>(req);
   if (!String(b.name ?? '').trim()) throw new ApiError(400, 'Broker name is required');
   if (!String(b.billNumber ?? '').trim()) throw new ApiError(400, 'billNumber is required');
-  const id = await logBrokerCommission(shop.id, { name: b.name, commission: b.commission, billNumber: String(b.billNumber), kind: b.kind === 'customer' ? 'customer' : 'supplier', party: b.party });
+  const id = await logBrokerCommission(shop.id, { name: b.name, commission: b.commission, billNumber: String(b.billNumber), kind: b.kind === 'customer' ? 'customer' : 'supplier', party: b.party, purchaseInvoiceId: b.purchaseInvoiceId, challanId: b.challanId });
   return json({ brokerId: id }, 201);
 });

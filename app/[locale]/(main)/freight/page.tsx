@@ -16,6 +16,12 @@ type FreightEntry = {
   id: string; transporterId: string; type: 'charge' | 'payment';
   amount: number; vehicleNumber?: string | null; paymentMethod?: string | null;
   note?: string | null; date: string;
+  direction?: 'purchase' | 'sale' | null; billType?: 'purchase' | 'sale' | null; billLabel?: string | null;
+};
+
+const DIR_BADGE: Record<string, string> = {
+  purchase: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
+  sale: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
 };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
@@ -28,6 +34,7 @@ export default function FreightPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAddTransporter, setShowAddTransporter] = useState(false);
   const [addMode, setAddMode] = useState<'charge' | 'payment' | null>(null);
+  const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
 
   const { data, mutate, isLoading } = useSWR<{ transporters: Transporter[]; entries: FreightEntry[] }>(
     activeShopId ? ['/logistics/freight', activeShopId] : null,
@@ -39,11 +46,12 @@ export default function FreightPage() {
 
   const selected = selectedId ? transporters.find(t => t.id === selectedId) : null;
   const selectedEntries = useMemo(
-    () => allEntries.filter(e => e.transporterId === selectedId).sort(
+    () => allEntries.filter(e => e.transporterId === selectedId && (dirFilter === 'all' || e.direction === dirFilter)).sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     ),
-    [allEntries, selectedId],
+    [allEntries, selectedId, dirFilter],
   );
+  const chargeTotal = (d: 'purchase' | 'sale') => allEntries.filter(e => e.type === 'charge' && e.direction === d).reduce((a, e) => a + e.amount, 0);
 
   const totalOwed = transporters.reduce((s, t) => s + (t.balance > 0 ? t.balance : 0), 0);
 
@@ -97,7 +105,7 @@ export default function FreightPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Transporters</p>
           <p className="text-2xl font-black text-slate-900 dark:text-white">{transporters.length}</p>
@@ -109,6 +117,14 @@ export default function FreightPage() {
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Entries</p>
           <p className="text-2xl font-black text-slate-900 dark:text-white">{allEntries.length}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs font-bold text-sky-600 uppercase tracking-wider mb-1">Purchase freight</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{rupee(chargeTotal('purchase'))}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-1">Sale freight</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{rupee(chargeTotal('sale'))}</p>
         </div>
       </div>
 
@@ -196,6 +212,15 @@ export default function FreightPage() {
                 />
               )}
 
+              <div className="px-5 py-2 flex gap-1.5 border-b border-slate-100 dark:border-slate-800">
+                {(['all', 'purchase', 'sale'] as const).map(k => (
+                  <button key={k} type="button" onClick={() => setDirFilter(k)}
+                    className={'text-xs font-bold px-3 py-1 rounded-full border ' + (dirFilter === k ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
+                    {k === 'all' ? 'All' : k === 'purchase' ? 'Purchase' : 'Sale'}
+                  </button>
+                ))}
+              </div>
+
               {/* Entries list */}
               {selectedEntries.length === 0 ? (
                 <div className="p-10 text-center">
@@ -214,6 +239,9 @@ export default function FreightPage() {
                           }`}>
                             {e.type === 'charge' ? 'Charge' : 'Payment'}
                           </span>
+                          {e.direction && (
+                            <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ' + DIR_BADGE[e.direction]}>{e.direction === 'purchase' ? 'Purchase' : 'Sale'}{e.billLabel ? ' · ' + e.billLabel : ''}</span>
+                          )}
                           {e.vehicleNumber && (
                             <span className="text-xs text-slate-500 font-medium">{e.vehicleNumber}</span>
                           )}
@@ -256,6 +284,7 @@ function EntryForm({
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [note, setNote] = useState('');
+  const [direction, setDirection] = useState<'purchase' | 'sale'>('purchase');
   const [saving, setSaving] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -270,6 +299,7 @@ function EntryForm({
         vehicleNumber: vehicleNumber.trim() || undefined,
         paymentMethod: mode === 'payment' ? paymentMethod : undefined,
         note: note.trim() || undefined,
+        direction,
       });
       toast.success(mode === 'charge' ? 'Charge added' : 'Payment recorded');
       onDone();
@@ -316,6 +346,17 @@ function EntryForm({
             </select>
           </div>
         )}
+        <div className="col-span-2">
+          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Freight for</label>
+          <div className="flex gap-2">
+            {(['purchase', 'sale'] as const).map(k => (
+              <button key={k} type="button" onClick={() => setDirection(k)}
+                className={'flex-1 px-3 py-2 rounded-lg text-sm font-bold border ' + (direction === k ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
+                {k === 'purchase' ? 'Purchase (inward)' : 'Sale (outward)'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="col-span-2">
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Note</label>
           <input

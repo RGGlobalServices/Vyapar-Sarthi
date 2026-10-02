@@ -11,6 +11,7 @@ import { useTranslations } from 'next-intl';
 const HAMALI_CATEGORY = 'Hamali / Labour';
 
 type ExpenseRow = {
+  direction?: 'purchase' | 'sale' | null; billLabel?: string | null;
   id: string; category: string; amount: number; description: string | null;
   paymentMode: string | null; date: string;
   party?: { id: string; name: string } | null;
@@ -43,12 +44,15 @@ export default function HamaliPage() {
   const t = useTranslations('Hamali');
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [recording, setRecording] = useState(false);
+  const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
 
   const { data: allExpenses = [], mutate: refetch, isLoading } = useSWR<ExpenseRow[]>(
     activeShopId ? ['/expenses', activeShopId] : null,
     ([u]) => fetcher(u),
   );
-  const rows = allExpenses.filter(e => e.category === HAMALI_CATEGORY);
+  const allHamali = allExpenses.filter(e => e.category === HAMALI_CATEGORY);
+  const rows = allHamali.filter(e => dirFilter === 'all' || e.direction === dirFilter);
+  const sumDir = (d: 'purchase' | 'sale') => allHamali.filter(e => e.direction === d).reduce((a, e) => a + (e.amount || 0), 0);
 
   const gateHamaliQuery = useMemo(() => {
     const now = new Date();
@@ -105,6 +109,26 @@ export default function HamaliPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-sky-200 dark:border-sky-900/40 bg-white dark:bg-slate-900 p-4">
+          <p className="text-[11px] text-sky-600 font-bold uppercase">Purchase hamali (total)</p>
+          <p className="text-xl font-black text-slate-900 dark:text-white">{rupee(sumDir('purchase'))}</p>
+        </div>
+        <div className="rounded-xl border border-violet-200 dark:border-violet-900/40 bg-white dark:bg-slate-900 p-4">
+          <p className="text-[11px] text-violet-600 font-bold uppercase">Sale hamali (total)</p>
+          <p className="text-xl font-black text-slate-900 dark:text-white">{rupee(sumDir('sale'))}</p>
+        </div>
+      </div>
+
+      <div className="flex gap-1.5">
+        {(['all', 'purchase', 'sale'] as const).map(k => (
+          <button key={k} type="button" onClick={() => setDirFilter(k)}
+            className={'text-xs font-bold px-3 py-1 rounded-full border ' + (dirFilter === k ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
+            {k === 'all' ? 'All' : k === 'purchase' ? 'Purchase' : 'Sale'}
+          </button>
+        ))}
+      </div>
+
       {monthlySummary.length > 1 && (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
@@ -137,7 +161,10 @@ export default function HamaliPage() {
             {rows.map(e => (
               <li key={e.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-700 dark:text-slate-300">{e.description || t('title')}</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    {e.direction && <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 ' + (e.direction === 'purchase' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700')}>{e.direction === 'purchase' ? 'Purchase' : 'Sale'}{e.billLabel ? ' · ' + e.billLabel : ''}</span>}
+                    {e.description || t('title')}
+                  </p>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {e.party?.name && <span className="font-medium text-indigo-600 dark:text-indigo-400 mr-1">{e.party.name} ·</span>}
                     {e.paymentMode || 'Cash'} · {new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -190,6 +217,7 @@ function RecordChargeModal({ onClose, onRecorded }: { onClose: () => void; onRec
   const [description, setDescription] = useState('');
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
   const [partyId, setPartyId] = useState('');
+  const [direction, setDirection] = useState<'purchase' | 'sale'>('purchase');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -208,6 +236,7 @@ function RecordChargeModal({ onClose, onRecorded }: { onClose: () => void; onRec
         description,
         paymentMode,
         partyId: partyId || undefined,
+        direction,
       });
       onRecorded();
     } catch (err: any) {
@@ -236,6 +265,17 @@ function RecordChargeModal({ onClose, onRecorded }: { onClose: () => void; onRec
               {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
+          <div>
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Hamali for</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(['purchase', 'sale'] as const).map(k => (
+                <button key={k} type="button" onClick={() => setDirection(k)}
+                  className={cn('h-9 rounded-lg text-sm font-bold border-2 transition-colors', direction === k ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
+                  {k === 'purchase' ? 'Purchase' : 'Sale'}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('descriptionOptional')}</span>
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder={t('descriptionPlaceholder')}

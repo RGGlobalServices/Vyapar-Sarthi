@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
+import { withBillTags, tagRows } from '@/lib/server/billTags';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
@@ -14,12 +15,18 @@ export const GET = handle(async (req) => {
     include: { party: { select: { id: true, name: true } } },
     orderBy: { createdAt: 'desc' }
   });
+  // Hamali rows carry Purchase / Sale + their bill (only those rows are looked up)
+  const hamali = expenses.filter((e: any) => e.category === 'Hamali / Labour');
+  if (hamali.length) {
+    const tagged = new Map((await withBillTags(shop.id, 'expenses', hamali)).map((e: any) => [e.id, e]));
+    return json(expenses.map((e: any) => tagged.get(e.id) ?? e));
+  }
   return json(expenses);
 });
 
 export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
-  const data = await readBody<{ category: string, amount: number, description?: string, paymentMode?: string, date?: string, attachmentUrl?: string, isRecurring?: boolean, warehouseId?: string, partyId?: string }>(req);
+  const data = await readBody<{ category: string, amount: number, description?: string, paymentMode?: string, date?: string, attachmentUrl?: string, isRecurring?: boolean, warehouseId?: string, partyId?: string, direction?: string, purchaseInvoiceId?: string, challanId?: string }>(req);
   await assertOwned(shop.id, { godownId: data.warehouseId, customerId: data.partyId });
   
   if (!data.category || !data.amount) {
@@ -66,6 +73,10 @@ export const POST = handle(async (req) => {
 
     return expense;
   });
+
+  if (data.direction === 'purchase' || data.direction === 'sale') {
+    await tagRows(prisma as any, 'expenses', [(result as any).id], { direction: data.direction, purchaseInvoiceId: data.purchaseInvoiceId, challanId: data.challanId });
+  }
 
   // Fresh expense → drop the shop's dashboard cache so the KPI reflects it
   // on the very next dashboard fetch, not up to 15s later.
