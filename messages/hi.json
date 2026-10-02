@@ -56,7 +56,7 @@
     "production": "उत्पादन",
     "quality-lab": "क्वालिटी / लैब",
     "batches": "बैच",
-    "raw-material": "कच्चा माल",
+    "raw-material": "मिलिंग",
     "finished-goods": "तैयार माल",
     "by-products": "सह-उत्पाद",
     "wip": "WIP (प्रक्रियाधीन माल)",
@@ -3652,7 +3652,9 @@
     "bt_pickLots": "कम से कम एक लॉट चुनें और kg डालें.",
     "bt_lots": "{n} लॉट",
     "bt_for": "बैच {n} — {material}",
-    "bt_fixedInput": "माल बैच से तय है"
+    "bt_fixedInput": "माल बैच से तय है",
+    "rm_pageTitle": "मिलिंग",
+    "rm_pageSubtitle": "पूरी मिलिंग प्रक्रिया एक जगह — कच्चा माल, उत्पादन, बैच, दोबारा प्रोसेस और रिपोर्ट."
   },
   "Brokers": {
     "title": "ब्रोकर",

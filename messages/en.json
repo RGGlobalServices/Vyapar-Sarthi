@@ -57,7 +57,7 @@
     "production": "Production",
     "quality-lab": "Quality / Lab",
     "batches": "Batches",
-    "raw-material": "Raw Material",
+    "raw-material": "Milling",
     "finished-goods": "Finished Goods",
     "by-products": "By-Products",
     "wip": "WIP (Work In Progress)",
@@ -3649,7 +3649,9 @@
     "bt_pickLots": "Tick at least one lot and enter its kg.",
     "bt_lots": "{n} lots",
     "bt_for": "Batch {n} — {material}",
-    "bt_fixedInput": "Material is fixed by the batch"
+    "bt_fixedInput": "Material is fixed by the batch",
+    "rm_pageTitle": "Milling",
+    "rm_pageSubtitle": "The whole milling process in one place — raw material in, production, batches, reprocessing and reports."
   },
   "Brokers": {
     "title": "Brokers",

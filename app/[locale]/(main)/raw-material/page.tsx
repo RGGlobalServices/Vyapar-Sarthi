@@ -248,10 +248,10 @@ export default function RawMaterialPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Wheat size={24} className="text-amber-600" /> Raw Material Register
+            <Wheat size={24} className="text-amber-600" /> {tm('rm_pageTitle')}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Lot-wise operational register — trace intake, allocate to production, and monitor actual consumption.
+            {tm('rm_pageSubtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
