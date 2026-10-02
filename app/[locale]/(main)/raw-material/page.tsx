@@ -17,6 +17,7 @@ import ProductionStageBuilder, { getProductSmartSuggestions } from '@/components
 import { useTranslations } from 'next-intl';
 import QuickProductionForm from '@/components/mill/QuickProductionForm';
 import ProductionSources from '@/components/mill/ProductionSources';
+import BatchesPanel, { type BatchInfo } from '@/components/mill/BatchesPanel';
 import type { QuickSource } from '@/lib/quickEntry';
 
 type Lot = {
@@ -80,8 +81,9 @@ export default function RawMaterialPage() {
   const tm = useTranslations('Mill');
   const searchParams = useSearchParams();
   // Where production starts: raw material lots here, the customer's grain (Job Work), and WIP / rejected material to reprocess.
-  const [view, setView] = useState<'raw' | 'job_work' | 'reprocess'>('raw');
+  const [view, setView] = useState<'raw' | 'job_work' | 'reprocess' | 'batches'>(searchParams?.get('view') === 'batches' ? 'batches' : 'raw');
   const [startFor, setStartFor] = useState<{ type: QuickSource; id?: string } | null>(null);
+  const [startBatch, setStartBatch] = useState<BatchInfo | null>(null);
   const activeShopId = useBusinessStore(s => s.activeShopId);
 
   // Filter & Sort States
@@ -279,13 +281,14 @@ export default function RawMaterialPage() {
 
       {/* Where production starts from */}
       <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 overflow-x-auto" data-testid="rm-views">
-        {([['raw', tm('rm_viewRaw')], ['job_work', tm('rm_viewJob')], ['reprocess', tm('rm_viewReprocess')]] as const).map(([id, label]) => (
+        {([['raw', tm('rm_viewRaw')], ['job_work', tm('rm_viewJob')], ['reprocess', tm('rm_viewReprocess')], ['batches', tm('bt_title')]] as const).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setView(id)}
             className={cn('px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors', view === id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300')}>{label}</button>
         ))}
       </div>
 
-      {view !== 'raw' && <ProductionSources view={view} onStart={(type, id) => setStartFor({ type, id })} />}
+      {(view === 'job_work' || view === 'reprocess') && <ProductionSources view={view} onStart={(type, id) => setStartFor({ type, id })} />}
+      {view === 'batches' && <BatchesPanel onStartBatch={(b) => setStartBatch(b)} />}
 
       {view === 'raw' && (<>
       {/* Summary KPI Cards upholding Received = Consumed + Allocated + Available */}
@@ -588,6 +591,8 @@ export default function RawMaterialPage() {
       )}
 
       </>)}
+
+      {startBatch && <QuickProductionForm batch={startBatch} onClose={() => setStartBatch(null)} onSaved={() => { refetch(); }} />}
 
       {/* Start Production (one-form entry) */}
       {startFor && (

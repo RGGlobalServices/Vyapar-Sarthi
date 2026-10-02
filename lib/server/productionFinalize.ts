@@ -1,6 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { ApiError } from '@/lib/server/http';
-import { checkBalance, kgToProductUnit, round3, type ParsedOutput } from '@/lib/server/millProduction';
+import { checkBalance, kgToProductUnit, round3, toKg, type ParsedOutput } from '@/lib/server/millProduction';
 import { createFinishedGoodsLot } from '@/lib/server/finishedGoodsService';
 import { createWipLotFromStageOutput } from '@/lib/server/wipService';
 import { createRejectionLot } from '@/lib/server/rejectionService';
@@ -84,11 +84,19 @@ export async function finalizeBatchTx(tx: any, p: FinalizeParams) {
   if (consume && !isJobWork) {
     if (!batch.raw_lot_id) throw new ApiError(400, 'This batch has no raw material lot to consume.', 'RAW_LOT_REQUIRED');
     
-    // Structure as an array to naturally support multiple lots without rewriting the core flow.
-    const consumedLots = [{
-      lotId: batch.raw_lot_id,
-      consumedQty: inputKg
-    }];
+    // A batch can draw from several lots of one material: every raw-lot row of the batch is consumed by its own weight. A batch
+    // without such rows (older ones) consumes its whole input from its single raw lot, exactly as before.
+    const lotRows = await tx.$queryRaw<any[]>`
+      SELECT raw_material_lot_id::text AS lot_id, quantity, unit FROM batch_input_lots
+      WHERE batch_id = ${id}::uuid AND raw_material_lot_id IS NOT NULL ORDER BY sequence`;
+    let consumedLots = [{ lotId: batch.raw_lot_id as string, consumedQty: inputKg }];
+    if (lotRows.length > 1) {
+      consumedLots = lotRows.map((r: any) => ({ lotId: r.lot_id as string, consumedQty: toKg(Number(r.quantity), r.unit) }));
+      const sum = round3(consumedLots.reduce((s, l) => s + l.consumedQty, 0));
+      if (Math.abs(sum - inputKg) > 0.005) throw new ApiError(400, `The lots add up to ${sum} kg but the batch input is ${inputKg} kg.`, 'INPUT_LOTS_MISMATCH');
+    } else if (lotRows.length === 1) {
+      consumedLots = [{ lotId: lotRows[0].lot_id as string, consumedQty: inputKg }];
+    }
 
     for (const cl of consumedLots) {
       const took = await tx.$executeRaw`

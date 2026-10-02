@@ -1,9 +1,14 @@
 'use client';
 
-import BatchesHub from '@/components/mill/BatchesHub';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useLocale } from 'next-intl';
+import { Loader2 } from 'lucide-react';
 
-// Batches — the record of production: every finished run with its Slip and the reports, plus the optional stage-wise batches.
-// Direct production is started from Raw Material.
+// Batches now live inside Raw Material (where production starts); old links and bookmarks land there.
 export default function MillBatchesPage() {
-  return <BatchesHub />;
+  const router = useRouter();
+  const locale = useLocale();
+  useEffect(() => { router.replace(`/${locale}/raw-material?view=batches`); }, [router, locale]);
+  return <div className="min-h-[50vh] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>;
 }

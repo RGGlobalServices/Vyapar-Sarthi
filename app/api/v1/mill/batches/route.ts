@@ -5,6 +5,7 @@ import { toKg, lotSource, canonicalReceivedDate, computeLotQuantities, round3 } 
 import { validateInputLots } from '@/lib/server/batchMaterialService';
 import { randomUUID } from 'crypto';
 import { setBatchJobWork } from '@/lib/server/jobWorkLink';
+import { allocatedByLot } from '@/lib/server/lotAllocation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -284,11 +285,7 @@ export const POST = handle(async (req) => {
       throw new ApiError(400, 'That raw material lot is fully consumed — choose an available lot.', 'LOT_UNAVAILABLE');
     }
 
-    const activeBatches = await (prisma as any).productionBatch.findMany({
-      where: { rawLotId, shopId: shop.id, status: { in: ['open', 'in_progress'] } },
-      select: { inputKg: true },
-    });
-    const allocatedKg = round3(activeBatches.reduce((s: number, b: any) => s + (Number(b.inputKg) || 0), 0));
+    const allocatedKg = (await allocatedByLot(prisma as any, shop.id, [rawLotId])).get(rawLotId)?.kg ?? 0;
     const availableKg = round3(Math.max(0, unconsumedKg - allocatedKg));
 
     if (availableKg < inputKg) {

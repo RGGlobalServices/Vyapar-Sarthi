@@ -9,6 +9,7 @@ import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import ModalPortal from '@/components/mill/ModalPortal';
+import RawLotPicker from '@/components/mill/RawLotPicker';
 import { downloadProductionSlip } from '@/lib/productionSlipClient';
 import { defaultOutputPicks, rankProducts } from '@/lib/millSuggest';
 import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance, unitToKg, yieldPct } from '@/lib/quickEntry';
@@ -57,7 +58,7 @@ function saveRecipe(shop: string | null, k: string, rows: OutRow[]) {
   } catch { /* private mode: ignore */ }
 }
 
-export default function QuickProductionForm({ onClose, onSaved, initialSource }: { onClose: () => void; onSaved?: () => void; initialSource?: { type: QuickSource; id?: string } }) {
+export default function QuickProductionForm({ onClose, onSaved, initialSource, batch }: { onClose: () => void; onSaved?: () => void; initialSource?: { type: QuickSource; id?: string }; batch?: { id: string; batchNumber: string; inputKg: number; materialName: string; materialProductId: string; lotsText: string } }) {
   const t = useTranslations('Mill');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const { mutate: globalMutate } = useSWRConfig();
@@ -95,8 +96,10 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
   }, [lots, jwOrders, wipData, rjData]);
 
   const [source, setSource] = useState<QuickSource>(initialSource?.type ?? 'raw_lot');
-  const [sourceId, setSourceId] = useState('');
-  const [inputQty, setInputQty] = useState('');
+  // raw material: one or more lots of one material, each with its own kg
+  const [rawSel, setRawSel] = useState<Record<string, string>>({});
+  const [sourceId, setSourceId] = useState(batch ? batch.id : '');
+  const [inputQty, setInputQty] = useState(batch ? String(batch.inputKg) : '');
   const [inputUnit, setInputUnit] = useState('kg');
   const [rows, setRows] = useState<OutRow[]>([newRow('finished_good'), newRow('by_product')]);
   const [lossKg, setLossKg] = useState('');
@@ -116,7 +119,10 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
   const profile = useBusinessStore((s) => s.profile);
 
   const list = options[source];
-  const picked = list.find((o) => o.id === sourceId) || null;
+  // a planned batch fixes the material and weight; otherwise the chosen lot / order
+  const picked = batch
+    ? { id: batch.id, kg: batch.inputKg, productId: batch.materialProductId, name: batch.materialName, label: batch.batchNumber, recipe: `p:${batch.materialProductId}` }
+    : (list.find((o) => o.id === sourceId) || null);
 
   // What this mill produced from this material before -> pre-selects the output products (weights stay empty).
   const matProductId = picked?.productId || '';
@@ -155,9 +161,22 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
     const o = options[type].find((x) => x.id === id);
     if (o) {
       setInputQty(String(Math.round(o.kg * 1000) / 1000)); setInputUnit('kg');
+      if (type === 'raw_lot') setRawSel({ [id]: String(Math.round(o.kg * 1000) / 1000) });
       touched.current = false; appliedKey.current = '';
     } else setInputQty('');
     setLossTouched(false);
+  };
+
+  const onRawChange = (sel: Record<string, string>) => {
+    const ids = Object.keys(sel);
+    const wasFirst = sourceId;
+    setRawSel(sel);
+    setSourceId(ids[0] || '');
+    setInputUnit('kg');
+    setInputQty(ids.length ? String(Math.round(ids.reduce((s, id) => s + (Number(sel[id]) || 0), 0) * 1000) / 1000) : '');
+    // a different material -> suggestions start over
+    if ((ids[0] || '') !== wasFirst) { touched.current = false; appliedKey.current = ''; }
+    setError('');
   };
 
   // Opened from a lot / order / WIP / rejected row: that source is already chosen (once its data has loaded).
@@ -224,8 +243,12 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
           notes: [r.bagMode ? `${r.packs} × ${r.packKg} kg` : '', r.reason].filter(Boolean).join(' · ') || null,
         };
       });
-      const res = await api.post('/mill/production-entry', {
-        source: { type: source, id: sourceId },
+      const res = batch
+        ? await api.post(`/mill/batches/${batch.id}/finalize`, { outputs, lossKg: loss, notes: notes.trim() || undefined })
+        : await api.post('/mill/production-entry', {
+        source: source === 'raw_lot'
+          ? { type: source, id: sourceId, lots: Object.entries(rawSel).filter(([, v]) => num(v) > 0).map(([id, v]) => ({ id, quantityKg: num(v) })) }
+          : { type: source, id: sourceId },
         inputQuantity: num(inputQty), unit: inputUnit,
         outputs, lossKg: loss,
         operatorName: operatorName.trim() || undefined,
@@ -233,7 +256,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
         startedAt: when ? new Date(when).toISOString() : undefined,
         notes: notes.trim() || undefined,
       }, { headers: { 'x-idempotency-key': idemKey.current } });
-      const r = res.data;
+      const r = batch ? { ...res.data, batchId: batch.id, batchNumber: batch.batchNumber } : res.data;
       if (picked) saveRecipe(activeShopId, picked.recipe, filled);
       setDone({ batchId: r.batchId, batchNumber: r.batchNumber, finishedKg: r.finishedKg, yieldPct: r.yieldPct ?? yieldPct(r.finishedKg, inputKg) });
       // every list the run touches
@@ -246,7 +269,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
 
   const reset = () => {
     idemKey.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `qp-${Date.now()}-${Math.random()}`;
-    touched.current = false; appliedKey.current = ''; setDone(null); setSourceId(''); setInputQty(''); setRows([newRow('finished_good'), newRow('by_product')]); setLossKg(''); setLossTouched(false); setNotes(''); setError('');
+    touched.current = false; appliedKey.current = ''; setRawSel({}); setDone(null); setSourceId(''); setInputQty(''); setRows([newRow('finished_good'), newRow('by_product')]); setLossKg(''); setLossTouched(false); setNotes(''); setError('');
   };
 
   const balanceTone = bal.state === 'balanced' ? 'text-emerald-600' : bal.state === 'over' ? 'text-red-500' : 'text-amber-600';
@@ -288,16 +311,25 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
                 {/* 1. what went in */}
                 <section className="space-y-2.5">
                   <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">{t('qp_stepIn')}</h3>
+                  {batch ? (
+                    <div className="rounded-xl border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/60 dark:bg-emerald-500/5 p-3 space-y-0.5">
+                      <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">{batch.batchNumber}</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">{batch.materialName}{batch.lotsText ? ` · ${batch.lotsText}` : ''}</p>
+                      <p className="text-sm font-black font-mono text-emerald-700 dark:text-emerald-300">{fmt(batch.inputKg)} kg</p>
+                    </div>
+                  ) : (<>
                   <div className="grid grid-cols-2 gap-1.5">
                     {QUICK_SOURCES.map((s) => (
-                      <button key={s} type="button" onClick={() => { setSource(s); setSourceId(''); setInputQty(''); }}
+                      <button key={s} type="button" onClick={() => { setSource(s); setSourceId(''); setInputQty(''); setRawSel({}); }}
                         className={cn('h-10 px-2 rounded-lg border-2 text-xs font-bold transition-colors',
                           source === s ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300')}>
                         {t(`qp_src_${s}`)} <span className="opacity-60">({options[s].length})</span>
                       </button>
                     ))}
                   </div>
-                  {list.length === 0 ? (
+                  {source === 'raw_lot' ? (
+                    <RawLotPicker lots={lots} selected={rawSel} onChange={onRawChange} inputCls={inputCls} labelCls={labelCls} />
+                  ) : list.length === 0 ? (
                     <p className="text-xs text-slate-400 py-2">{t('qp_noSource')}</p>
                   ) : (
                     <select value={sourceId} onChange={(e) => pickSource(source, e.target.value)} className={inputCls}>
@@ -305,7 +337,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
                       {list.map((o) => <option key={o.id} value={o.id}>{o.label} — {fmt(o.kg)} kg</option>)}
                     </select>
                   )}
-                  {picked && (
+                  {picked && source !== 'raw_lot' && (
                     <div className="grid grid-cols-3 gap-2 items-end">
                       <label className="col-span-2 block">
                         <span className={labelCls}>{t('qp_qtyUsed')} <span className="normal-case font-medium text-slate-400">· {t('qp_available', { qty: fmt(picked.kg) })}</span></span>
@@ -314,6 +346,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource }:
                       <select value={inputUnit} onChange={(e) => setInputUnit(e.target.value)} className={inputCls}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select>
                     </div>
                   )}
+                  </>)}
                 </section>
 
                 {/* 2. what came out */}

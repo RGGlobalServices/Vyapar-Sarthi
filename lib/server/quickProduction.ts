@@ -6,6 +6,7 @@ import { parseLossKg, parseOutputs, toKg, kgPerUnit, round3 } from '@/lib/server
 import { prepareOutputCredits, finalizeBatchTx, afterBatchFinalized } from '@/lib/server/productionFinalize';
 import { recordStageAuditEvent } from '@/lib/server/audit';
 import { setBatchJobWork } from '@/lib/server/jobWorkLink';
+import { allocatedByLot } from '@/lib/server/lotAllocation';
 import { QUICK_SOURCES, type QuickSource } from '@/lib/quickEntry';
 
 /**
@@ -16,7 +17,7 @@ import { QUICK_SOURCES, type QuickSource } from '@/lib/quickEntry';
  * rejections booked into their own lots and stock, input = outputs + loss enforced. If anything fails nothing is written.
  *
  * Input sources:
- *   raw_lot    a purchased raw material lot (consumed at the end, like any batch)
+ *   raw_lot    one purchased raw material lot, or SEVERAL lots of the same material at once (each consumed by its own weight)
  *   job_work   a customer's grain on a Job Work order (never mill stock; the order is completed and charged with the run)
  *   wip        a work-in-progress lot made by an earlier run
  *   rejection  a rejection lot sent for reprocessing
@@ -24,13 +25,28 @@ import { QUICK_SOURCES, type QuickSource } from '@/lib/quickEntry';
 
 const STAGE_NAME = 'Production';
 
-type Source = { type: QuickSource; id: string };
+type Source = { type: QuickSource; id: string; lots?: Array<{ id: string; kg: number }> };
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseSource(raw: any): Source {
   const type = String(raw?.type ?? '').trim() as QuickSource;
   if (!QUICK_SOURCES.includes(type)) throw new ApiError(400, `source.type must be one of ${QUICK_SOURCES.join(', ')}.`, 'INVALID_SOURCE');
+  if (type === 'raw_lot' && Array.isArray(raw?.lots) && raw.lots.length > 0) {
+    if (raw.lots.length > 20) throw new ApiError(400, 'At most 20 lots in one production.', 'TOO_MANY_LOTS');
+    const seen = new Set<string>();
+    const lots = raw.lots.map((l: any) => {
+      const lid = String(l?.id ?? '').trim();
+      const kg = round3(Number(l?.quantityKg ?? l?.kg));
+      if (!UUID_RE.test(lid)) throw new ApiError(400, 'Select the raw material lots this production uses.', 'SOURCE_REQUIRED');
+      if (seen.has(lid)) throw new ApiError(400, 'The same lot is listed twice.', 'DUPLICATE_INPUT_LOT');
+      seen.add(lid);
+      if (!isFinite(kg) || kg <= 0) throw new ApiError(400, 'Enter a weight for every selected lot.', 'INVALID_QUANTITY');
+      return { id: lid, kg };
+    });
+    return { type, id: lots[0].id, lots };
+  }
   const id = String(raw?.id ?? '').trim();
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new ApiError(400, 'Select the lot / order this production uses.', 'SOURCE_REQUIRED');
+  if (!UUID_RE.test(id)) throw new ApiError(400, 'Select the lot / order this production uses.', 'SOURCE_REQUIRED');
   return { type, id };
 }
 
@@ -57,9 +73,10 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
 
   // ---- shape checks only; everything stock-related is re-read from the DB under lock below ----
   const source = parseSource(body.source);
-  const enteredQty = Number(body.inputQuantity ?? body.inputKg);
+  // several lots: the input is the sum of the lot weights; otherwise the entered quantity
+  const enteredQty = source.lots ? source.lots.reduce((s, l) => s + l.kg, 0) : Number(body.inputQuantity ?? body.inputKg);
   if (!isFinite(enteredQty) || enteredQty <= 0) throw new ApiError(400, 'Enter how much material was used (a positive number).', 'INVALID_QUANTITY');
-  const inputKg = toKg(enteredQty, body.unit ?? 'kg');
+  const inputKg = source.lots ? round3(enteredQty) : toKg(enteredQty, body.unit ?? 'kg');
   if (inputKg <= 0) throw new ApiError(400, 'Enter how much material was used (a positive number).', 'INVALID_QUANTITY');
 
   const outputs = parseOutputs(body.outputs);
@@ -98,22 +115,31 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
 
         // ---------------- take the input from its source ----------------
         if (source.type === 'raw_lot') {
-          const lots = await tx.$queryRaw<any[]>`
-            SELECT id, product_id, quantity, remaining_quantity, lot_number FROM raw_material_lots
-            WHERE id = ${source.id}::uuid AND shop_id = ${shopId}::uuid FOR UPDATE`;
-          const lot = lots[0];
-          if (!lot) throw new ApiError(404, 'Source raw material lot not found for this shop', 'LOT_NOT_FOUND');
-          if (!lot.product_id) throw new ApiError(400, 'Link this raw material lot to its raw material product (Raw Material screen) before producing from it — that is the stock the run consumes.', 'RAW_PRODUCT_REQUIRED');
-          const unconsumed = round3(Number(lot.remaining_quantity ?? lot.quantity ?? 0));
-          if (unconsumed <= 0) throw new ApiError(400, 'That raw material lot is fully consumed — choose an available lot.', 'LOT_UNAVAILABLE');
-          const active = await tx.productionBatch.findMany({ where: { rawLotId: source.id, shopId, status: { in: ['open', 'in_progress'] } }, select: { inputKg: true } });
-          const allocated = round3(active.reduce((s: number, b: any) => s + (Number(b.inputKg) || 0), 0));
-          const available = round3(Math.max(0, unconsumed - allocated));
-          if (available < inputKg) throw new ApiError(400, `Only ${available} kg remaining in lot ${lot.lot_number || ''} — cannot use ${inputKg} kg.`, 'INSUFFICIENT_RAW_STOCK');
-          rawLotId = source.id;
-          rawProductId = lot.product_id;
-          sourceNote = `Raw lot ${lot.lot_number || source.id.slice(0, 8)}`;
-          inputLotRows.push({ id: randomUUID(), shopId, batchId, rawMaterialLotId: source.id, quantity: inputKg, unit: 'kg', sequence: 1 });
+          // one lot (the whole input) or several lots of one material (each its own weight); locked in a fixed order so two runs cannot deadlock
+          const wanted = source.lots ?? [{ id: source.id, kg: inputKg }];
+          const ordered = [...wanted].sort((a, b) => (a.id < b.id ? -1 : 1));
+          const nameById = new Map<string, string>();
+          for (const w of ordered) {
+            const lots = await tx.$queryRaw<any[]>`
+              SELECT id, product_id, quantity, remaining_quantity, lot_number FROM raw_material_lots
+              WHERE id = ${w.id}::uuid AND shop_id = ${shopId}::uuid FOR UPDATE`;
+            const lot = lots[0];
+            if (!lot) throw new ApiError(404, 'Source raw material lot not found for this shop', 'LOT_NOT_FOUND');
+            if (!lot.product_id) throw new ApiError(400, 'Link this raw material lot to its raw material product (Raw Material screen) before producing from it — that is the stock the run consumes.', 'RAW_PRODUCT_REQUIRED');
+            if (rawProductId && lot.product_id !== rawProductId) throw new ApiError(400, 'All lots in one production must be of the same raw material.', 'PRODUCT_LOT_MISMATCH');
+            rawProductId = lot.product_id;
+            const unconsumed = round3(Number(lot.remaining_quantity ?? lot.quantity ?? 0));
+            if (unconsumed <= 0) throw new ApiError(400, `Lot ${lot.lot_number || ''} is fully consumed — choose an available lot.`, 'LOT_UNAVAILABLE');
+            const allocated = (await allocatedByLot(tx, shopId, [w.id])).get(w.id)?.kg ?? 0;
+            const available = round3(Math.max(0, unconsumed - allocated));
+            if (available < w.kg) throw new ApiError(400, `Only ${available} kg remaining in lot ${lot.lot_number || ''} — cannot use ${w.kg} kg.`, 'INSUFFICIENT_RAW_STOCK');
+            nameById.set(w.id, String(lot.lot_number || w.id.slice(0, 8)));
+          }
+          // keep the user's order for sequence / primary lot
+          wanted.forEach((w, i) => inputLotRows.push({ id: randomUUID(), shopId, batchId, rawMaterialLotId: w.id, quantity: w.kg, unit: 'kg', sequence: i + 1 }));
+          rawLotId = wanted[0].id;
+          const names = wanted.map((w) => nameById.get(w.id) as string);
+          sourceNote = `Raw lot${names.length > 1 ? 's' : ''} ${names.slice(0, 3).join(' + ')}${names.length > 3 ? ' …' : ''}`;
         } else if (source.type === 'job_work') {
           const order = await tx.jobWorkOrder.findFirst({ where: { id: source.id, shopId }, include: { customer: true } });
           if (!order) throw new ApiError(404, 'Job work order not found for this shop', 'JOB_WORK_NOT_FOUND');

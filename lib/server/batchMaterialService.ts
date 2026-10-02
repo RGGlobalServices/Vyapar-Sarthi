@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { ApiError } from '@/lib/server/http';
 import { round3, toKg } from '@/lib/server/millProduction';
 import { recordStageAuditEvent } from '@/lib/server/audit';
+import { allocatedByLot } from '@/lib/server/lotAllocation';
 
 export type InputLotInput = {
   rawMaterialLotId: string;
@@ -97,7 +98,7 @@ export async function validateInputLots(
       throw new ApiError(400, `Raw material lot #${lot.lotNumber} is fully consumed.`, 'LOT_UNAVAILABLE');
     }
 
-    const activeAllocatedKg = round3(lot.batches.reduce((sum, b) => sum + (Number(b.inputKg) || 0), 0));
+    const activeAllocatedKg = (await allocatedByLot(prisma as any, shopId, [lot.id])).get(lot.id)?.kg ?? 0;
     const availableKg = round3(Math.max(0, unconsumedKg - activeAllocatedKg));
 
     const qtyKg = round3(toKg(qty, unit));

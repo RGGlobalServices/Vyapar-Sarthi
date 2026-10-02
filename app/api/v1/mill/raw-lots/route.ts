@@ -3,6 +3,7 @@ import { requireShop } from '@/lib/server/auth';
 import { assertOwned as assertRefsOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { kgPerUnit, kgToProductUnit, round3, lotSource, canonicalReceivedDate, computeLotQuantities } from '@/lib/server/millProduction';
+import { allocatedByLot } from '@/lib/server/lotAllocation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,13 +77,16 @@ export const GET = handle(async (req) => {
   });
 
   const { start: filterStart, end: filterEnd } = getDateBounds(datePreset, startDate, endDate);
+  // reserved kg per lot, from the batches' input-lot rows (a batch can draw from several lots)
+  const allocation = await allocatedByLot(prisma as any, shop.id, lots.map((l: any) => l.id));
 
   // Map each lot with its source, canonical receivedDate, and computed quantity states
   let mapped = lots.map((l: any) => {
     const { weighbridgeEntries, ...rest } = l;
     const src = lotSource(l);
     const recDate = canonicalReceivedDate(l);
-    const qty = computeLotQuantities(l);
+    const al = allocation.get(l.id);
+    const qty = computeLotQuantities({ quantity: l.quantity, remainingQuantity: l.remainingQuantity, batches: al && al.kg > 0 ? [{ inputKg: al.kg, status: al.inProgress ? 'in_progress' : 'open' }] : [] });
     return {
       ...rest,
       ...src,
