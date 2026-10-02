@@ -42,6 +42,26 @@ export const POST = handle(async (req) => {
   const description = (body.description || '').toString().trim();
   if (!description) throw new ApiError(400, 'description is required');
 
+  // Parts used in this job: [{ sparePartId, quantity }] — taken out of the spare-parts stock in the same transaction
+  const partsIn: Array<{ sparePartId: string; quantity: number }> = (Array.isArray(body.parts) ? body.parts : [])
+    .map((p: any) => ({ sparePartId: String(p?.sparePartId ?? ''), quantity: parseFloat(String(p?.quantity ?? '')) }))
+    .filter((p: any) => p.sparePartId && isFinite(p.quantity) && p.quantity > 0);
+  const partRows = partsIn.length ? await (prisma as any).sparePart.findMany({ where: { shopId: shop.id, id: { in: partsIn.map((p) => p.sparePartId) } } }) : [];
+  const partLines: string[] = [];
+  const partOps: any[] = [];
+  for (const u of partsIn) {
+    const part = partRows.find((x: any) => x.id === u.sparePartId);
+    if (!part) throw new ApiError(404, 'Spare part not found');
+    if (u.quantity > Number(part.quantity)) throw new ApiError(400, `Only ${part.quantity} ${part.name} in stock — cannot use ${u.quantity}`);
+    partLines.push(`${part.name} x ${u.quantity}`);
+    partOps.push(
+      (prisma as any).sparePart.update({ where: { id: part.id }, data: { quantity: { decrement: u.quantity } } }),
+      (prisma as any).sparePartMovement.create({ data: { shopId: shop.id, sparePartId: part.id, type: 'out', quantity: u.quantity, note: `Used on ${machine.name}: ${description}`.slice(0, 200) } }),
+    );
+  }
+  const baseNotes = (body.notes || '').trim();
+  const notes = [partLines.length ? `Parts used: ${partLines.join(', ')}` : '', baseNotes].filter(Boolean).join('\n') || null;
+
   const ops: any[] = [
     (prisma as any).maintenanceEntry.create({
       data: {
@@ -52,7 +72,7 @@ export const POST = handle(async (req) => {
         performedBy: (body.performedBy || '').trim() || null,
         serviceDate: body.serviceDate ? new Date(body.serviceDate) : new Date(),
         nextDueDate: body.nextDueDate ? new Date(body.nextDueDate) : null,
-        notes: (body.notes || '').trim() || null,
+        notes,
       },
       include: { machine: { select: { id: true, name: true } } },
     }),
@@ -82,6 +102,6 @@ export const POST = handle(async (req) => {
     );
   }
 
-  const [created] = await prisma.$transaction(ops);
+  const [created] = await prisma.$transaction([...ops, ...partOps]);
   return json(created, 201);
 });

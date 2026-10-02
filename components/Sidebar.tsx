@@ -57,7 +57,7 @@ const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali', 'freight'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'cashbook', 'settlement', 'expenses'] },
   { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers'], defaultCollapsed: true },
-  { id: 'maintenance', label: 'Machines & Maintenance', emoji: '🔧', keys: ['machines', 'maintenance', 'spare-parts'], defaultCollapsed: false },
+  { id: 'maintenance', label: 'Machines & Maintenance', emoji: '🔧', keys: ['machines'], defaultCollapsed: false },
   { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
   { id: 'admin',       label: 'Setup',             emoji: '⚙️', keys: ['staff', 'import', 'referral', 'calendar', 'returns', 'settings', 'profile', 'trash'], defaultCollapsed: true },
 ];
