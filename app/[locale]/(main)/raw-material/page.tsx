@@ -17,7 +17,9 @@ import ProductionStageBuilder, { getProductSmartSuggestions } from '@/components
 import { useTranslations } from 'next-intl';
 import QuickProductionForm from '@/components/mill/QuickProductionForm';
 import ProductionSources from '@/components/mill/ProductionSources';
-import BatchesPanel, { type BatchInfo } from '@/components/mill/BatchesPanel';
+import ReservedBatches, { type BatchInfo } from '@/components/mill/ReservedBatches';
+import NewBatchModal from '@/components/mill/NewBatchModal';
+import ProductionRuns from '@/components/mill/ProductionRuns';
 import type { QuickSource } from '@/lib/quickEntry';
 
 type Lot = {
@@ -84,6 +86,7 @@ export default function RawMaterialPage() {
   const [view, setView] = useState<'raw' | 'job_work' | 'reprocess' | 'batches'>(searchParams?.get('view') === 'batches' ? 'batches' : 'raw');
   const [startFor, setStartFor] = useState<{ type: QuickSource; id?: string } | null>(null);
   const [startBatch, setStartBatch] = useState<BatchInfo | null>(null);
+  const [reserveFor, setReserveFor] = useState<{ lotId?: string } | null>(null);
   const activeShopId = useBusinessStore(s => s.activeShopId);
 
   // Filter & Sort States
@@ -286,6 +289,13 @@ export default function RawMaterialPage() {
             <Factory size={18} /> {tm('rm_startProduction')}
           </button>
           <button
+            onClick={() => setReserveFor({})}
+            data-testid="reserve-material"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Wheat size={18} /> {tm('bt_new')}
+          </button>
+          <button
             onClick={() => setAdding(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm"
           >
@@ -303,7 +313,7 @@ export default function RawMaterialPage() {
       </div>
 
       {(view === 'job_work' || view === 'reprocess') && <ProductionSources view={view} onStart={(type, id) => setStartFor({ type, id })} />}
-      {view === 'batches' && <BatchesPanel onStartBatch={(b) => setStartBatch(b)} />}
+      {view === 'batches' && <ProductionRuns />}
 
       {view === 'raw' && (<>
       {/* Summary KPI Cards upholding Received = Consumed + Allocated + Available */}
@@ -363,16 +373,24 @@ export default function RawMaterialPage() {
                 </div>
                 <p className="text-[10px] text-slate-400 text-center">kg</p>
                 {m.available > 0 && m.firstLotId && (
-                  <button type="button" onClick={() => setStartFor({ type: 'raw_lot', id: m.firstLotId as string })}
-                    className="w-full h-9 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
-                    <Factory size={13} /> {tm('rm_startProduction')}
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setStartFor({ type: 'raw_lot', id: m.firstLotId as string })}
+                      className="h-9 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                      <Factory size={13} /> {tm('rm_startProduction')}
+                    </button>
+                    <button type="button" onClick={() => setReserveFor({ lotId: m.firstLotId as string })}
+                      className="h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                      {tm('bt_new')}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
           </div>
         </section>
       )}
+
+      <ReservedBatches onStartBatch={(b) => setStartBatch(b)} />
 
       {/* Filter and Sorting Controls */}
       <div className="space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
@@ -621,6 +639,13 @@ export default function RawMaterialPage() {
                         >
                           <Factory size={13} /> {tm('rm_startProduction')}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setReserveFor({ lotId: l.id })}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm"
+                        >
+                          {tm('bt_new')}
+                        </button>
                         </div>
                       ) : (
                         <span className="text-[11px] text-slate-400 italic">Fully allocated</span>
@@ -635,6 +660,8 @@ export default function RawMaterialPage() {
       )}
 
       </>)}
+
+      {reserveFor && <NewBatchModal lotsHint={allLots.filter((l) => (l.availableKg || 0) > 0)} initialLotId={reserveFor.lotId} onClose={() => setReserveFor(null)} onCreated={() => { refetch(); }} />}
 
       {startBatch && <QuickProductionForm batch={startBatch} onClose={() => setStartBatch(null)} onSaved={() => { refetch(); }} />}
 

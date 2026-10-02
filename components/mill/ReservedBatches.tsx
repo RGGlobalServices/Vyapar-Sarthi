@@ -7,7 +7,6 @@ import { Factory, Loader2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
-import ProductionRuns from '@/components/mill/ProductionRuns';
 import { useConfirm } from '@/components/ConfirmDialog';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
@@ -15,8 +14,8 @@ const kg = (n: number | null | undefined) => `${(Number(n) || 0).toLocaleString(
 
 export type BatchInfo = { id: string; batchNumber: string; inputKg: number; materialName: string; materialProductId: string; lotsText: string };
 
-/** Batches inside Milling: every finished run with its Slip and reports, plus any still-open batch (to finish or cancel). Production starts from a lot. */
-export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: BatchInfo) => void }) {
+/** Material reserved for a later production (an open batch): start its production, or release the reservation. Shown only while there is any. */
+export default function ReservedBatches({ onStartBatch }: { onStartBatch: (b: BatchInfo) => void }) {
   const t = useTranslations('Mill');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const { mutate: globalMutate } = useSWRConfig();
@@ -84,7 +83,6 @@ export default function BatchesPanel({ onStartBatch }: { onStartBatch: (b: Batch
       </section>
       )}
 
-      <ProductionRuns />
       {confirmDialog}
     </div>
   );
