@@ -957,7 +957,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
                   <p className="text-[10px] text-slate-400 mt-1">Add transporters in CRM → Parties (type: Transporter)</p>
                 )}
               </Field>
-              <Field label="Freight Amount (₹)">
+              <Field label="Freight paid to transporter (₹)">
                 <input
                   type="number" min="0" step="0.01"
                   value={freightAmount}
@@ -978,7 +978,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
               </Field>
               {isMill && (
                 <>
-                  <Field label="Sale Hamali (₹)">
+                  <Field label="Hamali paid by you (₹)">
                     <input type="number" min="0" step="0.01" value={hamaliAmount} onChange={e => setHamaliAmount(e.target.value)} placeholder="Loading hamali for this sale" className={inputCls} />
                     <p className="text-[10px] text-slate-400 mt-1">Saved as Sale hamali</p>
                   </Field>
