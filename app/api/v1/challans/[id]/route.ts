@@ -6,6 +6,7 @@ import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { billTagColumns } from '@/lib/server/billTags';
 import { FROM_BILL_MARK } from '@/lib/server/challanFromInvoice';
+import { withDispatchNumber } from '@/lib/server/dispatchNumber';
 
 async function getOwnedChallan(req: Request, id: string) {
   const { shop } = await requireShop(req);
@@ -161,16 +162,15 @@ export async function PATCH(req: Request, ctx: any) {
         return NextResponse.json({ error: `Cannot dispatch a challan that is ${challan.status}.` }, { status: 400 });
       }
 
-      const d = new Date();
-      const prefix = `DC-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-      const sameDay = await (prisma as any).dispatchEntry.count({ where: { shopId: shop.id, dispatchNumber: { startsWith: prefix } } });
-      const dispatchNumber = `${prefix}-${String(sameDay + 1).padStart(3, '0')}`;
+      // one live dispatch per challan — a second click used to create a second DC for the same goods
+      const existingDc = await (prisma as any).dispatchEntry.findFirst({ where: { shopId: shop.id, challanId: challan.id, status: { not: 'returned' } }, select: { dispatchNumber: true } });
+      if (existingDc) return NextResponse.json({ error: `This challan is already dispatched (${existingDc.dispatchNumber}).` }, { status: 409 });
 
       // Use the first item's product as the primary product for the dispatch entry
       const firstItem = challan.items[0] as any;
       const totalQty = (challan.items as any[]).reduce((s: number, it: any) => s + (it.quantity || 0), 0);
 
-      const dispatch = await (prisma as any).dispatchEntry.create({
+      const dispatch = await withDispatchNumber(shop.id, (dispatchNumber) => (prisma as any).dispatchEntry.create({
         data: {
           shopId: shop.id,
           dispatchNumber,
@@ -187,7 +187,7 @@ export async function PATCH(req: Request, ctx: any) {
           dispatchedAt: (challan as any).challanDate ? new Date((challan as any).challanDate) : new Date(),
           notes: challan.notes || null,
         },
-      });
+      }));
 
       return NextResponse.json({ dispatch });
     }

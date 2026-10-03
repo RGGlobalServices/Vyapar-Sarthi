@@ -26,33 +26,35 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   const returnNotes = (body.returnNotes || '').trim() || null;
   const returnedAt = body.returnedAt ? new Date(body.returnedAt) : new Date();
 
-  const ops: any[] = [
-    (prisma as any).dispatchEntry.update({
-      where: { id },
+  // Stock goes back only if THIS dispatch took it: not when it came from a challan (the challan took it; returning the challan gives it back)
+  // and not when it was made against a bill (marked 'dispatch_billed' — the bill took it).
+  const billed = entry.productId
+    ? await prisma.stockMovement.count({ where: { shopId: shop.id, productId: entry.productId, type: 'dispatch_billed', referenceId: entry.id } })
+    : 0;
+  const tookStock = !entry.challanId && billed === 0;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    // the status flip is the lock: two clicks at once -> only one changes the row, the other stops here, before any stock is touched
+    const flipped = await (tx as any).dispatchEntry.updateMany({
+      where: { id, shopId: shop.id, status: { not: 'returned' } },
       data: { status: 'returned', returnedAt, returnNotes },
+    });
+    if (flipped.count === 0) throw new ApiError(400, 'Already marked as returned');
+
+    // Credit stock back if product+quantity are on the original dispatch
+    if (tookStock && entry.productId && entry.quantity && entry.quantity > 0) {
+      await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${entry.quantity} WHERE id = ${entry.productId}::uuid AND shop_id = ${shop.id}::uuid`;
+      await tx.stockMovement.create({
+        data: { shopId: shop.id, productId: entry.productId, type: 'return', quantity: entry.quantity, referenceId: entry.id },
+      });
+    }
+    return (tx as any).dispatchEntry.findFirst({
+      where: { id, shopId: shop.id },
       include: {
         party: { select: { id: true, name: true } },
         product: { select: { id: true, name: true, baseUnit: true } },
       },
-    }),
-  ];
-
-  // Credit stock back if product+quantity are on the original dispatch
-  if (entry.productId && entry.quantity && entry.quantity > 0) {
-    ops.push(
-      prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${entry.quantity} WHERE id = ${entry.productId}::uuid AND shop_id = ${shop.id}::uuid`,
-      prisma.stockMovement.create({
-        data: {
-          shopId: shop.id,
-          productId: entry.productId,
-          type: 'return',
-          quantity: entry.quantity,
-          referenceId: entry.id,
-        },
-      }),
-    );
-  }
-
-  const [updated] = await prisma.$transaction(ops);
+    });
+  }, { timeout: 30000, maxWait: 10000 });
   return json(updated);
 });

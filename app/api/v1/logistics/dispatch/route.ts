@@ -2,6 +2,8 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
+import { randomUUID } from 'crypto';
+import { withDispatchNumber } from '@/lib/server/dispatchNumber';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,13 +19,6 @@ export const dynamic = 'force-dynamic';
  *      debits the dispatched product's stock (COALESCE-safe, same pattern
  *      purchases/route.ts and mill/by-products use).
  */
-
-async function nextDispatchNumber(shopId: string): Promise<string> {
-  const d = new Date();
-  const prefix = `DC-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const same = await (prisma as any).dispatchEntry.count({ where: { shopId, dispatchNumber: { startsWith: prefix } } });
-  return `${prefix}-${String(same + 1).padStart(3, '0')}`;
-}
 
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
@@ -68,7 +63,11 @@ export const POST = handle(async (req) => {
   await assertOwned(shop.id, { customerId: body.partyId });
 
   const vehicleNumber = (body.vehicleNumber || '').toString().trim();
-  const dispatchNumber = (body.dispatchNumber || '').toString().trim() || await nextDispatchNumber(shop.id);
+  const typedNumber = (body.dispatchNumber || '').toString().trim();
+  if (body.saleId) {
+    const sale = await prisma.sale.findFirst({ where: { id: String(body.saleId), shopId: shop.id }, select: { id: true } });
+    if (!sale) throw new ApiError(400, 'Invoice not found for this shop');
+  }
 
   let productId: string | null = body.productId || null;
   if (productId) {
@@ -88,9 +87,12 @@ export const POST = handle(async (req) => {
   const dispatchType = VALID_TYPES.includes(body.dispatchType) ? body.dispatchType : 'sale';
   const noOfBags = body.noOfBags != null && body.noOfBags !== '' ? Math.round(Number(body.noOfBags)) : null;
 
+  const entryId = randomUUID();
+  const build = (dispatchNumber: string) => {
   const ops: any[] = [
     (prisma as any).dispatchEntry.create({
       data: {
+        id: entryId,
         shopId: shop.id,
         dispatchNumber,
         partyId: body.partyId || null,
@@ -125,8 +127,15 @@ export const POST = handle(async (req) => {
         data: { shopId: shop.id, productId, type: 'dispatch', quantity, referenceId: gateEntryId },
       }),
     );
+  } else if (productId && quantity && quantity > 0) {
+    // zero-quantity marker: this dispatch took no stock (the bill did), so its return must not give any back
+    ops.push(prisma.stockMovement.create({ data: { shopId: shop.id, productId, type: 'dispatch_billed', quantity: 0, referenceId: entryId } }));
   }
+  return ops;
+  };
 
-  const [created] = await prisma.$transaction(ops);
+  const [created] = typedNumber
+    ? await prisma.$transaction(build(typedNumber))
+    : await withDispatchNumber(shop.id, (n) => prisma.$transaction(build(n)));
   return json(created, 201);
 });

@@ -25,8 +25,8 @@ export const POST = handle<Ctx>(async (req, { params }) => {
   if (!product || product.length === 0) throw new ApiError(404, 'Product not found in this shop');
 
   const rows = (await prisma.$queryRaw`
-    INSERT INTO godown_products (godown_id, product_id, quantity, updated_at)
-    VALUES (${id}::uuid, ${productId}::uuid, ${parseFloat(quantity)}, NOW())
+    INSERT INTO godown_products (id, godown_id, product_id, quantity, updated_at)
+    VALUES (gen_random_uuid(), ${id}::uuid, ${productId}::uuid, ${parseFloat(quantity)}, NOW())
     ON CONFLICT (godown_id, product_id) DO UPDATE
       SET quantity = ${parseFloat(quantity)}, updated_at = NOW()
     RETURNING *
