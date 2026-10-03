@@ -7,6 +7,7 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 
 type PaymentRow = {
   id: string; supplierId: string; supplierName: string; supplierMobile: string;
@@ -108,9 +109,21 @@ function RecordPaymentModal({ suppliers, onClose, onRecorded }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const selectedSupplier = suppliers.find(s => s.id === form.supplierId);
+  const isMill = isMillBillingPackage(useBusinessStore().profile?.packageType);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Bada Udyog: a payment above what is owed is an advance to the supplier — make sure it is meant, not a typo
+    const owed = Math.max(0, Number(selectedSupplier?.balance) || 0);
+    const amt = Number(form.amount) || 0;
+    if (isMill && amt > owed + 0.005) {
+      const ok = window.confirm(`${selectedSupplier?.name || 'Supplier'}: balance is ${rupee(owed)} but you are paying ${rupee(amt)}.
+
+The extra ${rupee(amt - owed)} will be recorded as an ADVANCE to the supplier (balance goes to -${rupee(amt - owed)}).
+
+Continue?`);
+      if (!ok) return;
+    }
     setSaving(true); setError('');
     try {
       await api.post('/crm/payments', {
