@@ -93,6 +93,7 @@ export const PUT = handle(async (req, { params }: any) => {
     district: data.district?.trim() || null,
     city: data.city?.trim() || null,
     state: data.state?.trim() || null,
+    shippingAddress: data.shippingAddress?.trim() || null,
     pincode: data.pincode?.trim() || null,
     paymentTerms: data.paymentTerms?.trim() || null,
     defaultGodownId: data.defaultGodownId?.trim() || null,

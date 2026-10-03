@@ -43,6 +43,7 @@ import { takeMillDuplicate } from '@/lib/millDuplicateHandoff';
 import MillRateInput from '@/components/billing/MillRateInput';
 import MillCommercialCharges, { EMPTY_MILL_CHARGES, type MillChargeInputs } from '@/components/billing/MillCommercialCharges';
 import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
+import DispatchDetailsField, { EMPTY_DISPATCH_INPUT, type DispatchInput } from '@/components/mill/DispatchDetailsField';
 import MillTotalsSummary from '@/components/billing/MillTotalsSummary';
 import MillBillSavedModal from '@/components/billing/MillBillSavedModal';
 
@@ -612,6 +613,7 @@ export default function WholesaleBillingUI() {
   const ZERO_MILL_CHARGES = { freight: 0, hamali: 0, loading: 0, unloading: 0, other: 0 };
   const [millCharges, setMillCharges] = useState<MillChargeInputs>(EMPTY_MILL_CHARGES);
   const [saleBroker, setSaleBroker] = useState(EMPTY_BROKER);
+  const [dispatch, setDispatch] = useState<DispatchInput>(EMPTY_DISPATCH_INPUT);
   const millChargesParsed = useMemo(() => {
     try { return { value: normalizeMillCharges(millCharges), error: null as string | null }; }
     catch (e: any) { return { value: ZERO_MILL_CHARGES, error: String(e?.message || 'Invalid charges') }; }
@@ -1382,6 +1384,7 @@ export default function WholesaleBillingUI() {
         items: saleItems,
         discount: millDiscountNumber,
         charges: millChargesParsed.value,
+        dispatch: { ...dispatch, broker: saleBroker.name.trim() },
         bill_type: billType,
         gst_inter_state: gstInterState,
         total_amount: grandTotal, // informational only — the server ignores it and flags any mismatch
@@ -1427,6 +1430,7 @@ export default function WholesaleBillingUI() {
       setCreditDays(30);
       setMillCharges(EMPTY_MILL_CHARGES);
       setSaleBroker(EMPTY_BROKER);
+      setDispatch(EMPTY_DISPATCH_INPUT);
       setDupFrom(null); setDupForceNonGst(false); setDupOriginalRates({});
       fetchParties();
       fetchUdharCustomers();
@@ -2314,6 +2318,7 @@ export default function WholesaleBillingUI() {
                 disabled={isGenerating}
               />
               <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
+              <DispatchDetailsField value={dispatch} onChange={setDispatch} disabled={isGenerating} />
               <MillTotalsSummary
                 calc={millCalc}
                 itemsCount={items.length}

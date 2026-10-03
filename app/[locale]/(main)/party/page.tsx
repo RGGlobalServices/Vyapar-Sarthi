@@ -13,6 +13,7 @@ import { generateCollectionRegisterPDF } from '@/lib/pdf/collectionRegister';
 import ScanCollectionModal from '@/components/party/ScanCollectionModal';
 import AddBillModal from '@/components/party/AddBillModal';
 import api from '@/lib/api';
+import { stateFromGstin } from '@/lib/indiaStates';
 import { useBusinessStore } from '@/lib/businessStore';
 import useSWR from 'swr';
 import toast from 'react-hot-toast';
@@ -862,6 +863,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
 /* ─── Parties (Udyog B2B wholesale credit) ──────────────────────────────── */
 
 const initialPartyForm = {
+  shippingAddress: '',
   name: '',
   shopName: '',
   farmerType: 'Farmer',
@@ -973,6 +975,7 @@ function PartiesPanel() {
       district: docs.district || docs.city || '',
       state: docs.state || 'Maharashtra',
       pincode: docs.pincode || '',
+      shippingAddress: docs.shippingAddress || '',
       openingBalance: '0',
       balanceType: docs.balanceType || ((selectedParty.totalDue || 0) < 0 ? 'payable' : 'receivable'),
       creditLimit: (selectedParty.creditLimit || 0).toString(),
@@ -1258,6 +1261,21 @@ function PartiesPanel() {
         </div>
       </div>
 
+      {isMill && (
+        <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/70 space-y-2" data-testid="party-gstin-card">
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            {locale === 'mr' ? 'GSTIN (बिलावर छापला जातो)' : locale === 'hi' ? 'GSTIN (बिल पर छपता है)' : 'GSTIN (printed on the bill)'}
+          </label>
+          <input
+            value={form.gst}
+            onChange={e => { const g = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15); const st = stateFromGstin(g); setForm({ ...form, gst: g, ...(st ? { state: st } : {}) }); }}
+            className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950 font-mono focus:ring-2 focus:ring-amber-500 outline-none uppercase"
+            placeholder="27ABCDE1234F1Z5" maxLength={15}
+          />
+          <p className="text-[11px] text-slate-500">{locale === 'mr' ? 'पहिल्या २ अंकांवरून राज्य आपोआप भरले जाते (उदा. 27 = Maharashtra).' : locale === 'hi' ? 'पहले 2 अंकों से राज्य अपने आप भर जाता है (जैसे 27 = Maharashtra).' : 'The state is filled from the first two digits (27 = Maharashtra).'}</p>
+        </div>
+      )}
+
       {/* 2. Complete Address */}
       <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/70 space-y-3">
         <div className="flex items-center gap-2 text-xs font-black uppercase text-indigo-700 dark:text-indigo-400 tracking-wider">
@@ -1275,6 +1293,25 @@ function PartiesPanel() {
             placeholder={locale === 'mr' ? 'उदा. गट क्र. ४५, पाटील वस्ती' : locale === 'hi' ? 'उदा. गट क्र. ४५, पाटील वस्ती' : 'e.g. Gut No 45, Near Hanuman Mandir'}
           />
         </div>
+        {isMill && (
+          <div data-testid="party-shipping">
+            <label className="block text-xs font-bold mb-1 text-slate-700 dark:text-slate-300">
+              {locale === 'mr' ? 'माल पाठवण्याचा पत्ता (Shipped to)' : locale === 'hi' ? 'माल भेजने का पता (Shipped to)' : 'Shipping address (Shipped to)'}
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-1.5">
+              <input type="checkbox" checked={!form.shippingAddress} onChange={e => setForm({ ...form, shippingAddress: e.target.checked ? '' : (form.address || ' ') })} />
+              {locale === 'mr' ? 'बिलिंग पत्त्यासारखाच' : locale === 'hi' ? 'बिलिंग पते जैसा ही' : 'Same as billing address'}
+            </label>
+            {form.shippingAddress !== '' && (
+              <input
+                value={form.shippingAddress.trim() === '' ? '' : form.shippingAddress}
+                onChange={e => setForm({ ...form, shippingAddress: e.target.value === '' ? ' ' : e.target.value })}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder={locale === 'mr' ? 'पूर्ण पत्ता जिथे माल पाठवायचा' : 'Full address where the goods are sent'}
+              />
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-bold mb-1 text-slate-700 dark:text-slate-300">

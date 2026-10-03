@@ -2,6 +2,7 @@
 
 import { forwardRef } from 'react';
 import { fmtPaise, MILL_CHARGE_ORDER, type MillInvoiceData, type MillChargeName } from '@/lib/millInvoice';
+import MillInvoiceClassic, { type InvoiceCopy } from '@/components/invoice/MillInvoiceClassic';
 
 const CHARGE_LABEL: Record<MillChargeName, string> = {
   freight: 'Freight', hamali: 'Hamali', loading: 'Loading', unloading: 'Unloading', other: 'Other Charges',
@@ -13,8 +14,10 @@ const CHARGE_LABEL: Record<MillChargeName, string> = {
  * A4Invoice / ThermalInvoice untouched). Commercial charges are shown in their own block, never as item lines.
  * Colours are fixed (white paper / black ink) so screen, print and PDF capture look identical in any app theme.
  */
-const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant: 'a4' | 'thermal' }>(function MillInvoice({ data: d, variant }, ref) {
-  const a4 = variant === 'a4';
+const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant: 'a4' | 'thermal'; copyLabel?: InvoiceCopy }>(function MillInvoice({ data: d, variant, copyLabel }, ref) {
+  // A4 = the classic trade-bill layout (Billed to / Shipped to, dispatch details, tax summary, amount in words, terms, signatures)
+  if (variant === 'a4') return <MillInvoiceClassic ref={ref} data={d} copyLabel={copyLabel} />;
+  const a4 = false;
   const fs = a4 ? 'text-[13px]' : 'text-[11px]';
   const hasCharges = d.chargesTotalPaise > 0;
   const Row = ({ label, value, strong, sub, testid }: { label: string; value: string; strong?: boolean; sub?: boolean; testid: string }) => (

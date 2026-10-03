@@ -10,6 +10,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { waitForImages } from '@/lib/waitForImages';
 import { buildMillInvoiceData, isMillInvoice, millWhatsAppText, type MillInvoiceShop } from '@/lib/millInvoice';
 import MillInvoice from '@/components/invoice/MillInvoice';
+import type { InvoiceCopy } from '@/components/invoice/MillInvoiceClassic';
 
 const fmtDate = (iso: string): string => {
   try { const d = new Date(iso); return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`; } catch { return ''; }
@@ -25,6 +26,7 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
   const [sale, setSale] = useState<any>(null);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [copyLabel, setCopyLabel] = useState<InvoiceCopy>('Original Copy');
   const previewRef = useRef<HTMLDivElement>(null);
   // Format is driven entirely by profile settings (A4/Thermal toggle is not shown to the user).
   const variant: 'a4' | 'thermal' = (profile?.invoiceFormat === 'a4' || profile?.invoiceFormat === 'wholesale') && !(typeof window !== 'undefined' && window.innerWidth < 640) ? 'a4' : 'thermal';
@@ -99,6 +101,11 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
         <div className="flex items-center justify-between gap-2 p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <h2 className="font-black text-slate-900 dark:text-white">Mill Invoice</h2>
           <div className="flex items-center gap-2">
+            {variant === 'a4' && (
+              <select value={copyLabel} onChange={(e) => setCopyLabel(e.target.value as InvoiceCopy)} data-testid="mill-inv-copy" className="h-8 px-2 text-xs font-semibold border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900">
+                <option>Original Copy</option><option>Duplicate Copy</option><option>Triplicate Copy</option>
+              </select>
+            )}
             <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={20} /></button>
           </div>
         </div>
@@ -108,7 +115,7 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
           {error && <p className="py-10 text-center text-red-500 text-sm font-semibold flex items-center justify-center gap-2"><AlertTriangle size={16} /> {error}</p>}
           {data && (
             <div className="flex justify-center">
-              <div className="shadow-xl"><MillInvoice ref={previewRef} data={data} variant={variant} /></div>
+              <div className="shadow-xl"><MillInvoice ref={previewRef} data={data} variant={variant} copyLabel={copyLabel} /></div>
             </div>
           )}
         </div>
@@ -128,7 +135,7 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
       {/* Print copy: the global print stylesheet shows only #print-area. Portalled to <body> so a long invoice is not
           clipped to one page by this fixed overlay. */}
       {data && typeof document !== 'undefined' && createPortal(
-        <div id="print-area" className="hidden print:block bg-white"><MillInvoice data={data} variant={variant} /></div>,
+        <div id="print-area" className="hidden print:block bg-white"><MillInvoice data={data} variant={variant} copyLabel={copyLabel} /></div>,
         document.body,
       )}
     </div>

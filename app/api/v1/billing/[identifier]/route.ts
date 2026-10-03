@@ -5,6 +5,7 @@ import { recordDeletion } from '@/lib/server/trash';
 import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, createSaleEffects, restoreBatchQuantities, restoreToDrawnLots } from '@/lib/server/sales';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { assertSaleEditable, assertNotJobWorkBill } from '@/lib/server/millGuards';
+import { loadMillInvoiceExtras } from '@/lib/server/millInvoiceExtras';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   // Mill (mill_v2) invoices only: the extra detail the Mill invoice template prints (unit, batch numbers, customer
   // contact). Legacy sales get exactly the response they always had.
   const isMillSale = (sale as any).pricingModel === 'mill_v2';
+  const millExtras = isMillSale ? await loadMillInvoiceExtras(prisma, shopId, { id: sale.id, customerId: sale.customerId, invoice_number: sale.invoice_number }) : null;
   const millBatchNames = new Map<string, string[]>();
   if (isMillSale && sale.items.length) {
     const rows = await prisma.saleItemBatch.findMany({
@@ -117,6 +119,11 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       customer_mobile: sale.customer?.mobile || null,
       customer_address: sale.customer?.address || null,
       customer_gst: sale.customer?.gst || null,
+      customer_state: millExtras?.customerState ?? null,
+      customer_shipping_address: millExtras?.customerShippingAddress ?? null,
+      customer_pan: millExtras?.customerPan ?? null,
+      dispatch: millExtras?.dispatch ?? null,
+      broker_name: millExtras?.brokerName ?? null,
     } : {}),
     created_at: sale.createdAt,
     discount_factor: discountFactor,

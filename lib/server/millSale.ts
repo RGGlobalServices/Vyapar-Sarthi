@@ -5,6 +5,7 @@ import { ApiError, json } from '@/lib/server/http';
 import { assertOwned } from '@/lib/server/ownership';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
+import { parseDispatch, setDispatch } from '@/lib/server/dispatchDetails';
 import { checkLargeTransactionAlert, checkLowStockAlerts } from '@/lib/server/notificationsEngine';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { resolveAmountPaid, validatePaymentDetails, resolveLineCost, serverCostFor, toPaise, round2 } from '@/lib/server/moneyValidation';
@@ -392,6 +393,8 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
 
   const sale: any = outcome.result;
   if (!outcome.isDuplicate) {
+    // transport / vehicle / station / E-Way bill / GR-RR printed on the invoice (best-effort: the bill is already saved)
+    try { await setDispatch(prisma, sale.id, parseDispatch(body.dispatch)); } catch (e) { console.error('dispatch details not saved', e); }
     (async () => {
       try {
         await checkLargeTransactionAlert(prisma, shopId, sale.totalAmount, 'sale', sale.invoice_number || invoice_number);
