@@ -1068,7 +1068,10 @@ export async function POST(req: NextRequest) {
         const runSupplierSideEffects = !!supplierOverride && Object.keys(supplierOverride).length > 0;
         const grandTotal = totalInvoiceCost + billChargesTotal;
         if (runSupplierSideEffects && grandTotal > 0) {
-          const owed = Math.max(0, grandTotal - paidAtImport);
+          // Bada Udyog: what is paid at import can never be more than the bill (a 45,000 payment typed against a 5,250 bill used to be recorded in
+          // full in the ledger while the balance only went down to 0, leaving the supplier's balance 39,750 higher than its ledger forever).
+          const paidNow = isMillImport ? Math.min(paidAtImport, grandTotal) : paidAtImport;
+          const owed = Math.max(0, grandTotal - paidNow);
           await prisma.supplier.update({
             where: { id: dbSupplier.id },
             data: { balance: { increment: owed } },
@@ -1085,12 +1088,12 @@ export async function POST(req: NextRequest) {
           });
           purchaseSupplierId = dbSupplier.id;
           purchaseSupplierTxnId = purchaseTxn.id;
-          if (paidAtImport > 0) {
+          if (paidNow > 0) {
             await prisma.supplierTransaction.create({
               data: {
                 supplierId: dbSupplier.id,
                 type: 'payment',
-                amount: paidAtImport,
+                amount: paidNow,
                 billNumber: String(invoiceNumber),
                 note: 'Paid at import',
                 ...(billDate ? { createdAt: billDate } : {}),
