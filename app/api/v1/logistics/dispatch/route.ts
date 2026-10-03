@@ -117,7 +117,8 @@ export const POST = handle(async (req) => {
 
   // Dispatching finished goods debits stock the same way a sale would —
   // best-effort only when a real product + quantity were given.
-  if (productId && quantity && quantity > 0) {
+  // ...but NOT when it is dispatched against a bill (saleId): the bill already took that stock, a second debit would count the same goods twice.
+  if (productId && quantity && quantity > 0 && !body.saleId) {
     ops.push(
       prisma.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${quantity} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`,
       prisma.stockMovement.create({

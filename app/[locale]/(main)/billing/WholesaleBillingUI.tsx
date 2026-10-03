@@ -1377,7 +1377,8 @@ export default function WholesaleBillingUI() {
         variant: item.variant || null,
         quantity: item.quantity,
         price_per_unit: item.price, // GST-EXCLUSIVE rate, as typed
-        purchase_price: item.cost || 0,
+        // a line pulled in from a challan carries no cost of its own: use the product's, so the bill's profit is not the whole amount
+        purchase_price: item.cost || ((item as any).fromChallan ? (Number((products as any[]).find((pr: any) => pr.id === item.id)?.costPrice ?? (products as any[]).find((pr: any) => pr.id === item.id)?.cost_price) || 0) : 0),
         ...(billType === 'gst' ? { gst_percent: item.gstPercent } : {}),
         hsn_code: item.hsnCode,
         batch_id: (item as any).batchId || undefined,

@@ -7,6 +7,7 @@ import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { tagRows } from '@/lib/server/billTags';
 import { logBrokerCommission } from '@/lib/server/brokerCommission';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import { remainingForSale, FROM_BILL_MARK } from '@/lib/server/challanFromInvoice';
 
 /**
  * GET /api/v1/challans
@@ -74,6 +75,24 @@ export async function POST(req: Request) {
     const isMill = isMillBillingPackage((shop as any).packageType);
     const saleHamali = isMill && Number(hamaliAmount) > 0 ? Number(hamaliAmount) : 0;
 
+    // Bada Udyog "challan from invoice": the bill already took the stock, so this challan takes none — it is linked to the bill and limited to
+    // what the bill still has undelivered. (A plain challan, with no fromSaleId, behaves exactly as before.)
+    let fromSale: any = null;
+    if (data.fromSaleId) {
+      if (!isMill) return NextResponse.json({ error: 'A challan from an invoice is a Bada Udyog feature.' }, { status: 403 });
+      const rem = await remainingForSale(shop.id, String(data.fromSaleId));
+      const want = new Map<string, number>();
+      for (const it of items) want.set(it.productId, (want.get(it.productId) || 0) + (Number(it.quantity) || 0));
+      for (const [pid, qty] of want) {
+        const line = rem.lines.find((l) => l.productId === pid);
+        if (!line) return NextResponse.json({ error: 'A product on this challan is not on the invoice.' }, { status: 400 });
+        if (qty > line.remainingQty + 0.0005) {
+          return NextResponse.json({ error: `${line.name}: only ${line.remainingQty} ${line.unit} of the invoice is still to be delivered (billed ${line.billedQty}, already on challans ${line.alreadyQty}).` }, { status: 400 });
+        }
+      }
+      fromSale = rem.sale;
+    }
+
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'At least one item is required.' }, { status: 400 });
     }
@@ -115,11 +134,12 @@ export async function POST(req: Request) {
           shopId: shop.id,
           challanNumber,
           orderId: orderId || null,
-          customerId: customerId || null,
-          customerName: customerName || null,
+          customerId: fromSale ? (fromSale.customerId || customerId || null) : (customerId || null),
+          customerName: fromSale ? (fromSale.customer?.name || customerName || null) : (customerName || null),
           customerMobile: customerMobile || null,
           customerAddress: customerAddress || null,
-          notes: notes || null,
+          notes: fromSale ? `${FROM_BILL_MARK} Invoice ${fromSale.invoice_number}${notes ? ' · ' + notes : ''}` : (notes || null),
+          ...(fromSale ? { status: 'invoiced', saleId: fromSale.id, invoicedAt: new Date() } : {}),
           // new fields
           challanDate: challanDate ? new Date(challanDate) : null,
           dispatchType: dispatchType || 'sale',
@@ -154,13 +174,13 @@ export async function POST(req: Request) {
         include: { items: true },
       });
 
-      // Decrement flat product stock
+      // Decrement flat product stock — NOT for a challan from an invoice (the bill took it already)
       const qtyByProduct = new Map<string, number>();
       for (const it of items) {
         qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) || 0) + (Number(it.quantity) || 0));
       }
       for (const [productId, qty] of qtyByProduct) {
-        if (qty <= 0) continue;
+        if (qty <= 0 || fromSale) continue;
         await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
       }
 
@@ -215,7 +235,7 @@ export async function POST(req: Request) {
     // after-the-transaction pattern Purchases already uses via this helper,
     // since it does its own per-product read-modify-write outside tx.
     try {
-      await applyVariantStockDeltas(
+      if (!fromSale) await applyVariantStockDeltas(
         prisma,
         items
           .filter((it: any) => it.variantKey)

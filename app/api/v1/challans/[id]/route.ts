@@ -5,6 +5,7 @@ import prisma from '@/lib/server/prisma';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { billTagColumns } from '@/lib/server/billTags';
+import { FROM_BILL_MARK } from '@/lib/server/challanFromInvoice';
 
 async function getOwnedChallan(req: Request, id: string) {
   const { shop } = await requireShop(req);
@@ -102,12 +103,15 @@ export async function PATCH(req: Request, ctx: any) {
       }
       await prisma.$transaction(async (tx) => {
         await tx.deliveryChallan.update({ where: { id }, data: { status: 'returned' } });
+        // A challan made FROM an invoice never took product stock (the bill did), so returning it must not add stock either — returning the goods
+        // to stock is the bill's return. Its lot availability (which the challan did take) does go back.
+        const fromBill = String((challan as any).notes || '').startsWith(FROM_BILL_MARK);
         const qtyByProduct = new Map<string, number>();
         for (const it of challan.items) {
           qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) || 0) + it.quantity);
         }
         for (const [productId, qty] of qtyByProduct) {
-          if (qty <= 0) continue;
+          if (qty <= 0 || fromBill) continue;
           await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
         }
         for (const it of challan.items as any[]) {
@@ -120,7 +124,7 @@ export async function PATCH(req: Request, ctx: any) {
         }
       });
       try {
-        await applyVariantStockDeltas(
+        if (!String((challan as any).notes || '').startsWith(FROM_BILL_MARK)) await applyVariantStockDeltas(
           prisma,
           challan.items
             .filter((it) => it.variantKey)

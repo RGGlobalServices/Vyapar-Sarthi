@@ -518,6 +518,11 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [hamaliAmount, setHamaliAmount] = useState('');
   const [brokerName, setBrokerName] = useState('');
   const [brokerCommission, setBrokerCommission] = useState('');
+  // Bada Udyog: start from a bill that is already made — its stock is already out, so this challan takes none and is limited to what is left to deliver
+  const [fromInv, setFromInv] = useState<{ saleId: string; invoiceNumber: string; lines: any[] } | null>(null);
+  const [invNo, setInvNo] = useState('');
+  const [invBusy, setInvBusy] = useState(false);
+  const [invErr, setInvErr] = useState('');
 
   // Basic
   const [challanDate, setChallanDate]     = useState(new Date().toISOString().slice(0, 10));
@@ -639,6 +644,33 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
     }));
   };
 
+  const loadFromInvoice = async () => {
+    const no = invNo.trim();
+    if (!no) return;
+    setInvBusy(true); setInvErr('');
+    try {
+      const bill = await api.get(`/billing/${encodeURIComponent(no)}`);
+      const id = bill.data?.id;
+      if (!id) throw new Error('Invoice not found');
+      const res = await api.get(`/challans/from-invoice/${id}`);
+      const d = res.data;
+      const lines = (d.items || []).filter((l: any) => l.remainingQty > 0);
+      if (lines.length === 0) { setInvErr('Everything on this invoice is already on challans.'); return; }
+      setFromInv({ saleId: d.saleId, invoiceNumber: d.invoiceNumber, lines: d.items });
+      if (d.customer) setSelectedParty({ id: d.customer.id, name: d.customer.name, mobile: d.customer.mobile, address: d.customer.address });
+      setCartItems(lines.map((l: any) => ({
+        productId: l.productId, name: l.name, baseUnit: l.unit, unit: l.unit, quantity: l.remainingQty, price: l.price,
+        lotId: null, lotNumber: null, godown: '', packSize: null, noOfPacks: null, totalWeight: null,
+      })));
+    } catch (err: any) {
+      setInvErr(err?.response?.data?.error || err?.message || 'Could not load the invoice.');
+    } finally {
+      setInvBusy(false);
+    }
+  };
+
+  const clearFromInvoice = () => { setFromInv(null); setCartItems([]); setSelectedParty(null); setInvNo(''); };
+
   const removeItem = (idx: number) => setCartItems(prev => prev.filter((_, i) => i !== idx));
 
   const total = cartItems.reduce((s, it) => {
@@ -654,6 +686,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
     setError('');
     try {
       await api.post('/challans', {
+        ...(fromInv ? { fromSaleId: fromInv.saleId } : {}),
         customerId: selectedParty.id,
         customerName: selectedParty.name,
         customerMobile: selectedParty.mobile,
@@ -711,6 +744,23 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </div>
 
         <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+
+          {isMill && (
+            <Section icon={<FileText size={13} />} title="Start from an invoice (optional)">
+              {fromInv ? (
+                <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-sm">
+                  <span className="font-bold text-slate-900 dark:text-white">Invoice {fromInv.invoiceNumber} — stock is already out; this challan will not reduce it again. Quantity is limited to what is left to deliver.</span>
+                  <button onClick={clearFromInvoice} className="text-slate-400 hover:text-red-500 ml-2"><X size={16} /></button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input value={invNo} onChange={e => setInvNo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); loadFromInvoice(); } }} placeholder="Invoice number, e.g. INV-0012" className={inputCls} />
+                  <button type="button" onClick={loadFromInvoice} disabled={invBusy || !invNo.trim()} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">{invBusy ? '…' : 'Load'}</button>
+                </div>
+              )}
+              {invErr && <p className="text-xs text-red-500 mt-1">{invErr}</p>}
+            </Section>
+          )}
 
           {/* ─ Basic Info ─ */}
           <Section icon={<FileText size={13} />} title="Basic Info">
