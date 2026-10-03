@@ -4,6 +4,7 @@ import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { applyCustomerPayment } from '@/lib/server/customerPayment';
 import { round3, kgToProductUnit, BALANCE_TOLERANCE_KG } from '@/lib/server/millProduction';
 import { findLinkedBatches, loadMaterialFlow } from '@/lib/server/jobWorkFlow';
+import { jobWorkBillNumber } from '@/lib/server/jobWorkBill';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -103,8 +104,20 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       });
       if (claimed.count === 0) throw new ApiError(409, 'Order is already completed', 'ALREADY_COMPLETED');
       await tx.customer.update({ where: { id: existing.customerId }, data: { totalDue: { increment: feeAmount } } });
+      // The bill for this milling charge: it shows in Billing -> Invoices as a "Job Work" bill (numbered JWB-… from the order number), so
+      // it is clear where it came from. The charge is already in the customer's ledger just above — the bill adds NO second charge, no stock and no profit.
+      const invoiceNumber = await jobWorkBillNumber(tx, shop.id, existing.orderNumber);
+      const billKg = existing.feeBasis === 'output' ? outputWeightKg : Number(existing.inputWeightKg);
+      await tx.sale.create({
+        data: {
+          shopId: shop.id, customerId: existing.customerId, totalAmount: feeAmount, totalProfit: 0, paymentType: 'Udhar', amountPaid: 0,
+          invoice_number: invoiceNumber, billType: 'non_gst', gstAmount: 0,
+          paymentDetails: { source: 'job_work', jobWorkOrderId: id, orderNumber: existing.orderNumber, inputKg: Number(existing.inputWeightKg), outputKg: outputWeightKg, feeBasis: existing.feeBasis },
+          items: { create: [{ productId: null, unit: 'kg', itemName: `Job Work ${existing.orderNumber} — milling of ${existing.materialDescription} (${round3(billKg)} kg ${existing.feeBasis === 'output' ? 'output' : 'input'} @ ₹${Number(existing.ratePerKg)}/kg)`, quantity: round3(billKg), pricePerUnit: Number(existing.ratePerKg), marginPerUnit: 0 }] },
+        },
+      });
       await tx.customer_transactions.create({
-        data: { customer_id: existing.customerId, type: 'job_work', amount: feeAmount, note: `Job work milling charge: ${existing.orderNumber}`, bill_number: existing.orderNumber },
+        data: { customer_id: existing.customerId, type: 'job_work', amount: feeAmount, note: `Job work milling charge: ${existing.orderNumber}`, bill_number: invoiceNumber },
       });
       // Only what the mill KEEPS becomes the mill's own by-product (and stock). The customer's grain and main output never do.
       if (retained) {
@@ -131,11 +144,16 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
           await applyCustomerPayment(tx, { shopId: shop.id, customerId: existing.customerId, amount: amountPaid, paymentMode: body.paymentMode || 'Cash', note: `Job work ${existing.orderNumber}` });
         }, { timeout: 20000 });
         paymentApplied = true;
+        // the bill shows what was collected with it
+        try {
+          const mode = ['Cash', 'UPI', 'Card'].includes(body.paymentMode) ? body.paymentMode : 'Cash';
+          await prisma.sale.updateMany({ where: { shopId: shop.id, invoice_number: await jobWorkBillNumber(prisma, shop.id, existing.orderNumber, true) }, data: { amountPaid, paymentType: amountPaid >= feeAmount - 0.005 ? mode : 'Udhar' } });
+        } catch (e) { console.error('[job-work complete] could not mark the bill as paid:', e); }
       } catch (e) {
         console.error('[job-work complete] payment application failed (order still marked completed):', e);
       }
     }
-    return json({ ...updated, paymentApplied });
+    return json({ ...updated, paymentApplied, invoiceNumber: await jobWorkBillNumber(prisma, shop.id, existing.orderNumber, true) });
   }
 
   if (action === 'deliver') {

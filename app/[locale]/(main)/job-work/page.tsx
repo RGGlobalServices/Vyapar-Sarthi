@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import DeleteButton from '@/components/mill/DeleteButton';
+import toast from 'react-hot-toast';
+import { Link } from '@/i18n/routing';
 import { Plus, X, Loader2, Wheat, PlayCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -126,6 +128,13 @@ export default function JobWorkPage() {
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/30 dark:text-purple-300">
                       🌾 Customer Grain
                     </span>
+                    {(o.status === 'completed' || o.status === 'delivered') && o.feeAmount != null && (
+                      <span onClick={e => e.stopPropagation()}>
+                        <Link href={`/billing/invoices/JWB-${String(o.orderNumber).replace(/^JW-?/i, '')}` as any} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300 hover:underline">
+                          Bill JWB-{String(o.orderNumber).replace(/^JW-?/i, '')}
+                        </Link>
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
                     {o.customer?.name ? `${o.customer.name} · ` : ''}
@@ -180,9 +189,10 @@ export default function JobWorkPage() {
         <ModalPortal><CompleteOrderModal
           order={completingOrder}
           onClose={() => setCompletingOrder(null)}
-          onCompleted={(paymentFailed) => {
+          onCompleted={(paymentFailed, invoiceNumber) => {
             setCompletingOrder(null);
             refetch();
+            if (invoiceNumber) toast.success(`Bill ${invoiceNumber} created — see Billing → Invoices (marked Job Work)`, { duration: 7000 });
             if (paymentFailed) alert(t('paymentNotRecordedWarning'));
           }}
         /></ModalPortal>
@@ -368,7 +378,7 @@ function CreateOrderModal({ customers, gateEntries, onClose, onCreated, onCustom
 }
 
 function CompleteOrderModal({ order, onClose, onCompleted }: {
-  order: JobWorkOrder; onClose: () => void; onCompleted: (paymentFailed?: boolean) => void;
+  order: JobWorkOrder; onClose: () => void; onCompleted: (paymentFailed?: boolean, invoiceNumber?: string) => void;
 }) {
   const t = useTranslations('JobWork');
   const [outputWeightKg, setOutputWeightKg] = useState('');
@@ -396,7 +406,7 @@ function CompleteOrderModal({ order, onClose, onCompleted }: {
         amountPaid: amountPaid === '' ? 0 : Number(amountPaid),
         byProducts: bps.filter(b => b.name.trim() || b.kg).map(b => ({ name: b.name.trim(), quantityKg: Number(b.kg), productId: b.productId || undefined })),
       });
-      onCompleted(res.data?.paymentApplied === false);
+      onCompleted(res.data?.paymentApplied === false, res.data?.invoiceNumber);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToComplete'));
     } finally { setSaving(false); }

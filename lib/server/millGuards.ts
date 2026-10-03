@@ -49,3 +49,27 @@ export function assertSaleEditable(sale: { pricingModel?: string | null }) {
     throw new ApiError(409, 'Mill bills cannot be edited yet. Delete and re-bill instead.', 'MILL_V2_EDIT_NOT_SUPPORTED');
   }
 }
+
+/**
+ * A Job Work bill (made when a Job Work order is completed: sale.payment_details.source = 'job_work') belongs to its order — the order's
+ * milling charge already sits in the customer's ledger, so editing, deleting, returning or exchanging the bill from Billing would leave the
+ * order and the ledger disagreeing with it.
+ */
+export function isJobWorkBill(paymentDetails: any): boolean {
+  let d = paymentDetails;
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch { return false; } }
+  return !!d && typeof d === 'object' && d.source === 'job_work';
+}
+
+export function assertNotJobWorkBill(paymentDetails: any) {
+  if (isJobWorkBill(paymentDetails)) {
+    throw new ApiError(409, 'This bill was made from a Job Work order. It cannot be edited, deleted or returned from Billing — manage it from the Job Work order.', 'JOB_WORK_BILL');
+  }
+}
+
+export async function assertSaleNotJobWork(shopId: string, saleId: string) {
+  if (typeof saleId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saleId)) return;
+  const rows = await prisma.$queryRaw<Array<{ src: string | null }>>`
+    SELECT payment_details->>'source' AS src FROM sales WHERE id = ${saleId}::uuid AND shop_id = ${shopId}::uuid LIMIT 1`;
+  if (rows[0]?.src === 'job_work') assertNotJobWorkBill({ source: 'job_work' });
+}

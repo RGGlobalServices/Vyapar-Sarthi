@@ -6,7 +6,7 @@ import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { planReturn, parsePriorReturns, splitRefund } from '@/lib/server/refunds';
 import { serverSellingPriceFor, serverCostFor, round2, toPaise } from '@/lib/server/moneyValidation';
 import { isMillBillingPackage, isWholesaleTierPackage } from '@/lib/config/packageConfig';
-import { assertNotMillSale } from '@/lib/server/millGuards';
+import { assertNotMillSale, assertSaleNotJobWork } from '@/lib/server/millGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +69,7 @@ export const POST = handle(async (req) => {
 
   // Mill bills (`mill_v2`) cannot be exchanged yet (the exchange leg is priced GST-inclusive). Legacy bills unaffected.
   await assertNotMillSale(shop.id, bill_id, 'exchange');
+  await assertSaleNotJobWork(shop.id, bill_id);
 
   // (After the Mill-sale check above, which keeps answering 409 for a Mill invoice.) An exchange creates a NEW legacy (unmarked) sale. Bada Udyog package = Mill Billing, so a Bada Udyog shop cannot create
   // legacy sales by any route (same rule as POST /billing).

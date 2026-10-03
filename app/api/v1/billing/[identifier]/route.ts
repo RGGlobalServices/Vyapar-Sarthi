@@ -4,7 +4,7 @@ import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { recordDeletion } from '@/lib/server/trash';
 import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, createSaleEffects, restoreBatchQuantities, restoreToDrawnLots } from '@/lib/server/sales';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
-import { assertSaleEditable } from '@/lib/server/millGuards';
+import { assertSaleEditable, assertNotJobWorkBill } from '@/lib/server/millGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +17,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   const shopId = shop.id;
 
   const cleanId = identifier.replace(/^INV[-_]?/i, '').replace(/[^a-zA-Z0-9]/g, '');
-  const invVariants = [`INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
+  const invVariants = [identifier, `INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
 
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
   const isHexSegment = /^[0-9a-f]{8,}$/i.test(cleanId);
@@ -161,7 +161,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   const body = await readBody<any>(req);
 
   const cleanId = identifier.replace(/^INV[-_]?/i, '').replace(/[^a-zA-Z0-9]/g, '');
-  const invVariants = [`INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
+  const invVariants = [identifier, `INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
 
   const existing = await prisma.sale.findFirst({
@@ -178,6 +178,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   // Mill bills (`mill_v2`) are not editable yet — this path rebuilds a bill with the LEGACY inclusive engine and would
   // silently drop its charges/round-off. Legacy bills continue below, unchanged.
   assertSaleEditable(existing as any);
+  assertNotJobWorkBill((existing as any).paymentDetails);
 
   // A bill with a return/exchange already recorded against it can't be
   // cleanly reversed — MaterialReturn's note references the OLD SaleItem
@@ -240,7 +241,7 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   // by the bill number it already has (customer_transactions carries
   // bill_number, not sale.id).
   const cleanId = identifier.replace(/^INV[-_]?/i, '').replace(/[^a-zA-Z0-9]/g, '');
-  const invVariants = [`INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
+  const invVariants = [identifier, `INV-${cleanId}`, `INV_${cleanId}`, `INV${cleanId}`, cleanId];
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
 
   const sale = await prisma.sale.findFirst({
@@ -254,6 +255,7 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
     include: { items: true },
   });
   if (!sale) throw new ApiError(404, 'Invoice not found');
+  assertNotJobWorkBill((sale as any).paymentDetails);
 
   // Snapshot before reversal — recoverable from the recycle bin even though
   // the reversal below already restores stock/ledger, matching every other

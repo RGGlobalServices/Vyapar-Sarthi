@@ -1024,6 +1024,9 @@ export default function InvoiceHistoryPage() {
                               {inv.bill_type === 'gst' && (
                                 <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-wider border border-indigo-500/20">GST</span>
                               )}
+                              {(typeof inv.payment_details === 'object' && inv.payment_details?.source === 'job_work') && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[8px] font-black uppercase tracking-wider border border-blue-500/20" title={`Made from Job Work order ${inv.payment_details?.orderNumber || ''}`}>Job Work</span>
+                              )}
                               {inv.is_manual && (
                                 <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[8px] font-black uppercase tracking-wider border border-amber-500/20">Manual</span>
                               )}

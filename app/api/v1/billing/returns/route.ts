@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { assertSaleNotJobWork } from '@/lib/server/millGuards';
 import { splitAcrossDraws } from '@/lib/lots';
 import { openVariantStores, adjustVariantStores, closeVariantStores } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
@@ -65,6 +66,7 @@ export const POST = handle(async (req) => {
   if (!bill_id || !items || !items.length) {
     throw new ApiError(400, 'bill_id and items are required');
   }
+  await assertSaleNotJobWork(shop.id, bill_id);
 
   const result = await prisma.$transaction(async (tx) => {
     // 1. Lock the target Sale row to serialize concurrent returns on the same bill
