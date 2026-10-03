@@ -65,16 +65,26 @@ export const POST = handle(async (req) => {
     brokenPct: num(body.brokenPct),
     damagedPct: num(body.damagedPct),
   };
+  // readings are percentages: a non-number / negative / above-100 value used to reach the DB as NaN (500) or be saved as nonsense
+  const docPct = num(body.docPct);
+  for (const [label, v] of [['Moisture', reading.moisturePct], ['Foreign matter', reading.foreignMatterPct], ['Broken', reading.brokenPct], ['Damaged', reading.damagedPct], ['Protein / oil', docPct]] as const) {
+    if (v !== null && (!Number.isFinite(v) || v < 0 || v > 100)) throw new ApiError(400, `${label} % must be a number between 0 and 100`);
+  }
+  if (reading.moisturePct === null && reading.foreignMatterPct === null && reading.brokenPct === null && reading.damagedPct === null) {
+    throw new ApiError(400, 'Enter at least one reading (moisture, foreign matter, broken or damaged %)');
+  }
+  const testDate = body.testDate ? new Date(body.testDate) : new Date();
+  if (isNaN(testDate.getTime())) throw new ApiError(400, 'Invalid test date');
   const flag = computeQualityFlag(reading);
 
   const created = await (prisma as any).qualityTest.create({
     data: {
       shopId: shop.id,
       rawLotId, batchId,
-      testDate: body.testDate ? new Date(body.testDate) : new Date(),
+      testDate,
       testedBy: (body.testedBy || '').trim() || null,
       ...reading,
-      docPct: num(body.docPct),
+      docPct,
       flag,
       decision: body.decision === 'accepted' || body.decision === 'rejected' ? body.decision : 'pending',
       notes: (body.notes || '').trim() || null,
