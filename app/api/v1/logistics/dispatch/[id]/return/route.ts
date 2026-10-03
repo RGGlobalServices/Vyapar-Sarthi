@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
@@ -47,6 +48,7 @@ export const POST = handle<Ctx>(async (req, { params }) => {
       await tx.stockMovement.create({
         data: { shopId: shop.id, productId: entry.productId, type: 'return', quantity: entry.quantity, referenceId: entry.id },
       });
+      if (syncsGodownStock(shop)) await creditGodown(tx, shop.id, entry.productId, entry.quantity);
     }
     return (tx as any).dispatchEntry.findFirst({
       where: { id, shopId: shop.id },

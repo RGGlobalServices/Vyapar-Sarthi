@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
@@ -77,6 +78,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
       const moved = await (tx as any).byProduct.updateMany({ where: { id, shopId: shop.id, productId: null }, data: { productId } });
       if (moved.count === 0) throw new ApiError(409, 'This by-product is already linked to a product.', 'ALREADY_LINKED');
       await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${stockQty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+      await creditGodown(tx, shop.id, productId, stockQty);
       await tx.stockMovement.create({ data: { shopId: shop.id, productId, type: 'byproduct_manual', quantity: stockQty, referenceId: id } });
       return (tx as any).byProduct.findFirst({ where: { id }, include: INCLUDE });
     }, { timeout: 15000, maxWait: 10000 });
@@ -99,6 +101,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
           UPDATE products SET current_stock = current_stock - ${stockQty}
           WHERE id = ${product.id}::uuid AND shop_id = ${shop.id}::uuid AND COALESCE(current_stock, 0) >= ${stockQty}`;
         if (took === 0) throw new ApiError(409, 'Not enough stock of the linked product.', 'INSUFFICIENT_STOCK');
+        await debitGodown(tx, shop.id, product.id, stockQty);
         await tx.stockMovement.create({ data: { shopId: shop.id, productId: product.id, type: 'byproduct_sale', quantity: -stockQty, referenceId: id } });
       }
     });

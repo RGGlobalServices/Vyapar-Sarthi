@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
@@ -127,6 +128,7 @@ export const POST = handle(async (req) => {
         data: { shopId: shop.id, productId, type: 'dispatch', quantity, referenceId: gateEntryId },
       }),
     );
+    if (syncsGodownStock(shop)) ops.push(debitGodown(prisma, shop.id, productId, quantity));
   } else if (productId && quantity && quantity > 0) {
     // zero-quantity marker: this dispatch took no stock (the bill did), so its return must not give any back
     ops.push(prisma.stockMovement.create({ data: { shopId: shop.id, productId, type: 'dispatch_billed', quantity: 0, referenceId: entryId } }));

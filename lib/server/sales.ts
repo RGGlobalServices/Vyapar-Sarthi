@@ -1,3 +1,4 @@
+import { creditGodown } from '@/lib/server/godownStock';
 import { resolveAmountPaid, validatePaymentDetails, resolveLineCost } from '@/lib/server/moneyValidation';
 import { allocateFromLots } from '@/lib/lots';
 import { readLotVariantKeys, savePriceAtSale } from '@/lib/server/lotColumns';
@@ -104,6 +105,8 @@ export async function reverseSaleEffects(
           ...(storeWrite as any),
         },
       });
+      // a deleted / reversed Bada Udyog bill puts the goods back in a godown too (it took them from one)
+      if ((sale as any).pricingModel === 'mill_v2' && product.currentStock !== null) await creditGodown(tx, shopId, productId, netQuantitiesByProduct.get(productId) || 0);
     }
   }
 

@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import prisma from '@/lib/server/prisma';
 import { assertSaleNotJobWork } from '@/lib/server/millGuards';
 import { splitAcrossDraws } from '@/lib/lots';
@@ -154,6 +155,7 @@ export const POST = handle(async (req) => {
       const storeWrite = closeVariantStores(stores);
 
       await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${totalQty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+      if (syncsGodownStock(shop)) await creditGodown(tx, shop.id, productId, totalQty);
       await tx.product.update({
         where: { id: productId },
         data: {

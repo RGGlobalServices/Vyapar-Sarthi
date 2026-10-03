@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
@@ -129,6 +130,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
           if (p) {
             const qty = kgToProductUnit(b.kg, p.baseUnit, p.name ?? '');
             await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${p.id}::uuid AND shop_id = ${shop.id}::uuid`;
+            await creditGodown(tx, shop.id, p.id, qty);
             await tx.stockMovement.create({ data: { shopId: shop.id, productId: p.id, type: 'byproduct_jobwork', quantity: qty, referenceId: row.id } });
           }
         }

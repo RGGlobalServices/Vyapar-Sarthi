@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
@@ -60,6 +61,7 @@ export async function PATCH(req: Request, ctx: any) {
         for (const [productId, qty] of qtyByProduct) {
           if (qty <= 0) continue;
           await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+          if (syncsGodownStock(shop)) await creditGodown(tx, shop.id, productId, qty);
         }
         // Restore FinishedGoodsLot.availableQuantity for lot-linked items
         for (const it of challan.items as any[]) {
@@ -114,6 +116,7 @@ export async function PATCH(req: Request, ctx: any) {
         for (const [productId, qty] of qtyByProduct) {
           if (qty <= 0 || fromBill) continue;
           await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${qty} WHERE id = ${productId}::uuid AND shop_id = ${shop.id}::uuid`;
+          if (syncsGodownStock(shop)) await creditGodown(tx, shop.id, productId, qty);
         }
         for (const it of challan.items as any[]) {
           if (!it.lotId || it.quantity <= 0) continue;

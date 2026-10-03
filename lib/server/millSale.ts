@@ -1,3 +1,4 @@
+import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
 import crypto from 'crypto';
 import { openVariantStores, adjustVariantStores, closeVariantStores, variantAvailable } from '@/lib/variants';
 import prisma from '@/lib/server/prisma';
@@ -336,6 +337,7 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
             } else {
               await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) - ${totalQty} WHERE id = ${product.id}::uuid AND shop_id = ${shopId}::uuid`;
             }
+            await debitGodown(tx, shopId, product.id, totalQty); // the godown figure follows the product total
             await tx.product.update({
               where: { id: product.id, shopId },
               data: { ...(storeWrite as any), },
