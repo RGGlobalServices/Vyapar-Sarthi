@@ -79,7 +79,7 @@ export const GET = handle(async (req) => {
     // DO have a real udhar row (any remaining balance) so a partially-paid
     // bill isn't shown twice — the existing udhar entry already covers it.
     const udharBillNumbers = new Set(
-      ledger.filter((t) => t.type === 'udhar' && t.bill_number).map((t) => t.bill_number)
+      ledger.filter((t) => (t.type === 'udhar' || t.type === 'job_work') && t.bill_number).map((t) => t.bill_number)
     );
     const paidInFullEntries = sales
       .filter((s) => !udharBillNumbers.has(s.invoice_number) && ((Number(s.totalAmount) || 0) - (Number(s.amountPaid) || 0)) <= 0)

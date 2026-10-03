@@ -23,17 +23,18 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, 'date and closingCash are required');
   }
 
-  const date = new Date(data.date);
-  date.setUTCHours(0, 0, 0, 0);
-  const nextDate = new Date(date);
-  nextDate.setUTCHours(23, 59, 59, 999);
+  const isDay = /^\d{4}-\d{2}-\d{2}$/.test(String(data.date));
+  // the closing row is keyed by the calendar date; the entries counted are those of that day in IST (UTC+5:30)
+  const date = isDay ? new Date(`${data.date}T00:00:00.000Z`) : (() => { const d = new Date(data.date); d.setUTCHours(0, 0, 0, 0); return d; })();
+  const windowStart = isDay ? new Date(`${data.date}T00:00:00+05:30`) : date;
+  const windowEnd = isDay ? new Date(`${data.date}T23:59:59.999+05:30`) : (() => { const d = new Date(date); d.setUTCHours(23, 59, 59, 999); return d; })();
 
   const result = await prisma.$transaction(async (tx) => {
     // 1. Calculate from CashBook
     const cashEntries = await tx.cashBook.findMany({
       where: {
         shopId: shop.id,
-        date: { gte: date, lte: nextDate }
+        date: { gte: windowStart, lte: windowEnd }
       }
     });
 
@@ -48,7 +49,7 @@ export const POST = handle(async (req) => {
       else if (entry.type === 'sale') cashSales += entry.amount;
       else if (entry.type === 'collection') cashCollection += entry.amount;
       else if (entry.type === 'expense' || entry.type === 'purchase') cashExpenses += entry.amount;
-      else if (entry.type === 'withdrawal') cashExpenses += entry.amount;
+      else if (entry.type === 'withdrawal' || entry.type === 'refund') cashExpenses += entry.amount; // a cash refund to a customer is cash out
       else if (entry.type === 'deposit') cashDeposits += entry.amount;
     });
 

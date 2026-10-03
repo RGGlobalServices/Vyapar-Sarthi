@@ -97,7 +97,15 @@ export const GET = handle(async (req) => {
     });
   }
 
+  // A Gate Entry with hamali (and a purchase import's hamali) books an Expense "Hamali - <entry no> (<vehicle>)" at the same time, so that
+  // hamali is already in the manual rows above. Only gate hamali WITHOUT such an expense (older entries) is listed from the gate entry.
+  const hamaliBooked = new Set<string>();
+  for (const e of manualExpenses) {
+    const m = /^Hamali - (GE-[A-Za-z0-9-]+)/.exec(String(e.description || ''));
+    if (m) hamaliBooked.add(m[1]);
+  }
   for (const g of hamaliEntries) {
+    if (hamaliBooked.has(String(g.entryNumber))) continue;
     rows.push({
       id: `hamali-${g.id}`,
       source: 'hamali',

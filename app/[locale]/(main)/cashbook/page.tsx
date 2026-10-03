@@ -27,7 +27,7 @@ export default function CashBookPage() {
   }
 
   const inFlows = entries.filter(e => ['sale', 'collection', 'opening_balance', 'deposit'].includes(e.type)).reduce((sum, e) => sum + e.amount, 0);
-  const outFlows = entries.filter(e => ['purchase', 'expense', 'withdrawal'].includes(e.type)).reduce((sum, e) => sum + e.amount, 0);
+  const outFlows = entries.filter(e => ['purchase', 'expense', 'withdrawal', 'refund'].includes(e.type)).reduce((sum, e) => sum + e.amount, 0);
   const balance = inFlows - outFlows;
 
   return (
@@ -91,7 +91,7 @@ export default function CashBookPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {entries.map(e => {
-                const isOut = ['purchase', 'expense', 'withdrawal'].includes(e.type);
+                const isOut = ['purchase', 'expense', 'withdrawal', 'refund'].includes(e.type);
                 return (
                   <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="px-6 py-4 text-sm font-medium">{new Date(e.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>

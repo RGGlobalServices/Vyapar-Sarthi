@@ -69,16 +69,24 @@ export const GET = handle(async (req) => {
     );
   }
 
-  rows = rows.slice(0, limit);
-
-  const summary = rows.reduce(
-    (acc, r) => {
+  // The totals must cover EVERY matching entry, not just the newest rows shown (they used to be summed after the slice, so Total Paid
+  // silently stopped growing once a shop had more than the row limit). With a search the matched rows are the set; without one the database sums.
+  let summary = { totalPaid: 0, totalPurchased: 0 };
+  if (q.search?.trim()) {
+    summary = rows.reduce((acc, r) => {
       if (r.type === 'payment') acc.totalPaid += r.amount;
       else if (r.type === 'purchase') acc.totalPurchased += r.amount;
       return acc;
-    },
-    { totalPaid: 0, totalPurchased: 0 },
-  );
+    }, summary);
+  } else {
+    const sums = await prisma.supplierTransaction.groupBy({ by: ['type'], where, _sum: { amount: true } });
+    for (const g of sums) {
+      if (g.type === 'payment') summary.totalPaid = Number(g._sum.amount) || 0;
+      else if (g.type === 'purchase') summary.totalPurchased = Number(g._sum.amount) || 0;
+    }
+  }
+
+  rows = rows.slice(0, limit);
 
   return json({ rows, summary });
 });
