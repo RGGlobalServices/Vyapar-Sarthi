@@ -16,9 +16,9 @@ const INCLUDE = {
 };
 
 /** The fee the server would charge: rate × (input or output weight, by the order's basis). Never taken from the client. */
-function computeFee(order: { feeBasis: string; inputWeightKg: number; ratePerUnit: number }, outputWeightKg: number | null): number | null {
+function computeFee(order: { feeBasis: string; inputWeightKg: number; ratePerKg: number }, outputWeightKg: number | null): number | null {
   const basisWeight = order.feeBasis === 'output' ? outputWeightKg : order.inputWeightKg;
-  return basisWeight == null ? null : Math.round(basisWeight * order.ratePerUnit * 100) / 100;
+  return basisWeight == null ? null : Math.round(basisWeight * Number(order.ratePerKg) * 100) / 100;
 }
 
 /**
@@ -88,6 +88,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
     for (const pid of productIds) if (!products.some((p) => p.id === pid)) throw new ApiError(404, 'A by-product product was not found for this shop', 'PRODUCT_NOT_FOUND');
 
     const feeAmount = computeFee(existing, outputWeightKg) as number;
+    if (!isFinite(feeAmount)) throw new ApiError(400, 'The milling fee could not be worked out — check the rate and weight of the order.', 'INVALID_FEE');
     const amountPaid = body.amountPaid != null && body.amountPaid !== '' ? Number(body.amountPaid) : 0;
     if (!isFinite(amountPaid) || amountPaid < 0 || amountPaid > feeAmount) throw new ApiError(400, 'amountPaid must be between 0 and the fee amount', 'INVALID_AMOUNT');
 
