@@ -1,4 +1,5 @@
 import prisma from '@/lib/server/prisma';
+import { packSummaryForLots } from '@/lib/server/packing';
 import { ApiError } from '@/lib/server/http';
 import { round3, toKg } from '@/lib/server/millProduction';
 import { recordStageAuditEvent } from '@/lib/server/audit';
@@ -244,8 +245,12 @@ export async function getFinishedGoodsLotsService(
     prisma.finishedGoodsLot.count({ where }),
   ]);
 
+  // how each lot was packed (empty until packing is recorded in Milling -> Not packed)
+  let packMap = new Map<string, Array<{ packKg: number; packs: number; packType: string }>>();
+  try { packMap = await packSummaryForLots(prisma, shopId, items.map((i: any) => ({ batchId: i.batchId, productId: i.productId }))); } catch { /* packing is optional */ }
+
   return {
-    items,
+    items: items.map((i: any) => ({ ...i, packs: packMap.get(`${i.batchId}:${i.productId}`) ?? [] })),
     pagination: {
       page,
       limit,

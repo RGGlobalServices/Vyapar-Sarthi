@@ -6,6 +6,7 @@ import { createQuickEntry } from '@/lib/server/quickProduction';
 import { reverseProductionTx } from '@/lib/server/productionReverse';
 import { recordAuditEvents } from '@/lib/server/productionWrites';
 import { jobWorkLinkColumn } from '@/lib/server/jobWorkLink';
+import { packsOfOutputs } from '@/lib/server/packing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,12 +73,14 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     source = { type: 'raw_lot', lots };
   }
 
+  const packMap = await packsOfOutputs(prisma, (b.outputs || []).map((o: any) => o.id));
   return json({
     id: b.id, batchNumber: b.batchNumber, direct, source, inputKg: Number(b.inputKg) || 0, lossKg: Number(stage?.wastageKg ?? b.wastageKg) || 0,
     operatorName: stage?.operatorName || '', machineId: stage?.machineId || '', notes: stage?.notes || '', startedAt: b.startedAt,
     outputs: (b.outputs || []).map((o: any) => ({
       outputType: o.outputType, productId: o.productId || '', name: o.name || '', quantity: Number(o.quantity) || 0, unit: o.unit || 'kg',
       outputLotNumber: o.outputLotNumber || '', notes: o.notes || '',
+      packs: (packMap.get(o.id) || []).map((k) => ({ packKg: k.packKg, packs: k.packs, packType: k.packType })),
     })),
   });
 });

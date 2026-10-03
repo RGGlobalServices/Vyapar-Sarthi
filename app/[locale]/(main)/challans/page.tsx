@@ -69,6 +69,7 @@ type Lot = {
   unit: string;
   godownId?: string | null;
   godown?: { name: string } | null;
+  packs?: Array<{ packKg: number; packs: number; packType: string }>;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -844,7 +845,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
                           {lots.length > 0 ? (
                             <select value={it.lotId || ''} onChange={e => updateItem(idx, { lotId: e.target.value || null })} className={cellCls}>
                               <option value="">— No Lot —</option>
-                              {lots.map(l => <option key={l.id} value={l.id}>{l.lotNumber} (Avl: {l.availableQuantity} {l.unit})</option>)}
+                              {lots.map(l => <option key={l.id} value={l.id}>{l.lotNumber} (Avl: {l.availableQuantity} {l.unit}){l.packs && l.packs.length > 0 ? ` · ${l.packs.map(k => `${k.packs}×${k.packKg}kg`).join(" + ")}` : ""}</option>)}
                             </select>
                           ) : (
                             <input value={it.lotNumber || ''} onChange={e => updateItem(idx, { lotNumber: e.target.value })} placeholder="Lot / Batch #" className={cellCls} />

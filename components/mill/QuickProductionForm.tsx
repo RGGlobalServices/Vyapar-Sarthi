@@ -21,7 +21,8 @@ import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance
  */
 
 type OutKind = 'finished_good' | 'by_product' | 'wip' | 'rejection';
-type OutRow = { key: number; kind: OutKind; productId: string; name: string; qty: string; unit: string; bagMode: boolean; packs: string; packKg: string; reason: string };
+type PackRow = { kg: string; n: string; type: 'bag' | 'goni' | 'other' };
+type OutRow = { key: number; kind: OutKind; productId: string; name: string; qty: string; unit: string; bagMode: boolean; packs: string; packKg: string; reason: string; pk: PackRow[] };
 type Product = { id: string; name: string; millCategory?: string | null; baseUnit?: string | null };
 
 const KINDS: OutKind[] = ['finished_good', 'by_product', 'wip', 'rejection'];
@@ -42,7 +43,7 @@ const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const num = (v: string) => (v === '' ? 0 : Number(v) || 0);
 const fmt = (n: number) => (Math.round(n * 1000) / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 const newKey = (() => { let k = 0; return () => ++k; })();
-const newRow = (kind: OutKind, over: Partial<OutRow> = {}): OutRow => ({ key: newKey(), kind, productId: '', name: '', qty: '', unit: 'kg', bagMode: false, packs: '', packKg: '', reason: '', ...over });
+const newRow = (kind: OutKind, over: Partial<OutRow> = {}): OutRow => ({ key: newKey(), kind, productId: '', name: '', qty: '', unit: 'kg', bagMode: false, packs: '', packKg: '', reason: '', pk: [], ...over });
 
 const inputCls = 'w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-emerald-500 outline-none';
 const labelCls = 'block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1';
@@ -211,6 +212,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
     setInputQty(String(Math.round(Number(editData.inputKg) * 1000) / 1000)); setInputUnit('kg');
     setRows((editData.outputs || []).map((o: any) => newRow(o.outputType as OutKind, {
       productId: o.productId || '', name: o.name || '', qty: String(Math.round(Number(o.quantity) * 1000) / 1000), unit: o.unit || 'kg', reason: o.notes || '',
+      pk: (o.packs || []).map((k: any) => ({ kg: String(k.packKg), n: String(k.packs), type: k.packType === 'goni' || k.packType === 'other' ? k.packType : 'bag' })),
     })));
     setLossKg(String(Math.round(Number(editData.lossKg) * 1000) / 1000)); setLossTouched(true);
     setOperatorName(editData.operatorName || ''); setMachineId(editData.machineId || ''); setNotes(editData.notes || '');
@@ -245,12 +247,20 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
   };
 
   const filled = rows.filter((r) => rowKg(r) > 0);
+  // how a ready product was packed: the pack lines, or - when the quantity was entered as bags x kg - that one line
+  const packLines = (r: OutRow) => {
+    const lines = r.pk.filter((l) => num(l.kg) > 0 && num(l.n) > 0).map((l) => ({ packKg: num(l.kg), packs: Math.round(num(l.n)), packType: l.type }));
+    if (!lines.length && r.bagMode && num(r.packs) > 0 && num(r.packKg) > 0) lines.push({ packKg: num(r.packKg), packs: Math.round(num(r.packs)), packType: 'bag' as const });
+    return lines;
+  };
+  const packedKgOf = (r: OutRow) => packLines(r).reduce((a, l) => a + l.packKg * l.packs, 0);
   const validation = (): string => {
     if (!sourceId) return t('qp_errSource');
     if (!(inputKg > 0)) return t('qp_errQty');
     if (!filled.length) return t('qp_errOutputs');
     if (filled.some((r) => (r.kind === 'finished_good' || r.kind === 'wip') && !r.productId)) return t('qp_errProduct');
     if (!bal.balanced) return t('qp_errBalance');
+    if (filled.some((r) => r.kind === 'finished_good' && packedKgOf(r) > rowKg(r) + 0.005)) return t('pk_errMore');
     return '';
   };
   const blocked = validation();
@@ -269,6 +279,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
           quantity: r.bagMode ? kg : num(r.qty),
           unit: r.bagMode ? 'kg' : r.unit,
           notes: [r.bagMode ? `${r.packs} × ${r.packKg} kg` : '', r.reason].filter(Boolean).join(' · ') || null,
+          ...(r.kind === 'finished_good' && packLines(r).length ? { packs: packLines(r) } : {}),
         };
       });
       const res = batch
@@ -446,6 +457,32 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createProduct(r); } }} /></label>
                                 <button type="button" onClick={() => createProduct(r)} disabled={creating || !newName.trim()} className="h-10 px-4 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50">
                                   {creating ? <Loader2 size={14} className="animate-spin" /> : t('qp_create')}</button>
+                              </div>
+                            )}
+                            {kind === 'finished_good' && (
+                              <div className="space-y-1.5" data-testid="packing-lines">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t('pk_title')}</span>
+                                  <button type="button" onClick={() => setRow(r.key, { pk: [...r.pk, { kg: '', n: '', type: 'bag' }] })} className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">+ {t('pk_add')}</button>
+                                  {r.pk.length === 0 && <span className="text-[11px] text-slate-400">{t('pk_later')}</span>}
+                                </div>
+                                {r.pk.map((l, i) => (
+                                  <div key={i} className="grid grid-cols-[5.2rem_1fr_1fr_auto] gap-2 items-end">
+                                    <select value={l.type} onChange={(e) => setRow(r.key, { pk: r.pk.map((x, j) => (j === i ? { ...x, type: e.target.value as PackRow['type'] } : x)) })} className={cn(inputCls, 'px-1.5')}>
+                                      <option value="bag">{t('pk_bag')}</option><option value="goni">{t('pk_goni')}</option><option value="other">{t('pk_other')}</option>
+                                    </select>
+                                    <label className="block"><span className={labelCls}>{t('pk_kgEach')}</span>
+                                      <input type="number" inputMode="decimal" min="0" value={l.kg} onChange={(e) => setRow(r.key, { pk: r.pk.map((x, j) => (j === i ? { ...x, kg: e.target.value } : x)) })} className={inputCls} /></label>
+                                    <label className="block"><span className={labelCls}>{t('pk_count')}</span>
+                                      <input type="number" inputMode="numeric" min="0" value={l.n} onChange={(e) => setRow(r.key, { pk: r.pk.map((x, j) => (j === i ? { ...x, n: e.target.value } : x)) })} className={inputCls} /></label>
+                                    <button type="button" onClick={() => setRow(r.key, { pk: r.pk.filter((_, j) => j !== i) })} className="h-10 px-2 text-red-500" aria-label={t('qp_remove')}><X size={14} /></button>
+                                  </div>
+                                ))}
+                                {r.pk.length > 0 && rowKg(r) > 0 && (
+                                  <p className={cn('text-[11px] font-mono', packedKgOf(r) > rowKg(r) + 0.005 ? 'text-red-500' : 'text-slate-500')}>
+                                    {t('pk_summary', { packed: fmt(packedKgOf(r)), loose: fmt(Math.max(0, rowKg(r) - packedKgOf(r))) })}
+                                  </p>
+                                )}
                               </div>
                             )}
                             <div className="flex items-center justify-between gap-2 flex-wrap">

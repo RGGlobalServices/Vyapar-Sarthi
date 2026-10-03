@@ -8,7 +8,7 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 
-type Lot = { id: string; batchNumber: string | null; quantity: number; initialQuantity: number | null; createdAt: string | null };
+type Lot = { id: string; batchNumber: string | null; quantity: number; initialQuantity: number | null; createdAt: string | null; packs?: Array<{ packKg: number; packs: number; packType: string }> };
 type FG = {
   id: string; name: string | null; baseUnit: string | null; currentStock: number | null; sellingPrice: number | null; mrp: number | null; minStock: number | null;
   produced: number; batchesCount: number; lastBatch: { id: string; batchNumber: string; date: string | null } | null; lots: Lot[];
@@ -89,6 +89,7 @@ export default function FinishedGoodsPage() {
         quantity: availQty,
         initialQuantity: origQty !== availQty ? origQty : null,
         createdAt: item.createdAt || null,
+        packs: Array.isArray(item.packs) ? item.packs : [],
       });
     });
 
@@ -184,7 +185,7 @@ function FGRow({ r, low, isOpen, onToggle }: { r: FG; low: boolean; isOpen: bool
               <div className="flex flex-wrap gap-2">
                 {r.lots.map(l => (
                   <span key={l.id} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                    <strong className="font-mono">{l.batchNumber || '—'}</strong> · {qty(l.quantity, r.baseUnit)}{l.initialQuantity != null ? ` of ${l.initialQuantity}` : ''} · {fmtDate(l.createdAt)}
+                    <strong className="font-mono">{l.batchNumber || '—'}</strong> · {qty(l.quantity, r.baseUnit)}{l.initialQuantity != null ? ` of ${l.initialQuantity}` : ''} · {fmtDate(l.createdAt)}{l.packs && l.packs.length > 0 ? ` · ${l.packs.map(k => `${k.packs} × ${k.packKg} kg ${k.packType === 'goni' ? 'goni' : k.packType === 'other' ? '' : 'bag'}`.trim()).join(' + ')}` : ''}
                   </span>
                 ))}
               </div>

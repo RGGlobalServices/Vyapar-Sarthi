@@ -138,7 +138,7 @@ export async function writeOutputsBulk(
 
   // ---- rows ----
   const outputs = credits.map((o) => ({
-    id: randomUUID(), shop_id: shopId, batch_id: batchId, product_id: o.productId, name: o.name, output_type: o.outputType,
+    id: (o as any).outputId || randomUUID(), shop_id: shopId, batch_id: batchId, product_id: o.productId, name: o.name, output_type: o.outputType,
     quantity: o.quantity, unit: o.unit, quantity_kg: o.quantityKg, output_lot_number: o.outputLotNumber || lotDefault, notes: o.notes,
   }));
 

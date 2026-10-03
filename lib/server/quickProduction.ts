@@ -7,6 +7,7 @@ import { prepareOutputCredits, finalizeBatchTx, afterBatchFinalized } from '@/li
 import { recordAuditEvents } from '@/lib/server/productionWrites';
 import { setBatchJobWork } from '@/lib/server/jobWorkLink';
 import { reverseProductionTx } from '@/lib/server/productionReverse';
+import { parsePackLines, insertPackLines, type PackLine } from '@/lib/server/packing';
 import { QUICK_SOURCES, type QuickSource } from '@/lib/quickEntry';
 
 /**
@@ -86,6 +87,16 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
   const outputs = parseOutputs(body.outputs);
   const lossKg = parseLossKg(body.lossKg);
   const credits = await prepareOutputCredits(shopId, outputs);
+  // how each ready product was packed (optional): ids are fixed here so the pack rows can point at their output
+  const packRows: Array<{ outputId: string; lines: PackLine[] }> = [];
+  credits.forEach((c, i) => {
+    const outputId = randomUUID();
+    (c as any).outputId = outputId;
+    if (c.outputType === 'finished_good') {
+      const lines = parsePackLines(body.outputs?.[i]?.packs, c.quantityKg, `Output ${i + 1} packing`);
+      if (lines.length) packRows.push({ outputId, lines });
+    }
+  });
 
   const operatorName = String(body.operatorName ?? '').trim().slice(0, 80) || null;
   const userNotes = String(body.notes ?? '').trim().slice(0, 200) || null;
@@ -254,6 +265,7 @@ export async function createQuickEntry(shop: any, body: any, idempotencyKey?: st
           },
         });
         events.push(...fin.events);
+        await insertPackLines(tx, shopId, batchId, packRows);
         events.push({ action: 'QUICK_PRODUCTION_ENTRY', entityId: batchId, details: { batchNumber, source: source.type, inputKg, finishedKg: fin.finishedKg, lossKg } });
         if (batchType === 'REPROCESSING') events.push({ action: 'REPROCESSING_BATCH_CREATED', entityId: batchId, details: { batchNumber, rejectionLotId, quantity: inputKg } });
 
