@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import DeleteButton from '@/components/mill/DeleteButton';
-import { Plus, X, Loader2, FlaskConical, Check, Ban } from 'lucide-react';
+import { Plus, X, Loader2, FlaskConical, Check, Ban, SlidersHorizontal } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
@@ -26,7 +26,10 @@ type TestRow = {
   rawLot?: { id: string; lotNumber: string | null; farmerName: string | null } | null;
   batch?: { id: string; batchNumber: string } | null;
 };
-type Lot = { id: string; lotNumber: string | null; farmerName: string | null };
+type Lot = { id: string; lotNumber: string | null; farmerName: string | null; remainingQuantity?: number | null; unit?: string | null };
+type Bands = { amber: number; red: number };
+type Thresholds = Record<'moisturePct' | 'foreignMatterPct' | 'brokenPct' | 'damagedPct', Bands>;
+type ThresholdData = { thresholds: Thresholds; defaults: Thresholds; custom: boolean; canCustomize: boolean };
 type Batch = { id: string; batchNumber: string };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
@@ -44,13 +47,15 @@ const FLAG_STYLES: Record<QualityFlag, string> = {
 export default function QualityLabPage() {
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const [logging, setLogging] = useState(false);
+  const [limitsOpen, setLimitsOpen] = useState(false);
 
   const { data: rows = [], mutate: refetch, isLoading } = useSWR<TestRow[]>(
     activeShopId ? ['/mill/quality-tests', activeShopId] : null, ([u]) => fetcher(u),
   );
   const { data: lots = [] } = useSWR<Lot[]>(
-    activeShopId ? ['/mill/raw-lots?status=available', activeShopId] : null, ([u]) => fetcher(u),
+    activeShopId ? ['/mill/raw-lots?status=all', activeShopId] : null, ([u]) => fetcher(u),
   );
+  const { data: limits, mutate: refetchLimits } = useSWR<ThresholdData>(activeShopId ? ['/mill/quality-thresholds', activeShopId] : null, ([u]) => fetcher(u));
   const { data: batches = [] } = useSWR<Batch[]>(activeShopId ? ['/mill/batches', activeShopId] : null, ([u]) => fetcher(u));
 
   const counts = useMemo(() => {
@@ -60,9 +65,10 @@ export default function QualityLabPage() {
     return { red, amber, pending, total: rows.length };
   }, [rows]);
 
+  // clicking the decision already made takes it back to pending
   const setDecision = async (row: TestRow, decision: 'accepted' | 'rejected') => {
     try {
-      await api.patch(`/mill/quality-tests/${row.id}`, { decision });
+      await api.patch(`/mill/quality-tests/${row.id}`, { decision: row.decision === decision ? 'pending' : decision });
       refetch();
     } catch { /* transient — table stays on old value, shopkeeper can retry */ }
   };
@@ -74,11 +80,16 @@ export default function QualityLabPage() {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <FlaskConical size={22} className="text-purple-600" /> Quality / Lab
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Moisture, foreign matter, broken % — test every lot and batch, flagged automatically.</p>
+          <p className="text-sm text-slate-500 mt-1">Moisture, foreign matter, broken % — test every lot and batch, flagged automatically. A raw lot that is Rejected cannot be used in production.</p>
         </div>
-        <button onClick={() => setLogging(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors">
-          <Plus size={18} /> Log Test
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setLimitsOpen(true)} className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <SlidersHorizontal size={16} /> Flag limits
+          </button>
+          <button onClick={() => setLogging(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors">
+            <Plus size={18} /> Log Test
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -134,16 +145,11 @@ export default function QualityLabPage() {
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1">
-                    {r.decision === 'pending' ? (
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => setDecision(r, 'accepted')} title="Accept" className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"><Check size={14} /></button>
-                        <button onClick={() => setDecision(r, 'rejected')} title="Reject" className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"><Ban size={14} /></button>
-                      </div>
-                    ) : (
-                      <span className={cn('text-[10px] font-black uppercase px-2 py-0.5 rounded-full', r.decision === 'accepted' ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400')}>
-                        {r.decision}
-                      </span>
-                    )}
+                    <button onClick={() => setDecision(r, 'accepted')} title={r.decision === 'accepted' ? 'Accepted — click to undo' : 'Accept'}
+                      className={cn('p-1.5 rounded-lg', r.decision === 'accepted' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10')}><Check size={14} /></button>
+                    <button onClick={() => setDecision(r, 'rejected')} title={r.decision === 'rejected' ? 'Rejected — click to undo' : 'Reject (a rejected lot cannot be used in production)'}
+                      className={cn('p-1.5 rounded-lg', r.decision === 'rejected' ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' : 'text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10')}><Ban size={14} /></button>
+                    {r.decision !== 'pending' && <span className="text-[10px] font-black uppercase text-slate-400 ml-1">{r.decision}</span>}
                     <DeleteButton url={`/mill/quality-tests/${r.id}`} name={'quality test'} onDone={() => refetch()} />
                     </div>
                   </td>
@@ -154,9 +160,13 @@ export default function QualityLabPage() {
         </div>
       )}
 
+      {limitsOpen && limits && (
+        <LimitsModal data={limits} onClose={() => setLimitsOpen(false)} onSaved={() => { setLimitsOpen(false); refetchLimits(); }} />
+      )}
+
       {logging && (
         <LogTestModal
-          lots={lots} batches={batches}
+          lots={lots} batches={batches} thresholds={limits?.thresholds}
           onClose={() => setLogging(false)}
           onLogged={() => { setLogging(false); refetch(); }}
         />
@@ -165,8 +175,8 @@ export default function QualityLabPage() {
   );
 }
 
-function LogTestModal({ lots, batches, onClose, onLogged }: {
-  lots: Lot[]; batches: Batch[]; onClose: () => void; onLogged: () => void;
+function LogTestModal({ lots, batches, thresholds, onClose, onLogged }: {
+  lots: Lot[]; batches: Batch[]; thresholds?: Thresholds; onClose: () => void; onLogged: () => void;
 }) {
   const [against, setAgainst] = useState<'lot' | 'batch'>('lot');
   const [form, setForm] = useState({
@@ -181,7 +191,7 @@ function LogTestModal({ lots, batches, onClose, onLogged }: {
     foreignMatterPct: form.foreignMatterPct === '' ? null : Number(form.foreignMatterPct),
     brokenPct: form.brokenPct === '' ? null : Number(form.brokenPct),
     damagedPct: form.damagedPct === '' ? null : Number(form.damagedPct),
-  });
+  }, thresholds);
   const hasAnyReading = [form.moisturePct, form.foreignMatterPct, form.brokenPct, form.damagedPct].some(v => v !== '');
 
   const submit = async (e: React.FormEvent) => {
@@ -232,7 +242,7 @@ function LogTestModal({ lots, batches, onClose, onLogged }: {
               <select value={form.rawLotId} onChange={e => setForm(f => ({ ...f, rawLotId: e.target.value }))}
                 className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required>
                 <option value="">-- Select Lot --</option>
-                {lots.map(l => <option key={l.id} value={l.id}>{l.lotNumber || l.id.slice(0, 8)}{l.farmerName ? ` — ${l.farmerName}` : ''}</option>)}
+                {lots.map(l => <option key={l.id} value={l.id}>{l.lotNumber || l.id.slice(0, 8)}{l.farmerName ? ` — ${l.farmerName}` : ''}{l.remainingQuantity != null ? ` (${Math.round(l.remainingQuantity * 1000) / 1000} ${l.unit || 'kg'} left)` : ''}</option>)}
               </select>
             </label>
           ) : (
@@ -297,6 +307,59 @@ function LogTestModal({ lots, batches, onClose, onLogged }: {
             Log Test
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+const LIMIT_LABELS: Array<[keyof Thresholds, string]> = [['moisturePct', 'Moisture %'], ['foreignMatterPct', 'Foreign matter %'], ['brokenPct', 'Broken %'], ['damagedPct', 'Damaged %']];
+
+// This shop's own amber / red limits. A reading at or above amber is flagged amber, at or above red it is flagged red.
+function LimitsModal({ data, onClose, onSaved }: { data: ThresholdData; onClose: () => void; onSaved: () => void }) {
+  const [vals, setVals] = useState<Record<string, { amber: string; red: string }>>(() => Object.fromEntries(
+    LIMIT_LABELS.map(([k]) => [k, { amber: String(data.thresholds[k].amber), red: String(data.thresholds[k].red) }])));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async (reset: boolean) => {
+    setSaving(true); setError('');
+    try {
+      await api.put('/mill/quality-thresholds', reset ? { reset: true } : { thresholds: Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, { amber: Number(v.amber), red: Number(v.red) }])) });
+      onSaved();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Could not save');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-lg font-black">Flag limits</h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <p className="text-xs text-slate-500">At or above <b>Amber</b> a reading is flagged amber; at or above <b>Red</b> it is flagged red. Tests already logged keep the flag they were given.</p>
+          {!data.canCustomize && <p className="text-xs text-amber-600">Custom limits are not available yet on this database — the standard limits are in use.</p>}
+          <div className="grid grid-cols-[1fr_5rem_5rem] gap-2 items-center text-xs font-bold uppercase text-slate-500">
+            <span /> <span className="text-amber-600">Amber</span> <span className="text-red-600">Red</span>
+          </div>
+          {LIMIT_LABELS.map(([k, label]) => (
+            <div key={k} className="grid grid-cols-[1fr_5rem_5rem] gap-2 items-center">
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{label} <span className="text-[10px] font-normal text-slate-400">(std {data.defaults[k].amber} / {data.defaults[k].red})</span></span>
+              {(['amber', 'red'] as const).map((f) => (
+                <input key={f} type="number" min="0" max="100" step="0.1" value={vals[k][f]} disabled={!data.canCustomize}
+                  onChange={(e) => setVals((v) => ({ ...v, [k]: { ...v[k], [f]: e.target.value } }))}
+                  className="h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+              ))}
+            </div>
+          ))}
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex gap-2">
+            <button onClick={() => save(true)} disabled={saving || !data.canCustomize || !data.custom} className="px-4 h-11 rounded-lg border border-slate-300 dark:border-slate-700 text-sm font-bold disabled:opacity-40">Reset to standard</button>
+            <button onClick={() => save(false)} disabled={saving || !data.canCustomize} className="flex-1 h-11 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold">Save limits</button>
+          </div>
+        </div>
       </div>
     </div>
   );

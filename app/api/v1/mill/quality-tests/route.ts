@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { computeQualityFlag } from '@/lib/businessConfig';
+import { getThresholds } from '@/lib/server/qualityConfig';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,7 +76,7 @@ export const POST = handle(async (req) => {
   }
   const testDate = body.testDate ? new Date(body.testDate) : new Date();
   if (isNaN(testDate.getTime())) throw new ApiError(400, 'Invalid test date');
-  const flag = computeQualityFlag(reading);
+  const flag = computeQualityFlag(reading, (await getThresholds(shop.id)).thresholds);
 
   const created = await (prisma as any).qualityTest.create({
     data: {

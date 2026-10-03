@@ -2360,8 +2360,8 @@ export type QualityFlag = 'green' | 'amber' | 'red';
 export function computeQualityFlag(reading: {
   moisturePct?: number | null; foreignMatterPct?: number | null;
   brokenPct?: number | null; damagedPct?: number | null;
-}): QualityFlag {
-  const t = QUALITY_FLAG_THRESHOLDS;
+}, thresholds: Record<'moisturePct' | 'foreignMatterPct' | 'brokenPct' | 'damagedPct', { amber: number; red: number }> = QUALITY_FLAG_THRESHOLDS): QualityFlag {
+  const t = thresholds;
   const checks: [number | null | undefined, { amber: number; red: number }][] = [
     [reading.moisturePct, t.moisturePct],
     [reading.foreignMatterPct, t.foreignMatterPct],

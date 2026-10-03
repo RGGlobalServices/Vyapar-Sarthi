@@ -3,6 +3,7 @@ import prisma from '@/lib/server/prisma';
 import { ApiError } from '@/lib/server/http';
 import { round3 } from '@/lib/server/millProduction';
 import type { OutputCredit } from '@/lib/server/productionFinalize';
+import { assertLotNotRejected } from '@/lib/server/qualityConfig';
 
 /**
  * The write side of closing a production run, folded into a handful of round trips.
@@ -32,6 +33,8 @@ export async function consumeRawLot(
   tx: any,
   p: { shopId: string; lotId: string; qtyKg: number; batchId: string; allowNegativeStock: boolean },
 ) {
+  // a lot rejected in the Quality Lab (its latest test) must not go into production
+  await assertLotNotRejected(tx, p.shopId, p.lotId);
   const rows: Array<{ product_id: string | null; godown_id: string | null; g_updated: number }> = await tx.$queryRawUnsafe(
     `WITH l AS (
        UPDATE raw_material_lots SET remaining_quantity = remaining_quantity - $1::float8
