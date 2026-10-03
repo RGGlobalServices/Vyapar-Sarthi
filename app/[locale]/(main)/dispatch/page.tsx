@@ -305,7 +305,7 @@ function CreateDispatchModal({ parties, products, bills, onClose, onCreated }: {
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      await api.post('/logistics/dispatch', {
+      const payload = {
         saleId: form.saleId || null,
         partyId: form.partyId || null,
         vehicleNumber: form.vehicleNumber || null,
@@ -318,7 +318,15 @@ function CreateDispatchModal({ parties, products, bills, onClose, onCreated }: {
         dispatchType: form.dispatchType,
         dispatchedAt: form.dispatchedAt || null,
         notes: form.notes,
-      });
+      };
+      try {
+        await api.post('/logistics/dispatch', payload);
+      } catch (e: any) {
+        // not enough stock: tell the user and let them go ahead on purpose
+        if (e?.response?.data?.code !== 'INSUFFICIENT_STOCK') throw e;
+        if (!window.confirm(`${e.response.data.detail || e.response.data.error}\n\nCreate this dispatch anyway? Stock will go below zero.`)) { setSaving(false); return; }
+        await api.post('/logistics/dispatch', { ...payload, force: true });
+      }
       onCreated();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToCreate'));

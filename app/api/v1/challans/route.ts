@@ -1,4 +1,4 @@
-import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
+import { debitGodown, creditGodown, syncsGodownStock, stockShortage } from '@/lib/server/godownStock';
 import { NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
@@ -92,6 +92,14 @@ export async function POST(req: Request) {
         }
       }
       fromSale = rem.sale;
+    }
+
+    // Bada Udyog: a challan that is not from a bill must not take more than is in stock — unless the user confirmed it (force)
+    if (isMill && !fromSale && !data.force && Array.isArray(items) && items.length > 0) {
+      const want = new Map<string, number>();
+      for (const it of items) if (it?.productId) want.set(it.productId, (want.get(it.productId) || 0) + (Number(it.quantity) || 0));
+      const msg = await stockShortage(prisma, shop.id, want);
+      if (msg) return NextResponse.json({ error: msg, code: 'INSUFFICIENT_STOCK' }, { status: 409 });
     }
 
     if (!Array.isArray(items) || items.length === 0) {

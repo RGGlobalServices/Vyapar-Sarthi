@@ -685,7 +685,7 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
     setSaving(true);
     setError('');
     try {
-      await api.post('/challans', {
+      const payload: any = {
         ...(fromInv ? { fromSaleId: fromInv.saleId } : {}),
         customerId: selectedParty.id,
         customerName: selectedParty.name,
@@ -723,7 +723,15 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
             totalWeight: it.totalWeight ?? undefined,
           };
         }),
-      });
+      };
+      try {
+        await api.post('/challans', payload);
+      } catch (e: any) {
+        // not enough stock: tell the user and let them go ahead on purpose
+        if (e?.response?.data?.code !== 'INSUFFICIENT_STOCK') throw e;
+        if (!window.confirm(`${e.response.data.error}\n\nCreate this challan anyway? Stock will go below zero.`)) { setSaving(false); return; }
+        await api.post('/challans', { ...payload, force: true });
+      }
       onCreated();
     } catch (err: any) {
       setError(err?.response?.data?.error || 'Failed to save challan.');

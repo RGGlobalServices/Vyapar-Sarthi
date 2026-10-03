@@ -41,3 +41,18 @@ export function creditGodown(db: any, shopId: string, productId: string, qty: nu
      ON CONFLICT (godown_id, product_id) DO UPDATE SET quantity = godown_products.quantity + $3::float8, updated_at = now()`,
     shopId, productId, qty);
 }
+
+/**
+ * Bada Udyog: goods leaving on a challan / dispatch that is NOT tied to a bill should not exceed what is in stock. Returns a plain message for
+ * the first shortage (or null when stock covers it) — the caller answers 409 INSUFFICIENT_STOCK unless the user confirmed ("force").
+ */
+export async function stockShortage(db: any, shopId: string, wanted: Map<string, number>): Promise<string | null> {
+  const ids = [...wanted.keys()];
+  if (!ids.length) return null;
+  const rows: Array<{ id: string; name: string | null; stock: number | null; unit: string | null }> = await db.$queryRawUnsafe(
+    `SELECT id::text AS id, name, COALESCE(current_stock, 0)::float8 AS stock, base_unit AS unit FROM products WHERE shop_id = $1::uuid AND id = ANY($2::uuid[])`, shopId, ids);
+  const short = rows.filter((p) => (wanted.get(p.id) || 0) > Number(p.stock) + 1e-9);
+  if (!short.length) return null;
+  const f = (n: number) => Math.round(n * 1000) / 1000;
+  return short.map((p) => `${p.name || 'Item'}: only ${f(Number(p.stock))} ${p.unit || ''} in stock, ${f(wanted.get(p.id) || 0)} requested`).join('; ');
+}

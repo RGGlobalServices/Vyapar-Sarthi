@@ -1,4 +1,4 @@
-import { debitGodown, creditGodown, syncsGodownStock } from '@/lib/server/godownStock';
+import { debitGodown, creditGodown, syncsGodownStock, stockShortage } from '@/lib/server/godownStock';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
@@ -87,6 +87,12 @@ export const POST = handle(async (req) => {
   const VALID_TYPES = ['sale', 'sample', 'transfer', 'job_work', 'other'];
   const dispatchType = VALID_TYPES.includes(body.dispatchType) ? body.dispatchType : 'sale';
   const noOfBags = body.noOfBags != null && body.noOfBags !== '' ? Math.round(Number(body.noOfBags)) : null;
+
+  // a dispatch that is not against a bill takes stock itself: warn (409) when it is more than is in stock, unless the user confirmed (force)
+  if (syncsGodownStock(shop) && !body.force && !body.saleId && productId && quantity && quantity > 0) {
+    const msg = await stockShortage(prisma, shop.id, new Map([[productId, quantity]]));
+    if (msg) throw new ApiError(409, msg, 'INSUFFICIENT_STOCK');
+  }
 
   const entryId = randomUUID();
   const build = (dispatchNumber: string) => {
