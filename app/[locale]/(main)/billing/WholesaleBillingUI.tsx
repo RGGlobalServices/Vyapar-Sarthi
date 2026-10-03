@@ -615,6 +615,7 @@ export default function WholesaleBillingUI() {
   const [millCharges, setMillCharges] = useState<MillChargeInputs>(EMPTY_MILL_CHARGES);
   const [saleBroker, setSaleBroker] = useState(EMPTY_BROKER);
   const [dispatch, setDispatch] = useState<DispatchInput>(EMPTY_DISPATCH_INPUT);
+  const [rateBasis, setRateBasis] = useState<'excl' | 'incl'>('excl'); // Bada Udyog GST bills: type the rate with or without GST
   const [addPartyFor, setAddPartyFor] = useState<string | null>(null); // Bada Udyog: add a new party from the checkout
   const millChargesParsed = useMemo(() => {
     try { return { value: normalizeMillCharges(millCharges), error: null as string | null }; }
@@ -1860,7 +1861,17 @@ export default function WholesaleBillingUI() {
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
                     {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-16">{t('ml') || 'ML'}</th>}
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-28">{t('qty') || 'Qty'}</th>
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? tMill('rateExclGst') : (t('price') || 'Price')}</th>
+                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <span>{isGstBill && rateBasis === 'incl' ? 'Rate (Incl. GST)' : tMill('rateExclGst')}</span>
+                        {isGstBill && (
+                          <div className="inline-flex rounded overflow-hidden border border-slate-500 normal-case text-[10px] font-bold" data-testid="rate-basis-toggle">
+                            <button type="button" onClick={() => setRateBasis('excl')} className={rateBasis === 'excl' ? 'px-2 py-0.5 bg-white text-slate-900' : 'px-2 py-0.5 text-slate-300'}>Excl.</button>
+                            <button type="button" onClick={() => setRateBasis('incl')} className={rateBasis === 'incl' ? 'px-2 py-0.5 bg-white text-slate-900' : 'px-2 py-0.5 text-slate-300'}>Incl.</button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (t('price') || 'Price')}</th>
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-24">{t('totalUpper') || 'Total'}</th>
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-12">{t('act') || 'Act'}</th>
                   </tr>
@@ -2042,11 +2053,11 @@ export default function WholesaleBillingUI() {
                       </td>
                       <td className="px-4 py-3 text-right align-top">
                         {isMill
-                          ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
+                          ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} basis={rateBasis} />
                           : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono align-top">
-                        ₹{item.total.toLocaleString()}
+                        ₹{(isMill && isGstBill && rateBasis === 'incl' ? Math.round(item.total * (1 + (Number(item.gstPercent) || 0) / 100) * 100) / 100 : item.total).toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-center align-top">
                         <button onClick={() => removeItem(item.id as any, lineRef(item))} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
@@ -2192,7 +2203,7 @@ export default function WholesaleBillingUI() {
                           <div className="flex flex-col min-w-0">
                             <span className="text-[10px] text-slate-400 mb-0.5">{isMill ? tMill('rateExclGst') : (t('price') || 'Rate')}</span>
                             {isMill
-                              ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
+                              ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} basis={rateBasis} />
                               : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
                           </div>
 
