@@ -260,6 +260,18 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
     );
   }
 
+  // A reprocessing batch took its material out of a rejection lot when it was started: cancelling it puts that material back
+  // (and the lot's status goes back to Available / Partially reprocessed), so nothing is lost.
+  if (batch.batchType === 'REPROCESSING' && batch.rejectionLotId && Number(batch.inputKg) > 0) {
+    ops.push(prisma.$executeRaw`
+      UPDATE rejection_lots
+         SET available_quantity = LEAST(quantity, available_quantity + ${Number(batch.inputKg)}),
+             status = CASE WHEN status IN ('DISPOSED', 'BLOCKED') THEN status
+                           WHEN available_quantity + ${Number(batch.inputKg)} >= quantity - 0.0001 THEN 'AVAILABLE'
+                           ELSE 'PARTIALLY_REPROCESSED' END
+       WHERE id = ${batch.rejectionLotId}::uuid AND shop_id = ${shop.id}::uuid`);
+  }
+
   ops.push(
     prisma.stockMovement.deleteMany({ where: { shopId: shop.id, referenceId: id } }),
     (prisma as any).batchStage.deleteMany({ where: { batchId: id } }),

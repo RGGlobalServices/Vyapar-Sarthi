@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import QuickProductionForm from '@/components/mill/QuickProductionForm';
 import useSWR from 'swr';
 import {
   AlertTriangle, Search, RefreshCw, Loader2, ArrowLeft, ArrowRight,
@@ -459,6 +460,8 @@ export default function RejectionsPage() {
 
   // Modals state
   const [reprocessLot, setReprocessLot] = useState<RejectionLot | null>(null);
+  const [quickLot, setQuickLot] = useState<RejectionLot | null>(null);
+  const [cancellingBatch, setCancellingBatch] = useState<string | null>(null);
   const [disposeLot, setDisposeLot] = useState<RejectionLot | null>(null);
   const [returnLot, setReturnLot] = useState<RejectionLot | null>(null);
   const [traceLotId, setTraceLotId] = useState<string | null>(null);
@@ -506,8 +509,8 @@ export default function RejectionsPage() {
   const { data: suppliersData } = useSWR(activeShopId ? `/suppliers` : null, fetcher);
   const { data: customersData } = useSWR(activeShopId ? `/crm/customers` : null, fetcher);
 
-  const { data: traceData, isLoading: isTraceLoading } = useSWR(
-    activeShopId && traceLotId ? `/mill/rejections/${traceLotId}` : null,
+  const { data: traceData, isLoading: isTraceLoading, mutate: mutateTrace } = useSWR(
+    activeShopId && traceLotId ? `/mill/rejections/${traceLotId}?traceability=true` : null,
     fetcher
   );
 
@@ -871,6 +874,11 @@ export default function RejectionsPage() {
   };
 
   const handleOpenReprocess = (lot: RejectionLot) => {
+    // Reprocessing is booked in ONE step (what went in, what came out) — the same form as Milling -> Reprocess. The old flow only opened a
+    // batch to be worked stage by stage, which left the material "in progress" with nowhere to finish it.
+    setQuickLot(lot);
+    return;
+    // eslint-disable-next-line no-unreachable
     setReprocessLot(lot);
     setReprocessQty(String(lot.availableQuantity));
     setWorkflowVersionId('');
@@ -1782,6 +1790,10 @@ export default function RejectionsPage() {
       )}
 
       {/* Traceability Modal */}
+      {quickLot && (
+        <QuickProductionForm initialSource={{ type: 'rejection', id: quickLot.id }} onClose={() => setQuickLot(null)} onSaved={() => { mutate(); }} />
+      )}
+
       {traceLotId && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative max-h-[85vh] overflow-y-auto">
@@ -1825,6 +1837,21 @@ export default function RejectionsPage() {
                             <span>{t.inputKg} {b.inputKg} kg</span>
                           </div>
                           <p className="text-slate-500 mt-1">Status: <span className="uppercase text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">{b.status}</span></p>
+                          {(b.status === 'in_progress' || b.status === 'open') && (
+                            <div className="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
+                              <p className="text-[11px] text-amber-800 dark:text-amber-300">This reprocessing was started but never finished, so these {b.inputKg} kg are stuck here. Put them back into this lot, then use Reprocess again to record the result.</p>
+                              <button type="button" disabled={cancellingBatch === b.id}
+                                onClick={async () => {
+                                  setCancellingBatch(b.id);
+                                  try { await api.delete(`/mill/batches/${b.id}`); await mutate(); await mutateTrace(); }
+                                  catch (e: any) { alert(e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Could not cancel'); }
+                                  finally { setCancellingBatch(null); }
+                                }}
+                                className="mt-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50">
+                                {cancellingBatch === b.id ? 'Putting back…' : 'Cancel & put material back'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
