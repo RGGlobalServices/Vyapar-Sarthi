@@ -44,6 +44,7 @@ import MillRateInput from '@/components/billing/MillRateInput';
 import MillCommercialCharges, { EMPTY_MILL_CHARGES, type MillChargeInputs } from '@/components/billing/MillCommercialCharges';
 import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
 import QuickAddPartyModal from '@/components/mill/QuickAddPartyModal';
+import BillPartyDetailsField, { EMPTY_BILL_PARTY, billPartyFrom, type BillPartyInput } from '@/components/mill/BillPartyDetailsField';
 import DispatchDetailsField, { EMPTY_DISPATCH_INPUT, type DispatchInput } from '@/components/mill/DispatchDetailsField';
 import MillTotalsSummary from '@/components/billing/MillTotalsSummary';
 import MillBillSavedModal from '@/components/billing/MillBillSavedModal';
@@ -460,7 +461,7 @@ export default function WholesaleBillingUI() {
   // against the correct party, instead of a loose text label.
   type Party = {
     id: string; name: string; shopName?: string; mobile?: string; email?: string;
-    gst?: string; totalDue?: number; creditDays?: number; creditLimit?: number; address?: string;
+    gst?: string; totalDue?: number; creditDays?: number; creditLimit?: number; address?: string; documents?: any;
   };
   const [parties, setParties] = useState<Party[]>([]);
   const [partySearch, setPartySearch] = useState('');
@@ -501,6 +502,9 @@ export default function WholesaleBillingUI() {
       console.error('Failed to load parties', err);
     }
   }, [profile?.id]);
+
+  // Bada Udyog: the customer details printed on the bill start from the selected party's saved details (and stay editable for this bill)
+  useEffect(() => { setBillParty(billPartyFrom(selectedParty)); }, [selectedParty?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-fills contact fields (used for WhatsApp/email delivery, still
   // editable) and defaults Credit Days from the party's own payment terms.
@@ -615,6 +619,7 @@ export default function WholesaleBillingUI() {
   const [millCharges, setMillCharges] = useState<MillChargeInputs>(EMPTY_MILL_CHARGES);
   const [saleBroker, setSaleBroker] = useState(EMPTY_BROKER);
   const [dispatch, setDispatch] = useState<DispatchInput>(EMPTY_DISPATCH_INPUT);
+  const [billParty, setBillParty] = useState<BillPartyInput>(EMPTY_BILL_PARTY); // customer details as printed on this bill (editable)
   const [rateBasis, setRateBasis] = useState<'excl' | 'incl'>('excl'); // Bada Udyog GST bills: type the rate with or without GST
   const [addPartyFor, setAddPartyFor] = useState<string | null>(null); // Bada Udyog: add a new party from the checkout
   const millChargesParsed = useMemo(() => {
@@ -1387,7 +1392,7 @@ export default function WholesaleBillingUI() {
         items: saleItems,
         discount: millDiscountNumber,
         charges: millChargesParsed.value,
-        dispatch: { ...dispatch, broker: saleBroker.name.trim() },
+        dispatch: { ...dispatch, broker: saleBroker.name.trim(), ...(isWholesale && selectedParty ? { billName: billParty.name, billAddress: billParty.address, billGst: billParty.gst, billState: billParty.state, shipAddress: billParty.shipping } : {}) },
         bill_type: billType,
         gst_inter_state: gstInterState,
         total_amount: grandTotal, // informational only — the server ignores it and flags any mismatch
@@ -2332,6 +2337,7 @@ export default function WholesaleBillingUI() {
               />
               <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
               <DispatchDetailsField value={dispatch} onChange={setDispatch} disabled={isGenerating} />
+              {isWholesale && selectedParty && <BillPartyDetailsField value={billParty} onChange={setBillParty} disabled={isGenerating} />}
               <MillTotalsSummary
                 calc={millCalc}
                 itemsCount={items.length}

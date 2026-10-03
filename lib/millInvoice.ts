@@ -37,7 +37,7 @@ export interface MillInvoiceData {
   shop: MillInvoiceShop;
   customer: { name: string; mobile: string; address: string; gst: string; pan: string; state: string; shippingAddress: string };
   /** Transport / vehicle / station / E-Way bill / GR-RR, printed in the dispatch block (empty when not entered). */
-  dispatch: { transport: string; vehicleNo: string; station: string; eWayBill: string; grRrNo: string; reverseCharge: string; salesman: string; broker: string };
+  dispatch: { transport: string; vehicleNo: string; station: string; eWayBill: string; grRrNo: string; reverseCharge: string; salesman: string; broker: string; billName: string; billAddress: string; billGst: string; billState: string; shipAddress: string };
   brokerName: string;
   /** Sum of the quantities, with their unit when every line has the same one ("86.920 QNT"). */
   qtyTotal: { qty: number; unit: string };
@@ -137,15 +137,17 @@ export function buildMillInvoiceData(sale: any, shop: MillInvoiceShop, dateText:
     : [];
 
   const paidPaise = paise(sale.amount_paid);
+  const dsp = { transport: '', vehicleNo: '', station: '', eWayBill: '', grRrNo: '', reverseCharge: 'N', salesman: '', broker: '', billName: '', billAddress: '', billGst: '', billState: '', shipAddress: '', ...(sale.dispatch && typeof sale.dispatch === 'object' ? sale.dispatch : {}) };
   return {
     invoiceNumber: sale.invoice_number || `INV-${String(sale.id || '').substring(0, 8).toUpperCase()}`,
     dateText,
     shop,
     customer: {
-      name: sale.customer_name || '', mobile: sale.customer_mobile || '', address: sale.customer_address || '', gst: sale.customer_gst || '',
-      pan: sale.customer_pan || '', state: sale.customer_state || '', shippingAddress: sale.customer_shipping_address || '',
+      // the details printed on THIS bill (edited at billing) win over the party record
+      name: dsp.billName || sale.customer_name || '', mobile: sale.customer_mobile || '', address: dsp.billAddress || sale.customer_address || '', gst: dsp.billGst || sale.customer_gst || '',
+      pan: sale.customer_pan || '', state: dsp.billState || sale.customer_state || '', shippingAddress: dsp.shipAddress || sale.customer_shipping_address || '',
     },
-    dispatch: { transport: '', vehicleNo: '', station: '', eWayBill: '', grRrNo: '', reverseCharge: 'N', salesman: '', broker: '', ...(sale.dispatch && typeof sale.dispatch === 'object' ? sale.dispatch : {}) },
+    dispatch: dsp,
     brokerName: sale.broker_name || (sale.dispatch && sale.dispatch.broker) || '',
     qtyTotal: (() => { const units = [...new Set(lines.map((l) => l.unit))]; return { qty: Math.round(lines.reduce((a, l) => a + l.qty, 0) * 1000) / 1000, unit: units.length === 1 ? units[0] : '' }; })(),
     lines, goodsPaise, discountPaise, taxablePaise,

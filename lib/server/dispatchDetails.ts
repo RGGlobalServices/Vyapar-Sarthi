@@ -6,8 +6,10 @@ import prisma from '@/lib/server/prisma';
  */
 export type Dispatch = {
   transport: string; vehicleNo: string; station: string; eWayBill: string; grRrNo: string; reverseCharge: 'Y' | 'N'; salesman: string; broker: string;
+  /** Customer details as printed on THIS bill (editable at billing; the party record itself is not changed). */
+  billName: string; billAddress: string; billGst: string; billState: string; shipAddress: string;
 };
-export const EMPTY_DISPATCH: Dispatch = { transport: '', vehicleNo: '', station: '', eWayBill: '', grRrNo: '', reverseCharge: 'N', salesman: '', broker: '' };
+export const EMPTY_DISPATCH: Dispatch = { transport: '', vehicleNo: '', station: '', eWayBill: '', grRrNo: '', reverseCharge: 'N', salesman: '', broker: '', billName: '', billAddress: '', billGst: '', billState: '', shipAddress: '' };
 
 let ready = false;
 let checkedAt = 0;
@@ -30,8 +32,9 @@ export function parseDispatch(raw: any): Dispatch | null {
   const d: Dispatch = {
     transport: clean(raw.transport, 80), vehicleNo: clean(raw.vehicleNo, 30).toUpperCase(), station: clean(raw.station, 60),
     eWayBill: clean(raw.eWayBill, 30), grRrNo: clean(raw.grRrNo, 30), reverseCharge: raw.reverseCharge === 'Y' ? 'Y' : 'N', salesman: clean(raw.salesman, 60), broker: clean(raw.broker, 80),
+    billName: clean(raw.billName, 120), billAddress: clean(raw.billAddress, 250), billGst: clean(raw.billGst, 15).toUpperCase(), billState: clean(raw.billState, 60), shipAddress: clean(raw.shipAddress, 250),
   };
-  const any = d.transport || d.vehicleNo || d.station || d.eWayBill || d.grRrNo || d.salesman || d.broker || d.reverseCharge === 'Y';
+  const any = d.transport || d.vehicleNo || d.station || d.eWayBill || d.grRrNo || d.salesman || d.broker || d.billName || d.billAddress || d.billGst || d.billState || d.shipAddress || d.reverseCharge === 'Y';
   return any ? d : null;
 }
 
