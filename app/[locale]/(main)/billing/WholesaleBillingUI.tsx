@@ -43,6 +43,7 @@ import { takeMillDuplicate } from '@/lib/millDuplicateHandoff';
 import MillRateInput from '@/components/billing/MillRateInput';
 import MillCommercialCharges, { EMPTY_MILL_CHARGES, type MillChargeInputs } from '@/components/billing/MillCommercialCharges';
 import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
+import QuickAddPartyModal from '@/components/mill/QuickAddPartyModal';
 import DispatchDetailsField, { EMPTY_DISPATCH_INPUT, type DispatchInput } from '@/components/mill/DispatchDetailsField';
 import MillTotalsSummary from '@/components/billing/MillTotalsSummary';
 import MillBillSavedModal from '@/components/billing/MillBillSavedModal';
@@ -614,6 +615,7 @@ export default function WholesaleBillingUI() {
   const [millCharges, setMillCharges] = useState<MillChargeInputs>(EMPTY_MILL_CHARGES);
   const [saleBroker, setSaleBroker] = useState(EMPTY_BROKER);
   const [dispatch, setDispatch] = useState<DispatchInput>(EMPTY_DISPATCH_INPUT);
+  const [addPartyFor, setAddPartyFor] = useState<string | null>(null); // Bada Udyog: add a new party from the checkout
   const millChargesParsed = useMemo(() => {
     try { return { value: normalizeMillCharges(millCharges), error: null as string | null }; }
     catch (e: any) { return { value: ZERO_MILL_CHARGES, error: String(e?.message || 'Invalid charges') }; }
@@ -2659,10 +2661,15 @@ export default function WholesaleBillingUI() {
                 </div>
               ) : (
               <div className="relative">
-                <label className="text-xs font-bold text-slate-500 mb-1 block">
-                  {t('party') || 'Party'}
-                  <span className="text-red-500 ml-1">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-500 block">
+                    {t('party') || 'Party'}
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  {isMill && !selectedParty && (
+                    <button type="button" data-testid="add-party-btn" onClick={() => setAddPartyFor(partySearch.trim())} className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">+ Add new party</button>
+                  )}
+                </div>
                 {selectedParty ? (
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg">
                     <div className="flex items-start justify-between gap-2">
@@ -2743,6 +2750,7 @@ export default function WholesaleBillingUI() {
                         {parties.filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase())).length === 0 && (
                           <div className="px-3 py-3 text-xs text-slate-500 text-center">
                             {t('noPartiesFound') || 'No matching party. Add one from the Parties page.'}
+                            {isMill && <button type="button" onMouseDown={(e) => { e.preventDefault(); setAddPartyFor(partySearch.trim()); }} className="block mx-auto mt-1.5 font-bold text-emerald-600">+ Add "{partySearch.trim() || 'new party'}" as a new party</button>}
                           </div>
                         )}
                       </div>
@@ -2764,6 +2772,20 @@ export default function WholesaleBillingUI() {
                     value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder={t('emailPlaceholder') || "For auto email bill receipt"} />
                 </div>
               </div>
+
+              {isMill && addPartyFor !== null && (
+                <QuickAddPartyModal
+                  initialName={addPartyFor}
+                  onClose={() => setAddPartyFor(null)}
+                  onCreated={(created: any) => {
+                    const np = { ...created, totalDue: Number(created.totalDue) || 0, creditLimit: Number(created.creditLimit) || 0, creditDays: Number(created.creditDays) || 0 };
+                    setParties((ps) => [np, ...ps]);
+                    selectParty(np);
+                    setAddPartyFor(null);
+                    fetchParties();
+                  }}
+                />
+              )}
 
               {/* Payment Method */}
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
