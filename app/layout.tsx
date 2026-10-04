@@ -1,5 +1,6 @@
 import { Inter, Noto_Sans_Devanagari } from 'next/font/google';
 import './globals.css';
+import RegisterSW from '@/components/RegisterSW';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 // Sturdy Devanagari for Marathi/Hindi bills: the system fallback font is too thin to read on a thermal printer.
@@ -67,6 +68,7 @@ export default function RootLayout({
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
         <head />
       <body className={`${inter.className} ${deva.variable} bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-50 min-h-screen`} suppressHydrationWarning>
+        <RegisterSW />
         {children}
       </body>
     </html>
