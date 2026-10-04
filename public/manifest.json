@@ -15,7 +15,7 @@
     {
       "src": "/icon.png",
       "type": "image/png",
-      "sizes": "192x192",
+      "sizes": "512x512",
       "purpose": "any"
     },
     {
@@ -30,19 +30,19 @@
       "name": "New Bill",
       "short_name": "Billing",
       "url": "/en/billing",
-      "icons": [{ "src": "/icon.png", "sizes": "any" }]
+      "icons": [{ "src": "/icon.png", "sizes": "512x512", "type": "image/png" }]
     },
     {
       "name": "Products",
       "short_name": "Products",
       "url": "/en/products",
-      "icons": [{ "src": "/icon.png", "sizes": "any" }]
+      "icons": [{ "src": "/icon.png", "sizes": "512x512", "type": "image/png" }]
     },
     {
       "name": "Reports",
       "short_name": "Reports",
       "url": "/en/reports",
-      "icons": [{ "src": "/icon.png", "sizes": "any" }]
+      "icons": [{ "src": "/icon.png", "sizes": "512x512", "type": "image/png" }]
     }
   ],
   "related_applications": [],
