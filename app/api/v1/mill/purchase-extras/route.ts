@@ -125,6 +125,14 @@ export const POST = handle(async (req) => {
       }
     }
 
+    // Check once whether purchase_item_id column exists (migration 22 may not have run yet)
+    const hasPurchaseItemCol = await (async () => {
+      try {
+        const r = await tx.$queryRaw<Array<{ n: number }>>`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'raw_material_lots' AND column_name = 'purchase_item_id'`;
+        return (r[0]?.n ?? 0) > 0;
+      } catch { return false; }
+    })();
+
     // ---------------- Raw material lots ----------------
     const lots: any[] = [];
     if (want.lots) {
@@ -133,7 +141,10 @@ export const POST = handle(async (req) => {
         n += 1;
         const p = item.product;
         if (!p) { skipped.push(`Lot: a line has no product.`); continue; }
-        const exists = await tx.rawMaterialLot.findFirst({ where: { shopId: shop.id, purchaseItemId: item.id }, select: { id: true } });
+        // Use purchaseItemId dedup only when the column exists; fall back to marker in notes
+        const exists = hasPurchaseItemCol
+          ? await tx.rawMaterialLot.findFirst({ where: { shopId: shop.id, purchaseItemId: item.id }, select: { id: true } })
+          : await tx.rawMaterialLot.findFirst({ where: { shopId: shop.id, notes: { contains: `[PUR ${invoice.id}]` }, productId: p.id }, select: { id: true } });
         if (exists) continue;
         if (p.isRawMaterial !== true) {
           // a product used only as raw material in this mill (no other mill role yet) is marked as raw material; anything else is left alone
@@ -155,7 +166,8 @@ export const POST = handle(async (req) => {
             shopId: shop.id, productId: p.id, supplierId, lotNumber, farmerName: null,
             purchaseDate: invoice.date || new Date(), quantity: qty, unit: p.baseUnit || 'kg',
             ratePerUnit: Number(item.cost) || null, totalAmount: Number(item.cost) > 0 ? Math.round(Number(item.cost) * qty * 100) / 100 : null,
-            remainingQuantity: qty, purchaseItemId: item.id,
+            remainingQuantity: qty,
+            ...(hasPurchaseItemCol ? { purchaseItemId: item.id } : {}),
             notes: `Imported from Purchase Invoice ${invoiceNumber}${mb.totalBags && invoice.purchaseItems.length === 1 ? ` · ${mb.totalBags} bags` : ''}${mb.vehicleNumber ? ` · ${mb.vehicleNumber}` : ''} ${marker}`.slice(0, 250),
           },
         });
