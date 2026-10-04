@@ -50,6 +50,9 @@ export interface BaseInvoiceProps {
   ownerSignature?: string;
   gst?: string;
   pan?: string;
+  fssai?: string;
+  customerGstNo?: string;
+  customerFssai?: string;
   isEmi?: boolean;
   emiMonths?: number;
   emiDownPayment?: number;
@@ -114,6 +117,8 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   ownerSignature,
   gst,
   pan,
+  fssai,
+  customerFssai,
   isEmi,
   emiMonths,
   emiDownPayment,
@@ -202,6 +207,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
             {storeMobile && <span>{t('mob')} {storeMobile}</span>}
             {gst && <span>· {t('gstin')} {gst}</span>}
             {pan && <span>· {t('pan')} {pan}</span>}
+            {fssai && <span>· FSSAI: {fssai}</span>}
           </div>
         </div>
 
@@ -233,6 +239,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
               )}
               {customerAddress && <div className="mt-0.5">Address: {customerAddress}</div>}
               {customerGst && <div className="mt-0.5">GSTIN: {customerGst}</div>}
+              {customerFssai && <div className="mt-0.5">FSSAI: {customerFssai}</div>}
             </div>
           )}
         </div>

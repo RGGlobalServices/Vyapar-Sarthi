@@ -90,6 +90,7 @@ export const POST = handle(async (req) => {
       shopName: data.shopName?.trim() || (metadata.partyType ? `${data.name.trim()} (${metadata.partyType})` : null),
       gst: data.gst?.trim() || null,
       pan: data.pan?.trim() || null,
+      fssai: data.fssai?.trim() || null,
       address: fullAddress,
       creditDays: parseInt(data.creditDays) || (data.paymentTerms?.includes('15') ? 15 : data.paymentTerms?.includes('30') ? 30 : 0),
       creditLimit: parseFloat(data.creditLimit) || 0,

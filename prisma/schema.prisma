@@ -109,6 +109,7 @@ model Shop {
   firstChargeDate         DateTime? @map("first_charge_date") @db.Timestamptz(6)
   gst                     String?   @db.VarChar
   pan                     String?   @db.VarChar
+  fssai                   String?   @db.VarChar
   invoiceFormat           String?   @default("thermal80") @map("invoice_format") @db.VarChar
   // Visual design of the printed/PDF bill — 'standard' (current plain black
   // layout), 'modern' (colored header band), 'stylish' (bold accent-colored
@@ -622,6 +623,7 @@ model Customer {
   shopName     String?   @map("shop_name") @db.VarChar
   gst          String?   @db.VarChar
   pan          String?   @db.VarChar
+  fssai        String?   @db.VarChar
   address      String?   @db.VarChar
   creditDays   Int?      @default(0) @map("credit_days")
   creditLimit  Float?    @default(0) @map("credit_limit")

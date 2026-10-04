@@ -55,6 +55,19 @@ export default function ByProductsPage() {
     const totalValue = rows.reduce((s, r) => s + (r.soldKg || 0) * (r.ratePerKg || 0), 0);
     return { totalQty, totalSold, available: Math.max(0, totalQty - totalSold), totalValue };
   }, [rows]);
+
+  const byType = useMemo(() => {
+    const map = new Map<string, { qty: number; sold: number; value: number }>();
+    for (const r of rows) {
+      const key = r.name;
+      const cur = map.get(key) ?? { qty: 0, sold: 0, value: 0 };
+      cur.qty += r.quantityKg || 0;
+      cur.sold += r.soldKg || 0;
+      cur.value += (r.soldKg || 0) * (r.ratePerKg || 0);
+      map.set(key, cur);
+    }
+    return Array.from(map.entries()).map(([name, s]) => ({ name, ...s, available: Math.max(0, s.qty - s.sold) }));
+  }, [rows]);
   // Names the mill already uses — suggestions only; every name is the user's own.
   const knownNames = useMemo(() => Array.from(new Set(rows.map(r => r.name))), [rows]);
 
@@ -90,6 +103,29 @@ export default function ByProductsPage() {
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{rupee(totals.totalValue)}</p>
         </div>
       </div>
+
+      {byType.length > 1 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">By Type</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {byType.map(t => (
+              <div key={t.name} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+                <p className="text-sm font-black text-slate-900 dark:text-white capitalize mb-3">{t.name}</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <span className="text-slate-500">Total Produced</span>
+                  <span className="font-bold text-right text-slate-800 dark:text-slate-200">{t.qty.toLocaleString('en-IN')} Kg</span>
+                  <span className="text-slate-500">Available</span>
+                  <span className="font-bold text-right text-amber-600 dark:text-amber-400">{t.available.toLocaleString('en-IN')} Kg</span>
+                  <span className="text-slate-500">Sold / Used</span>
+                  <span className="font-bold text-right text-blue-600 dark:text-blue-400">{t.sold.toLocaleString('en-IN')} Kg</span>
+                  <span className="text-slate-500">Sale Value</span>
+                  <span className="font-bold text-right text-slate-800 dark:text-slate-200">{rupee(t.value)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>

@@ -51,6 +51,8 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   bankIfsc,
   invoiceTheme = 'standard',
   invoiceColor,
+  fssai,
+  customerFssai,
 }, ref) => {
   const t = useBillT('BillSlip');
   const billLang = useBillLocale();
@@ -134,6 +136,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                   {storeMobile && <span>{t('mob')} {storeMobile}</span>}
                   {gst && <span className={`ml-3 font-bold ${isModern ? '' : 'text-slate-800'}`}>{t('gstin')}: {gst}</span>}
                   {pan && <span className={`ml-3 font-bold ${isModern ? '' : 'text-slate-800'}`}>{t('pan')}: {pan}</span>}
+                  {fssai && <span className={`ml-3 font-bold ${isModern ? '' : 'text-slate-800'}`}>FSSAI: {fssai}</span>}
                 </p>
               </div>
             </div>
@@ -162,6 +165,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
             {customerMobile && <p className="text-slate-600 mt-0.5 text-xs">{customerMobile}</p>}
             {customerAddress && <p className="text-slate-600 mt-0.5 text-xs">{customerAddress}</p>}
             {customerGst && <p className="text-slate-800 mt-1 text-xs font-bold">GSTIN: {customerGst}</p>}
+            {customerFssai && <p className="text-slate-800 mt-0.5 text-xs font-bold">FSSAI: {customerFssai}</p>}
           </div>
           <div className="p-3">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">Payment Details</h3>

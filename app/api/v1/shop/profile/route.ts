@@ -61,7 +61,7 @@ export const PATCH = handle(async (req) => {
 
   const allowedFields = [
     'name', 'address', 'mobile', 'businessType', 'businessSubtype', 'businessProducts',
-    'logoUrl', 'signatureUrl', 'setupComplete', 'gst', 'pan', 'gstInclusiveProfit',
+    'logoUrl', 'signatureUrl', 'setupComplete', 'gst', 'pan', 'fssai', 'gstInclusiveProfit',
     'invoiceFormat', 'invoiceTheme', 'invoiceColor', 'invoiceFooter', 'showQrCode',
     'upiId', 'bankName', 'bankAccountName', 'bankAccountNumber', 'bankIfsc',
     // Which IndustryCategory (Kirana/Garment/Pharmacy/…) this shop picked via

@@ -346,6 +346,7 @@ function StandardBillingUI() {
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [showManualBillUpload, setShowManualBillUpload] = useState(false);
+  const [manualBillNo, setManualBillNo] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -987,8 +988,8 @@ function StandardBillingUI() {
         batch_id: item.batchId || undefined,
       }));
 
-      // Generate bill number locally — no waiting for server
-      const billNumber = `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
+      // Generate bill number locally — no waiting for server; manual entry overrides
+      const billNumber = manualBillNo.trim() || `INV-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
 
       const salePayload = {
         customer_id: udharInfo?.type === 'existing' && typeof udharInfo.customer?.id === 'string' && !udharInfo.customer.id.startsWith('temp-')
@@ -2575,6 +2576,18 @@ function StandardBillingUI() {
                 </div>
               )}
 
+              {/* Manual bill number (optional override) */}
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Bill No. (optional)</label>
+                <input
+                  type="text"
+                  placeholder="Auto-generated if empty"
+                  value={manualBillNo}
+                  onChange={e => setManualBillNo(e.target.value)}
+                  className="w-full h-9 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
               {/* Summary */}
               <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
@@ -2783,6 +2796,8 @@ function StandardBillingUI() {
                 logoUrl={profile.logoUrl}
                 gst={profile.gst || undefined}
                 pan={profile.pan || undefined}
+                fssai={(profile as any).fssai || undefined}
+                customerFssai={(lastBill as any).customerFssai || undefined}
                 bankName={profile.bankName || undefined}
                 bankAccountName={profile.bankAccountName || undefined}
                 bankAccountNumber={profile.bankAccountNumber || undefined}
