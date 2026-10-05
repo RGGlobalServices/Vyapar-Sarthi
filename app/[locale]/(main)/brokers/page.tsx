@@ -19,8 +19,18 @@ type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment';
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
+const fmtDate = (v: string) => {
+  const ist = new Date(new Date(v).getTime() + 5.5 * 60 * 60 * 1000);
+  const dd = String(ist.getUTCDate()).padStart(2, '0');
+  const mm = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = ist.getUTCFullYear();
+  const hh = String(ist.getUTCHours()).padStart(2, '0');
+  const min = String(ist.getUTCMinutes()).padStart(2, '0');
+  return `${dd}-${mm}-${yyyy}  ${hh}:${min}`;
+};
+
 const STATEMENT_COLUMNS = [
-  { key: 'date', label: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+  { key: 'date', label: 'Date & Time', format: fmtDate },
   { key: 'type', label: 'Type', format: (v: string) => v === 'charge' ? 'Commission Earned' : 'Payment Made' },
   { key: 'direction', label: 'For', format: (v: any) => v === 'purchase' ? 'Purchase' : v === 'sale' ? 'Sale' : '—' },
   { key: 'billNumber', label: 'Bill #', format: (v: any) => v || '—' },
@@ -129,7 +139,7 @@ export default function BrokersPage() {
             filename="commission-statement"
             orientation="landscape"
             columns={[
-              { key: 'date', label: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+              { key: 'date', label: 'Date & Time', format: fmtDate },
               { key: 'brokerName', label: 'Broker' },
               { key: 'type', label: 'Type', format: (v: string) => v === 'charge' ? 'Charge' : 'Payment' },
               { key: 'billNumber', label: 'Bill #', format: (v: any) => v || '—' },
