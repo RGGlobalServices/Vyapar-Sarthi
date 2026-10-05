@@ -268,9 +268,16 @@ export default function BrokersPage() {
 
       <div>
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <p className="text-xs font-bold uppercase text-slate-500 flex-1">
+          <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5">
             {selectedBroker ? t('logFor', { name: selectedBroker.name }) : t('allActivity')}
+            {selectedBroker && (
+              <button onClick={() => setSelectedBrokerId(null)}
+                className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-500/20 dark:hover:text-rose-400 transition-colors">
+                <X size={9} /> {t('allActivity')}
+              </button>
+            )}
           </p>
+          <div className="flex-1" />
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
             className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-rose-500" />
           <span className="text-xs text-slate-400">–</span>
