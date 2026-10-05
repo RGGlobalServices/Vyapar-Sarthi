@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp } from 'lucide-react';
+import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp, Pencil, Trash2, CheckSquare, Square, AlertCircle, Phone, User } from 'lucide-react';
 import { useExport } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { toast } from 'react-hot-toast';
 import DeleteButton from '@/components/mill/DeleteButton';
 import EditEntryModal, { EditButton } from '@/components/mill/EditEntryModal';
 import { ExportButton } from '@/lib/hooks/useExport';
@@ -40,6 +41,11 @@ export default function BrokersPage() {
   const [dateTo, setDateTo] = useState('');
   const [dirFilter, setDirFilter] = useState<'all' | 'purchase' | 'sale'>('all');
   const [editing, setEditing] = useState<CommissionRow | null>(null);
+  const [viewingBroker, setViewingBroker] = useState<Broker | null>(null);
+  const [editingBroker, setEditingBroker] = useState<Broker | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deletingBulk, setDeletingBulk] = useState(false);
 
   const { data, mutate: refetch, isLoading } = useSWR<{ brokers: Broker[]; entries: CommissionRow[] }>(
     activeShopId ? ['/management/commission', activeShopId] : null,
@@ -70,6 +76,31 @@ export default function BrokersPage() {
         { label: 'Pending Balance', value: `₹${Math.max(0, b.balance).toLocaleString('en-IN')}` },
       ],
     });
+  };
+
+  const toggleSelect = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const handleBulkDelete = async () => {
+    const toDelete = brokers.filter(b => selectedIds.has(b.id));
+    const withBalance = toDelete.filter(b => b.balance > 0);
+    if (withBalance.length > 0) {
+      toast.error(t('bulkDeleteBlocked', { names: withBalance.map(b => b.name).join(', ') }));
+      return;
+    }
+    setDeletingBulk(true);
+    try {
+      await Promise.all(toDelete.map(b => api.delete(`/crm/customers/${b.id}`)));
+      toast.success(t('bulkDeletedSuccess', { count: toDelete.length }));
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      refetch();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || t('deleteFailed'));
+    } finally { setDeletingBulk(false); }
   };
 
   const filteredEntries = entries
@@ -136,6 +167,36 @@ export default function BrokersPage() {
         </div>
       </div>
 
+      {/* Multi-select toolbar */}
+      {brokers.length > 0 && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setSelectionMode(s => !s); setSelectedIds(new Set()); }}
+            className={cn('text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors', selectionMode ? 'bg-rose-600 text-white border-rose-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}
+          >
+            {selectionMode ? t('cancelSelect') : t('selectMode')}
+          </button>
+          {selectionMode && selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={deletingBulk}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-60"
+            >
+              {deletingBulk ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+              {t('deleteSelected', { count: selectedIds.size })}
+            </button>
+          )}
+          {selectionMode && brokers.length > 0 && (
+            <button
+              onClick={() => setSelectedIds(selectedIds.size === brokers.length ? new Set() : new Set(brokers.map(b => b.id)))}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+            >
+              {selectedIds.size === brokers.length ? t('deselectAll') : t('selectAll')}
+            </button>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
       ) : brokers.length === 0 ? (
@@ -148,48 +209,60 @@ export default function BrokersPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {brokers.map(b => (
-            <div key={b.id}
-              onClick={() => setSelectedBrokerId(id => id === b.id ? null : b.id)}
-              className={cn('p-4 rounded-xl border-2 bg-white dark:bg-slate-900 cursor-pointer transition-colors',
-                selectedBrokerId === b.id ? 'border-rose-400 dark:border-rose-500/60' : 'border-slate-200 dark:border-slate-800')}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 dark:text-white truncate">{b.name}</p>
-                  {b.mobile && <p className="text-xs text-slate-500">{b.mobile}</p>}
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    {['Supplier broker', 'Customer broker'].filter(k => entries.some(e => e.brokerId === b.id && (e.note || '').startsWith(`[${k}]`))).map(k => (
-                      <span key={k} className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">{k}</span>
-                    ))}
+          {brokers.map(b => {
+            const isSelected = selectedIds.has(b.id);
+            const isFiltered = selectedBrokerId === b.id;
+            return (
+              <div key={b.id}
+                onClick={() => {
+                  if (selectionMode) { toggleSelect(b.id); return; }
+                  setViewingBroker(b);
+                }}
+                className={cn('p-4 rounded-xl border-2 bg-white dark:bg-slate-900 cursor-pointer transition-colors',
+                  isSelected ? 'border-red-500 bg-red-50/30 dark:bg-red-500/5' :
+                  isFiltered ? 'border-rose-400 dark:border-rose-500/60' : 'border-slate-200 dark:border-slate-800 hover:border-rose-300')}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 min-w-0">
+                    {selectionMode && (
+                      <span className="mt-0.5 shrink-0 text-rose-600">
+                        {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-slate-400" />}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 dark:text-white truncate">{b.name}</p>
+                      {b.mobile && <p className="text-xs text-slate-500">{b.mobile}</p>}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className={cn('text-lg font-black block', b.balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                      {b.balance > 0 ? 'Pending ' : 'Settled '}{rupee(Math.abs(b.balance))}
+                    </span>
+                    <span className="text-[10px] text-slate-400 flex items-center justify-end gap-0.5 mt-0.5">
+                      <TrendingUp size={10} /> {entries.filter(e => e.brokerId === b.id && e.type === 'charge').length} orders
+                    </span>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className={cn('text-lg font-black block', b.balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-                    {b.balance > 0 ? 'Pending ' : 'Settled '}{rupee(Math.abs(b.balance))}
-                  </span>
-                  <span className="text-[10px] text-slate-400 flex items-center justify-end gap-0.5 mt-0.5">
-                    <TrendingUp size={10} /> {entries.filter(e => e.brokerId === b.id && e.type === 'charge').length} orders
-                  </span>
-                </div>
+                {!selectionMode && (
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={(e) => { e.stopPropagation(); setEntryModal({ brokerId: b.id, type: 'charge' }); }}
+                      className="flex-1 text-xs font-bold py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-100">
+                      {t('addCommission')}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setEntryModal({ brokerId: b.id, type: 'payment' }); }}
+                      className="flex-1 text-xs font-bold py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100">
+                      {t('recordPayment')}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); downloadBrokerStatement(b); }}
+                      title="Download PDF Statement"
+                      className="text-xs font-bold p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                      <FileText size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2 mt-3">
-                <button onClick={(e) => { e.stopPropagation(); setEntryModal({ brokerId: b.id, type: 'charge' }); }}
-                  className="flex-1 text-xs font-bold py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-100">
-                  {t('addCommission')}
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); setEntryModal({ brokerId: b.id, type: 'payment' }); }}
-                  className="flex-1 text-xs font-bold py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100">
-                  {t('recordPayment')}
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); downloadBrokerStatement(b); }}
-                  title="Download PDF Statement"
-                  className="text-xs font-bold p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
-                  <FileText size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -252,6 +325,27 @@ export default function BrokersPage() {
         )}
       </div>
 
+      {viewingBroker && (
+        <BrokerProfileModal
+          broker={viewingBroker}
+          entries={entries.filter(e => e.brokerId === viewingBroker.id)}
+          onClose={() => setViewingBroker(null)}
+          onEdit={() => { setEditingBroker(viewingBroker); setViewingBroker(null); }}
+          onDeleted={() => { setViewingBroker(null); refetch(); }}
+          onAddCommission={() => { setEntryModal({ brokerId: viewingBroker.id, type: 'charge' }); setViewingBroker(null); }}
+          onRecordPayment={() => { setEntryModal({ brokerId: viewingBroker.id, type: 'payment' }); setViewingBroker(null); }}
+          onFilterActivity={() => { setSelectedBrokerId(id => id === viewingBroker.id ? null : viewingBroker.id); setViewingBroker(null); }}
+        />
+      )}
+
+      {editingBroker && (
+        <BrokerEditModal
+          broker={editingBroker}
+          onClose={() => setEditingBroker(null)}
+          onSaved={() => { setEditingBroker(null); refetch(); }}
+        />
+      )}
+
       {editing && (
         <EditEntryModal url={`/management/commission/${editing.id}`} title={editing.type === 'charge' ? 'Edit commission' : 'Edit commission payment'} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refetch(); }}
           initial={{ amount: editing.amount, billNumber: editing.billNumber || '', note: editing.note || '', direction: editing.direction || '', paymentMethod: editing.paymentMethod || 'Cash' }}
@@ -280,6 +374,184 @@ export default function BrokersPage() {
           onSaved={() => { setShowAddBroker(false); refetch(); }}
         />
       )}
+    </div>
+  );
+}
+
+function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAddCommission, onRecordPayment, onFilterActivity }: {
+  broker: Broker;
+  entries: CommissionRow[];
+  onClose: () => void;
+  onEdit: () => void;
+  onDeleted: () => void;
+  onAddCommission: () => void;
+  onRecordPayment: () => void;
+  onFilterActivity: () => void;
+}) {
+  const t = useTranslations('Brokers');
+  const [deleting, setDeleting] = useState(false);
+  const totalCommission = entries.filter(e => e.type === 'charge').reduce((a, e) => a + e.amount, 0);
+  const totalPaid = entries.filter(e => e.type === 'payment').reduce((a, e) => a + e.amount, 0);
+  const orderCount = entries.filter(e => e.type === 'charge').length;
+  const hasDues = broker.balance > 0;
+
+  const handleDelete = async () => {
+    if (hasDues) return;
+    if (!confirm(t('deleteConfirm', { name: broker.name }))) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/crm/customers/${broker.id}`);
+      toast.success(t('deletedSuccess', { name: broker.name }));
+      onDeleted();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || t('deleteFailed'));
+    } finally { setDeleting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-base font-black flex items-center gap-2">
+            <Handshake size={16} className="text-rose-600" /> {t('profileTitle')}
+          </h2>
+          <div className="flex items-center gap-1">
+            <button onClick={onEdit} title={t('editBroker')} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+              <Pencil size={15} />
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting || hasDues}
+              title={hasDues ? t('deleteBlockedDue') : t('deleteBroker')}
+              className={cn('p-1.5 rounded-lg transition-colors', hasDues ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500')}
+            >
+              {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Identity */}
+          <div className="flex items-start gap-3">
+            <div className="w-11 h-11 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
+              <User size={20} className="text-rose-600 dark:text-rose-400" />
+            </div>
+            <div>
+              <p className="font-black text-lg text-slate-900 dark:text-white leading-tight">{broker.name}</p>
+              {broker.mobile
+                ? <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><Phone size={12} /> {broker.mobile}</p>
+                : <p className="text-xs text-slate-400 mt-0.5">{t('noMobile')}</p>}
+            </div>
+          </div>
+
+          {/* Balance badge */}
+          <div className={cn('rounded-xl p-3 flex justify-between items-center', hasDues ? 'bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20' : 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20')}>
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              {hasDues ? t('pendingDue') : t('settled')}
+            </span>
+            <span className={cn('text-xl font-black', hasDues ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+              {rupee(Math.abs(broker.balance))}
+            </span>
+          </div>
+
+          {hasDues && (
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 -mt-1">
+              <AlertCircle size={11} /> {t('deleteBlockedHint')}
+            </p>
+          )}
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[
+              { labelKey: 'orders' as const, value: orderCount },
+              { labelKey: 'totalCommission' as const, value: rupee(totalCommission) },
+              { labelKey: 'totalPaid' as const, value: rupee(totalPaid) },
+            ].map(({ labelKey, value }) => (
+              <div key={labelKey} className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2">
+                <p className="text-[10px] text-slate-400 uppercase font-bold">{t(labelKey)}</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            <button onClick={onAddCommission}
+              className="flex-1 text-xs font-bold py-2 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-100">
+              + {t('addCommission')}
+            </button>
+            <button onClick={onRecordPayment}
+              className="flex-1 text-xs font-bold py-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100">
+              {t('recordPayment')}
+            </button>
+          </div>
+          <button onClick={onFilterActivity}
+            className="w-full text-xs font-bold py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+            {t('viewActivity')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BrokerEditModal({ broker, onClose, onSaved }: { broker: Broker; onClose: () => void; onSaved: () => void }) {
+  const t = useTranslations('Brokers');
+  const [name, setName] = useState(broker.name);
+  const [mobile, setMobile] = useState(broker.mobile || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true); setError('');
+    try {
+      await api.put(`/crm/customers/${broker.id}`, {
+        name: name.trim(),
+        mobile: mobile.trim(),
+        customerType: 'broker',
+      });
+      toast.success(t('updatedSuccess'));
+      onSaved();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('saveFailed'));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h2 className="text-lg font-black flex items-center gap-2">
+            <Pencil size={16} className="text-rose-600" /> {t('editBroker')}
+          </h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+        <form onSubmit={submit} className="p-6 space-y-4">
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('brokerName')} *</span>
+            <input type="text" autoFocus value={name} onChange={e => setName(e.target.value)}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('mobileOptional')}</span>
+            <input type="tel" value={mobile} onChange={e => setMobile(e.target.value)}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+          </label>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="flex-1 h-10 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-slate-600 dark:text-slate-300">{t('cancelSelect')}</button>
+            <button type="submit" disabled={saving || !name.trim()}
+              className="flex-1 h-10 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : null} Save
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
