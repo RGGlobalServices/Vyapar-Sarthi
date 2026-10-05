@@ -1285,6 +1285,7 @@ model Supplier {
   email       String?   @db.VarChar
   address     String?   @db.VarChar
   gst         String?   @db.VarChar
+  fssai       String?   @db.VarChar
   balance     Float     @default(0)
   creditDays  Int?      @default(0) @map("credit_days")
   creditLimit Float?    @default(0) @map("credit_limit")

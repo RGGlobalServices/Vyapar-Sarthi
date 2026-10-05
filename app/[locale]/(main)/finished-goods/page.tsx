@@ -111,7 +111,7 @@ export default function FinishedGoodsPage() {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><Boxes size={22} className="text-emerald-600" /> Finished Goods</h1>
           <p className="text-sm text-slate-500 mt-1">What your production has made and can sell — how much each batch made, what is in stock, and the batch-wise lots. Prices and details are edited in Products; sales go through Billing.</p>
         </div>
-        <Link href="/products" className="text-xs font-bold text-slate-500 hover:text-emerald-600">Products →</Link>
+        <Link href="/products?view=finished-goods" className="text-xs font-bold text-slate-500 hover:text-emerald-600">View in Products →</Link>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="fg-cards">
@@ -122,6 +122,40 @@ export default function FinishedGoodsPage() {
           </div>
         ))}
       </div>
+
+      {rows.length > 1 && (
+        <div>
+          <h2 className="text-xs font-bold uppercase text-slate-500 mb-2 tracking-wider">By Product</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {rows.map(r => {
+              const stockVal = (r.currentStock || 0) * (r.sellingPrice || 0);
+              const low = r.minStock != null && r.minStock > 0 && (r.currentStock || 0) <= r.minStock;
+              return (
+                <div key={r.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+                  <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{r.name}</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Produced</p>
+                      <p className="text-sm font-black text-slate-700 dark:text-slate-200">{qty(r.produced, r.baseUnit)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">In Stock</p>
+                      <p className={cn('text-sm font-black', low ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400')}>{qty(r.currentStock, r.baseUnit)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Stock Value</p>
+                      <p className="text-sm font-black text-slate-700 dark:text-slate-200">{rupee(stockVal)}</p>
+                    </div>
+                  </div>
+                  {r.lastBatch && (
+                    <p className="text-[11px] text-slate-400">Last batch: {r.lastBatch.batchNumber} · {fmtDate(r.lastBatch.date)}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <label className="relative block max-w-md">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -180,16 +214,57 @@ function FGRow({ r, low, isOpen, onToggle }: { r: FG; low: boolean; isOpen: bool
       </tr>
       {isOpen && (
         <tr className="bg-slate-50/60 dark:bg-slate-800/30">
-          <td colSpan={7} className="px-4 py-3" data-testid="fg-lots">
-            {r.lots.length === 0 ? <p className="text-xs text-slate-500">No batch-wise lots with stock left.</p> : (
-              <div className="flex flex-wrap gap-2">
-                {r.lots.map(l => (
-                  <span key={l.id} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                    <strong className="font-mono">{l.batchNumber || '—'}</strong> · {qty(l.quantity, r.baseUnit)}{l.initialQuantity != null ? ` of ${l.initialQuantity}` : ''} · {fmtDate(l.createdAt)}{l.packs && l.packs.length > 0 ? ` · ${l.packs.map(k => `${k.packs} × ${k.packKg} kg ${k.packType === 'goni' ? 'goni' : k.packType === 'other' ? '' : 'bag'}`.trim()).join(' + ')}` : ''}
-                  </span>
-                ))}
-              </div>
-            )}
+          <td colSpan={7} className="px-4 py-4" data-testid="fg-lots">
+            {r.lots.length === 0 ? <p className="text-xs text-slate-500">No batch-wise lots with stock left.</p> : (() => {
+              // Aggregate packet sizes across all lots
+              const packTotals = new Map<string, { packKg: number; packType: string; packs: number }>();
+              for (const l of r.lots) {
+                for (const k of (l.packs || [])) {
+                  const key = `${k.packKg}|${k.packType}`;
+                  const cur = packTotals.get(key) ?? { packKg: k.packKg, packType: k.packType, packs: 0 };
+                  cur.packs += k.packs;
+                  packTotals.set(key, cur);
+                }
+              }
+              const packLabel = (k: { packKg: number; packType: string }) =>
+                `${k.packKg} kg ${k.packType === 'goni' ? 'goni' : k.packType === 'other' ? 'pack' : 'bag'}`;
+              return (
+                <div className="space-y-3">
+                  {packTotals.size > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-slate-400 mb-1.5">Packet Sizes (total in stock)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {Array.from(packTotals.values()).map(k => (
+                          <span key={`${k.packKg}|${k.packType}`} className="text-xs px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold">
+                            {k.packs} × {packLabel(k)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400 mb-1.5">Batch-wise Breakdown</p>
+                    <div className="space-y-1.5">
+                      {r.lots.map(l => (
+                        <div key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
+                          <span className="font-mono font-bold text-slate-800 dark:text-white">{l.batchNumber || '—'}</span>
+                          <span className="text-slate-500">{fmtDate(l.createdAt)}</span>
+                          <span className={cn('font-bold', (l.quantity || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400')}>
+                            {qty(l.quantity, r.baseUnit)} in stock
+                          </span>
+                          {l.initialQuantity != null && l.initialQuantity !== l.quantity && (
+                            <span className="text-slate-400">of {qty(l.initialQuantity, r.baseUnit)} made</span>
+                          )}
+                          {l.packs && l.packs.length > 0 && (
+                            <span className="text-slate-500">{l.packs.map(k => `${k.packs} × ${packLabel(k)}`).join(' + ')}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </td>
         </tr>
       )}

@@ -453,12 +453,12 @@ function DashboardInner() {
       {isMill && has('net_goods_sales') && (
         <section data-testid="dash-breakdown">
           <SectionHeading>{t('financialBreakdown')}</SectionHeading>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-6">
             <StatCard title={t('netGoodsSales')} value={rupees(n('net_goods_sales'))} footnote={t('netGoodsNote')} icon={<Calculator className="text-emerald-500" />} accent="emerald" />
             <StatCard title={t('gstCollected')} value={rupees(n('gst_collected'))} icon={<Percent className="text-blue-500" />} accent="blue" />
             <StatCard title={t('commercialCharges')} value={rupees(n('commercial_charges'))} footnote={t('commercialChargesNote')} icon={<Truck className="text-amber-500" />} accent="amber" />
-            <StatCard title={t('discountLabel')} value={rupees(n('discount'))} icon={<Tag className="text-rose-500" />} accent="rose" />
-            <StatCard title={t('roundOffLabel')} value={signedRupees(n('round_off'))} icon={<Scale className="text-slate-500" />} />
+            {n('discount') !== 0 && <StatCard title={t('discountLabel')} value={rupees(n('discount'))} icon={<Tag className="text-rose-500" />} accent="rose" />}
+            {n('round_off') !== 0 && <StatCard title={t('roundOffLabel')} value={signedRupees(n('round_off'))} icon={<Scale className="text-slate-500" />} />}
           </div>
         </section>
       )}

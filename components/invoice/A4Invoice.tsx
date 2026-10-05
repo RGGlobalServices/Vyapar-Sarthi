@@ -458,23 +458,6 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                 )}
               </div>
 
-              <div
-                style={{
-                  borderTopColor: isMinimal ? hairline : accent,
-                  backgroundColor: isModern || isStylish ? accent : undefined,
-                  color: isModern || isStylish ? '#ffffff' : (isMinimal ? accent : undefined),
-                }}
-                className={`flex justify-between items-center px-4 py-3 border-t-2 ${isModern || isStylish ? '' : (isMinimal ? '' : 'bg-slate-50')}`}
-              >
-                <span className="text-base font-black uppercase">{t('total')}</span>
-                <span className="text-xl font-black">₹{inr(total)}</span>
-              </div>
-
-              <p className="text-[11px] text-slate-600 px-4 py-2 border-t border-slate-200 italic">
-                <span className="font-semibold not-italic">Amount in Words: </span>
-                {amountInWords(total)}
-              </p>
-
               {/* Payment Summary */}
               <div className="px-4 py-3 border-t border-slate-200 text-xs">
                 {isEmi && emiMonths && emiMonthlyAmount !== undefined ? (
@@ -538,6 +521,23 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                     </div>
                   );
                 })()}
+
+                {/* TOTAL at the very bottom */}
+                <div
+                  style={{
+                    borderTopColor: isMinimal ? hairline : accent,
+                    backgroundColor: isModern || isStylish ? accent : undefined,
+                    color: isModern || isStylish ? '#ffffff' : (isMinimal ? accent : undefined),
+                  }}
+                  className={`flex justify-between items-center px-4 py-3 border-t-2 mt-3 ${isModern || isStylish ? '' : (isMinimal ? '' : 'bg-slate-50')}`}
+                >
+                  <span className="text-base font-black uppercase">{t('total')}</span>
+                  <span className="text-xl font-black">₹{inr(total)}</span>
+                </div>
+                <p className="text-[11px] text-slate-600 px-4 py-2 border-t border-slate-200 italic">
+                  <span className="font-semibold not-italic">Amount in Words: </span>
+                  {amountInWords(total)}
+                </p>
               </div>
             </div>
 

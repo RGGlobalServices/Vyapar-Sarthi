@@ -333,10 +333,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
               </div>
             ))}
           </div>
-          <div className="flex justify-between font-black text-[15px] mt-1 py-1.5 px-2 -mx-2" style={{ ...rule, borderBottom: '1px solid #000', backgroundColor: '#f5f5f5' }}>
-            <span>{t('total')}</span>
-            <span>₹{inr(total)}</span>
-          </div>
+          <div style={{ borderTop: '1px solid #000', borderBottom: '1px dashed #000', marginTop: '4px', paddingBottom: '4px' }} />
 
           {/* GST tax summary (rate-wise). Prices are GST-inclusive, so this is the
               tax embedded in the total above — the total does not change.
@@ -463,6 +460,10 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                       <span>₹{inr((paid - total))}</span>
                     </div>
                   )}
+                  <div className={`flex justify-between font-black text-[15px] mt-1 pt-1.5 px-2 -mx-2`} style={{ borderTop: '2px solid #000', backgroundColor: '#f5f5f5', paddingTop: '6px', paddingBottom: '6px' }}>
+                    <span>{t('total')}</span>
+                    <span>₹{inr(total)}</span>
+                  </div>
                 </div>
 
                 {/* Status */}

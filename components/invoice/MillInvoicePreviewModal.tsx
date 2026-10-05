@@ -42,7 +42,7 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
 
   const shop: MillInvoiceShop = useMemo(() => ({
     name: profile?.shopName || undefined, address: profile?.address || undefined, mobile: profile?.mobile || undefined,
-    gst: profile?.gst || undefined, pan: profile?.pan || undefined,
+    gst: profile?.gst || undefined, pan: profile?.pan || undefined, fssai: (profile as any)?.fssai || undefined,
     logoUrl: profile?.logoUrl || undefined, signatureUrl: profile?.signatureUrl || undefined,
     footer: profile?.invoiceFooter || undefined, upiId: profile?.upiId || undefined,
     bankName: profile?.bankName || undefined, bankAccountName: profile?.bankAccountName || undefined,

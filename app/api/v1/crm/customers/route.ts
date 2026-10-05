@@ -80,7 +80,7 @@ export const POST = handle(async (req) => {
     status: data.status || 'active',
   };
 
-  const customer = await prisma.customer.create({
+  const customer = await (prisma.customer as any).create({
     data: {
       shopId: shop.id,
       name: data.name.trim(),

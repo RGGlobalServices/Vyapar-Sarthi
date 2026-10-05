@@ -122,6 +122,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       customer_state: millExtras?.customerState ?? null,
       customer_shipping_address: millExtras?.customerShippingAddress ?? null,
       customer_pan: millExtras?.customerPan ?? null,
+      customer_fssai: millExtras?.customerFssai ?? null,
       dispatch: millExtras?.dispatch ?? null,
       broker_name: millExtras?.brokerName ?? null,
     } : {}),

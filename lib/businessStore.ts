@@ -42,6 +42,7 @@ interface BusinessProfile {
   trialPauseStart: string | null;
   gst: string | null;
   pan: string | null;
+  fssai?: string | null;
   invoiceFormat: 'thermal58' | 'thermal80' | 'a4' | 'wholesale';
   // Visual design of the printed/PDF bill — independent of invoiceFormat
   // (which picks paper size). '' / null on invoiceColor means no accent —

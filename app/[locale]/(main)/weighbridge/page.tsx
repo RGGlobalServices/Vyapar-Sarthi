@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import DeleteButton from '@/components/mill/DeleteButton';
 import { Plus, X, Loader2, Scale, CheckCircle2, ArrowRight, Search, LogOut } from 'lucide-react';
 import api from '@/lib/api';
@@ -339,6 +339,28 @@ function CreateWeighmentModal({ products, suppliers, prefilledGateEntryId, onClo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [prefillLoading, setPrefillLoading] = useState(!!prefilledGateEntryId);
+  // "+" next to the material dropdown: null = closed, string = the new raw-material name being typed.
+  const [addingProduct, setAddingProduct] = useState<string | null>(null);
+  const [creatingProduct, setCreatingProduct] = useState(false);
+  const { mutate: globalMutate } = useSWRConfig();
+  const shopId = useBusinessStore(s => s.activeShopId);
+
+  const createProduct = async () => {
+    const name = (addingProduct || '').trim();
+    if (!name) return;
+    setCreatingProduct(true);
+    try {
+      const { data: created } = await api.post('/products', { name, category: 'Raw Material', millCategory: 'raw_material', baseUnit: 'Kg', currentStock: 0, sellingPrice: 0 });
+      // Refresh the shop's product list so the new material shows up in the dropdown right away.
+      if (shopId) await globalMutate(['/products', shopId]);
+      setForm(f => ({ ...f, productId: created.id }));
+      setAddingProduct(null);
+    } catch (err: any) {
+      alert('Failed to create product: ' + (err?.response?.data?.detail || err?.response?.data?.error || err.message));
+    } finally {
+      setCreatingProduct(false);
+    }
+  };
 
   // The "vehicle and supplier will carry over" note below promises this, but
   // the server only fills them in from the gate entry when the form fields
@@ -407,11 +429,26 @@ function CreateWeighmentModal({ products, suppliers, prefilledGateEntryId, onClo
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm disabled:opacity-60" placeholder="MH12AB1234" required />
           </Field>
           <Field label={t('materialProduct')}>
-            <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
-              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
-              <option value="">{t('noProduct')}</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="flex gap-2">
+              <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
+                className="flex-1 h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
+                <option value="">{t('noProduct')}</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <button type="button" onClick={() => setAddingProduct(v => v === null ? '' : null)} aria-label="Add new product"
+                className="h-10 w-10 shrink-0 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black text-lg hover:bg-emerald-100 dark:hover:bg-emerald-500/20">+</button>
+            </div>
+            {addingProduct !== null && (
+              <div className="flex gap-2 mt-2">
+                <input autoFocus value={addingProduct} onChange={e => setAddingProduct(e.target.value)}
+                  placeholder="New raw material name"
+                  className="flex-1 h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm" />
+                <button type="button" onClick={createProduct} disabled={creatingProduct || !addingProduct.trim()}
+                  className="h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-1.5">
+                  {creatingProduct && <Loader2 size={14} className="animate-spin" />} Save
+                </button>
+              </div>
+            )}
           </Field>
           <Field label={t('materialDescription')}>
             <input value={form.materialDescription} onChange={e => setForm(f => ({ ...f, materialDescription: e.target.value }))}

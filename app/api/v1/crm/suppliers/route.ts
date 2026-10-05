@@ -36,6 +36,7 @@ export const POST = handle(async (req) => {
       email: data.email?.trim() || '',
       contact: data.contact?.trim() || null,
       gst: data.gst?.trim() || null,
+      fssai: data.fssai?.trim() || null,
       address: data.address?.trim() || null,
       creditDays: parseInt(data.creditDays) || 0,
       creditLimit: parseFloat(data.creditLimit) || 0,

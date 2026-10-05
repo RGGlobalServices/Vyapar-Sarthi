@@ -28,7 +28,7 @@ export default function MillCommercialCharges({
         </h3>
       </div>
       <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t('chargesNote')}</p>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {MILL_CHARGE_KEYS.map((k) => (
           <div key={k} className="min-w-0">
             <label htmlFor={`mill-charge-${k}`} className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-tight mb-1 block truncate" title={label(k)}>{label(k)}</label>

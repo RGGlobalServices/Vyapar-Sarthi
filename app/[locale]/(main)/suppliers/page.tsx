@@ -781,8 +781,11 @@ function StatusPill({ status }: { status: 'paid' | 'unpaid' | 'partial' }) {
 
 function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useTranslations('Suppliers');
+  const { profile } = useBusinessStore();
+  // FSSAI licence is a Bada Udyog (mill) field only.
+  const isMill = isMillBillingPackage(profile?.packageType);
   const [form, setForm] = useState({
-    name: '', contact: '', mobile: '', email: '', gst: '', address: '',
+    name: '', contact: '', mobile: '', email: '', gst: '', fssai: '', address: '',
     creditLimit: '', creditDays: '', openingBalance: '',
   });
   // Optional opening purchase recorded together with the supplier.
@@ -884,6 +887,17 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
             </Field>
           </div>
 
+          {isMill && (
+            <Field label={t('fssaiLabel')} hint={t('optionalTag')}>
+              <input
+                value={form.fssai}
+                onChange={(e) => setForm({ ...form, fssai: e.target.value })}
+                className={`${inputCls} font-mono text-sm`}
+                maxLength={14}
+                placeholder="14-digit FSSAI number"
+              />
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Field label={t('gstinLabel')} hint={t('optionalTag')}>
               <input
@@ -1035,11 +1049,13 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 
 function EditSupplierModal({ supplierId, initial, onClose, onSaved }: {
   supplierId: string;
-  initial: { name: string; contact: string; mobile: string; email: string; gst: string; address: string; creditLimit: string; creditDays: string };
+  initial: { name: string; contact: string; mobile: string; email: string; gst: string; fssai: string; address: string; creditLimit: string; creditDays: string };
   onClose: () => void;
   onSaved: () => void;
 }) {
   const t = useTranslations('Suppliers');
+  const { profile } = useBusinessStore();
+  const isMill = isMillBillingPackage(profile?.packageType);
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1087,6 +1103,11 @@ function EditSupplierModal({ supplierId, initial, onClose, onSaved }: {
               <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputCls} />
             </Field>
           </div>
+          {isMill && (
+            <Field label={t('fssaiLabel')} hint={t('optionalTag')}>
+              <input value={form.fssai} onChange={(e) => setForm({ ...form, fssai: e.target.value })} className={`${inputCls} font-mono text-sm`} maxLength={14} placeholder="14-digit FSSAI number" />
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Field label={t('gstinLabel')} hint={t('optionalTag')}>
               <input value={form.gst} onChange={(e) => setForm({ ...form, gst: e.target.value.toUpperCase() })} className={`${inputCls} font-mono text-sm`} maxLength={15} />
@@ -1407,6 +1428,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
               mobile: s.mobile || '',
               email: s.email || '',
               gst: s.gst || '',
+              fssai: (s as any).fssai || '',
               address: s.address || '',
               creditLimit: s.creditLimit ? String(s.creditLimit) : '',
               creditDays: s.creditDays ? String(s.creditDays) : '',

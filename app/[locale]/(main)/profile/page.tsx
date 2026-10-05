@@ -152,6 +152,7 @@ export default function ProfilePage() {
         package_type: profile.packageType,
         gst: profile.gst || '',
         pan: profile.pan || '',
+        fssai: (profile as any).fssai || '',
         invoice_format: profile.invoiceFormat || 'thermal80',
         invoice_theme: profile.invoiceTheme || 'standard',
         invoice_color: profile.invoiceColor || '',
@@ -188,7 +189,7 @@ export default function ProfilePage() {
         businessSubtype: shop.business_type === 'millprocessing' ? (shop.business_subtype || null) : null,
         businessProducts: shop.business_type === 'millprocessing' ? (shop.business_products || []) : [],
         packageType: shop.package_type,
-        gst: shop.gst, pan: shop.pan,
+        gst: shop.gst, pan: shop.pan, fssai: shop.fssai || null,
         invoiceFormat: shop.invoice_format,
         invoiceTheme: shop.invoice_theme || 'standard',
         invoiceColor: shop.invoice_color || null,
@@ -298,6 +299,8 @@ export default function ProfilePage() {
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading profile...</div>;
+
+  const showBillTheme = profile?.packageType !== 'badaudyog' && profile?.subscriptionPlan !== 'badaudyog';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500 pb-20">
@@ -606,6 +609,15 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase">FSSAI License No. <span className="normal-case font-normal text-slate-400">(optional — prints on bills)</span></label>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input type="text" placeholder="e.g. 11224567890123"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                    value={shop?.fssai || ''} onChange={e => setShop({ ...shop, fssai: e.target.value })} />
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -823,10 +835,8 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Bill Theme — visual design + accent color for the printed/PDF bill.
-          Independent of Invoice Print Format above (paper size); this only
-          changes how the bill looks. 'Standard' with no color is byte-for-
-          byte the original design (see A4Invoice.tsx's `accent` fallback). */}
+      {/* Bill Theme — hidden for Bada Udyog (uses MillInvoice format exclusively) */}
+      {showBillTheme && (
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
@@ -921,6 +931,7 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Terms & Conditions — printed on every A4/thermal bill footer
           (A4Invoice.tsx / ThermalInvoice.tsx already render invoiceFooter,

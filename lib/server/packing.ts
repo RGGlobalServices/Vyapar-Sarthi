@@ -60,16 +60,16 @@ export async function insertPackLines(db: any, shopId: string, batchId: string, 
 }
 
 /** output id -> its pack lines, for the given outputs. */
-export async function packsOfOutputs(db: any, outputIds: string[]): Promise<Map<string, Array<{ id: string; packKg: number; packs: number; packType: string }>>> {
-  const out = new Map<string, Array<{ id: string; packKg: number; packs: number; packType: string }>>();
+export async function packsOfOutputs(db: any, outputIds: string[]): Promise<Map<string, Array<{ id: string; packKg: number; packs: number; packType: string; createdAt: string | null }>>> {
+  const out = new Map<string, Array<{ id: string; packKg: number; packs: number; packType: string; createdAt: string | null }>>();
   if (!outputIds.length || !(await packingTable())) return out;
   const rows: any[] = await db.$queryRawUnsafe(
-    `SELECT id::text AS id, output_id::text AS output_id, pack_kg::float8 AS pack_kg, packs, pack_type FROM production_output_packs WHERE output_id = ANY($1::uuid[]) ORDER BY created_at ASC`,
+    `SELECT id::text AS id, output_id::text AS output_id, pack_kg::float8 AS pack_kg, packs, pack_type, created_at FROM production_output_packs WHERE output_id = ANY($1::uuid[]) ORDER BY created_at ASC`,
     outputIds,
   );
   for (const r of rows) {
     const l = out.get(r.output_id) ?? [];
-    l.push({ id: r.id, packKg: Number(r.pack_kg), packs: Number(r.packs), packType: r.pack_type });
+    l.push({ id: r.id, packKg: Number(r.pack_kg), packs: Number(r.packs), packType: r.pack_type, createdAt: r.created_at ? new Date(r.created_at).toISOString() : null });
     out.set(r.output_id, l);
   }
   return out;

@@ -585,9 +585,17 @@ return json(sale, 201);
 
 export const GET = handle(async (req) => {
   const { shop } = await requireShop(req);
+  const url = new URL(req.url);
+  const q = url.searchParams.get('q')?.trim() || '';
+  const millOnly = url.searchParams.get('mill') === '1';
   const sales = await prisma.sale.findMany({
-    where: { shopId: shop.id },
+    where: {
+      shopId: shop.id,
+      ...(q ? { invoice_number: { contains: q, mode: 'insensitive' } } : {}),
+      ...(millOnly ? { pricingModel: 'mill_v2' } : {}),
+    },
     orderBy: { createdAt: 'desc' },
+    take: q ? 20 : undefined,
     include: {
       customer: { select: { name: true, mobile: true, email: true } },
       // Item NAMES only (not price/qty/etc) — just enough for the invoice

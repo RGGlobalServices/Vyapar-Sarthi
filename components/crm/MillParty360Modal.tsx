@@ -18,7 +18,8 @@ import {
   FileText,
   Building2,
   Share2,
-  PackageCheck
+  PackageCheck,
+  Pencil
 } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -34,9 +35,10 @@ type MillParty360Props = {
   partyId: string;
   onClose: () => void;
   onUpdated?: () => void;
+  onEdit?: () => void;
 };
 
-export default function MillParty360Modal({ partyId, onClose, onUpdated }: MillParty360Props) {
+export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit }: MillParty360Props) {
   const [activeTab, setActiveTab] = useState<'overview' | 'grain' | 'production' | 'ledger'>('overview');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
@@ -130,6 +132,15 @@ export default function MillParty360Modal({ partyId, onClose, onUpdated }: MillP
               >
                 <Share2 size={16} />
               </button>
+              {onEdit && (
+                <button
+                  onClick={onEdit}
+                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/20 text-amber-600 transition-colors"
+                  title="Edit Party Details"
+                >
+                  <Pencil size={16} />
+                </button>
+              )}
               <button
                 onClick={() => setShowPaymentModal(true)}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"

@@ -685,6 +685,8 @@ export async function POST(req: NextRequest) {
         // Amount the shopkeeper already handed over at the counter — the rest
         // becomes an unpaid balance the supplier is owed.
         const paidAtImport = Math.max(0, parseFloat(String(supplierOverride.paidAmount ?? '')) || 0);
+        // Supplier-given discount on the whole bill — reduces what is owed and what is stored on the invoice.
+        const billDiscount = Math.max(0, parseFloat(String(supplierOverride.discount ?? '')) || 0);
         // Bill-level charges (hamali, freight …) reviewed in the import screen; sent with the first batch only. They are part of what the
         // supplier is owed and are stored on the purchase — never as products or stock.
         const billCharges = parseCharges((body as any).charges);
@@ -1051,7 +1053,7 @@ export async function POST(req: NextRequest) {
           // totalCost is tax-inclusive; gst holds the tax portion so the
           // Purchases detail can show Subtotal + GST = Total.
           data: {
-            totalCost: totalInvoiceCost + billChargesTotal,
+            totalCost: Math.max(0, totalInvoiceCost + billChargesTotal - billDiscount),
             gst: Math.round(totalInvoiceGst * 100) / 100,
             ...(billCharges.length ? { charges: billCharges as any } : {}),
           }
@@ -1066,7 +1068,7 @@ export async function POST(req: NextRequest) {
         // supplier-ledger side-effects once, on the initial batch — subsequent
         // batches would double-count balance / spam Payment History otherwise.
         const runSupplierSideEffects = !!supplierOverride && Object.keys(supplierOverride).length > 0;
-        const grandTotal = totalInvoiceCost + billChargesTotal;
+        const grandTotal = Math.max(0, totalInvoiceCost + billChargesTotal - billDiscount);
         if (runSupplierSideEffects && grandTotal > 0) {
           // Bada Udyog: what is paid at import can never be more than the bill (a 45,000 payment typed against a 5,250 bill used to be recorded in
           // full in the ledger while the balance only went down to 0, leaving the supplier's balance 39,750 higher than its ledger forever).
@@ -1082,7 +1084,10 @@ export async function POST(req: NextRequest) {
               type: 'purchase',
               amount: grandTotal,
               billNumber: String(invoiceNumber),
-              note: billCharges.length ? `Imported purchase invoice (incl. ${billCharges.map((c) => c.name).join(', ')})` : 'Imported purchase invoice',
+              note: [
+                billCharges.length ? `Imported purchase invoice (incl. ${billCharges.map((c) => c.name).join(', ')})` : 'Imported purchase invoice',
+                billDiscount > 0 ? `Discount ₹${billDiscount}` : '',
+              ].filter(Boolean).join(' — '),
               ...(billDate ? { createdAt: billDate } : {}),
             },
           });

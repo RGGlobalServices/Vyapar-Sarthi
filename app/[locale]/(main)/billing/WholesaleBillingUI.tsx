@@ -492,8 +492,18 @@ export default function WholesaleBillingUI() {
       const data = await withOfflineCache(
         `parties_${profile.id}`,
         async () => {
-          const res = await api.get(`/crm/customers?type=party&_shop=${profile.id}`);
-          return Array.isArray(res.data) ? res.data : [];
+          // Bada Udyog bills show both Parties (Farmers/Parties tab) and
+          // Traders & Customers (type=customer) in one selectable list.
+          const [partyRes, customerRes] = await Promise.all([
+            api.get(`/crm/customers?type=party&_shop=${profile.id}`),
+            api.get(`/crm/customers?type=customer&_shop=${profile.id}`),
+          ]);
+          const merged = [
+            ...(Array.isArray(partyRes.data) ? partyRes.data : []),
+            ...(Array.isArray(customerRes.data) ? customerRes.data : []),
+          ];
+          const seen = new Set<string>();
+          return merged.filter((p: any) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
         },
         profile.id
       );
@@ -2356,7 +2366,14 @@ export default function WholesaleBillingUI() {
               <span className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">₹{subtotal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center py-1.5 text-sm text-slate-600 dark:text-slate-400">
-              <span>{t('discount')}</span>
+              <span className="flex items-center gap-1.5">
+                {t('discount')}
+                {(typeof discount === 'number' ? discount : (discount as any)?.value || 0) > 0 && (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs tabular-nums">
+                    −₹{(typeof discount === 'number' ? discount : (discount as any)?.value || 0).toLocaleString('en-IN')}
+                  </span>
+                )}
+              </span>
               <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
 

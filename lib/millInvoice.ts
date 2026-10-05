@@ -20,6 +20,7 @@ export const fmtPaise = (p: number) => {
 
 export interface MillInvoiceShop {
   name?: string; address?: string; mobile?: string; gst?: string; pan?: string; email?: string;
+  fssai?: string;
   logoUrl?: string; signatureUrl?: string; footer?: string; upiId?: string;
   bankName?: string; bankAccountName?: string; bankAccountNumber?: string; bankIfsc?: string;
   /** Hex accent colour from profile (invoiceColor). Drives the header strip on both A4 and thermal. */
@@ -35,7 +36,7 @@ export interface MillInvoiceData {
   invoiceNumber: string;
   dateText: string;
   shop: MillInvoiceShop;
-  customer: { name: string; mobile: string; address: string; gst: string; pan: string; state: string; shippingAddress: string };
+  customer: { name: string; mobile: string; address: string; gst: string; pan: string; state: string; shippingAddress: string; fssai?: string };
   /** Transport / vehicle / station / E-Way bill / GR-RR, printed in the dispatch block (empty when not entered). */
   dispatch: { transport: string; vehicleNo: string; station: string; eWayBill: string; grRrNo: string; reverseCharge: string; salesman: string; broker: string; billName: string; billAddress: string; billGst: string; billState: string; shipAddress: string };
   brokerName: string;
@@ -146,6 +147,7 @@ export function buildMillInvoiceData(sale: any, shop: MillInvoiceShop, dateText:
       // the details printed on THIS bill (edited at billing) win over the party record
       name: dsp.billName || sale.customer_name || '', mobile: sale.customer_mobile || '', address: dsp.billAddress || sale.customer_address || '', gst: dsp.billGst || sale.customer_gst || '',
       pan: sale.customer_pan || '', state: dsp.billState || sale.customer_state || '', shippingAddress: dsp.shipAddress || sale.customer_shipping_address || '',
+      fssai: sale.customer_fssai || undefined,
     },
     dispatch: dsp,
     brokerName: sale.broker_name || (sale.dispatch && sale.dispatch.broker) || '',

@@ -3,10 +3,8 @@
 import { forwardRef } from 'react';
 import { fmtPaise, MILL_CHARGE_ORDER, type MillInvoiceData, type MillChargeName } from '@/lib/millInvoice';
 import MillInvoiceClassic, { type InvoiceCopy } from '@/components/invoice/MillInvoiceClassic';
-
-const CHARGE_LABEL: Record<MillChargeName, string> = {
-  freight: 'Freight', hamali: 'Hamali', loading: 'Loading', unloading: 'Unloading', other: 'Other Charges',
-};
+import { useBillLocale } from '@/lib/billLanguage';
+import { getMillBillLabels } from '@/lib/millBillLabels';
 
 /**
  * Dedicated invoice for `pricing_model = "mill_v2"` (GST-exclusive rates). Renders ONLY the stored figures in `data`
@@ -15,6 +13,15 @@ const CHARGE_LABEL: Record<MillChargeName, string> = {
  * Colours are fixed (white paper / black ink) so screen, print and PDF capture look identical in any app theme.
  */
 const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant: 'a4' | 'thermal'; copyLabel?: InvoiceCopy }>(function MillInvoice({ data: d, variant, copyLabel }, ref) {
+  const locale = useBillLocale();
+  const L = getMillBillLabels(locale);
+  const chargeName = (k: MillChargeName): string => {
+    if (k === 'freight') return L.freight;
+    if (k === 'hamali') return L.hamali;
+    if (k === 'loading') return L.loading;
+    if (k === 'unloading') return L.unloading;
+    return L.otherCharges;
+  };
   // A4 = the classic trade-bill layout (Billed to / Shipped to, dispatch details, tax summary, amount in words, terms, signatures)
   if (variant === 'a4') return <MillInvoiceClassic ref={ref} data={d} copyLabel={copyLabel} />;
   const a4 = false;
@@ -54,17 +61,17 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
       </div>
       {accent && <div className="border-b border-black mb-3" />}
 
-      <div className={`text-center font-black ${a4 ? 'text-lg mb-2' : 'text-sm mb-1'}`}>{d.gstBilled ? 'TAX INVOICE' : 'INVOICE'}</div>
+      <div className={`text-center font-black ${a4 ? 'text-lg mb-2' : 'text-sm mb-1'}`}>{d.gstBilled ? L.taxInvoice : L.invoiceLabel}</div>
 
       {/* Meta + customer */}
       <div className={`${a4 ? 'grid grid-cols-2 gap-6 mb-3' : 'mb-2 space-y-1'}`}>
         <div>
-          <div>Invoice No: <b data-testid="mi-invoice-number">{d.invoiceNumber}</b></div>
-          <div>Date: <b data-testid="mi-date">{d.dateText}</b></div>
-          <div>Payment Mode: <b data-testid="mi-payment-mode">{d.paymentMode}</b></div>
+          <div>{L.invoiceNo} <b data-testid="mi-invoice-number">{d.invoiceNumber}</b></div>
+          <div>{L.date}: <b data-testid="mi-date">{d.dateText}</b></div>
+          <div>{L.paymentMode}: <b data-testid="mi-payment-mode">{d.paymentMode}</b></div>
         </div>
         <div>
-          <div className="font-bold">Bill To</div>
+          <div className="font-bold">{L.billTo}</div>
           <div data-testid="mi-customer">{d.customer.name || 'Walk-in Customer'}</div>
           {d.customer.mobile && <div>Ph: {d.customer.mobile}</div>}
           {d.customer.address && <div>{d.customer.address}</div>}
@@ -77,19 +84,19 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
         <thead>
           <tr className="border-y border-black text-left">
             <th className="py-1 pr-1 w-6">#</th>
-            <th className="py-1 pr-1">Product</th>
-            {a4 && <th className="py-1 pr-1">Batch</th>}
-            <th className="py-1 pr-1">Unit</th>
-            <th className="py-1 pr-1 text-right">Qty</th>
-            <th className="py-1 pr-1 text-right">Rate (Excl. GST)</th>
-            <th className="py-1 text-right">Amount</th>
+            <th className="py-1 pr-1">{L.product}</th>
+            {a4 && <th className="py-1 pr-1">{L.batch}</th>}
+            <th className="py-1 pr-1">{L.unit}</th>
+            <th className="py-1 pr-1 text-right">{L.qty}</th>
+            <th className="py-1 pr-1 text-right">{L.rateExclGstCol}</th>
+            <th className="py-1 text-right">{L.amount}</th>
           </tr>
         </thead>
         <tbody>
           {d.lines.map((l, i) => (
             <tr key={i} className="border-b border-gray-300 align-top" data-testid="mi-line">
               <td className="py-1 pr-1">{i + 1}</td>
-              <td className="py-1 pr-1">{l.name}{!a4 && l.batch ? <div className="text-[0.85em]">Batch: {l.batch}</div> : null}</td>
+              <td className="py-1 pr-1">{l.name}{!a4 && l.batch ? <div className="text-[0.85em]">{L.batch}: {l.batch}</div> : null}</td>
               {a4 && <td className="py-1 pr-1">{l.batch || '—'}</td>}
               <td className="py-1 pr-1">{l.unit}</td>
               <td className="py-1 pr-1 text-right font-mono">{l.qty}</td>
@@ -99,13 +106,13 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
           ))}
         </tbody>
       </table>
-      <div className={`mt-1 font-semibold ${a4 ? 'text-[12px]' : 'text-[10px]'}`} data-testid="mi-ex-gst-note">Rate is exclusive of GST.</div>
+      <div className={`mt-1 font-semibold ${a4 ? 'text-[12px]' : 'text-[10px]'}`} data-testid="mi-ex-gst-note">{L.rateExclGst}</div>
 
       {/* Totals */}
       <div className={`${a4 ? 'ml-auto w-[55%]' : 'w-full'} mt-2 space-y-0.5`}>
-        <Row label="Goods Subtotal" value={fmtPaise(d.goodsPaise)} testid="mi-goods" />
-        {d.discountPaise > 0 && <Row label="Discount" value={`- ${fmtPaise(d.discountPaise)}`} testid="mi-discount" />}
-        <Row label="Taxable Amount" value={fmtPaise(d.taxablePaise)} testid="mi-taxable" />
+        <Row label={L.goodsSubtotal} value={fmtPaise(d.goodsPaise)} testid="mi-goods" />
+        {d.discountPaise > 0 && <Row label={L.lessDiscount} value={`- ${fmtPaise(d.discountPaise)}`} testid="mi-discount" />}
+        <Row label={L.taxableAmount} value={fmtPaise(d.taxablePaise)} testid="mi-taxable" />
         {d.gstBilled ? (
           d.interState ? (
             <Row label="IGST" value={fmtPaise(d.igstPaise)} testid="mi-igst" sub />
@@ -116,23 +123,23 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
             </>
           )
         ) : null}
-        {d.gstBilled && <Row label="Total GST" value={fmtPaise(d.totalGstPaise)} testid="mi-gst" />}
+        {d.gstBilled && <Row label={L.totalGst} value={fmtPaise(d.totalGstPaise)} testid="mi-gst" />}
 
         {hasCharges && (
           <div className="border-t border-dashed border-gray-500 mt-1 pt-1" data-testid="mi-charges">
-            <div className="font-semibold text-[0.9em]">Commercial Charges (not goods)</div>
+            <div className="font-semibold text-[0.9em]">{L.commercialCharges}</div>
             {MILL_CHARGE_ORDER.filter((k) => d.charges[k] > 0).map((k) => (
-              <Row key={k} label={CHARGE_LABEL[k]} value={fmtPaise(d.charges[k])} testid={`mi-${k}`} sub />
+              <Row key={k} label={chargeName(k)} value={fmtPaise(d.charges[k])} testid={`mi-${k}`} sub />
             ))}
           </div>
         )}
 
-        {d.roundOffPaise !== 0 && <Row label="Round Off" value={`${d.roundOffPaise > 0 ? '+' : '-'} ${fmtPaise(Math.abs(d.roundOffPaise))}`} testid="mi-roundoff" />}
+        {d.roundOffPaise !== 0 && <Row label={L.roundOff} value={`${d.roundOffPaise > 0 ? '+' : '-'} ${fmtPaise(Math.abs(d.roundOffPaise))}`} testid="mi-roundoff" />}
         <div className="border-t-2 border-black mt-1 pt-1">
-          <Row label="Grand Total" value={fmtPaise(d.grandPaise)} testid="mi-grand" strong />
+          <Row label={L.grandTotal} value={fmtPaise(d.grandPaise)} testid="mi-grand" strong />
         </div>
-        <Row label="Amount Received" value={fmtPaise(d.paidPaise)} testid="mi-received" />
-        <Row label="Balance / Udhar" value={fmtPaise(d.balancePaise)} testid="mi-balance" strong={d.balancePaise > 0} />
+        <Row label={L.amountReceived} value={fmtPaise(d.paidPaise)} testid="mi-received" />
+        <Row label={L.balanceUdhar} value={fmtPaise(d.balancePaise)} testid="mi-balance" strong={d.balancePaise > 0} />
       </div>
 
       {/* GST summary */}
@@ -159,7 +166,7 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
 
       {(d.shop.upiId || d.shop.bankAccountNumber) && a4 && (
         <div className="mt-3 text-[12px]">
-          <div className="font-bold">Payment Details</div>
+          <div className="font-bold">{L.paymentDetails}</div>
           {d.shop.upiId && <div>UPI: {d.shop.upiId}</div>}
           {d.shop.bankAccountNumber && <div>{[d.shop.bankName, d.shop.bankAccountName, `A/c ${d.shop.bankAccountNumber}`, d.shop.bankIfsc && `IFSC ${d.shop.bankIfsc}`].filter(Boolean).join(' · ')}</div>}
         </div>
@@ -176,7 +183,7 @@ const MillInvoice = forwardRef<HTMLDivElement, { data: MillInvoiceData; variant:
         {a4 && (
           <div className="text-center text-[12px]">
             {d.shop.signatureUrl ? <img src={d.shop.signatureUrl} alt="" crossOrigin="anonymous" className="h-10 mx-auto" /> : <div className="h-10" />}
-            <div className="border-t border-black px-6">Authorised Signatory</div>
+            <div className="border-t border-black px-6">{L.authorisedSignatory}</div>
           </div>
         )}
       </div>

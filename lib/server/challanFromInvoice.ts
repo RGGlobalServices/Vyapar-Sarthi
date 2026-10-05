@@ -8,7 +8,7 @@ import { ApiError } from '@/lib/server/http';
  */
 export const FROM_BILL_MARK = '[FROM-BILL]';
 
-export type RemainingLine = { productId: string; name: string; unit: string; price: number; billedQty: number; alreadyQty: number; remainingQty: number };
+export type RemainingLine = { productId: string; name: string; unit: string; price: number; billedQty: number; alreadyQty: number; remainingQty: number; packSize?: number | null; packUnit?: string | null };
 
 export async function remainingForSale(shopId: string, saleId: string): Promise<{ sale: any; lines: RemainingLine[] }> {
   const sale = await (prisma as any).sale.findFirst({
@@ -16,7 +16,7 @@ export async function remainingForSale(shopId: string, saleId: string): Promise<
     select: {
       id: true, invoice_number: true, pricingModel: true, customerId: true,
       customer: { select: { id: true, name: true, mobile: true, address: true } },
-      items: { select: { productId: true, itemName: true, quantity: true, unit: true, pricePerUnit: true, product: { select: { name: true, baseUnit: true } } } },
+      items: { select: { productId: true, itemName: true, quantity: true, unit: true, pricePerUnit: true, product: { select: { name: true, baseUnit: true, packSize: true, packUnit: true } } } },
     },
   });
   if (!sale) throw new ApiError(404, 'Invoice not found', 'SALE_NOT_FOUND');
@@ -35,8 +35,12 @@ export async function remainingForSale(shopId: string, saleId: string): Promise<
     const cur = byProduct.get(it.productId) || {
       productId: it.productId, name: it.product?.name || it.itemName || 'Item', unit: it.unit || it.product?.baseUnit || 'Kg',
       price: Number(it.pricePerUnit) || 0, billedQty: 0, alreadyQty: done.get(it.productId) || 0, remainingQty: 0,
+      packSize: it.product?.packSize ?? null, packUnit: it.product?.packUnit ?? null,
     };
     cur.billedQty += Number(it.quantity) || 0;
+    // Carry product pack info so the challan UI can pre-fill bag/pack fields
+    if (!cur.packSize && it.product?.packSize) cur.packSize = it.product.packSize;
+    if (!cur.packUnit && it.product?.packUnit) cur.packUnit = it.product.packUnit;
     byProduct.set(it.productId, cur);
   }
   const lines = [...byProduct.values()].map((l) => ({ ...l, billedQty: round3(l.billedQty), alreadyQty: round3(l.alreadyQty), remainingQty: round3(Math.max(0, l.billedQty - l.alreadyQty)) }));

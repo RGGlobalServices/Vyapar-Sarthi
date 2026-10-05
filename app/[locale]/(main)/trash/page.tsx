@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import api from '@/lib/api';
 import { Trash2, RefreshCw, Download, RotateCcw, Package, Users, Truck, UserRound, Search, IndianRupee, Receipt, ArrowLeft, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,6 +42,7 @@ type Toast = { kind: 'success' | 'error'; title: string; detail?: string[] };
 
 export default function TrashPage() {
   const t = useTranslations('Trash');
+  const locale = useLocale();
   const [records, setRecords] = useState<DeletedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [entityType, setEntityType] = useState('');
@@ -240,30 +241,34 @@ export default function TrashPage() {
           <script>window.onload = function() { window.print(); }</script>
         </body></html>`;
 
-        const printWin = window.open('', '_blank', 'width=820,height=640,scrollbars=yes');
+        const blob = new Blob([html], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+        const printWin = window.open(blobUrl, '_blank');
         if (printWin) {
-          printWin.document.write(html);
-          printWin.document.close();
-          showToast({ kind: 'success', title: 'Invoice print dialog opened' });
+          showToast({ kind: 'success', title: 'Invoice opened — use browser print (Ctrl+P)' });
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
         } else {
+          URL.revokeObjectURL(blobUrl);
           showToast({ kind: 'error', title: 'Popup blocked — allow popups and try again' });
         }
         return;
       }
 
-      // For all other entity types: download as JSON
-      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
+      // For all other entity types: a professional PDF of the deleted record
+      const { generateTrashRecordPDF } = await import('@/lib/pdf/trashRecordPdf');
       const datePart = new Date(r.deletedAt).toISOString().split('T')[0];
-      const safeLabel = (r.label || r.entityId).replace(/[^a-z0-9-_]+/gi, '_');
-      a.download = `${r.entityType}-${safeLabel}-${datePart}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      showToast({ kind: 'success', title: `Downloaded ${a.download}` });
+      // Non-English names (e.g. Marathi) are not ASCII, so fall back to the id for the file name.
+      const asciiLabel = (r.label || '').replace(/[^a-z0-9-_]+/gi, '_').replace(/^_+|_+$/g, '');
+      const safeLabel = asciiLabel || r.entityId.slice(0, 8);
+      await generateTrashRecordPDF({
+        shop: { name: profile.shopName, address: profile.address, mobile: profile.mobile, gst: profile.gst },
+        title: `${r.entityType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())} — ${r.label || r.entityId}`,
+        deletedAt: r.deletedAt,
+        data: res.data,
+        filename: `${r.entityType}-${safeLabel}-${datePart}`,
+        locale: locale === 'hi' || locale === 'mr' ? locale : 'en',
+      });
+      showToast({ kind: 'success', title: `Downloaded ${r.entityType}-${safeLabel}-${datePart}.pdf` });
     } catch {
       showToast({ kind: 'error', title: 'Failed to download' });
     } finally {
@@ -310,7 +315,7 @@ export default function TrashPage() {
             {Object.entries(ENTITY_META).map(([key, meta]) => (
               <button key={key} onClick={() => setEntityType(key)}
                 className={cn('px-3 py-1.5 rounded-lg text-xs font-bold transition-all', entityType === key ? 'bg-emerald-500 text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')}>
-                {meta.label}
+                {t(`entity_${key}`)}
               </button>
             ))}
           </div>
@@ -376,8 +381,8 @@ export default function TrashPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{r.label || r.entityId}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-500 truncate">
-                          {meta.label}
-                          {r.deletedBy ? <> &middot; deleted by {r.deletedBy}</> : null}
+                          {ENTITY_META[r.entityType] ? t(`entity_${r.entityType}`) : meta.label}
+                          {r.deletedBy ? <> &middot; {t('deletedByLine', { by: r.deletedBy })}</> : null}
                           {' '}&middot; {new Date(r.deletedAt).toLocaleString('en-IN')}
                           {' '}&middot;{' '}
                           <span className={cn('font-semibold', left <= 3 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400')}>

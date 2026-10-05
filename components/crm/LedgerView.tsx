@@ -140,6 +140,7 @@ export default function LedgerView({
   // money they actually handed over. Reused for both the on-screen +/- glyph
   // and the exported "Direction" column so the two can never disagree.
   const isCredit = (tx: Transaction) => tx.type === 'credit' || tx.type === 'udhar' || tx.type === 'sale';
+  // Discount/write-off reduces the outstanding balance like a payment does
   const totalCredit = transactions.filter(isCredit).reduce((sum, tx) => sum + (tx.amount || 0), 0);
   const totalPayments = transactions.filter(tx => !isCredit(tx)).reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
@@ -147,7 +148,7 @@ export default function LedgerView({
   // (see api/v1/crm/ledger/route.ts) since those never get a real 'udhar'
   // row and would otherwise be invisible in this history, even though a
   // real sale happened.
-  const typeLabel = (tx: Transaction) => tx.type === 'udhar' ? t('creditBill') : tx.type === 'payment' ? t('paymentReceived') : tx.type === 'sale' ? (t('salePaidInFull') || 'Sale (Paid in Full)') : tx.type;
+  const typeLabel = (tx: Transaction) => tx.type === 'udhar' ? t('creditBill') : tx.type === 'payment' ? t('paymentReceived') : tx.type === 'sale' ? (t('salePaidInFull') || 'Sale (Paid in Full)') : tx.type === 'discount' ? 'Discount / Write-off' : tx.type;
 
   // Oldest-first for the exported document only — a printed/downloaded
   // ledger reads as a running history (and lets whoever's reading it clear

@@ -170,6 +170,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
     accountNumber: '',
     ifsc: '',
     upiId: '',
+    fssai: '',
     status: 'active',
   });
   const [saving, setSaving] = useState(false);
@@ -203,6 +204,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
       accountNumber: '',
       ifsc: '',
       upiId: '',
+      fssai: '',
       status: 'active',
     });
   };
@@ -243,6 +245,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
       accountNumber: doc.accountNumber || '',
       ifsc: doc.ifsc || '',
       upiId: doc.upiId || '',
+      fssai: row.fssai || '',
       status: doc.status || 'active',
     });
     setShowAdd(true);
@@ -676,6 +679,18 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  FSSAI No. (Optional)
+                </label>
+                <input
+                  value={form.fssai} onChange={(e) => setForm({ ...form, fssai: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm font-mono"
+                  placeholder="14-digit FSSAI number"
+                  maxLength={14}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                   {locale === 'mr' ? 'पत्ता' : locale === 'hi' ? 'पता' : 'Address'}
                 </label>
                 <input
@@ -888,283 +903,32 @@ const initialPartyForm = {
   accountNumber: '',
   ifsc: '',
   upiId: '',
+  fssai: '',
   status: 'active',
   notes: ''
 };
 
-function PartiesPanel() {
-  const t = useTranslations('Party');
-  const locale = useLocale();
-  const activeShopId = useBusinessStore(s => s.activeShopId);
-  const profile = useBusinessStore(s => s.profile);
-  const isMill = profile?.businessType === 'millprocessing';
-  const [search, setSearch] = useState('');
-  const [range, setRange] = useState({ from: '', to: '' });
-  const [generatingRegister, setGeneratingRegister] = useState(false);
-  const [showScanModal, setShowScanModal] = useState(false);
-
-  const { data: partiesData = [], mutate: mutateParties, isLoading } = useSWR(
-    activeShopId ? `/crm/customers?type=party&_shop=${activeShopId}` : null,
-    fetcher
-  );
-  const parties: Party[] = Array.isArray(partiesData) ? partiesData : [];
-
-  const { data: godownsData = [] } = useSWR<any[]>(
-    activeShopId && isMill ? `/godowns?_shop=${activeShopId}` : null,
-    fetcher
-  );
-  const godowns: any[] = Array.isArray(godownsData) ? godownsData : [];
-
-  // Just for the "Total Collected" card below — the rollup view itself is
-  // the real source of truth for the full payment list, this only needs its summary.
-  const { data: paymentsSummary } = useSWR(
-    activeShopId ? `/crm/payments-all?entityType=party&_shop=${activeShopId}` : null,
-    fetcher
-  );
-  const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
-
-  const [selectedParty, setSelectedParty] = useState<Party | null>(null);
-  const [showPayment, setShowPayment] = useState(false);
-  const [showAddBill, setShowAddBill] = useState(false);
-  const [showNewParty, setShowNewParty] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
-  // Edit / Delete states
-  const [editingParty, setEditingParty] = useState<Party | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-
-  const [deletingParty, setDeletingParty] = useState<Party | null>(null);
-  const [confirmBulkDeleteParties, setConfirmBulkDeleteParties] = useState(false);
-  const [bulkDeletingParties, setBulkDeletingParties] = useState(false);
-
-  const [form, setForm] = useState(initialPartyForm);
-
-  const handleCreateParty = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    try {
-      await api.post('/crm/customers', { ...form, customerType: 'party' });
-      toast.success(isMill ? (locale === 'mr' ? 'शेतकरी खाते यशस्वीरित्या जोडले' : locale === 'hi' ? 'किसान खाता सफलतापूर्वक जोड़ा गया' : 'Farmer account created') : (t('partyCreated') || 'Party added successfully'));
-      await mutateParties();
-      setShowNewParty(false);
-      setForm(initialPartyForm);
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to add party');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const openEditModal = () => {
-    if (!selectedParty) return;
-    const docs = (selectedParty.documents && typeof selectedParty.documents === 'object' && !Array.isArray(selectedParty.documents))
-      ? (selectedParty.documents as any)
-      : {};
-    setForm({
-      name: selectedParty.name || '',
-      shopName: selectedParty.shopName || '',
-      farmerType: docs.farmerType || 'Farmer',
-      mobile: selectedParty.mobile || '',
-      alternateMobile: docs.alternateMobile || '',
-      pan: (selectedParty as any).pan || '',
-      gst: selectedParty.gst || '',
-      address: docs.address || (selectedParty.address || '').split(', गाव:')[0] || '',
-      village: docs.village || '',
-      taluka: docs.taluka || '',
-      district: docs.district || docs.city || '',
-      state: docs.state || 'Maharashtra',
-      pincode: docs.pincode || '',
-      shippingAddress: docs.shippingAddress || '',
-      openingBalance: '0',
-      balanceType: docs.balanceType || ((selectedParty.totalDue || 0) < 0 ? 'payable' : 'receivable'),
-      creditLimit: (selectedParty.creditLimit || 0).toString(),
-      creditDays: (selectedParty.creditDays || 0).toString(),
-      paymentTerms: docs.paymentTerms || 'Immediate',
-      defaultGodownId: docs.defaultGodownId || '',
-      bankName: docs.bankName || '',
-      accountHolder: docs.accountHolder || '',
-      accountNumber: docs.accountNumber || '',
-      ifsc: docs.ifsc || '',
-      upiId: docs.upiId || '',
-      status: docs.status || 'active',
-      notes: (selectedParty as any).notes || docs.notes || ''
-    });
-    setEditingParty(selectedParty);
-  };
-
-  const handleEditParty = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingParty) return;
-    setIsEditing(true);
-    try {
-      await api.put(`/crm/customers/${editingParty.id}`, { ...form, customerType: 'party' });
-      toast.success(isMill ? (locale === 'mr' ? 'शेतकरी खाते अपडेट केले' : locale === 'hi' ? 'किसान खाता अपडेट किया' : 'Farmer updated successfully') : 'Party updated successfully');
-      await mutateParties();
-      setEditingParty(null);
-      setSelectedParty(null);
-      setForm(initialPartyForm);
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to update party');
-    } finally {
-      setIsEditing(false);
-    }
-  };
-
-  const handleDeleteParty = async () => {
-    if (!deletingParty) return;
-    try {
-      await api.delete(`/crm/customers/${deletingParty.id}`);
-      toast.success('Party deleted successfully');
-      mutateParties();
-      setDeletingParty(null);
-      setSelectedParty(null);
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to delete party');
-    }
-  };
-
-  const filtered = parties.filter(p => {
-    const docs = (p.documents && typeof p.documents === 'object' && !Array.isArray(p.documents)) ? (p.documents as any) : {};
-    const q = search.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      (p.shopName && p.shopName.toLowerCase().includes(q)) ||
-      (p.mobile && p.mobile.includes(search)) ||
-      (docs.village && docs.village.toLowerCase().includes(q)) ||
-      (docs.taluka && docs.taluka.toLowerCase().includes(q)) ||
-      (docs.district && docs.district.toLowerCase().includes(q))
-    );
-  });
-
-  const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(filtered.map(p => p.id));
-
-  const handleBulkDeleteParties = async () => {
-    setBulkDeletingParties(true);
-    try {
-      const res = await api.delete(`/crm/customers/bulk?ids=${selectedIds.join(',')}`);
-      const failed = res.data?.failed || [];
-      if (failed.length > 0) {
-        toast.error(`${failed.length} ${failed.length === 1 ? 'party' : 'parties'} could not be deleted`);
-      } else {
-        toast.success('Parties deleted successfully');
-      }
-      await mutateParties();
-      clearSelection();
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to delete parties');
-    } finally {
-      setBulkDeletingParties(false);
-      setConfirmBulkDeleteParties(false);
-    }
-  };
-
-  // Collection Register
-  const handleDownloadCollectionRegister = async () => {
-    const outstanding = filtered.filter(p => (p.totalDue || 0) > 0);
-    if (outstanding.length === 0) {
-      toast.error('No outstanding parties to collect from');
-      return;
-    }
-    setGeneratingRegister(true);
-    try {
-      await generateCollectionRegisterPDF({
-        shop: {
-          name: profile.shopName || 'Vyapar Sarthi',
-          address: profile.address || null,
-          mobile: profile.mobile || null,
-          gst: profile.gst || null,
-          pan: profile.pan || null,
-        },
-        parties: outstanding.map(p => ({
-          name: p.name,
-          shopName: p.shopName,
-          address: p.address,
-          totalDue: p.totalDue || 0,
-        })),
-      });
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to generate collection register');
-    } finally {
-      setGeneratingRegister(false);
-    }
-  };
-
-  // Report export
-  const inRange = (createdAt: string) => {
-    if (!range.from && !range.to) return true;
-    const d = new Date(createdAt).getTime();
-    if (range.from && d < new Date(range.from).getTime()) return false;
-    if (range.to) {
-      const to = new Date(range.to);
-      to.setHours(23, 59, 59, 999);
-      if (d > to.getTime()) return false;
-    }
-    return true;
-  };
-  const exportRows = filtered.filter(p => inRange(p.createdAt));
-  const exportColumns = [
-    { key: 'shopName', label: isMill ? 'Farm / Business Name' : 'Business Name' },
-    { key: 'name', label: isMill ? 'Farmer Name' : 'Owner Name' },
-    { key: 'farmerType', label: 'Farmer Type' },
-    { key: 'mobile', label: 'Phone' },
-    { key: 'village', label: 'Village' },
-    { key: 'taluka', label: 'Taluka' },
-    { key: 'district', label: 'District' },
-    { key: 'address', label: 'Address' },
-    { key: 'bankName', label: 'Bank Name' },
-    { key: 'accountNumber', label: 'Account No' },
-    { key: 'ifsc', label: 'IFSC' },
-    { key: 'upiId', label: 'UPI ID' },
-    { key: 'creditLimit', label: 'Credit Limit', type: 'currency' as const },
-    { key: 'creditDays', label: 'Credit Days', type: 'number' as const },
-    { key: 'totalDue', label: 'Remaining Amount', type: 'currency' as const },
-    { key: 'status', label: 'Status' },
-    { key: 'dateAdded', label: 'Date Added', type: 'date' as const },
-  ];
-  const exportData = exportRows.map(p => {
-    const docs = (p.documents && typeof p.documents === 'object' && !Array.isArray(p.documents)) ? (p.documents as any) : {};
-    return {
-      shopName: p.shopName || '',
-      name: p.name || '',
-      farmerType: docs.farmerType || (isMill ? 'Farmer' : ''),
-      mobile: p.mobile || '',
-      village: docs.village || '',
-      taluka: docs.taluka || '',
-      district: docs.district || '',
-      address: p.address || '',
-      bankName: docs.bankName || '',
-      accountNumber: docs.accountNumber || '',
-      ifsc: docs.ifsc || '',
-      upiId: docs.upiId || '',
-      creditLimit: p.creditLimit || 0,
-      creditDays: p.creditDays || 0,
-      totalDue: p.totalDue || 0,
-      status: docs.status || ((p.totalDue || 0) > 0 ? 'Due' : 'Settled'),
-      dateAdded: p.createdAt,
-    };
-  });
-  const dateRangeLabel = range.from && range.to
-    ? `${new Date(range.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
-    : undefined;
-
-  // Render modal form content for Farmer vs Wholesale Party
-  const renderFarmerFormFields = () => (
+// Professional multi-section farmer/party form. Shared by Bada Udyog party
+// Add/Edit (PartiesPanel) and customer Add/Edit (CustomersPanel).
+function FarmerFormFields({ form, setForm, godowns, locale, isMill, variant = 'farmer' }: { form: any; setForm: (v: any) => void; godowns: any[]; locale: string; isMill: boolean; variant?: 'farmer' | 'party' }) {
+  // 'party' variant: customers/parties (Party name, party type). 'farmer' keeps the farmer wording.
+  const isParty = variant === 'party';
+  return (
     <div className="space-y-6">
       {/* 1. Basic / Identity */}
       <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/70 space-y-3">
         <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider">
           <Wheat size={15} />
-          {locale === 'mr' ? '१. शेतकरी / पुरवठादार माहिती' : locale === 'hi' ? '१. किसान / आपूर्तिकर्ता जानकारी' : '1. Farmer / Identity Details'}
+          {isParty
+            ? (locale === 'mr' ? '१. पार्टी / ओळख माहिती' : locale === 'hi' ? '१. पार्टी / पहचान जानकारी' : '1. Party / Identity Details')
+            : (locale === 'mr' ? '१. शेतकरी / पुरवठादार माहिती' : locale === 'hi' ? '१. किसान / आपूर्तिकर्ता जानकारी' : '1. Farmer / Identity Details')}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-bold mb-1 text-slate-700 dark:text-slate-300">
-              {locale === 'mr' ? 'शेतकरी / फर्म / व्यवसायाचे नाव *' : locale === 'hi' ? 'किसान / फार्म / व्यापार का नाम *' : 'Farmer / Farm / Business Name *'}
+              {isParty
+                ? (locale === 'mr' ? 'पार्टी / व्यवसायाचे नाव *' : locale === 'hi' ? 'पार्टी / व्यापार का नाम *' : 'Party / Business Name *')
+                : (locale === 'mr' ? 'शेतकरी / फर्म / व्यवसायाचे नाव *' : locale === 'hi' ? 'किसान / फार्म / व्यापार का नाम *' : 'Farmer / Farm / Business Name *')}
             </label>
             <input
               required
@@ -1176,7 +940,9 @@ function PartiesPanel() {
           </div>
           <div>
             <label className="block text-xs font-bold mb-1 text-slate-700 dark:text-slate-300">
-              {locale === 'mr' ? 'शेतकऱ्याचे / खातेदाराचे नाव *' : locale === 'hi' ? 'किसान / संपर्क व्यक्ति का नाम *' : 'Farmer / Contact Name *'}
+              {isParty
+                ? (locale === 'mr' ? 'संपर्क व्यक्तीचे नाव *' : locale === 'hi' ? 'संपर्क व्यक्ति का नाम *' : 'Contact Person Name *')
+                : (locale === 'mr' ? 'शेतकऱ्याचे / खातेदाराचे नाव *' : locale === 'hi' ? 'किसान / संपर्क व्यक्ति का नाम *' : 'Farmer / Contact Name *')}
             </label>
             <input
               required
@@ -1191,18 +957,30 @@ function PartiesPanel() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-bold mb-1 text-slate-700 dark:text-slate-300">
-              {locale === 'mr' ? 'शेतकरी प्रकार' : locale === 'hi' ? 'किसान प्रकार' : 'Farmer Type'}
+              {isParty
+                ? (locale === 'mr' ? 'पार्टी प्रकार' : locale === 'hi' ? 'पार्टी प्रकार' : 'Party Type')
+                : (locale === 'mr' ? 'शेतकरी प्रकार' : locale === 'hi' ? 'किसान प्रकार' : 'Farmer Type')}
             </label>
             <select
-              value={form.farmerType}
-              onChange={e => setForm({ ...form, farmerType: e.target.value })}
+              value={isParty ? form.partyType : form.farmerType}
+              onChange={e => setForm({ ...form, ...(isParty ? { partyType: e.target.value } : { farmerType: e.target.value }) })}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none"
             >
+              {isParty ? (
+                <>
+                  <option value="Customer">{locale === 'mr' ? 'ग्राहक' : locale === 'hi' ? 'ग्राहक' : 'Customer'}</option>
+                  <option value="Trader">{locale === 'mr' ? 'व्यापारी' : locale === 'hi' ? 'व्यापारी' : 'Trader'}</option>
+                  <option value="Dealer">{locale === 'mr' ? 'डीलर' : locale === 'hi' ? 'डीलर' : 'Dealer'}</option>
+                  <option value="Institution">{locale === 'mr' ? 'संस्था / कंपनी' : locale === 'hi' ? 'संस्था / कंपनी' : 'Institution'}</option>
+                  <option value="Other">{locale === 'mr' ? 'इतर' : locale === 'hi' ? 'अन्य' : 'Other'}</option>
+                </>
+              ) : (<>
               <option value="Farmer">{locale === 'mr' ? 'शेतकरी (Farmer)' : locale === 'hi' ? 'किसान (Farmer)' : 'Farmer'}</option>
               <option value="Trader">{locale === 'mr' ? 'व्यापारी (Trader)' : locale === 'hi' ? 'व्यापारी (Trader)' : 'Trader'}</option>
               <option value="Supplier">{locale === 'mr' ? 'पुरवठादार (Supplier)' : locale === 'hi' ? 'आपूर्तिकर्ता (Supplier)' : 'Supplier'}</option>
               <option value="FPO">{locale === 'mr' ? 'FPO / शेतकरी संस्था' : locale === 'hi' ? 'FPO / किसान संस्था' : 'FPO (Farmer Producer Org)'}</option>
               <option value="Other">{locale === 'mr' ? 'इतर (Other)' : locale === 'hi' ? 'अन्य (Other)' : 'Other'}</option>
+              </>)}
             </select>
           </div>
           <div>
@@ -1273,6 +1051,16 @@ function PartiesPanel() {
             placeholder="27ABCDE1234F1Z5" maxLength={15}
           />
           <p className="text-[11px] text-slate-500">{locale === 'mr' ? 'पहिल्या २ अंकांवरून राज्य आपोआप भरले जाते (उदा. 27 = Maharashtra).' : locale === 'hi' ? 'पहले 2 अंकों से राज्य अपने आप भर जाता है (जैसे 27 = Maharashtra).' : 'The state is filled from the first two digits (27 = Maharashtra).'}</p>
+          <label className="block text-xs font-bold mt-3 mb-1 text-slate-700 dark:text-slate-300">
+            FSSAI No. ({locale === 'mr' ? 'ऐच्छिक' : locale === 'hi' ? 'वैकल्पिक' : 'Optional'})
+          </label>
+          <input
+            value={form.fssai}
+            onChange={e => setForm({ ...form, fssai: e.target.value })}
+            className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950 font-mono focus:ring-2 focus:ring-amber-500 outline-none"
+            placeholder="14-digit FSSAI number"
+            maxLength={14}
+          />
         </div>
       )}
 
@@ -1554,6 +1342,270 @@ function PartiesPanel() {
       </div>
     </div>
   );
+}
+
+function PartiesPanel() {
+  const t = useTranslations('Party');
+  const locale = useLocale();
+  const activeShopId = useBusinessStore(s => s.activeShopId);
+  const profile = useBusinessStore(s => s.profile);
+  const isMill = profile?.businessType === 'millprocessing';
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState({ from: '', to: '' });
+  const [generatingRegister, setGeneratingRegister] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+
+  const { data: partiesData = [], mutate: mutateParties, isLoading } = useSWR(
+    activeShopId ? `/crm/customers?type=party&_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const parties: Party[] = Array.isArray(partiesData) ? partiesData : [];
+
+  const { data: godownsData = [] } = useSWR<any[]>(
+    activeShopId && isMill ? `/godowns?_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const godowns: any[] = Array.isArray(godownsData) ? godownsData : [];
+
+  // Just for the "Total Collected" card below — the rollup view itself is
+  // the real source of truth for the full payment list, this only needs its summary.
+  const { data: paymentsSummary } = useSWR(
+    activeShopId ? `/crm/payments-all?entityType=party&_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
+
+  const [selectedParty, setSelectedParty] = useState<Party | null>(null);
+  const [showPayment, setShowPayment] = useState(false);
+  const [showAddBill, setShowAddBill] = useState(false);
+  const [showNewParty, setShowNewParty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Edit / Delete states
+  const [editingParty, setEditingParty] = useState<Party | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [deletingParty, setDeletingParty] = useState<Party | null>(null);
+  const [confirmBulkDeleteParties, setConfirmBulkDeleteParties] = useState(false);
+  const [bulkDeletingParties, setBulkDeletingParties] = useState(false);
+
+  const [form, setForm] = useState(initialPartyForm);
+
+  const handleCreateParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await api.post('/crm/customers', { ...form, customerType: 'party' });
+      toast.success(isMill ? (locale === 'mr' ? 'शेतकरी खाते यशस्वीरित्या जोडले' : locale === 'hi' ? 'किसान खाता सफलतापूर्वक जोड़ा गया' : 'Farmer account created') : (t('partyCreated') || 'Party added successfully'));
+      await mutateParties();
+      setShowNewParty(false);
+      setForm(initialPartyForm);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to add party');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openEditModal = () => {
+    if (!selectedParty) return;
+    const docs = (selectedParty.documents && typeof selectedParty.documents === 'object' && !Array.isArray(selectedParty.documents))
+      ? (selectedParty.documents as any)
+      : {};
+    setForm({
+      name: selectedParty.name || '',
+      shopName: selectedParty.shopName || '',
+      farmerType: docs.farmerType || 'Farmer',
+      mobile: selectedParty.mobile || '',
+      alternateMobile: docs.alternateMobile || '',
+      pan: (selectedParty as any).pan || '',
+      gst: selectedParty.gst || '',
+      address: docs.address || (selectedParty.address || '').split(', गाव:')[0] || '',
+      village: docs.village || '',
+      taluka: docs.taluka || '',
+      district: docs.district || docs.city || '',
+      state: docs.state || 'Maharashtra',
+      pincode: docs.pincode || '',
+      shippingAddress: docs.shippingAddress || '',
+      openingBalance: '0',
+      balanceType: docs.balanceType || ((selectedParty.totalDue || 0) < 0 ? 'payable' : 'receivable'),
+      creditLimit: (selectedParty.creditLimit || 0).toString(),
+      creditDays: (selectedParty.creditDays || 0).toString(),
+      paymentTerms: docs.paymentTerms || 'Immediate',
+      defaultGodownId: docs.defaultGodownId || '',
+      bankName: docs.bankName || '',
+      accountHolder: docs.accountHolder || '',
+      accountNumber: docs.accountNumber || '',
+      ifsc: docs.ifsc || '',
+      upiId: docs.upiId || '',
+      fssai: (selectedParty as any).fssai || '',
+      status: docs.status || 'active',
+      notes: (selectedParty as any).notes || docs.notes || ''
+    });
+    setEditingParty(selectedParty);
+  };
+
+  const handleEditParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingParty) return;
+    setIsEditing(true);
+    try {
+      await api.put(`/crm/customers/${editingParty.id}`, { ...form, customerType: 'party' });
+      toast.success(isMill ? (locale === 'mr' ? 'शेतकरी खाते अपडेट केले' : locale === 'hi' ? 'किसान खाता अपडेट किया' : 'Farmer updated successfully') : 'Party updated successfully');
+      await mutateParties();
+      setEditingParty(null);
+      setSelectedParty(null);
+      setForm(initialPartyForm);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to update party');
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleDeleteParty = async () => {
+    if (!deletingParty) return;
+    try {
+      await api.delete(`/crm/customers/${deletingParty.id}`);
+      toast.success('Party deleted successfully');
+      mutateParties();
+      setDeletingParty(null);
+      setSelectedParty(null);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to delete party');
+    }
+  };
+
+  const filtered = parties.filter(p => {
+    const docs = (p.documents && typeof p.documents === 'object' && !Array.isArray(p.documents)) ? (p.documents as any) : {};
+    const q = search.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.shopName && p.shopName.toLowerCase().includes(q)) ||
+      (p.mobile && p.mobile.includes(search)) ||
+      (docs.village && docs.village.toLowerCase().includes(q)) ||
+      (docs.taluka && docs.taluka.toLowerCase().includes(q)) ||
+      (docs.district && docs.district.toLowerCase().includes(q))
+    );
+  });
+
+  const { selectedIds, isAllSelected, toggleOne, toggleAll, clear: clearSelection } = useRowSelection(filtered.map(p => p.id));
+
+  const handleBulkDeleteParties = async () => {
+    setBulkDeletingParties(true);
+    try {
+      const res = await api.delete(`/crm/customers/bulk?ids=${selectedIds.join(',')}`);
+      const failed = res.data?.failed || [];
+      if (failed.length > 0) {
+        toast.error(`${failed.length} ${failed.length === 1 ? 'party' : 'parties'} could not be deleted`);
+      } else {
+        toast.success('Parties deleted successfully');
+      }
+      await mutateParties();
+      clearSelection();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to delete parties');
+    } finally {
+      setBulkDeletingParties(false);
+      setConfirmBulkDeleteParties(false);
+    }
+  };
+
+  // Collection Register
+  const handleDownloadCollectionRegister = async () => {
+    const outstanding = filtered.filter(p => (p.totalDue || 0) > 0);
+    if (outstanding.length === 0) {
+      toast.error('No outstanding parties to collect from');
+      return;
+    }
+    setGeneratingRegister(true);
+    try {
+      await generateCollectionRegisterPDF({
+        shop: {
+          name: profile.shopName || 'Vyapar Sarthi',
+          address: profile.address || null,
+          mobile: profile.mobile || null,
+          gst: profile.gst || null,
+          pan: profile.pan || null,
+        },
+        parties: outstanding.map(p => ({
+          name: p.name,
+          shopName: p.shopName,
+          address: p.address,
+          totalDue: p.totalDue || 0,
+        })),
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate collection register');
+    } finally {
+      setGeneratingRegister(false);
+    }
+  };
+
+  // Report export
+  const inRange = (createdAt: string) => {
+    if (!range.from && !range.to) return true;
+    const d = new Date(createdAt).getTime();
+    if (range.from && d < new Date(range.from).getTime()) return false;
+    if (range.to) {
+      const to = new Date(range.to);
+      to.setHours(23, 59, 59, 999);
+      if (d > to.getTime()) return false;
+    }
+    return true;
+  };
+  const exportRows = filtered.filter(p => inRange(p.createdAt));
+  const exportColumns = [
+    { key: 'shopName', label: isMill ? 'Farm / Business Name' : 'Business Name' },
+    { key: 'name', label: isMill ? 'Farmer Name' : 'Owner Name' },
+    { key: 'farmerType', label: 'Farmer Type' },
+    { key: 'mobile', label: 'Phone' },
+    { key: 'village', label: 'Village' },
+    { key: 'taluka', label: 'Taluka' },
+    { key: 'district', label: 'District' },
+    { key: 'address', label: 'Address' },
+    { key: 'bankName', label: 'Bank Name' },
+    { key: 'accountNumber', label: 'Account No' },
+    { key: 'ifsc', label: 'IFSC' },
+    { key: 'upiId', label: 'UPI ID' },
+    { key: 'creditLimit', label: 'Credit Limit', type: 'currency' as const },
+    { key: 'creditDays', label: 'Credit Days', type: 'number' as const },
+    { key: 'totalDue', label: 'Remaining Amount', type: 'currency' as const },
+    { key: 'status', label: 'Status' },
+    { key: 'dateAdded', label: 'Date Added', type: 'date' as const },
+  ];
+  const exportData = exportRows.map(p => {
+    const docs = (p.documents && typeof p.documents === 'object' && !Array.isArray(p.documents)) ? (p.documents as any) : {};
+    return {
+      shopName: p.shopName || '',
+      name: p.name || '',
+      farmerType: docs.farmerType || (isMill ? 'Farmer' : ''),
+      mobile: p.mobile || '',
+      village: docs.village || '',
+      taluka: docs.taluka || '',
+      district: docs.district || '',
+      address: p.address || '',
+      bankName: docs.bankName || '',
+      accountNumber: docs.accountNumber || '',
+      ifsc: docs.ifsc || '',
+      upiId: docs.upiId || '',
+      creditLimit: p.creditLimit || 0,
+      creditDays: p.creditDays || 0,
+      totalDue: p.totalDue || 0,
+      status: docs.status || ((p.totalDue || 0) > 0 ? 'Due' : 'Settled'),
+      dateAdded: p.createdAt,
+    };
+  });
+  const dateRangeLabel = range.from && range.to
+    ? `${new Date(range.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(range.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    : undefined;
+
+  // Render modal form content for Farmer vs Wholesale Party
 
   return (
     <div className="space-y-6">
@@ -1786,6 +1838,7 @@ function PartiesPanel() {
           partyId={selectedParty.id}
           onClose={() => setSelectedParty(null)}
           onUpdated={() => mutateParties()}
+          onEdit={openEditModal}
         />
       )}
 
@@ -1911,7 +1964,7 @@ function PartiesPanel() {
             <div className="overflow-y-auto">
               <form onSubmit={handleCreateParty} className="p-6 space-y-4">
                 {isMill ? (
-                  renderFarmerFormFields()
+                  <FarmerFormFields form={form} setForm={setForm} godowns={godowns} locale={locale} isMill={isMill} />
                 ) : (
                   <>
                     <div>
@@ -1931,6 +1984,10 @@ function PartiesPanel() {
                         <label className="block text-sm font-bold mb-1">{t('gstin')}</label>
                         <input value={form.gst} onChange={e=>setForm({...form, gst: e.target.value.toUpperCase()})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm" maxLength={15} />
                       </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1">FSSAI No.</label>
+                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm" maxLength={14} placeholder="14-digit FSSAI number" />
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-1">{t('address')}</label>
@@ -1970,7 +2027,7 @@ function PartiesPanel() {
 
       {/* Edit Party / Farmer Modal */}
       {editingParty && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
           <div className={cn(
             "bg-white dark:bg-slate-900 w-full rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[92vh]",
             isMill ? "max-w-2xl" : "max-w-md"
@@ -1985,7 +2042,7 @@ function PartiesPanel() {
             <div className="overflow-y-auto">
               <form onSubmit={handleEditParty} className="p-6 space-y-4">
                 {isMill ? (
-                  renderFarmerFormFields()
+                  <FarmerFormFields form={form} setForm={setForm} godowns={godowns} locale={locale} isMill={isMill} />
                 ) : (
                   <>
                     <div>
@@ -2005,6 +2062,10 @@ function PartiesPanel() {
                         <label className="block text-sm font-bold mb-1">{t('gstin')}</label>
                         <input value={form.gst} onChange={e=>setForm({...form, gst: e.target.value.toUpperCase()})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={15} />
                       </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1">FSSAI No.</label>
+                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={14} placeholder="14-digit FSSAI number" />
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-1">{t('address')}</label>
@@ -2083,6 +2144,29 @@ type UdharCustomer = {
   createdAt: string;
 };
 
+// Form state shared by the customer Add/Edit modals. Starts from the full
+// party shape so the Bada Udyog FarmerFormFields can bind to it, while the
+// original customer keys keep their previous defaults for non-mill shops.
+const makeCustomerForm = () => ({
+  ...initialPartyForm,
+  name: '',
+  partyType: 'Customer',
+  mobile: '',
+  alternateMobile: '',
+  address: '',
+  city: '',
+  state: '',
+  pincode: '',
+  gst: '',
+  pan: '',
+  openingBalance: '',
+  balanceType: 'receivable',
+  creditLimit: '0',
+  creditDays: '0',
+  paymentTerms: 'Immediate',
+  notes: '',
+});
+
 function CustomersPanel() {
   const t = useTranslations('Party');
   const locale = useLocale();
@@ -2095,6 +2179,12 @@ function CustomersPanel() {
     fetcher
   );
   const customers: UdharCustomer[] = Array.isArray(customersData) ? customersData : [];
+  const isMillShop = useBusinessStore(s => s.profile)?.businessType === 'millprocessing';
+  const { data: customerGodownsData = [] } = useSWR<any[]>(
+    activeShopId && isMillShop ? `/godowns?_shop=${activeShopId}` : null,
+    fetcher
+  );
+  const customerGodowns: any[] = Array.isArray(customerGodownsData) ? customerGodownsData : [];
   const { data: paymentsSummary } = useSWR(
     activeShopId ? `/crm/payments-all?entityType=customer&_shop=${activeShopId}` : null,
     fetcher
@@ -2122,43 +2212,9 @@ function CustomersPanel() {
   const [confirmBulkDeleteCustomers, setConfirmBulkDeleteCustomers] = useState(false);
   const [bulkDeletingCustomers, setBulkDeletingCustomers] = useState(false);
 
-  const [form, setForm] = useState({
-    name: '',
-    partyType: 'Customer',
-    mobile: '',
-    alternateMobile: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    gst: '',
-    pan: '',
-    openingBalance: '',
-    balanceType: 'receivable',
-    creditLimit: '0',
-    creditDays: '0',
-    paymentTerms: 'Immediate',
-    notes: '',
-  });
+  const [form, setForm] = useState<any>(makeCustomerForm);
 
-  const resetForm = () => setForm({
-    name: '',
-    partyType: 'Customer',
-    mobile: '',
-    alternateMobile: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    gst: '',
-    pan: '',
-    openingBalance: '',
-    balanceType: 'receivable',
-    creditLimit: '0',
-    creditDays: '0',
-    paymentTerms: 'Immediate',
-    notes: '',
-  });
+  const resetForm = () => setForm(makeCustomerForm());
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2181,6 +2237,21 @@ function CustomersPanel() {
     if (!selectedCustomer) return;
     const doc = ((selectedCustomer as any).documents && typeof (selectedCustomer as any).documents === 'object') ? (selectedCustomer as any).documents : {};
     setForm({
+      ...makeCustomerForm(),
+      shopName: (selectedCustomer as any).shopName || '',
+      farmerType: doc.farmerType || 'Farmer',
+      village: doc.village || '',
+      taluka: doc.taluka || '',
+      district: doc.district || doc.city || '',
+      ifsc: doc.ifsc || '',
+      upiId: doc.upiId || '',
+      bankName: doc.bankName || '',
+      accountHolder: doc.accountHolder || '',
+      accountNumber: doc.accountNumber || '',
+      fssai: (selectedCustomer as any).fssai || '',
+      status: doc.status || 'active',
+      defaultGodownId: doc.defaultGodownId || '',
+      shippingAddress: doc.shippingAddress || '',
       name: selectedCustomer.name,
       partyType: doc.partyType || 'Customer',
       mobile: selectedCustomer.mobile || '',
@@ -2510,6 +2581,7 @@ function CustomersPanel() {
           partyId={selectedCustomer.id}
           onClose={() => setSelectedCustomer(null)}
           onUpdated={() => mutateCustomers()}
+          onEdit={openEditModal}
         />
       )}
 
@@ -2623,7 +2695,35 @@ function CustomersPanel() {
       )}
 
       {/* New Customer / Party Modal */}
-      {showNewCustomer && (
+      {showNewCustomer && isMill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[92vh]">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Wheat size={18} className="text-amber-600" />
+                {locale === 'mr' ? 'नवीन ग्राहक / खातेदार जोडा' : locale === 'hi' ? 'नया ग्राहक / पार्टी जोड़ें' : 'Add Customer / Party'}
+              </h2>
+              <button type="button" onClick={() => setShowNewCustomer(false)}><X size={20} className="text-slate-400" /></button>
+            </div>
+            <form onSubmit={handleCreateCustomer} className="flex flex-col min-h-0 flex-1">
+              <div className="p-6 overflow-y-auto flex-1">
+                <FarmerFormFields form={form} setForm={setForm} godowns={customerGodowns} locale={locale} isMill={isMill} variant="party" />
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 shrink-0">
+                <button type="button" onClick={() => setShowNewCustomer(false)} className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold">
+                  {locale === 'mr' ? 'रद्द करा' : locale === 'hi' ? 'रद्द करें' : 'Cancel'}
+                </button>
+                <button type="submit" disabled={isSaving} className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold disabled:opacity-60 flex items-center gap-2">
+                  {isSaving && <Loader2 size={14} className="animate-spin" />}
+                  {locale === 'mr' ? 'जतन करा' : locale === 'hi' ? 'सहेजें' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showNewCustomer && !isMill && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh]">
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
@@ -2843,8 +2943,36 @@ function CustomersPanel() {
       )}
 
       {/* Edit Customer Modal */}
-      {editingCustomer && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+      {editingCustomer && isMill && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[92vh]">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Pencil size={18} className="text-indigo-500" />
+                {locale === 'mr' ? 'ग्राहक / पार्टी संपादित करा' : locale === 'hi' ? 'ग्राहक / पार्टी संपादित करें' : 'Edit Customer / Party'}
+              </h2>
+              <button type="button" onClick={() => { setEditingCustomer(null); resetForm(); }}><X size={20} className="text-slate-400 hover:text-slate-700 transition-colors" /></button>
+            </div>
+            <form onSubmit={handleEditCustomer} className="flex flex-col min-h-0 flex-1">
+              <div className="p-6 overflow-y-auto flex-1">
+                <FarmerFormFields form={form} setForm={setForm} godowns={customerGodowns} locale={locale} isMill={isMill} variant="party" />
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 shrink-0">
+                <button type="button" onClick={() => { setEditingCustomer(null); resetForm(); }} className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold">
+                  {locale === 'mr' ? 'रद्द करा' : locale === 'hi' ? 'रद्द करें' : 'Cancel'}
+                </button>
+                <button type="submit" disabled={isEditing} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold disabled:opacity-60 flex items-center gap-2">
+                  {isEditing && <Loader2 size={14} className="animate-spin" />}
+                  {locale === 'mr' ? 'बदल जतन करा' : locale === 'hi' ? 'बदलाव सहेजें' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingCustomer && !isMill && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh]">
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
               <h2 className="text-lg font-bold flex items-center gap-2">

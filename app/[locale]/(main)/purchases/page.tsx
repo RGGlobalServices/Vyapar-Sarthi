@@ -213,7 +213,40 @@ export default function PurchasesPage() {
 
   const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
 
+  // Farmers / Parties (Farmers & Customers Management) also appear in the
+  // supplier dropdown. Purchase rows reference a Supplier row, so a picked
+  // party is mapped to its Supplier (found by name + mobile, or created once).
+  const { data: partiesData = [] } = useSWR(
+    activeShopId ? [`/crm/customers?type=party&_shop=${activeShopId}`, activeShopId] : null,
+    fetcher
+  );
+  const parties: any[] = Array.isArray(partiesData) ? partiesData : [];
+
   const [supplierId, setSupplierId] = useState('');
+  const [resolvingSupplier, setResolvingSupplier] = useState(false);
+
+  const pickSupplier = async (value: string) => {
+    if (!value.startsWith('party:')) { setSupplierId(value); return; }
+    const party = parties.find((p: any) => p.id === value.slice('party:'.length));
+    if (!party) return;
+    const match = suppliers.find((s: any) => s.name === party.name && (s.mobile || '') === (party.mobile || ''));
+    if (match) { setSupplierId(match.id); return; }
+    setResolvingSupplier(true);
+    try {
+      const { data } = await api.post('/suppliers', {
+        name: party.name,
+        mobile: party.mobile || null,
+        address: party.address || null,
+        gst: party.gst || null,
+      });
+      mutateSuppliers([data, ...suppliers], false);
+      setSupplierId(data.id);
+    } catch (err: any) {
+      alert('Failed to link farmer as supplier: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setResolvingSupplier(false);
+    }
+  };
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [broker, setBroker] = useState(EMPTY_BROKER);
   const [tareWeightKg, setTareWeightKg] = useState('');
@@ -589,10 +622,15 @@ export default function PurchasesPage() {
                     </div>
                   ) : (
                     <div className="flex gap-2">
-                      <select required value={supplierId} onChange={e => setSupplierId(e.target.value)}
+                      <select required value={supplierId} onChange={e => pickSupplier(e.target.value)} disabled={resolvingSupplier}
                         className="flex-1 px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
                           <option value="">{t('selectSupplier') || 'Select Supplier'}</option>
                         {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {parties.length > 0 && (
+                          <optgroup label="Farmers / Parties">
+                            {parties.map((p: any) => <option key={`party:${p.id}`} value={`party:${p.id}`}>{p.name}</option>)}
+                          </optgroup>
+                        )}
                       </select>
                       <button type="button" onClick={() => setIsAddingSupplier(true)} className="px-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">+</button>
                     </div>

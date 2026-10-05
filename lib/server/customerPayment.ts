@@ -22,11 +22,12 @@ import { recordDeletion } from '@/lib/server/trash';
  */
 export async function applyCustomerPayment(
   tx: Prisma.TransactionClient,
-  params: { shopId: string; customerId: string; amount: number; paymentMode: string; note?: string }
+  params: { shopId: string; customerId: string; amount: number; discount?: number; paymentMode: string; note?: string }
 ): Promise<{ customerTransactionId: string; customerName: string; customerMobile: string | null; newTotalDue: number }> {
   const { shopId, customerId, paymentMode, note } = params;
   const amount = round2(parseMoney(params.amount, 'amount'));
-  if (amount <= 0) throw new ApiError(400, 'Payment amount must be greater than zero');
+  const discount = round2(Math.max(0, params.discount || 0));
+  if (amount <= 0 && discount <= 0) throw new ApiError(400, 'Payment amount must be greater than zero');
 
   const lockedCustomers = await tx.$queryRaw<Array<{ id: string; name: string | null; mobile: string | null; total_due: number | null }>>`
     SELECT id, name, mobile, total_due
@@ -37,52 +38,66 @@ export async function applyCustomerPayment(
   if (!lockedCustomers.length) throw new ApiError(404, 'Customer/Party not found');
   const customer = lockedCustomers[0];
 
-  // A payment can never exceed what the customer owes — that would push the
-  // balance negative (there is no customer-advance feature).
   const owed = Number(customer.total_due || 0);
-  if (toPaise(amount) > toPaise(owed)) {
-    throw new ApiError(400, `Payment (${amount}) exceeds the outstanding balance (${round2(Math.max(0, owed))})`, 'PAYMENT_EXCEEDS_DUE');
+  if (toPaise(amount + discount) > toPaise(owed) + 1) {
+    throw new ApiError(400, `Payment + Discount (${round2(amount + discount)}) exceeds the outstanding balance (${round2(Math.max(0, owed))})`, 'PAYMENT_EXCEEDS_DUE');
   }
 
-  const newTotalDue = owed - amount;
+  const newTotalDue = Math.max(0, owed - amount - discount);
 
   await tx.customer.update({
     where: { id: customerId },
-    data: { totalDue: { decrement: amount } },
+    data: { totalDue: { decrement: amount + discount } },
   });
 
-  const transaction = await tx.customer_transactions.create({
-    data: {
-      customer_id: customerId,
-      type: 'payment',
-      amount,
-      note: `Payment via ${paymentMode || 'Cash'} - ${note || ''}`.trim(),
-    },
-  });
-
-  if ((paymentMode || 'Cash').toLowerCase() === 'cash') {
-    await tx.cashBook.create({
+  let transactionId = '';
+  if (amount > 0) {
+    const transaction = await tx.customer_transactions.create({
       data: {
-        shopId,
-        type: 'collection',
+        customer_id: customerId,
+        type: 'payment',
         amount,
-        referenceId: transaction.id,
-        description: `Payment from Customer: ${customer.name}`,
+        note: `Payment via ${paymentMode || 'Cash'} - ${note || ''}`.trim(),
       },
     });
+    transactionId = transaction.id;
+
+    if ((paymentMode || 'Cash').toLowerCase() === 'cash') {
+      await tx.cashBook.create({
+        data: {
+          shopId,
+          type: 'collection',
+          amount,
+          referenceId: transaction.id,
+          description: `Payment from Customer: ${customer.name}`,
+        },
+      });
+    }
+  }
+
+  if (discount > 0) {
+    const discountTxn = await tx.customer_transactions.create({
+      data: {
+        customer_id: customerId,
+        type: 'discount',
+        amount: discount,
+        note: `Discount/Write-off${note ? ` - ${note}` : ''}`.trim(),
+      },
+    });
+    if (!transactionId) transactionId = discountTxn.id;
   }
 
   await tx.activityLog.create({
     data: {
       shopId,
       action: 'payment_collected',
-      entityId: transaction.id,
-      details: { entityType: 'customer', name: customer.name, amount },
+      entityId: transactionId,
+      details: { entityType: 'customer', name: customer.name, amount, ...(discount > 0 ? { discount } : {}) },
     },
   });
 
   return {
-    customerTransactionId: transaction.id,
+    customerTransactionId: transactionId,
     customerName: customer.name ?? '',
     customerMobile: customer.mobile ?? null,
     newTotalDue,

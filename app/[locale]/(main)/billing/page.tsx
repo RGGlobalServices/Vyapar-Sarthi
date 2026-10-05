@@ -1015,6 +1015,7 @@ function StandardBillingUI() {
         customerName: customerName.trim() || undefined,
         customerMobile: customerMobile.trim() || undefined,
         customerEmail: customerEmail.trim() || undefined,
+        customerFssai: (udharInfo?.type === 'existing' ? (udharInfo.customer as any).fssai : undefined) || undefined,
         ownerSignature: profile.signatureUrl || undefined,
         items: [...items],
         total,
@@ -2001,7 +2002,14 @@ function StandardBillingUI() {
               <span>₹{subtotal.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
-              <span>{t('discount')}</span>
+              <span className="flex items-center gap-1.5">
+                {t('discount')}
+                {(typeof discount === 'number' ? discount : (discount as any)?.value || 0) > 0 && (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs tabular-nums">
+                    −₹{(typeof discount === 'number' ? discount : (discount as any)?.value || 0).toLocaleString('en-IN')}
+                  </span>
+                )}
+              </span>
               <DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />
             </div>
             {/* GST tax summary — shown for GST invoices. Prices are GST-inclusive,
@@ -2213,9 +2221,24 @@ function StandardBillingUI() {
                   </div>
 
                   {(isUdharSale || isMixedSale) && remainingAmount > 0 && (
-                    <p className="text-[10px] font-medium text-orange-500/80 leading-relaxed">
-                      {t('udharHint') || "The remaining amount will be added to the customer's udhar ledger. Customer name is required on the next step."}
-                    </p>
+                    <div className="flex items-start gap-2">
+                      <p className="text-[10px] font-medium text-orange-500/80 leading-relaxed flex-1">
+                        {t('udharHint') || "The remaining amount will be added to the customer's udhar ledger. Customer name is required on the next step."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isUdharSale) {
+                            setUdharAdvance(total);
+                          } else {
+                            setSplitPayments((p: any) => ({ ...p, cash: total, upi: 0, card: 0, bank: 0, udhar: 0 }));
+                          }
+                        }}
+                        className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition-colors whitespace-nowrap"
+                      >
+                        Settle Full ✓
+                      </button>
+                    </div>
                   )}
                 </div>
 

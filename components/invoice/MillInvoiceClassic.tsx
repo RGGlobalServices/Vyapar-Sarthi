@@ -4,10 +4,8 @@ import { forwardRef } from 'react';
 import { fmtPaise, MILL_CHARGE_ORDER, type MillInvoiceData, type MillChargeName } from '@/lib/millInvoice';
 import { amountInWords } from '@/lib/amountInWords';
 import { placeOfSupplyText, stateFromGstin } from '@/lib/indiaStates';
-
-const CHARGE_LABEL: Record<MillChargeName, string> = { freight: 'Freight', hamali: 'Hamali', loading: 'Loading', unloading: 'Unloading', other: 'Other Charges' };
-
-const DEFAULT_DECLARATION = 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.';
+import { useBillLocale } from '@/lib/billLanguage';
+import { getMillBillLabels } from '@/lib/millBillLabels';
 
 /** "86,920.00" without the ₹ sign: the classic bill prints the amount column plain and puts the rupee mark in the heading. */
 const num = (p: number) => fmtPaise(p).replace('₹', '');
@@ -20,8 +18,18 @@ export type InvoiceCopy = 'Original Copy' | 'Duplicate Copy' | 'Triplicate Copy'
  * when GST is billed, "BILL OF SUPPLY" otherwise. It only RENDERS the stored figures of `data` (lib/millInvoice.ts) — it never calculates a
  * total — and keeps the test ids of the original mill invoice. Fixed black-on-white colours so screen, print and PDF look the same.
  */
-const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; copyLabel?: InvoiceCopy }>(function MillInvoiceClassic({ data: d, copyLabel = 'Original Copy' }, ref) {
-  const title = d.gstBilled ? 'TAX INVOICE' : 'BILL OF SUPPLY';
+const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; copyLabel?: InvoiceCopy }>(function MillInvoiceClassic({ data: d, copyLabel }, ref) {
+  const locale = useBillLocale();
+  const L = getMillBillLabels(locale);
+  const copyLabel_ = copyLabel ?? L.originalCopy as InvoiceCopy;
+  const title = d.gstBilled ? L.taxInvoice : L.billOfSupply;
+  const chargeName = (k: MillChargeName): string => {
+    if (k === 'freight') return L.freight;
+    if (k === 'hamali') return L.hamali;
+    if (k === 'loading') return L.loading;
+    if (k === 'unloading') return L.unloading;
+    return L.otherCharges;
+  };
   const cell = 'border-black';
   const shopState = stateFromGstin(d.shop.gst);
   const placeOfSupply = placeOfSupplyText(d.customer.state || stateFromGstin(d.customer.gst) || shopState);
@@ -32,6 +40,8 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
     'Interest @ 18% p.a. will be charged if the payment is not made within the stipulated time.',
     `Subject to ${shopState ? `'${shopState}'` : 'local'} jurisdiction only.`,
   ];
+  const copyLabelText = copyLabel_ === 'Duplicate Copy' ? L.duplicateCopy : copyLabel_ === 'Triplicate Copy' ? L.triplicateCopy : L.originalCopy;
+
   const meta = (label: string, value: string, testid?: string) => (
     <div className="flex gap-1"><span className="w-[92px] shrink-0">{label}</span><span>:</span><b data-testid={testid} className="font-medium">{value}</b></div>
   );
@@ -52,11 +62,14 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
         {/* seller */}
         <div className="relative text-center px-3 pt-1 pb-2 border-b border-black">
           <div className="flex justify-between text-[12px]">
-            <span>{d.shop.gst ? <>GSTIN : <b>{d.shop.gst}</b></> : ''}</span>
-            <span className="italic">{copyLabel}</span>
+            <span className="text-left">
+              {d.shop.gst ? <><>GSTIN : <b>{d.shop.gst}</b></></> : ''}
+              {d.shop.fssai ? <div>FSSAI : <b>{d.shop.fssai}</b></div> : null}
+            </span>
+            <span className="italic">{copyLabelText}</span>
           </div>
           {d.shop.logoUrl && <img src={d.shop.logoUrl} alt="" crossOrigin="anonymous" className="h-10 mx-auto object-contain" />}
-          <div className="text-[13px] font-bold underline underline-offset-2">{title}</div>
+          <div className="text-[13px] font-bold underline underline-offset-2 uppercase">{title}</div>
           <div className="text-[22px] font-bold uppercase tracking-wide leading-tight">{d.shop.name || 'Business'}</div>
           {d.shop.address && <div className="uppercase">{d.shop.address}</div>}
           {d.shop.pan && <div>PAN : {d.shop.pan}</div>}
@@ -66,18 +79,18 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
         {/* invoice + dispatch details */}
         <div className="grid grid-cols-2 border-b border-black">
           <div className={`px-2 py-1 border-r ${cell}`}>
-            {meta('Invoice No.', d.invoiceNumber, 'mi-invoice-number')}
-            {meta('Dated', d.dateText, 'mi-date')}
-            {meta('Place of Supply', placeOfSupply)}
-            {meta('Reverse Charge', d.dispatch.reverseCharge || 'N')}
-            {meta('Salesman Name', d.dispatch.salesman)}
+            {meta(L.invoiceNo, d.invoiceNumber, 'mi-invoice-number')}
+            {meta(L.dated, d.dateText, 'mi-date')}
+            {meta(L.placeOfSupply, placeOfSupply)}
+            {meta(L.reverseCharge, d.dispatch.reverseCharge || 'N')}
+            {meta(L.salesmanName, d.dispatch.salesman)}
           </div>
           <div className="px-2 py-1">
-            {meta('GR/RR No.', d.dispatch.grRrNo)}
-            {meta('Transport', d.dispatch.transport)}
-            {meta('Vehicle No.', d.dispatch.vehicleNo)}
-            {meta('Station', d.dispatch.station)}
-            {meta('E-Way Bill No.', d.dispatch.eWayBill)}
+            {meta(L.grRrNo, d.dispatch.grRrNo)}
+            {meta(L.transport, d.dispatch.transport)}
+            {meta(L.vehicleNo, d.dispatch.vehicleNo)}
+            {meta(L.station, d.dispatch.station)}
+            {meta(L.eWayBillNo, d.dispatch.eWayBill)}
           </div>
         </div>
 
@@ -85,16 +98,17 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
         <div className="grid grid-cols-2 border-b border-black">
           <div className={`px-2 py-1 border-r ${cell} min-h-[104px] flex flex-col justify-between`}>
             <div>
-              <div className="italic font-semibold">Billed to :</div>
+              <div className="italic font-semibold">{L.billedTo}</div>
               <div data-testid="mi-customer" className="uppercase">{d.customer.name || 'Walk-in Customer'}</div>
               {d.customer.address && <div className="uppercase">{d.customer.address}</div>}
               {d.customer.mobile && <div>Ph: {d.customer.mobile}</div>}
             </div>
             <div>GSTIN / UIN &nbsp;&nbsp;&nbsp;&nbsp;: {d.customer.gst}</div>
+            {d.customer.fssai ? <div>FSSAI : {d.customer.fssai}</div> : null}
           </div>
           <div className="px-2 py-1 min-h-[104px] flex flex-col justify-between">
             <div>
-              <div className="italic font-semibold">Shipped to :</div>
+              <div className="italic font-semibold">{L.shippedTo}</div>
               <div className="uppercase">{d.customer.name || 'Walk-in Customer'}</div>
               {shipTo && <div className="uppercase">{shipTo}</div>}
             </div>
@@ -108,20 +122,20 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
         <table className="w-full border-collapse" data-testid="mi-items">
           <thead>
             <tr className="border-b border-black text-left">
-              <th className="py-1 px-1 w-8 border-r border-black font-semibold">S.N.</th>
-              <th className="py-1 px-1 border-r border-black font-semibold">Description of Goods</th>
-              <th className="py-1 px-1 w-[84px] border-r border-black font-semibold">HSN/ SAC Code</th>
-              <th className="py-1 px-1 w-[78px] border-r border-black text-right font-semibold">Qty.</th>
-              <th className="py-1 px-1 w-[48px] border-r border-black font-semibold">Unit</th>
-              <th className="py-1 px-1 w-[84px] border-r border-black text-right font-semibold">Price</th>
-              <th className="py-1 px-1 w-[104px] text-right font-semibold">Amount(₹)</th>
+              <th className="py-1 px-1 w-8 border-r border-black font-semibold">{L.sn}</th>
+              <th className="py-1 px-1 border-r border-black font-semibold">{L.descriptionOfGoods}</th>
+              <th className="py-1 px-1 w-[84px] border-r border-black font-semibold">{L.hsnSacCode}</th>
+              <th className="py-1 px-1 w-[78px] border-r border-black text-right font-semibold">{L.qty}</th>
+              <th className="py-1 px-1 w-[48px] border-r border-black font-semibold">{L.unit}</th>
+              <th className="py-1 px-1 w-[84px] border-r border-black text-right font-semibold">{L.price}</th>
+              <th className="py-1 px-1 w-[104px] text-right font-semibold">{L.amount}</th>
             </tr>
           </thead>
           <tbody>
             {d.lines.map((l, i) => (
               <tr key={i} className="align-top" data-testid="mi-line">
                 <td className="py-1 px-1 border-r border-black text-center">{i + 1}.</td>
-                <td className="py-1 px-1 border-r border-black uppercase">{l.name}{l.batch ? <div className="italic normal-case text-[11px]">Batch: {l.batch}</div> : null}</td>
+                <td className="py-1 px-1 border-r border-black uppercase">{l.name}{l.batch ? <div className="italic normal-case text-[11px]">{L.batch}: {l.batch}</div> : null}</td>
                 <td className="py-1 px-1 border-r border-black">{l.hsn}</td>
                 <td className="py-1 px-1 border-r border-black text-right">{l.qty.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
                 <td className="py-1 px-1 border-r border-black uppercase">{l.unit}</td>
@@ -139,17 +153,17 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
         {/* amount block */}
         <div className="border-t border-black">
           <div className="flex justify-end"><div className="w-[300px] px-2 py-1 space-y-0.5">
-            <Line label="Goods Subtotal" value={num(d.goodsPaise)} testid="mi-goods" />
-            {d.discountPaise > 0 && <Line label="Less : Discount" value={`${num(d.discountPaise)}`} testid="mi-discount" />}
-            {d.gstBilled && <Line label="Taxable Amount" value={num(d.taxablePaise)} testid="mi-taxable" />}
+            <Line label={L.goodsSubtotal} value={num(d.goodsPaise)} testid="mi-goods" />
+            {d.discountPaise > 0 && <Line label={L.lessDiscount} value={`${num(d.discountPaise)}`} testid="mi-discount" />}
+            {d.gstBilled && <Line label={L.taxableAmount} value={num(d.taxablePaise)} testid="mi-taxable" />}
             {d.gstBilled && (d.interState
-              ? <Line label="Add : IGST" value={num(d.igstPaise)} testid="mi-igst" />
-              : (<><Line label="Add : CGST" value={num(d.cgstPaise)} testid="mi-cgst" /><Line label="Add : SGST" value={num(d.sgstPaise)} testid="mi-sgst" /></>))}
-            {chargeRows.length > 0 && <div data-testid="mi-charges">{chargeRows.map((k) => <Line key={k} label={`Add : ${CHARGE_LABEL[k]}`} value={num(d.charges[k])} testid={`mi-${k}`} />)}</div>}
-            {d.roundOffPaise !== 0 && <Line label={`Less : Rounded Off (${d.roundOffPaise < 0 ? '-' : '+'})`} value={num(Math.abs(d.roundOffPaise))} testid="mi-roundoff" />}
+              ? <Line label={L.addIgst} value={num(d.igstPaise)} testid="mi-igst" />
+              : (<><Line label={L.addCgst} value={num(d.cgstPaise)} testid="mi-cgst" /><Line label={L.addSgst} value={num(d.sgstPaise)} testid="mi-sgst" /></>))}
+            {chargeRows.length > 0 && <div data-testid="mi-charges">{chargeRows.map((k) => <Line key={k} label={`${locale === 'en' ? 'Add' : '+'} : ${chargeName(k)}`} value={num(d.charges[k])} testid={`mi-${k}`} />)}</div>}
+            {d.roundOffPaise !== 0 && <Line label={`${L.roundOff} (${d.roundOffPaise < 0 ? '-' : '+'})`} value={num(Math.abs(d.roundOffPaise))} testid="mi-roundoff" />}
           </div></div>
           <div className="flex border-t border-black">
-            <div className="flex-1 text-right font-semibold px-2 py-1">Grand Total</div>
+            <div className="flex-1 text-right font-semibold px-2 py-1">{L.grandTotal}</div>
             <div className="w-[160px] text-center py-1 border-l border-black font-semibold" data-testid="mi-qty-total">
               {d.qtyTotal.qty.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {d.qtyTotal.unit.toUpperCase()}
             </div>
@@ -162,10 +176,10 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
           <table className="border-collapse text-[11px]" data-testid="mi-tax-table">
             <thead>
               <tr className="text-left">
-                <th className="pr-3 font-semibold underline">HSN/ SAC</th><th className="pr-3 font-semibold underline">Tax Rate</th><th className="pr-3 font-semibold underline text-right">Taxable Amt.</th>
-                <th className="pr-3 font-semibold underline text-right">{d.interState ? 'IGST Amt.' : 'CGST Amt.'}</th>
-                <th className="pr-3 font-semibold underline text-right">{d.interState ? '' : 'SGST Amt.'}</th>
-                <th className="font-semibold underline text-right">Total Tax</th>
+                <th className="pr-3 font-semibold underline">HSN/ SAC</th><th className="pr-3 font-semibold underline">{L.taxRate}</th><th className="pr-3 font-semibold underline text-right">{L.taxableAmt}</th>
+                <th className="pr-3 font-semibold underline text-right">{d.interState ? L.igstAmt : L.cgstAmt}</th>
+                <th className="pr-3 font-semibold underline text-right">{d.interState ? '' : L.sgstAmt}</th>
+                <th className="font-semibold underline text-right">{L.totalTax}</th>
               </tr>
             </thead>
             <tbody>
@@ -186,20 +200,20 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
 
         {d.balancePaise > 0 && (
           <div className="border-t border-black px-2 py-1 text-[11px] flex justify-between">
-            <span>Payment: <b data-testid="mi-payment-mode">{d.paymentMode}</b></span>
-            <span>Received <b data-testid="mi-received">{num(d.paidPaise)}</b> · Balance due <b data-testid="mi-balance">{num(d.balancePaise)}</b></span>
+            <span>{L.payment}: <b data-testid="mi-payment-mode">{d.paymentMode}</b></span>
+            <span>{L.received} <b data-testid="mi-received">{num(d.paidPaise)}</b> · {L.balanceDue} <b data-testid="mi-balance">{num(d.balancePaise)}</b></span>
           </div>
         )}
 
         <div className="border-t border-black px-3 py-1 text-center">
-          <div className="font-semibold underline">Declaration</div>
-          <div className="text-[10.5px] leading-tight">{DEFAULT_DECLARATION}</div>
+          <div className="font-semibold underline">{L.declaration}</div>
+          <div className="text-[10.5px] leading-tight">{L.declarationText}</div>
         </div>
 
         {(d.shop.bankAccountNumber || d.shop.upiId) && (
           <div className="border-t border-black px-2 py-1">
             <div>
-              Bank Details : &nbsp;{[d.shop.bankName, d.shop.bankAccountNumber && `A/C NO. ${d.shop.bankAccountNumber}`].filter(Boolean).join(' ')}
+              {L.bankDetails} : &nbsp;{[d.shop.bankName, d.shop.bankAccountNumber && `A/C NO. ${d.shop.bankAccountNumber}`].filter(Boolean).join(' ')}
               {d.shop.bankIfsc && <div className="pl-[84px]">IFSC CODE :- {d.shop.bankIfsc}</div>}
               {d.shop.upiId && <div className="pl-[84px]">UPI : {d.shop.upiId}</div>}
             </div>
@@ -209,17 +223,17 @@ const MillInvoiceClassic = forwardRef<HTMLDivElement, { data: MillInvoiceData; c
         {/* terms + signatures */}
         <div className="grid grid-cols-[1fr_1fr] border-t border-black">
           <div className={`px-2 py-1 border-r ${cell} text-[10.5px]`}>
-            <div className="underline">Terms &amp; Conditions</div>
-            <div>E.&amp; O.E.</div>
+            <div className="underline">{L.termsAndConditions}</div>
+            <div>{L.eAndOE}</div>
             {terms.map((t, i) => <div key={i}>{i + 1}. {t}</div>)}
           </div>
           <div className="flex flex-col">
-            <div className="px-2 py-1 border-b border-black min-h-[48px] text-[10.5px]">Receiver&apos;s Signature :</div>
+            <div className="px-2 py-1 border-b border-black min-h-[48px] text-[10.5px]">{L.receiversSignature}</div>
             <div className="flex-1 px-2 py-1 text-right text-[12px] flex flex-col justify-between min-h-[64px]">
               <div>For <b className="uppercase">{d.shop.name}</b></div>
               <div>
                 {d.shop.signatureUrl && <img src={d.shop.signatureUrl} alt="" crossOrigin="anonymous" className="h-8 ml-auto object-contain" />}
-                Authorised Signatory
+                {L.authorisedSignatory}
               </div>
             </div>
           </div>

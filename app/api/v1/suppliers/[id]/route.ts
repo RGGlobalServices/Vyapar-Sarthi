@@ -32,6 +32,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         email: data.email !== undefined ? data.email : (supplier as any).email,
         address: data.address !== undefined ? data.address : (supplier as any).address,
         gst: data.gst !== undefined ? data.gst : supplier.gst,
+        fssai: data.fssai !== undefined ? (data.fssai?.trim() || null) : (supplier as any).fssai,
         balance: data.balance !== undefined ? parseFloat(data.balance) : (supplier as any).balance,
         creditLimit: data.creditLimit !== undefined ? (parseFloat(data.creditLimit) || 0) : (supplier as any).creditLimit,
         creditDays: data.creditDays !== undefined ? (parseInt(data.creditDays) || 0) : (supplier as any).creditDays,

@@ -11,9 +11,10 @@ export const POST = handle(async (req) => {
   const { shop } = await requireShop(req);
   const data = await readBody(req);
   
-  const { entityType, entityId, amount, paymentMode, note } = data;
+  const { entityType, entityId, amount, discount, paymentMode, note } = data;
+  const discountAmount = Math.max(0, parseFloat(discount) || 0);
 
-  if (!entityType || !entityId || !amount || amount <= 0) {
+  if (!entityType || !entityId || ((!amount || amount <= 0) && discountAmount <= 0)) {
     throw new ApiError(400, 'Invalid payment data');
   }
 
@@ -23,7 +24,8 @@ export const POST = handle(async (req) => {
       const { customerTransactionId, customerName, customerMobile, newTotalDue } = await applyCustomerPayment(tx, {
         shopId: shop.id,
         customerId: entityId,
-        amount,
+        amount: amount || 0,
+        discount: discountAmount,
         paymentMode,
         note,
       });

@@ -600,8 +600,9 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
               value={form.batchNumber}
               onChange={e => setForm({ ...form, batchNumber: e.target.value })}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm"
-              placeholder="PB-2026-001"
+              placeholder="Auto-generated if empty (e.g. PB-2026-001)"
             />
+            <p className="text-[10px] text-slate-400 mt-1">Leave empty to auto-generate, or type your own batch number</p>
           </div>
 
           {/* Configurable Production Stage Workflow Builder */}

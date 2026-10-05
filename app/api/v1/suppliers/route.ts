@@ -47,6 +47,7 @@ export async function POST(req: Request) {
         email: data.email || null,
         address: data.address || null,
         gst: data.gst || null,
+        fssai: data.fssai?.trim() || null,
         balance: data.balance ? parseFloat(data.balance) : 0,
       },
     });

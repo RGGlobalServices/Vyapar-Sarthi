@@ -65,7 +65,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   // credit limit so the shopkeeper can see the impact before importing.
   const [purchaseSupplier, setPurchaseSupplier] = useState({
     name: '', mobile: '', gst: '', address: '',
-    creditDays: '', creditLimit: '', paidAmount: '', batchNumber: '',
+    creditDays: '', creditLimit: '', paidAmount: '', batchNumber: '', discount: '',
   });
   // Bill-level charges read from the bill (hamali, freight, loading …) — editable here, stored on the purchase, never as products.
   const [purchaseBroker, setPurchaseBroker] = useState({ name: '', commission: '' });
@@ -121,6 +121,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       creditLimit: prev.creditLimit,
       paidAmount: prev.paidAmount,
       batchNumber: prev.batchNumber,
+      discount: prev.discount,
     }));
     setSupplierLookupDone(false);
   }, [importType, previewData]);
@@ -1254,7 +1255,63 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <input value={purchaseSupplier.batchNumber} onChange={e => setPurchaseSupplier(s => ({ ...s, batchNumber: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. LOT-001" />
                     <span className="block text-[10px] text-slate-400 mt-1">Applied to all items on this bill. Rows with their own batch column take priority.</span>
                   </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Bill Discount (₹) <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                    <input type="number" min="0" step="0.01" value={purchaseSupplier.discount} onChange={e => setPurchaseSupplier(s => ({ ...s, discount: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
+                    <span className="block text-[10px] text-slate-400 mt-1">Discount given by supplier — subtracted from bill total and from what is owed.</span>
+                  </label>
                 </div>
+                {(() => {
+                  const goodsTotal = previewData.reduce((sum, r) => {
+                    const qty = parseFloat(String(r['Quantity'] ?? r['quantity'] ?? 0)) || 0;
+                    const unitCost = parseFloat(String(r['Unit Cost'] ?? r['unit_cost'] ?? r['unitCost'] ?? 0)) || 0;
+                    return sum + qty * unitCost;
+                  }, 0);
+                  const chargesSum = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
+                  const discountAmt = Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
+                  const billTotal = Math.max(0, goodsTotal - discountAmt + chargesSum);
+                  const paidNow = Math.max(0, parseFloat(purchaseSupplier.paidAmount) || 0);
+                  const balanceDue = Math.max(0, billTotal - paidNow);
+                  const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+                  if (goodsTotal === 0) return null;
+                  return (
+                    <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-500/20">
+                      <h5 className="text-[11px] font-bold uppercase text-slate-500 mb-2">Bill Summary</h5>
+                      <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Goods Total</span>
+                          <span className="font-semibold tabular-nums">₹{fmt(goodsTotal)}</span>
+                        </div>
+                        {discountAmt > 0 && (
+                          <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                            <span>Less: Discount</span>
+                            <span className="tabular-nums">−₹{fmt(discountAmt)}</span>
+                          </div>
+                        )}
+                        {chargesSum > 0 && (
+                          <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                            <span>Plus: Charges</span>
+                            <span className="tabular-nums">+₹{fmt(chargesSum)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-bold border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5">
+                          <span>Bill Total</span>
+                          <span className="tabular-nums">₹{fmt(billTotal)}</span>
+                        </div>
+                        {paidNow > 0 && (
+                          <div className="flex justify-between text-slate-500">
+                            <span>Less: Paid Now</span>
+                            <span className="tabular-nums">−₹{fmt(paidNow)}</span>
+                          </div>
+                        )}
+                        <div className={`flex justify-between font-black border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5 ${balanceDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          <span>Balance Due to Supplier</span>
+                          <span className="tabular-nums">₹{fmt(balanceDue)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

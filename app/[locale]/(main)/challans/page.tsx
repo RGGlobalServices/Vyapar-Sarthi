@@ -523,6 +523,9 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [invNo, setInvNo] = useState('');
   const [invBusy, setInvBusy] = useState(false);
   const [invErr, setInvErr] = useState('');
+  const [invSuggestions, setInvSuggestions] = useState<{ id: string; invoice_number: string; customer_name?: string | null }[]>([]);
+  const [showInvDrop, setShowInvDrop] = useState(false);
+  const invInputRef = useRef<HTMLInputElement>(null);
 
   // Basic
   const [challanDate, setChallanDate]     = useState(new Date().toISOString().slice(0, 10));
@@ -644,6 +647,47 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
     }));
   };
 
+  // Debounced invoice search: fetch suggestions as user types (min 2 chars)
+  useEffect(() => {
+    if (!isMill || invNo.trim().length < 2) { setInvSuggestions([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get(`/billing?q=${encodeURIComponent(invNo.trim())}&mill=1`);
+        setInvSuggestions((res.data || []).slice(0, 8));
+      } catch { setInvSuggestions([]); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [invNo, isMill]);
+
+  const loadFromInvoiceById = async (saleId: string) => {
+    setInvBusy(true); setInvErr(''); setShowInvDrop(false);
+    try {
+      const res = await api.get(`/challans/from-invoice/${saleId}`);
+      const d = res.data;
+      const lines = (d.items || []).filter((l: any) => l.remainingQty > 0);
+      if (lines.length === 0) { setInvErr('Everything on this invoice is already on challans.'); return; }
+      setFromInv({ saleId: d.saleId, invoiceNumber: d.invoiceNumber, lines: d.items });
+      if (d.customer) setSelectedParty({ id: d.customer.id, name: d.customer.name, mobile: d.customer.mobile, address: d.customer.address });
+      setCartItems(lines.map((l: any) => {
+        const hasPack = l.packSize && l.packSize > 0;
+        const dispUnit = hasPack ? 'Bag' : (l.unit || 'Kg');
+        const noOfPacks = hasPack ? Math.ceil(l.remainingQty / l.packSize) : null;
+        const totalWeight = hasPack ? l.remainingQty : null;
+        return {
+          productId: l.productId, name: l.name, baseUnit: l.unit || 'Kg',
+          unit: dispUnit, quantity: noOfPacks ?? l.remainingQty, price: l.price,
+          lotId: null, lotNumber: null, godown: '',
+          packSize: hasPack ? l.packSize : null,
+          noOfPacks, totalWeight,
+        };
+      }));
+    } catch (err: any) {
+      setInvErr(err?.response?.data?.error || err?.message || 'Could not load the invoice.');
+    } finally {
+      setInvBusy(false);
+    }
+  };
+
   const loadFromInvoice = async () => {
     const no = invNo.trim();
     if (!no) return;
@@ -652,19 +696,9 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
       const bill = await api.get(`/billing/${encodeURIComponent(no)}`);
       const id = bill.data?.id;
       if (!id) throw new Error('Invoice not found');
-      const res = await api.get(`/challans/from-invoice/${id}`);
-      const d = res.data;
-      const lines = (d.items || []).filter((l: any) => l.remainingQty > 0);
-      if (lines.length === 0) { setInvErr('Everything on this invoice is already on challans.'); return; }
-      setFromInv({ saleId: d.saleId, invoiceNumber: d.invoiceNumber, lines: d.items });
-      if (d.customer) setSelectedParty({ id: d.customer.id, name: d.customer.name, mobile: d.customer.mobile, address: d.customer.address });
-      setCartItems(lines.map((l: any) => ({
-        productId: l.productId, name: l.name, baseUnit: l.unit, unit: l.unit, quantity: l.remainingQty, price: l.price,
-        lotId: null, lotNumber: null, godown: '', packSize: null, noOfPacks: null, totalWeight: null,
-      })));
+      await loadFromInvoiceById(id);
     } catch (err: any) {
       setInvErr(err?.response?.data?.error || err?.message || 'Could not load the invoice.');
-    } finally {
       setInvBusy(false);
     }
   };
@@ -757,13 +791,52 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <Section icon={<FileText size={13} />} title="Start from an invoice (optional)">
               {fromInv ? (
                 <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-sm">
-                  <span className="font-bold text-slate-900 dark:text-white">Invoice {fromInv.invoiceNumber} — stock is already out; this challan will not reduce it again. Quantity is limited to what is left to deliver.</span>
-                  <button onClick={clearFromInvoice} className="text-slate-400 hover:text-red-500 ml-2"><X size={16} /></button>
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Receipt size={14} className="text-amber-500 shrink-0" />
+                    Invoice {fromInv.invoiceNumber} — stock already out; delivery only (Quantity limited to what's left).
+                  </span>
+                  <button onClick={clearFromInvoice} className="text-slate-400 hover:text-red-500 ml-2 shrink-0"><X size={16} /></button>
                 </div>
               ) : (
-                <div className="flex gap-2">
-                  <input value={invNo} onChange={e => setInvNo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); loadFromInvoice(); } }} placeholder="Invoice number, e.g. INV-0012" className={inputCls} />
-                  <button type="button" onClick={loadFromInvoice} disabled={invBusy || !invNo.trim()} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">{invBusy ? '…' : 'Load'}</button>
+                <div className="relative">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      <input
+                        ref={invInputRef}
+                        value={invNo}
+                        onChange={e => { setInvNo(e.target.value); setShowInvDrop(true); setInvErr(''); }}
+                        onFocus={() => { if (invNo.trim().length >= 2) setShowInvDrop(true); }}
+                        onBlur={() => setTimeout(() => setShowInvDrop(false), 200)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setShowInvDrop(false); loadFromInvoice(); } }}
+                        placeholder="Search invoice number, e.g. INV-0012"
+                        className={cn(inputCls, 'pl-9')}
+                      />
+                    </div>
+                    <button type="button" onClick={() => { setShowInvDrop(false); loadFromInvoice(); }} disabled={invBusy || !invNo.trim()} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 shrink-0">
+                      {invBusy ? <Loader2 size={15} className="animate-spin" /> : 'Load'}
+                    </button>
+                  </div>
+                  {/* Autocomplete dropdown */}
+                  {showInvDrop && invSuggestions.length > 0 && (() => {
+                    const r = invInputRef.current?.getBoundingClientRect();
+                    if (!r) return null;
+                    return (
+                      <div style={{ position: 'fixed', top: r.bottom + 4, left: r.left, width: r.width, zIndex: 9999 }} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
+                        {invSuggestions.map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onMouseDown={() => { setInvNo(s.invoice_number); setShowInvDrop(false); loadFromInvoiceById(s.id); }}
+                            className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 border-b border-slate-100 dark:border-slate-700 last:border-0 flex justify-between items-center"
+                          >
+                            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{s.invoice_number}</span>
+                            {s.customer_name && <span className="text-xs text-slate-500 truncate ml-2">{s.customer_name}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
               {invErr && <p className="text-xs text-red-500 mt-1">{invErr}</p>}

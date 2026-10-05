@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, Handshake, IndianRupee } from 'lucide-react';
+import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp } from 'lucide-react';
+import { useExport } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
@@ -17,9 +18,21 @@ type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment';
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
+const STATEMENT_COLUMNS = [
+  { key: 'date', label: 'Date', format: (v: string) => new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+  { key: 'type', label: 'Type', format: (v: string) => v === 'charge' ? 'Commission Earned' : 'Payment Made' },
+  { key: 'direction', label: 'For', format: (v: any) => v === 'purchase' ? 'Purchase' : v === 'sale' ? 'Sale' : '—' },
+  { key: 'billNumber', label: 'Bill #', format: (v: any) => v || '—' },
+  { key: 'amount', label: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
+  { key: 'paymentMethod', label: 'Mode', format: (v: any) => v || '—' },
+  { key: 'note', label: 'Note', format: (v: any) => v || '' },
+];
+
 export default function BrokersPage() {
   const t = useTranslations('Brokers');
   const activeShopId = useBusinessStore(s => s.activeShopId);
+  const { exportToPDF } = useExport();
+  const { profile } = useBusinessStore();
   const [selectedBrokerId, setSelectedBrokerId] = useState<string | null>(null);
   const [entryModal, setEntryModal] = useState<{ brokerId: string; type: 'charge' | 'payment' } | null>(null);
   const [showAddBroker, setShowAddBroker] = useState(false);
@@ -38,6 +51,26 @@ export default function BrokersPage() {
   const totalOwed = brokers.reduce((s, b) => s + Math.max(0, b.balance), 0);
   const chargeSum = (d: 'purchase' | 'sale') => entries.filter(e => e.type === 'charge' && e.direction === d).reduce((a, e) => a + e.amount, 0);
   const selectedBroker = brokers.find(b => b.id === selectedBrokerId);
+
+  const downloadBrokerStatement = async (b: Broker) => {
+    const brokerEntries = entries.filter(e => e.brokerId === b.id);
+    const orderCount = brokerEntries.filter(e => e.type === 'charge').length;
+    const paid = brokerEntries.filter(e => e.type === 'payment').reduce((a, e) => a + e.amount, 0);
+    await exportToPDF({
+      title: `Commission Statement — ${b.name}`,
+      filename: `broker-statement-${b.name.replace(/\s+/g, '-').toLowerCase()}`,
+      columns: STATEMENT_COLUMNS,
+      data: brokerEntries,
+      summary: [
+        { label: 'Broker', value: b.name },
+        ...(b.mobile ? [{ label: 'Mobile', value: b.mobile }] : []),
+        { label: 'Total Orders/Deals', value: String(orderCount) },
+        { label: 'Total Commission Earned', value: `₹${brokerEntries.filter(e => e.type === 'charge').reduce((a, e) => a + e.amount, 0).toLocaleString('en-IN')}` },
+        { label: 'Total Paid', value: `₹${paid.toLocaleString('en-IN')}` },
+        { label: 'Pending Balance', value: `₹${Math.max(0, b.balance).toLocaleString('en-IN')}` },
+      ],
+    });
+  };
 
   const filteredEntries = entries
     .filter(e => !selectedBrokerId || e.brokerId === selectedBrokerId)
@@ -131,9 +164,14 @@ export default function BrokersPage() {
                     ))}
                   </div>
                 </div>
-                <span className={cn('text-lg font-black shrink-0', b.balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-                  {rupee(Math.abs(b.balance))}
-                </span>
+                <div className="text-right shrink-0">
+                  <span className={cn('text-lg font-black block', b.balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                    {b.balance > 0 ? 'Pending ' : 'Settled '}{rupee(Math.abs(b.balance))}
+                  </span>
+                  <span className="text-[10px] text-slate-400 flex items-center justify-end gap-0.5 mt-0.5">
+                    <TrendingUp size={10} /> {entries.filter(e => e.brokerId === b.id && e.type === 'charge').length} orders
+                  </span>
+                </div>
               </div>
               <div className="flex gap-2 mt-3">
                 <button onClick={(e) => { e.stopPropagation(); setEntryModal({ brokerId: b.id, type: 'charge' }); }}
@@ -143,6 +181,11 @@ export default function BrokersPage() {
                 <button onClick={(e) => { e.stopPropagation(); setEntryModal({ brokerId: b.id, type: 'payment' }); }}
                   className="flex-1 text-xs font-bold py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100">
                   {t('recordPayment')}
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); downloadBrokerStatement(b); }}
+                  title="Download PDF Statement"
+                  className="text-xs font-bold p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                  <FileText size={14} />
                 </button>
               </div>
             </div>
