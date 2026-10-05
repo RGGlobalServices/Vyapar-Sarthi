@@ -8,7 +8,7 @@ import {
   Recycle, Trash2, Eye, X, Undo2, Download, Truck, CheckCircle2,
   PackageCheck, FileSpreadsheet, FileText
 } from 'lucide-react';
-import { useLocale } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
@@ -76,7 +76,7 @@ type RejectionReturnRecord = {
   batchNumber?: string | null;
 };
 
-const DICTIONARY = {
+const _DICTIONARY_REMOVED = {
   en: {
     title: 'Rejection Management (Rejection & Return Engine)',
     subtitle: 'Manage rejected raw materials and in-process quality failures — return to supplier/farmer (with Return Gate Pass), reprocess, or scrap.',
@@ -445,10 +445,10 @@ const DICTIONARY = {
 const fetcher = (url: string) => api.get(url).then((res) => res.data);
 
 export default function RejectionsPage() {
+  const t = useTranslations('Rejections');
   const activeShopId = useBusinessStore((s) => s.activeShopId);
   const profile = useBusinessStore((s) => s.profile);
   const currentLocale = useLocale() as 'en' | 'mr' | 'hi';
-  const t = DICTIONARY[currentLocale] || DICTIONARY.en;
 
   const [activeTab, setActiveTab] = useState<'LOTS' | 'RETURNS'>('LOTS');
   const [search, setSearch] = useState('');
@@ -955,10 +955,10 @@ export default function RejectionsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <AlertTriangle size={24} className="text-red-500" /> {t.title}
+            <AlertTriangle size={24} className="text-red-500" /> {t('title')}
           </h1>
           <p className="text-sm text-slate-500 mt-1 max-w-4xl">
-            {t.subtitle}
+            {t('subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -969,7 +969,7 @@ export default function RejectionsPage() {
             className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 px-3.5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all shadow-sm"
           >
             {isExportingExcel ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} className="text-emerald-600 dark:text-emerald-400" />}
-            {t.downloadExcel}
+            {t('downloadExcel')}
           </button>
 
           {/* Download PDF Report */}
@@ -979,7 +979,7 @@ export default function RejectionsPage() {
             className="bg-red-50 hover:bg-red-100 text-red-700 dark:bg-red-950/40 dark:hover:bg-red-900/60 dark:text-red-300 border border-red-200 dark:border-red-800/50 px-3.5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all shadow-sm"
           >
             {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} className="text-red-600 dark:text-red-400" />}
-            {t.downloadPdfReport}
+            {t('downloadPdfReport')}
           </button>
 
           {/* Refresh Button */}
@@ -990,7 +990,7 @@ export default function RejectionsPage() {
             }}
             className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
           >
-            <RefreshCw size={16} /> {t.refresh}
+            <RefreshCw size={16} /> {t('refresh')}
           </button>
         </div>
       </div>
@@ -999,44 +999,44 @@ export default function RejectionsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase">{t.kpiTotalLots}</span>
+            <span className="text-xs font-bold text-slate-500 uppercase">{t('kpiTotalLots')}</span>
             <AlertTriangle size={18} className="text-amber-500" />
           </div>
           <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5 font-mono">{totalLots}</p>
-          <span className="text-[11px] text-slate-400">{t.kpiTotalLotsSub}</span>
+          <span className="text-[11px] text-slate-400">{t('kpiTotalLotsSub')}</span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase">{t.kpiAvailableStock}</span>
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase">{t('kpiAvailableStock')}</span>
             <PackageCheck size={18} className="text-emerald-500" />
           </div>
           <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1.5 font-mono">
-            {availableKg.toLocaleString('en-IN')} <span className="text-xs">{t.kgUnit}</span>
+            {availableKg.toLocaleString('en-IN')} <span className="text-xs">{t('kgUnit')}</span>
           </p>
-          <span className="text-[11px] text-slate-400">{t.kpiAvailableStockSub}</span>
+          <span className="text-[11px] text-slate-400">{t('kpiAvailableStockSub')}</span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase">{t.kpiReturned}</span>
+            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase">{t('kpiReturned')}</span>
             <Undo2 size={18} className="text-blue-500" />
           </div>
           <p className="text-2xl font-extrabold text-blue-600 dark:text-blue-400 mt-1.5 font-mono">
-            {returnHistory.length} <span className="text-xs">{t.challansUnit}</span>
+            {returnHistory.length} <span className="text-xs">{t('challansUnit')}</span>
           </p>
-          <span className="text-[11px] text-slate-400">{t.kpiReturnedSub}</span>
+          <span className="text-[11px] text-slate-400">{t('kpiReturnedSub')}</span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase">{t.kpiDisposed}</span>
+            <span className="text-xs font-bold text-slate-500 uppercase">{t('kpiDisposed')}</span>
             <Trash2 size={18} className="text-slate-400" />
           </div>
           <p className="text-2xl font-extrabold text-slate-700 dark:text-slate-300 mt-1.5 font-mono">
-            {disposedKg.toLocaleString('en-IN')} <span className="text-xs">{t.kgUnit}</span>
+            {disposedKg.toLocaleString('en-IN')} <span className="text-xs">{t('kgUnit')}</span>
           </p>
-          <span className="text-[11px] text-slate-400">{t.kpiDisposedSub}</span>
+          <span className="text-[11px] text-slate-400">{t('kpiDisposedSub')}</span>
         </div>
       </div>
 
@@ -1051,7 +1051,7 @@ export default function RejectionsPage() {
               : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
           )}
         >
-          <AlertTriangle size={16} /> {t.tabLots}
+          <AlertTriangle size={16} /> {t('tabLots')}
         </button>
         <button
           onClick={() => setActiveTab('RETURNS')}
@@ -1062,7 +1062,7 @@ export default function RejectionsPage() {
               : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
           )}
         >
-          <Undo2 size={16} /> {t.tabReturns}
+          <Undo2 size={16} /> {t('tabReturns')}
           {returnHistory.length > 0 && (
             <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold">
               {returnHistory.length}
@@ -1079,7 +1079,7 @@ export default function RejectionsPage() {
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder={t.searchPlaceholder}
+                placeholder={t('searchPlaceholder')}
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -1097,17 +1097,17 @@ export default function RejectionsPage() {
               }}
               className="h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-medium"
             >
-              <option value="">{t.allStatuses}</option>
-              <option value="AVAILABLE">{t.statusAvailable}</option>
-              <option value="STORED">{t.statusStored}</option>
-              <option value="PARTIALLY_REPROCESSED">{t.statusPartiallyReprocessed}</option>
-              <option value="FULLY_REPROCESSED">{t.statusFullyReprocessed}</option>
-              <option value="DISPOSED">{t.statusDisposed}</option>
+              <option value="">{t('allStatuses')}</option>
+              <option value="AVAILABLE">{t('statusAvailable')}</option>
+              <option value="STORED">{t('statusStored')}</option>
+              <option value="PARTIALLY_REPROCESSED">{t('statusPartiallyReprocessed')}</option>
+              <option value="FULLY_REPROCESSED">{t('statusFullyReprocessed')}</option>
+              <option value="DISPOSED">{t('statusDisposed')}</option>
             </select>
 
             <input
               type="text"
-              placeholder={t.filterReasonPlaceholder}
+              placeholder={t('filterReasonPlaceholder')}
               value={reasonFilter}
               onChange={(e) => {
                 setReasonFilter(e.target.value);
@@ -1125,23 +1125,23 @@ export default function RejectionsPage() {
           ) : lots.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
               <AlertTriangle size={40} className="mx-auto text-slate-300 dark:text-slate-700" />
-              <p className="mt-3 text-sm text-slate-500">{t.noLotsFound}</p>
+              <p className="mt-3 text-sm text-slate-500">{t('noLotsFound')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase text-xs">
                   <tr>
-                    <th className="px-4 py-3 font-bold">{t.colLotNo}</th>
-                    <th className="px-3 py-3 font-bold">{t.colProduct}</th>
-                    <th className="px-3 py-3 font-bold">{t.colBatch}</th>
-                    <th className="px-3 py-3 font-bold text-right">{t.colInitialQty}</th>
-                    <th className="px-3 py-3 font-bold text-right">{t.colAvailable}</th>
-                    <th className="px-3 py-3 font-bold text-right">{t.colDisposed}</th>
-                    <th className="px-3 py-3 font-bold">{t.colReason}</th>
-                    <th className="px-3 py-3 font-bold">{t.colGodown}</th>
-                    <th className="px-3 py-3 font-bold">{t.colStatus}</th>
-                    <th className="px-4 py-3 font-bold text-right">{t.colActions}</th>
+                    <th className="px-4 py-3 font-bold">{t('colLotNo')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colProduct')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colBatch')}</th>
+                    <th className="px-3 py-3 font-bold text-right">{t('colInitialQty')}</th>
+                    <th className="px-3 py-3 font-bold text-right">{t('colAvailable')}</th>
+                    <th className="px-3 py-3 font-bold text-right">{t('colDisposed')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colReason')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colGodown')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colStatus')}</th>
+                    <th className="px-4 py-3 font-bold text-right">{t('colActions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1179,8 +1179,8 @@ export default function RejectionsPage() {
                         <td className="px-3 py-3 text-right font-mono text-slate-400">
                           {lot.disposedQuantity || 0} {lot.unit}
                         </td>
-                        <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{lot.rejectionReason || 'Quality Failure'}</td>
-                        <td className="px-3 py-3 text-slate-500">{lot.godown?.name || 'Rejection Holding'}</td>
+                        <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{lot.rejectionReason || t('qualityFailure')}</td>
+                        <td className="px-3 py-3 text-slate-500">{lot.godown?.name || t('rejectionHolding')}</td>
                         <td className="px-3 py-3">
                           <span
                             className={cn(
@@ -1200,33 +1200,33 @@ export default function RejectionsPage() {
                             {isActionable && (
                               <button
                                 onClick={() => handleOpenReturn(lot)}
-                                title={t.tooltipReturn}
+                                title={t('tooltipReturn')}
                                 className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 transition-colors text-xs font-bold flex items-center gap-1"
                               >
-                                <Undo2 size={14} /> {t.btnReturn}
+                                <Undo2 size={14} /> {t('btnReturn')}
                               </button>
                             )}
                             {isActionable && (
                               <button
                                 onClick={() => handleOpenReprocess(lot)}
-                                title={t.tooltipReprocess}
+                                title={t('tooltipReprocess')}
                                 className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 transition-colors text-xs font-bold flex items-center gap-1"
                               >
-                                <Recycle size={14} /> {t.btnReprocess}
+                                <Recycle size={14} /> {t('btnReprocess')}
                               </button>
                             )}
                             {isActionable && (
                               <button
                                 onClick={() => handleOpenDispose(lot)}
-                                title={t.tooltipDispose}
+                                title={t('tooltipDispose')}
                                 className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors text-xs font-medium flex items-center gap-1"
                               >
-                                <Trash2 size={14} /> {t.btnDispose}
+                                <Trash2 size={14} /> {t('btnDispose')}
                               </button>
                             )}
                             <button
                               onClick={() => setTraceLotId(lot.id)}
-                              title={t.tooltipTrace}
+                              title={t('tooltipTrace')}
                               className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400"
                             >
                               <Eye size={14} />
@@ -1245,7 +1245,7 @@ export default function RejectionsPage() {
           {pagination.totalPages > 1 && (
             <div className="flex items-center justify-between pt-2">
               <p className="text-xs text-slate-500">
-                {t.pageInfo(pagination.page, pagination.totalPages, pagination.total)}
+                {t('pageInfo', { page: pagination.page, totalPages: pagination.totalPages, total: pagination.total })}
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -1271,7 +1271,7 @@ export default function RejectionsPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
-              {t.returnHistoryTitle}
+              {t('returnHistoryTitle')}
             </h3>
           </div>
 
@@ -1282,22 +1282,22 @@ export default function RejectionsPage() {
           ) : returnHistory.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
               <Undo2 size={40} className="mx-auto text-slate-300 dark:text-slate-700" />
-              <p className="mt-3 text-sm text-slate-500">{t.noReturnsFound}</p>
+              <p className="mt-3 text-sm text-slate-500">{t('noReturnsFound')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase text-xs">
                   <tr>
-                    <th className="px-4 py-3 font-bold">{t.colGatePass}</th>
-                    <th className="px-3 py-3 font-bold">{t.colDate}</th>
-                    <th className="px-3 py-3 font-bold">{t.colReturnType}</th>
-                    <th className="px-3 py-3 font-bold">{t.colParty}</th>
-                    <th className="px-3 py-3 font-bold">{t.colProductLot}</th>
-                    <th className="px-3 py-3 font-bold text-right">{t.colReturnQty}</th>
-                    <th className="px-3 py-3 font-bold">{t.colTransport}</th>
-                    <th className="px-3 py-3 font-bold">{t.colRemarks}</th>
-                    <th className="px-4 py-3 font-bold text-right">{t.colGatePassPdf}</th>
+                    <th className="px-4 py-3 font-bold">{t('colGatePass')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colDate')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colReturnType')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colParty')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colProductLot')}</th>
+                    <th className="px-3 py-3 font-bold text-right">{t('colReturnQty')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colTransport')}</th>
+                    <th className="px-3 py-3 font-bold">{t('colRemarks')}</th>
+                    <th className="px-4 py-3 font-bold text-right">{t('colGatePassPdf')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1322,7 +1322,7 @@ export default function RejectionsPage() {
                               : 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300'
                           )}
                         >
-                          {ret.returnType === 'JOB_WORK_RETURN' ? t.typeJobWorkReturn : t.typeSupplierReturn}
+                          {ret.returnType === 'JOB_WORK_RETURN' ? t('typeJobWorkReturn') : t('typeSupplierReturn')}
                         </span>
                       </td>
                       <td className="px-3 py-3 font-medium text-slate-900 dark:text-white">
@@ -1331,13 +1331,13 @@ export default function RejectionsPage() {
                       </td>
                       <td className="px-3 py-3">
                         <div className="font-medium text-slate-800 dark:text-slate-200">{ret.productName}</div>
-                        <div className="text-xs font-mono text-slate-400">Lot: {ret.lotNumber}</div>
+                        <div className="text-xs font-mono text-slate-400">{t('lotLabel', { lotNumber: ret.lotNumber })}</div>
                       </td>
                       <td className="px-3 py-3 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
                         {ret.returnQuantity} {ret.unit}
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-600 dark:text-slate-300">
-                        <div className="font-semibold">{ret.transporterName || t.directTransport}</div>
+                        <div className="font-semibold">{ret.transporterName || t('directTransport')}</div>
                         {ret.vehicleNumber && <div className="font-mono text-slate-400">{ret.vehicleNumber}</div>}
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-500 max-w-xs truncate">
@@ -1348,7 +1348,7 @@ export default function RejectionsPage() {
                           onClick={() => handleDownloadGatePassPdf(ret)}
                           className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg text-xs font-bold flex items-center gap-1.5 ml-auto transition-colors shadow-sm"
                         >
-                          <Download size={13} /> {t.colGatePassPdf}
+                          <Download size={13} /> {t('colGatePassPdf')}
                         </button>
                       </td>
                     </tr>
@@ -1375,27 +1375,27 @@ export default function RejectionsPage() {
             </button>
 
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Undo2 className="text-blue-600" size={20} /> {t.modalReturnTitle}
+              <Undo2 className="text-blue-600" size={20} /> {t('modalReturnTitle')}
             </h2>
             <p className="text-xs text-slate-500 mt-1 font-mono">
-              {t.modalReturnSubtitle(returnLot.lotNumber, returnLot.product.name, returnLot.availableQuantity, returnLot.unit)}
+              {t('modalReturnSubtitle', { lot: returnLot.lotNumber, prod: returnLot.product.name, qty: returnLot.availableQuantity, unit: returnLot.unit })}
             </p>
 
             {lastGeneratedGatePass ? (
               <div className="mt-4 p-5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-center space-y-3">
                 <CheckCircle2 size={36} className="text-emerald-600 dark:text-emerald-400 mx-auto" />
                 <h3 className="font-bold text-emerald-900 dark:text-emerald-200 text-base">
-                  {t.gatePassSuccessTitle}
+                  {t('gatePassSuccessTitle')}
                 </h3>
                 <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                  {t.gatePassSuccessDesc(lastGeneratedGatePass.gatePassNo, lastGeneratedGatePass.returnQuantity, lastGeneratedGatePass.unit, lastGeneratedGatePass.partyName)}
+                  {t('gatePassSuccessDesc', { gp: lastGeneratedGatePass.gatePassNo, qty: lastGeneratedGatePass.returnQuantity, unit: lastGeneratedGatePass.unit, party: lastGeneratedGatePass.partyName })}
                 </p>
                 <div className="pt-2 flex justify-center gap-2">
                   <button
                     onClick={() => handleDownloadGatePassPdf(lastGeneratedGatePass)}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md"
                   >
-                    <Download size={15} /> {t.downloadPdf}
+                    <Download size={15} /> {t('downloadPdf')}
                   </button>
                   <button
                     onClick={() => {
@@ -1404,7 +1404,7 @@ export default function RejectionsPage() {
                     }}
                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-xl text-xs font-bold"
                   >
-                    {t.close}
+                    {t('close')}
                   </button>
                 </div>
               </div>
@@ -1413,7 +1413,7 @@ export default function RejectionsPage() {
                 {/* Return Type Selector */}
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    {t.returnTypeLabel}
+                    {t('returnTypeLabel')}
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -1429,7 +1429,7 @@ export default function RejectionsPage() {
                           : 'border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-50'
                       )}
                     >
-                      {t.optSupplier}
+                      {t('optSupplier')}
                     </button>
                     <button
                       type="button"
@@ -1444,7 +1444,7 @@ export default function RejectionsPage() {
                           : 'border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-50'
                       )}
                     >
-                      {t.optJobWork}
+                      {t('optJobWork')}
                     </button>
                   </div>
                 </div>
@@ -1453,14 +1453,14 @@ export default function RejectionsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      {t.selectPartyLabel(returnType === 'SUPPLIER_RETURN')}
+                      {returnType === 'SUPPLIER_RETURN' ? t('selectPartyLabelSupplier') : t('selectPartyLabelCustomer')}
                     </label>
                     <select
                       value={selectedPartyId}
                       onChange={(e) => handlePartySelect(e.target.value)}
                       className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-medium"
                     >
-                      <option value="">{t.selectPartyPlaceholder}</option>
+                      <option value="">{t('selectPartyPlaceholder')}</option>
                       {returnType === 'SUPPLIER_RETURN'
                         ? suppliers.map((s: any) => (
                             <option key={s.id} value={s.id}>
@@ -1477,12 +1477,12 @@ export default function RejectionsPage() {
 
                   <div>
                     <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      {t.partyNameLabel}
+                      {t('partyNameLabel')}
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder={t.partyNamePlaceholder}
+                      placeholder={t('partyNamePlaceholder')}
                       value={partyName}
                       onChange={(e) => setPartyName(e.target.value)}
                       className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1493,11 +1493,11 @@ export default function RejectionsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      {t.mobileLabel}
+                      {t('mobileLabel')}
                     </label>
                     <input
                       type="text"
-                      placeholder={t.mobilePlaceholder}
+                      placeholder={t('mobilePlaceholder')}
                       value={partyPhone}
                       onChange={(e) => setPartyPhone(e.target.value)}
                       className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs"
@@ -1506,7 +1506,7 @@ export default function RejectionsPage() {
 
                   <div>
                     <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      {t.returnQtyLabel(returnLot.unit, returnLot.availableQuantity)}
+                      {t('returnQtyLabel', { unit: returnLot.unit, max: returnLot.availableQuantity })}
                     </label>
                     <input
                       type="number"
@@ -1523,25 +1523,25 @@ export default function RejectionsPage() {
                 {/* Transport & Vehicle Details */}
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
                   <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
-                    <Truck size={14} className="text-amber-500" /> {t.transportSectionTitle}
+                    <Truck size={14} className="text-amber-500" /> {t('transportSectionTitle')}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-0.5">{t.transporterNameLabel}</label>
+                      <label className="block text-[11px] text-slate-500 mb-0.5">{t('transporterNameLabel')}</label>
                       <input
                         type="text"
-                        placeholder={t.transporterPlaceholder}
+                        placeholder={t('transporterPlaceholder')}
                         value={transporterName}
                         onChange={(e) => setTransporterName(e.target.value)}
                         className="w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-0.5">{t.vehicleNoLabel}</label>
+                      <label className="block text-[11px] text-slate-500 mb-0.5">{t('vehicleNoLabel')}</label>
                       <input
                         type="text"
-                        placeholder={t.vehiclePlaceholder}
+                        placeholder={t('vehiclePlaceholder')}
                         value={vehicleNumber}
                         onChange={(e) => setVehicleNumber(e.target.value)}
                         className="w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-mono"
@@ -1551,20 +1551,20 @@ export default function RejectionsPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-0.5">{t.driverNameLabel}</label>
+                      <label className="block text-[11px] text-slate-500 mb-0.5">{t('driverNameLabel')}</label>
                       <input
                         type="text"
-                        placeholder={t.driverPlaceholder}
+                        placeholder={t('driverPlaceholder')}
                         value={driverName}
                         onChange={(e) => setDriverName(e.target.value)}
                         className="w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-0.5">{t.driverMobileLabel}</label>
+                      <label className="block text-[11px] text-slate-500 mb-0.5">{t('driverMobileLabel')}</label>
                       <input
                         type="text"
-                        placeholder={t.driverMobilePlaceholder}
+                        placeholder={t('driverMobilePlaceholder')}
                         value={driverPhone}
                         onChange={(e) => setDriverPhone(e.target.value)}
                         className="w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs"
@@ -1576,11 +1576,11 @@ export default function RejectionsPage() {
                 {/* Reason & Remarks */}
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    {t.returnReasonLabel}
+                    {t('returnReasonLabel')}
                   </label>
                   <input
                     type="text"
-                    placeholder={t.returnReasonPlaceholder}
+                    placeholder={t('returnReasonPlaceholder')}
                     value={returnReason}
                     onChange={(e) => setReturnReason(e.target.value)}
                     className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs"
@@ -1588,10 +1588,10 @@ export default function RejectionsPage() {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">{t.remarksLabel}</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">{t('remarksLabel')}</label>
                   <input
                     type="text"
-                    placeholder={t.remarksPlaceholder}
+                    placeholder={t('remarksPlaceholder')}
                     value={returnRemarks}
                     onChange={(e) => setReturnRemarks(e.target.value)}
                     className="w-full h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs"
@@ -1606,14 +1606,14 @@ export default function RejectionsPage() {
                     onClick={() => setReturnLot(null)}
                     className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                   >
-                    {t.cancel}
+                    {t('cancel')}
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
                     className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center gap-2 shadow-md"
                   >
-                    {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />} {t.btnSubmitReturn}
+                    {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />} {t('btnSubmitReturn')}
                   </button>
                 </div>
               </form>
@@ -1633,13 +1633,13 @@ export default function RejectionsPage() {
               <X size={20} />
             </button>
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Recycle className="text-emerald-500" size={20} /> {t.modalReprocessTitle}
+              <Recycle className="text-emerald-500" size={20} /> {t('modalReprocessTitle')}
             </h2>
-            <p className="text-xs text-slate-500 mt-1 font-mono">Lot #{reprocessLot.lotNumber} ({reprocessLot.product.name})</p>
+            <p className="text-xs text-slate-500 mt-1 font-mono">{t('reprocessLotSubtitle', { lot: reprocessLot.lotNumber, product: reprocessLot.product.name })}</p>
 
             <form onSubmit={handleReprocessSubmit} className="mt-4 space-y-4">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex justify-between text-xs font-mono">
-                <span>{t.availableStockLabel}</span>
+                <span>{t('availableStockLabel')}</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400">
                   {reprocessLot.availableQuantity} {reprocessLot.unit}
                 </span>
@@ -1647,7 +1647,7 @@ export default function RejectionsPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {t.reprocessQtyLabel(reprocessLot.unit)}
+                  {t('reprocessQtyLabel', { unit: reprocessLot.unit })}
                 </label>
                 <input
                   type="number"
@@ -1663,14 +1663,14 @@ export default function RejectionsPage() {
               {workflows.length > 0 && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    {t.workflowLabel}
+                    {t('workflowLabel')}
                   </label>
                   <select
                     value={workflowVersionId}
                     onChange={(e) => setWorkflowVersionId(e.target.value)}
                     className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm font-medium"
                   >
-                    <option value="">{t.defaultWorkflow}</option>
+                    <option value="">{t('defaultWorkflow')}</option>
                     {workflows.map((w: any) => (
                       <option key={w.id} value={w.activeVersionId || w.versions?.[0]?.id || ''}>
                         {w.name} ({w.code})
@@ -1681,10 +1681,10 @@ export default function RejectionsPage() {
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{t.reprocessNotesLabel}</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{t('reprocessNotesLabel')}</label>
                 <input
                   type="text"
-                  placeholder={t.reprocessNotesPlaceholder}
+                  placeholder={t('reprocessNotesPlaceholder')}
                   value={reprocessNotes}
                   onChange={(e) => setReprocessNotes(e.target.value)}
                   className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm"
@@ -1700,14 +1700,14 @@ export default function RejectionsPage() {
                   onClick={() => setReprocessLot(null)}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  {t.cancel}
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center gap-2"
                 >
-                  {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Recycle size={14} />} {t.btnSubmitReprocess}
+                  {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Recycle size={14} />} {t('btnSubmitReprocess')}
                 </button>
               </div>
             </form>
@@ -1726,13 +1726,13 @@ export default function RejectionsPage() {
               <X size={20} />
             </button>
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Trash2 className="text-red-500" size={20} /> {t.modalDisposeTitle}
+              <Trash2 className="text-red-500" size={20} /> {t('modalDisposeTitle')}
             </h2>
-            <p className="text-xs text-slate-500 mt-1 font-mono">Lot #{disposeLot.lotNumber}</p>
+            <p className="text-xs text-slate-500 mt-1 font-mono">{t('disposeLotSubtitle', { lot: disposeLot.lotNumber })}</p>
 
             <form onSubmit={handleDisposeSubmit} className="mt-4 space-y-4">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex justify-between text-xs font-mono">
-                <span>{t.availableStockLabel}</span>
+                <span>{t('availableStockLabel')}</span>
                 <span className="font-bold text-slate-700 dark:text-slate-300">
                   {disposeLot.availableQuantity} {disposeLot.unit}
                 </span>
@@ -1740,7 +1740,7 @@ export default function RejectionsPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {t.disposeQtyLabel(disposeLot.unit)}
+                  {t('disposeQtyLabel', { unit: disposeLot.unit })}
                 </label>
                 <input
                   type="number"
@@ -1754,10 +1754,10 @@ export default function RejectionsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{t.disposeReasonLabel}</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{t('disposeReasonLabel')}</label>
                 <input
                   type="text"
-                  placeholder={t.disposeReasonPlaceholder}
+                  placeholder={t('disposeReasonPlaceholder')}
                   required
                   value={disposeReason}
                   onChange={(e) => setDisposeReason(e.target.value)}
@@ -1774,14 +1774,14 @@ export default function RejectionsPage() {
                   onClick={() => setDisposeLot(null)}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  {t.cancel}
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl flex items-center gap-2"
                 >
-                  {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} {t.btnSubmitDispose}
+                  {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} {t('btnSubmitDispose')}
                 </button>
               </div>
             </form>
@@ -1804,7 +1804,7 @@ export default function RejectionsPage() {
               <X size={20} />
             </button>
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Eye className="text-blue-500" size={20} /> {t.modalTraceTitle}
+              <Eye className="text-blue-500" size={20} /> {t('modalTraceTitle')}
             </h2>
 
             {isTraceLoading ? (
@@ -1816,30 +1816,30 @@ export default function RejectionsPage() {
                 {/* Origin Details */}
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
                   <h3 className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
-                    {t.originSectionTitle}
+                    {t('originSectionTitle')}
                   </h3>
-                  <p>{t.originBatchLabel} <span className="font-mono font-bold text-slate-900 dark:text-white">{traceData.origin?.batchNumber}</span></p>
-                  <p>{t.originStageLabel} <span className="font-semibold">{traceData.origin?.sourceStageName}</span></p>
-                  <p>{t.originReasonLabel} <span className="text-red-600 dark:text-red-400 font-semibold">{traceData.rejectionLot?.rejectionReason}</span></p>
+                  <p>{t('originBatchLabel')} <span className="font-mono font-bold text-slate-900 dark:text-white">{traceData.origin?.batchNumber}</span></p>
+                  <p>{t('originStageLabel')} <span className="font-semibold">{traceData.origin?.sourceStageName}</span></p>
+                  <p>{t('originReasonLabel')} <span className="text-red-600 dark:text-red-400 font-semibold">{traceData.rejectionLot?.rejectionReason}</span></p>
                 </div>
 
                 {/* Reprocessing Batches History */}
                 <div className="space-y-2">
                   <h3 className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
-                    {t.reprocessingBatchesTitle(traceData.reprocessingBatches?.length || 0)}
+                    {t('reprocessingBatchesTitle', { count: traceData.reprocessingBatches?.length || 0 })}
                   </h3>
                   {traceData.reprocessingBatches && traceData.reprocessingBatches.length > 0 ? (
                     <div className="space-y-2">
                       {traceData.reprocessingBatches.map((b: any) => (
                         <div key={b.id} className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50 rounded-xl">
                           <div className="flex justify-between font-bold">
-                            <span className="font-mono text-emerald-700 dark:text-emerald-300">Reprocessing Batch #{b.batchNumber}</span>
-                            <span>{t.inputKg} {b.inputKg} kg</span>
+                            <span className="font-mono text-emerald-700 dark:text-emerald-300">{t('reprocessingBatchNo', { batchNumber: b.batchNumber })}</span>
+                            <span>{t('inputKg')} {b.inputKg} kg</span>
                           </div>
-                          <p className="text-slate-500 mt-1">Status: <span className="uppercase text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">{b.status}</span></p>
+                          <p className="text-slate-500 mt-1">{t('batchStatus')} <span className="uppercase text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">{b.status}</span></p>
                           {(b.status === 'in_progress' || b.status === 'open') && (
                             <div className="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
-                              <p className="text-[11px] text-amber-800 dark:text-amber-300">This reprocessing was started but never finished, so these {b.inputKg} kg are stuck here. Put them back into this lot, then use Reprocess again to record the result.</p>
+                              <p className="text-[11px] text-amber-800 dark:text-amber-300">{t('reprocessInProgressWarning', { inputKg: b.inputKg })}</p>
                               <button type="button" disabled={cancellingBatch === b.id}
                                 onClick={async () => {
                                   setCancellingBatch(b.id);
@@ -1848,7 +1848,7 @@ export default function RejectionsPage() {
                                   finally { setCancellingBatch(null); }
                                 }}
                                 className="mt-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50">
-                                {cancellingBatch === b.id ? 'Putting back…' : 'Cancel & put material back'}
+                                {cancellingBatch === b.id ? t('cancellingBatch') : t('cancelBatch')}
                               </button>
                             </div>
                           )}
@@ -1856,7 +1856,7 @@ export default function RejectionsPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-slate-400 italic">{t.noReprocessingBatches}</p>
+                    <p className="text-slate-400 italic">{t('noReprocessingBatches')}</p>
                   )}
                 </div>
               </div>

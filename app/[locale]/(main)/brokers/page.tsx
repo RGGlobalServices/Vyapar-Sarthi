@@ -19,6 +19,17 @@ type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment';
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
+const fmtNote = (v: any): string => {
+  if (!v) return '';
+  // Reformat legacy auto-notes: "[Customer broker] Sale INV-123 — Party" → "Sale commission · Party · Bill #INV-123"
+  const m = String(v).match(/^\[(Customer|Supplier) broker\] (Sale|Purchase) (\S+)(?:\s+—\s+(.+))?$/);
+  if (m) {
+    const [, , dir, bill, party] = m;
+    return `${dir} commission${party ? ` · ${party}` : ''}${bill ? ` · Bill #${bill}` : ''}`;
+  }
+  return String(v);
+};
+
 const fmtDate = (v: string) => {
   const ist = new Date(new Date(v).getTime() + 5.5 * 60 * 60 * 1000);
   const dd = String(ist.getUTCDate()).padStart(2, '0');
@@ -36,7 +47,7 @@ const STATEMENT_COLUMNS = [
   { key: 'billNumber', label: 'Bill #', format: (v: any) => v || '—' },
   { key: 'amount', label: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
   { key: 'paymentMethod', label: 'Mode', format: (v: any) => v || '—' },
-  { key: 'note', label: 'Note', format: (v: any) => v || '' },
+  { key: 'note', label: 'Note', format: fmtNote },
 ];
 
 export default function BrokersPage() {
@@ -145,7 +156,7 @@ export default function BrokersPage() {
               { key: 'billNumber', label: 'Bill #', format: (v: any) => v || '—' },
               { key: 'amount', label: 'Amount (₹)', format: (v: number) => v.toLocaleString('en-IN') },
               { key: 'paymentMethod', label: 'Mode', format: (v: any) => v || '—' },
-              { key: 'note', label: 'Note', format: (v: any) => v || '' },
+              { key: 'note', label: 'Note', format: fmtNote },
             ]}
             data={filteredEntries.map(e => ({
               ...e,
@@ -325,7 +336,7 @@ export default function BrokersPage() {
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
                       {new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      {e.note && ` · ${e.note}`}
+                      {e.note && ` · ${fmtNote(e.note)}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -380,6 +391,7 @@ export default function BrokersPage() {
           brokerId={entryModal.brokerId}
           brokerName={brokers.find(b => b.id === entryModal.brokerId)?.name || ''}
           type={entryModal.type}
+          balance={Math.max(0, brokers.find(b => b.id === entryModal.brokerId)?.balance || 0)}
           onClose={() => setEntryModal(null)}
           onSaved={() => { setEntryModal(null); refetch(); }}
         />
@@ -629,11 +641,12 @@ function AddBrokerModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   );
 }
 
-function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: {
-  brokerId: string; brokerName: string; type: 'charge' | 'payment'; onClose: () => void; onSaved: () => void;
+function CommissionEntryModal({ brokerId, brokerName, type, balance = 0, onClose, onSaved }: {
+  brokerId: string; brokerName: string; type: 'charge' | 'payment'; balance?: number; onClose: () => void; onSaved: () => void;
 }) {
   const t = useTranslations('Brokers');
   const [amount, setAmount] = useState('');
+  const [discount, setDiscount] = useState('');
   const [billNumber, setBillNumber] = useState('');
   const [direction, setDirection] = useState<'purchase' | 'sale'>('purchase');
   const [billAmount, setBillAmount] = useState('');
@@ -642,6 +655,10 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const discountVal = Math.max(0, parseFloat(discount) || 0);
+  const amountVal = Math.max(0, parseFloat(amount) || 0);
+  const effectiveMax = Math.max(0, balance - discountVal);
 
   const calcAmount = () => {
     const b = parseFloat(billAmount);
@@ -653,10 +670,13 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (amountVal <= 0 && discountVal <= 0) { setError('Enter payment amount or discount.'); return; }
+    if (amountVal + discountVal > balance + 0.005) { setError(`Cannot exceed outstanding ${rupee(balance)}.`); return; }
     setSaving(true); setError('');
     try {
       await api.post('/management/commission', {
-        brokerId, type, amount: Number(amount),
+        brokerId, type, amount: amountVal,
+        discount: discountVal || undefined,
         billNumber: type === 'charge' ? billNumber : undefined,
         paymentMethod: type === 'payment' ? paymentMethod : undefined,
         note,
@@ -701,11 +721,53 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
               </button>
             </div>
           )}
-          <label className="block">
-            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('amount')} *</span>
-            <input type="number" min="0" step="0.01" autoFocus={type !== 'charge'} value={amount} onChange={e => setAmount(e.target.value)}
-              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
-          </label>
+          {type === 'payment' && balance > 0 && (
+            <div className="rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 px-3 py-2 flex justify-between items-center">
+              <span className="text-xs font-medium text-slate-500">Outstanding</span>
+              <span className="text-base font-black text-rose-600 dark:text-rose-400">{rupee(balance)}</span>
+            </div>
+          )}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold uppercase text-slate-500">{t('amount')} {type === 'payment' ? '(₹)' : '*'}</span>
+              {type === 'payment' && balance > 0 && (
+                <button type="button" onClick={() => setAmount(effectiveMax.toFixed(2))}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200">
+                  Settle Full {discountVal > 0 ? `(${rupee(effectiveMax)})` : ''}
+                </button>
+              )}
+            </div>
+            <input type="number" min="0" step="0.01" autoFocus={type !== 'charge'} value={amount}
+              onChange={e => setAmount(e.target.value)}
+              max={type === 'payment' ? effectiveMax : undefined}
+              className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
+          </div>
+          {type === 'payment' && (
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Discount / Write-off (₹)</span>
+              <input type="number" min="0" step="0.01" value={discount}
+                onChange={e => {
+                  setDiscount(e.target.value);
+                  const d = Math.max(0, parseFloat(e.target.value) || 0);
+                  const newMax = Math.max(0, balance - d);
+                  if ((parseFloat(amount) || 0) > newMax) setAmount(newMax.toFixed(2));
+                }}
+                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" placeholder="0" />
+            </label>
+          )}
+          {type === 'payment' && discountVal > 0 && (
+            <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-xs space-y-1.5">
+              <div className="flex justify-between text-slate-500"><span>Outstanding</span><span>{rupee(balance)}</span></div>
+              {amountVal > 0 && <div className="flex justify-between text-emerald-700 dark:text-emerald-400"><span>− Payment</span><span>{rupee(amountVal)}</span></div>}
+              <div className="flex justify-between text-violet-600 dark:text-violet-400"><span>− Discount / Write-off</span><span>{rupee(discountVal)}</span></div>
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-1.5 flex justify-between font-bold">
+                <span className="text-slate-700 dark:text-slate-300">Balance After</span>
+                <span className={Math.max(0, balance - amountVal - discountVal) <= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                  {rupee(Math.max(0, balance - amountVal - discountVal))}
+                </span>
+              </div>
+            </div>
+          )}
           {type === 'charge' && (
             <div>
               <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Commission for</span>
@@ -745,11 +807,14 @@ function CommissionEntryModal({ brokerId, brokerName, type, onClose, onSaved }: 
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
           </label>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <button type="submit" disabled={saving || !amount}
+          <button type="submit" disabled={saving || (type === 'payment' ? amountVal <= 0 && discountVal <= 0 : !amount)}
             className={cn('w-full h-11 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2',
               type === 'charge' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700')}>
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            {type === 'charge' ? t('addCommission') : t('recordPayment')}
+            {type === 'charge' ? t('addCommission')
+              : discountVal > 0 && amountVal > 0 ? `Pay ${rupee(amountVal)} + Discount ${rupee(discountVal)}`
+              : discountVal > 0 ? `Write-off ${rupee(discountVal)}`
+              : t('recordPayment')}
           </button>
         </form>
       </div>

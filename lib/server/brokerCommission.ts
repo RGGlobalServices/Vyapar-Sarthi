@@ -18,7 +18,7 @@ export async function logBrokerCommission(shopId: string, o: { name: string; com
   const comm = parseFloat(String(o.commission ?? '').replace(/[₹,\s]/g, ''));
   if (isFinite(comm) && comm > 0) {
     const ce = await (prisma as any).commissionEntry.create({
-      data: { shopId, brokerId: broker.id, type: 'charge', amount: comm, billNumber: o.billNumber, note: `[${o.kind === 'supplier' ? 'Supplier broker' : 'Customer broker'}] ${o.kind === 'supplier' ? 'Purchase' : 'Sale'} ${o.billNumber}${o.party ? ` — ${o.party}` : ''}` },
+      data: { shopId, brokerId: broker.id, type: 'charge', amount: comm, billNumber: o.billNumber, note: `${o.kind === 'supplier' ? 'Purchase' : 'Sale'} commission${o.party ? ` · ${o.party}` : ''}${o.billNumber ? ` · Bill #${o.billNumber}` : ''}` },
     });
     // Purchase broker (kind supplier) or Sale broker (kind customer), linked to its bill
     await tagRows(prisma as any, 'commission_entries', [ce.id], { direction: o.kind === 'supplier' ? 'purchase' : 'sale', purchaseInvoiceId: o.purchaseInvoiceId, challanId: o.challanId });

@@ -564,7 +564,7 @@ function CreateBatchModal({ lots, onClose, onCreated }: {
                     <span>Received: {selectedJw.inputWeightKg} Kg</span>
                   </div>
                   <div className="text-[11px] text-purple-700 dark:text-purple-300 font-medium pt-1 border-t border-purple-100 dark:border-purple-800/30">
-                    🌾 Deal: {selectedJw.byproductRetainedByMill ? 'Mill keeps By-products (Husk/Bran)' : 'Customer receives By-products'}
+                    🌾 Deal: {selectedJw.byproductRetainedByMill ? t('byproduct_mill_keeps') : t('byproduct_customer_receives')}
                   </div>
                 </div>
               ) : (
@@ -815,7 +815,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                   </InfoRow>
                   <InfoRow label="Byproduct Deal">
                     <span className={batch.jobWorkOrder.byproductRetainedByMill ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                      {batch.jobWorkOrder.byproductRetainedByMill ? 'Mill keeps By-products' : 'Customer receives By-products'}
+                      {batch.jobWorkOrder.byproductRetainedByMill ? t('byproduct_mill_keeps') : t('byproduct_customer_receives')}
                     </span>
                   </InfoRow>
                   <InfoRow label="Material Ownership">
@@ -878,26 +878,26 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
           {batch.wipLots && batch.wipLots.length > 0 && (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">WIP MATERIAL (WORK IN PROGRESS)</p>
-                <span className="text-xs font-bold text-slate-400">{batch.wipLots.length} Lot(s)</span>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{t('sect_wip')}</p>
+                <span className="text-xs font-bold text-slate-400">{t('lot_count', { count: batch.wipLots.length })}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
-                      <th className="py-2 px-2">WIP Lot</th>
-                      <th className="py-2 px-2">Product</th>
-                      <th className="py-2 px-2 text-right">Original Qty</th>
-                      <th className="py-2 px-2 text-right">Available Qty</th>
-                      <th className="py-2 px-2">Status</th>
-                      <th className="py-2 px-2">Source Stage</th>
+                      <th className="py-2 px-2">{t('col_wipLot')}</th>
+                      <th className="py-2 px-2">{t('col_product')}</th>
+                      <th className="py-2 px-2 text-right">{t('col_originalQty')}</th>
+                      <th className="py-2 px-2 text-right">{t('col_availableQty')}</th>
+                      <th className="py-2 px-2">{t('col_status')}</th>
+                      <th className="py-2 px-2">{t('col_sourceStage')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {batch.wipLots.map((wip: any) => (
                       <tr key={wip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                         <td className="py-2 px-2 font-mono font-bold text-slate-800 dark:text-slate-200">{wip.lotNumber}</td>
-                        <td className="py-2 px-2 font-medium">{wip.product?.name || 'Intermediate Material'}</td>
+                        <td className="py-2 px-2 font-medium">{wip.product?.name || t('fallback_intermediateMaterial')}</td>
                         <td className="py-2 px-2 text-right font-mono">{wip.quantity} {wip.unit}</td>
                         <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">{wip.availableQuantity} {wip.unit}</td>
                         <td className="py-2 px-2">
@@ -911,7 +911,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {wip.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{wip.sourceBatchStage?.stageName ? stageLabel(t, wip.sourceBatchStage.stageName) : 'Stage Output'}</td>
+                        <td className="py-2 px-2 text-slate-500">{wip.sourceBatchStage?.stageName ? stageLabel(t, wip.sourceBatchStage.stageName) : t('fallback_stageOutput')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -924,28 +924,28 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
           {batch.finishedGoodsLots && batch.finishedGoodsLots.length > 0 && (
             <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">FINISHED GOODS INVENTORY</p>
-                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{batch.finishedGoodsLots.length} FG Lot(s)</span>
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">{t('sect_fg')}</p>
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{t('fg_lot_count', { count: batch.finishedGoodsLots.length })}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
-                      <th className="py-2 px-2">FG Lot</th>
-                      <th className="py-2 px-2">Product</th>
-                      <th className="py-2 px-2 text-right">Quantity</th>
-                      <th className="py-2 px-2">Godown / Location</th>
-                      <th className="py-2 px-2">Status</th>
-                      <th className="py-2 px-2">Source Stage</th>
+                      <th className="py-2 px-2">{t('col_fgLot')}</th>
+                      <th className="py-2 px-2">{t('col_product')}</th>
+                      <th className="py-2 px-2 text-right">{t('col_quantity')}</th>
+                      <th className="py-2 px-2">{t('col_godown')}</th>
+                      <th className="py-2 px-2">{t('col_status')}</th>
+                      <th className="py-2 px-2">{t('col_sourceStage')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {batch.finishedGoodsLots.map((fg: any) => (
                       <tr key={fg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                         <td className="py-2 px-2 font-mono font-bold text-emerald-700 dark:text-emerald-300">{fg.lotNumber}</td>
-                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{fg.product?.name || 'Finished Product'}</td>
+                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{fg.product?.name || t('fallback_finishedProduct')}</td>
                         <td className="py-2 px-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{fg.quantity} {fg.unit}</td>
-                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{fg.godown?.name || 'Main Stock'}</td>
+                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{fg.godown?.name || t('fallback_mainStock')}</td>
                         <td className="py-2 px-2">
                           <span className={cn(
                             'px-2 py-0.5 text-[10px] font-bold rounded-full uppercase',
@@ -956,7 +956,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {fg.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName ? stageLabel(t, fg.sourceBatchStage.stageName) : 'Final Stage'}</td>
+                        <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName ? stageLabel(t, fg.sourceBatchStage.stageName) : t('fallback_finalStage')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -969,36 +969,36 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
           {batch.byProductLots && batch.byProductLots.length > 0 && (
             <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">BY-PRODUCTS INVENTORY</p>
-                <span className="text-xs font-bold text-blue-600 dark:text-blue-400">{batch.byProductLots.length} By-Product Lot(s)</span>
+                <p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">{t('sect_bp')}</p>
+                <span className="text-xs font-bold text-blue-600 dark:text-blue-400">{t('bp_lot_count', { count: batch.byProductLots.length })}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
-                      <th className="py-2 px-2">Lot</th>
-                      <th className="py-2 px-2">Product</th>
-                      <th className="py-2 px-2 text-right">Quantity</th>
-                      <th className="py-2 px-2 text-right">Available</th>
-                      <th className="py-2 px-2">Godown / Location</th>
-                      <th className="py-2 px-2">Stockable</th>
-                      <th className="py-2 px-2">Source Stage</th>
+                      <th className="py-2 px-2">{t('col_lot')}</th>
+                      <th className="py-2 px-2">{t('col_product')}</th>
+                      <th className="py-2 px-2 text-right">{t('col_quantity')}</th>
+                      <th className="py-2 px-2 text-right">{t('col_available')}</th>
+                      <th className="py-2 px-2">{t('col_godown')}</th>
+                      <th className="py-2 px-2">{t('col_stockable')}</th>
+                      <th className="py-2 px-2">{t('col_sourceStage')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {batch.byProductLots.map((bp: any) => (
                       <tr key={bp.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                         <td className="py-2 px-2 font-mono font-bold text-blue-700 dark:text-blue-300">{bp.lotNumber}</td>
-                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{bp.product?.name || 'By-Product'}</td>
+                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{bp.product?.name || t('fallback_byProduct')}</td>
                         <td className="py-2 px-2 text-right font-mono text-slate-800 dark:text-slate-200">{bp.quantity} {bp.unit}</td>
                         <td className="py-2 px-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{bp.availableQuantity} {bp.unit}</td>
-                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{bp.godown?.name || 'Main Stock'}</td>
+                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{bp.godown?.name || t('fallback_mainStock')}</td>
                         <td className="py-2 px-2">
                           <span className={cn('px-2 py-0.5 text-[10px] font-bold rounded-full uppercase', bp.isStockable ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600')}>
                             {bp.isStockable ? 'Yes' : 'No'}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{bp.sourceBatchStage?.stageName ? stageLabel(t, bp.sourceBatchStage.stageName) : 'Stage Output'}</td>
+                        <td className="py-2 px-2 text-slate-500">{bp.sourceBatchStage?.stageName ? stageLabel(t, bp.sourceBatchStage.stageName) : t('fallback_stageOutput')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1040,7 +1040,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
                             {rj.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-slate-500">{rj.sourceBatchStage?.stageName ? stageLabel(t, rj.sourceBatchStage.stageName) : 'Stage Output'}</td>
+                        <td className="py-2 px-2 text-slate-500">{rj.sourceBatchStage?.stageName ? stageLabel(t, rj.sourceBatchStage.stageName) : t('fallback_stageOutput')}</td>
                       </tr>
                     ))}
                   </tbody>

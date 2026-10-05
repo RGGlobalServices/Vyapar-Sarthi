@@ -56,6 +56,7 @@ export function useExport() {
       columns.map(col => {
         const val = row[col.key];
         if (val === null || val === undefined) return '';
+        if (col.format) return `"${String(col.format(val)).replace(/"/g, '""')}"`;
         if (col.type === 'date') return fmtDate(val);
         if (col.type === 'currency' || col.type === 'number') return Number(val).toFixed(2);
         return `"${String(val).replace(/"/g, '""')}"`;
@@ -174,6 +175,7 @@ export function useExport() {
       ? data.map(row => `<tr>${columns.map(col => {
           const val = row[col.key];
           if (val === null || val === undefined || val === '') return '<td>—</td>';
+          if (col.format) return `<td>${esc(String(col.format(val)))}</td>`;
           if (col.type === 'date') return `<td>${esc(fmtDate(val))}</td>`;
           if (col.type === 'currency') return `<td class="num">₹${Number(val).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>`;
           if (col.type === 'number') return `<td class="num">${Number(val).toLocaleString('en-IN')}</td>`;
@@ -351,6 +353,7 @@ export function useExport() {
         columns.map(col => {
           const val = row[col.key];
           if (val === null || val === undefined) return '';
+          if (col.format) return String(col.format(val));
           if (col.type === 'date') return fmtDate(val);
           if (col.type === 'currency') return { content: tpl.fmtInr(Number(val) || 0), styles: { halign: 'right' } as any };
           if (col.type === 'number') return { content: Number(val).toLocaleString('en-IN'), styles: { halign: 'right' } as any };

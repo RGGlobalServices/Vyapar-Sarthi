@@ -59,24 +59,27 @@ export const POST = handle(async (req) => {
   if (!broker) throw new ApiError(404, 'Broker not found for this shop');
 
   const type = body.type === 'payment' ? 'payment' : 'charge';
-  const amount = parseFloat(String(body.amount ?? ''));
-  if (!isFinite(amount) || amount <= 0) throw new ApiError(400, 'A positive amount is required');
+  const amount = Math.max(0, parseFloat(String(body.amount ?? '')) || 0);
+  const discount = type === 'payment' ? Math.max(0, parseFloat(String(body.discount ?? '')) || 0) : 0;
+  if (type === 'charge' && amount <= 0) throw new ApiError(400, 'A positive amount is required');
+  if (type === 'payment' && amount <= 0 && discount <= 0) throw new ApiError(400, 'Enter payment amount or discount');
 
-  const ops: any[] = [
-    (prisma as any).commissionEntry.create({
-      data: {
-        shopId: shop.id,
-        brokerId,
-        type,
-        amount,
-        billNumber: (body.billNumber || '').trim() || null,
-        paymentMethod: type === 'payment' ? (['Cash', 'UPI', 'Card'].includes(body.paymentMethod) ? body.paymentMethod : 'Cash') : null,
-        note: (body.note || '').trim() || null,
-      },
-    }),
-  ];
+  const paymentMethod = type === 'payment' ? (['Cash', 'UPI', 'Card'].includes(body.paymentMethod) ? body.paymentMethod : 'Cash') : null;
+  const noteText = (body.note || '').trim() || null;
 
-  if (type === 'payment' && (body.paymentMethod || 'Cash') === 'Cash') {
+  const ops: any[] = [];
+  if (amount > 0) {
+    ops.push((prisma as any).commissionEntry.create({
+      data: { shopId: shop.id, brokerId, type, amount, billNumber: (body.billNumber || '').trim() || null, paymentMethod, note: noteText },
+    }));
+  }
+  if (discount > 0) {
+    ops.push((prisma as any).commissionEntry.create({
+      data: { shopId: shop.id, brokerId, type: 'payment', amount: discount, paymentMethod: null, note: `Discount / Write-off${noteText ? ` · ${noteText}` : ''}` },
+    }));
+  }
+
+  if (type === 'payment' && amount > 0 && paymentMethod === 'Cash') {
     ops.push(
       prisma.cashBook.create({
         data: { shopId: shop.id, type: 'withdrawal', amount, description: `Commission payment to ${broker.name}` },

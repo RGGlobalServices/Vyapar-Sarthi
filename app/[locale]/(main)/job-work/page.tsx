@@ -76,13 +76,13 @@ export default function JobWorkPage() {
   };
 
   const markDelivered = async (order: JobWorkOrder) => {
-    if (!confirm(`Mark Order ${order.orderNumber} as Returned / Delivered to customer ${order.customer?.name || ''}?`)) return;
+    if (!confirm(t('confirmDeliver', { orderNumber: order.orderNumber, name: order.customer?.name || '' }))) return;
     setDeliveringId(order.id);
     try {
       await api.patch(`/mill/job-work/${order.id}`, { action: 'deliver' });
       refetch();
     } catch (err: any) {
-      alert(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to deliver');
+      alert(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToDeliver'));
     } finally { setDeliveringId(null); }
   };
 
@@ -104,7 +104,7 @@ export default function JobWorkPage() {
         <StatCard label={t('received')} value={stats.received} tone="slate" />
         <StatCard label={t('processing')} value={stats.processing} tone="amber" />
         <StatCard label={t('completed')} value={stats.completed} tone="emerald" />
-        <StatCard label="Delivered / Returned" value={stats.delivered} tone="blue" />
+        <StatCard label={t('delivered')} value={stats.delivered} tone="blue" />
       </div>
 
       {isLoading ? (
@@ -123,10 +123,10 @@ export default function JobWorkPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black text-slate-900 dark:text-white">{o.orderNumber}</span>
                     <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full', statusTone(o.status))}>
-                      {o.status === 'delivered' ? 'RETURNED / CLOSED' : t(o.status)}
+                      {o.status === 'delivered' ? t('deliveredStatus') : t(o.status)}
                     </span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/30 dark:text-purple-300">
-                      🌾 Customer Grain
+                      🌾 {t('customerGrain')}
                     </span>
                     {(o.status === 'completed' || o.status === 'delivered') && o.feeAmount != null && (
                       <span onClick={e => e.stopPropagation()}>
@@ -160,12 +160,12 @@ export default function JobWorkPage() {
                   {o.status === 'completed' && (
                     <button onClick={() => markDelivered(o)} disabled={deliveringId === o.id}
                       className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-100 disabled:opacity-50">
-                      {deliveringId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Return / Deliver
+                      {deliveringId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} {t('returnDeliver')}
                     </button>
                   )}
                   {o.status === 'delivered' && (
                     <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                      ✓ Closed
+                      ✓ {t('closed')}
                     </span>
                   )}
                 </div>
@@ -192,7 +192,7 @@ export default function JobWorkPage() {
           onCompleted={(paymentFailed, invoiceNumber) => {
             setCompletingOrder(null);
             refetch();
-            if (invoiceNumber) toast.success(`Bill ${invoiceNumber} created — see Billing → Invoices (marked Job Work)`, { duration: 7000 });
+            if (invoiceNumber) toast.success(t('billCreated', { invoiceNumber }), { duration: 7000 });
             if (paymentFailed) alert(t('paymentNotRecordedWarning'));
           }}
         /></ModalPortal>
@@ -516,7 +516,7 @@ function OrderDetailModal({ id, onClose }: { id: string; onClose: () => void }) 
             </div>
             <div className={box}>
               <p className={head}>{t('detailProcessing')}</p>
-              <Row k={t('detailStatus')}>{t(o.status)}</Row>
+              <Row k={t('detailStatus')}>{o.status === 'delivered' ? t('delivered') : t(o.status)}</Row>
               <Row k={t('outputMaterialOptional')}>{o.outputDescription || '—'}</Row>
               <Row k={t('outputWeight')}>{o.outputWeightKg != null ? `${o.outputWeightKg} Kg` : '—'}</Row>
               <Row k={t('byProductsTitle')}>{o.byproductRetainedByMill ? t('byProductsKeptShort') : t('byProductsReturnedShort')}</Row>

@@ -204,12 +204,12 @@ export function renderSummaryBox(doc: jsPDF, y: number, items: SummaryItem[]): n
   items.forEach((item, i) => {
     const cx = L + cellW * i + cellW / 2;
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(smartFont(item.label), 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...PDF_LAYOUT.muted);
     doc.text(item.label.toUpperCase(), cx, y + 6, { align: 'center' });
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(smartFont(item.value), 'bold');
     doc.setFontSize(12);
     const tone = item.tone === 'positive' ? [22, 163, 74]
       : item.tone === 'negative' ? [220, 38, 38]

@@ -5,12 +5,14 @@ import useSWR from 'swr';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { ChevronDown, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export type BrokerValue = { name: string; commission: string };
 export const EMPTY_BROKER: BrokerValue = { name: '', commission: '' };
 
 /** Optional broker + commission for a bill (Bada Udyog). Existing brokers are suggested via a custom dropdown; a new name creates the broker on save. */
 export default function BrokerField({ value, onChange, kind }: { value: BrokerValue; onChange: (v: BrokerValue) => void; kind: 'supplier' | 'customer' }) {
+  const t = useTranslations('Billing');
   const shopId = useBusinessStore(s => s.activeShopId);
   const { data: brokers = [] } = useSWR<any[]>(shopId ? `/crm/customers?type=broker&_shop=${shopId}` : null, (u: string) => api.get(u).then(r => r.data), { revalidateOnFocus: false });
 
@@ -41,7 +43,7 @@ export default function BrokerField({ value, onChange, kind }: { value: BrokerVa
     <div className="flex flex-col sm:flex-row gap-2" data-testid={`broker-field-${kind}`}>
       {/* Broker name — custom combobox */}
       <div className="flex-1 relative" ref={containerRef}>
-        <span className="text-xs font-bold text-slate-500 uppercase block mb-1">{kind === 'supplier' ? 'Supplier Broker' : 'Customer Broker'} (optional)</span>
+        <span className="text-xs font-bold text-slate-500 uppercase block mb-1">{kind === 'supplier' ? t('brokerField_supplierLabel') : t('brokerField_customerLabel')}</span>
         <div className="relative">
           <input
             ref={inputRef}
@@ -49,7 +51,7 @@ export default function BrokerField({ value, onChange, kind }: { value: BrokerVa
             value={value.name}
             onChange={e => { onChange({ ...value, name: e.target.value }); setOpen(true); }}
             onFocus={() => setOpen(true)}
-            placeholder="Broker name — new names are added to Brokers"
+            placeholder={t('brokerField_placeholder')}
             className="w-full h-10 pl-3 pr-16 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
@@ -85,7 +87,7 @@ export default function BrokerField({ value, onChange, kind }: { value: BrokerVa
 
       {/* Commission */}
       <div className="w-full sm:w-32 shrink-0">
-        <span className="text-xs font-bold text-slate-500 uppercase block mb-1">Commission ₹</span>
+        <span className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('brokerField_commissionLabel')}</span>
         <input
           type="number" min="0" step="0.01"
           value={value.commission}

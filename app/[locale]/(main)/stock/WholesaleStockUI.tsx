@@ -23,7 +23,6 @@ import BarcodeQRModal from '@/components/BarcodeQRModal';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { cssColor } from '@/components/ColorSizeVariantGrid';
-import ExpandViewButton from '@/components/ExpandViewButton';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
 import { getStockTableConfig, type StockColumn } from '@/lib/stockTableConfig';
@@ -581,53 +580,54 @@ export default function WholesaleStockUI() {
           (see below), not a docked side panel, so this stays full width
           regardless of selection. */}
       <div className="flex-1 overflow-y-auto lg:pr-2 custom-scrollbar transition-all duration-300 pb-10 w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-emerald-500 flex items-center gap-3">
-              <Box className="text-emerald-500" /> {t('inventoryDashboard')}
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('inventoryDesc')}</p>
+        {/* Page header */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
+              <Box size={20} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">{t('inventoryDashboard')}</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t('inventoryDesc')}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <ExpandViewButton />
-            <button onClick={() => setStockSection(s => s === 'register' ? 'none' : 'register')}
-              className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
-                stockSection === 'register' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
-              <CalendarDays size={16} /> {t('dailyRegister')}
-            </button>
-            <button onClick={() => setStockSection(s => s === 'stockTake' ? 'none' : 'stockTake')}
-              className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
-                stockSection === 'stockTake' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
-              <ListChecks size={16} /> Stock Take
-            </button>
-            {isLiquor && (
-              <button onClick={() => setStockSection(s => s === 'mlMatrix' ? 'none' : 'mlMatrix')}
-                className={cn('flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors shadow-sm text-sm border',
-                  stockSection === 'mlMatrix' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800')}>
-                <Wine size={16} /> ML Matrix
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+              <button onClick={() => setStockSection(s => s === 'register' ? 'none' : 'register')}
+                className={cn('flex items-center gap-1.5 px-3 py-1.5 font-semibold rounded-lg transition-all text-xs',
+                  stockSection === 'register' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')}>
+                <CalendarDays size={14} /> {t('dailyRegister')}
               </button>
-            )}
-            {/* Unlike Transfer/Adjust (which move or correct stock a product
-                already has, so picking that product from the table first
-                makes sense), Receiving is how NEW stock gets added — forcing
-                a table selection first was a dead end: clicking this cold
-                did nothing but show a barely-noticeable alert. The drawer
-                now has its own product search, so this opens directly. */}
-            <button onClick={() => setActionModal('receive')} className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-sm">
-              <Plus size={16} /> {t('receiveStock')}
-            </button>
-            <button onClick={() => {
-              if (!selectedProduct) { alert(t('selectProductFirst')); return; }
-              setActionModal('transfer');
-            }} className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white font-bold rounded-xl hover:bg-blue-600 transition-colors shadow-sm text-sm">
-              <ArrowRightLeft size={16} /> {t('transferStock')}
-            </button>
-            <button onClick={() => {
-              if (!selectedProduct) { alert(t('selectProductFirst')); return; }
-              setActionModal('adjust');
-            }} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors shadow-sm text-sm">
-              <Edit size={16} /> {t('adjustStock')}
-            </button>
+              <button onClick={() => setStockSection(s => s === 'stockTake' ? 'none' : 'stockTake')}
+                className={cn('flex items-center gap-1.5 px-3 py-1.5 font-semibold rounded-lg transition-all text-xs',
+                  stockSection === 'stockTake' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')}>
+                <ListChecks size={14} /> Stock Take
+              </button>
+              {isLiquor && (
+                <button onClick={() => setStockSection(s => s === 'mlMatrix' ? 'none' : 'mlMatrix')}
+                  className={cn('flex items-center gap-1.5 px-3 py-1.5 font-semibold rounded-lg transition-all text-xs',
+                    stockSection === 'mlMatrix' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')}>
+                  <Wine size={14} /> ML Matrix
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => {
+                if (!selectedProduct) { alert(t('selectProductFirst')); return; }
+                setActionModal('transfer');
+              }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all shadow-sm">
+                <ArrowRightLeft size={13} /> {t('transferStock')}
+              </button>
+              <button onClick={() => {
+                if (!selectedProduct) { alert(t('selectProductFirst')); return; }
+                setActionModal('adjust');
+              }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-all shadow-sm">
+                <Edit size={13} /> {t('adjustStock')}
+              </button>
+              <button onClick={() => setActionModal('receive')} className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
+                <Plus size={13} /> {t('receiveStock')}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -644,43 +644,112 @@ export default function WholesaleStockUI() {
             onAddBrand={handleMlAddBrand}
           />
         ) : (<>
-        {/* Analytics Widgets */}
-        <div className={cn("grid grid-cols-2 gap-4 mb-6", stockConfig.kpis.length <= 5 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-3 lg:grid-cols-6")}>
-          {loading && (!data || data.items.length === 0) ? (
-            Array(stockConfig.kpis.length).fill(0).map((_, i) => (
-              <Card key={i} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-                <CardContent className="p-4">
-                  <div className="h-3 w-16 bg-slate-200 dark:bg-slate-800 rounded mb-3 animate-pulse" />
-                  <div className="h-6 w-24 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            stockConfig.kpis.map((kpi) => {
-              const kpiColorMap: Record<string, string> = {
-                emerald: 'text-emerald-600 dark:text-emerald-400',
-                amber: 'text-amber-500 dark:text-amber-400',
-                rose: 'text-rose-600 dark:text-rose-400',
-                blue: 'text-blue-600 dark:text-blue-400',
-                purple: 'text-purple-600 dark:text-purple-400',
-                indigo: 'text-indigo-600 dark:text-indigo-400',
-                orange: 'text-orange-600 dark:text-orange-400',
-                slate: 'text-slate-600 dark:text-slate-400',
-              };
-              const val = kpi.getValue(data?.items || [], data);
-              return (
-                <Card key={kpi.key} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-                  <CardContent className="p-4">
-                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-2">{t(kpi.labelKey)}</p>
-                    <p className={cn("text-xl sm:text-2xl font-bold font-mono tracking-tighter truncate", kpiColorMap[kpi.color] || kpiColorMap.slate)}>
-                      {typeof val === 'number' ? val.toLocaleString('en-IN') : val}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })
-          )}
-        </div>
+        {/* KPI Cards */}
+        {(() => {
+          // Abbreviate large numbers to Cr/L/K — keeps value on one line
+          const fmtKpi = (raw: string | number): { value: string; unit: string } => {
+            if (typeof raw === 'number') {
+              if (raw >= 10000000) return { value: (raw / 10000000).toFixed(2), unit: 'Cr' };
+              if (raw >= 100000)   return { value: (raw / 100000).toFixed(2),   unit: 'L' };
+              if (raw >= 1000)     return { value: (raw / 1000).toFixed(1),      unit: 'K' };
+              return { value: raw.toLocaleString('en-IN'), unit: '' };
+            }
+            // Currency string: "₹1,45,35,401"
+            if (typeof raw === 'string' && raw.startsWith('₹')) {
+              const num = Number(raw.slice(1).replace(/,/g, ''));
+              if (num >= 10000000) return { value: `₹${(num / 10000000).toFixed(2)}`, unit: 'Cr' };
+              if (num >= 100000)   return { value: `₹${(num / 100000).toFixed(2)}`,   unit: 'L' };
+              return { value: raw, unit: '' };
+            }
+            // "2,58,953 Kg" / "7,034 Bags"
+            if (typeof raw === 'string') {
+              const m = raw.match(/^([\d,]+)\s+(.+)$/);
+              if (m) {
+                const num = Number(m[1].replace(/,/g, ''));
+                const unit = m[2];
+                if (num >= 10000000) return { value: (num / 10000000).toFixed(2), unit: `Cr ${unit}` };
+                if (num >= 100000)   return { value: (num / 100000).toFixed(2),   unit: `L ${unit}` };
+                return { value: m[1], unit };
+              }
+            }
+            return { value: String(raw), unit: '' };
+          };
+
+          const kpiIconMap: Record<string, React.ReactNode> = {
+            available:   <CheckCircle size={15} />,
+            lowStock:    <TrendingDown size={15} />,
+            outOfStock:  <AlertTriangle size={15} />,
+            stockValue:  <BarChart3 size={15} />,
+            totalWeight: <Package size={15} />,
+            totalBags:   <Archive size={15} />,
+            nearExpiry:  <Clock size={15} />,
+          };
+          const kpiBorderMap: Record<string, string> = {
+            emerald: 'border-t-emerald-500', amber: 'border-t-amber-500',
+            rose:    'border-t-rose-500',    blue:   'border-t-blue-500',
+            purple:  'border-t-purple-500',  indigo: 'border-t-indigo-500',
+            orange:  'border-t-orange-500',  slate:  'border-t-slate-400',
+          };
+          const kpiBgMap: Record<string, string> = {
+            emerald: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            amber:   'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            rose:    'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400',
+            blue:    'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400',
+            purple:  'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400',
+            indigo:  'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+            orange:  'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400',
+            slate:   'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400',
+          };
+          const kpiValMap: Record<string, string> = {
+            emerald: 'text-emerald-700 dark:text-emerald-300',
+            amber:   'text-amber-700 dark:text-amber-300',
+            rose:    'text-rose-700 dark:text-rose-300',
+            blue:    'text-blue-700 dark:text-blue-300',
+            purple:  'text-purple-700 dark:text-purple-300',
+            indigo:  'text-indigo-700 dark:text-indigo-300',
+            orange:  'text-orange-700 dark:text-orange-300',
+            slate:   'text-slate-700 dark:text-slate-300',
+          };
+          return (
+            <div className={cn("grid grid-cols-2 gap-3 mb-5", stockConfig.kpis.length <= 5 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-3 lg:grid-cols-6")}>
+              {loading && (!data || data.items.length === 0) ? (
+                Array(stockConfig.kpis.length).fill(0).map((_, i) => (
+                  <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-t-2 border-t-slate-200 rounded-xl p-4 h-[90px] animate-pulse">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="h-2.5 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
+                      <div className="h-6 w-6 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+                    </div>
+                    <div className="h-6 w-20 bg-slate-200 dark:bg-slate-800 rounded" />
+                  </div>
+                ))
+              ) : (
+                stockConfig.kpis.map((kpi) => {
+                  const raw = kpi.getValue(data?.items || [], data);
+                  const { value, unit } = fmtKpi(raw);
+                  return (
+                    <div key={kpi.key} className={cn(
+                      "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-t-[3px] rounded-xl p-4 h-[90px] flex flex-col justify-between hover:shadow-md transition-shadow",
+                      kpiBorderMap[kpi.color] || kpiBorderMap.slate
+                    )}>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-tight">{t(kpi.labelKey)}</p>
+                        <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0", kpiBgMap[kpi.color] || kpiBgMap.slate)}>
+                          {kpiIconMap[kpi.key] ?? <BarChart3 size={13} />}
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className={cn("text-2xl font-bold font-mono leading-none whitespace-nowrap", kpiValMap[kpi.color] || kpiValMap.slate)}>
+                          {value}
+                        </span>
+                        {unit && <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 whitespace-nowrap">{unit}</span>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          );
+        })()}
 
         <SelectionActionBar
           count={selectedStockIds.size}
@@ -691,9 +760,9 @@ export default function WholesaleStockUI() {
         />
 
         {/* Filters and Table */}
-        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-            <div className="flex flex-col lg:flex-row gap-3">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/20">
+            <div className="flex flex-col lg:flex-row gap-2.5">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -713,39 +782,39 @@ export default function WholesaleStockUI() {
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar">
                 {stockConfig.filterKeys.includes('millCategory') && (data?.millCategories?.length ?? 0) > 0 && (
-                  <select value={millCategoryFilter} onChange={e => setMillCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                  <select value={millCategoryFilter} onChange={e => setMillCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 min-w-[130px] font-medium">
                     <option value="all">{t('allMillCategories')}</option>
                     {data.millCategories.map((c:string) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 )}
-                <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 min-w-[130px] font-medium">
                   <option value="all">{t('allCategories')}</option>
                   {data?.categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 {stockConfig.filterKeys.includes('brand') && (data?.brands?.length ?? 0) > 0 && (
-                  <select value={brandFilter} onChange={e => setBrandFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                  <select value={brandFilter} onChange={e => setBrandFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 min-w-[130px] font-medium">
                     <option value="all">{t('allBrands')}</option>
                     {data.brands.map((b:string) => <option key={b} value={b}>{b}</option>)}
                   </select>
                 )}
                 {stockConfig.filterKeys.includes('grade') && (data?.grades?.length ?? 0) > 0 && (
-                  <select value={gradeFilter} onChange={e => setGradeFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                  <select value={gradeFilter} onChange={e => setGradeFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 min-w-[130px] font-medium">
                     <option value="all">{t('allGrades')}</option>
                     {data.grades.map((g:string) => <option key={g} value={g}>{g}</option>)}
                   </select>
                 )}
-                <select value={warehouseFilter} onChange={e => setWarehouseFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[130px]">
+                <select value={warehouseFilter} onChange={e => setWarehouseFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 min-w-[130px] font-medium">
                   <option value="all">{t('allWarehouses')}</option>
                   {data?.warehouses.map((w:any) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 min-w-[120px]">
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 min-w-[120px] font-medium">
                   <option value="all">{t('allStatuses')}</option>
                   <option value="ok">{t('inStock')}</option>
                   <option value="low">{t('lowStock')}</option>
                   <option value="out">{t('outOfStock')}</option>
                 </select>
-                <button onClick={exportExcel} className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap text-sm border border-slate-200 dark:border-slate-700">
-                  <Download size={14} /> {t('export')}
+                <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap text-xs border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <Download size={13} /> {t('export')}
                 </button>
               </div>
             </div>
@@ -763,9 +832,9 @@ export default function WholesaleStockUI() {
           <div className="overflow-x-auto w-full custom-scrollbar relative">
 
             <table className="w-full min-w-[800px] text-left text-sm text-slate-600 dark:text-slate-300 relative">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 text-xs uppercase font-medium sticky top-0 backdrop-blur-md z-10 shadow-sm border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
+              <thead className="bg-slate-50 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 sticky top-0 backdrop-blur-md z-10 border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
                 <tr>
-                  <th className="px-4 py-3 w-10">
+                  <th className="px-4 py-2.5 w-10">
                     <input
                       type="checkbox"
                       checked={group.items.length > 0 && group.items.every((i: any) => selectedStockIds.has(i.id))}
@@ -781,12 +850,12 @@ export default function WholesaleStockUI() {
                     />
                   </th>
                   {stockConfig.columns.map(col => (
-                    <th key={col.key} className={cn("px-4 py-3", col.align === 'right' && 'text-right', col.align === 'center' && 'text-center')}>
+                    <th key={col.key} className={cn("px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider", col.align === 'right' && 'text-right', col.align === 'center' && 'text-center')}>
                       {t(col.labelKey)}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-center">{t('colStatus')}</th>
-                  <th className="px-4 py-3 text-right">{t('colActions')}</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider">{t('colStatus')}</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider">{t('colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -813,8 +882,8 @@ export default function WholesaleStockUI() {
                       key={item.id}
                       onClick={() => setSelectedProduct(item)}
                       className={cn(
-                        "hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer",
-                        selectedProduct?.id === item.id && "bg-emerald-50 dark:bg-emerald-500/10 border-l-2 border-emerald-500"
+                        "hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer group",
+                        selectedProduct?.id === item.id && "bg-emerald-50/70 dark:bg-emerald-500/10 border-l-2 border-emerald-500"
                       )}
                     >
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -830,9 +899,9 @@ export default function WholesaleStockUI() {
                         const display = col.format ? col.format(raw, item) : (raw ?? '—');
                         if (col.key === 'name') {
                           return (
-                            <td key={col.key} className="px-4 py-3 font-medium text-slate-900 dark:text-white">
-                              {item.name}
-                              <div className="text-xs text-slate-500 font-normal">{item.category || '-'}</div>
+                            <td key={col.key} className="px-4 py-3">
+                              <p className="font-semibold text-slate-900 dark:text-white text-sm leading-tight">{item.name}</p>
+                              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-normal">{item.category || '-'}</p>
                             </td>
                           );
                         }
@@ -880,24 +949,24 @@ export default function WholesaleStockUI() {
                       })}
                       <td className="px-4 py-3 text-center">
                         {item.computedStock <= 0 ? (
-                          <span className="inline-flex px-1.5 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-bold rounded uppercase border border-red-200 dark:border-red-500/30">{t('statusOut')}</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-semibold rounded-full border border-red-200 dark:border-red-500/30">{t('statusOut')}</span>
                         ) : item.computedStock <= (item.minStock || 0) ? (
-                          <span className="inline-flex px-1.5 py-0.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded uppercase border border-amber-200 dark:border-amber-500/30">{t('statusLow')}</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-semibold rounded-full border border-amber-200 dark:border-amber-500/30">{t('statusLow')}</span>
                         ) : (
-                          <span className="inline-flex px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded uppercase border border-emerald-200 dark:border-emerald-500/30">{t('statusOk')}</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold rounded-full border border-emerald-200 dark:border-emerald-500/30">{t('statusOk')}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 rounded-lg transition-colors">
-                            <Eye size={16} />
+                            <Eye size={15} />
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); permanentDelete(item); }}
                             title={t('deletePermanently')}
                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/20 rounded-lg transition-colors"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </td>
