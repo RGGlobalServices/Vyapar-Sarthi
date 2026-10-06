@@ -3,7 +3,7 @@ import { parseVariantTitle, baseKey } from '@/lib/variantTitleParser';
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer, Percent, Plus, Minus, PencilLine, PlusCircle } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileImage, FileText, CheckCircle, Loader2, AlertCircle, ArrowLeft, Trash2, Camera, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Printer, Percent, Plus, Minus, PencilLine, PlusCircle, IndianRupee } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -67,12 +67,13 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     name: '', mobile: '', gst: '', address: '',
     creditDays: '', creditLimit: '', paidAmount: '', batchNumber: '', discount: '',
   });
+  const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   // Bill-level charges read from the bill (hamali, freight, loading …) — editable here, stored on the purchase, never as products.
   const [purchaseBroker, setPurchaseBroker] = useState({ name: '', commission: '' });
   const [purchaseCharges, setPurchaseCharges] = useState<{ name: string; amount: string }[]>([]);
   // Bada Udyog only: truck / driver / freight read from the mill purchase bill. Stays empty (and unused) for every other package.
   const [millBill, setMillBill] = useState<MillBill | null>(null);
-  const [millOpts, setMillOpts] = useState({ gateEntry: true, freight: true, lots: true, advancePaidBy: 'seller' as 'seller' | 'mill' | 'skip' });
+  const [millOpts, setMillOpts] = useState({ gateEntry: true, freight: true, lots: true, advancePaidBy: 'seller' as 'seller' | 'mill' | 'skip', deductFreightFromBill: false });
   const [supplierMatch, setSupplierMatch] = useState<null | {
     id: string; name: string; balance: number; creditLimit: number; creditDays: number;
   }>(null);
@@ -576,6 +577,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const PRICE_FIELD_LABELS = ['MRP', 'Selling Price', 'Cost Price', 'Unit Cost'];
   const priceHeaders = headers.filter(h => PRICE_FIELD_LABELS.includes(h));
 
+  const purchaseGoodsTotal = importType === 'purchase'
+    ? previewData.reduce((sum, r) => {
+        const qty = parseFloat(String(r['Quantity'] ?? r['quantity'] ?? 0)) || 0;
+        const unitCost = parseFloat(String(r['Unit Cost'] ?? r['unit_cost'] ?? r['unitCost'] ?? 0)) || 0;
+        return sum + qty * unitCost;
+      }, 0)
+    : 0;
+
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const computeAdjustedCell = (oldVal: string, value: number, mode: 'percent' | 'amount'): string => {
     const n = Number(oldVal) || 0;
@@ -744,7 +753,13 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 // Purchase-invoice supplier panel overrides — only sent for the
                 // first batch of a purchase import so the server doesn't re-apply
                 // enrichment / re-increment balance on every subsequent chunk.
-                supplier: (importType === 'purchase' && offset === 0) ? purchaseSupplier : undefined,
+                supplier: (importType === 'purchase' && offset === 0) ? (() => {
+                  const baseDiscount = discountType === 'percent'
+                    ? purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100
+                    : (parseFloat(purchaseSupplier.discount) || 0);
+                  const freightDeduct = millOpts.deductFreightFromBill && millBill ? (millBill.freightTotal ?? 0) : 0;
+                  return { ...purchaseSupplier, discount: String(Math.max(0, baseDiscount + freightDeduct)) };
+                })() : undefined,
                 broker: (importType === 'purchase' && offset === 0 && isMillBillingPackage(profile?.packageType) && purchaseBroker.name.trim()) ? purchaseBroker : undefined,
                 charges: (importType === 'purchase' && offset === 0) ? [
                   ...purchaseCharges.filter(c => c.name.trim() || c.amount !== '').map(c => ({ name: c.name.trim(), amount: c.amount })),
@@ -850,7 +865,24 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       }
       localStorage.removeItem(RESUME_KEY);
       try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
-      setSummary({ millExtras: millExtrasResult, totalProcessed: total, created: acc.created, updated: acc.updated, skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed });
+      const purchaseGoodsTotalSnap = purchaseGoodsTotal;
+      const chargesSnap = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
+      const discountSnapAmt = discountType === 'percent'
+        ? Math.max(0, purchaseGoodsTotalSnap * (parseFloat(purchaseSupplier.discount) || 0) / 100)
+        : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
+      const freightDeductSnap = millOpts.deductFreightFromBill && millBill ? (millBill.freightTotal ?? 0) : 0;
+      setSummary({
+        millExtras: millExtrasResult, totalProcessed: total, created: acc.created, updated: acc.updated,
+        skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed,
+        purchaseFinancial: importType === 'purchase' ? {
+          supplierName: purchaseSupplier.name,
+          goodsTotal: purchaseGoodsTotalSnap,
+          chargesTotal: chargesSnap,
+          discountAmt: discountSnapAmt,
+          freightDeductAmt: freightDeductSnap,
+          paidNow: Math.max(0, parseFloat(purchaseSupplier.paidAmount) || 0),
+        } : null,
+      });
       setStep('done');
       import('swr').then(({ mutate }) => {
         mutate(key => typeof key === 'string' && key.startsWith('/products'), undefined, { revalidate: true });
@@ -1256,20 +1288,34 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <span className="block text-[10px] text-slate-400 mt-1">Applied to all items on this bill. Rows with their own batch column take priority.</span>
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Bill Discount (₹) <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
-                    <input type="number" min="0" step="0.01" value={purchaseSupplier.discount} onChange={e => setPurchaseSupplier(s => ({ ...s, discount: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
-                    <span className="block text-[10px] text-slate-400 mt-1">Discount given by supplier — subtracted from bill total and from what is owed.</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Bill Discount <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                    <div className="mt-1 flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500">
+                      <input type="number" min="0" step="0.01" value={purchaseSupplier.discount} onChange={e => setPurchaseSupplier(s => ({ ...s, discount: e.target.value }))}
+                        className="flex-1 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none min-w-0" placeholder="0" />
+                      <div className="flex border-l border-slate-300 dark:border-slate-700 shrink-0">
+                        {(['amount', 'percent'] as const).map(m => (
+                          <button key={m} type="button" onClick={() => setDiscountType(m)}
+                            className={`h-full px-3 text-sm font-bold transition-colors ${discountType === m ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                            {m === 'amount' ? '₹' : '%'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <span className="block text-[10px] text-slate-400 mt-1">
+                      {discountType === 'percent' && purchaseGoodsTotal > 0 && purchaseSupplier.discount
+                        ? `= ₹${(purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} off the bill total`
+                        : 'Discount given by supplier — subtracted from bill total and from what is owed.'}
+                    </span>
                   </label>
                 </div>
                 {(() => {
-                  const goodsTotal = previewData.reduce((sum, r) => {
-                    const qty = parseFloat(String(r['Quantity'] ?? r['quantity'] ?? 0)) || 0;
-                    const unitCost = parseFloat(String(r['Unit Cost'] ?? r['unit_cost'] ?? r['unitCost'] ?? 0)) || 0;
-                    return sum + qty * unitCost;
-                  }, 0);
+                  const goodsTotal = purchaseGoodsTotal;
                   const chargesSum = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
-                  const discountAmt = Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
-                  const billTotal = Math.max(0, goodsTotal - discountAmt + chargesSum);
+                  const discountAmt = discountType === 'percent'
+                    ? Math.max(0, goodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100)
+                    : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
+                  const freightDeductAmt = millOpts.deductFreightFromBill && millBill ? (millBill.freightTotal ?? 0) : 0;
+                  const billTotal = Math.max(0, goodsTotal - discountAmt - freightDeductAmt + chargesSum);
                   const paidNow = Math.max(0, parseFloat(purchaseSupplier.paidAmount) || 0);
                   const balanceDue = Math.max(0, billTotal - paidNow);
                   const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -1286,6 +1332,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                           <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
                             <span>Less: Discount</span>
                             <span className="tabular-nums">−₹{fmt(discountAmt)}</span>
+                          </div>
+                        )}
+                        {freightDeductAmt > 0 && (
+                          <div className="flex justify-between text-blue-700 dark:text-blue-400">
+                            <span>Less: Freight (deducted)</span>
+                            <span className="tabular-nums">−₹{fmt(freightDeductAmt)}</span>
                           </div>
                         )}
                         {chargesSum > 0 && (
@@ -1392,6 +1444,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       </div>
                     )}
                     <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.lots} onChange={e => setMillOpts(o => ({ ...o, lots: e.target.checked }))} /> Create Raw Material lot(s) for the milling stock</label>
+                    {(millBill.freightTotal ?? 0) > 0 && (
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={millOpts.deductFreightFromBill} onChange={e => setMillOpts(o => ({ ...o, deductFreightFromBill: e.target.checked }))} />
+                        Deduct freight (₹{(millBill.freightTotal ?? 0).toLocaleString('en-IN')}) from supplier bill total
+                      </label>
+                    )}
                   </div>
                 </div>
               );
@@ -1404,46 +1462,44 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 Value" toolbar below, which only SETS an absolute value —
                 this is relative, and price-column-specific. */}
             {priceHeaders.length > 0 && (
-              <div className="mb-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/30 p-3 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
-                <div className="flex flex-wrap items-end gap-2">
-                  <span className="text-sm font-medium text-indigo-800 dark:text-indigo-300 self-center flex items-center gap-1.5">
-                    <Percent size={14} /> Adjust price by %/₹
-                  </span>
-                  <select
-                    value={pctAdjustField}
-                    onChange={e => setPctAdjustField(e.target.value)}
-                    className="text-sm bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
-                  >
-                    <option value="" disabled hidden>-- Select Field --</option>
-                    {priceHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                  <input
-                    type="number" inputMode="decimal"
-                    placeholder={pctAdjustMode === 'percent' ? '10' : '5'}
-                    value={pctAdjustValue}
-                    onChange={e => { setPctAdjustValue(e.target.value); setPctAdjustNote(''); }}
-                    className="text-sm bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-1.5 w-24 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
-                  />
-                  <div className="flex bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded-lg p-0.5">
-                    {(['percent', 'amount'] as const).map(m => (
-                      <button key={m} type="button" onClick={() => setPctAdjustMode(m)}
-                        className={`px-3 py-1 rounded-md text-sm font-bold ${pctAdjustMode === m ? 'bg-indigo-500 text-white' : 'text-slate-500'}`}>
-                        {m === 'percent' ? '%' : '₹'}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={applyPctAdjust}
-                    disabled={!pctAdjustField || pctAdjustValue === '' || selectedRows.length === 0}
-                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 shadow-sm"
-                  >
-                    Apply to Selected{selectedRows.length > 0 ? ` (${selectedRows.length})` : ''}
-                  </button>
+              <div className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                  <Percent size={13} className="text-slate-400" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Adjust Price</span>
                 </div>
-                <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/70">
-                  Positive increases, negative (e.g. -10) decreases. Tick rows above and hit Apply, or leave rows unticked and use the <span className="font-bold">+ / −</span> next to any single row's {priceHeaders.join('/')} box.
-                </p>
-                {pctAdjustNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{pctAdjustNote}</p>}
+                <div className="px-4 py-3 bg-white dark:bg-slate-900 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={pctAdjustField} onChange={e => setPctAdjustField(e.target.value)}
+                      className="h-9 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 dark:text-slate-200">
+                      <option value="" disabled hidden>-- Select Field --</option>
+                      {priceHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                    <div className="flex h-9 rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden">
+                      <input type="number" inputMode="decimal"
+                        placeholder={pctAdjustMode === 'percent' ? '10' : '5'}
+                        value={pctAdjustValue}
+                        onChange={e => { setPctAdjustValue(e.target.value); setPctAdjustNote(''); }}
+                        className="h-full w-20 px-3 text-sm text-center bg-white dark:bg-slate-900 border-0 focus:outline-none text-slate-700 dark:text-slate-200" />
+                      <div className="flex border-l border-slate-300 dark:border-slate-700">
+                        {(['percent', 'amount'] as const).map(m => (
+                          <button key={m} type="button" onClick={() => setPctAdjustMode(m)}
+                            className={`h-full px-3 text-sm font-bold transition-colors ${pctAdjustMode === m ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                            {m === 'percent' ? '%' : '₹'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button onClick={applyPctAdjust}
+                      disabled={!pctAdjustField || pctAdjustValue === '' || selectedRows.length === 0}
+                      className="h-9 text-sm bg-emerald-600 hover:bg-emerald-700 text-white px-4 rounded-lg font-bold transition-colors disabled:opacity-40">
+                      Apply to Selected{selectedRows.length > 0 ? ` (${selectedRows.length})` : ''}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Positive increases, negative (e.g. −10) decreases. Tick rows and hit Apply, or use the <strong>+/−</strong> next to any single price cell.
+                  </p>
+                  {pctAdjustNote && <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{pctAdjustNote}</p>}
+                </div>
               </div>
             )}
 
@@ -1698,6 +1754,59 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 </div>
               )}
             </div>
+
+            {summary.purchaseFinancial && (() => {
+              const f = summary.purchaseFinancial;
+              if (f.goodsTotal === 0) return null;
+              const billTotal = Math.max(0, f.goodsTotal - f.discountAmt - f.freightDeductAmt + f.chargesTotal);
+              const balanceDue = Math.max(0, billTotal - f.paidNow);
+              const fmt = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+              return (
+                <div className="mt-6 max-w-sm mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-3 flex items-center gap-1.5">
+                    <IndianRupee size={12} /> {f.supplierName ? `Bill Summary — ${f.supplierName}` : 'Bill Summary'}
+                  </h4>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Goods Total</span>
+                      <span className="font-semibold tabular-nums">{fmt(f.goodsTotal)}</span>
+                    </div>
+                    {f.discountAmt > 0 && (
+                      <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                        <span>Less: Discount</span>
+                        <span className="tabular-nums">−{fmt(f.discountAmt)}</span>
+                      </div>
+                    )}
+                    {f.freightDeductAmt > 0 && (
+                      <div className="flex justify-between text-blue-700 dark:text-blue-400">
+                        <span>Less: Freight (deducted)</span>
+                        <span className="tabular-nums">−{fmt(f.freightDeductAmt)}</span>
+                      </div>
+                    )}
+                    {f.chargesTotal > 0 && (
+                      <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                        <span>Plus: Charges</span>
+                        <span className="tabular-nums">+{fmt(f.chargesTotal)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold border-t border-slate-200 dark:border-slate-700 pt-1.5 mt-0.5">
+                      <span>Bill Total</span>
+                      <span className="tabular-nums">{fmt(billTotal)}</span>
+                    </div>
+                    {f.paidNow > 0 && (
+                      <div className="flex justify-between text-slate-500">
+                        <span>Less: Paid Now</span>
+                        <span className="tabular-nums">−{fmt(f.paidNow)}</span>
+                      </div>
+                    )}
+                    <div className={`flex justify-between font-black border-t border-slate-200 dark:border-slate-700 pt-1.5 mt-0.5 text-base ${balanceDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      <span>Balance Due</span>
+                      <span className="tabular-nums">{fmt(balanceDue)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {summary.rowErrors?.length > 0 && (
               <div className="mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-amber-500/30 rounded-xl">

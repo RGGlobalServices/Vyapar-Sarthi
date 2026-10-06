@@ -1284,6 +1284,60 @@ export default function PurchasesPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Bill Summary */}
+              {(() => {
+                const goodsTotal = (selectedInvoice.purchaseItems || []).reduce((s: number, item: any) => s + (item.quantity || 0) * (item.cost || 0), 0);
+                const discount = parseFloat(selectedInvoice.supplier?.discount ?? '0') || 0;
+                const chargesTotal = (selectedInvoice.charges || []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
+                const billTotal = selectedInvoice.totalCost || 0;
+                const paidNow = parseFloat(selectedInvoice.supplier?.paidAmount ?? selectedInvoice.paidAmount ?? '0') || 0;
+                const balance = billTotal - paidNow;
+                if (goodsTotal === 0 && discount === 0 && chargesTotal === 0 && paidNow === 0) return null;
+                return (
+                  <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Bill Summary</p>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {goodsTotal > 0 && (
+                        <div className="px-4 py-2.5 flex justify-between items-center">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">Goods Total</span>
+                          <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{goodsTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {discount > 0 && (
+                        <div className="px-4 py-2.5 flex justify-between items-center">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">Less: Discount</span>
+                          <span className="text-xs font-mono font-semibold text-rose-600 dark:text-rose-400 tabular-nums">−₹{discount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {chargesTotal > 0 && (
+                        <div className="px-4 py-2.5 flex justify-between items-center">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">Plus: Charges</span>
+                          <span className="text-xs font-mono font-semibold text-amber-700 dark:text-amber-400 tabular-nums">+₹{chargesTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      <div className="px-4 py-2.5 flex justify-between items-center bg-slate-50 dark:bg-slate-800/30">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Bill Total</span>
+                        <span className="text-sm font-mono font-black text-slate-900 dark:text-white tabular-nums">₹{billTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                      {paidNow > 0 && (
+                        <div className="px-4 py-2.5 flex justify-between items-center">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">Less: Paid Now</span>
+                          <span className="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">−₹{paidNow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      <div className="px-4 py-3 flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Balance Due to Supplier</span>
+                        <span className={`text-base font-mono font-black tabular-nums ${balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          ₹{Math.abs(balance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
               <div className="flex gap-2 flex-wrap">

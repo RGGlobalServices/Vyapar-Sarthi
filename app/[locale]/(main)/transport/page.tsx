@@ -91,34 +91,64 @@ export default function TransportPage() {
       )}
 
       <div>
-        <p className="text-xs font-bold uppercase text-slate-500 mb-2">
-          {selectedTransporter ? t('logFor', { name: selectedTransporter.name }) : t('allActivity')}
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {selectedTransporter ? t('logFor', { name: selectedTransporter.name }) : t('allActivity')}
+          </p>
+          {selectedEntries.length > 0 && (
+            <span className="text-[11px] text-slate-400">{t('entries', { count: selectedEntries.length })}</span>
+          )}
+        </div>
         {selectedEntries.length === 0 ? (
-          <p className="text-sm text-slate-500">{t('noEntries')}</p>
+          <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-10 text-center">
+            <p className="text-sm text-slate-400">{t('noEntries')}</p>
+          </div>
         ) : (
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {selectedEntries.map(e => (
-                <li key={e.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full',
-                        e.type === 'charge' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300')}>
-                        {e.type === 'charge' ? t('charge') : t('payment')}
-                      </span>
-                      {e.vehicleNumber && <span className="text-xs font-semibold text-slate-500">{e.vehicleNumber}</span>}
+              {selectedEntries.map(e => {
+                const tr = !selectedTransporterId ? transporters.find(t2 => t2.id === e.transporterId) : null;
+                const dateStr = new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                return (
+                  <li key={e.id} className="px-4 py-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn('text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full',
+                            e.type === 'charge'
+                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300'
+                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300')}>
+                            {e.type === 'charge' ? t('charge') : t('payment')}
+                          </span>
+                          {tr && (
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{tr.name}</span>
+                          )}
+                          {e.vehicleNumber && (
+                            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded">
+                              {e.vehicleNumber}
+                            </span>
+                          )}
+                          {e.paymentMethod && (
+                            <span className="text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">
+                              {t('via', { method: e.paymentMethod })}
+                            </span>
+                          )}
+                        </div>
+                        {e.note && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{e.note}</p>
+                        )}
+                        <p className="text-[11px] text-slate-400 dark:text-slate-600">{dateStr}</p>
+                      </div>
+                      <div className="shrink-0 text-right pt-0.5">
+                        <span className={cn('text-base font-black tabular-nums',
+                          e.type === 'charge' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                          {e.type === 'charge' ? '+' : '−'}{rupee(e.amount)}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      {e.note && ` · ${e.note}`}
-                    </p>
-                  </div>
-                  <span className={cn('text-lg font-black shrink-0', e.type === 'charge' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-                    {e.type === 'charge' ? '+' : '−'}{rupee(e.amount)}
-                  </span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
