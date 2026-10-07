@@ -140,11 +140,14 @@ export function renderProfessionalHeader(
   doc.setFontSize(13);
   doc.setTextColor(...PDF_LAYOUT.accent);
   doc.text(reportTitle.toUpperCase(), R, 15, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...PDF_LAYOUT.muted);
-  doc.text(`${labels.periodLabel || 'Period'}: ${dateRange}`, R, 20, { align: 'right' });
-  doc.text(`${labels.generatedLabel || 'Generated'}: ${new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`, R, 24, { align: 'right' });
+  const periodText = `${labels.periodLabel || 'Period'}: ${dateRange}`;
+  const generatedText = `${labels.generatedLabel || 'Generated'}: ${new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`;
+  setSmartFont(doc, periodText, 'normal');
+  doc.text(periodText, R, 20, { align: 'right' });
+  setSmartFont(doc, generatedText, 'normal');
+  doc.text(generatedText, R, 24, { align: 'right' });
 
   // Divider bar under the header — flat accent stripe.
   doc.setFillColor(...PDF_LAYOUT.accent);

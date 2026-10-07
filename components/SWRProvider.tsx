@@ -35,6 +35,12 @@ export default function SWRProvider({ children }: { children: React.ReactNode })
         // Reconnect refetch stays on: the offline-online transition is exactly
         // when you WANT to pull the latest from the server.
         revalidateOnReconnect: true,
+        // AbortError is thrown intentionally when the shop changes mid-request.
+        // Treat it as a no-op so it never surfaces as an error toast or console warning.
+        onError: (err: any) => {
+          if (err?.name === 'AbortError') return;
+        },
+        shouldRetryOnError: (err: any) => err?.name !== 'AbortError',
       }}
     >
       {children}

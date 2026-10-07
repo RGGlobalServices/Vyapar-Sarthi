@@ -26,7 +26,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [downloading, setDownloading] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
   const { user } = useAuthStore();
-  const { profile, fetchProfile } = useBusinessStore();
+  const { profile, fetchProfile, activeShopId, allShops } = useBusinessStore();
+  const activeShopEntry = allShops.find(s => s.id === activeShopId) ?? null;
+  const activeShopName = activeShopEntry?.name || profile?.shopName;
 
   useEffect(() => {
     fetchProfile();
@@ -172,7 +174,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     remainingAmount: Math.max(0, totalAmount - (invoice.amount_paid ?? (invoice.payment_type === 'Udhar' ? 0 : totalAmount))),
     billNumber: `INV-${invoice.id.substring(0, 8)}`,
     date: fmtDate(invoice.created_at),
-    storeName: profile?.shopName || user?.storeName || 'Store',
+    storeName: activeShopName || user?.storeName || 'Store',
     storeAddress: profile?.address || undefined,
     storeMobile: profile?.mobile || undefined,
     logoUrl: profile?.logoUrl || undefined,

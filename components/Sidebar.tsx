@@ -406,44 +406,49 @@ export default function Sidebar({
             canSwitchShops && "hover:bg-slate-200/50 dark:hover:bg-slate-800/40"
           )}
         >
-          {/* Main Business Identity */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0 p-0.5 border border-slate-100 dark:border-slate-800">
-              {profile.logoUrl ? (
-                <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" />
-              ) : (
-                <img src="/icon.png" alt="App Icon" className="w-full h-full object-cover rounded-lg" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-[15px] font-black text-slate-900 dark:text-white truncate leading-tight tracking-tight">
-                {user?.storeName || 'Vyapar Sarthi'}
-              </h1>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest truncate border border-slate-200 dark:border-slate-700">
-                  {currentBusinessConfig.label}
-                </span>
-                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest truncate">
-                  {currentPackageConfig.label}
-                </span>
+          {/* Active Shop as primary header */}
+          {(() => {
+            const activeShopEntry = allShops.find(s => s.id === activeShopId)
+              ?? allShops.find(s => s.id === profile.id)
+              ?? null;
+            const displayName = activeShopEntry?.name
+              || profile.shopName
+              || (mounted && isWholesaleTierPackage(profile.subscriptionPlan) ? 'Main Warehouse' : 'Main Store');
+            const displayCode = activeShopEntry?.shopCode;
+            return (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0 p-0.5 border border-slate-100 dark:border-slate-800">
+                  {profile.logoUrl ? (
+                    <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" />
+                  ) : (
+                    <img src="/icon.png" alt="App Icon" className="w-full h-full object-cover rounded-lg" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                    <h1 className="text-[15px] font-black text-slate-900 dark:text-white truncate leading-tight tracking-tight">
+                      {displayName}
+                    </h1>
+                    {canSwitchShops && (
+                      <ChevronDown size={13} className={cn('text-slate-400 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    {displayCode && (
+                      <span className="text-[9px] text-slate-400 font-mono">{displayCode}</span>
+                    )}
+                    <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest border border-slate-200 dark:border-slate-700">
+                      {currentBusinessConfig.label}
+                    </span>
+                    <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest">
+                      {currentPackageConfig.label}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-
-          {/* Location Selector */}
-          <div className="w-full mt-2 flex items-center justify-between bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-2 group transition-all hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:border-emerald-200 dark:hover:border-emerald-500/30">
-            <div className="flex items-center gap-2 truncate">
-              <span className="text-sm">
-                {mounted && isWholesaleTierPackage(profile.subscriptionPlan) ? '📦' : '🏪'}
-              </span>
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 truncate">
-                {profile.shopName || (mounted && isWholesaleTierPackage(profile.subscriptionPlan) ? 'Main Warehouse' : 'Main Store')}
-              </span>
-            </div>
-            {canSwitchShops && (
-              <ChevronDown size={14} className={cn('text-slate-400 group-hover:text-emerald-500 flex-shrink-0 transition-transform', showShopMenu && 'rotate-180')} />
-            )}
-          </div>
+            );
+          })()}
         </ShopHeaderTag>
 
         {/* Shop dropdown */}

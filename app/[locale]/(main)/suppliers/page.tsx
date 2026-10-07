@@ -15,6 +15,7 @@ import DocumentViewerModal from '@/components/DocumentViewerModal';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { generatePendingBillsPDF } from '@/lib/pdf/pendingBillsReport';
 import { generatePurchaseBillPDF } from '@/lib/pdf/purchaseBillDetail';
+import { downloadPurchaseSlip, downloadWeighbridgeSlip, downloadEntryExitSlip } from '@/lib/pdf/slipGenerator';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
@@ -1170,9 +1171,10 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   const [billSearch, setBillSearch] = useState('');
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [supplierTab, setSupplierTab] = useState<'history' | 'deliveries'>('history');
+  const [supplierTab, setSupplierTab] = useState<'history' | 'deliveries' | 'slips'>('history');
   const [gateEntries, setGateEntries] = useState<any[]>([]);
   const [loadingGateEntries, setLoadingGateEntries] = useState(false);
+  const [downloadingSlipId, setDownloadingSlipId] = useState<string | null>(null);
   // Password re-verification gate — replaces the old first confirm() "are you
   // sure" dialog. The Trash icon just opens this; the actual delete only
   // fires from ConfirmPasswordModal's onConfirm, after verify-pin succeeds.
@@ -1238,7 +1240,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (supplierTab !== 'deliveries') return;
+    if (supplierTab !== 'deliveries' && supplierTab !== 'slips') return;
     setLoadingGateEntries(true);
     api.get(`/mill/gate-entries?supplierId=${supplierId}`)
       .then(r => setGateEntries(r.data || []))
@@ -1541,21 +1543,159 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
           />
         )}
 
-        {/* Tab switcher — history vs deliveries */}
+        {/* Tab switcher — history / deliveries / slips */}
         <div className="flex gap-1 px-4 pt-3 pb-0 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
-          {(['history', 'deliveries'] as const).map(tab => (
+          {(['history', 'deliveries', 'slips'] as const).map(tab => (
             <button key={tab} onClick={() => setSupplierTab(tab)}
               className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors border-b-2 -mb-px ${
                 supplierTab === tab
                   ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
                   : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               }`}>
-              {tab === 'history' ? (t('tabHistory') || 'Purchase History') : (t('tabDeliveries') || 'Deliveries')}
+              {tab === 'history' ? (t('tabHistory') || 'Purchase History') : tab === 'deliveries' ? (t('tabDeliveries') || 'Deliveries') : (t('tabSlips') || 'Slips')}
             </button>
           ))}
         </div>
 
-        {supplierTab === 'deliveries' ? (
+        {supplierTab === 'slips' ? (
+          <div className="p-4 sm:p-6 space-y-6">
+            {/* Purchase Slips — from existing purchase transactions */}
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Purchase Slips</h3>
+              {(() => {
+                const purchases = (data?.months || []).flatMap((m: any) =>
+                  (m.items || []).filter((it: any) => it.type !== 'payment')
+                );
+                if (!purchases.length) return (
+                  <p className="text-sm text-slate-500 py-4 text-center">No purchase records found.</p>
+                );
+                return (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {purchases.map((it: any) => (
+                        <li key={it.id} className="p-3 flex items-center justify-between gap-4 flex-wrap">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 px-2 py-0.5 rounded-full uppercase">Purchase Slip</span>
+                              {it.billNumber && <span className="text-sm font-bold text-slate-800 dark:text-white">{it.billNumber}</span>}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                              {it.note ? ` · ${it.note}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-sm font-black text-slate-700 dark:text-slate-300">₹{Math.round(it.amount || 0).toLocaleString('en-IN')}</span>
+                            <button
+                              disabled={downloadingSlipId === it.id}
+                              onClick={async () => {
+                                setDownloadingSlipId(it.id);
+                                try {
+                                  await downloadPurchaseSlip({
+                                    transaction: { billNumber: it.billNumber || '', date: it.date, amount: it.amount, note: it.note || '', type: it.type },
+                                    supplier: { name: s?.name || '', mobile: s?.mobile, address: s?.address, gst: s?.gst },
+                                    shopInfo: { name: profile.shopName || 'Vyapar Sarthi', address: profile.address, mobile: profile.mobile, gst: profile.gst, pan: profile.pan },
+                                  });
+                                } finally { setDownloadingSlipId(null); }
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20 disabled:opacity-50 transition-colors"
+                            >
+                              {downloadingSlipId === it.id ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                              Download
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Weighbridge / Entry-Exit Slips — from gate entries */}
+            {(loadingGateEntries || gateEntries.length > 0) && (
+              <div>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Weighbridge &amp; Entry/Exit Slips</h3>
+                {loadingGateEntries ? (
+                  <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-emerald-500" /></div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {gateEntries.map((ge: any) => {
+                        const hasWeight = ge.weighbridgeEntries?.some((w: any) => w.netWeightKg);
+                        return (
+                          <li key={ge.id} className="p-3 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {hasWeight
+                                  ? <span className="text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 px-2 py-0.5 rounded-full uppercase">Weighbridge</span>
+                                  : <span className="text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 px-2 py-0.5 rounded-full uppercase">Entry/Exit</span>
+                                }
+                                <span className="text-sm font-bold text-slate-800 dark:text-white">{ge.vehicleNumber || ge.entryNumber}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {ge.entryNumber} · {new Date(ge.enteredAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {ge.materialDescription ? ` · ${ge.materialDescription}` : ''}
+                              </p>
+                              {hasWeight && <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                Net: {ge.weighbridgeEntries.reduce((s: number, w: any) => s + (w.netWeightKg || 0), 0).toLocaleString('en-IN')} kg
+                              </p>}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {hasWeight && (
+                                <button
+                                  disabled={downloadingSlipId === ge.id + '_wb'}
+                                  onClick={async () => {
+                                    setDownloadingSlipId(ge.id + '_wb');
+                                    try {
+                                      await downloadWeighbridgeSlip({
+                                        gateEntry: ge,
+                                        supplier: s ? { name: s.name } : null,
+                                        shopInfo: { name: profile.shopName || 'Vyapar Sarthi', address: profile.address, mobile: profile.mobile, gst: profile.gst, pan: profile.pan },
+                                      });
+                                    } finally { setDownloadingSlipId(null); }
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                                >
+                                  {downloadingSlipId === ge.id + '_wb' ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                                  Weighbridge
+                                </button>
+                              )}
+                              <button
+                                disabled={downloadingSlipId === ge.id + '_ee'}
+                                onClick={async () => {
+                                  setDownloadingSlipId(ge.id + '_ee');
+                                  try {
+                                    await downloadEntryExitSlip({
+                                      gateEntry: ge,
+                                      supplier: s ? { name: s.name } : null,
+                                      shopInfo: { name: profile.shopName || 'Vyapar Sarthi', address: profile.address, mobile: profile.mobile, gst: profile.gst, pan: profile.pan },
+                                    });
+                                  } finally { setDownloadingSlipId(null); }
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
+                              >
+                                {downloadingSlipId === ge.id + '_ee' ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                                Entry/Exit
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!loadingGateEntries && gateEntries.length === 0 && (data?.months || []).flatMap((m: any) => (m.items || []).filter((it: any) => it.type !== 'payment')).length === 0 && (
+              <div className="py-12 text-center">
+                <FileText size={36} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+                <p className="text-sm text-slate-500">No slips found. Add purchases or gate entries first.</p>
+              </div>
+            )}
+          </div>
+        ) : supplierTab === 'deliveries' ? (
           <div className="p-4 sm:p-6">
             {loadingGateEntries ? (
               <div className="flex justify-center py-12"><Loader2 className="w-7 h-7 animate-spin text-emerald-500" /></div>

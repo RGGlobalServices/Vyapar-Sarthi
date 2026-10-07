@@ -95,11 +95,11 @@ export default function HamaliPage() {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-sky-200 dark:border-sky-900/40 bg-white dark:bg-slate-900 p-4">
-          <p className="text-[11px] text-sky-600 font-bold uppercase">Purchase hamali (total)</p>
+          <p className="text-[11px] text-sky-600 font-bold uppercase">{t('purchaseHamaliTotal')}</p>
           <p className="text-xl font-black text-slate-900 dark:text-white">{rupee(sumDir('purchase'))}</p>
         </div>
         <div className="rounded-xl border border-violet-200 dark:border-violet-900/40 bg-white dark:bg-slate-900 p-4">
-          <p className="text-[11px] text-violet-600 font-bold uppercase">Sale hamali (total)</p>
+          <p className="text-[11px] text-violet-600 font-bold uppercase">{t('saleHamaliTotal')}</p>
           <p className="text-xl font-black text-slate-900 dark:text-white">{rupee(sumDir('sale'))}</p>
         </div>
       </div>
@@ -108,7 +108,7 @@ export default function HamaliPage() {
         {(['all', 'purchase', 'sale'] as const).map(k => (
           <button key={k} type="button" onClick={() => setDirFilter(k)}
             className={'text-xs font-bold px-3 py-1 rounded-full border ' + (dirFilter === k ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
-            {k === 'all' ? 'All' : k === 'purchase' ? 'Purchase' : 'Sale'}
+            {k === 'all' ? t('filterAll') : k === 'purchase' ? t('filterPurchase') : t('filterSale')}
           </button>
         ))}
       </div>
@@ -116,14 +116,14 @@ export default function HamaliPage() {
       {monthlySummary.length > 1 && (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-            <p className="text-xs font-bold uppercase text-slate-500 tracking-wider">Monthly Summary</p>
+            <p className="text-xs font-bold uppercase text-slate-500 tracking-wider">{t('monthlySummary')}</p>
           </div>
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {monthlySummary.map(([key, data]) => (
               <li key={key} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{monthLabel(key)}</p>
-                  <p className="text-xs text-slate-400">{data.count} entries</p>
+                  <p className="text-xs text-slate-400">{t('entries', { count: data.count })}</p>
                 </div>
                 <span className="text-base font-black text-yellow-600 dark:text-yellow-400">{rupee(data.total)}</span>
               </li>
@@ -146,7 +146,7 @@ export default function HamaliPage() {
               <li key={e.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-slate-700 dark:text-slate-300">
-                    {e.direction && <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 ' + (e.direction === 'purchase' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700')}>{e.direction === 'purchase' ? 'Purchase' : 'Sale'}{e.billLabel ? ' · ' + e.billLabel : ''}</span>}
+                    {e.direction && <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 ' + (e.direction === 'purchase' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700')}>{e.direction === 'purchase' ? t('purchase') : t('sale')}{e.billLabel ? ' · ' + e.billLabel : ''}</span>}
                     {e.description || t('title')}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -166,14 +166,14 @@ export default function HamaliPage() {
       )}
 
       {editing && (
-        <EditEntryModal url={`/expenses/${editing.id}`} title="Edit hamali" onClose={() => setEditing(null)} onDone={() => { setEditing(null); refetch(); }}
+        <EditEntryModal url={`/expenses/${editing.id}`} title={t('editHamali')} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refetch(); }}
           initial={{ amount: editing.amount, description: editing.description || '', date: editing.date ? String(editing.date).slice(0, 10) : '', paymentMode: editing.paymentMode || 'Cash', direction: editing.direction || '' }}
           fields={[
-            { key: 'amount', label: 'Amount (₹)', type: 'number' },
-            { key: 'direction', label: 'Hamali for', type: 'choice', options: [{ value: 'purchase', label: 'Purchase' }, { value: 'sale', label: 'Sale' }] },
-            { key: 'description', label: 'Description' },
-            { key: 'date', label: 'Date', type: 'date' },
-            { key: 'paymentMode', label: 'Paid by', type: 'select', options: ['Cash', 'UPI', 'Card', 'Bank'].map(v => ({ value: v, label: v })) },
+            { key: 'amount', label: t('amountLabel'), type: 'number' },
+            { key: 'direction', label: t('hamaliFor'), type: 'choice', options: [{ value: 'purchase', label: t('purchase') }, { value: 'sale', label: t('sale') }] },
+            { key: 'description', label: t('descriptionLabel') },
+            { key: 'date', label: t('dateLabel'), type: 'date' },
+            { key: 'paymentMode', label: t('paidByLabel'), type: 'select', options: ['Cash', 'UPI', 'Card', 'Bank'].map(v => ({ value: v, label: v })) },
           ]} />
       )}
 
@@ -232,20 +232,20 @@ function RecordChargeModal({ onClose, onRecorded }: { onClose: () => void; onRec
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
           </label>
           <label className="block">
-            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Thekedar / Labour Contractor</span>
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('thekedar')}</span>
             <select value={partyId} onChange={e => setPartyId(e.target.value)}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm">
-              <option value="">No party (optional)</option>
+              <option value="">{t('noParty')}</option>
               {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
           <div>
-            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Hamali for</span>
+            <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('hamaliFor')}</span>
             <div className="grid grid-cols-2 gap-2">
               {(['purchase', 'sale'] as const).map(k => (
                 <button key={k} type="button" onClick={() => setDirection(k)}
                   className={cn('h-9 rounded-lg text-sm font-bold border-2 transition-colors', direction === k ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400' : 'border-slate-200 dark:border-slate-700 text-slate-500')}>
-                  {k === 'purchase' ? 'Purchase' : 'Sale'}
+                  {k === 'purchase' ? t('purchase') : t('sale')}
                 </button>
               ))}
             </div>

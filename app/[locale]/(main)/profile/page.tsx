@@ -1257,7 +1257,15 @@ function BillThemePreview({ theme, accent, shopName }: { theme: string; accent: 
   return (
     <div
       className="rounded-lg border overflow-hidden shadow-sm bg-white mx-auto"
-      style={{ maxWidth: 340, borderColor: isModern ? color : '#0f172a', borderLeft: isStylish ? `6px solid ${color}` : undefined }}
+      style={{
+        maxWidth: 340,
+        borderTopColor: isModern ? color : '#0f172a',
+        borderRightColor: isModern ? color : '#0f172a',
+        borderBottomColor: isModern ? color : '#0f172a',
+        borderLeftColor: isStylish ? color : (isModern ? color : '#0f172a'),
+        borderLeftWidth: isStylish ? '6px' : '1px',
+        borderLeftStyle: 'solid',
+      }}
     >
       {/* Letterhead */}
       <div

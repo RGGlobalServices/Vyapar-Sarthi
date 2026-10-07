@@ -612,7 +612,9 @@ export default function InvoiceHistoryPage() {
   const locale = useLocale();
   const router = useRouter();
   const { user, role } = useAuthStore();
-  const { profile } = useBusinessStore();
+  const { profile, activeShopId, allShops } = useBusinessStore();
+  const activeShopEntry = allShops.find(s => s.id === activeShopId) ?? null;
+  const activeShopName = activeShopEntry?.name || profile?.shopName;
   const mill = useMillMode();
   const tMill = useTranslations('MillBilling');
   const { addItem, clearCart } = useCartStore();
@@ -1173,7 +1175,7 @@ export default function InvoiceHistoryPage() {
         <InvoicePreviewModal
           invoice={previewInvoice}
           onClose={() => setPreviewInvoice(null)}
-          storeName={profile?.shopName || user?.storeName}
+          storeName={activeShopName || user?.storeName}
           storeAddress={profile?.address}
           storeMobile={profile?.mobile}
           gst={profile?.gst || undefined}

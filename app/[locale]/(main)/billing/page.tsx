@@ -1,5 +1,6 @@
 'use client';
 import { pickCaptureScale } from '@/lib/pdfCapture';
+import { generateA4BillPDF } from '@/lib/pdf/gstInvoice';
 import {useState, useEffect, useRef, useCallback, useMemo} from 'react';
 import useSWR, { mutate } from 'swr';
 import WholesaleBillingUI from './WholesaleBillingUI';
@@ -300,7 +301,9 @@ function StandardBillingUI() {
   const tBill = useTranslations('BillSlip');
   const tP = useTranslations('Products');
   const locale = useLocale();
-  const {profile, activeShopId} = useBusinessStore();
+  const {profile, activeShopId, allShops} = useBusinessStore();
+  const activeShopEntry = allShops.find(s => s.id === activeShopId) ?? null;
+  const activeShopName = activeShopEntry?.name || profile.shopName;
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   
@@ -451,7 +454,11 @@ function StandardBillingUI() {
     clone.style.top = '0';
     clone.style.left = '-9999px';
     const isA4 = profile.invoiceFormat === 'a4' || profile.invoiceFormat === 'wholesale';
-    clone.style.width = isA4 ? '800px' : '320px';
+    const is58mm = profile.invoiceFormat === 'thermal58';
+    const captureWidth = isA4 ? 800 : is58mm ? 220 : 302;
+    clone.style.width = `${captureWidth}px`;
+    clone.style.maxWidth = `${captureWidth}px`;
+    clone.style.overflow = 'hidden';
     clone.style.height = 'auto';
     clone.style.backgroundColor = '#ffffff';
     clone.style.visibility = 'visible';
@@ -460,20 +467,18 @@ function StandardBillingUI() {
     try {
       await waitForImages(clone);
 
-      // scale 2.2 is still noticeably sharper than the original blurry
-      // capture, without the page ballooning past ~100KB. JPEG (not PNG)
-      // does the rest of the size work — this is a document of white space,
-      // thin borders and text, which JPEG compresses far better than
-      // lossless PNG; only the QR/barcode's fine detail resists it much.
+      const captureH = clone.scrollHeight;
       const canvas = await html2canvas(clone, {
-        scale: pickCaptureScale(clone.scrollWidth, clone.scrollHeight),
+        scale: pickCaptureScale(captureWidth, captureH),
+        width: captureWidth,
+        height: captureH,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false
       });
 
       const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = isA4 ? 210 : 80;
+      const pdfWidth = isA4 ? 210 : is58mm ? 58 : 80;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
       // Page size always matches the captured content height exactly. A fixed
@@ -498,8 +503,51 @@ function StandardBillingUI() {
     if (isGeneratingPdf) return;
     setIsGeneratingPdf(true);
     try {
-      const { pdf } = await generatePDFBlob();
-      pdf.save(`bill-${lastBill?.billNumber?.replace(/[^a-zA-Z0-9]/g, '') || 'invoice'}.pdf`);
+      const isA4Format = profile.invoiceFormat === 'a4' || profile.invoiceFormat === 'wholesale';
+      const filename = `bill-${lastBill?.billNumber?.replace(/[^a-zA-Z0-9]/g, '') || 'invoice'}.pdf`;
+      if (isA4Format && lastBill) {
+        const { pdf } = await generateA4BillPDF({
+          shop: {
+            name: activeShopName || '',
+            address: profile.address || '',
+            mobile: profile.mobile || '',
+            gst: profile.gst || '',
+            pan: profile.pan || '',
+          },
+          billNumber: lastBill.billNumber || '',
+          date: lastBill.date || '',
+          billType: lastBill.billType === 'gst' ? 'gst' : 'non-gst',
+          customerName: lastBill.customerName,
+          customerMobile: lastBill.customerMobile,
+          customerAddress: lastBill.customerAddress,
+          customerGst: (lastBill as any).customerGst,
+          items: (lastBill.items || []).map((it: any) => ({
+            name: it.name,
+            variantLabel: it.colorSize || it.size || it.variantLabel,
+            quantity: it.quantity || 1,
+            unit: it.unit || 'Piece',
+            price: it.price || 0,
+            total: it.total || 0,
+            gstPercent: it.gstPercent,
+            hsnCode: it.hsnCode,
+          })),
+          subtotal: (lastBill.items || []).reduce((s: number, it: any) => s + (it.total || 0), 0),
+          discount: lastBill.discount,
+          total: lastBill.total,
+          amountPaid: lastBill.amountPaid,
+          remainingAmount: lastBill.remainingAmount,
+          paymentMethod: lastBill.paymentMethod,
+          splitPayments: lastBill.splitPayments,
+          gstBreakdown: lastBill.gstBreakdown?.groups?.map((g: any) => ({
+            rate: g.rate, taxable: g.taxable, cgst: g.cgst, sgst: g.sgst,
+          })),
+          invoiceFooter: profile.invoiceFooter || undefined,
+        });
+        pdf.save(filename);
+      } else {
+        const { pdf } = await generatePDFBlob();
+        pdf.save(filename);
+      }
     } catch (error) {
       console.error('Failed to generate PDF', error);
       alert(t('failedToDownloadPdf'));
@@ -515,11 +563,37 @@ function StandardBillingUI() {
     const fileName = `bill-${lastBill?.billNumber || Date.now()}.pdf`;
 
     try {
-      const { blob } = await generatePDFBlob();
+      const isA4Format = profile.invoiceFormat === 'a4' || profile.invoiceFormat === 'wholesale';
+      let blob: Blob;
+      if (isA4Format && lastBill) {
+        const result = await generateA4BillPDF({
+          shop: { name: activeShopName || '', address: profile.address || '', mobile: profile.mobile || '', gst: profile.gst || '', pan: profile.pan || '' },
+          billNumber: lastBill.billNumber || '',
+          date: lastBill.date || '',
+          billType: lastBill.billType === 'gst' ? 'gst' : 'non-gst',
+          customerName: lastBill.customerName,
+          customerMobile: lastBill.customerMobile,
+          items: (lastBill.items || []).map((it: any) => ({ name: it.name, variantLabel: it.colorSize || it.variantLabel, quantity: it.quantity || 1, unit: it.unit || 'Piece', price: it.price || 0, total: it.total || 0, gstPercent: it.gstPercent })),
+          subtotal: (lastBill.items || []).reduce((s: number, it: any) => s + (it.total || 0), 0),
+          discount: lastBill.discount,
+          total: lastBill.total,
+          amountPaid: lastBill.amountPaid,
+          remainingAmount: lastBill.remainingAmount,
+          paymentMethod: lastBill.paymentMethod,
+          splitPayments: lastBill.splitPayments,
+          gstBreakdown: lastBill.gstBreakdown?.groups?.map((g: any) => ({
+            rate: g.rate, taxable: g.taxable, cgst: g.cgst, sgst: g.sgst,
+          })),
+        });
+        blob = result.blob;
+      } else {
+        const result = await generatePDFBlob();
+        blob = result.blob;
+      }
       const publicUrl = await uploadInvoiceToSupabase(blob, fileName);
       const text = generateWhatsAppText({
         ...lastBill,
-        storeName: profile.shopName || user?.storeName,
+        storeName: activeShopName || user?.storeName,
         pdfUrl: publicUrl || undefined,
         gst: profile.gst || undefined,
         pan: profile.pan || undefined,
@@ -2813,7 +2887,7 @@ function StandardBillingUI() {
               <BillSlip
                 ref={componentRef}
                 {...lastBill}
-                storeName={profile.shopName}
+                storeName={activeShopName}
                 storeAddress={profile.address}
                 storeMobile={profile.mobile}
                 logoUrl={profile.logoUrl}

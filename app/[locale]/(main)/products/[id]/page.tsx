@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
 import { useBusinessStore } from '@/lib/businessStore';
-import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
+import { calculateProductProfit, profitColorClass, toExclusivePrice } from '@/lib/profitCalc';
 
 const DashboardCharts = dynamic(() => import('@/components/DashboardCharts'), {
   ssr: false,
@@ -186,9 +186,28 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               </div>
             </div>
             <div className="space-y-3 pt-2">
-              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
+              <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-2">
                 <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Selling Price</span>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">₹{(product.price || product.sellingPrice || 0).toLocaleString('en-IN')}</span>
+                <div className="text-right">
+                  {(() => {
+                    const sp = product.sellingPrice || 0;
+                    const gst = product.gstPercent || 0;
+                    const excl = gst > 0 ? toExclusivePrice(sp, gst) : sp;
+                    return (
+                      <>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white block">
+                          ₹{excl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                          {gst > 0 && <span className="text-[10px] font-normal text-slate-400 ml-1">excl. GST</span>}
+                        </span>
+                        {gst > 0 && (
+                          <span className="text-[10px] text-slate-400 block">
+                            ₹{sp.toLocaleString('en-IN', { maximumFractionDigits: 2 })} incl. {gst}% GST
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
               <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
                 <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Wholesale Cost</span>
@@ -197,17 +216,16 @@ export default function ProductInsightsPage({ params }: { params: Promise<{ loca
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Profit Margin</span>
                 <span className={cn('text-sm font-bold', (() => {
-                  // Matches the products list's Profit % column — see lib/profitCalc.ts.
                   const cost = product.cost || product.wholesaleCost || 0;
-                  const price = product.price || product.sellingPrice || 0;
+                  const price = product.sellingPrice || 0;
                   const gst = product.gstPercent || 0;
                   return profitColorClass(calculateProductProfit(price, cost, gst, !!profile.gstInclusiveProfit).status);
                 })())}>
                   {(() => {
                     const cost = product.cost || product.wholesaleCost || 0;
-                    const price = product.price || product.sellingPrice || 0;
+                    const price = product.sellingPrice || 0;
                     const gst = product.gstPercent || 0;
-                    if (cost <= 0) return '0.0%';
+                    if (cost <= 0) return '—';
                     const result = calculateProductProfit(price, cost, gst, !!profile.gstInclusiveProfit);
                     return `₹${result.amount.toFixed(2)} (${result.percent.toFixed(1)}%)`;
                   })()}

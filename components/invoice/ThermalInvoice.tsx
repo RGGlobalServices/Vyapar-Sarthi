@@ -195,11 +195,11 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
       data-bill-lang={billLang}
       data-print-format={is58mm ? 'thermal58' : 'thermal80'}
       style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: devaFont }}
-      className={`p-3 w-full mx-auto ${widthClass} ${textClass} leading-snug`}
+      className={`${is58mm ? 'p-1' : 'p-3'} w-full mx-auto ${widthClass} ${textClass} leading-snug`}
     >
       <div style={boxBorder}>
         {/* Header */}
-        <div className="text-center px-2 pt-3 pb-2" style={{ borderBottom: '2px solid #000' }}>
+        <div className={`text-center ${is58mm ? 'px-1 pt-2 pb-1' : 'px-2 pt-3 pb-2'}`} style={{ borderBottom: '2px solid #000' }}>
           {/* No logo on thermal receipts: a thermal head prints a photo/logo as a solid black box and wastes paper. */}
           <h1 className={`${headerTextClass} font-black uppercase tracking-tight`}>{storeName || t('storeNameFallback')}</h1>
           {storeAddress && <p className={`${smallTextClass} mt-0.5`}>{storeAddress}</p>}
@@ -220,7 +220,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
         </div>
 
         {/* Bill meta & Barcode */}
-        <div className="px-2 pt-2">
+        <div className={`${is58mm ? 'px-0.5' : 'px-2'} pt-2`}>
           <div className={`flex flex-wrap justify-between items-baseline gap-x-2 ${smallTextClass} font-bold`}>
             <span style={{ whiteSpace: 'nowrap' }}>{t('bill')} {billNumber}</span>
             <span style={{ whiteSpace: 'nowrap' }}>{date}</span>
@@ -313,7 +313,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
           })}
         </div>
 
-        <div className="px-2">
+        <div className={is58mm ? 'px-0.5' : 'px-2'}>
           {/* Totals */}
           <div className="space-y-0.5 pt-2">
             <div className={`flex justify-between ${smallTextClass}`}>

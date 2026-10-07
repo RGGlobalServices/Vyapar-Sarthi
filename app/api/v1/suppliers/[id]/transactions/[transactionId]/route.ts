@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isSupplierCredit } from '@/lib/server/ledgerClassification';
+import { recordDeletion } from '@/lib/server/trash';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -150,4 +151,39 @@ export const PATCH = handle(async (req, ctx: any) => {
   });
 
   return json(result);
+});
+
+/**
+ * DELETE /api/v1/suppliers/[id]/transactions/[transactionId]
+ * Removes the transaction and reverses its effect on the supplier's balance.
+ */
+export const DELETE = handle(async (req, ctx: any) => {
+  const { id, transactionId } = await ctx.params;
+  const { shop, user } = await requireShop(req);
+
+  const supplier = await prisma.supplier.findFirst({ where: { id, shopId: shop.id } });
+  if (!supplier) throw new ApiError(404, 'Supplier not found');
+  const txn = await prisma.supplierTransaction.findFirst({ where: { id: transactionId, supplierId: id } });
+  if (!txn) throw new ApiError(404, 'Transaction not found');
+
+  const oldAmount = Number(txn.amount) || 0;
+  // Reverse the balance effect: purchase added to balance, payment subtracted
+  const sign = isSupplierCredit(txn.type) ? -1 : 1;
+  const balanceDelta = sign * (-oldAmount);
+
+  await recordDeletion({
+    shopId: shop.id,
+    entityType: 'supplier_transaction',
+    entityId: txn.id,
+    label: txn.billNumber || txn.note,
+    data: txn,
+    deletedBy: user.email,
+  }).catch(() => {});
+
+  await prisma.$transaction([
+    prisma.supplierTransaction.delete({ where: { id: transactionId } }),
+    prisma.supplier.update({ where: { id }, data: { balance: { increment: balanceDelta } } }),
+  ]);
+
+  return json({ detail: 'Transaction deleted' });
 });

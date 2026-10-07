@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2, NotebookText, ScanLine, Pencil } from 'lucide-react';
+import { Search, Loader2, User, Phone, ChevronRight, X, Calendar, Plus, Wallet, MapPin, ReceiptText, FileText, FileImage, Eye, Trash2, AlertCircle, CheckCircle2, NotebookText, ScanLine, Pencil, Download } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import PaymentCollectionModal from '@/components/crm/PaymentCollectionModal';
@@ -16,6 +16,7 @@ import AddBillModal from '@/components/party/AddBillModal';
 import ScanCollectionModal from '@/components/party/ScanCollectionModal';
 import toast from 'react-hot-toast';
 import { generateCollectionRegisterPDF } from '@/lib/pdf/collectionRegister';
+import { downloadDispatchChallan } from '@/lib/pdf/slipGenerator';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig } from '@/lib/businessConfig';
@@ -169,7 +170,10 @@ export default function CustomersPage() {
   const [showAddBill, setShowAddBill] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
   const [generatingRegister, setGeneratingRegister] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ledger' | 'sales'>('ledger');
+  const [activeTab, setActiveTab] = useState<'ledger' | 'sales' | 'slips'>('ledger');
+  const [downloadingSlipId, setDownloadingSlipId] = useState<string | null>(null);
+  const [slipSales, setSlipSales] = useState<any[]>([]);
+  const [slipSalesLoading, setSlipSalesLoading] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; label: string } | null>(null);
   const [rollupMode, setRollupMode] = useState<'pending' | 'paid' | null>(null);
@@ -230,6 +234,15 @@ export default function CustomersPage() {
   useEffect(() => {
     fetchCustomers();
   }, [activeShopId]);
+
+  useEffect(() => {
+    if (activeTab !== 'slips' || !selectedCustomer) return;
+    setSlipSalesLoading(true);
+    api.get(`/customers/${selectedCustomer.id}/history`)
+      .then(res => setSlipSales(res.data || []))
+      .catch(() => setSlipSales([]))
+      .finally(() => setSlipSalesLoading(false));
+  }, [activeTab, selectedCustomer?.id]);
 
   const fetchCustomers = async () => {
     try {
@@ -694,13 +707,86 @@ export default function CustomersPage() {
               >
                 {t('salesHistoryTitle')}
               </button>
+              <button
+                onClick={() => setActiveTab('slips')}
+                className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'slips' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+              >
+                {t('tabSlips') || 'Slips'}
+              </button>
             </div>
 
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-slate-900">
               {activeTab === 'ledger' ? (
                 <LedgerView entityId={selectedCustomer.id} entityType="customer" entityName={selectedCustomer.name} onLedgerChanged={() => fetchCustomers()} />
-              ) : (
+              ) : activeTab === 'sales' ? (
                 <CustomerSalesView entityId={selectedCustomer.id} />
+              ) : (
+                /* Slips tab — Dispatch Challans generated from existing sales data */
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{t('slipsNote') || 'Download dispatch challans for each sale. No new records are created.'}</p>
+                  {slipSalesLoading ? (
+                    <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-emerald-500" /></div>
+                  ) : slipSales.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400">
+                      <FileText className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">{t('noSalesHistory') || 'No sales found'}</p>
+                    </div>
+                  ) : (
+                    slipSales.map((sale: any) => (
+                      <div key={sale.id} className="flex items-center justify-between bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 shadow-sm">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-1.5">
+                            <ReceiptText size={14} className="text-emerald-500" />
+                            {sale.invoice_number || t('dispatchChallan') || 'Dispatch Challan'}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                            <Calendar size={10} /> {fmtDate(sale.created_at)}
+                            <span className="ml-2 font-semibold text-emerald-600">₹{(sale.total_amount || 0).toLocaleString()}</span>
+                          </p>
+                        </div>
+                        <button
+                          disabled={downloadingSlipId === sale.id}
+                          onClick={async () => {
+                            setDownloadingSlipId(sale.id);
+                            try {
+                              await downloadDispatchChallan({
+                                sale: {
+                                  billNumber: sale.invoice_number,
+                                  date: sale.created_at,
+                                  items: sale.items?.map((it: any) => ({
+                                    name: it.product_name,
+                                    quantity: it.quantity,
+                                    price: it.total,
+                                  })),
+                                  total: sale.total_amount,
+                                },
+                                customer: {
+                                  name: selectedCustomer.name,
+                                  mobile: selectedCustomer.mobile,
+                                  address: selectedCustomer.address,
+                                },
+                                shopInfo: {
+                                  name: profile.shopName || 'Vyapar Sarthi',
+                                  address: profile.address,
+                                  mobile: profile.mobile,
+                                  gst: profile.gst,
+                                },
+                              });
+                            } catch (e) {
+                              toast.error('Failed to generate slip');
+                            } finally {
+                              setDownloadingSlipId(null);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 disabled:opacity-50 transition-colors"
+                        >
+                          {downloadingSlipId === sale.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                          {t('downloadChallan') || 'Challan'}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
             </div>
           </div>

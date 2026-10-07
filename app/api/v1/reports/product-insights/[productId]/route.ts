@@ -65,12 +65,14 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       id: product.id,
       name: product.name,
       category: product.category,
-      currentStock: product.currentStock,
+      stock: product.currentStock,
       minStock: product.minStock,
       sellingPrice: product.sellingPrice,
+      gstPercent: product.gstPercent || 0,
       mrp: product.mrp,
       unit: product.baseUnit || 'pcs',
-      cost: product.wholesaleCost || 0
+      cost: product.wholesaleCost || 0,
+      wholesaleCost: product.wholesaleCost || 0,
     },
     stats: { 
       unitsSold: totalQuantity, 
