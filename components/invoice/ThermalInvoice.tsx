@@ -195,9 +195,9 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
       data-bill-lang={billLang}
       data-print-format={is58mm ? 'thermal58' : 'thermal80'}
       style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: devaFont }}
-      className={`${is58mm ? 'p-1' : 'p-3'} w-full mx-auto ${widthClass} ${textClass} leading-snug`}
+      className={`${is58mm ? 'p-0' : 'p-3'} w-full mx-auto ${widthClass} ${textClass} leading-snug`}
     >
-      <div style={boxBorder}>
+      <div style={is58mm ? {} : boxBorder}>
         {/* Header */}
         <div className={`text-center ${is58mm ? 'px-1 pt-2 pb-1' : 'px-2 pt-3 pb-2'}`} style={{ borderBottom: '2px solid #000' }}>
           {/* No logo on thermal receipts: a thermal head prints a photo/logo as a solid black box and wastes paper. */}

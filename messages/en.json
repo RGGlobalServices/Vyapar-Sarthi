@@ -4014,6 +4014,8 @@
     "qp_lotsTick": "Lots — tick one or more",
     "qp_lotsWord": "lots",
     "qp_max": "All",
+    "qp_selectAll": "Select All",
+    "qp_deselectAll": "Deselect All",
     "qp_totalUsed": "Total used",
     "bt_title": "Production history",
     "bt_new": "Reserve material",

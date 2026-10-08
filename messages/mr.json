@@ -4017,6 +4017,8 @@
     "qp_lotsTick": "लॉट — एक किंवा अधिक निवडा",
     "qp_lotsWord": "लॉट",
     "qp_max": "सर्व",
+    "qp_selectAll": "सर्व निवडा",
+    "qp_deselectAll": "सर्व रद्द करा",
     "qp_totalUsed": "एकूण वापर",
     "bt_title": "उत्पादन इतिहास",
     "bt_new": "माल राखीव ठेवा",

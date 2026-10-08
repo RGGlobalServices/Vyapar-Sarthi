@@ -74,7 +74,27 @@ export default function RawLotPicker({
         </label>
       )}
       <div>
-        <span className={labelCls}>{t('qp_lotsTick')}</span>
+        <div className="flex items-center justify-between mb-1">
+          <span className={labelCls}>{t('qp_lotsTick')}</span>
+          {shown.length > 1 && (() => {
+            const allSelected = shown.every((l) => selected[l.id] !== undefined);
+            return (
+              <button type="button"
+                onClick={() => {
+                  if (allSelected) {
+                    onChange({});
+                  } else {
+                    const next: Record<string, string> = {};
+                    for (const l of shown) next[l.id] = String(Math.round(avail(l) * 1000) / 1000);
+                    onChange(next);
+                  }
+                }}
+                className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline">
+                {allSelected ? t('qp_deselectAll') : t('qp_selectAll')}
+              </button>
+            );
+          })()}
+        </div>
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
           {shown.map((l) => {
             const on = selected[l.id] !== undefined;
