@@ -2,6 +2,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { toKg, lotSource, canonicalReceivedDate, computeLotQuantities, round3 } from '@/lib/server/millProduction';
+import { packsOfOutputs } from '@/lib/server/packing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -88,6 +89,15 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     },
   });
   if (!batch) throw new ApiError(404, 'Production batch not found');
+
+  // Attach pack lines to outputs (used by badaudyog pack size display)
+  const outputIds = (batch.outputs || []).map((o: any) => o.id);
+  const packMap = outputIds.length ? await packsOfOutputs(prisma, outputIds) : new Map();
+  const outputsWithPacks = (batch.outputs || []).map((o: any) => ({
+    ...o,
+    packLines: (packMap.get(o.id) || []).map((l: any) => ({ packKg: l.packKg, packs: l.packs, packType: l.packType })),
+  }));
+
   if (batch.rawLot) {
     const { weighbridgeEntries, batches, ...lot } = batch.rawLot;
     const src = lotSource(batch.rawLot);
@@ -95,6 +105,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     const qty = computeLotQuantities(batch.rawLot);
     return json({
       ...batch,
+      outputs: outputsWithPacks,
       rawLot: {
         ...lot,
         ...src,
@@ -107,7 +118,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
       },
     });
   }
-  return json(batch);
+  return json({ ...batch, outputs: outputsWithPacks });
 });
 
 export const PATCH = handle<Ctx>(async (req, { params }) => {

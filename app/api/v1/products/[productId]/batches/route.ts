@@ -3,6 +3,7 @@ import { readLotVariantKeys } from '@/lib/server/lotColumns';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { receiveLot } from '@/lib/server/lotCreate';
+import { packsOfOutputs } from '@/lib/server/packing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,7 +39,30 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
   // size/colour each lot was bought for (only once the optional migration 16 has been run)
   const variantKeys = await readLotVariantKeys(prisma, batches.map((b) => b.id));
-  return json(batches.map((b) => ({ ...b, variantKey: variantKeys.get(b.id) ?? null })));
+
+  // For badaudyog: attach mill pack lines to lots that came from production
+  let packByBatchNumber = new Map<string, { packKg: number; packs: number; packType: string }[]>();
+  if (shop.packageType === 'badaudyog') {
+    const batchNumbers = batches.map((b) => b.batchNumber).filter(Boolean) as string[];
+    if (batchNumbers.length) {
+      const outputs: any[] = await prisma.$queryRawUnsafe(
+        `SELECT id::text AS id, output_lot_number FROM production_outputs WHERE shop_id = $1::uuid AND product_id = $2::uuid AND output_type = 'finished_good' AND output_lot_number = ANY($3::text[])`,
+        shop.id, productId, batchNumbers,
+      );
+      if (outputs.length) {
+        const pm = await packsOfOutputs(prisma, outputs.map((o) => o.id));
+        for (const o of outputs) {
+          packByBatchNumber.set(o.output_lot_number, (pm.get(o.id) || []).map((l) => ({ packKg: l.packKg, packs: l.packs, packType: l.packType })));
+        }
+      }
+    }
+  }
+
+  return json(batches.map((b) => ({
+    ...b,
+    variantKey: variantKeys.get(b.id) ?? null,
+    packLines: packByBatchNumber.get(b.batchNumber ?? '') ?? [],
+  })));
 });
 
 /**

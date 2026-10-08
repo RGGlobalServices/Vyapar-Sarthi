@@ -2606,6 +2606,11 @@ function StandardBillingUI() {
                       {b.purchaseDate && ` · bought ${new Date(b.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
                       {b.expiryDate && ` · exp ${new Date(b.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`}
                     </p>
+                    {b.packLines && b.packLines.length > 0 && (
+                      <p className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {b.packLines.map((l: { packKg: number; packs: number; packType: string }) => `${l.packs} × ${l.packKg} kg ${l.packType === 'goni' ? 'goni' : l.packType === 'other' ? '' : 'bag'}`).join(' + ')}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <span className="block text-sm font-black text-emerald-600 dark:text-emerald-400">{Number(b.sellingPrice) > 0 ? `₹${Number(b.sellingPrice).toLocaleString('en-IN')}` : 'shelf price'}</span>

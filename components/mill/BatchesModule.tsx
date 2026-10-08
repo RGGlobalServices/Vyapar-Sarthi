@@ -111,6 +111,7 @@ export default function BatchesModule({ mode }: { mode: 'batches' | 'production'
   const t = useTranslations('Mill');
   const searchParams = useSearchParams();
   const activeShopId = useBusinessStore(s => s.activeShopId);
+  const isBadaUdyog = useBusinessStore(s => s.profile.packageType) === 'badaudyog';
   const { data: batches = [], mutate: refetch, isLoading } = useSWR<Batch[]>(
     activeShopId ? ['/mill/batches', activeShopId] : null,
     ([u]) => fetcher(u),
@@ -921,49 +922,87 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
           )}
 
           {/* Finished Goods Section */}
-          {batch.finishedGoodsLots && batch.finishedGoodsLots.length > 0 && (
-            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">{t('sect_fg')}</p>
-                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{t('fg_lot_count', { count: batch.finishedGoodsLots.length })}</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
-                      <th className="py-2 px-2">{t('col_fgLot')}</th>
-                      <th className="py-2 px-2">{t('col_product')}</th>
-                      <th className="py-2 px-2 text-right">{t('col_quantity')}</th>
-                      <th className="py-2 px-2">{t('col_godown')}</th>
-                      <th className="py-2 px-2">{t('col_status')}</th>
-                      <th className="py-2 px-2">{t('col_sourceStage')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {batch.finishedGoodsLots.map((fg: any) => (
-                      <tr key={fg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                        <td className="py-2 px-2 font-mono font-bold text-emerald-700 dark:text-emerald-300">{fg.lotNumber}</td>
-                        <td className="py-2 px-2 font-medium text-slate-800 dark:text-slate-200">{fg.product?.name || t('fallback_finishedProduct')}</td>
-                        <td className="py-2 px-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{fg.quantity} {fg.unit}</td>
-                        <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{fg.godown?.name || t('fallback_mainStock')}</td>
-                        <td className="py-2 px-2">
-                          <span className={cn(
-                            'px-2 py-0.5 text-[10px] font-bold rounded-full uppercase',
-                            fg.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' :
-                            fg.status === 'PARTIALLY_DISPATCHED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300' :
-                            'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
-                          )}>
-                            {fg.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName ? stageLabel(t, fg.sourceBatchStage.stageName) : t('fallback_finalStage')}</td>
+          {batch.finishedGoodsLots && batch.finishedGoodsLots.length > 0 && (() => {
+            // For badaudyog: match each FG lot to its production_output by productId (in order)
+            const fgPackLinesList: { packKg: number; packs: number; packType: string }[][] = [];
+            if (isBadaUdyog && batch.outputs) {
+              const byPid = new Map<string, any[]>();
+              for (const o of (batch.outputs as any[]).filter((o: any) => o.outputType === 'finished_good')) {
+                const arr = byPid.get(o.productId) || []; arr.push(o); byPid.set(o.productId, arr);
+              }
+              const idxByPid = new Map<string, number>();
+              for (const fg of batch.finishedGoodsLots) {
+                const idx = idxByPid.get((fg as any).productId) || 0;
+                const out = (byPid.get((fg as any).productId) || [])[idx];
+                fgPackLinesList.push(out?.packLines || []);
+                idxByPid.set((fg as any).productId, idx + 1);
+              }
+            }
+            // Pack summary for the header (total bags per size)
+            const flatPacks = fgPackLinesList.flat();
+            const packSummary = flatPacks.length
+              ? Object.entries(flatPacks.reduce<Record<string, number>>((acc, l) => { const k = `${l.packs} × ${l.packKg} kg`; acc[k] = (acc[k] || 0) + 1; return acc; }, {}))
+                  .length > 0
+                ? flatPacks.map((l) => `${l.packs} × ${l.packKg} kg`).join(' + ')
+                : ''
+              : '';
+            return (
+              <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-white dark:bg-slate-900 p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">{t('sect_fg')}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {packSummary && <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">{packSummary}</span>}
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{t('fg_lot_count', { count: batch.finishedGoodsLots.length })}</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                        <th className="py-2 px-2">{t('col_fgLot')}</th>
+                        <th className="py-2 px-2">{t('col_product')}</th>
+                        <th className="py-2 px-2 text-right">{t('col_quantity')}</th>
+                        <th className="py-2 px-2">{t('col_godown')}</th>
+                        <th className="py-2 px-2">{t('col_status')}</th>
+                        <th className="py-2 px-2">{t('col_sourceStage')}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {batch.finishedGoodsLots.map((fg: any, fgIdx: number) => {
+                        const packLines = fgPackLinesList[fgIdx] || [];
+                        return (
+                          <tr key={fg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                            <td className="py-2 px-2 font-mono font-bold text-emerald-700 dark:text-emerald-300">{fg.lotNumber}</td>
+                            <td className="py-2 px-2">
+                              <span className="font-medium text-slate-800 dark:text-slate-200">{fg.product?.name || t('fallback_finishedProduct')}</span>
+                              {packLines.length > 0 && (
+                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                                  {packLines.map((l) => `${l.packs} × ${l.packKg} kg ${l.packType === 'goni' ? 'goni' : l.packType === 'other' ? '' : 'bag'}`).join(' + ')}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{fg.quantity} {fg.unit}</td>
+                            <td className="py-2 px-2 text-slate-600 dark:text-slate-400">{fg.godown?.name || t('fallback_mainStock')}</td>
+                            <td className="py-2 px-2">
+                              <span className={cn(
+                                'px-2 py-0.5 text-[10px] font-bold rounded-full uppercase',
+                                fg.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' :
+                                fg.status === 'PARTIALLY_DISPATCHED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300' :
+                                'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                              )}>
+                                {fg.status.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-slate-500">{fg.sourceBatchStage?.stageName ? stageLabel(t, fg.sourceBatchStage.stageName) : t('fallback_finalStage')}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* By-Products Section */}
           {batch.byProductLots && batch.byProductLots.length > 0 && (
