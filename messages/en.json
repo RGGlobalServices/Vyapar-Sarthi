@@ -4016,6 +4016,8 @@
     "qp_max": "All",
     "qp_selectAll": "Select All",
     "qp_deselectAll": "Deselect All",
+    "qp_brandName": "Brand Name",
+    "qp_lotNumber": "Lot No.",
     "qp_totalUsed": "Total used",
     "bt_title": "Production history",
     "bt_new": "Reserve material",

@@ -22,7 +22,7 @@ import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance
 
 type OutKind = 'finished_good' | 'by_product' | 'wip' | 'rejection';
 type PackRow = { kg: string; n: string; type: 'bag' | 'goni' | 'other' };
-type OutRow = { key: number; kind: OutKind; productId: string; name: string; qty: string; unit: string; bagMode: boolean; packs: string; packKg: string; reason: string; pk: PackRow[] };
+type OutRow = { key: number; kind: OutKind; productId: string; name: string; qty: string; unit: string; bagMode: boolean; packs: string; packKg: string; reason: string; brandName: string; lotNumber: string; pk: PackRow[] };
 type Product = { id: string; name: string; millCategory?: string | null; baseUnit?: string | null };
 
 const KINDS: OutKind[] = ['finished_good', 'by_product', 'wip', 'rejection'];
@@ -43,7 +43,7 @@ const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const num = (v: string) => (v === '' ? 0 : Number(v) || 0);
 const fmt = (n: number) => (Math.round(n * 1000) / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 const newKey = (() => { let k = 0; return () => ++k; })();
-const newRow = (kind: OutKind, over: Partial<OutRow> = {}): OutRow => ({ key: newKey(), kind, productId: '', name: '', qty: '', unit: 'kg', bagMode: false, packs: '', packKg: '', reason: '', pk: [], ...over });
+const newRow = (kind: OutKind, over: Partial<OutRow> = {}): OutRow => ({ key: newKey(), kind, productId: '', name: '', qty: '', unit: 'kg', bagMode: false, packs: '', packKg: '', reason: '', brandName: '', lotNumber: '', pk: [], ...over });
 
 const inputCls = 'w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-emerald-500 outline-none';
 const labelCls = 'block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1';
@@ -212,6 +212,7 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
     setInputQty(String(Math.round(Number(editData.inputKg) * 1000) / 1000)); setInputUnit('kg');
     setRows((editData.outputs || []).map((o: any) => newRow(o.outputType as OutKind, {
       productId: o.productId || '', name: o.name || '', qty: String(Math.round(Number(o.quantity) * 1000) / 1000), unit: o.unit || 'kg', reason: o.notes || '',
+      lotNumber: o.outputLotNumber || '',
       pk: (o.packs || []).map((k: any) => ({ kg: String(k.packKg), n: String(k.packs), type: k.packType === 'goni' || k.packType === 'other' ? k.packType : 'bag' })),
     })));
     setLossKg(String(Math.round(Number(editData.lossKg) * 1000) / 1000)); setLossTouched(true);
@@ -272,13 +273,19 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
     try {
       const outputs = filled.map((r) => {
         const kg = rowKg(r);
+        const notesParts = [
+          r.brandName.trim() ? `Brand: ${r.brandName.trim()}` : '',
+          r.bagMode ? `${r.packs} × ${r.packKg} kg` : '',
+          r.reason,
+        ].filter(Boolean).join(' · ');
         return {
           outputType: r.kind,
           productId: r.productId || null,
           name: r.name || products.find((p) => p.id === r.productId)?.name || '',
           quantity: r.bagMode ? kg : num(r.qty),
           unit: r.bagMode ? 'kg' : r.unit,
-          notes: [r.bagMode ? `${r.packs} × ${r.packKg} kg` : '', r.reason].filter(Boolean).join(' · ') || null,
+          outputLotNumber: r.lotNumber.trim() || null,
+          notes: notesParts || null,
           ...(r.kind === 'finished_good' && packLines(r).length ? { packs: packLines(r) } : {}),
         };
       });
@@ -457,6 +464,18 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createProduct(r); } }} /></label>
                                 <button type="button" onClick={() => createProduct(r)} disabled={creating || !newName.trim()} className="h-10 px-4 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50">
                                   {creating ? <Loader2 size={14} className="animate-spin" /> : t('qp_create')}</button>
+                              </div>
+                            )}
+                            {(kind === 'finished_good' || kind === 'by_product') && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <label className="block">
+                                  <span className={labelCls}>{t('qp_brandName')}</span>
+                                  <input value={r.brandName} onChange={(e) => setRow(r.key, { brandName: e.target.value })} className={cn(inputCls, 'h-9 text-xs')} maxLength={80} />
+                                </label>
+                                <label className="block">
+                                  <span className={labelCls}>{t('qp_lotNumber')}</span>
+                                  <input value={r.lotNumber} onChange={(e) => setRow(r.key, { lotNumber: e.target.value })} className={cn(inputCls, 'h-9 text-xs')} maxLength={60} />
+                                </label>
                               </div>
                             )}
                             {kind === 'finished_good' && (
