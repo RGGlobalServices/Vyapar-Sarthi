@@ -354,6 +354,12 @@ export default function WholesaleBillingUI() {
   // priced at exact cost with zero profit unless the cashier manually
   // noticed and flipped this toggle.
   const [isWholesale, setIsWholesale] = useState(false);
+  // Mill (Bada Udyog) billing has no Retail/Wholesale pricing toggle of its own — that
+  // toggle lives in the non-mill summary panel only — but it DOES always require a
+  // Party (mandatory "Bill To" field at the top of the page). So customer-identity
+  // logic below must treat mill billing as party-based regardless of `isWholesale`,
+  // which otherwise stays stuck at its initial `false` for every mill bill.
+  const partyMode = isMill || isWholesale;
 
   // GST / Non-GST billing. Default non-GST. Wholesale is usually B2B GST-registered,
   // so this matters here even more than on retail.
@@ -1362,8 +1368,8 @@ export default function WholesaleBillingUI() {
     if (millCalcError) { alert(`Billing error: ${millCalcError}`); return; }
     if (!millCalc) return;
     if (millChargesParsed.error) { alert(`${tMill('chargesInvalid')}: ${millChargesParsed.error}`); return; }
-    if (isWholesale && !selectedParty) { alert(t('partyRequiredToSave') || 'Please select a party before saving the invoice.'); return; }
-    if (!isWholesale && grandRemaining > 0 && !customerName.trim()) {
+    if (partyMode && !selectedParty) { alert(t('partyRequiredToSave') || 'Please select a party before saving the invoice.'); return; }
+    if (!partyMode && grandRemaining > 0 && !customerName.trim()) {
       alert(t('nameRequiredForUdhar') || 'Please enter a customer name — this sale has an outstanding balance to track.');
       return;
     }
@@ -1395,15 +1401,15 @@ export default function WholesaleBillingUI() {
       }));
       const payload: any = {
         billing_model: 'mill_v2',
-        customer_id: isWholesale ? selectedParty!.id : null,
-        customer_name: isWholesale ? selectedParty!.name : (customerName.trim() || null),
+        customer_id: partyMode ? selectedParty!.id : null,
+        customer_name: partyMode ? selectedParty!.name : (customerName.trim() || null),
         customer_mobile: customerMobile.trim() || null,
         customer_email: customerEmail.trim() || null,
         customer_address: customerAddress.trim() || null,
         items: saleItems,
         discount: millDiscountNumber,
         charges: millChargesParsed.value,
-        dispatch: { ...dispatch, broker: saleBroker.name.trim(), ...(isWholesale && selectedParty ? { billName: billParty.name, billAddress: billParty.address, billGst: billParty.gst, billState: billParty.state, shipAddress: billParty.shipping } : {}) },
+        dispatch: { ...dispatch, broker: saleBroker.name.trim(), ...(partyMode && selectedParty ? { billName: billParty.name, billAddress: billParty.address, billGst: billParty.gst, billState: billParty.state, shipAddress: billParty.shipping } : {}) },
         bill_type: billType,
         gst_inter_state: gstInterState,
         total_amount: grandTotal, // informational only — the server ignores it and flags any mismatch
@@ -1428,10 +1434,10 @@ export default function WholesaleBillingUI() {
       }
       // Customer broker + commission: best-effort, after the bill is saved (online only; never affects the bill or the customer's balance).
       if (saleBroker.name.trim() && !saved?.offline && saved?.invoice_number) {
-        api.post('/mill/broker-commission', { name: saleBroker.name, commission: saleBroker.commission, billNumber: saved.invoice_number, kind: 'customer', party: isWholesale ? selectedParty?.name : (customerName.trim() || undefined) })
+        api.post('/mill/broker-commission', { name: saleBroker.name, commission: saleBroker.commission, billNumber: saved.invoice_number, kind: 'customer', party: partyMode ? selectedParty?.name : (customerName.trim() || undefined) })
           .catch((e: any) => console.error('Broker commission not saved:', e));
       }
-      saved._customerName = isWholesale ? selectedParty?.name : (customerName.trim() || undefined);
+      saved._customerName = partyMode ? selectedParty?.name : (customerName.trim() || undefined);
 
       if (pendingChallanId && saved?.id && !saved.offline) {
         api.patch(`/challans/${pendingChallanId}`, { action: 'invoice', saleId: saved.id }).catch((e) => console.error('Failed to mark challan invoiced:', e));
@@ -1981,6 +1987,7 @@ export default function WholesaleBillingUI() {
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-10">#</th>
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
                     {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-16">{t('ml') || 'ML'}</th>}
+                    {isMill && isGstBill && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-24">{tMill('hsn') || 'HSN'}</th>}
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-28">{t('qty') || 'Qty'}</th>
                     <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? (
                       <div className="flex flex-col items-end gap-1">
@@ -2000,7 +2007,7 @@ export default function WholesaleBillingUI() {
                 <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
                   {nonLiquorCartItems.length === 0 ? (
                     <tr>
-                      <td colSpan={6 + (bizConfig.hasLiquorSpecs ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
+                      <td colSpan={6 + (bizConfig.hasLiquorSpecs ? 1 : 0) + (isMill && isGstBill ? 1 : 0)} className="px-4 py-12 text-center text-slate-400">
                         <Scan size={48} className="mx-auto mb-4 opacity-20" />
                         <p className="text-lg font-medium">{t('cartEmpty')}</p>
                         <p className="text-sm mt-1">{t('cartEmptyDesc')}</p>
@@ -2139,6 +2146,11 @@ export default function WholesaleBillingUI() {
                       {bizConfig.hasLiquorSpecs && (
                         <td className="px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400 align-top">
                           {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
+                        </td>
+                      )}
+                      {isMill && isGstBill && (
+                        <td className="px-4 py-3 align-top">
+                          <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{item.hsnCode || '—'}</span>
                         </td>
                       )}
                       <td className="px-4 py-3 align-top">
@@ -2413,6 +2425,7 @@ export default function WholesaleBillingUI() {
               collected={collectedAmount}
               balance={grandRemaining}
               discountSlot={<DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />}
+              showPaymentStatus={false}
             />
             <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
               <button
@@ -2427,7 +2440,7 @@ export default function WholesaleBillingUI() {
         </div>
       )}
 
-      {/* RIGHT PANEL: non-mill only */}
+      {/* RIGHT PANEL: Unified Summary Card (non-mill only) */}
       {!isMill ? (<div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col flex-1 md:min-h-0 md:overflow-hidden">
 
@@ -2496,7 +2509,7 @@ export default function WholesaleBillingUI() {
               />
               <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
               <DispatchDetailsField value={dispatch} onChange={setDispatch} disabled={isGenerating} />
-              {isWholesale && selectedParty && <BillPartyDetailsField value={billParty} onChange={setBillParty} disabled={isGenerating} />}
+              {partyMode && selectedParty && <BillPartyDetailsField value={billParty} onChange={setBillParty} disabled={isGenerating} />}
               <MillTotalsSummary
                 calc={millCalc}
                 itemsCount={items.length}
@@ -2771,7 +2784,7 @@ export default function WholesaleBillingUI() {
                   customer name (Retail pricing mode) — some Udyog shops also
                   run counter sales to walk-in residential customers who
                   don't need a formal Party/CRM record. */}
-              {!isWholesale ? (
+              {!partyMode ? (
                 <div className="relative">
                   <label className="text-xs font-bold text-slate-500 mb-1 block">
                     {t('customerNameLabel') || 'Customer Name'}
@@ -2955,20 +2968,6 @@ export default function WholesaleBillingUI() {
                     value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder={t('emailPlaceholder') || "For auto email bill receipt"} />
                 </div>
               </div>
-
-              {isMill && addPartyFor !== null && (
-                <QuickAddPartyModal
-                  initialName={addPartyFor}
-                  onClose={() => setAddPartyFor(null)}
-                  onCreated={(created: any) => {
-                    const np = { ...created, totalDue: Number(created.totalDue) || 0, creditLimit: Number(created.creditLimit) || 0, creditDays: Number(created.creditDays) || 0 };
-                    setParties((ps) => [np, ...ps]);
-                    selectParty(np);
-                    setAddPartyFor(null);
-                    fetchParties();
-                  }}
-                />
-              )}
 
               {/* Payment Method */}
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -3172,6 +3171,19 @@ export default function WholesaleBillingUI() {
 
       {/* Bill Success Modal (Simplified representation) */}
       {/* Mill Billing: server-generated breakdown after save. Print/PDF/WhatsApp are disabled here on purpose (next phase). */}
+      {isMill && addPartyFor !== null && (
+        <QuickAddPartyModal
+          initialName={addPartyFor}
+          onClose={() => setAddPartyFor(null)}
+          onCreated={(created: any) => {
+            const np = { ...created, totalDue: Number(created.totalDue) || 0, creditLimit: Number(created.creditLimit) || 0, creditDays: Number(created.creditDays) || 0 };
+            setParties((ps) => [np, ...ps]);
+            selectParty(np);
+            setAddPartyFor(null);
+            fetchParties();
+          }}
+        />
+      )}
       {millSaved && (
         <MillBillSavedModal bill={millSaved} customerName={millSaved._customerName} onClose={() => setMillSaved(null)} />
       )}

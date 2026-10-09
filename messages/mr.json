@@ -4835,6 +4835,7 @@
     "purgeWarningMessage": "तुमच्या रीसायकल बिनमधील {count} डिलीट केलेल्या {itemPlural} 3 दिवसांत कायमच्या हटवल्या जातील. गरज असल्यास आत्ताच परत आणा."
   },
   "MillBilling": {
+    "hsn": "HSN",
     "rateExclGst": "दर (GST वगळून)",
     "goodsSubtotal": "मालाची एकूण रक्कम",
     "discount": "सूट",

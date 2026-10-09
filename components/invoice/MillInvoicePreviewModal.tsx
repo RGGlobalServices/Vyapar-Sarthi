@@ -17,6 +17,50 @@ const fmtDate = (iso: string): string => {
 };
 
 /**
+ * Scales a fixed-width child (the A4/thermal invoice is a fixed-pixel-width print layout, never
+ * responsive) down to fit whatever width this preview panel actually has, so nothing is ever
+ * clipped or scrolled sideways on a phone or a narrower modal. Uses a CSS transform purely for
+ * on-screen display — the invoice's own DOM node (passed via `contentRef`) keeps its real
+ * unscaled size, since Print/PDF capture clones that node directly and must not inherit the zoom.
+ */
+function FitToWidth({ baseWidth, children }: { baseWidth: number; children: React.ReactNode }) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [contentHeight, setContentHeight] = useState(0);
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const measure = () => setScale(el.clientWidth > 0 ? Math.min(1, el.clientWidth / baseWidth) : 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [baseWidth]);
+
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    const measure = () => setContentHeight(el.scrollHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={outerRef} className="w-full flex justify-center">
+      <div style={{ width: baseWidth * scale, height: contentHeight * scale || undefined }}>
+        <div ref={innerRef} style={{ width: baseWidth, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Print / PDF / Reprint / WhatsApp for a Mill (mill_v2) invoice. Always loads the STORED invoice from the server
  * (GET /billing/:id) — a Mill invoice is never rebuilt from a client cart or with the legacy billing engine.
  * Used for the "bill saved" screen, the invoice-history preview and the invoice detail page.
@@ -114,9 +158,9 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
           {!sale && !error && <div className="py-16 flex justify-center text-slate-500"><Loader2 className="animate-spin" /></div>}
           {error && <p className="py-10 text-center text-red-500 text-sm font-semibold flex items-center justify-center gap-2"><AlertTriangle size={16} /> {error}</p>}
           {data && (
-            <div className="flex justify-center">
+            <FitToWidth baseWidth={variant === 'a4' ? 800 : 320}>
               <div className="shadow-xl"><MillInvoice ref={previewRef} data={data} variant={variant} copyLabel={copyLabel} /></div>
-            </div>
+            </FitToWidth>
           )}
         </div>
 

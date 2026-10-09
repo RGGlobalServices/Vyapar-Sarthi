@@ -4832,6 +4832,7 @@
     "purgeWarningMessage": "{count} deleted {itemPlural} in your Recycle Bin will be permanently deleted in 3 days. Restore them now if you need them."
   },
   "MillBilling": {
+    "hsn": "HSN",
     "rateExclGst": "Rate (Excl. GST)",
     "goodsSubtotal": "Goods Subtotal",
     "discount": "Discount",
