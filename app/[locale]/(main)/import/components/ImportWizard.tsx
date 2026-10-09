@@ -1339,9 +1339,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <MillField label={t('transportCompany')}><input className={inp} value={millBill.transportCompany} onChange={e => set('transportCompany', e.target.value)} /></MillField>
                     <MillField label={t('totalFreight')}><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => { const total = num(e.target.value); setMillBill(b => b ? { ...b, freightTotal: total, freightBalance: total !== null ? total - (b.freightAdvance ?? 0) : null } : b); }} /></MillField>
                     <MillField label={t('paidFreight')}>
-                      <div className="flex gap-1">
+                      <div className="flex flex-col gap-1">
                         <input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => { const adv = num(e.target.value); setMillBill(b => b ? { ...b, freightAdvance: adv, freightBalance: (b.freightTotal ?? 0) - (adv ?? 0) } : b); }} />
-                        <button type="button" onClick={() => setMillOpts(o => ({ ...o, includeFreightDeduct: !o.includeFreightDeduct }))} title={millOpts.includeFreightDeduct ? t('freightDeductTitle') : t('freightSkipTitle')} className={`h-9 px-2 text-[11px] font-bold rounded-lg border shrink-0 transition-colors ${millOpts.includeFreightDeduct ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-300 dark:border-slate-700'}`}>{millOpts.includeFreightDeduct ? t('freightDeductBtn') : t('freightSkipBtn')}</button>
+                        <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-slate-500 dark:text-slate-400">
+                          <input type="checkbox" className="accent-blue-600 w-3.5 h-3.5" checked={millOpts.includeFreightDeduct} onChange={e => setMillOpts(o => ({ ...o, includeFreightDeduct: e.target.checked }))} />
+                          {t('freightDeductCheckbox')}
+                        </label>
                       </div>
                     </MillField>
                     <MillField label={t('balanceFreight')}><input className={inp + ' bg-slate-50 dark:bg-slate-800 cursor-default'} type="number" readOnly value={(millBill.freightTotal ?? 0) - (millBill.freightAdvance ?? 0)} /></MillField>
