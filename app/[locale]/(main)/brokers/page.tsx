@@ -449,8 +449,8 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <h2 className="text-base font-black flex items-center gap-2">
             <Handshake size={16} className="text-rose-600" /> {t('profileTitle')}
           </h2>
@@ -472,7 +472,7 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto">
           {/* Identity */}
           <div className="flex items-start gap-3">
             <div className="w-11 h-11 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
@@ -591,14 +591,14 @@ function BrokerEditModal({ broker, onClose, onSaved }: { broker: Broker; onClose
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <h2 className="text-lg font-black flex items-center gap-2">
             <Pencil size={16} className="text-rose-600" /> {t('editBroker')}
           </h2>
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
         </div>
-        <form onSubmit={submit} className="p-6 space-y-4">
+        <form onSubmit={submit} className="p-6 space-y-4 overflow-y-auto">
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('brokerName')} *</span>
             <input type="text" autoFocus value={name} onChange={e => setName(e.target.value)}
@@ -649,14 +649,14 @@ function AddBrokerModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <h2 className="text-lg font-black flex items-center gap-2">
             <Handshake size={16} className="text-rose-600" /> {t('addBrokerBtn')}
           </h2>
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
         </div>
-        <form onSubmit={submit} className="p-6 space-y-4">
+        <form onSubmit={submit} className="p-6 space-y-4 overflow-y-auto">
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('brokerName')} *</span>
             <input type="text" autoFocus value={name} onChange={e => setName(e.target.value)}
@@ -728,15 +728,15 @@ function CommissionEntryModal({ brokerId, brokerName, type, balance = 0, onClose
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <h2 className="text-lg font-black flex items-center gap-2">
             <IndianRupee size={16} className={type === 'charge' ? 'text-rose-600' : 'text-emerald-600'} />
             {type === 'charge' ? t('addCommission') : t('recordPayment')}
           </h2>
           <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
         </div>
-        <form onSubmit={submit} className="p-6 space-y-4">
+        <form onSubmit={submit} className="p-6 space-y-4 overflow-y-auto">
           <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{brokerName}</p>
           {type === 'charge' && (
             <div className="rounded-xl border border-rose-100 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/20 p-3 space-y-3">
