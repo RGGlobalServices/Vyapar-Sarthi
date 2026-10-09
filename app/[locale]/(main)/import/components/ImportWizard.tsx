@@ -9,7 +9,7 @@ import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useUdharStore } from '@/lib/store';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
-import { EMPTY_MILL_BILL, freightMismatch, type MillBill } from '@/lib/millBill';
+import { EMPTY_MILL_BILL, type MillBill } from '@/lib/millBill';
 import { CHARGE_COLUMNS, getImportTemplate, applyTemplate, getAddableColumns } from '@/lib/importTemplates';
 import { printLabelSheet } from '@/lib/printLabels';
 
@@ -1307,6 +1307,16 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                         : 'Discount given by supplier — subtracted from bill total and from what is owed.'}
                     </span>
                   </label>
+                  {isMillBillingPackage(profile?.packageType) && (
+                    <label className="block sm:col-span-2">
+                      <span className="text-[11px] font-bold uppercase text-slate-500">Broker <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                      <div className="mt-1 grid grid-cols-[1fr_8rem] gap-2">
+                        <input value={purchaseBroker.name} onChange={e => { setPurchaseBroker(b => ({ ...b, name: e.target.value })); if (millBill) setMillBill(b => b ? { ...b, broker: e.target.value } : b); }} placeholder="Broker name" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
+                        <input type="number" min="0" step="0.01" value={purchaseBroker.commission} onChange={e => setPurchaseBroker(b => ({ ...b, commission: e.target.value }))} placeholder="Commission ₹" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
+                      </div>
+                      <span className="block text-[10px] text-slate-400 mt-1">Commission is owed to the broker — not added to what the supplier is owed.</span>
+                    </label>
+                  )}
                 </div>
                 {(() => {
                   const goodsTotal = purchaseGoodsTotal;
@@ -1367,48 +1377,11 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               </div>
             )}
 
-            {importType === 'purchase' && (
-              <div className="mb-5 p-5 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-500/5" data-testid="import-charges">
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Bill Charges</h4>
-                <p className="text-[11px] text-slate-500 mt-0.5 mb-3">Hamali, freight, loading … read from the bill. They are added to this purchase and to what the supplier is owed — not to Products or Stock. Edit, add or remove any line.</p>
-                {purchaseCharges.length === 0 && <p className="text-xs text-slate-400 mb-2">No charges found on the bill.</p>}
-                <div className="space-y-2">
-                  {purchaseCharges.map((c, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_8rem_auto] gap-2 items-center">
-                      <input value={c.name} onChange={e => setPurchaseCharges(list => list.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} placeholder="Charge name (e.g. Hamali)"
-                        className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
-                      <input type="number" min="0" step="0.01" value={c.amount} onChange={e => setPurchaseCharges(list => list.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} placeholder="₹"
-                        className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
-                      <button type="button" onClick={() => setPurchaseCharges(list => list.filter((_, j) => j !== i))} aria-label="Remove charge"
-                        className="h-9 w-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"><X size={14} /></button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-3 mt-3">
-                  <button type="button" onClick={() => setPurchaseCharges(list => [...list, { name: '', amount: '' }])}
-                    className="text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-amber-500 text-amber-700 dark:text-amber-400">+ Add charge</button>
-                  {purchaseCharges.length > 0 && (
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Charges total: ₹{purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                  )}
-                </div>
-                {isMillBillingPackage(profile?.packageType) && (
-                  <div className="mt-4 pt-3 border-t border-amber-200 dark:border-amber-500/20" data-testid="import-broker">
-                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">Broker (optional)</h5>
-                    <p className="text-[11px] text-slate-500 mb-2">A broker record is created in Party → Brokers (or reused) and the commission is logged as owed to them. It is not added to what the supplier is owed.</p>
-                    <div className="grid grid-cols-[1fr_8rem] gap-2">
-                      <input value={purchaseBroker.name} onChange={e => setPurchaseBroker(b => ({ ...b, name: e.target.value }))} placeholder="Broker name" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
-                      <input type="number" min="0" step="0.01" value={purchaseBroker.commission} onChange={e => setPurchaseBroker(b => ({ ...b, commission: e.target.value }))} placeholder="Commission ₹" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {importType === 'purchase' && isMillBillingPackage(profile?.packageType) && millBill && (() => {
               const set = (k: keyof MillBill, v: any) => setMillBill(b => (b ? { ...b, [k]: v } : b));
               const num = (v: string) => (v === '' ? null : Number(v));
               const inp = 'h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0 w-full';
-              const bad = freightMismatch(millBill);
               return (
                 <div className="mb-5 p-5 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-500/5" data-testid="import-mill-bill">
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white">Mill purchase details — truck, driver &amp; freight</h4>
@@ -1420,19 +1393,16 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <MillField label="Truck owner"><input className={inp} value={millBill.truckOwnerName} onChange={e => set('truckOwnerName', e.target.value)} /></MillField>
                     <MillField label="Owner mobile"><input className={inp} inputMode="numeric" value={millBill.truckOwnerMobile} onChange={e => set('truckOwnerMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
                     <MillField label="Transport company"><input className={inp} value={millBill.transportCompany} onChange={e => set('transportCompany', e.target.value)} /></MillField>
-                    <MillField label="Total freight ₹"><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => set('freightTotal', num(e.target.value))} /></MillField>
-                    <MillField label="Advance ₹"><input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => set('freightAdvance', num(e.target.value))} /></MillField>
-                    <MillField label="Balance ₹"><input className={inp} type="number" min="0" value={millBill.freightBalance ?? ''} onChange={e => set('freightBalance', num(e.target.value))} /></MillField>
-                    <MillField label="Hamali ₹"><input className={inp} type="number" min="0" value={millBill.hamali ?? ''} onChange={e => set('hamali', num(e.target.value))} /></MillField>
+                    <MillField label="Total freight ₹"><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => { const total = num(e.target.value); setMillBill(b => b ? { ...b, freightTotal: total, freightBalance: total !== null ? total - (b.freightAdvance ?? 0) : null } : b); }} /></MillField>
+                    <MillField label="Paid Freight ₹"><input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => { const adv = num(e.target.value); setMillBill(b => b ? { ...b, freightAdvance: adv, freightBalance: (b.freightTotal ?? 0) - (adv ?? 0) } : b); }} /></MillField>
+                    <MillField label="Balance Freight ₹"><input className={inp + ' bg-slate-50 dark:bg-slate-800 cursor-default'} type="number" readOnly value={(millBill.freightTotal ?? 0) - (millBill.freightAdvance ?? 0)} /></MillField>
                     <MillField label="Total bags"><input className={inp} type="number" min="0" value={millBill.totalBags ?? ''} onChange={e => set('totalBags', num(e.target.value))} /></MillField>
-                    <MillField label="Broker (commission is set in the Broker box above)"><input className={inp} value={millBill.broker} onChange={e => { set('broker', e.target.value); setPurchaseBroker(b => ({ ...b, name: e.target.value })); }} /></MillField>
                   </div>
-                  {bad && <p className="mt-2 text-xs font-semibold text-red-600">Freight total must equal advance + balance — fix one of them.</p>}
                   {(millBill.sellerBank.bankName || millBill.sellerBank.accountNo) && (
                     <p className="mt-2 text-[11px] text-slate-500">Seller bank on the bill: {[millBill.sellerBank.bankName, millBill.sellerBank.branch, millBill.sellerBank.accountNo, millBill.sellerBank.ifsc].filter(Boolean).join(' · ')}</p>
                   )}
                   <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-500/20 space-y-1.5 text-sm">
-                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.gateEntry} onChange={e => setMillOpts(o => ({ ...o, gateEntry: e.target.checked }))} /> Create inward Gate Entry (truck, driver{millBill.hamali ? ', hamali' : ''})</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.gateEntry} onChange={e => setMillOpts(o => ({ ...o, gateEntry: e.target.checked }))} /> Create inward Gate Entry (truck, driver)</label>
                     <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.freight} onChange={e => setMillOpts(o => ({ ...o, freight: e.target.checked }))} /> Record freight in the transporter's account</label>
                     {millOpts.freight && (millBill.freightAdvance ?? 0) > 0 && (
                       <div className="pl-6 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Advance was paid by
