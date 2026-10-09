@@ -951,18 +951,18 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             }
             onBack();
           }} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
-            <ArrowLeft size={20} /> Back to Import Types
+            <ArrowLeft size={20} /> {t('backToImportTypes')}
           </button>
           {confirmBack && (
             <div className="flex items-center gap-2 text-sm bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg px-3 py-1.5">
-              <span className="text-red-700 dark:text-red-400 font-medium">Discard {previewData.length} rows?</span>
-              <button onClick={onBack} className="px-2 py-0.5 bg-red-600 text-white rounded font-bold text-xs hover:bg-red-700">Yes</button>
-              <button onClick={() => setConfirmBack(false)} className="px-2 py-0.5 border border-slate-300 dark:border-slate-600 rounded text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">No</button>
+              <span className="text-red-700 dark:text-red-400 font-medium">{t('discardRowsConfirm', { n: previewData.length })}</span>
+              <button onClick={onBack} className="px-2 py-0.5 bg-red-600 text-white rounded font-bold text-xs hover:bg-red-700">{t('yes')}</button>
+              <button onClick={() => setConfirmBack(false)} className="px-2 py-0.5 border border-slate-300 dark:border-slate-600 rounded text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">{t('no')}</button>
             </div>
           )}
         </div>
-        <h2 className="text-xl font-bold capitalize text-slate-900 dark:text-white">
-          {importType.replace('-', ' ')} Import
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+          {({ product: t('importTypeName_product'), purchase: t('importTypeName_purchase'), stock: t('importTypeName_stock'), suppliers: t('importTypeName_suppliers'), customers: t('importTypeName_customers'), sales: t('importTypeName_sales'), ledger: t('importTypeName_ledger') } as Record<string, string>)[importType] ?? importType} {t('importWord')}
         </h2>
       </div>
 
@@ -1002,7 +1002,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     </div>
                   </div>
 
-                  <p className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Analysing your file…</p>
+                  <p className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">{t('analysingFile')}</p>
                   <p className="text-sm text-slate-500 dark:text-slate-400 text-center leading-relaxed">{loadingText.replace(/^🤖\s*/,'')}</p>
 
                   <style>{`
@@ -1016,31 +1016,31 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               ) : (
                 <>
                   <Upload size={48} className="text-slate-400 mb-4" />
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Drop your file here</h3>
-                  <p className="text-slate-500 text-sm mb-6">Supports CSV, Excel, PDF, and Images</p>
-                  
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t('dropFileHere')}</h3>
+                  <p className="text-slate-500 text-sm mb-6">{t('supportsFormats')}</p>
+
                   <div className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl text-center max-w-sm">
                     <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-400">
-                      💡 Note: The AI reads the ENTIRE file — every page and every row — before showing results. Text PDFs are read in full (all pages, hundreds/thousands of rows); scanned PDFs and photos are read page-by-page. Large files just take a little longer.
+                      💡 {t('aiFileNote')}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-center gap-3">
                     <button className="bg-emerald-500 text-slate-900 px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-400 transition-colors">
-                      Browse Files
+                      {t('browseFiles')}
                     </button>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click(); }}
                       className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-6 py-2.5 rounded-xl font-bold hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                     >
-                      <Camera size={18} /> Take Photo
+                      <Camera size={18} /> {t('takePhoto')}
                     </button>
                   </div>
 
                   <div className="flex items-center gap-3 w-full max-w-xs my-5">
                     <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-                    <span className="text-[11px] font-bold uppercase text-slate-400">or</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-400">{t('orDivider')}</span>
                     <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
                   </div>
 
@@ -1049,9 +1049,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     onClick={(e) => { e.stopPropagation(); startManualEntry(); }}
                     className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-6 py-2.5 rounded-xl font-bold hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                   >
-                    <PencilLine size={18} /> Enter Manually
+                    <PencilLine size={18} /> {t('enterManually')}
                   </button>
-                  <p className="text-slate-400 text-xs mt-2">No file? Type the rows in yourself — same table you'd get from a scan.</p>
+                  <p className="text-slate-400 text-xs mt-2">{t('noFileHint')}</p>
                 </>
               )}
             </div>
@@ -1064,10 +1064,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
           <CardContent className="p-6">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Review &amp; edit before import</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{t('reviewTitle')}</h3>
                 <p className="text-sm text-slate-500">
-                  {previewData.length} rows · <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{willImportCount} will import</span>
-                  {checkingMatches ? ' · checking for existing records…' : (existingCount > 0 ? ` · ${existingCount} already exist` : '')}
+                  {previewData.length} rows · <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{t('willImportCount', { n: willImportCount })}</span>
+                  {checkingMatches ? ` · ${t('checkingRecords')}` : (existingCount > 0 ? ` · ${t('alreadyExistCount', { n: existingCount })}` : '')}
                 </p>
               </div>
               <div className="flex gap-3 items-center">
@@ -1111,7 +1111,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   title="Add a blank row to type into"
                   className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-50 text-sm font-bold"
                 >
-                  <PlusCircle size={15} /> Add Row
+                  <PlusCircle size={15} /> {t('addRowBtn')}
                 </button>
                 {addableColumns.length > 0 && (
                   <select
@@ -1134,7 +1134,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   }
                   setStep('upload');
                 }} disabled={isProcessing} className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
-                  Cancel
+                  {t('cancelBtn')}
                 </button>
                 {resumeState ? (
                   <button
@@ -1143,7 +1143,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     className="px-6 py-2 bg-amber-500 text-slate-900 rounded-lg font-bold hover:bg-amber-400 disabled:opacity-50 flex items-center gap-2"
                   >
                     {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                    Resume from row {resumeState.offset}
+                    {t('resumeFromRow', { offset: resumeState.offset })}
                   </button>
                 ) : (
                   <button
@@ -1152,7 +1152,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     className="px-6 py-2 bg-emerald-500 text-slate-900 rounded-lg font-bold hover:bg-emerald-400 disabled:opacity-50 flex items-center gap-2"
                   >
                     {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                    Import {willImportCount} record{willImportCount === 1 ? '' : 's'}
+                    {willImportCount === 1 ? t('importBtnOne') : t('importBtn', { n: willImportCount })}
                   </button>
                 )}
               </div>
@@ -1174,10 +1174,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     style={{ width: `${progress.total ? Math.round((progress.processed / progress.total) * 100) : 0}%` }} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div><span className="text-slate-500">Batch</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.batch} / {progress.totalBatches}</span></div>
-                  <div><span className="text-slate-500">Saved</span><br /><span className="font-bold text-emerald-600 dark:text-emerald-400">{progress.created + progress.updated}</span></div>
-                  <div><span className="text-slate-500">Speed</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.rps} rows/s</span></div>
-                  <div><span className="text-slate-500">ETA</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.etaSec > 0 ? `${progress.etaSec}s` : '—'}</span></div>
+                  <div><span className="text-slate-500">{t('progressBatch')}</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.batch} / {progress.totalBatches}</span></div>
+                  <div><span className="text-slate-500">{t('progressSaved')}</span><br /><span className="font-bold text-emerald-600 dark:text-emerald-400">{progress.created + progress.updated}</span></div>
+                  <div><span className="text-slate-500">{t('progressSpeed')}</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.rps} rows/s</span></div>
+                  <div><span className="text-slate-500">{t('progressEta')}</span><br /><span className="font-bold text-slate-800 dark:text-slate-200">{progress.etaSec > 0 ? `${progress.etaSec}s` : '—'}</span></div>
                 </div>
               </div>
             )}
@@ -1188,7 +1188,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm text-amber-800 dark:text-amber-300 font-medium flex items-center gap-2">
                     <AlertCircle size={16} className="shrink-0" />
-                    {existingCount} of these already exist in your shop. What should happen to them?
+                    {t('existingConflictMsg', { n: existingCount })}
                   </p>
                   <div className="flex items-center bg-white dark:bg-slate-900 rounded-lg p-1 border border-amber-200 dark:border-amber-500/20">
                     <button
@@ -1196,26 +1196,26 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       onClick={() => setExistingPolicy('update')}
                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${existingPolicy === 'update' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}
                     >
-                      Update with new info
+                      {t('updateWithNew')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setExistingPolicy('skip')}
                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${existingPolicy === 'skip' ? 'bg-slate-600 text-white' : 'text-slate-500'}`}
                     >
-                      Keep existing (import only new)
+                      {t('keepExisting')}
                     </button>
                   </div>
                 </div>
                 <p className="text-[11px] text-amber-700/80 dark:text-amber-400/70 mt-2">
-                  Blank cells never overwrite existing data. You can override any single row below.
+                  {t('blankCellOverwrite')}
                 </p>
               </div>
             )}
 
             {errors.length > 0 && (
               <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500">
-                <h4 className="font-bold flex items-center gap-2"><AlertCircle size={16}/> Validation Errors</h4>
+                <h4 className="font-bold flex items-center gap-2"><AlertCircle size={16}/> {t('validationErrors')}</h4>
                 <ul className="list-disc pl-6 mt-2 text-sm">
                   {errors.map((e, i) => <li key={i}>{e}</li>)}
                 </ul>
@@ -1230,19 +1230,19 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      Supplier Details
+                      {t('supplierDetails')}
                       {supplierLookupDone && supplierMatch && (
-                        <span className="text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">Existing supplier</span>
+                        <span className="text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">{t('existingSupplierBadge')}</span>
                       )}
                       {supplierLookupDone && !supplierMatch && purchaseSupplier.name.trim() && (
-                        <span className="text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">Will be created</span>
+                        <span className="text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">{t('willBeCreatedBadge')}</span>
                       )}
                     </h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Confirm before importing — the invoice total will be added to this supplier's balance and their Payment History.</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{t('supplierConfirmHint')}</p>
                   </div>
                   {supplierMatch && (
                     <div className="text-right text-[11px]">
-                      <div className="text-slate-500">Current balance</div>
+                      <div className="text-slate-500">{t('currentBalance')}</div>
                       <div className={`font-black ${supplierMatch.balance > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                         ₹{Math.round(supplierMatch.balance).toLocaleString('en-IN')}
                       </div>
@@ -1254,41 +1254,41 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Supplier Name *</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('supplierNameLabel')}</span>
                     <input value={purchaseSupplier.name} onChange={e => setPurchaseSupplier(s => ({ ...s, name: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. Sharma Traders" />
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Mobile</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('supplierMobileLabel')}</span>
                     <input value={purchaseSupplier.mobile} onChange={e => setPurchaseSupplier(s => ({ ...s, mobile: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" inputMode="numeric" />
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">GSTIN</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('supplierGstinLabel')}</span>
                     <input value={purchaseSupplier.gst} onChange={e => setPurchaseSupplier(s => ({ ...s, gst: e.target.value.toUpperCase() }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" maxLength={15} />
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Address</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('supplierAddressLabel')}</span>
                     <input value={purchaseSupplier.address} onChange={e => setPurchaseSupplier(s => ({ ...s, address: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Credit Days (payment terms)</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('creditDaysLabel')}</span>
                     <input type="number" min="0" step="1" value={purchaseSupplier.creditDays} onChange={e => setPurchaseSupplier(s => ({ ...s, creditDays: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. 30" />
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Credit Limit (₹)</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('creditLimitLabel')}</span>
                     <input type="number" min="0" step="1" value={purchaseSupplier.creditLimit} onChange={e => setPurchaseSupplier(s => ({ ...s, creditLimit: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. 50000" />
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Amount Paid Now (₹)</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('amountPaidNowLabel')}</span>
                     <input type="number" min="0" step="1" value={purchaseSupplier.paidAmount} onChange={e => setPurchaseSupplier(s => ({ ...s, paidAmount: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
-                    <span className="block text-[10px] text-slate-400 mt-1">The rest becomes owed. Leave 0 if the whole bill is on credit.</span>
+                    <span className="block text-[10px] text-slate-400 mt-1">{t('paidAmountHint')}</span>
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Lot / Batch No. <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('lotBatchNoLabel')} <span className="normal-case text-slate-400 font-normal">({t('brokerOptional')})</span></span>
                     <input value={purchaseSupplier.batchNumber} onChange={e => setPurchaseSupplier(s => ({ ...s, batchNumber: e.target.value }))} className="mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. LOT-001" />
-                    <span className="block text-[10px] text-slate-400 mt-1">Applied to all items on this bill. Rows with their own batch column take priority.</span>
+                    <span className="block text-[10px] text-slate-400 mt-1">{t('lotHint')}</span>
                   </label>
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase text-slate-500">Bill Discount <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                    <span className="text-[11px] font-bold uppercase text-slate-500">{t('billDiscountLabel')} <span className="normal-case text-slate-400 font-normal">({t('brokerOptional')})</span></span>
                     <div className="mt-1 flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500">
                       <input type="number" min="0" step="0.01" value={purchaseSupplier.discount} onChange={e => setPurchaseSupplier(s => ({ ...s, discount: e.target.value }))}
                         className="flex-1 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none min-w-0" placeholder="0" />
@@ -1303,8 +1303,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     </div>
                     <span className="block text-[10px] text-slate-400 mt-1">
                       {discountType === 'percent' && purchaseGoodsTotal > 0 && purchaseSupplier.discount
-                        ? `= ₹${(purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} off the bill total`
-                        : 'Discount given by supplier — subtracted from bill total and from what is owed.'}
+                        ? t('discountCalc', { amount: (purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) })
+                        : t('discountHint')}
                     </span>
                   </label>
                   {isMillBillingPackage(profile?.packageType) && (
