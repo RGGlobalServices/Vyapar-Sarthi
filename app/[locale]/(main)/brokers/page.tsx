@@ -12,6 +12,7 @@ import { toast } from 'react-hot-toast';
 import DeleteButton from '@/components/mill/DeleteButton';
 import EditEntryModal, { EditButton } from '@/components/mill/EditEntryModal';
 import { ExportButton } from '@/lib/hooks/useExport';
+import DiscountInput from '@/components/DiscountInput';
 
 type Broker = { id: string; name: string; mobile: string | null; balance: number; entryCount: number };
 type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment'; amount: number; billNumber: string | null; paymentMethod: string | null; note: string | null; date: string; direction?: 'purchase' | 'sale' | null; billLabel?: string | null };
@@ -684,7 +685,7 @@ function CommissionEntryModal({ brokerId, brokerName, type, balance = 0, onClose
 }) {
   const t = useTranslations('Brokers');
   const [amount, setAmount] = useState('');
-  const [discount, setDiscount] = useState('');
+  const [discount, setDiscount] = useState<number>(0);
   const [billNumber, setBillNumber] = useState('');
   const [direction, setDirection] = useState<'purchase' | 'sale'>('purchase');
   const [billAmount, setBillAmount] = useState('');
@@ -694,9 +695,18 @@ function CommissionEntryModal({ brokerId, brokerName, type, balance = 0, onClose
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const discountVal = Math.max(0, parseFloat(discount) || 0);
+  const discountVal = Math.max(0, discount || 0);
   const amountVal = Math.max(0, parseFloat(amount) || 0);
   const effectiveMax = Math.max(0, balance - discountVal);
+
+  // DiscountInput always hands back the resolved rupee amount (whether typed as ₹ or as a % of
+  // `balance`) — clamp the already-typed payment amount down if the new discount would push the
+  // total past what's outstanding.
+  const handleSetDiscount = (d: number) => {
+    setDiscount(d);
+    const newMax = Math.max(0, balance - d);
+    if (amountVal > newMax) setAmount(newMax.toFixed(2));
+  };
 
   const calcAmount = () => {
     const b = parseFloat(billAmount);
@@ -780,31 +790,28 @@ function CommissionEntryModal({ brokerId, brokerName, type, balance = 0, onClose
               max={type === 'payment' ? effectiveMax : undefined}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" />
           </div>
-          {type === 'payment' && (
-            <label className="block">
-              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Discount / Write-off (₹)</span>
-              <input type="number" min="0" step="0.01" value={discount}
-                onChange={e => {
-                  setDiscount(e.target.value);
-                  const d = Math.max(0, parseFloat(e.target.value) || 0);
-                  const newMax = Math.max(0, balance - d);
-                  if ((parseFloat(amount) || 0) > newMax) setAmount(newMax.toFixed(2));
-                }}
-                className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" placeholder="0" />
-            </label>
-          )}
-          {type === 'payment' && discountVal > 0 && (
+          {/* Running total — out of what's outstanding, how much is being paid now vs. left after,
+              always visible (not just once a discount is typed) so the cashier sees it while typing. */}
+          {type === 'payment' && balance > 0 && (
             <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-xs space-y-1.5">
-              <div className="flex justify-between text-slate-500"><span>Outstanding</span><span>{rupee(balance)}</span></div>
-              {amountVal > 0 && <div className="flex justify-between text-emerald-700 dark:text-emerald-400"><span>− Payment</span><span>{rupee(amountVal)}</span></div>}
-              <div className="flex justify-between text-violet-600 dark:text-violet-400"><span>− Discount / Write-off</span><span>{rupee(discountVal)}</span></div>
+              <div className="flex justify-between text-slate-500"><span>Total Outstanding</span><span>{rupee(balance)}</span></div>
+              <div className="flex justify-between text-emerald-700 dark:text-emerald-400"><span>− Paying Now</span><span>{rupee(amountVal)}</span></div>
+              {discountVal > 0 && (
+                <div className="flex justify-between text-violet-600 dark:text-violet-400"><span>− Discount / Write-off</span><span>{rupee(discountVal)}</span></div>
+              )}
               <div className="border-t border-slate-200 dark:border-slate-700 pt-1.5 flex justify-between font-bold">
-                <span className="text-slate-700 dark:text-slate-300">Balance After</span>
+                <span className="text-slate-700 dark:text-slate-300">Remaining</span>
                 <span className={Math.max(0, balance - amountVal - discountVal) <= 0 ? 'text-emerald-600' : 'text-rose-600'}>
                   {rupee(Math.max(0, balance - amountVal - discountVal))}
                 </span>
               </div>
             </div>
+          )}
+          {type === 'payment' && (
+            <label className="block">
+              <span className="block text-xs font-bold uppercase text-slate-500 mb-1">Discount / Write-off</span>
+              <DiscountInput subtotal={balance} discount={discount} setDiscount={handleSetDiscount} />
+            </label>
           )}
           {type === 'charge' && (
             <div>
