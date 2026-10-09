@@ -1310,10 +1310,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   {isMillBillingPackage(profile?.packageType) && (
                     <label className="block sm:col-span-2">
                       <span className="text-[11px] font-bold uppercase text-slate-500">{t('brokerLabel')} <span className="normal-case text-slate-400 font-normal">{t('brokerOptional')}</span></span>
-                      <div className="mt-1 grid grid-cols-[1fr_8rem] gap-2">
-                        <input value={purchaseBroker.name} onChange={e => { setPurchaseBroker(b => ({ ...b, name: e.target.value })); if (millBill) setMillBill(b => b ? { ...b, broker: e.target.value } : b); }} placeholder={t('brokerNamePlaceholder')} className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
-                        <input type="number" min="0" step="0.01" value={purchaseBroker.commission} onChange={e => setPurchaseBroker(b => ({ ...b, commission: e.target.value }))} placeholder={t('brokerCommissionPlaceholder')} className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
-                      </div>
+                      <input value={purchaseBroker.name} onChange={e => { setPurchaseBroker(b => ({ ...b, name: e.target.value })); if (millBill) setMillBill(b => b ? { ...b, broker: e.target.value } : b); }} placeholder={t('brokerNamePlaceholder')} className="mt-1 w-full h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
                       <span className="block text-[10px] text-slate-400 mt-1">{t('brokerHint')}</span>
                     </label>
                   )}

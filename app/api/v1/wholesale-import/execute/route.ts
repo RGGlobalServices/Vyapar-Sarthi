@@ -1110,7 +1110,7 @@ export async function POST(req: NextRequest) {
         // Best-effort and outside the purchase itself — a failure here must never undo the imported bill.
         try {
           const br = (body as any).broker;
-          if (String(br?.name ?? '').trim()) await logBrokerCommission(shopId, { name: br.name, commission: br.commission, billNumber: String(invoiceNumber), kind: 'supplier', party: String(getVal(firstRow, ['supplier', 'vendor', 'suppliername']) || '') });
+          if (String(br?.name ?? '').trim()) await logBrokerCommission(shopId, { name: br.name, commission: br.commission, billNumber: String(invoiceNumber), kind: 'supplier', party: String(getVal(firstRow, ['supplier', 'vendor', 'suppliername']) || ''), purchaseInvoiceId: purchaseInvoice.id });
         } catch (e) { console.error('[import purchase] broker step failed (purchase kept):', e); }
         break;
       }

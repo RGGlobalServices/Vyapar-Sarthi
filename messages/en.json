@@ -2439,7 +2439,7 @@
     "brokerOptional": "(optional)",
     "brokerNamePlaceholder": "Broker name",
     "brokerCommissionPlaceholder": "Commission ₹",
-    "brokerHint": "Commission is owed to the broker — not added to what the supplier is owed.",
+    "brokerHint": "Commission is added later from the Broker page — not added to what the supplier is owed.",
     "gateEntryCheckbox": "Create inward Gate Entry (truck, driver)",
     "freightCheckbox": "Record freight in the transporter's account",
     "lotsCheckbox": "Create Raw Material lot(s) for the milling stock",

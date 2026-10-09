@@ -16,7 +16,7 @@ import DiscountInput from '@/components/DiscountInput';
 
 type Broker = { id: string; name: string; mobile: string | null; balance: number; entryCount: number };
 type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment'; amount: number; billNumber: string | null; paymentMethod: string | null; note: string | null; date: string; direction?: 'purchase' | 'sale' | null; billLabel?: string | null };
-type BrokerBill = { id: string; invoiceNumber: string | null; date: string; amount: number; customerName: string | null };
+type BrokerBill = { id: string; type: 'sale' | 'purchase'; invoiceNumber: string | null; date: string; amount: number; party: string | null };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -530,12 +530,18 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
             ) : (
               <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
                 {bills.map((bill) => (
-                  <li key={bill.id} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                  <li key={`${bill.type}-${bill.id}`} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
                     <div className="min-w-0">
-                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{bill.invoiceNumber || '—'}</p>
-                      <p className="text-slate-400">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0',
+                          bill.type === 'purchase' ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300' : 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300')}>
+                          {bill.type === 'purchase' ? 'Purchase' : 'Sale'}
+                        </span>
+                        <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{bill.invoiceNumber || '—'}</p>
+                      </div>
+                      <p className="text-slate-400 mt-0.5">
                         {new Date(bill.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        {bill.customerName ? ` · ${bill.customerName}` : ''}
+                        {bill.party ? ` · ${bill.party}` : ''}
                       </p>
                     </div>
                     <span className="font-black text-slate-900 dark:text-white shrink-0">{rupee(bill.amount)}</span>

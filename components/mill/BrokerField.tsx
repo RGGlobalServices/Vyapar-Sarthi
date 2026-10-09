@@ -10,7 +10,14 @@ import { useTranslations } from 'next-intl';
 export type BrokerValue = { name: string; commission: string };
 export const EMPTY_BROKER: BrokerValue = { name: '', commission: '' };
 
-/** Optional broker + commission for a bill (Bada Udyog). Existing brokers are suggested via a custom dropdown; a new name creates the broker on save. */
+/**
+ * Optional broker name for a bill (Bada Udyog) — existing brokers are suggested via a custom
+ * dropdown; a new name creates the broker on save. Commission is deliberately NOT entered here:
+ * it's added later from the Broker page (Add Commission / Record Payment) once the broker has
+ * seen their own bill list and stated what they're owed, so it never has to be guessed at
+ * checkout time. `commission` stays on BrokerValue only so existing call sites compile unchanged
+ * — it's always sent empty.
+ */
 export default function BrokerField({ value, onChange, kind }: { value: BrokerValue; onChange: (v: BrokerValue) => void; kind: 'supplier' | 'customer' }) {
   const t = useTranslations('Billing');
   const shopId = useBusinessStore(s => s.activeShopId);
@@ -40,9 +47,9 @@ export default function BrokerField({ value, onChange, kind }: { value: BrokerVa
   };
 
   return (
-    <div className="flex flex-col sm:flex-row gap-2" data-testid={`broker-field-${kind}`}>
+    <div data-testid={`broker-field-${kind}`}>
       {/* Broker name — custom combobox */}
-      <div className="flex-1 relative" ref={containerRef}>
+      <div className="relative" ref={containerRef}>
         <span className="text-xs font-bold text-slate-500 uppercase block mb-1">{kind === 'supplier' ? t('brokerField_supplierLabel') : t('brokerField_customerLabel')}</span>
         <div className="relative">
           <input
@@ -83,18 +90,6 @@ export default function BrokerField({ value, onChange, kind }: { value: BrokerVa
             ))}
           </ul>
         )}
-      </div>
-
-      {/* Commission */}
-      <div className="w-full sm:w-32 shrink-0">
-        <span className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('brokerField_commissionLabel')}</span>
-        <input
-          type="number" min="0" step="0.01"
-          value={value.commission}
-          onChange={e => onChange({ ...value, commission: e.target.value })}
-          placeholder="₹"
-          className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-        />
       </div>
     </div>
   );
