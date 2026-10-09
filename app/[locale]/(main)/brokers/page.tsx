@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp, Pencil, Trash2, CheckSquare, Square, AlertCircle, Phone, User } from 'lucide-react';
+import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp, Pencil, Trash2, CheckSquare, Square, AlertCircle, Phone, User, Receipt } from 'lucide-react';
 import { useExport } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -15,6 +15,7 @@ import { ExportButton } from '@/lib/hooks/useExport';
 
 type Broker = { id: string; name: string; mobile: string | null; balance: number; entryCount: number };
 type CommissionRow = { id: string; brokerId: string; type: 'charge' | 'payment'; amount: number; billNumber: string | null; paymentMethod: string | null; note: string | null; date: string; direction?: 'purchase' | 'sale' | null; billLabel?: string | null };
+type BrokerBill = { id: string; invoiceNumber: string | null; date: string; amount: number; customerName: string | null };
 
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -424,6 +425,15 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
   const orderCount = entries.filter(e => e.type === 'charge').length;
   const hasDues = broker.balance > 0;
 
+  // Bills this broker was tagged on — separate from commissionEntry (which only exists once an
+  // amount is typed in). This is the list the owner hands the broker so HE can quote the
+  // commission, so it has to show every bill regardless of whether commission was ever entered.
+  const { data: billsData, isLoading: billsLoading } = useSWR<{ bills: BrokerBill[] }>(
+    `/management/commission/bills?brokerId=${broker.id}`,
+    fetcher,
+  );
+  const bills = billsData?.bills || [];
+
   const handleDelete = async () => {
     if (hasDues) return;
     if (!confirm(t('deleteConfirm', { name: broker.name }))) return;
@@ -504,6 +514,34 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
                 <p className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{value}</p>
               </div>
             ))}
+          </div>
+
+          {/* Bills this broker was tagged on — shown to the broker so HE can tell us the
+              commission, independent of whether an amount was ever entered for any of them. */}
+          <div>
+            <p className="text-[10px] text-slate-400 uppercase font-bold mb-1.5 flex items-center gap-1">
+              <Receipt size={11} /> {t('brokerBills')} {bills.length > 0 && `(${bills.length})`}
+            </p>
+            {billsLoading ? (
+              <div className="py-4 flex justify-center"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
+            ) : bills.length === 0 ? (
+              <p className="text-xs text-slate-400 py-2">{t('noBrokerBills')}</p>
+            ) : (
+              <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+                {bills.map((bill) => (
+                  <li key={bill.id} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{bill.invoiceNumber || '—'}</p>
+                      <p className="text-slate-400">
+                        {new Date(bill.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {bill.customerName ? ` · ${bill.customerName}` : ''}
+                      </p>
+                    </div>
+                    <span className="font-black text-slate-900 dark:text-white shrink-0">{rupee(bill.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* Action buttons */}

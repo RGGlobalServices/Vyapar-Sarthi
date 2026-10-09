@@ -4152,6 +4152,8 @@
     "rm_registerHint": "The full list with dates, suppliers and used-up lots. Not needed for daily work."
   },
   "Brokers": {
+    "brokerBills": "Bills via this broker",
+    "noBrokerBills": "No bills tagged to this broker yet.",
     "title": "Brokers",
     "subtitle": "A running account with each broker — commission owed per deal closed, paid off later.",
     "totalOwedLabel": "Total Owed to Brokers",

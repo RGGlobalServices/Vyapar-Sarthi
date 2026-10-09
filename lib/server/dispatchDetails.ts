@@ -49,3 +49,25 @@ export async function readDispatch(db: any, saleId: string): Promise<Dispatch | 
   const d = r[0]?.d;
   return d && typeof d === 'object' ? { ...EMPTY_DISPATCH, ...d } : null;
 }
+
+export type BrokerBill = { id: string; invoiceNumber: string | null; date: string; amount: number; customerName: string | null };
+
+/**
+ * Every sale this broker was tagged on (`dispatch_details.broker`), regardless of whether a
+ * commission was ever logged for it. A commission entry only exists once an amount is typed in —
+ * but the broker's name on the bill is saved at checkout either way — so this is the only
+ * reliable "which bills came through this broker" list: the owner shows it to the broker, who
+ * then quotes the commission, rather than the shop having to already know it.
+ */
+export async function getBrokerBills(db: any, shopId: string, brokerName: string): Promise<BrokerBill[]> {
+  if (!brokerName.trim() || !(await dispatchColumn())) return [];
+  const rows: Array<{ id: string; invoice_number: string | null; created_at: Date; total_amount: number | null; customer_name: string | null }> =
+    await db.$queryRawUnsafe(
+      `SELECT s.id, s.invoice_number, s.created_at, s.total_amount, c.name AS customer_name
+       FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
+       WHERE s.shop_id = $1::uuid AND s.dispatch_details->>'broker' ILIKE $2
+       ORDER BY s.created_at DESC LIMIT 200`,
+      shopId, brokerName.trim(),
+    );
+  return rows.map((r) => ({ id: r.id, invoiceNumber: r.invoice_number, date: r.created_at.toISOString(), amount: Number(r.total_amount) || 0, customerName: r.customer_name }));
+}
