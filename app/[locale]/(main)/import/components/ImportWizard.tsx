@@ -73,7 +73,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const [purchaseCharges, setPurchaseCharges] = useState<{ name: string; amount: string }[]>([]);
   // Bada Udyog only: truck / driver / freight read from the mill purchase bill. Stays empty (and unused) for every other package.
   const [millBill, setMillBill] = useState<MillBill | null>(null);
-  const [millOpts, setMillOpts] = useState({ gateEntry: true, freight: true, lots: true, advancePaidBy: 'seller' as 'seller' | 'mill' | 'skip', deductFreightFromBill: false });
+  const [millOpts, setMillOpts] = useState({ gateEntry: true, freight: true, lots: true, advancePaidBy: 'seller' as 'seller' | 'mill' | 'skip', deductFreightFromBill: false, hamaliMode: 'add' as 'add' | 'subtract', includeFreightDeduct: true });
   const [supplierMatch, setSupplierMatch] = useState<null | {
     id: string; name: string; balance: number; creditLimit: number; creditDays: number;
   }>(null);
@@ -757,7 +757,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   const baseDiscount = discountType === 'percent'
                     ? purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100
                     : (parseFloat(purchaseSupplier.discount) || 0);
-                  const freightDeduct = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.freightAdvance ?? 0) : 0;
+                  const freightDeduct = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
                   return { ...purchaseSupplier, discount: String(Math.max(0, baseDiscount + freightDeduct)) };
                 })() : undefined,
                 broker: (importType === 'purchase' && offset === 0 && isMillBillingPackage(profile?.packageType) && purchaseBroker.name.trim()) ? purchaseBroker : undefined,
@@ -870,7 +870,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       const discountSnapAmt = discountType === 'percent'
         ? Math.max(0, purchaseGoodsTotalSnap * (parseFloat(purchaseSupplier.discount) || 0) / 100)
         : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
-      const freightDeductSnap = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.freightAdvance ?? 0) : 0;
+      const freightDeductSnap = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
       setSummary({
         millExtras: millExtrasResult, totalProcessed: total, created: acc.created, updated: acc.updated,
         skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed,
@@ -1338,9 +1338,22 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <MillField label="Owner mobile"><input className={inp} inputMode="numeric" value={millBill.truckOwnerMobile} onChange={e => set('truckOwnerMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
                     <MillField label="Transport company"><input className={inp} value={millBill.transportCompany} onChange={e => set('transportCompany', e.target.value)} /></MillField>
                     <MillField label="Total freight ₹"><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => { const total = num(e.target.value); setMillBill(b => b ? { ...b, freightTotal: total, freightBalance: total !== null ? total - (b.freightAdvance ?? 0) : null } : b); }} /></MillField>
-                    <MillField label="Paid Freight ₹"><input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => { const adv = num(e.target.value); setMillBill(b => b ? { ...b, freightAdvance: adv, freightBalance: (b.freightTotal ?? 0) - (adv ?? 0) } : b); }} /></MillField>
+                    <MillField label="Paid Freight ₹">
+                      <div className="flex gap-1">
+                        <input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => { const adv = num(e.target.value); setMillBill(b => b ? { ...b, freightAdvance: adv, freightBalance: (b.freightTotal ?? 0) - (adv ?? 0) } : b); }} />
+                        <button type="button" onClick={() => setMillOpts(o => ({ ...o, includeFreightDeduct: !o.includeFreightDeduct }))} title={millOpts.includeFreightDeduct ? 'Deducting from bill total — click to skip' : 'Not in bill total — click to deduct'} className={`h-9 px-2 text-[11px] font-bold rounded-lg border shrink-0 transition-colors ${millOpts.includeFreightDeduct ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-300 dark:border-slate-700'}`}>{millOpts.includeFreightDeduct ? '−Bill' : 'Skip'}</button>
+                      </div>
+                    </MillField>
                     <MillField label="Balance Freight ₹"><input className={inp + ' bg-slate-50 dark:bg-slate-800 cursor-default'} type="number" readOnly value={(millBill.freightTotal ?? 0) - (millBill.freightAdvance ?? 0)} /></MillField>
-                    <MillField label="Hamali ₹"><input className={inp} type="number" min="0" value={millBill.hamali ?? ''} onChange={e => set('hamali', num(e.target.value))} /></MillField>
+                    <MillField label="Hamali ₹">
+                      <div className="flex gap-1">
+                        <input className={inp} type="number" min="0" value={millBill.hamali ?? ''} onChange={e => set('hamali', num(e.target.value))} />
+                        <div className="flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden shrink-0">
+                          <button type="button" title="Add Hamali to bill total" onClick={() => setMillOpts(o => ({ ...o, hamaliMode: 'add' }))} className={`h-9 px-2.5 text-sm font-bold transition-colors ${millOpts.hamaliMode === 'add' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>+</button>
+                          <button type="button" title="Subtract Hamali from bill total" onClick={() => setMillOpts(o => ({ ...o, hamaliMode: 'subtract' }))} className={`h-9 px-2.5 text-sm font-bold border-l border-slate-300 dark:border-slate-700 transition-colors ${millOpts.hamaliMode === 'subtract' ? 'bg-red-500 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>−</button>
+                        </div>
+                      </div>
+                    </MillField>
                     <MillField label="Total bags"><input className={inp} type="number" min="0" value={millBill.totalBags ?? ''} onChange={e => set('totalBags', num(e.target.value))} /></MillField>
                   </div>
                   {(millBill.sellerBank.bankName || millBill.sellerBank.accountNo) && (
@@ -1370,8 +1383,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               const discountAmt = discountType === 'percent'
                 ? Math.max(0, goodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100)
                 : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
-              const millFreightPaid = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.freightAdvance ?? 0) : 0;
-              const millHamali = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.hamali ?? 0) : 0;
+              const millFreightPaid = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
+              const millHamaliAmt = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.hamali ?? 0) : 0;
+              const millHamali = millOpts.hamaliMode === 'add' ? millHamaliAmt : -millHamaliAmt;
               const billTotal = Math.max(0, goodsTotal - discountAmt - millFreightPaid + millHamali + chargesSum);
               const paidNow = Math.max(0, parseFloat(purchaseSupplier.paidAmount) || 0);
               const balanceDue = Math.max(0, billTotal - paidNow);
@@ -1397,10 +1411,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                         <span className="tabular-nums">−₹{fmt(millFreightPaid)}</span>
                       </div>
                     )}
-                    {millHamali > 0 && (
-                      <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                        <span>Plus: Hamali</span>
-                        <span className="tabular-nums">+₹{fmt(millHamali)}</span>
+                    {millHamaliAmt > 0 && (
+                      <div className={`flex justify-between ${millOpts.hamaliMode === 'add' ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400'}`}>
+                        <span>{millOpts.hamaliMode === 'add' ? 'Plus' : 'Less'}: Hamali</span>
+                        <span className="tabular-nums">{millOpts.hamaliMode === 'add' ? '+' : '−'}₹{fmt(millHamaliAmt)}</span>
                       </div>
                     )}
                     {chargesSum > 0 && (
