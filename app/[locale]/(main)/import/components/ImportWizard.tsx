@@ -757,7 +757,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   const baseDiscount = discountType === 'percent'
                     ? purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100
                     : (parseFloat(purchaseSupplier.discount) || 0);
-                  const freightDeduct = millOpts.deductFreightFromBill && millBill ? (millBill.freightTotal ?? 0) : 0;
+                  const freightDeduct = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.freightAdvance ?? 0) : 0;
                   return { ...purchaseSupplier, discount: String(Math.max(0, baseDiscount + freightDeduct)) };
                 })() : undefined,
                 broker: (importType === 'purchase' && offset === 0 && isMillBillingPackage(profile?.packageType) && purchaseBroker.name.trim()) ? purchaseBroker : undefined,
@@ -870,7 +870,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       const discountSnapAmt = discountType === 'percent'
         ? Math.max(0, purchaseGoodsTotalSnap * (parseFloat(purchaseSupplier.discount) || 0) / 100)
         : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
-      const freightDeductSnap = millOpts.deductFreightFromBill && millBill ? (millBill.freightTotal ?? 0) : 0;
+      const freightDeductSnap = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.freightAdvance ?? 0) : 0;
       setSummary({
         millExtras: millExtrasResult, totalProcessed: total, created: acc.created, updated: acc.updated,
         skipped: acc.skipped, rowErrors: allErrors, productIds: allProductIds, billPhotoAttachFailed,
@@ -1318,62 +1318,6 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     </label>
                   )}
                 </div>
-                {(() => {
-                  const goodsTotal = purchaseGoodsTotal;
-                  const chargesSum = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
-                  const discountAmt = discountType === 'percent'
-                    ? Math.max(0, goodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100)
-                    : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
-                  const freightDeductAmt = millOpts.deductFreightFromBill && millBill ? (millBill.freightTotal ?? 0) : 0;
-                  const billTotal = Math.max(0, goodsTotal - discountAmt - freightDeductAmt + chargesSum);
-                  const paidNow = Math.max(0, parseFloat(purchaseSupplier.paidAmount) || 0);
-                  const balanceDue = Math.max(0, billTotal - paidNow);
-                  const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-                  if (goodsTotal === 0) return null;
-                  return (
-                    <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-500/20">
-                      <h5 className="text-[11px] font-bold uppercase text-slate-500 mb-2">Bill Summary</h5>
-                      <div className="flex flex-col gap-1 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Goods Total</span>
-                          <span className="font-semibold tabular-nums">₹{fmt(goodsTotal)}</span>
-                        </div>
-                        {discountAmt > 0 && (
-                          <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
-                            <span>Less: Discount</span>
-                            <span className="tabular-nums">−₹{fmt(discountAmt)}</span>
-                          </div>
-                        )}
-                        {freightDeductAmt > 0 && (
-                          <div className="flex justify-between text-blue-700 dark:text-blue-400">
-                            <span>Less: Freight (deducted)</span>
-                            <span className="tabular-nums">−₹{fmt(freightDeductAmt)}</span>
-                          </div>
-                        )}
-                        {chargesSum > 0 && (
-                          <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                            <span>Plus: Charges</span>
-                            <span className="tabular-nums">+₹{fmt(chargesSum)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between font-bold border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5">
-                          <span>Bill Total</span>
-                          <span className="tabular-nums">₹{fmt(billTotal)}</span>
-                        </div>
-                        {paidNow > 0 && (
-                          <div className="flex justify-between text-slate-500">
-                            <span>Less: Paid Now</span>
-                            <span className="tabular-nums">−₹{fmt(paidNow)}</span>
-                          </div>
-                        )}
-                        <div className={`flex justify-between font-black border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5 ${balanceDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                          <span>Balance Due to Supplier</span>
-                          <span className="tabular-nums">₹{fmt(balanceDue)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
             )}
 
@@ -1396,6 +1340,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     <MillField label="Total freight ₹"><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => { const total = num(e.target.value); setMillBill(b => b ? { ...b, freightTotal: total, freightBalance: total !== null ? total - (b.freightAdvance ?? 0) : null } : b); }} /></MillField>
                     <MillField label="Paid Freight ₹"><input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => { const adv = num(e.target.value); setMillBill(b => b ? { ...b, freightAdvance: adv, freightBalance: (b.freightTotal ?? 0) - (adv ?? 0) } : b); }} /></MillField>
                     <MillField label="Balance Freight ₹"><input className={inp + ' bg-slate-50 dark:bg-slate-800 cursor-default'} type="number" readOnly value={(millBill.freightTotal ?? 0) - (millBill.freightAdvance ?? 0)} /></MillField>
+                    <MillField label="Hamali ₹"><input className={inp} type="number" min="0" value={millBill.hamali ?? ''} onChange={e => set('hamali', num(e.target.value))} /></MillField>
                     <MillField label="Total bags"><input className={inp} type="number" min="0" value={millBill.totalBags ?? ''} onChange={e => set('totalBags', num(e.target.value))} /></MillField>
                   </div>
                   {(millBill.sellerBank.bankName || millBill.sellerBank.accountNo) && (
@@ -1414,12 +1359,70 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       </div>
                     )}
                     <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.lots} onChange={e => setMillOpts(o => ({ ...o, lots: e.target.checked }))} /> Create Raw Material lot(s) for the milling stock</label>
-                    {(millBill.freightTotal ?? 0) > 0 && (
-                      <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={millOpts.deductFreightFromBill} onChange={e => setMillOpts(o => ({ ...o, deductFreightFromBill: e.target.checked }))} />
-                        Deduct freight (₹{(millBill.freightTotal ?? 0).toLocaleString('en-IN')}) from supplier bill total
-                      </label>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {importType === 'purchase' && (() => {
+              const goodsTotal = purchaseGoodsTotal;
+              const chargesSum = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
+              const discountAmt = discountType === 'percent'
+                ? Math.max(0, goodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100)
+                : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
+              const millFreightPaid = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.freightAdvance ?? 0) : 0;
+              const millHamali = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.hamali ?? 0) : 0;
+              const billTotal = Math.max(0, goodsTotal - discountAmt - millFreightPaid + millHamali + chargesSum);
+              const paidNow = Math.max(0, parseFloat(purchaseSupplier.paidAmount) || 0);
+              const balanceDue = Math.max(0, billTotal - paidNow);
+              const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+              if (goodsTotal === 0) return null;
+              return (
+                <div className="mb-5 p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Bill Summary</h4>
+                  <div className="flex flex-col gap-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Goods Total</span>
+                      <span className="font-semibold tabular-nums">₹{fmt(goodsTotal)}</span>
+                    </div>
+                    {discountAmt > 0 && (
+                      <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                        <span>Less: Discount</span>
+                        <span className="tabular-nums">−₹{fmt(discountAmt)}</span>
+                      </div>
                     )}
+                    {millFreightPaid > 0 && (
+                      <div className="flex justify-between text-blue-700 dark:text-blue-400">
+                        <span>Less: Paid Freight</span>
+                        <span className="tabular-nums">−₹{fmt(millFreightPaid)}</span>
+                      </div>
+                    )}
+                    {millHamali > 0 && (
+                      <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                        <span>Plus: Hamali</span>
+                        <span className="tabular-nums">+₹{fmt(millHamali)}</span>
+                      </div>
+                    )}
+                    {chargesSum > 0 && (
+                      <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                        <span>Plus: Charges</span>
+                        <span className="tabular-nums">+₹{fmt(chargesSum)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5">
+                      <span>Bill Total</span>
+                      <span className="tabular-nums">₹{fmt(billTotal)}</span>
+                    </div>
+                    {paidNow > 0 && (
+                      <div className="flex justify-between text-slate-500">
+                        <span>Less: Paid Now</span>
+                        <span className="tabular-nums">−₹{fmt(paidNow)}</span>
+                      </div>
+                    )}
+                    <div className={`flex justify-between font-black border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5 ${balanceDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      <span>Balance Due to Supplier</span>
+                      <span className="tabular-nums">₹{fmt(balanceDue)}</span>
+                    </div>
                   </div>
                 </div>
               );
