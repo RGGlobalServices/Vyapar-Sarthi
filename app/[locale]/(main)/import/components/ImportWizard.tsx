@@ -12,6 +12,7 @@ import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { EMPTY_MILL_BILL, type MillBill } from '@/lib/millBill';
 import { CHARGE_COLUMNS, getImportTemplate, applyTemplate, getAddableColumns } from '@/lib/importTemplates';
 import { printLabelSheet } from '@/lib/printLabels';
+import DiscountInput from '@/components/DiscountInput';
 
 type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' | 'sales' | 'ledger';
 type Step = 'upload' | 'preview' | 'importing' | 'done';
@@ -67,7 +68,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     name: '', mobile: '', gst: '', address: '',
     creditDays: '', creditLimit: '', paidAmount: '', batchNumber: '', discount: '',
   });
-  const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
+  // purchaseSupplier.discount is always the resolved ₹ amount — DiscountInput (₹/% toggle)
+  // converts a typed percentage to rupees itself, so nothing downstream needs to know which
+  // unit the user typed in.
   // Bill-level charges read from the bill (hamali, freight, loading …) — editable here, stored on the purchase, never as products.
   const [purchaseBroker, setPurchaseBroker] = useState({ name: '', commission: '' });
   const [purchaseCharges, setPurchaseCharges] = useState<{ name: string; amount: string }[]>([]);
@@ -416,7 +419,6 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               }, 0);
               const impliedDiscount = Math.round(Math.max(0, grossTotal - Number(data.grandTotal)) * 100) / 100;
               if (impliedDiscount > 0.01) {
-                setDiscountType('amount');
                 setPurchaseSupplier(prev => ({ ...prev, discount: prev.discount ? prev.discount : String(impliedDiscount) }));
               }
             }
@@ -774,9 +776,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 // first batch of a purchase import so the server doesn't re-apply
                 // enrichment / re-increment balance on every subsequent chunk.
                 supplier: (importType === 'purchase' && offset === 0) ? (() => {
-                  const baseDiscount = discountType === 'percent'
-                    ? purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100
-                    : (parseFloat(purchaseSupplier.discount) || 0);
+                  const baseDiscount = Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
                   const freightDeduct = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
                   return { ...purchaseSupplier, discount: String(Math.max(0, baseDiscount + freightDeduct)) };
                 })() : undefined,
@@ -887,9 +887,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
       const purchaseGoodsTotalSnap = purchaseGoodsTotal;
       const chargesSnap = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
-      const discountSnapAmt = discountType === 'percent'
-        ? Math.max(0, purchaseGoodsTotalSnap * (parseFloat(purchaseSupplier.discount) || 0) / 100)
-        : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
+      const discountSnapAmt = Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
       const freightDeductSnap = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
       setSummary({
         millExtras: millExtrasResult, totalProcessed: total, created: acc.created, updated: acc.updated,
@@ -1309,23 +1307,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   </label>
                   <label className="block">
                     <span className="text-[11px] font-bold uppercase text-slate-500">{t('billDiscountLabel')} <span className="normal-case text-slate-400 font-normal">({t('brokerOptional')})</span></span>
-                    <div className="mt-1 flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500">
-                      <input type="number" min="0" step="0.01" value={purchaseSupplier.discount} onChange={e => setPurchaseSupplier(s => ({ ...s, discount: e.target.value }))}
-                        className="flex-1 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none min-w-0" placeholder="0" />
-                      <div className="flex border-l border-slate-300 dark:border-slate-700 shrink-0">
-                        {(['amount', 'percent'] as const).map(m => (
-                          <button key={m} type="button" onClick={() => setDiscountType(m)}
-                            className={`h-full px-3 text-sm font-bold transition-colors ${discountType === m ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
-                            {m === 'amount' ? '₹' : '%'}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="mt-1">
+                      <DiscountInput
+                        subtotal={purchaseGoodsTotal}
+                        discount={parseFloat(purchaseSupplier.discount) || 0}
+                        setDiscount={(v: number) => setPurchaseSupplier(s => ({ ...s, discount: String(v) }))}
+                      />
                     </div>
-                    <span className="block text-[10px] text-slate-400 mt-1">
-                      {discountType === 'percent' && purchaseGoodsTotal > 0 && purchaseSupplier.discount
-                        ? t('discountCalc', { amount: (purchaseGoodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) })
-                        : t('discountHint')}
-                    </span>
+                    <span className="block text-[10px] text-slate-400 mt-1">{t('discountHint')}</span>
                   </label>
                   {isMillBillingPackage(profile?.packageType) && (
                     <label className="block sm:col-span-2">
@@ -1400,9 +1389,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             {importType === 'purchase' && (() => {
               const goodsTotal = purchaseGoodsTotal;
               const chargesSum = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
-              const discountAmt = discountType === 'percent'
-                ? Math.max(0, goodsTotal * (parseFloat(purchaseSupplier.discount) || 0) / 100)
-                : Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
+              const discountAmt = Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
               const millFreightPaid = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
               const millHamaliAmt = isMillBillingPackage(profile?.packageType) && millBill ? (millBill.hamali ?? 0) : 0;
               const millHamali = millOpts.hamaliMode === 'add' ? millHamaliAmt : -millHamaliAmt;
