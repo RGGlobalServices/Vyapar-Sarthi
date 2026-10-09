@@ -1309,12 +1309,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   </label>
                   {isMillBillingPackage(profile?.packageType) && (
                     <label className="block sm:col-span-2">
-                      <span className="text-[11px] font-bold uppercase text-slate-500">Broker <span className="normal-case text-slate-400 font-normal">(optional)</span></span>
+                      <span className="text-[11px] font-bold uppercase text-slate-500">{t('brokerLabel')} <span className="normal-case text-slate-400 font-normal">{t('brokerOptional')}</span></span>
                       <div className="mt-1 grid grid-cols-[1fr_8rem] gap-2">
-                        <input value={purchaseBroker.name} onChange={e => { setPurchaseBroker(b => ({ ...b, name: e.target.value })); if (millBill) setMillBill(b => b ? { ...b, broker: e.target.value } : b); }} placeholder="Broker name" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
-                        <input type="number" min="0" step="0.01" value={purchaseBroker.commission} onChange={e => setPurchaseBroker(b => ({ ...b, commission: e.target.value }))} placeholder="Commission ₹" className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
+                        <input value={purchaseBroker.name} onChange={e => { setPurchaseBroker(b => ({ ...b, name: e.target.value })); if (millBill) setMillBill(b => b ? { ...b, broker: e.target.value } : b); }} placeholder={t('brokerNamePlaceholder')} className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0" />
+                        <input type="number" min="0" step="0.01" value={purchaseBroker.commission} onChange={e => setPurchaseBroker(b => ({ ...b, commission: e.target.value }))} placeholder={t('brokerCommissionPlaceholder')} className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm" />
                       </div>
-                      <span className="block text-[10px] text-slate-400 mt-1">Commission is owed to the broker — not added to what the supplier is owed.</span>
+                      <span className="block text-[10px] text-slate-400 mt-1">{t('brokerHint')}</span>
                     </label>
                   )}
                 </div>
@@ -1328,50 +1328,50 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               const inp = 'h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm min-w-0 w-full';
               return (
                 <div className="mb-5 p-5 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-500/5" data-testid="import-mill-bill">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Mill purchase details — truck, driver &amp; freight</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 mb-3">Read from the bill. Handwriting can be misread — please check names, mobile numbers and amounts before importing. Empty fields are simply skipped.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t('millSectionTitle')}</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 mb-3">{t('millSectionHint')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <MillField label="Truck number"><input className={inp} value={millBill.vehicleNumber} onChange={e => set('vehicleNumber', e.target.value.toUpperCase())} /></MillField>
-                    <MillField label="Driver name"><input className={inp} value={millBill.driverName} onChange={e => set('driverName', e.target.value)} /></MillField>
-                    <MillField label="Driver mobile"><input className={inp} inputMode="numeric" value={millBill.driverMobile} onChange={e => set('driverMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
-                    <MillField label="Truck owner"><input className={inp} value={millBill.truckOwnerName} onChange={e => set('truckOwnerName', e.target.value)} /></MillField>
-                    <MillField label="Owner mobile"><input className={inp} inputMode="numeric" value={millBill.truckOwnerMobile} onChange={e => set('truckOwnerMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
-                    <MillField label="Transport company"><input className={inp} value={millBill.transportCompany} onChange={e => set('transportCompany', e.target.value)} /></MillField>
-                    <MillField label="Total freight ₹"><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => { const total = num(e.target.value); setMillBill(b => b ? { ...b, freightTotal: total, freightBalance: total !== null ? total - (b.freightAdvance ?? 0) : null } : b); }} /></MillField>
-                    <MillField label="Paid Freight ₹">
+                    <MillField label={t('truckNumber')}><input className={inp} value={millBill.vehicleNumber} onChange={e => set('vehicleNumber', e.target.value.toUpperCase())} /></MillField>
+                    <MillField label={t('driverName')}><input className={inp} value={millBill.driverName} onChange={e => set('driverName', e.target.value)} /></MillField>
+                    <MillField label={t('driverMobile')}><input className={inp} inputMode="numeric" value={millBill.driverMobile} onChange={e => set('driverMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
+                    <MillField label={t('truckOwner')}><input className={inp} value={millBill.truckOwnerName} onChange={e => set('truckOwnerName', e.target.value)} /></MillField>
+                    <MillField label={t('ownerMobile')}><input className={inp} inputMode="numeric" value={millBill.truckOwnerMobile} onChange={e => set('truckOwnerMobile', e.target.value.replace(/\D/g, '').slice(0, 10))} /></MillField>
+                    <MillField label={t('transportCompany')}><input className={inp} value={millBill.transportCompany} onChange={e => set('transportCompany', e.target.value)} /></MillField>
+                    <MillField label={t('totalFreight')}><input className={inp} type="number" min="0" value={millBill.freightTotal ?? ''} onChange={e => { const total = num(e.target.value); setMillBill(b => b ? { ...b, freightTotal: total, freightBalance: total !== null ? total - (b.freightAdvance ?? 0) : null } : b); }} /></MillField>
+                    <MillField label={t('paidFreight')}>
                       <div className="flex gap-1">
                         <input className={inp} type="number" min="0" value={millBill.freightAdvance ?? ''} onChange={e => { const adv = num(e.target.value); setMillBill(b => b ? { ...b, freightAdvance: adv, freightBalance: (b.freightTotal ?? 0) - (adv ?? 0) } : b); }} />
-                        <button type="button" onClick={() => setMillOpts(o => ({ ...o, includeFreightDeduct: !o.includeFreightDeduct }))} title={millOpts.includeFreightDeduct ? 'Deducting from bill total — click to skip' : 'Not in bill total — click to deduct'} className={`h-9 px-2 text-[11px] font-bold rounded-lg border shrink-0 transition-colors ${millOpts.includeFreightDeduct ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-300 dark:border-slate-700'}`}>{millOpts.includeFreightDeduct ? '−Bill' : 'Skip'}</button>
+                        <button type="button" onClick={() => setMillOpts(o => ({ ...o, includeFreightDeduct: !o.includeFreightDeduct }))} title={millOpts.includeFreightDeduct ? t('freightDeductTitle') : t('freightSkipTitle')} className={`h-9 px-2 text-[11px] font-bold rounded-lg border shrink-0 transition-colors ${millOpts.includeFreightDeduct ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-300 dark:border-slate-700'}`}>{millOpts.includeFreightDeduct ? t('freightDeductBtn') : t('freightSkipBtn')}</button>
                       </div>
                     </MillField>
-                    <MillField label="Balance Freight ₹"><input className={inp + ' bg-slate-50 dark:bg-slate-800 cursor-default'} type="number" readOnly value={(millBill.freightTotal ?? 0) - (millBill.freightAdvance ?? 0)} /></MillField>
-                    <MillField label="Hamali ₹">
+                    <MillField label={t('balanceFreight')}><input className={inp + ' bg-slate-50 dark:bg-slate-800 cursor-default'} type="number" readOnly value={(millBill.freightTotal ?? 0) - (millBill.freightAdvance ?? 0)} /></MillField>
+                    <MillField label={t('hamali')}>
                       <div className="flex gap-1">
                         <input className={inp} type="number" min="0" value={millBill.hamali ?? ''} onChange={e => set('hamali', num(e.target.value))} />
                         <div className="flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden shrink-0">
-                          <button type="button" title="Add Hamali to bill total" onClick={() => setMillOpts(o => ({ ...o, hamaliMode: 'add' }))} className={`h-9 px-2.5 text-sm font-bold transition-colors ${millOpts.hamaliMode === 'add' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>+</button>
-                          <button type="button" title="Subtract Hamali from bill total" onClick={() => setMillOpts(o => ({ ...o, hamaliMode: 'subtract' }))} className={`h-9 px-2.5 text-sm font-bold border-l border-slate-300 dark:border-slate-700 transition-colors ${millOpts.hamaliMode === 'subtract' ? 'bg-red-500 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>−</button>
+                          <button type="button" title={t('hamaliAddTitle')} onClick={() => setMillOpts(o => ({ ...o, hamaliMode: 'add' }))} className={`h-9 px-2.5 text-sm font-bold transition-colors ${millOpts.hamaliMode === 'add' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>+</button>
+                          <button type="button" title={t('hamaliSubtractTitle')} onClick={() => setMillOpts(o => ({ ...o, hamaliMode: 'subtract' }))} className={`h-9 px-2.5 text-sm font-bold border-l border-slate-300 dark:border-slate-700 transition-colors ${millOpts.hamaliMode === 'subtract' ? 'bg-red-500 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>−</button>
                         </div>
                       </div>
                     </MillField>
-                    <MillField label="Total bags"><input className={inp} type="number" min="0" value={millBill.totalBags ?? ''} onChange={e => set('totalBags', num(e.target.value))} /></MillField>
+                    <MillField label={t('totalBags')}><input className={inp} type="number" min="0" value={millBill.totalBags ?? ''} onChange={e => set('totalBags', num(e.target.value))} /></MillField>
                   </div>
                   {(millBill.sellerBank.bankName || millBill.sellerBank.accountNo) && (
-                    <p className="mt-2 text-[11px] text-slate-500">Seller bank on the bill: {[millBill.sellerBank.bankName, millBill.sellerBank.branch, millBill.sellerBank.accountNo, millBill.sellerBank.ifsc].filter(Boolean).join(' · ')}</p>
+                    <p className="mt-2 text-[11px] text-slate-500">{t('sellerBankLabel')}: {[millBill.sellerBank.bankName, millBill.sellerBank.branch, millBill.sellerBank.accountNo, millBill.sellerBank.ifsc].filter(Boolean).join(' · ')}</p>
                   )}
                   <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-500/20 space-y-1.5 text-sm">
-                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.gateEntry} onChange={e => setMillOpts(o => ({ ...o, gateEntry: e.target.checked }))} /> Create inward Gate Entry (truck, driver)</label>
-                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.freight} onChange={e => setMillOpts(o => ({ ...o, freight: e.target.checked }))} /> Record freight in the transporter's account</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.gateEntry} onChange={e => setMillOpts(o => ({ ...o, gateEntry: e.target.checked }))} /> {t('gateEntryCheckbox')}</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.freight} onChange={e => setMillOpts(o => ({ ...o, freight: e.target.checked }))} /> {t('freightCheckbox')}</label>
                     {millOpts.freight && (millBill.freightAdvance ?? 0) > 0 && (
-                      <div className="pl-6 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Advance was paid by
+                      <div className="pl-6 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">{t('advancePaidByLabel')}
                         <select className="h-8 px-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900" value={millOpts.advancePaidBy} onChange={e => setMillOpts(o => ({ ...o, advancePaidBy: e.target.value as any }))}>
-                          <option value="seller">the seller (no cash out of the mill)</option>
-                          <option value="mill">the mill (cash)</option>
-                          <option value="skip">don't record the advance</option>
+                          <option value="seller">{t('advanceBySeller')}</option>
+                          <option value="mill">{t('advanceByMill')}</option>
+                          <option value="skip">{t('advanceSkip')}</option>
                         </select>
                       </div>
                     )}
-                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.lots} onChange={e => setMillOpts(o => ({ ...o, lots: e.target.checked }))} /> Create Raw Material lot(s) for the milling stock</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={millOpts.lots} onChange={e => setMillOpts(o => ({ ...o, lots: e.target.checked }))} /> {t('lotsCheckbox')}</label>
                   </div>
                 </div>
               );
@@ -1393,48 +1393,48 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               if (goodsTotal === 0) return null;
               return (
                 <div className="mb-5 p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Bill Summary</h4>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{t('billSummaryTitle')}</h4>
                   <div className="flex flex-col gap-1 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Goods Total</span>
+                      <span className="text-slate-500">{t('goodsTotal')}</span>
                       <span className="font-semibold tabular-nums">₹{fmt(goodsTotal)}</span>
                     </div>
                     {discountAmt > 0 && (
                       <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
-                        <span>Less: Discount</span>
+                        <span>{t('lessDiscount')}</span>
                         <span className="tabular-nums">−₹{fmt(discountAmt)}</span>
                       </div>
                     )}
                     {millFreightPaid > 0 && (
                       <div className="flex justify-between text-blue-700 dark:text-blue-400">
-                        <span>Less: Paid Freight</span>
+                        <span>{t('lessPaidFreight')}</span>
                         <span className="tabular-nums">−₹{fmt(millFreightPaid)}</span>
                       </div>
                     )}
                     {millHamaliAmt > 0 && (
                       <div className={`flex justify-between ${millOpts.hamaliMode === 'add' ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400'}`}>
-                        <span>{millOpts.hamaliMode === 'add' ? 'Plus' : 'Less'}: Hamali</span>
+                        <span>{millOpts.hamaliMode === 'add' ? t('plusHamali') : t('lessHamali')}</span>
                         <span className="tabular-nums">{millOpts.hamaliMode === 'add' ? '+' : '−'}₹{fmt(millHamaliAmt)}</span>
                       </div>
                     )}
                     {chargesSum > 0 && (
                       <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                        <span>Plus: Charges</span>
+                        <span>{t('plusCharges')}</span>
                         <span className="tabular-nums">+₹{fmt(chargesSum)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5">
-                      <span>Bill Total</span>
+                      <span>{t('billTotal')}</span>
                       <span className="tabular-nums">₹{fmt(billTotal)}</span>
                     </div>
                     {paidNow > 0 && (
                       <div className="flex justify-between text-slate-500">
-                        <span>Less: Paid Now</span>
+                        <span>{t('lessPaidNow')}</span>
                         <span className="tabular-nums">−₹{fmt(paidNow)}</span>
                       </div>
                     )}
                     <div className={`flex justify-between font-black border-t border-slate-200 dark:border-slate-700 pt-1 mt-0.5 ${balanceDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                      <span>Balance Due to Supplier</span>
+                      <span>{t('balanceDue')}</span>
                       <span className="tabular-nums">₹{fmt(balanceDue)}</span>
                     </div>
                   </div>
