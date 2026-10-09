@@ -292,8 +292,8 @@ export async function downloadDispatchChallan({ sale, customer, shopInfo }: Disp
       item.variant ? `${item.name} (${item.variant})` : item.name,
       item.unit || 'Unit',
       item.quantity.toLocaleString('en-IN'),
-      { content: fmtInr(item.price), styles: { halign: 'right' } },
-      { content: fmtInr(item.quantity * item.price), styles: { halign: 'right' } },
+      { content: fmtInr(item.price), styles: { halign: 'right' as const } },
+      { content: fmtInr(item.quantity * item.price), styles: { halign: 'right' as const } },
     ]);
     autoTable(doc, {
       startY: y,

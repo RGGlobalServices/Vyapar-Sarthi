@@ -21,7 +21,7 @@ export const GET = handle(async (req) => {
   if (!brokerId) throw new ApiError(400, 'brokerId is required');
 
   const broker = await prisma.customer.findFirst({ where: { id: brokerId, shopId: shop.id, customerType: 'broker' }, select: { name: true } });
-  if (!broker) throw new ApiError(404, 'Broker not found for this shop');
+  if (!broker || !broker.name) throw new ApiError(404, 'Broker not found for this shop');
 
   const bills = await getBrokerBills(prisma, shop.id, broker.name);
   return json({ bills });
