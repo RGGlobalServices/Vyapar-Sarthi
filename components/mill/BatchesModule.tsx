@@ -674,6 +674,7 @@ function BatchDetail({ mode, batch, products, onClose, onChanged, onBatchUpdated
   onBatchUpdated?: (updated: Batch) => void;
 }) {
   const t = useTranslations('Mill');
+  const isBadaUdyog = useBusinessStore(s => s.profile.packageType) === 'badaudyog';
   const [saving, setSaving] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
