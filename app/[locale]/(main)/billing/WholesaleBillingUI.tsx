@@ -2427,8 +2427,8 @@ export default function WholesaleBillingUI() {
         </div>
       )}
 
-      {/* RIGHT PANEL: Unified Summary Card (non-mill only) */}
-      {!isMill && <div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
+      {/* RIGHT PANEL: non-mill only */}
+      {!isMill ? (<div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col flex-1 md:min-h-0 md:overflow-hidden">
 
           {/* Pricing Mode */}
@@ -2585,7 +2585,7 @@ export default function WholesaleBillingUI() {
             </button>
           </div>
         </div>
-      </div>}
+      </div>) : null}
 
       {/* Manual Bill Upload */}
       {showManualBillUpload && profile?.id && (
