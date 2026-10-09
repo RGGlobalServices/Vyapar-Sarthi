@@ -718,8 +718,12 @@ function CommissionEntryModal({ brokerId, brokerName, type, balance = 0, onClose
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (amountVal <= 0 && discountVal <= 0) { setError('Enter payment amount or discount.'); return; }
-    if (amountVal + discountVal > balance + 0.005) { setError(`Cannot exceed outstanding ${rupee(balance)}.`); return; }
+    if (type === 'payment') {
+      if (amountVal <= 0 && discountVal <= 0) { setError('Enter payment amount or discount.'); return; }
+      if (amountVal + discountVal > balance + 0.005) { setError(`Cannot exceed outstanding ${rupee(balance)}.`); return; }
+    } else {
+      if (amountVal <= 0) { setError('Enter commission amount.'); return; }
+    }
     setSaving(true); setError('');
     try {
       await api.post('/management/commission', {
