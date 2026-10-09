@@ -401,6 +401,26 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             // supplier charges added to what the supplier is owed. Every other package keeps all charges exactly as before.
             if (importType === 'purchase') setPurchaseCharges((Array.isArray(data.charges) ? data.charges : []).filter((ch: any) => !(isMillBillingPackage(profile?.packageType) && MILL_OWN_COST.test(String(ch?.name || '')))).map((c: any) => ({ name: String(c.name || ''), amount: String(c.amount ?? '') })));
 
+            // The item rows carry the per-unit RATE exactly as printed (gross, before any discount) — see the
+            // analyze prompt. Goods Total below is qty × that rate, so it comes out HIGHER than the bill's
+            // actual final amount whenever the bill applied a discount (per-item, bill-level, or both — the
+            // printed rate column doesn't distinguish them). Rather than ask the AI to do that subtraction
+            // itself (unreliable across many lines), it separately reads the one printed "grand total" figure;
+            // the gap between the two is the real discount, which belongs in this form's own Bill Discount
+            // field so Bill Total lands on the number the supplier actually invoiced.
+            if (importType === 'purchase' && Array.isArray(data.items) && data.items.length > 0 && Number.isFinite(Number(data.grandTotal)) && Number(data.grandTotal) > 0) {
+              const grossTotal = data.items.reduce((sum: number, it: any) => {
+                const qty = parseFloat(String(it.quantity ?? 0)) || 0;
+                const rate = parseFloat(String(it.unitCost ?? 0)) || 0;
+                return sum + qty * rate;
+              }, 0);
+              const impliedDiscount = Math.round(Math.max(0, grossTotal - Number(data.grandTotal)) * 100) / 100;
+              if (impliedDiscount > 0.01) {
+                setDiscountType('amount');
+                setPurchaseSupplier(prev => ({ ...prev, discount: prev.discount ? prev.discount : String(impliedDiscount) }));
+              }
+            }
+
             if (data.items && data.items.length > 0) {
               const aiHeaders = Object.keys(data.items[0]);
               await loadRows(data.items, aiHeaders);

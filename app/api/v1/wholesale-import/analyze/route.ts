@@ -265,6 +265,7 @@ export async function POST(req: NextRequest) {
         'HSN codes are 4, 6 or 8 digits and are a SEPARATE column from quantity — never merge them. If you see "6203" in the HSN column and "18" in the Qty column, output hsnCode "6203" and quantity 18, never "620318".',
         'Also output discount and taxableAmount when the invoice shows them; they are used to cross-check each row.',
         'ALSO output a top-level "charges" array (next to "items") for every bill-level extra charge printed on the bill that is NOT a goods row, NOT GST/tax, NOT discount and NOT round-off — for example Hamali, Freight / Transport, Loading, Unloading, Packing, Weighment / Weighbridge, Commission, Mandi fee, Other charges. Each entry is { "name": the label as printed, "amount": the number printed }. Use [] when there are none. Never put these charges inside "items".',
+        'ALSO output a top-level "grandTotal": the single FINAL amount printed at the bottom of the bill that the supplier is actually owed for the whole invoice — look for a label like "Grand Total", "Total Amount", "Net Amount", "Amount Payable", "बिल रक्कम" or similar, printed AFTER every item discount, the bill-level discount (if any) and round-off have already been applied. Copy that printed number exactly; never compute it yourself from the line items. Leave it null if no such final total is printed anywhere on the page — never guess or estimate it.',
       ].join(' ');
       if (millPurchase) {
         specificInstructions += ' ' + [
@@ -733,6 +734,10 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         // each row (not just the top-level of the analyze response).
         for (const k of ['supplier', 'invoiceNumber', 'invoiceDate', 'warehouse']) {
           if (!header[k] && r?.[k]) header[k] = r[k];
+        }
+        if (header.grandTotal === undefined) {
+          const gt = typeof r?.grandTotal === 'number' ? r.grandTotal : parseFloat(String(r?.grandTotal ?? ''));
+          if (Number.isFinite(gt) && gt > 0) header.grandTotal = gt;
         }
         if (millPurchase && r?.millBill) millBills.push(normalizeMillBill(r.millBill));
         if (Array.isArray(r?.charges)) {
