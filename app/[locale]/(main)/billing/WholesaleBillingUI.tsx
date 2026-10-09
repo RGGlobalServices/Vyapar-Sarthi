@@ -1745,9 +1745,114 @@ export default function WholesaleBillingUI() {
 
 
   return (
-    <div className="min-h-[calc(100vh-80px)] md:h-[calc(100vh-80px)] flex flex-col md:flex-row gap-3 overflow-y-auto md:overflow-hidden">
-      {/* LEFT PANEL: Search & Cart Table */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 md:overflow-hidden">
+    <div className={cn("min-h-[calc(100vh-80px)] gap-3 overflow-y-auto", isMill ? "flex flex-col" : "md:h-[calc(100vh-80px)] flex flex-col md:flex-row md:overflow-hidden")}>
+
+      {/* MILL TOP HEADER: shop info + Bill To party + invoice type */}
+      {isMill && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+          {/* Shop info row + Invoice type toggle */}
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="font-bold text-slate-900 dark:text-white text-base leading-tight">{profile?.shopName}</div>
+              {profile?.gst && <div className="text-[11px] text-slate-500 mt-0.5">GSTIN: {profile.gst}</div>}
+              {profile?.address && <div className="text-[11px] text-slate-500">{profile.address}</div>}
+              {profile?.mobile && <div className="text-[11px] text-slate-500">Tel: {profile.mobile}</div>}
+            </div>
+            <div className="flex flex-col gap-2 items-end shrink-0">
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+                <button type="button" onClick={() => setBillType('non_gst')} aria-pressed={!isGstBill}
+                  className={cn('px-3 py-1.5 rounded-md text-xs font-semibold transition-all', !isGstBill ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400')}>
+                  {t('nonGstInvoice') || 'Non-GST'}
+                </button>
+                <button type="button" onClick={() => { if (!dupRestrictionActive) setBillType('gst'); }} aria-pressed={isGstBill}
+                  disabled={dupRestrictionActive}
+                  title={dupRestrictionActive ? tMill('duplicateLocked') : undefined}
+                  className={cn('px-3 py-1.5 rounded-md text-xs font-semibold transition-all', isGstBill ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400')}>
+                  {t('gstInvoice') || 'GST Invoice'}
+                </button>
+              </div>
+              {isGstBill && (
+                <label className="flex items-center gap-2 text-[11px] text-slate-500 cursor-pointer select-none">
+                  <input type="checkbox" checked={gstInterState} onChange={e => setGstInterState(e.target.checked)} className="accent-slate-600" />
+                  {t('interStateIgst') || 'Inter-state (IGST)'}
+                </label>
+              )}
+            </div>
+          </div>
+          {/* Bill To (Party) selector */}
+          <div className="px-4 py-3 relative">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                <User size={12} /> {t('party') || 'Bill To (Party)'}
+                <span className="text-red-500">*</span>
+              </label>
+              {!selectedParty && (
+                <button type="button" onClick={() => setAddPartyFor(partySearch.trim())}
+                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700">+ Add new party</button>
+              )}
+            </div>
+            {selectedParty ? (
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 text-sm">
+                    <Building2 size={13} className="text-slate-400 shrink-0" />
+                    <span className="truncate">{selectedParty.name}</span>
+                  </div>
+                  {selectedParty.gst && <div className="text-[11px] text-slate-500 mt-0.5">GSTIN: {selectedParty.gst}</div>}
+                  {selectedParty.address && <div className="text-[11px] text-slate-500 mt-0.5">{selectedParty.address}</div>}
+                  {!!(selectedParty.totalDue) && (
+                    <div className="text-[11px] text-orange-500 font-semibold mt-1">{t('outstanding') || 'Outstanding'}: ₹{selectedParty.totalDue.toLocaleString()}</div>
+                  )}
+                </div>
+                <button type="button" onClick={() => { setSelectedParty(null); setPartyCreditHealth(null); }}
+                  className="text-slate-400 hover:text-red-500 shrink-0"><X size={16} /></button>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-all"
+                    value={partySearch}
+                    onChange={e => { setPartySearch(e.target.value); setShowPartyDropdown(true); }}
+                    onFocus={() => setShowPartyDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowPartyDropdown(false), 200)}
+                    placeholder={t('searchParty') || 'Search party by name or mobile'} />
+                </div>
+                {showPartyDropdown && (
+                  <div className="absolute z-20 left-4 right-4 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                    {parties
+                      .filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase()) || (p.mobile || '').includes(partySearch))
+                      .map(p => (
+                        <button key={p.id} type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0"
+                          onMouseDown={() => selectParty(p)}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
+                            {!!(p.totalDue || 0) && <span className="text-[10px] text-orange-500 font-semibold">₹{(p.totalDue || 0).toLocaleString()} due</span>}
+                          </div>
+                          <div className="text-xs text-slate-500">{p.mobile || 'No mobile'}{p.gst ? ` • ${p.gst}` : ''}</div>
+                        </button>
+                      ))}
+                    {parties.filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase())).length === 0 && (
+                      <div className="px-3 py-3 text-xs text-slate-500 text-center">
+                        {t('noPartiesFound') || 'No matching party found.'}
+                        <button type="button" onMouseDown={e => { e.preventDefault(); setAddPartyFor(partySearch.trim()); }}
+                          className="block mx-auto mt-1.5 font-bold text-emerald-600">+ Add "{partySearch.trim() || 'new party'}"</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {/* Customer bill details (name/address override) */}
+          {selectedParty && <BillPartyDetailsField value={billParty} onChange={setBillParty} disabled={isGenerating} />}
+        </div>
+      )}
+
+      {/* LEFT / MAIN PANEL: Search & Cart Table */}
+      <div className={cn("flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800", isMill ? "" : "flex-1 md:overflow-hidden")}>
         
         {/* Top Bar: Search & Scanner */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap gap-3 items-center">
@@ -2279,8 +2384,51 @@ export default function WholesaleBillingUI() {
         </div>
       </div>
 
-      {/* RIGHT PANEL: Unified Summary Card */}
-      <div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
+      {/* MILL BOTTOM SECTION: broker + dispatch + charges + totals + checkout */}
+      {isMill && (
+        <div className="space-y-3">
+          {/* Broker + Dispatch side by side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
+            <DispatchDetailsField value={dispatch} onChange={setDispatch} disabled={isGenerating} />
+          </div>
+          {/* Commercial Charges */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+            <MillCommercialCharges
+              values={millCharges}
+              onChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
+              error={millChargesParsed.error}
+              disabled={isGenerating}
+            />
+          </div>
+          {/* Totals + Checkout */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 px-5 py-4">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{tMill('gstAddedOnTop')}</p>
+            {dupRestrictionActive && (
+              <p data-testid="mill-dup-note" className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-2 py-1.5 mb-3">{tMill('duplicateLocked')}</p>
+            )}
+            <MillTotalsSummary
+              calc={millCalc}
+              itemsCount={items.length}
+              collected={collectedAmount}
+              balance={grandRemaining}
+              discountSlot={<DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />}
+            />
+            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+              <button
+                disabled={items.length === 0}
+                onClick={() => setShowCheckout(true)}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 disabled:opacity-40 text-white rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                {t('checkout') || 'Checkout'}
+                <span className="text-[10px] bg-white/20 dark:bg-slate-900/20 px-1.5 py-0.5 rounded font-mono">F2</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RIGHT PANEL: Unified Summary Card (non-mill only) */}
+      {!isMill && <div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col flex-1 md:min-h-0 md:overflow-hidden">
 
           {/* Pricing Mode */}
@@ -2437,7 +2585,7 @@ export default function WholesaleBillingUI() {
             </button>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Manual Bill Upload */}
       {showManualBillUpload && profile?.id && (
