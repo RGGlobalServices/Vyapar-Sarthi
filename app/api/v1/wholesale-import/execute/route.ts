@@ -728,6 +728,21 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // Re-importing the same bill (same supplier + invoice number) must never silently run twice —
+        // it would add the goods total to the supplier's balance again while the stock-merge logic
+        // below (keyed on product name/barcode) quietly no-ops on most lines, so the money owed drifts
+        // upward with no matching stock increase. Block it outright, the same way the Sales import
+        // already skips a bill it has seen before.
+        const existingInvoice = await prisma.purchaseInvoice.findFirst({
+          where: { shopId, supplierId: dbSupplier.id, invoiceNumber: { equals: String(invoiceNumber), mode: 'insensitive' } },
+          select: { id: true },
+        });
+        if (existingInvoice) {
+          skipped++;
+          rowErrors.push(`Bill ${invoiceNumber} for ${supplierName} was already imported earlier — skipped so the supplier balance and stock aren't counted twice. Delete the earlier purchase first if you need to re-import it.`);
+          break;
+        }
+
         // Bada Udyog weighbridge/kanta-chitthi capture — bill-level, read once from the first row (same convention as invoiceNumber/date).
         const tareWeightRaw = getVal(firstRow, ['tareweight', 'tareweightkg', 'tare']);
         const grossWeightRaw = getVal(firstRow, ['grossweight', 'grossweightkg', 'totalweight', 'total']);
