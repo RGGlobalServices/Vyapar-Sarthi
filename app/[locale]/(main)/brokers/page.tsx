@@ -452,76 +452,81 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header with gradient identity banner */}
-        <div className="relative shrink-0 bg-gradient-to-br from-rose-600 via-rose-500 to-orange-500 px-5 pt-4 pb-6 text-white overflow-hidden">
-          <div className="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-white/10" />
-          <div className="absolute -right-2 bottom-0 w-20 h-20 rounded-full bg-white/10" />
+        <div className="relative shrink-0 bg-gradient-to-br from-rose-600 via-rose-500 to-orange-500 px-7 pt-6 pb-10 text-white overflow-hidden">
+          <div className="absolute -right-10 -top-14 w-48 h-48 rounded-full bg-white/10" />
+          <div className="absolute -left-10 -bottom-16 w-40 h-40 rounded-full bg-white/5" />
+          <div className="absolute right-10 bottom-0 w-24 h-24 rounded-full bg-white/10" />
           <div className="relative flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-white/80 flex items-center gap-1.5">
-              <Handshake size={13} /> {t('profileTitle')}
+            <span className="text-xs font-bold uppercase tracking-wider text-white/80 flex items-center gap-2">
+              <Handshake size={15} /> {t('profileTitle')}
             </span>
             <div className="flex items-center gap-1">
-              <button onClick={onEdit} title={t('editBroker')} className="p-1.5 rounded-lg hover:bg-white/15 text-white/90">
-                <Pencil size={15} />
+              <button onClick={onEdit} title={t('editBroker')} className="p-2 rounded-lg hover:bg-white/15 text-white/90">
+                <Pencil size={16} />
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting || hasDues}
                 title={hasDues ? t('deleteBlockedDue') : t('deleteBroker')}
-                className={cn('p-1.5 rounded-lg transition-colors', hasDues ? 'text-white/40 cursor-not-allowed' : 'hover:bg-white/15 text-white/90')}
+                className={cn('p-2 rounded-lg transition-colors', hasDues ? 'text-white/40 cursor-not-allowed' : 'hover:bg-white/15 text-white/90')}
               >
-                {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
               </button>
-              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/15 text-white/90">
-                <X size={18} />
+              <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/15 text-white/90">
+                <X size={20} />
               </button>
             </div>
           </div>
-          <div className="relative flex items-center gap-3 mt-3">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0 ring-2 ring-white/30 font-black text-lg">
-              {initials || <User size={22} />}
+          <div className="relative flex items-center gap-4 mt-6">
+            <div className="w-20 h-20 rounded-3xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0 ring-4 ring-white/25 font-black text-2xl shadow-lg">
+              {initials || <User size={30} />}
             </div>
             <div className="min-w-0">
-              <p className="font-black text-xl leading-tight truncate">{broker.name}</p>
+              <p className="font-black text-2xl sm:text-3xl leading-tight truncate">{broker.name}</p>
               {broker.mobile
-                ? <p className="text-sm text-white/85 flex items-center gap-1 mt-0.5"><Phone size={12} /> {broker.mobile}</p>
-                : <p className="text-xs text-white/70 mt-0.5">{t('noMobile')}</p>}
+                ? <p className="text-sm text-white/90 flex items-center gap-1.5 mt-1"><Phone size={13} /> {broker.mobile}</p>
+                : <p className="text-sm text-white/70 mt-1">{t('noMobile')}</p>}
             </div>
           </div>
         </div>
 
-        <div className="p-5 space-y-4 overflow-y-auto -mt-4">
+        <div className="p-6 sm:p-7 space-y-5 overflow-y-auto -mt-7">
           {/* Balance card */}
-          <div className={cn('rounded-xl p-3.5 flex justify-between items-center shadow-sm border',
+          <div className={cn('rounded-2xl p-5 flex justify-between items-center shadow-md border',
             hasDues ? 'bg-white dark:bg-slate-900 border-rose-200 dark:border-rose-500/30' : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30')}>
-            <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Wallet size={13} className={hasDues ? 'text-rose-500' : 'text-emerald-500'} />
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+              <span className={cn('w-8 h-8 rounded-lg flex items-center justify-center', hasDues ? 'bg-rose-50 dark:bg-rose-500/10' : 'bg-emerald-50 dark:bg-emerald-500/10')}>
+                <Wallet size={15} className={hasDues ? 'text-rose-500' : 'text-emerald-500'} />
+              </span>
               {hasDues ? t('pendingDue') : t('settled')}
             </span>
-            <span className={cn('text-xl font-black flex items-center gap-1', hasDues ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-              {hasDues ? <ArrowUpRight size={16} /> : null}
+            <span className={cn('text-2xl sm:text-3xl font-black flex items-center gap-1', hasDues ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+              {hasDues ? <ArrowUpRight size={20} /> : null}
               {rupee(Math.abs(broker.balance))}
             </span>
           </div>
 
           {hasDues && (
-            <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 -mt-2.5">
-              <AlertCircle size={11} /> {t('deleteBlockedHint')}
+            <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1.5 -mt-3">
+              <AlertCircle size={12} /> {t('deleteBlockedHint')}
             </p>
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-3 text-center">
             {[
-              { labelKey: 'orders' as const, value: orderCount, icon: ShoppingBag, accent: 'text-slate-500 dark:text-slate-400' },
-              { labelKey: 'totalCommission' as const, value: rupee(totalCommission), icon: TrendingUp, accent: 'text-rose-500' },
-              { labelKey: 'totalPaid' as const, value: rupee(totalPaid), icon: IndianRupee, accent: 'text-emerald-500' },
-            ].map(({ labelKey, value, icon: Icon, accent }) => (
-              <div key={labelKey} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 p-2.5 flex flex-col items-center gap-1">
-                <Icon size={14} className={accent} />
-                <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{value}</p>
-                <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wide">{t(labelKey)}</p>
+              { labelKey: 'orders' as const, value: orderCount, icon: ShoppingBag, accent: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800' },
+              { labelKey: 'totalCommission' as const, value: rupee(totalCommission), icon: TrendingUp, accent: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-500/10' },
+              { labelKey: 'totalPaid' as const, value: rupee(totalPaid), icon: IndianRupee, accent: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+            ].map(({ labelKey, value, icon: Icon, accent, bg }) => (
+              <div key={labelKey} className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 p-3.5 flex flex-col items-center gap-1.5">
+                <span className={cn('w-9 h-9 rounded-xl flex items-center justify-center', bg)}>
+                  <Icon size={16} className={accent} />
+                </span>
+                <p className="text-base font-black text-slate-900 dark:text-white leading-none mt-0.5">{value}</p>
+                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">{t(labelKey)}</p>
               </div>
             ))}
           </div>
@@ -529,36 +534,36 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
           {/* Bills this broker was tagged on — shown to the broker so HE can tell us the
               commission, independent of whether an amount was ever entered for any of them. */}
           <div>
-            <p className="text-[10px] text-slate-400 uppercase font-bold mb-1.5 flex items-center gap-1">
-              <Receipt size={11} /> {t('brokerBills')} {bills.length > 0 && `(${bills.length})`}
+            <p className="text-[11px] text-slate-400 uppercase font-bold mb-2 flex items-center gap-1.5">
+              <Receipt size={12} /> {t('brokerBills')} {bills.length > 0 && `(${bills.length})`}
             </p>
             {billsLoading ? (
-              <div className="py-4 flex justify-center"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
+              <div className="py-6 flex justify-center"><Loader2 size={18} className="animate-spin text-slate-400" /></div>
             ) : bills.length === 0 ? (
-              <div className="py-5 flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                <Receipt size={18} className="text-slate-300 dark:text-slate-600" />
-                <p className="text-xs text-slate-400">{t('noBrokerBills')}</p>
+              <div className="py-6 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                <Receipt size={20} className="text-slate-300 dark:text-slate-600" />
+                <p className="text-sm text-slate-400">{t('noBrokerBills')}</p>
               </div>
             ) : (
-              <ul className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+              <ul className="max-h-60 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
                 {bills.map((bill) => (
-                  <li key={`${bill.type}-${bill.id}`} className="px-3 py-2.5 flex items-center gap-2.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                  <li key={`${bill.type}-${bill.id}`} className="px-4 py-3 flex items-center gap-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
                       bill.type === 'purchase' ? 'bg-sky-100 dark:bg-sky-500/15' : 'bg-violet-100 dark:bg-violet-500/15')}>
                       {bill.type === 'purchase'
-                        ? <ArrowDownRight size={14} className="text-sky-600 dark:text-sky-400" />
-                        : <ArrowUpRight size={14} className="text-violet-600 dark:text-violet-400" />}
+                        ? <ArrowDownRight size={16} className="text-sky-600 dark:text-sky-400" />
+                        : <ArrowUpRight size={16} className="text-violet-600 dark:text-violet-400" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0',
+                        <span className={cn('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0',
                           bill.type === 'purchase' ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300' : 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300')}>
                           {bill.type === 'purchase' ? t('purchaseBadge') : t('saleBadge')}
                         </span>
                         <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{bill.invoiceNumber || '—'}</p>
                       </div>
-                      <p className="text-slate-400 mt-0.5 flex items-center gap-1">
-                        <Calendar size={10} />
+                      <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                        <Calendar size={11} />
                         {new Date(bill.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         {bill.party ? ` · ${bill.party}` : ''}
                       </p>
@@ -571,19 +576,19 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-3 pt-1">
             <button onClick={onAddCommission}
-              className="flex-1 text-xs font-bold py-2.5 rounded-xl bg-gradient-to-br from-rose-600 to-rose-500 text-white shadow-sm hover:shadow-md transition-shadow flex items-center justify-center gap-1.5">
-              <Plus size={13} /> {t('addCommission')}
+              className="flex-1 text-sm font-bold py-3 rounded-xl bg-gradient-to-br from-rose-600 to-rose-500 text-white shadow-sm hover:shadow-lg transition-shadow flex items-center justify-center gap-2">
+              <Plus size={15} /> {t('addCommission')}
             </button>
             <button onClick={onRecordPayment}
-              className="flex-1 text-xs font-bold py-2.5 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-500 text-white shadow-sm hover:shadow-md transition-shadow flex items-center justify-center gap-1.5">
-              <Wallet size={13} /> {t('recordPayment')}
+              className="flex-1 text-sm font-bold py-3 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-500 text-white shadow-sm hover:shadow-lg transition-shadow flex items-center justify-center gap-2">
+              <Wallet size={15} /> {t('recordPayment')}
             </button>
           </div>
           <button onClick={onFilterActivity}
-            className="w-full text-xs font-bold py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5">
-            {t('viewActivity')} <ChevronRight size={13} />
+            className="w-full text-sm font-bold py-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-2">
+            {t('viewActivity')} <ChevronRight size={15} />
           </button>
         </div>
       </div>
