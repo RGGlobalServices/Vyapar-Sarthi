@@ -2044,10 +2044,14 @@ export default function WholesaleBillingUI() {
                     const lineStock = resolveStockForItem(item, products);
                     const maxQty = lineStock.known ? lineStock.qty : undefined;
                     const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
+                    // Bada Udyog: a packed unit like "Bag" means nothing on its own — show how many
+                    // Kg (etc.) are actually in it, same figure the product's own Pack Size holds.
+                    const lineProduct = isMill ? products.find((p: any) => p.id === item.id) : null;
+                    const packLabel = lineProduct?.packSize && lineProduct?.packUnit ? `${lineProduct.packSize} ${lineProduct.packUnit}` : null;
                     const subLineParts = [
                       item.variant && !bizConfig.hasLiquorSpecs ? item.variant : (item.size || null),
                       bizConfig.hasGender && item.gender ? item.gender : null,
-                      isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit || null),
+                      isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit ? (packLabel ? `${item.unit} (${packLabel})` : item.unit) : null),
                     ].filter(Boolean);
                     return (
                     <tr key={`${item.id}-${item.variant}-${(item as any).batchId || ''}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
@@ -2247,6 +2251,8 @@ export default function WholesaleBillingUI() {
                     const atMax = typeof maxQty === 'number' && item.quantity >= maxQty;
                     const mrp = Number(item.mrp) || 0;
                     const disc = (mrp > 0 && item.price > 0 && item.price < mrp) ? ((mrp - item.price) / mrp) * 100 : 0;
+                    const lineProduct = isMill ? products.find((p: any) => p.id === item.id) : null;
+                    const packLabel = lineProduct?.packSize && lineProduct?.packUnit ? `${lineProduct.packSize} ${lineProduct.packUnit}` : null;
 
                     return (
                       <div
@@ -2269,7 +2275,7 @@ export default function WholesaleBillingUI() {
                               {(() => {
                                 const mParts = [
                                   item.variant || null,
-                                  isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit || null),
+                                  isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit ? (packLabel ? `${item.unit} (${packLabel})` : item.unit) : null),
                                 ].filter(Boolean);
                                 return mParts.length > 0
                                   ? <p className="text-[11px] text-slate-400 mt-0.5">{mParts.join(' · ')}</p>
