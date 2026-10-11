@@ -1,12 +1,12 @@
 'use client';
 import { pickCaptureScale } from '@/lib/pdfCapture';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { useAuthStore, lineRef } from '@/lib/store';
 import { lotLabel as makeLotLabel } from '@/lib/lots';
 import { useBillingEngine } from '@/lib/hooks/useBillingEngine';
 import { useBusinessStore } from '@/lib/businessStore';
-import { getBusinessConfig } from '@/lib/businessConfig';
+import { getBusinessConfig, MILL_CATEGORIES } from '@/lib/businessConfig';
 import { useCategoryConfig } from '@/lib/hooks/useCategoryConfig';
 import { performSmartSearch } from '@/lib/smartSearch';
 import api from '@/lib/api';
@@ -296,6 +296,7 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
 export default function WholesaleBillingUI() {
   const t = useTranslations('Billing');
   const tBill = useTranslations('BillSlip');
+  const locale = useLocale();
   const { user } = useAuthStore();
   const { profile } = useBusinessStore();
 
@@ -316,6 +317,20 @@ export default function WholesaleBillingUI() {
   } = useBillingEngine(cartKey);
   const bizConfig = getBusinessConfig(profile?.businessType);
   const { config: categoryConfig } = useCategoryConfig();
+
+  // Mill search results all look alike (name + stock + price) with nothing saying whether a
+  // hit is a Raw Material, Finished Good, By-Product etc. — this looks the product's
+  // millCategory up against the shared MILL_CATEGORIES list so the search dropdown can show it.
+  const MILL_CAT_ACCENT: Record<string, string> = {
+    amber: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+    emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+    blue: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300',
+    slate: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+    purple: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300',
+    rose: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',
+  };
+  const millCategoryOf = (product: any) => MILL_CATEGORIES.find((c) => c.key === product?.millCategory) || null;
+  const millCatLabel = (cat: { label: string; labelHi: string; labelMr: string }) => locale === 'hi' ? cat.labelHi : locale === 'mr' ? cat.labelMr : cat.label;
 
   // Merged display flags: hard-wired businessType flags OR CategoryConfig flags
   const catSchema = categoryConfig.attributeSchema;
@@ -1893,7 +1908,14 @@ export default function WholesaleBillingUI() {
                 {searchResults.map((p, i) => (lotsByProduct[String(p.id)]?.length > 1) ? (
                   <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
                     <div className="px-4 pt-2.5 pb-1">
-                      <p className="font-bold text-slate-900 dark:text-white">{p.name}</p>
+                      <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                        {p.name}
+                        {isMill && millCategoryOf(p) && (
+                          <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
+                            {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
+                          </span>
+                        )}
+                      </p>
                       <p className="text-[11px] text-slate-500">{lotsByProduct[String(p.id)].length} lots in stock — pick the lot to sell</p>
                     </div>
                     {lotsByProduct[String(p.id)].map((lot: any, idx: number) => (
@@ -1927,9 +1949,14 @@ export default function WholesaleBillingUI() {
                     )}
                   >
                     <div>
-                      <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                         {p.name}
                         {p.barcode && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">B: {p.barcode}</span>}
+                        {isMill && millCategoryOf(p) && (
+                          <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
+                            {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
                         Stock: {Math.max(0, p.currentStock || 0)} {p.baseUnit} • Retail: ₹{p.sellingPrice} • Wholesale: ₹{p.wholesaleCost}
