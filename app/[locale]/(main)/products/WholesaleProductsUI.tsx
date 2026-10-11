@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Plus, Search, Pencil, Trash2, X,
@@ -199,6 +199,8 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
 export default function WholesaleProductsUI() {
   const t = useTranslations('Products');
   const tv = useTranslations('Variants');
+  const locale = useLocale();
+  const millCatLabel = (mc: { label: string; labelHi: string; labelMr: string }) => locale === 'hi' ? mc.labelHi : locale === 'mr' ? mc.labelMr : mc.label;
   const { profile, activeShopId, allShopAccess } = useBusinessStore();
   const bizConfig = getBusinessConfig(profile.businessType);
   const { config: categoryConfig } = useCategoryConfig();
@@ -237,7 +239,6 @@ export default function WholesaleProductsUI() {
   // Mill-only filter bar (Food Mill Product Master) — every filter reads
   // fields the shopkeeper configured on the product, never the mill's name.
   const [millTypeFilter, setMillTypeFilter] = useState('');
-  const [millCategoryFilter, setMillCategoryFilter] = useState('');
   const [millGradeFilter, setMillGradeFilter] = useState('');
   const [millVarietyFilter, setMillVarietyFilter] = useState('');
   const [millWarehouseFilter, setMillWarehouseFilter] = useState('');
@@ -863,7 +864,6 @@ export default function WholesaleProductsUI() {
     if (activeMillCategory && p.millCategory !== activeMillCategory) return false;
     if (!isMillShop) return true;
     if (millTypeFilter && p.millCategory !== millTypeFilter) return false;
-    if (millCategoryFilter && p.category !== millCategoryFilter) return false;
     if (millGradeFilter && p.grade !== millGradeFilter) return false;
     if (millVarietyFilter && p.variety !== millVarietyFilter) return false;
     if (millWarehouseFilter) {
@@ -1108,65 +1108,86 @@ export default function WholesaleProductsUI() {
         </CardContent>
       </Card>
 
+      {/* Segregation toggle — Raw Material / Finished Goods / By-Product / Waste etc, read straight off
+          MILL_CATEGORIES (same source of truth as the Add Product form and the billing search badge),
+          localized to the active language. Replaces the old "Product Type" / "Category" dropdowns: a
+          row of always-visible, click-to-filter pills with live counts segregates the catalogue at a
+          glance instead of hiding it behind a select the shopkeeper has to open first. */}
+      {isMillShop && (
+        <div className="flex flex-wrap gap-2">
+          {([{ key: '', emoji: '📋', isAll: true } as any, ...MILL_CATEGORIES]).map((mc: any) => {
+            const count = mc.isAll ? products.length : products.filter((p: any) => p.millCategory === mc.key).length;
+            const active = millTypeFilter === mc.key;
+            return (
+              <button
+                key={mc.key || 'all'}
+                type="button"
+                onClick={() => setMillTypeFilter(mc.key)}
+                className={cn(
+                  'px-3.5 py-2 rounded-xl text-xs font-bold border-2 transition-colors flex items-center gap-1.5',
+                  active
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600',
+                )}
+              >
+                <span>{mc.emoji}</span>
+                {mc.isAll ? (t('segregationAll') || 'All') : millCatLabel(mc)}
+                <span className={cn('text-[10px] font-black px-1.5 py-0.5 rounded-full', active ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500')}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Mill Product Master filter bar — driven entirely by data already on
-          the products (category/grade/variety/etc), never by mill name, so
+          the products (grade/variety/warehouse/etc), never by mill name, so
           the same bar works for a Rice Mill, Dal Mill, Oil Mill, etc. */}
       {isMillShop && (
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
           <CardContent className="p-4 flex flex-wrap gap-3 items-center">
-            <select value={millTypeFilter} onChange={(e) => setMillTypeFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-              <option value="">Product Type: All</option>
-              {MILL_CATEGORIES.map(mc => <option key={mc.key} value={mc.key}>{mc.emoji} {mc.label}</option>)}
-            </select>
-            <select value={millCategoryFilter} onChange={(e) => setMillCategoryFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-              <option value="">Category: All</option>
-              {Array.from(new Set(products.map((p: any) => p.category).filter(Boolean))).sort().map((c: any) => <option key={c} value={c}>{c}</option>)}
-            </select>
             <select value={millGradeFilter} onChange={(e) => setMillGradeFilter(e.target.value)}
               className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-              <option value="">Grade: All</option>
+              <option value="">{t('gradeAllFilter') || 'Grade: All'}</option>
               {Array.from(new Set(products.map((p: any) => p.grade).filter(Boolean))).sort().map((g: any) => <option key={g} value={g}>{g}</option>)}
             </select>
             <select value={millVarietyFilter} onChange={(e) => setMillVarietyFilter(e.target.value)}
               className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-              <option value="">Variety: All</option>
+              <option value="">{t('varietyAllFilter') || 'Variety: All'}</option>
               {Array.from(new Set(products.map((p: any) => p.variety).filter(Boolean))).sort().map((v: any) => <option key={v} value={v}>{v}</option>)}
             </select>
             <select value={millWarehouseFilter} onChange={(e) => setMillWarehouseFilter(e.target.value)}
               className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-              <option value="">Warehouse: All</option>
-              <option value="assigned">In a Warehouse</option>
-              <option value="unassigned">Not Assigned</option>
+              <option value="">{t('warehouseAllFilter') || 'Warehouse: All'}</option>
+              <option value="assigned">{t('warehouseAssignedFilter') || 'In a Warehouse'}</option>
+              <option value="unassigned">{t('warehouseUnassignedFilter') || 'Not Assigned'}</option>
             </select>
             <select value={millStockStatusFilter} onChange={(e) => setMillStockStatusFilter(e.target.value)}
               className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-              <option value="">Stock Status: All</option>
+              <option value="">{t('stockStatusAllFilter') || 'Stock Status: All'}</option>
               {Object.entries(STOCK_STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </select>
             {bizConfig.hasBatch && (
               <select value={millBatchFilter} onChange={(e) => setMillBatchFilter(e.target.value)}
                 className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-                <option value="">Batch Tracking: All</option>
-                <option value="on">On</option>
-                <option value="off">Off</option>
+                <option value="">{t('batchTrackingAllFilter') || 'Batch Tracking: All'}</option>
+                <option value="on">{t('trackingOn') || 'On'}</option>
+                <option value="off">{t('trackingOff') || 'Off'}</option>
               </select>
             )}
             {bizConfig.hasExpiry && (
               <select value={millExpiryFilter} onChange={(e) => setMillExpiryFilter(e.target.value)}
                 className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white">
-                <option value="">Expiry Tracking: All</option>
-                <option value="on">On</option>
-                <option value="off">Off</option>
+                <option value="">{t('expiryTrackingAllFilter') || 'Expiry Tracking: All'}</option>
+                <option value="on">{t('trackingOn') || 'On'}</option>
+                <option value="off">{t('trackingOff') || 'Off'}</option>
               </select>
             )}
-            {(millTypeFilter || millCategoryFilter || millGradeFilter || millVarietyFilter || millWarehouseFilter || millStockStatusFilter || millBatchFilter || millExpiryFilter) && (
+            {(millTypeFilter || millGradeFilter || millVarietyFilter || millWarehouseFilter || millStockStatusFilter || millBatchFilter || millExpiryFilter) && (
               <button
-                onClick={() => { setMillTypeFilter(''); setMillCategoryFilter(''); setMillGradeFilter(''); setMillVarietyFilter(''); setMillWarehouseFilter(''); setMillStockStatusFilter(''); setMillBatchFilter(''); setMillExpiryFilter(''); }}
+                onClick={() => { setMillTypeFilter(''); setMillGradeFilter(''); setMillVarietyFilter(''); setMillWarehouseFilter(''); setMillStockStatusFilter(''); setMillBatchFilter(''); setMillExpiryFilter(''); }}
                 className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
               >
-                <X size={13} /> Clear Filters
+                <X size={13} /> {t('clearFiltersBtn') || 'Clear Filters'}
               </button>
             )}
           </CardContent>
