@@ -1016,9 +1016,9 @@ export default function WholesaleProductsUI() {
             // pre-selected in the form, so there is nothing to hunt for.
             <>
               {([
-                { cat: 'finished_goods', label: 'Ready Product', cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' },
-                { cat: 'raw_material', label: 'Raw Material', cls: 'bg-amber-500 hover:bg-amber-600 text-white' },
-                { cat: 'by_product', label: 'By-Product', cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
+                { cat: 'finished_goods', label: t('addReadyProductBtn') || 'Ready Product', cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' },
+                { cat: 'raw_material', label: t('addRawMaterialBtn') || 'Raw Material', cls: 'bg-amber-500 hover:bg-amber-600 text-white' },
+                { cat: 'by_product', label: t('addByProductBtn') || 'By-Product', cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
               ] as const).map(b => (
                 <button key={b.cat}
                   onClick={() => { setForm({ ...emptyProduct, millCategory: b.cat }); setVariants([]); setSameVariantPricing(true); setExpandedVariantCell(null); setCustomSizes([]); setNewSizeInput(''); setWholesaleMode('manual'); setWholesaleDiscountPercent(''); setShowAddModal(true); }}
@@ -1339,8 +1339,8 @@ export default function WholesaleProductsUI() {
                     </th>
                     {profile.businessType === 'millprocessing' && (
                       <>
-                        <th className="p-4 font-semibold">Product Type</th>
-                        <th className="p-4 font-semibold">Grade / Variety</th>
+                        <th className="p-4 font-semibold">{t('colMillProductType') || 'Product Type'}</th>
+                        <th className="p-4 font-semibold">{t('colGradeVariety') || 'Grade / Variety'}</th>
                       </>
                     )}
                     {!isMillShop && <th className="p-4 font-semibold">
@@ -1349,7 +1349,7 @@ export default function WholesaleProductsUI() {
                     {/* Business-type specific columns */}
                     {groupBizConfig.hasExpiry && (
                       <th className="p-4 font-semibold text-orange-500 dark:text-orange-400">
-                        <div className="flex items-center gap-1"><Calendar size={13}/> Expiry</div>
+                        <div className="flex items-center gap-1"><Calendar size={13}/> {t('colExpiry') || 'Expiry'}</div>
                       </th>
                     )}
                     {groupBizConfig.hasBatch && (
