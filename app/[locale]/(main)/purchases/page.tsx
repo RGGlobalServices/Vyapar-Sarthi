@@ -1314,39 +1314,39 @@ export default function PurchasesPage() {
                 return (
                   <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                     <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Bill Summary</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('billSummaryHeading') || 'Bill Summary'}</p>
                     </div>
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                       {goodsTotal > 0 && (
                         <div className="px-4 py-2.5 flex justify-between items-center">
-                          <span className="text-xs text-slate-600 dark:text-slate-400">Goods Total</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-400">{t('goodsTotalLabel') || 'Goods Total'}</span>
                           <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{goodsTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
                       {discount > 0 && (
                         <div className="px-4 py-2.5 flex justify-between items-center">
-                          <span className="text-xs text-slate-600 dark:text-slate-400">Less: Discount</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-400">{t('lessDiscountLabel') || 'Less: Discount'}</span>
                           <span className="text-xs font-mono font-semibold text-rose-600 dark:text-rose-400 tabular-nums">−₹{discount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
                       {chargesTotal > 0 && (
                         <div className="px-4 py-2.5 flex justify-between items-center">
-                          <span className="text-xs text-slate-600 dark:text-slate-400">Plus: Charges</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-400">{t('plusChargesLabel') || 'Plus: Charges'}</span>
                           <span className="text-xs font-mono font-semibold text-amber-700 dark:text-amber-400 tabular-nums">+₹{chargesTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
                       <div className="px-4 py-2.5 flex justify-between items-center bg-slate-50 dark:bg-slate-800/30">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Bill Total</span>
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('billTotalLabel') || 'Bill Total'}</span>
                         <span className="text-sm font-mono font-black text-slate-900 dark:text-white tabular-nums">₹{billTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                       </div>
                       {paidNow > 0 && (
                         <div className="px-4 py-2.5 flex justify-between items-center">
-                          <span className="text-xs text-slate-600 dark:text-slate-400">Less: Paid Now</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-400">{t('lessPaidNowLabel') || 'Less: Paid Now'}</span>
                           <span className="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">−₹{paidNow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
                       <div className="px-4 py-3 flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Balance Due to Supplier</span>
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('balanceDueToSupplierLabel') || 'Balance Due to Supplier'}</span>
                         <span className={`text-base font-mono font-black tabular-nums ${balance > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                           ₹{Math.abs(balance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                         </span>
@@ -1355,24 +1355,24 @@ export default function PurchasesPage() {
                     {hasExtras && (
                       <>
                         <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-y border-slate-200 dark:border-slate-800">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Mill's Own Cost — Not Owed to Supplier</p>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('millOwnCostHeading') || "Mill's Own Cost — Not Owed to Supplier"}</p>
                         </div>
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                           {extras!.hamali > 0 && (
                             <div className="px-4 py-2.5 flex justify-between items-center">
-                              <span className="text-xs text-slate-600 dark:text-slate-400">Hamali</span>
+                              <span className="text-xs text-slate-600 dark:text-slate-400">{t('hamaliRowLabel') || 'Hamali'}</span>
                               <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{extras!.hamali.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
                           {extras!.freight > 0 && (
                             <div className="px-4 py-2.5 flex justify-between items-center">
-                              <span className="text-xs text-slate-600 dark:text-slate-400">Freight</span>
+                              <span className="text-xs text-slate-600 dark:text-slate-400">{t('freightRowLabel') || 'Freight'}</span>
                               <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{extras!.freight.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
                           {extras!.brokerCommission > 0 && (
                             <div className="px-4 py-2.5 flex justify-between items-center">
-                              <span className="text-xs text-slate-600 dark:text-slate-400">Broker Commission{extras!.brokerName ? ` · ${extras!.brokerName}` : ''}</span>
+                              <span className="text-xs text-slate-600 dark:text-slate-400">{t('brokerCommissionRowLabel') || 'Broker Commission'}{extras!.brokerName ? ` · ${extras!.brokerName}` : ''}</span>
                               <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{extras!.brokerCommission.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
