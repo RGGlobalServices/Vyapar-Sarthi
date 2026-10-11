@@ -15,6 +15,7 @@ import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 import { upsertHamali, upsertFreight } from '@/lib/server/purchaseExtrasWrite';
+import { sendToNotPacked } from '@/lib/server/sendToNotPacked';
 
 
 // Bada Udyog: whether a saved purchase's items include a Raw-Material-classed product, and whether it has already been pushed into
@@ -163,7 +164,7 @@ export async function POST(req: Request) {
       .map((i: any) => ({ productId: i.productId, batchNumber: String(i.batchNumber).trim() }));
 
     const [purchaseProductsInfo, existingBatchCounts, existingNamedBatches] = await Promise.all([
-      prisma.product.findMany({ where: { id: { in: purchaseProductIds }, shopId: auth.shop.id }, select: { id: true, barcode: true, sku: true, millCategory: true } }),
+      prisma.product.findMany({ where: { id: { in: purchaseProductIds }, shopId: auth.shop.id }, select: { id: true, barcode: true, sku: true, millCategory: true, name: true, baseUnit: true } }),
       prisma.batch.groupBy({ by: ['productId'], where: { productId: { in: purchaseProductIds }, shopId: auth.shop.id }, _count: { _all: true } }),
       // Look up any existing batches whose number matches what we're about to receive —
       // same batch number → same physical lot → merge quantity into it instead of creating a duplicate.
@@ -441,6 +442,27 @@ export async function POST(req: Request) {
           if (data.freight !== undefined) await upsertFreight(tx, auth.shop.id, invoice.id, label, Math.max(0, Number(data.freight) || 0), data.freightParty);
         });
       } catch (e) { console.error('Hamali/Freight create failed:', e); }
+    }
+
+    // "Send to Not Packed" (Bada Udyog): a by-product bought ready-made and resold as-is — best-effort,
+    // after the purchase itself is safely saved, same as the broker commission below.
+    if (!idempotencyOutcome.isDuplicate) {
+      const notPackedItems = processedItems.filter((item: any) => item.sendToNotPacked);
+      if (notPackedItems.length) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            for (const item of notPackedItems) {
+              const p = purchaseProductById.get(item.productId);
+              if (!p) continue;
+              await sendToNotPacked(tx, auth.shop.id, {
+                productId: item.productId, productName: p.name || item.name || 'Product', quantity: item.baseQuantity,
+                unit: p.baseUnit || 'kg', batchLabel: invoiceNumber || invoiceId,
+                sourceNote: `Purchased — Invoice ${invoiceNumber || invoiceId}`,
+              });
+            }
+          }, { timeout: 15000 });
+        } catch (e) { console.error('Send to Not Packed failed:', e); }
+      }
     }
 
     return NextResponse.json({ success: true, invoice, isDuplicate: idempotencyOutcome.isDuplicate });

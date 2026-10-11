@@ -54,7 +54,9 @@ export const GET = handle(async (req) => {
   const url = new URL(req.url);
   const status = url.searchParams.get('status'); // 'open' | 'in_progress' | 'closed'
 
-  const where: any = { shopId: shop.id };
+  // Synthetic batches created so a direct-bought or quick-entry by-product can show in "Not Packed"
+  // (see lib/server/sendToNotPacked.ts) are plumbing, not a real production run — never list them here.
+  const where: any = { shopId: shop.id, batchType: { not: 'PURCHASE' } };
   if (status) where.status = status;
 
   const rows = await (prisma as any).productionBatch.findMany({

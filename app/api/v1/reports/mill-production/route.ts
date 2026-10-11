@@ -23,7 +23,9 @@ export const GET = handle(async (req) => {
   const to = q.end_date || q.to ? new Date(`${q.end_date || q.to}T23:59:59.999`) : null;
 
   const batches = await (prisma as any).productionBatch.findMany({
-    where: { shopId: shop.id, ...(from || to ? { startedAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) },
+    // Synthetic batches behind "Not Packed" for a direct purchase (lib/server/sendToNotPacked.ts) have no
+    // real stages/recovery and would skew this report — exclude them, same as the Batches list.
+    where: { shopId: shop.id, batchType: { not: 'PURCHASE' }, ...(from || to ? { startedAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) },
     include: {
       rawLot: { select: { id: true, lotNumber: true, product: { select: { name: true, baseUnit: true } } } },
       outputProduct: { select: { name: true } },

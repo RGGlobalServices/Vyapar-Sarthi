@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { readCharges, chargesTotal } from '@/lib/server/purchaseCharges';
 import { getPurchaseExtras } from '@/lib/server/purchaseExtras';
 import { upsertHamali, upsertFreight } from '@/lib/server/purchaseExtrasWrite';
+import { sendToNotPacked } from '@/lib/server/sendToNotPacked';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse } from '@/lib/server/http';
@@ -246,6 +247,31 @@ export async function PATCH(req: Request, { params }: Ctx) {
           if (data.freight !== undefined) await upsertFreight(tx, auth!.shop.id, id, label, Math.max(0, Number(data.freight) || 0), data.freightParty);
         });
       } catch (e) { console.error('Hamali/Freight update failed:', e); }
+    }
+
+    // "Send to Not Packed" (Bada Udyog): a by-product bought ready-made and resold as-is — best-effort,
+    // same as hamali/freight above. Re-editing never re-sends an item already converted this way
+    // (each save only acts on the item rows present in THIS submit, same as the raw-material flag).
+    const notPackedItems = processedItems.filter((item: any) => item.sendToNotPacked);
+    if (notPackedItems.length) {
+      try {
+        const productInfo = await prisma.product.findMany({
+          where: { id: { in: notPackedItems.map((i: any) => i.productId) }, shopId: auth!.shop.id },
+          select: { id: true, name: true, baseUnit: true },
+        });
+        const byId = new Map(productInfo.map((p) => [p.id, p]));
+        const label = invoiceNumber || id;
+        await prisma.$transaction(async (tx) => {
+          for (const item of notPackedItems) {
+            const p = byId.get(item.productId);
+            if (!p) continue;
+            await sendToNotPacked(tx, auth!.shop.id, {
+              productId: item.productId, productName: p.name || item.name || 'Product', quantity: item.baseQuantity,
+              unit: p.baseUnit || 'kg', batchLabel: label, sourceNote: `Purchased — Invoice ${label}`,
+            });
+          }
+        }, { timeout: 15000 });
+      } catch (e) { console.error('Send to Not Packed failed:', e); }
     }
 
     // Per-variant stock breakdown: undo what the old line items added, then

@@ -2904,7 +2904,11 @@
     "millNewProductHint": "हे उत्पादन प्रोडक्ट मास्टरमध्ये जोडेल. खात्री करेपर्यंत काहीही तयार होत नाही.",
     "millConfirmCreate": "खात्री करून तयार करा",
     "millAddsToStock": "स्टॉकमध्ये {qty} {unit} जमा होईल",
-    "millAddToRaw": "कच्च्या मालातही जोडा (लॉट तयार होईल)"
+    "millAddToRaw": "कच्च्या मालातही जोडा (लॉट तयार होईल)",
+    "millDestinationLabel": "पाठवा",
+    "millDestStock": "स्टॉक",
+    "millDestRawMaterial": "कच्चा माल",
+    "millDestNotPacked": "पॅक न केलेले"
   },
   "Profile": {
     "title": "व्यवसाय प्रोफाइल",
@@ -3994,6 +3998,7 @@
     "qp_useBags": "पोत्यांत मोजा",
     "qp_useWeight": "वजन टाका",
     "qp_reason": "कारण (ऐच्छिक)",
+    "qp_sendToNotPacked": "विकण्याआधी पोत्यात तोलून घ्या (Not Packed मध्ये पाठवा)",
     "qp_newProduct": "+ नवीन उत्पादन तयार करा",
     "qp_newProductName": "नवीन उत्पादनाचे नाव",
     "qp_create": "तयार करा",

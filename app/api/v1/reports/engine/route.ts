@@ -1559,7 +1559,9 @@ async function handleCA(shop: any, startDate: Date, endDate: Date, q: Record<str
 
     if (reportType === 'mill_production') {
       const batches = await prisma.productionBatch.findMany({
-        where: { shopId: shop.id, startedAt: { gte: startDate, lte: endDate } },
+        // Synthetic batches behind "Not Packed" for a direct purchase (lib/server/sendToNotPacked.ts) are
+        // not a real production run — exclude them, same as every other mill-production listing.
+        where: { shopId: shop.id, batchType: { not: 'PURCHASE' }, startedAt: { gte: startDate, lte: endDate } },
         orderBy: { startedAt: 'asc' },
       });
       const rows = batches.map((b) => ({

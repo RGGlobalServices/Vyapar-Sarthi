@@ -28,7 +28,9 @@ export const GET = handle(async (req) => {
   if ((from && isNaN(from.getTime())) || (to && isNaN(to.getTime()))) throw new ApiError(400, 'Invalid date range', 'INVALID_DATE');
 
   const batches = await (prisma as any).productionBatch.findMany({
-    where: { shopId: shop.id, status: 'closed', ...(from || to ? { startedAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) },
+    // Synthetic batches behind "Not Packed" for a direct purchase (lib/server/sendToNotPacked.ts) are not
+    // a real production run — exclude them, same as the Batches list and the Milling report.
+    where: { shopId: shop.id, status: 'closed', batchType: { not: 'PURCHASE' }, ...(from || to ? { startedAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) },
     include: {
       rawLot: { select: { lotNumber: true, product: { select: { name: true } } } },
       outputs: { select: { outputType: true, name: true, quantityKg: true } },

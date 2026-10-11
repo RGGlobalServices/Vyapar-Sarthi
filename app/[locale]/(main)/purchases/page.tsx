@@ -22,7 +22,12 @@ const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
 const emptyItem = () => ({
-  productId: '', quantity: 1, cost: 0, batchNumber: '', expiryDate: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '', toRaw: undefined as boolean | undefined,
+  productId: '', quantity: 1, cost: 0, batchNumber: '', expiryDate: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '',
+  // Where this line should land beyond the ordinary stock credit every purchased item already gets:
+  // 'raw_material' queues it for milling, 'not_packed' makes it show in Milling -> Not Packed so it can
+  // be weighed into bags before sale (for by-products bought ready-made and resold as-is). undefined =
+  // let the product's own millCategory decide (raw_material products default to 'raw_material').
+  dest: undefined as 'stock' | 'raw_material' | 'not_packed' | undefined,
   // One qty per colour/size, keyed the same way as everywhere else — only
   // used when the selected product has variant rows; `quantity` above is
   // still what's used for a plain (non-variant) product.
@@ -34,6 +39,12 @@ const emptyItem = () => ({
   // purchase actually paid.
   costMode: 'manual' as 'manual' | 'mrp_based', mrp: '', discountPercent: '',
 });
+
+// A row's destination when nothing was explicitly clicked — raw-material products default to Raw
+// Material, by-products default to Not Packed (ready to weigh into bags and sell), everything else to
+// plain Stock. Shared by the item row's UI highlight and the save payload so they can never disagree.
+const defaultDest = (product: any): 'stock' | 'raw_material' | 'not_packed' =>
+  product?.millCategory === 'raw_material' ? 'raw_material' : product?.millCategory === 'by_product' ? 'not_packed' : 'stock';
 
 // Shared by every item row — 'manual' just returns the typed cost; 'mrp_based'
 // derives it from that row's own mrp/discountPercent.
@@ -406,8 +417,10 @@ export default function PurchasesPage() {
           conversionFactor: item.conversionFactor,
         }));
     }
-    const addToRawMaterial = isMill ? (item.toRaw ?? (product?.millCategory === 'raw_material')) : undefined;
-    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice, ...(isMill ? { addToRawMaterial } : {}) }] : [];
+    const dest = item.dest ?? defaultDest(product);
+    const addToRawMaterial = isMill ? dest === 'raw_material' : undefined;
+    const sendToNotPacked = isMill ? dest === 'not_packed' : undefined;
+    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice, ...(isMill ? { addToRawMaterial, sendToNotPacked } : {}) }] : [];
   });
 
   const setItemUnit = (index: number, unitKey: string) => {
@@ -1004,11 +1017,24 @@ export default function PurchasesPage() {
                       </div>
                     )}
                     {isMill && item.productId && (
-                      <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer" data-testid="to-raw-toggle">
-                        <input type="checkbox" checked={item.toRaw ?? (selectedProduct?.millCategory === 'raw_material')}
-                          onChange={e => { const n = [...items]; n[index].toRaw = e.target.checked; setItems(n); }} />
-                        {t('millAddToRaw')}
-                      </label>
+                      <div data-testid="item-destination">
+                        <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('millDestinationLabel') || 'Send to'}</span>
+                        <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden text-xs font-bold">
+                          {([
+                            { key: 'stock', label: t('millDestStock') || 'Stock' },
+                            { key: 'raw_material', label: t('millDestRawMaterial') || 'Raw Material' },
+                            { key: 'not_packed', label: t('millDestNotPacked') || 'Not Packed' },
+                          ] as const).map(({ key, label }) => {
+                            const active = (item.dest ?? defaultDest(selectedProduct)) === key;
+                            return (
+                              <button key={label} type="button" onClick={() => { const n = [...items]; n[index].dest = key; setItems(n); }}
+                                className={cn('px-2.5 py-1.5 transition-colors', active ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800')}>
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                     {hasVariants && (
                       <div>

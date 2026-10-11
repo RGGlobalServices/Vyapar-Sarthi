@@ -2901,7 +2901,11 @@
     "millNewProductHint": "This adds the product to Product Master. Nothing is created until you confirm.",
     "millConfirmCreate": "Confirm & create",
     "millAddsToStock": "Adds {qty} {unit} to stock",
-    "millAddToRaw": "Also add to Raw Material (creates a lot)"
+    "millAddToRaw": "Also add to Raw Material (creates a lot)",
+    "millDestinationLabel": "Send to",
+    "millDestStock": "Stock",
+    "millDestRawMaterial": "Raw Material",
+    "millDestNotPacked": "Not Packed"
   },
   "Profile": {
     "title": "Business Profile",
@@ -3991,6 +3995,7 @@
     "qp_useBags": "Count in bags",
     "qp_useWeight": "Enter weight",
     "qp_reason": "Reason (optional)",
+    "qp_sendToNotPacked": "Weigh into bags before selling (send to Not Packed)",
     "qp_newProduct": "+ Create new product",
     "qp_newProductName": "New product name",
     "qp_create": "Create",

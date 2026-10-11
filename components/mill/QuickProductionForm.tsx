@@ -22,7 +22,7 @@ import { QUICK_SOURCES, type QuickSource, lossToBalance, packsToKg, quickBalance
 
 type OutKind = 'finished_good' | 'by_product' | 'wip' | 'rejection';
 type PackRow = { kg: string; n: string; type: 'bag' | 'goni' | 'other' };
-type OutRow = { key: number; kind: OutKind; productId: string; name: string; qty: string; unit: string; bagMode: boolean; packs: string; packKg: string; reason: string; brandName: string; lotNumber: string; pk: PackRow[] };
+type OutRow = { key: number; kind: OutKind; productId: string; name: string; qty: string; unit: string; bagMode: boolean; packs: string; packKg: string; reason: string; brandName: string; lotNumber: string; pk: PackRow[]; notPack: boolean };
 type Product = { id: string; name: string; millCategory?: string | null; baseUnit?: string | null };
 
 const KINDS: OutKind[] = ['finished_good', 'by_product', 'wip', 'rejection'];
@@ -43,7 +43,7 @@ const fetcher = (u: string) => api.get(u).then((r) => r.data);
 const num = (v: string) => (v === '' ? 0 : Number(v) || 0);
 const fmt = (n: number) => (Math.round(n * 1000) / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 const newKey = (() => { let k = 0; return () => ++k; })();
-const newRow = (kind: OutKind, over: Partial<OutRow> = {}): OutRow => ({ key: newKey(), kind, productId: '', name: '', qty: '', unit: 'kg', bagMode: false, packs: '', packKg: '', reason: '', brandName: '', lotNumber: '', pk: [], ...over });
+const newRow = (kind: OutKind, over: Partial<OutRow> = {}): OutRow => ({ key: newKey(), kind, productId: '', name: '', qty: '', unit: 'kg', bagMode: false, packs: '', packKg: '', reason: '', brandName: '', lotNumber: '', pk: [], notPack: false, ...over });
 
 const inputCls = 'w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-emerald-500 outline-none';
 const labelCls = 'block text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1';
@@ -343,6 +343,15 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
       }, { headers: { 'x-idempotency-key': idemKey.current } });
       const r = batch ? { ...res.data, batchId: batch.id, batchNumber: batch.batchNumber } : res.data;
       if (picked) saveRecipe(activeShopId, picked.recipe, filled);
+      // Best-effort, after the run itself is safely saved — a by-product the shopkeeper flagged to be
+      // weighed into bags before sale gets its own "Not Packed" entry, same as a finished good's.
+      for (const row of filled) {
+        if (row.kind !== 'by_product' || !row.notPack || !row.productId) continue;
+        const kg = rowKg(row);
+        if (kg <= 0) continue;
+        api.post('/mill/send-to-not-packed', { productId: row.productId, quantity: kg, unit: 'kg', sourceLabel: r.batchNumber })
+          .catch((e: any) => console.error('Send to Not Packed failed:', e));
+      }
       setDone({
         batchId: r.batchId, batchNumber: r.batchNumber, finishedKg: r.finishedKg, yieldPct: r.yieldPct ?? yieldPct(r.finishedKg, inputKg),
         // everything the slip needs is already here — no round trip to the server when it is printed
@@ -543,6 +552,12 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                                   <input value={r.lotNumber} onChange={(e) => setRow(r.key, { lotNumber: e.target.value })} className={cn(inputCls, 'h-9 text-xs')} maxLength={60} />
                                 </label>
                               </div>
+                            )}
+                            {kind === 'by_product' && r.productId && (
+                              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                                <input type="checkbox" checked={r.notPack} onChange={(e) => setRow(r.key, { notPack: e.target.checked })} />
+                                {t('qp_sendToNotPacked') || 'Weigh into bags before selling (send to Not Packed)'}
+                              </label>
                             )}
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               {kind === 'rejection' ? (

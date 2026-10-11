@@ -2904,7 +2904,11 @@
     "millNewProductHint": "यह उत्पाद प्रोडक्ट मास्टर में जुड़ेगा। पुष्टि तक कुछ नहीं बनता।",
     "millConfirmCreate": "पुष्टि करें और बनाएँ",
     "millAddsToStock": "स्टॉक में {qty} {unit} जुड़ेगा",
-    "millAddToRaw": "कच्चे माल में भी जोड़ें (लॉट बनेगा)"
+    "millAddToRaw": "कच्चे माल में भी जोड़ें (लॉट बनेगा)",
+    "millDestinationLabel": "भेजें",
+    "millDestStock": "स्टॉक",
+    "millDestRawMaterial": "कच्चा माल",
+    "millDestNotPacked": "पैक नहीं हुआ"
   },
   "Profile": {
     "title": "व्यापार प्रोफ़ाइल",
@@ -3994,6 +3998,7 @@
     "qp_useBags": "बोरी में गिनें",
     "qp_useWeight": "वज़न डालें",
     "qp_reason": "कारण (वैकल्पिक)",
+    "qp_sendToNotPacked": "बेचने से पहले बोरियों में तौलें (Not Packed में भेजें)",
     "qp_newProduct": "+ नया उत्पाद बनाएँ",
     "qp_newProductName": "नए उत्पाद का नाम",
     "qp_create": "बनाएँ",
