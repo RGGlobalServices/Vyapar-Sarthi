@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
-import { CheckCircle2, ChevronDown, FileText, Loader2, Plus, X } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, FileText, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -122,6 +122,13 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
   const [newFor, setNewFor] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  // Rename/delete the product picked in an output row, in place — a shopkeeper who mistypes a name
+  // while creating it on the fly (e.g. "Bhagar" meant to be "Bhagat") shouldn't have to leave this
+  // screen and hunt it down in Products just to fix it.
+  const [editFor, setEditFor] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState<null | { batchId: string; batchNumber: string; finishedKg: number; yieldPct: number | null; slip: SlipBatch }>(null);
@@ -245,6 +252,38 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('qp_failed'));
     } finally { setCreating(false); }
+  };
+
+  const renameProduct = async (row: OutRow) => {
+    const name = editName.trim();
+    if (!name || !row.productId) return;
+    setEditSaving(true); setError('');
+    try {
+      await api.put(`/products/${row.productId}`, { name });
+      const p = products.find((x) => x.id === row.productId);
+      if (p) p.name = name;
+      rows.filter((r) => r.productId === row.productId).forEach((r) => setRow(r.key, { name }));
+      mutateProducts();
+      setEditFor(null); setEditName('');
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('qp_failed'));
+    } finally { setEditSaving(false); }
+  };
+
+  const deleteProduct = async (row: OutRow) => {
+    if (!row.productId) return;
+    if (!confirm(t('qp_deleteProductConfirm', { name: row.name }) || `Delete "${row.name}"?`)) return;
+    setDeletingId(row.productId);
+    try {
+      const res = await api.delete(`/products/${row.productId}`);
+      const idx = products.findIndex((x) => x.id === row.productId);
+      if (idx >= 0 && !res?.data?.detail?.includes('archived')) products.splice(idx, 1);
+      rows.filter((r) => r.productId === row.productId).forEach((r) => setRow(r.key, { productId: '', name: '' }));
+      mutateProducts();
+      if (res?.data?.detail?.includes('archived')) toast(t('qp_productArchived') || 'Already used elsewhere, so it was archived instead of deleted.');
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('qp_failed'));
+    } finally { setDeletingId(null); }
   };
 
   const filled = rows.filter((r) => rowKg(r) > 0);
@@ -422,23 +461,39 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                             <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
                               <label className="block sm:col-span-3">
                                 <span className={labelCls}>{t('qp_product')}</span>
-                                <select value={newFor === r.key ? '__new__' : r.productId}
-                                  onChange={(e) => {
-                                    if (e.target.value === '__new__') { setNewFor(r.key); setNewName(r.name || (kind === 'finished_good' ? suggestedFinishedName(picked?.name || '') || '' : '')); }
-                                    else { setNewFor(null); const p = products.find((x) => x.id === e.target.value); setRow(r.key, { productId: e.target.value, name: p?.name || '' }); }
-                                  }}
-                                  className={cn(inputCls, !r.productId && (kind === 'finished_good' || kind === 'wip') && 'border-amber-400')}>
-                                  <option value="">{kind === 'by_product' || kind === 'rejection' ? t('qp_notTracked') : t('qp_selectProduct')}</option>
-                                  {ranked.suggested.length > 0 && (
-                                    <optgroup label={t('qp_suggested', { name: picked?.name || '' })}>
-                                      {ranked.suggested.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                <div className="flex items-stretch gap-1">
+                                  <select value={newFor === r.key ? '__new__' : r.productId}
+                                    onChange={(e) => {
+                                      if (e.target.value === '__new__') { setNewFor(r.key); setNewName(r.name || (kind === 'finished_good' ? suggestedFinishedName(picked?.name || '') || '' : '')); }
+                                      else { setNewFor(null); const p = products.find((x) => x.id === e.target.value); setRow(r.key, { productId: e.target.value, name: p?.name || '' }); }
+                                    }}
+                                    className={cn(inputCls, 'flex-1 min-w-0', !r.productId && (kind === 'finished_good' || kind === 'wip') && 'border-amber-400')}>
+                                    <option value="">{kind === 'by_product' || kind === 'rejection' ? t('qp_notTracked') : t('qp_selectProduct')}</option>
+                                    {ranked.suggested.length > 0 && (
+                                      <optgroup label={t('qp_suggested', { name: picked?.name || '' })}>
+                                        {ranked.suggested.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                      </optgroup>
+                                    )}
+                                    <optgroup label={t('qp_allProducts')}>
+                                      {ranked.rest.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </optgroup>
+                                    <option value="__new__">{t('qp_newProduct')}</option>
+                                  </select>
+                                  {r.productId && newFor !== r.key && (
+                                    <>
+                                      <button type="button" title={t('qp_renameProduct') || 'Rename'}
+                                        onClick={() => { setEditFor(r.key); setEditName(r.name); }}
+                                        className="shrink-0 w-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-emerald-600 hover:border-emerald-400 flex items-center justify-center">
+                                        <Pencil size={13} />
+                                      </button>
+                                      <button type="button" title={t('qp_deleteProduct') || 'Delete'} disabled={deletingId === r.productId}
+                                        onClick={() => deleteProduct(r)}
+                                        className="shrink-0 w-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-600 hover:border-rose-400 flex items-center justify-center disabled:opacity-50">
+                                        {deletingId === r.productId ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                      </button>
+                                    </>
                                   )}
-                                  <optgroup label={t('qp_allProducts')}>
-                                    {ranked.rest.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                  </optgroup>
-                                  <option value="__new__">{t('qp_newProduct')}</option>
-                                </select>
+                                </div>
                               </label>
                               <div className="sm:col-span-2 flex items-end gap-1.5">
                                 {r.bagMode ? (
@@ -464,6 +519,17 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createProduct(r); } }} /></label>
                                 <button type="button" onClick={() => createProduct(r)} disabled={creating || !newName.trim()} className="h-10 px-4 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50">
                                   {creating ? <Loader2 size={14} className="animate-spin" /> : t('qp_create')}</button>
+                              </div>
+                            )}
+                            {editFor === r.key && (
+                              <div className="flex flex-wrap items-end gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg p-2">
+                                <label className="block flex-1 min-w-[10rem]"><span className={labelCls}>{t('qp_renameProductName') || 'New name'}</span>
+                                  <input value={editName} onChange={(e) => setEditName(e.target.value)} className={inputCls} autoFocus
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renameProduct(r); } if (e.key === 'Escape') setEditFor(null); }} /></label>
+                                <button type="button" onClick={() => renameProduct(r)} disabled={editSaving || !editName.trim()} className="h-10 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 flex items-center gap-1.5">
+                                  {editSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {t('qp_renameSave') || 'Save'}</button>
+                                <button type="button" onClick={() => setEditFor(null)} disabled={editSaving} className="h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-bold">
+                                  {t('qp_cancel') || 'Cancel'}</button>
                               </div>
                             )}
                             {(kind === 'finished_good' || kind === 'by_product') && (
