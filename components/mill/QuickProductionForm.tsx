@@ -544,38 +544,8 @@ export default function QuickProductionForm({ onClose, onSaved, initialSource, b
                                 </label>
                               </div>
                             )}
-                            {kind === 'finished_good' && (
-                              <div className="space-y-1.5" data-testid="packing-lines">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t('pk_title')}</span>
-                                  <button type="button" onClick={() => setRow(r.key, { pk: [...r.pk, { kg: '', n: '', type: 'bag' }] })} className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">+ {t('pk_add')}</button>
-                                  {r.pk.length === 0 && <span className="text-[11px] text-slate-400">{t('pk_later')}</span>}
-                                </div>
-                                {r.pk.map((l, i) => (
-                                  <div key={i} className="grid grid-cols-[5.2rem_1fr_1fr_auto] gap-2 items-end">
-                                    <select value={l.type} onChange={(e) => setRow(r.key, { pk: r.pk.map((x, j) => (j === i ? { ...x, type: e.target.value as PackRow['type'] } : x)) })} className={cn(inputCls, 'px-1.5')}>
-                                      <option value="bag">{t('pk_bag')}</option><option value="goni">{t('pk_goni')}</option><option value="other">{t('pk_other')}</option>
-                                    </select>
-                                    <label className="block"><span className={labelCls}>{t('pk_kgEach')}</span>
-                                      <input type="number" inputMode="decimal" min="0" value={l.kg} onChange={(e) => setRow(r.key, { pk: r.pk.map((x, j) => (j === i ? { ...x, kg: e.target.value } : x)) })} className={inputCls} /></label>
-                                    <label className="block"><span className={labelCls}>{t('pk_count')}</span>
-                                      <input type="number" inputMode="numeric" min="0" value={l.n} onChange={(e) => setRow(r.key, { pk: r.pk.map((x, j) => (j === i ? { ...x, n: e.target.value } : x)) })} className={inputCls} /></label>
-                                    <button type="button" onClick={() => setRow(r.key, { pk: r.pk.filter((_, j) => j !== i) })} className="h-10 px-2 text-red-500" aria-label={t('qp_remove')}><X size={14} /></button>
-                                  </div>
-                                ))}
-                                {r.pk.length > 0 && rowKg(r) > 0 && (
-                                  <p className={cn('text-[11px] font-mono', packedKgOf(r) > rowKg(r) + 0.005 ? 'text-red-500' : 'text-slate-500')}>
-                                    {t('pk_summary', { packed: fmt(packedKgOf(r)), loose: fmt(Math.max(0, rowKg(r) - packedKgOf(r))) })}
-                                  </p>
-                                )}
-                              </div>
-                            )}
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              {kind === 'finished_good' ? (
-                                <button type="button" onClick={() => setRow(r.key, { bagMode: !r.bagMode })} className="text-[11px] font-bold text-slate-500 underline underline-offset-2">
-                                  {r.bagMode ? t('qp_useWeight') : t('qp_useBags')}
-                                </button>
-                              ) : kind === 'rejection' ? (
+                              {kind === 'rejection' ? (
                                 <input value={r.reason} onChange={(e) => setRow(r.key, { reason: e.target.value })} placeholder={t('qp_reason')} className={cn(inputCls, 'h-8 text-xs flex-1 min-w-[8rem]')} />
                               ) : <span />}
                               <div className="flex items-center gap-3">
