@@ -266,6 +266,9 @@ export default function PurchasesPage() {
   const [freight, setFreight] = useState('');
   const [freightParty, setFreightParty] = useState('');
   const [amountPaidNow, setAmountPaidNow] = useState('');
+  // Which invoice's "Edit" fetch is in flight — drives the spinner on both Edit buttons (row list and
+  // Purchase Details modal) so a slow/failed load is visible instead of looking like a dead button.
+  const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
 
   const [items, setItems] = useState<any[]>([emptyItem()]);
   const [saving, setSaving] = useState(false);
@@ -305,9 +308,14 @@ export default function PurchasesPage() {
   };
 
   const openEdit = async (inv: any) => {
-    setSelectedInvoice(null);
+    // Keep the Purchase Details modal open (just show a spinner on the button) until the fetch
+    // actually succeeds — closing it immediately used to leave the shopkeeper on a bare list with
+    // nothing visibly happening whenever this request was slow or failed (the sandbox's frequent
+    // "Server Unavailable" blips reproduce this every time).
+    setEditLoadingId(inv.id);
     try {
       const { data: full } = await api.get(`/purchases/${inv.id}`);
+      setSelectedInvoice(null);
       setEditingInvoice(full);
       setSupplierId(full.supplierId);
       setInvoiceNumber(full.invoiceNumber || '');
@@ -363,6 +371,8 @@ export default function PurchasesPage() {
       setShowAdd(true);
     } catch (err: any) {
       alert('Failed to load purchase for editing: ' + (err?.response?.data?.error || err.message));
+    } finally {
+      setEditLoadingId(null);
     }
   };
 
@@ -1251,9 +1261,9 @@ export default function PurchasesPage() {
                     <td className="px-5 py-4 text-right font-bold font-mono text-slate-900 dark:text-white">₹{(inv.totalCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => openEdit(inv)} title={t('edit') || 'Edit'}
-                          className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-colors">
-                          <Pencil size={15} />
+                        <button onClick={() => openEdit(inv)} disabled={editLoadingId === inv.id} title={t('edit') || 'Edit'}
+                          className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-colors disabled:opacity-50">
+                          {editLoadingId === inv.id ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />}
                         </button>
                         <button onClick={() => handleDelete(inv)} disabled={deleting} title={t('delete') || 'Delete'}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50">
@@ -1472,9 +1482,9 @@ export default function PurchasesPage() {
             </div>
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
               <div className="flex gap-2 flex-wrap">
-                <button onClick={() => openEdit(selectedInvoice)}
-                  className="px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                  <Pencil size={14} /> {t('edit') || 'Edit'}
+                <button onClick={() => openEdit(selectedInvoice)} disabled={editLoadingId === selectedInvoice.id}
+                  className="px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 text-slate-700 dark:text-slate-300 disabled:opacity-50">
+                  {editLoadingId === selectedInvoice.id ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />} {t('edit') || 'Edit'}
                 </button>
                 <button onClick={() => setShowReturnModal(true)}
                   className="px-4 py-2.5 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 rounded-xl text-sm font-bold shadow-sm hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-colors flex items-center gap-2 text-orange-600 dark:text-orange-400">
