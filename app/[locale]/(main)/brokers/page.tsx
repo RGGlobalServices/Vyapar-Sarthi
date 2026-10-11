@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp, Pencil, Trash2, CheckSquare, Square, AlertCircle, Phone, User, Receipt } from 'lucide-react';
+import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp, Pencil, Trash2, CheckSquare, Square, AlertCircle, Phone, User, Receipt, Wallet, ArrowUpRight, ArrowDownRight, ChevronRight, Calendar, ShoppingBag } from 'lucide-react';
 import { useExport } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -448,57 +448,65 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
     } finally { setDeleting(false); }
   };
 
+  const initials = broker.name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
-          <h2 className="text-base font-black flex items-center gap-2">
-            <Handshake size={16} className="text-rose-600" /> {t('profileTitle')}
-          </h2>
-          <div className="flex items-center gap-1">
-            <button onClick={onEdit} title={t('editBroker')} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
-              <Pencil size={15} />
-            </button>
-            <button
-              onClick={handleDelete}
-              disabled={deleting || hasDues}
-              title={hasDues ? t('deleteBlockedDue') : t('deleteBroker')}
-              className={cn('p-1.5 rounded-lg transition-colors', hasDues ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500')}
-            >
-              {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-            </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
-              <X size={18} />
-            </button>
+        {/* Header with gradient identity banner */}
+        <div className="relative shrink-0 bg-gradient-to-br from-rose-600 via-rose-500 to-orange-500 px-5 pt-4 pb-6 text-white overflow-hidden">
+          <div className="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-white/10" />
+          <div className="absolute -right-2 bottom-0 w-20 h-20 rounded-full bg-white/10" />
+          <div className="relative flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-white/80 flex items-center gap-1.5">
+              <Handshake size={13} /> {t('profileTitle')}
+            </span>
+            <div className="flex items-center gap-1">
+              <button onClick={onEdit} title={t('editBroker')} className="p-1.5 rounded-lg hover:bg-white/15 text-white/90">
+                <Pencil size={15} />
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting || hasDues}
+                title={hasDues ? t('deleteBlockedDue') : t('deleteBroker')}
+                className={cn('p-1.5 rounded-lg transition-colors', hasDues ? 'text-white/40 cursor-not-allowed' : 'hover:bg-white/15 text-white/90')}
+              >
+                {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+              </button>
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/15 text-white/90">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="relative flex items-center gap-3 mt-3">
+            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0 ring-2 ring-white/30 font-black text-lg">
+              {initials || <User size={22} />}
+            </div>
+            <div className="min-w-0">
+              <p className="font-black text-xl leading-tight truncate">{broker.name}</p>
+              {broker.mobile
+                ? <p className="text-sm text-white/85 flex items-center gap-1 mt-0.5"><Phone size={12} /> {broker.mobile}</p>
+                : <p className="text-xs text-white/70 mt-0.5">{t('noMobile')}</p>}
+            </div>
           </div>
         </div>
 
-        <div className="p-5 space-y-4 overflow-y-auto">
-          {/* Identity */}
-          <div className="flex items-start gap-3">
-            <div className="w-11 h-11 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
-              <User size={20} className="text-rose-600 dark:text-rose-400" />
-            </div>
-            <div>
-              <p className="font-black text-lg text-slate-900 dark:text-white leading-tight">{broker.name}</p>
-              {broker.mobile
-                ? <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><Phone size={12} /> {broker.mobile}</p>
-                : <p className="text-xs text-slate-400 mt-0.5">{t('noMobile')}</p>}
-            </div>
-          </div>
-
-          {/* Balance badge */}
-          <div className={cn('rounded-xl p-3 flex justify-between items-center', hasDues ? 'bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20' : 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20')}>
-            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+        <div className="p-5 space-y-4 overflow-y-auto -mt-4">
+          {/* Balance card */}
+          <div className={cn('rounded-xl p-3.5 flex justify-between items-center shadow-sm border',
+            hasDues ? 'bg-white dark:bg-slate-900 border-rose-200 dark:border-rose-500/30' : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-500/30')}>
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <Wallet size={13} className={hasDues ? 'text-rose-500' : 'text-emerald-500'} />
               {hasDues ? t('pendingDue') : t('settled')}
             </span>
-            <span className={cn('text-xl font-black', hasDues ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+            <span className={cn('text-xl font-black flex items-center gap-1', hasDues ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+              {hasDues ? <ArrowUpRight size={16} /> : null}
               {rupee(Math.abs(broker.balance))}
             </span>
           </div>
 
           {hasDues && (
-            <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 -mt-1">
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 -mt-2.5">
               <AlertCircle size={11} /> {t('deleteBlockedHint')}
             </p>
           )}
@@ -506,13 +514,14 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
           {/* Stats */}
           <div className="grid grid-cols-3 gap-2 text-center">
             {[
-              { labelKey: 'orders' as const, value: orderCount },
-              { labelKey: 'totalCommission' as const, value: rupee(totalCommission) },
-              { labelKey: 'totalPaid' as const, value: rupee(totalPaid) },
-            ].map(({ labelKey, value }) => (
-              <div key={labelKey} className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2">
-                <p className="text-[10px] text-slate-400 uppercase font-bold">{t(labelKey)}</p>
-                <p className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{value}</p>
+              { labelKey: 'orders' as const, value: orderCount, icon: ShoppingBag, accent: 'text-slate-500 dark:text-slate-400' },
+              { labelKey: 'totalCommission' as const, value: rupee(totalCommission), icon: TrendingUp, accent: 'text-rose-500' },
+              { labelKey: 'totalPaid' as const, value: rupee(totalPaid), icon: IndianRupee, accent: 'text-emerald-500' },
+            ].map(({ labelKey, value, icon: Icon, accent }) => (
+              <div key={labelKey} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 p-2.5 flex flex-col items-center gap-1">
+                <Icon size={14} className={accent} />
+                <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{value}</p>
+                <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wide">{t(labelKey)}</p>
               </div>
             ))}
           </div>
@@ -526,20 +535,30 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
             {billsLoading ? (
               <div className="py-4 flex justify-center"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
             ) : bills.length === 0 ? (
-              <p className="text-xs text-slate-400 py-2">{t('noBrokerBills')}</p>
+              <div className="py-5 flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                <Receipt size={18} className="text-slate-300 dark:text-slate-600" />
+                <p className="text-xs text-slate-400">{t('noBrokerBills')}</p>
+              </div>
             ) : (
-              <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+              <ul className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
                 {bills.map((bill) => (
-                  <li key={`${bill.type}-${bill.id}`} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
-                    <div className="min-w-0">
+                  <li key={`${bill.type}-${bill.id}`} className="px-3 py-2.5 flex items-center gap-2.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                      bill.type === 'purchase' ? 'bg-sky-100 dark:bg-sky-500/15' : 'bg-violet-100 dark:bg-violet-500/15')}>
+                      {bill.type === 'purchase'
+                        ? <ArrowDownRight size={14} className="text-sky-600 dark:text-sky-400" />
+                        : <ArrowUpRight size={14} className="text-violet-600 dark:text-violet-400" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0',
                           bill.type === 'purchase' ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300' : 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300')}>
-                          {bill.type === 'purchase' ? 'Purchase' : 'Sale'}
+                          {bill.type === 'purchase' ? t('purchaseBadge') : t('saleBadge')}
                         </span>
                         <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{bill.invoiceNumber || '—'}</p>
                       </div>
-                      <p className="text-slate-400 mt-0.5">
+                      <p className="text-slate-400 mt-0.5 flex items-center gap-1">
+                        <Calendar size={10} />
                         {new Date(bill.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         {bill.party ? ` · ${bill.party}` : ''}
                       </p>
@@ -552,19 +571,19 @@ function BrokerProfileModal({ broker, entries, onClose, onEdit, onDeleted, onAdd
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-1">
             <button onClick={onAddCommission}
-              className="flex-1 text-xs font-bold py-2 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-100">
-              + {t('addCommission')}
+              className="flex-1 text-xs font-bold py-2.5 rounded-xl bg-gradient-to-br from-rose-600 to-rose-500 text-white shadow-sm hover:shadow-md transition-shadow flex items-center justify-center gap-1.5">
+              <Plus size={13} /> {t('addCommission')}
             </button>
             <button onClick={onRecordPayment}
-              className="flex-1 text-xs font-bold py-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100">
-              {t('recordPayment')}
+              className="flex-1 text-xs font-bold py-2.5 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-500 text-white shadow-sm hover:shadow-md transition-shadow flex items-center justify-center gap-1.5">
+              <Wallet size={13} /> {t('recordPayment')}
             </button>
           </div>
           <button onClick={onFilterActivity}
-            className="w-full text-xs font-bold py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-            {t('viewActivity')}
+            className="w-full text-xs font-bold py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5">
+            {t('viewActivity')} <ChevronRight size={13} />
           </button>
         </div>
       </div>

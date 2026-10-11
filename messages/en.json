@@ -4184,6 +4184,8 @@
   "Brokers": {
     "brokerBills": "Bills via this broker",
     "noBrokerBills": "No bills tagged to this broker yet.",
+    "purchaseBadge": "Purchase",
+    "saleBadge": "Sale",
     "title": "Brokers",
     "subtitle": "A running account with each broker — commission owed per deal closed, paid off later.",
     "totalOwedLabel": "Total Owed to Brokers",
