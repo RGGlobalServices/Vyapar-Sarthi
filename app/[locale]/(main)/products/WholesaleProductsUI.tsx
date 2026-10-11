@@ -950,15 +950,15 @@ export default function WholesaleProductsUI() {
             {t('wholesaleTitle') || 'Product Master Data'}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 flex items-center gap-2">
-            {bizConfig.label}
+            {locale === 'hi' ? bizConfig.labelHi : locale === 'mr' ? bizConfig.labelMr : bizConfig.label}
             {bizConfig.hasExpiry && (
               <span className="text-[10px] bg-orange-500/15 text-orange-500 border border-orange-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-1">
-                <Calendar size={9} /> Expiry Tracking
+                <Calendar size={9} /> {t('expiryTrackingBadge') || 'Expiry Tracking'}
               </span>
             )}
             {bizConfig.hasBatch && (
               <span className="text-[10px] bg-blue-500/15 text-blue-500 border border-blue-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-1">
-                <FlaskConical size={9} /> Batch Tracking
+                <FlaskConical size={9} /> {t('batchTrackingBadge') || 'Batch Tracking'}
               </span>
             )}
             {bizConfig.hasSizes && (

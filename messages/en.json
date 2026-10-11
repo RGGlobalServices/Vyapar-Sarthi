@@ -563,6 +563,8 @@
     "filters": "Filters",
     "clearAll": "Clear all",
     "allCategories": "All",
+    "expiryTrackingBadge": "Expiry Tracking",
+    "batchTrackingBadge": "Batch Tracking",
     "addReadyProductBtn": "Ready Product",
     "addRawMaterialBtn": "Raw Material",
     "addByProductBtn": "By-Product",

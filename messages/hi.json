@@ -484,6 +484,8 @@
     "filters": "फ़िल्टर",
     "clearAll": "सब हटाएं",
     "allCategories": "सभी",
+    "expiryTrackingBadge": "एक्सपायरी ट्रैकिंग",
+    "batchTrackingBadge": "बैच ट्रैकिंग",
     "addReadyProductBtn": "तैयार उत्पाद",
     "addRawMaterialBtn": "कच्चा माल",
     "addByProductBtn": "उप-उत्पाद",
