@@ -23,8 +23,8 @@ export async function sendToNotPacked(
   // Idempotency: re-saving an edited purchase (or re-running the same production-entry call) must not
   // create a second lot for the same line every time — one already carrying this exact note means it
   // was already sent, so this is a no-op.
-  const already = await tx.finishedGoodsLot.findFirst({ where: { shopId, productId: o.productId, notes: o.sourceNote.slice(0, 250) }, select: { id: true, batchId: true, sourceOutputId: true } });
-  if (already) return { batchId: already.batchId, outputId: already.sourceOutputId || '', lotId: already.id };
+  const already = await tx.finishedGoodsLot.findFirst({ where: { shopId, productId: o.productId, notes: o.sourceNote.slice(0, 250) }, select: { id: true, batchId: true } });
+  if (already) return { batchId: already.batchId, outputId: '', lotId: already.id };
 
   const quantityKg = unitToKg(quantity, o.unit) ?? quantity;
 
@@ -43,10 +43,14 @@ export async function sendToNotPacked(
     },
   });
   const lotNumber = await uniqueLotNumber(tx, shopId, now);
+  // sourceOutputId (if set) must point at a BatchStageOutput row — the stage-based production flow's
+  // own output record, a different model from the ProductionOutput this (Quick Production) flow uses.
+  // Leaving it null is correct here; "Not Packed" (OUTPUTS_SQL) looks up the lot by batchId + productId,
+  // never by this column.
   const lot = await tx.finishedGoodsLot.create({
     data: {
       shopId, lotNumber, productId: o.productId, quantity, availableQuantity: quantity, unit: o.unit || 'kg',
-      batchId: batch.id, sourceOutputId: output.id, status: 'AVAILABLE', notes: o.sourceNote.slice(0, 250),
+      batchId: batch.id, status: 'AVAILABLE', notes: o.sourceNote.slice(0, 250),
     },
   });
   return { batchId: batch.id, outputId: output.id, lotId: lot.id };
@@ -55,7 +59,9 @@ export async function sendToNotPacked(
 // One round trip each (not a loop of existence checks) — this sandbox's DB latency alone was enough to
 // blow a 5s transaction timeout when this used to probe candidates one at a time.
 async function uniqueBatchNumber(tx: any, shopId: string, label: string): Promise<string> {
-  const base = `PUR-${label}`.slice(0, 40);
+  // A manual purchase gets an auto-generated invoice number already shaped "PUR-XXXXXXXX" — don't
+  // double that prefix; an invoice number the shopkeeper actually typed gets it added for clarity.
+  const base = (/^PUR-/i.test(label) ? label : `PUR-${label}`).slice(0, 40);
   const rows: Array<{ n: string }> = await tx.$queryRawUnsafe(
     `SELECT batch_number AS n FROM production_batches WHERE shop_id = $1::uuid AND batch_number LIKE $2`,
     shopId, `${base}%`,
