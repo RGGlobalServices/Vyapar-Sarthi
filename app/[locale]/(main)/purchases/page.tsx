@@ -14,6 +14,7 @@ import { canUseGodowns } from '@/lib/planGates';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import PurchaseReturnModal from '@/components/purchases/PurchaseReturnModal';
 import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
+import DiscountInput from '@/components/DiscountInput';
 import { printLabelSheet } from '@/lib/printLabels';
 import { resolveActiveProfile } from '@/lib/printProfiles';
 
@@ -249,9 +250,22 @@ export default function PurchasesPage() {
   };
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [broker, setBroker] = useState(EMPTY_BROKER);
+  // Snapshot of `broker` as the edit form opened — the broker-commission API logs a NEW commission
+  // charge every time it's called, so re-saving an untouched edit (e.g. just fixing tare weight) must
+  // not resend it. Only a save where `broker` differs from this snapshot submits it. Always "dirty" on
+  // a fresh Add (stays EMPTY_BROKER so any name typed in differs from it).
+  const [initialBroker, setInitialBroker] = useState(EMPTY_BROKER);
   const [tareWeightKg, setTareWeightKg] = useState('');
   const [grossWeightKg, setGrossWeightKg] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  // Bill-level figures re-editable from this form (Bada Udyog) — discount and the mill's own
+  // hamali/freight cost, plus an optional extra payment recorded at save time. Blank/0 means
+  // "no change" on an edit; see openEdit for how each is pre-filled from the saved bill.
+  const [discount, setDiscount] = useState(0);
+  const [hamali, setHamali] = useState('');
+  const [freight, setFreight] = useState('');
+  const [freightParty, setFreightParty] = useState('');
+  const [amountPaidNow, setAmountPaidNow] = useState('');
 
   const [items, setItems] = useState<any[]>([emptyItem()]);
   const [saving, setSaving] = useState(false);
@@ -270,6 +284,7 @@ export default function PurchasesPage() {
     setSupplierId('');
     setInvoiceNumber('');
     setBroker(EMPTY_BROKER);
+    setInitialBroker(EMPTY_BROKER);
     setTareWeightKg('');
     setGrossWeightKg('');
     setDate(new Date().toISOString().split('T')[0]);
@@ -277,6 +292,11 @@ export default function PurchasesPage() {
     setItems([emptyItem()]);
     setSlipId('');
     setNewProd(null);
+    setDiscount(0);
+    setHamali('');
+    setFreight('');
+    setFreightParty('');
+    setAmountPaidNow('');
   };
 
   const openAdd = () => {
@@ -295,6 +315,19 @@ export default function PurchasesPage() {
       setWarehouseId(full.warehouseId || '');
       setTareWeightKg(full.tareWeightKg != null ? String(full.tareWeightKg) : '');
       setGrossWeightKg(full.grossWeightKg != null ? String(full.grossWeightKg) : '');
+      // Bill-level discount isn't stored as its own field — it's the gap between what the items/charges
+      // add up to and the bill's saved total (same reconstruction the Purchase Details view uses).
+      const goodsTotal = (full.purchaseItems || []).reduce((s: number, it: any) => s + (it.quantity || 0) * (it.cost || 0), 0);
+      const chargesSum = (Array.isArray(full.charges) ? full.charges : []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
+      setDiscount(Math.max(0, Math.round((goodsTotal + chargesSum - (full.totalCost || 0)) * 100) / 100));
+      const extras = full.millExtras || { hamali: 0, freight: 0, brokerName: null, brokerCommission: 0 };
+      setHamali(extras.hamali > 0 ? String(extras.hamali) : '');
+      setFreight(extras.freight > 0 ? String(extras.freight) : '');
+      setFreightParty('');
+      setAmountPaidNow('');
+      const prefilledBroker = extras.brokerName ? { name: extras.brokerName, commission: extras.brokerCommission > 0 ? String(extras.brokerCommission) : '' } : EMPTY_BROKER;
+      setBroker(prefilledBroker);
+      setInitialBroker(prefilledBroker);
       // Purchase items come back as a flat list — each colour/size a saved
       // invoice covered is its own row with the same productId. Group them
       // back into one form row per product so re-editing shows the same
@@ -425,19 +458,31 @@ export default function PurchasesPage() {
       ...(isMill && slipId && !editingInvoice ? { weighbridgeEntryId: slipId } : {}),
       ...(isMill && tareWeightKg !== '' ? { tareWeightKg } : {}),
       ...(isMill && grossWeightKg !== '' ? { grossWeightKg } : {}),
+      ...(isMill && discount > 0 ? { discount } : {}),
+      ...(isMill && hamali !== '' ? { hamali: Math.max(0, Number(hamali) || 0) } : {}),
+      ...(isMill && freight !== '' ? { freight: Math.max(0, Number(freight) || 0), freightParty: freightParty.trim() || undefined } : {}),
+      ...(amountPaidNow !== '' && Number(amountPaidNow) > 0 ? { amountPaid: Number(amountPaidNow), paymentMode: 'Cash' } : {}),
     };
 
     try {
+      let invoiceId = editingInvoice?.id;
+      let billNumber = invoiceNumber || editingInvoice?.invoiceNumber;
       if (editingInvoice) {
         await api.patch(`/purchases/${editingInvoice.id}`, payload);
       } else {
         const res = await api.post('/purchases', payload);
-        // Broker + commission: best-effort, after the purchase is safely saved (a failure never undoes the bill).
-        if (isMill && broker.name.trim()) {
-          const inv = res?.data?.invoice;
-          api.post('/mill/broker-commission', { name: broker.name, commission: broker.commission, billNumber: inv?.invoiceNumber || invoiceNumber || inv?.id, kind: 'supplier', purchaseInvoiceId: inv?.id })
-            .catch((e: any) => console.error('Broker commission not saved:', e));
-        }
+        const inv = res?.data?.invoice;
+        invoiceId = inv?.id;
+        billNumber = inv?.invoiceNumber || invoiceNumber || inv?.id;
+      }
+      // Broker + commission: best-effort, after the purchase is safely saved (a failure never undoes the
+      // bill). On an edit, only resend when the broker fields actually changed from what the form opened
+      // with — the commission API logs a fresh charge every call, so re-saving an untouched broker on an
+      // unrelated edit (e.g. just fixing tare weight) must not double the commission.
+      const brokerChanged = !editingInvoice || broker.name.trim() !== initialBroker.name.trim() || broker.commission !== initialBroker.commission;
+      if (isMill && broker.name.trim() && brokerChanged) {
+        api.post('/mill/broker-commission', { name: broker.name, commission: broker.commission, billNumber, kind: 'supplier', purchaseInvoiceId: invoiceId })
+          .catch((e: any) => console.error('Broker commission not saved:', e));
       }
       setShowAdd(false);
       resetForm();
@@ -655,7 +700,7 @@ export default function PurchasesPage() {
                   <input type="text" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="e.g. INV-2023-001" />
                 </div>
-                {isMill && !editingInvoice && (
+                {isMill && (
                   <div className="sm:col-span-2"><BrokerField kind="supplier" value={broker} onChange={setBroker} /></div>
                 )}
                 {isMill && (
@@ -686,6 +731,48 @@ export default function PurchasesPage() {
               </div>
             </CardContent>
           </Card>
+
+          {isMill && (
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm" data-testid="bill-extras">
+              <CardContent className="p-6">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">{t('billExtrasTitle') || 'Bill Details'}</h3>
+                <p className="text-xs text-slate-400 mb-4">{t('billExtrasHint') || 'Anything missed at import — discount, hamali, freight, advance — can be filled in or corrected here.'}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('billDiscountLabel') || 'Bill Discount'}</label>
+                    <DiscountInput subtotal={purchaseTotal} discount={discount} setDiscount={setDiscount} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('amountPaidNowLabel') || 'Amount Paid Now'} <span className="normal-case text-slate-400 font-normal">({t('optionalLabel') || 'optional'})</span></label>
+                    <input type="number" min="0" value={amountPaidNow} onChange={e => setAmountPaidNow(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('hamaliLabel') || 'Hamali'}</label>
+                    <input type="number" min="0" value={hamali} onChange={e => setHamali(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('freightLabel') || 'Freight / Driver Bill'}</label>
+                      <input type="number" min="0" value={freight} onChange={e => setFreight(e.target.value)}
+                        placeholder="0"
+                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('transporterLabel') || 'Transporter / Driver'}</label>
+                      <input type="text" value={freightParty} onChange={e => setFreightParty(e.target.value)}
+                        placeholder={t('transporterPlaceholder') || 'Name (optional)'}
+                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-3">{t('hamaliFreightHint') || 'Hamali and freight are the mill’s own cost — they never change what the supplier is owed.'}</p>
+              </CardContent>
+            </Card>
+          )}
 
           {isMill && !editingInvoice && (
             <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm" data-testid="weighbridge-import">

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readCharges, chargesTotal } from '@/lib/server/purchaseCharges';
 import { getPurchaseExtras } from '@/lib/server/purchaseExtras';
+import { upsertHamali, upsertFreight } from '@/lib/server/purchaseExtrasWrite';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse } from '@/lib/server/http';
@@ -73,6 +74,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
     auth = await requireShop(req);
     const data = await req.json();
     const { supplierId, invoiceNumber, date, warehouseId, items, paymentMode, amountPaid } = data;
+    // Bill-level discount, re-editable from the Purchases "Edit" form so a mistake caught after
+    // import (or a figure left blank at import time) can be corrected without re-importing the bill.
+    const discountAmt = Math.max(0, Number(data.discount) || 0);
 
     if (!supplierId || !items || items.length === 0) {
       return NextResponse.json({ error: 'Missing required purchase details.' }, { status: 400 });
@@ -105,6 +109,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     // The bill's charges (hamali, freight … set when it was imported) are part of what is owed and survive an edit of the items.
     const prior = await prisma.purchaseInvoice.findFirst({ where: { id, shopId: auth!.shop.id }, select: { charges: true } });
     totalCost += chargesTotal(readCharges(prior?.charges));
+    totalCost = Math.max(0, totalCost - discountAmt);
 
     // Undo the old stock/ledger effects, then re-apply as if this were a
     // fresh purchase — same machinery as POST, just keeping the invoice id
@@ -229,6 +234,19 @@ export async function PATCH(req: Request, { params }: Ctx) {
     try {
       await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, oldInvoice);
     } catch (e) { console.error('Purchase ledger/batch cleanup failed:', e); }
+
+    // Hamali / Freight (Bada Udyog): best-effort, same as the broker commission on POST — a figure
+    // left blank at import time (or caught wrong afterwards) can be fixed here without touching the
+    // bill's own total (these are the mill's own cost, never part of what the supplier is owed).
+    if (data.hamali !== undefined || data.freight !== undefined) {
+      try {
+        const label = invoiceNumber || id;
+        await prisma.$transaction(async (tx) => {
+          if (data.hamali !== undefined) await upsertHamali(tx, auth!.shop.id, id, label, Math.max(0, Number(data.hamali) || 0));
+          if (data.freight !== undefined) await upsertFreight(tx, auth!.shop.id, id, label, Math.max(0, Number(data.freight) || 0), data.freightParty);
+        });
+      } catch (e) { console.error('Hamali/Freight update failed:', e); }
+    }
 
     // Per-variant stock breakdown: undo what the old line items added, then
     // (re)apply the new ones — same best-effort, after-commit treatment as

@@ -14,6 +14,7 @@ import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
 import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
+import { upsertHamali, upsertFreight } from '@/lib/server/purchaseExtrasWrite';
 
 
 // Bada Udyog: whether a saved purchase's items include a Raw-Material-classed product, and whether it has already been pushed into
@@ -135,6 +136,9 @@ export async function POST(req: Request) {
     const finalAmountPaid = typeof amountPaid === 'number' ? amountPaid : 0;
     const finalPaymentMode = paymentMode || 'Cash';
     const invoiceId = randomUUID();
+    // Bill-level discount — same editable figure as the Purchases "Edit" form, so the Add form can
+    // record it too, instead of only being settable through the AI import wizard.
+    const discountAmt = Math.max(0, Number(data.discount) || 0);
 
     let totalCost = 0;
     let totalGst = 0;
@@ -150,6 +154,7 @@ export async function POST(req: Request) {
       totalCost += item.quantity * item.cost;
       if (item.gst) totalGst += item.gst;
     }
+    totalCost = Math.max(0, totalCost - discountAmt);
 
     const purchaseProductIds = [...new Set(processedItems.map((i: any) => i.productId))] as string[];
     // Batch numbers that need a merge-check (only items that actually carry one)
@@ -425,6 +430,19 @@ export async function POST(req: Request) {
     }
 
     invalidateDashboardCacheForShop(auth.shop.id);
+
+    // Hamali / Freight (Bada Udyog): best-effort, mirrors the discount above — lets the Add form
+    // record the mill's own cost on the bill without routing through the AI import wizard.
+    if (!idempotencyOutcome.isDuplicate && (data.hamali !== undefined || data.freight !== undefined)) {
+      try {
+        const label = invoiceNumber || invoiceId;
+        await prisma.$transaction(async (tx) => {
+          if (data.hamali !== undefined) await upsertHamali(tx, auth.shop.id, invoice.id, label, Math.max(0, Number(data.hamali) || 0));
+          if (data.freight !== undefined) await upsertFreight(tx, auth.shop.id, invoice.id, label, Math.max(0, Number(data.freight) || 0), data.freightParty);
+        });
+      } catch (e) { console.error('Hamali/Freight create failed:', e); }
+    }
+
     return NextResponse.json({ success: true, invoice, isDuplicate: idempotencyOutcome.isDuplicate });
   } catch (error: any) {
     const known = apiErrorResponse(error);
