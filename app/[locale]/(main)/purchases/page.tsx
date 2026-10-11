@@ -1142,7 +1142,18 @@ export default function PurchasesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {invoices.map((inv: any) => (
-                  <tr key={inv.id} onClick={() => setSelectedInvoice(inv)} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer">
+                  <tr key={inv.id} onClick={() => {
+                    setSelectedInvoice(inv);
+                    // Hamali / Freight / Broker commission for a mill bill live in separate
+                    // ledgers (Expense / FreightEntry / CommissionEntry), not on the invoice
+                    // itself — fetch them once the modal is open so "why is Bill Total less
+                    // than Goods Total" has a full answer, not just the discount line.
+                    if (isMill) {
+                      api.get(`/purchases/${inv.id}`).then(res => {
+                        setSelectedInvoice((cur: any) => (cur && cur.id === inv.id) ? { ...cur, millExtras: res.data?.millExtras } : cur);
+                      }).catch(() => {});
+                    }
+                  }} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer">
                     <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">{fmtDate(inv.date)}</td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400 font-mono text-xs">{inv.invoiceNumber || '-'}</td>
                     <td className="px-5 py-4 text-slate-900 dark:text-slate-200 font-bold">{inv.supplier?.name}</td>
@@ -1288,12 +1299,18 @@ export default function PurchasesPage() {
               {/* Bill Summary */}
               {(() => {
                 const goodsTotal = (selectedInvoice.purchaseItems || []).reduce((s: number, item: any) => s + (item.quantity || 0) * (item.cost || 0), 0);
-                const discount = parseFloat(selectedInvoice.supplier?.discount ?? '0') || 0;
                 const chargesTotal = (selectedInvoice.charges || []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
                 const billTotal = selectedInvoice.totalCost || 0;
+                // The invoice has no discount field of its own — Bill Total was computed at save
+                // time as Goods Total + Charges − Discount, so Discount is reconstructed from the
+                // same three numbers already shown here. This is what used to make "why did my
+                // bill amount come out lower" unanswerable: the discount line simply never rendered.
+                const discount = Math.max(0, Math.round((goodsTotal + chargesTotal - billTotal) * 100) / 100);
                 const paidNow = parseFloat(selectedInvoice.supplier?.paidAmount ?? selectedInvoice.paidAmount ?? '0') || 0;
                 const balance = billTotal - paidNow;
-                if (goodsTotal === 0 && discount === 0 && chargesTotal === 0 && paidNow === 0) return null;
+                const extras = selectedInvoice.millExtras as { hamali: number; freight: number; brokerName: string | null; brokerCommission: number } | undefined;
+                const hasExtras = !!extras && (extras.hamali > 0 || extras.freight > 0 || extras.brokerCommission > 0);
+                if (goodsTotal === 0 && discount === 0 && chargesTotal === 0 && paidNow === 0 && !hasExtras) return null;
                 return (
                   <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                     <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
@@ -1335,6 +1352,33 @@ export default function PurchasesPage() {
                         </span>
                       </div>
                     </div>
+                    {hasExtras && (
+                      <>
+                        <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-y border-slate-200 dark:border-slate-800">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Mill's Own Cost — Not Owed to Supplier</p>
+                        </div>
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {extras!.hamali > 0 && (
+                            <div className="px-4 py-2.5 flex justify-between items-center">
+                              <span className="text-xs text-slate-600 dark:text-slate-400">Hamali</span>
+                              <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{extras!.hamali.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                          {extras!.freight > 0 && (
+                            <div className="px-4 py-2.5 flex justify-between items-center">
+                              <span className="text-xs text-slate-600 dark:text-slate-400">Freight</span>
+                              <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{extras!.freight.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                          {extras!.brokerCommission > 0 && (
+                            <div className="px-4 py-2.5 flex justify-between items-center">
+                              <span className="text-xs text-slate-600 dark:text-slate-400">Broker Commission{extras!.brokerName ? ` · ${extras!.brokerName}` : ''}</span>
+                              <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white tabular-nums">₹{extras!.brokerCommission.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })()}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readCharges, chargesTotal } from '@/lib/server/purchaseCharges';
+import { getPurchaseExtras } from '@/lib/server/purchaseExtras';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse } from '@/lib/server/http';
@@ -57,7 +58,8 @@ export async function GET(req: Request, { params }: Ctx) {
     });
 
     const [annotated] = await annotateRawMaterialStatus(auth.shop.id, [invoice]);
-    return NextResponse.json({ ...annotated, warehouseId: movement?.warehouseId || null });
+    const millExtras = await getPurchaseExtras(prisma, auth.shop.id, id);
+    return NextResponse.json({ ...annotated, warehouseId: movement?.warehouseId || null, millExtras });
   } catch (error: any) {
     console.error('[API] Error fetching purchase:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
