@@ -933,7 +933,7 @@ export default function PurchasesPage() {
                       <div className="w-32">
                         <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('qty') || 'Qty'}</label>
                         <input type="number" required min={isMill ? '0.001' : '1'} step={isMill ? 'any' : undefined} value={item.quantity}
-                          onFocus={e => e.target.select()}
+                          onFocus={e => { const t = e.target; setTimeout(() => t.select(), 0); }}
                           onChange={e => {
                             const newItems = [...items];
                             newItems[index].quantity = isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1);
@@ -999,11 +999,13 @@ export default function PurchasesPage() {
                           ₹{effectiveItemCost(item).toFixed(2)}
                         </p>
                       ) : (
-                        <input type="number" step="0.01" required value={item.cost} onChange={e => {
-                          const newItems = [...items];
-                          newItems[index].cost = parseFloat(e.target.value) || 0;
-                          setItems(newItems);
-                        }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                        <input type="number" step="0.01" required value={item.cost}
+                          onFocus={e => { const t = e.target; setTimeout(() => t.select(), 0); }}
+                          onChange={e => {
+                            const newItems = [...items];
+                            newItems[index].cost = parseFloat(e.target.value) || 0;
+                            setItems(newItems);
+                          }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                       )}
                     </div>
                     <div className="w-32">
@@ -1101,6 +1103,7 @@ export default function PurchasesPage() {
                                   onClick={() => { const n = [...items]; n[index].bagCount = Math.max(0, (n[index].bagCount || 0) - 1); setItems(n); }}
                                   className="w-6 h-6 flex items-center justify-center rounded border border-amber-300 dark:border-amber-500/50 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold text-sm hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors select-none">−</button>
                                 <input type="number" min="0" step="1" value={item.bagCount || 0}
+                                  onFocus={e => { const t = e.target; setTimeout(() => t.select(), 0); }}
                                   onChange={e => { const n = [...items]; n[index].bagCount = Math.max(0, parseInt(e.target.value) || 0); setItems(n); }}
                                   className="w-16 px-1.5 py-1 text-center bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded text-sm font-bold font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
                                 <button type="button"
@@ -1112,6 +1115,7 @@ export default function PurchasesPage() {
                             <div className="px-3 py-2.5 bg-amber-50/60 dark:bg-slate-900">
                               <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('wtPerBag', { unit: unitLabel })}</label>
                               <input type="number" min="0" step="0.001" value={item.bagWeightKg ?? '0.5'}
+                                onFocus={e => { const t = e.target; setTimeout(() => t.select(), 0); }}
                                 onChange={e => { const n = [...items]; n[index].bagWeightKg = e.target.value; setItems(n); }}
                                 className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded text-sm font-mono text-right text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
                             </div>
