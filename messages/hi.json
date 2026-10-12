@@ -3165,7 +3165,20 @@
     "millDestStock": "स्टॉक",
     "millDestRawMaterial": "कच्चा माल",
     "millDestNotPacked": "पैक नहीं हुआ",
-    "millDestByProductNotPacked": "उप-उत्पाद पैक नहीं हुआ"
+    "millDestByProductNotPacked": "उप-उत्पाद पैक नहीं हुआ",
+    "tareWeightKg": "टेयर वजन (kg)",
+    "grossWeightKg": "सकल वजन (kg)",
+    "netWeightKg": "शुद्ध वजन (kg)",
+    "netWeightLabel": "शुद्ध {value} kg",
+    "netWeightApplyHint": "या पहले आइटम पर लागू करें:",
+    "applyNetToItemQty": "Item Qty में लगाएं",
+    "goniLabel": "बोरी (Bags)",
+    "wtPerBag": "वजन / बोरी ({unit})",
+    "bagWtDeduction": "बोरी वजन",
+    "inhandMaal": "हाथ में माल",
+    "tareWeightShort": "टेयर वजन",
+    "grossWeightShort": "सकल वजन",
+    "netWeightShort": "शुद्ध वजन"
   },
   "Profile": {
     "title": "व्यापार प्रोफ़ाइल",

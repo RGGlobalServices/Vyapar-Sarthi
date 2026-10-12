@@ -3162,7 +3162,20 @@
     "millDestStock": "Stock",
     "millDestRawMaterial": "Raw Material",
     "millDestNotPacked": "Not Packed",
-    "millDestByProductNotPacked": "By-Products Not Packed"
+    "millDestByProductNotPacked": "By-Products Not Packed",
+    "tareWeightKg": "Tare Weight (kg)",
+    "grossWeightKg": "Gross Weight (kg)",
+    "netWeightKg": "Net Weight (kg)",
+    "netWeightLabel": "Net {value} kg",
+    "netWeightApplyHint": "Or apply to first item:",
+    "applyNetToItemQty": "Use as Item Qty",
+    "goniLabel": "Goni (Bags)",
+    "wtPerBag": "Wt / Bag ({unit})",
+    "bagWtDeduction": "Bag wt",
+    "inhandMaal": "Inhand Maal",
+    "tareWeightShort": "Tare Weight",
+    "grossWeightShort": "Gross Weight",
+    "netWeightShort": "Net Weight"
   },
   "Profile": {
     "title": "Business Profile",

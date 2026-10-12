@@ -750,17 +750,17 @@ export default function PurchasesPage() {
                     <div className="sm:col-span-2 space-y-2" data-testid="weight-fields">
                       <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Tare Weight (kg)</label>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('tareWeightKg')}</label>
                           <input type="number" min="0" step="0.001" value={tareWeightKg} onChange={e => setTareWeightKg(e.target.value)}
                             className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Gross Weight (kg)</label>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('grossWeightKg')}</label>
                           <input type="number" min="0" step="0.001" value={grossWeightKg} onChange={e => setGrossWeightKg(e.target.value)}
                             className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Net Weight (kg)</label>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('netWeightKg')}</label>
                           <div className={cn(
                             'w-full px-3 py-2.5 rounded-lg text-sm border',
                             netKg !== null
@@ -773,12 +773,12 @@ export default function PurchasesPage() {
                       </div>
                       {netKg !== null && (
                         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-400">
-                          <span className="font-semibold">Net {netKg.toLocaleString('en-IN', { maximumFractionDigits: 3 })} kg</span>
+                          <span className="font-semibold">{t('netWeightLabel', { value: netKg.toLocaleString('en-IN', { maximumFractionDigits: 3 }) })}</span>
                           <span className="text-emerald-400">→</span>
-                          <span className="text-slate-500 dark:text-slate-400 flex-1">Item cha Qty aaposhap fill honar nahi — khali Items madhe manually enter kara kinwa:</span>
+                          <span className="text-slate-500 dark:text-slate-400 flex-1">{t('netWeightApplyHint')}</span>
                           <button type="button" onClick={applyNetToItem}
                             className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors">
-                            → Item Qty la laav
+                            {t('applyNetToItemQty')}
                           </button>
                         </div>
                       )}
@@ -1091,7 +1091,7 @@ export default function PurchasesPage() {
                       return (
                         <div className="flex flex-wrap items-end gap-3 pt-1 pb-1 px-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5">
                           <div>
-                            <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1.5">Goni (Bags)</label>
+                            <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1.5">{t('goniLabel')}</label>
                             <div className="flex items-center gap-1">
                               <button type="button"
                                 onClick={() => { const n = [...items]; n[index].bagCount = Math.max(0, (n[index].bagCount || 0) - 1); setItems(n); }}
@@ -1105,20 +1105,20 @@ export default function PurchasesPage() {
                             </div>
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1.5">Wt / Bag ({unitLabel})</label>
+                            <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1.5">{t('wtPerBag', { unit: unitLabel })}</label>
                             <input type="number" min="0" step="0.001" value={item.bagWeightKg ?? '0.5'}
                               onChange={e => { const n = [...items]; n[index].bagWeightKg = e.target.value; setItems(n); }}
                               className="w-20 px-2 py-1 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
                           </div>
                           {(item.bagCount || 0) > 0 && bDeduction > 0 && (
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase">Bag wt</span>
+                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase">{t('bagWtDeduction')}</span>
                               <span className="text-sm font-bold text-amber-600 dark:text-amber-400">−{bDeduction.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {unitLabel}</span>
                             </div>
                           )}
                           {inHand !== null && (
                             <div className="flex flex-col gap-0.5 ml-auto">
-                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Inhand Maal</span>
+                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">{t('inhandMaal')}</span>
                               <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-2 py-0.5">
                                 {inHand.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {unitLabel}
                               </span>
@@ -1450,15 +1450,15 @@ export default function PurchasesPage() {
                 {isMill && (selectedInvoice.tareWeightKg != null || selectedInvoice.grossWeightKg != null) && (
                   <div className="col-span-2 md:col-span-4 grid grid-cols-3 gap-2" data-testid="weight-display">
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tare Weight</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('tareWeightShort')}</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white font-mono">{selectedInvoice.tareWeightKg != null ? `${selectedInvoice.tareWeightKg.toLocaleString('en-IN')} kg` : '-'}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gross Weight</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('grossWeightShort')}</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white font-mono">{selectedInvoice.grossWeightKg != null ? `${selectedInvoice.grossWeightKg.toLocaleString('en-IN')} kg` : '-'}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Weight</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('netWeightShort')}</p>
                       <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                         {selectedInvoice.tareWeightKg != null && selectedInvoice.grossWeightKg != null ? `${Math.max(0, selectedInvoice.grossWeightKg - selectedInvoice.tareWeightKg).toLocaleString('en-IN')} kg` : '-'}
                       </p>
