@@ -21,7 +21,7 @@
     "db:generate": "npx dotenv-cli -e .env.local -- prisma generate",
     "db:push": "npx dotenv-cli -e .env.local -- prisma db push",
     "db:migrate": "npx dotenv-cli -e .env.local -- prisma migrate dev",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && node scripts/stub-parcel-watcher.js",
     "prepare": "husky",
     "desktop:build:win": "electron-builder --win",
     "desktop:build:mac": "electron-builder --mac",
