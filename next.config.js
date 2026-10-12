@@ -1,42 +1,42 @@
 // Stub @parcel/watcher and @swc/core before next-intl/plugin loads them.
-// Both packages require native binaries that are unavailable on some Linux
-// build servers. They are only used for i18n file-watching in development;
-// production builds work correctly without them.
+// Both need native binaries unavailable on some Linux build servers.
+// Strategy: try to require normally; if it fails, resolve the path without
+// executing and inject a no-op stub into require.cache at the real path.
+// This avoids fake IDs that downstream code may treat as file paths.
 (function stubNativeDevModules() {
-  const Module = require('module');
   const noop = () => {};
 
-  function stubModule(name, exports) {
-    const fakeId = '\0stub:' + name;
-    Module._cache[fakeId] = { id: fakeId, filename: fakeId, loaded: true, exports: exports, children: [] };
-    const orig = Module._resolveFilename;
-    Module._resolveFilename = function(request, parent, isMain, options) {
-      if (request === name) return fakeId;
-      return orig.call(this, request, parent, isMain, options);
-    };
+  function safeStub(name, stub) {
+    try {
+      require(name); // success → no stub needed
+    } catch (_loadErr) {
+      try {
+        const resolved = require.resolve(name); // path only, no execution
+        require.cache[resolved] = {
+          id: resolved, filename: resolved,
+          loaded: true, exports: stub, children: [],
+        };
+      } catch (_resolveErr) {} // not installed at all — nothing to do
+    }
   }
 
-  try { require('@parcel/watcher'); } catch (_e) {
-    stubModule('@parcel/watcher', {
-      subscribe: async () => ({ unsubscribe: noop }),
-      unsubscribe: noop,
-      getEventsSince: async () => [],
-      writeSnapshot: async () => '',
-    });
-  }
+  safeStub('@parcel/watcher', {
+    subscribe: async () => ({ unsubscribe: noop }),
+    unsubscribe: noop,
+    getEventsSince: async () => [],
+    writeSnapshot: async () => '',
+  });
 
-  try { require('@swc/core'); } catch (_e) {
-    stubModule('@swc/core', {
-      transform: async (src) => ({ code: src }),
-      transformSync: (src) => ({ code: src }),
-      parse: async () => ({}),
-      parseSync: () => ({}),
-      print: async () => ({ code: '' }),
-      printSync: () => ({ code: '' }),
-      minify: async (src) => ({ code: src }),
-      minifySync: (src) => ({ code: src }),
-    });
-  }
+  safeStub('@swc/core', {
+    transform: async (src) => ({ code: src }),
+    transformSync: (src) => ({ code: src }),
+    parse: async () => ({}),
+    parseSync: () => ({}),
+    print: async () => ({ code: '' }),
+    printSync: () => ({ code: '' }),
+    minify: async (src) => ({ code: src }),
+    minifySync: (src) => ({ code: src }),
+  });
 })();
 
 const createNextIntlPlugin = require('next-intl/plugin');
@@ -56,13 +56,10 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Backend is now served by native Next.js Route Handlers under app/api/v1.
-  // Prisma + bcrypt must stay external so they aren't bundled by webpack.
   serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma', 'bcryptjs'],
   webpack: (config, { isServer }) => {
     config.optimization.moduleIds = 'named';
 
-    // Add polyfills for non-Node.js environments
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
