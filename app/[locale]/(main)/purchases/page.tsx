@@ -731,26 +731,60 @@ export default function PurchasesPage() {
                 {isMill && (
                   <div className="sm:col-span-2"><BrokerField kind="supplier" value={broker} onChange={setBroker} /></div>
                 )}
-                {isMill && (
-                  <div className="sm:col-span-2 grid grid-cols-3 gap-2" data-testid="weight-fields">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Tare Weight (kg)</label>
-                      <input type="number" min="0" step="0.001" value={tareWeightKg} onChange={e => setTareWeightKg(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Gross Weight (kg)</label>
-                      <input type="number" min="0" step="0.001" value={grossWeightKg} onChange={e => setGrossWeightKg(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Net Weight (kg)</label>
-                      <div className="w-full px-3 py-2.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 dark:text-slate-400">
-                        {tareWeightKg !== '' && grossWeightKg !== '' ? Math.max(0, Number(grossWeightKg) - Number(tareWeightKg)).toLocaleString('en-IN') : '—'}
+                {isMill && (() => {
+                  const netKg = tareWeightKg !== '' && grossWeightKg !== ''
+                    ? Math.max(0, Number(grossWeightKg) - Number(tareWeightKg))
+                    : null;
+                  const applyNetToItem = () => {
+                    if (netKg === null) return;
+                    const newItems = [...items];
+                    if (!newItems.length) return;
+                    const prod = products.find((p: any) => p.id === newItems[0].productId);
+                    const base = kgPerBase(prod?.baseUnit) || 1;
+                    newItems[0].quantity = Math.round(netKg * 1000) / 1000;
+                    newItems[0].unitLabel = 'kg';
+                    newItems[0].conversionFactor = 1 / base;
+                    setItems(newItems);
+                  };
+                  return (
+                    <div className="sm:col-span-2 space-y-2" data-testid="weight-fields">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Tare Weight (kg)</label>
+                          <input type="number" min="0" step="0.001" value={tareWeightKg} onChange={e => setTareWeightKg(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Gross Weight (kg)</label>
+                          <input type="number" min="0" step="0.001" value={grossWeightKg} onChange={e => setGrossWeightKg(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">Net Weight (kg)</label>
+                          <div className={cn(
+                            'w-full px-3 py-2.5 rounded-lg text-sm border',
+                            netKg !== null
+                              ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-semibold'
+                              : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                          )}>
+                            {netKg !== null ? netKg.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}
+                          </div>
+                        </div>
                       </div>
+                      {netKg !== null && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-400">
+                          <span className="font-semibold">Net {netKg.toLocaleString('en-IN', { maximumFractionDigits: 3 })} kg</span>
+                          <span className="text-emerald-400">→</span>
+                          <span className="text-slate-500 dark:text-slate-400 flex-1">Item cha Qty aaposhap fill honar nahi — khali Items madhe manually enter kara kinwa:</span>
+                          <button type="button" onClick={applyNetToItem}
+                            className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors">
+                            → Item Qty la laav
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('purchaseDate') || 'Purchase Date'}</label>
                   <input type="date" value={date} onChange={e => setDate(e.target.value)}
