@@ -930,13 +930,13 @@ export default function PurchasesPage() {
                       </div>
                     )}
                     {!hasVariants && (
-                      <div className="w-24">
+                      <div className="w-32">
                         <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('qty') || 'Qty'}</label>
                         <input type="number" required min={isMill ? '0.001' : '1'} step={isMill ? 'any' : undefined} value={item.quantity} onChange={e => {
                           const newItems = [...items];
                           newItems[index].quantity = isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1);
                           setItems(newItems);
-                        }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                        }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-right font-mono text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                       </div>
                     )}
                     {isMill ? (
@@ -1089,41 +1089,45 @@ export default function PurchasesPage() {
                       const inHand = qty > 0 && bDeduction > 0 ? Math.max(0, qty - bDeduction) : null;
                       const unitLabel = item.unitLabel || selectedProduct?.baseUnit || 'kg';
                       return (
-                        <div className="flex flex-wrap items-end gap-3 pt-1 pb-1 px-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5">
-                          <div>
-                            <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1.5">{t('goniLabel')}</label>
-                            <div className="flex items-center gap-1">
-                              <button type="button"
-                                onClick={() => { const n = [...items]; n[index].bagCount = Math.max(0, (n[index].bagCount || 0) - 1); setItems(n); }}
-                                className="w-7 h-7 flex items-center justify-center rounded-lg border border-amber-300 dark:border-amber-500/50 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold text-base hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors select-none">−</button>
-                              <input type="number" min="0" step="1" value={item.bagCount || 0}
-                                onChange={e => { const n = [...items]; n[index].bagCount = Math.max(0, parseInt(e.target.value) || 0); setItems(n); }}
-                                className="w-14 px-2 py-1 text-center bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded-lg text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                              <button type="button"
-                                onClick={() => { const n = [...items]; n[index].bagCount = (n[index].bagCount || 0) + 1; setItems(n); }}
-                                className="w-7 h-7 flex items-center justify-center rounded-lg border border-amber-300 dark:border-amber-500/50 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold text-base hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors select-none">+</button>
+                        <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5 overflow-hidden">
+                          <div className="grid grid-cols-4 divide-x divide-amber-200 dark:divide-amber-500/30">
+                            {/* Col 1 — bag count */}
+                            <div className="px-3 py-2.5">
+                              <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('goniLabel')}</label>
+                              <div className="flex items-center gap-1">
+                                <button type="button"
+                                  onClick={() => { const n = [...items]; n[index].bagCount = Math.max(0, (n[index].bagCount || 0) - 1); setItems(n); }}
+                                  className="w-6 h-6 flex items-center justify-center rounded border border-amber-300 dark:border-amber-500/50 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold text-sm hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors select-none">−</button>
+                                <input type="number" min="0" step="1" value={item.bagCount || 0}
+                                  onChange={e => { const n = [...items]; n[index].bagCount = Math.max(0, parseInt(e.target.value) || 0); setItems(n); }}
+                                  className="w-16 px-1.5 py-1 text-center bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded text-sm font-bold font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                                <button type="button"
+                                  onClick={() => { const n = [...items]; n[index].bagCount = (n[index].bagCount || 0) + 1; setItems(n); }}
+                                  className="w-6 h-6 flex items-center justify-center rounded border border-amber-300 dark:border-amber-500/50 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold text-sm hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors select-none">+</button>
+                              </div>
+                            </div>
+                            {/* Col 2 — wt per bag */}
+                            <div className="px-3 py-2.5">
+                              <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('wtPerBag', { unit: unitLabel })}</label>
+                              <input type="number" min="0" step="0.001" value={item.bagWeightKg ?? '0.5'}
+                                onChange={e => { const n = [...items]; n[index].bagWeightKg = e.target.value; setItems(n); }}
+                                className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded text-sm font-mono text-right text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                            </div>
+                            {/* Col 3 — bag deduction */}
+                            <div className="px-3 py-2.5">
+                              <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('bagWtDeduction')}</label>
+                              <p className={cn('text-sm font-bold font-mono text-right', bDeduction > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400')}>
+                                {bDeduction > 0 ? `−${bDeduction.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unitLabel}` : '—'}
+                              </p>
+                            </div>
+                            {/* Col 4 — inhand maal */}
+                            <div className={cn('px-3 py-2.5', inHand !== null ? 'bg-emerald-50 dark:bg-emerald-500/10' : '')}>
+                              <label className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide mb-2">{t('inhandMaal')}</label>
+                              <p className={cn('text-sm font-bold font-mono text-right', inHand !== null ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400')}>
+                                {inHand !== null ? `${inHand.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unitLabel}` : '—'}
+                              </p>
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1.5">{t('wtPerBag', { unit: unitLabel })}</label>
-                            <input type="number" min="0" step="0.001" value={item.bagWeightKg ?? '0.5'}
-                              onChange={e => { const n = [...items]; n[index].bagWeightKg = e.target.value; setItems(n); }}
-                              className="w-20 px-2 py-1 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                          </div>
-                          {(item.bagCount || 0) > 0 && bDeduction > 0 && (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase">{t('bagWtDeduction')}</span>
-                              <span className="text-sm font-bold text-amber-600 dark:text-amber-400">−{bDeduction.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {unitLabel}</span>
-                            </div>
-                          )}
-                          {inHand !== null && (
-                            <div className="flex flex-col gap-0.5 ml-auto">
-                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">{t('inhandMaal')}</span>
-                              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-2 py-0.5">
-                                {inHand.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {unitLabel}
-                              </span>
-                            </div>
-                          )}
                         </div>
                       );
                     })()}
