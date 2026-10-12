@@ -25,7 +25,7 @@ export const POST = handle(async (req) => {
   }
 
   if (email) {
-    sendBillEmail({ to: email, customerName, storeName, billNumber, total, items: items || [], pdfUrl }).catch(err => {
+    sendBillEmail({ to: email, customerName, storeName, billNumber, total, items: items || [], pdfUrl }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : 'unknown';
       console.error('Bill email error:', msg);
     });
