@@ -49,7 +49,7 @@ export const GET = handle(async (req, { params }: any) => {
   const linkedSupplier = await prisma.supplier.findFirst({
     where: {
       shopId: shop.id,
-      name: customer.name,
+      name: customer.name ?? undefined,
       ...(customer.mobile ? { mobile: customer.mobile } : {}),
     },
   });
