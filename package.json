@@ -149,5 +149,8 @@
     "@parcel/watcher-linux-x64-musl": "2.5.6",
     "@parcel/watcher-linux-arm64-glibc": "2.5.6",
     "@parcel/watcher-linux-arm64-musl": "2.5.6"
+  },
+  "overrides": {
+    "@parcel/watcher": "file:./stubs/parcel-watcher"
   }
 }
