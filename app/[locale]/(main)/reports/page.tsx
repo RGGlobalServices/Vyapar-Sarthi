@@ -373,9 +373,9 @@ function SalesTab({ filters }: { filters: any }) {
 
 // ── FINANCIALS TAB ─────────────────────────────────────────────────────────
 function FinancialsTab({ filters }: { filters: any }) {
-  const { activeShopId, packageType } = useBusinessStore();
+  const { activeShopId, profile } = useBusinessStore();
   const t = useTranslations('Reports');
-  const isMill = isMillBillingPackage(packageType);
+  const isMill = isMillBillingPackage(profile.packageType);
   const [pnl, setPnl] = useState<any>(null);
   const [daybook, setDaybook] = useState<any>(null);
   const [balanceSheet, setBalanceSheet] = useState<any>(null);

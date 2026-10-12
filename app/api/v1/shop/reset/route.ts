@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedShop } from '@/lib/server/auth';
+import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/v1/shop/reset
@@ -10,8 +13,12 @@ import { isMillBillingPackage } from '@/lib/config/packageConfig';
  * Body: { confirmText: "RESET" }
  */
 export async function POST(req: NextRequest) {
-  const shop = await getAuthenticatedShop(req);
-  if (!shop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  let shop: Awaited<ReturnType<typeof requireShop>>['shop'];
+  try {
+    ({ shop } = await requireShop(req));
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   if (!isMillBillingPackage(shop.packageType)) {
     return NextResponse.json({ error: 'Feature not available for this package' }, { status: 403 });
   }
