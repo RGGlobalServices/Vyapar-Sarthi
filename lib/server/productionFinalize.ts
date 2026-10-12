@@ -128,6 +128,54 @@ export async function finalizeBatchTx(tx: any, p: FinalizeParams) {
   const { events } = await writeOutputsBulk(tx, { shopId, batchId: id, lotDefault: batchNumber, credits, isJobWork, jwOrder });
 
   const finishedKg = credits.filter((o) => o.outputType === 'finished_good').reduce((s, o) => s + o.quantityKg, 0);
+
+  // AUTO COST PRICE: distribute raw material cost across all productive outputs (finished + by-products)
+  // using weighted average costing (AVCO) so Product.costPrice always reflects the true per-kg cost.
+  // Job Work batches are skipped — grain belongs to the customer, not the mill.
+  if (consume && !isJobWork && consumedLots.length > 0) {
+    const rawLots = await tx.rawMaterialLot.findMany({
+      where: { id: { in: consumedLots.map((l) => l.lotId) } },
+      select: { id: true, ratePerUnit: true },
+    });
+    const rateById = new Map(rawLots.map((l: any) => [l.id, Number(l.ratePerUnit) || 0]));
+    const totalRawCost = consumedLots.reduce((s, l) => s + l.qtyKg * (rateById.get(l.lotId) || 0), 0);
+    // Productive kg = finished + by-products (rejections/waste excluded — no resale value)
+    const productiveKg = credits
+      .filter((o) => o.outputType !== 'rejection')
+      .reduce((s, o) => s + o.quantityKg, 0);
+
+    if (totalRawCost > 0 && productiveKg > 0) {
+      const batchCostPerKg = round3(totalRawCost / productiveKg);
+      // Unique product ids for productive outputs with a linked product
+      const outputProductIds = [...new Set(
+        credits
+          .filter((o) => o.productId && o.outputType !== 'rejection')
+          .map((o) => o.productId as string),
+      )];
+      if (outputProductIds.length > 0) {
+        // Weighted moving average: blend new batch cost into the product's existing cost
+        const currentProducts = await tx.product.findMany({
+          where: { id: { in: outputProductIds } },
+          select: { id: true, costPrice: true, currentStock: true },
+        });
+        for (const prod of currentProducts) {
+          const existingStock = Math.max(0, Number((prod as any).currentStock) || 0);
+          const existingCost = Number((prod as any).costPrice) || batchCostPerKg;
+          const newQty = credits
+            .filter((o) => o.productId === (prod as any).id && o.outputType !== 'rejection')
+            .reduce((s, o) => s + o.quantityKg, 0);
+          const avgCost = existingStock > 0
+            ? round3((existingStock * existingCost + newQty * batchCostPerKg) / (existingStock + newQty))
+            : batchCostPerKg;
+          await tx.product.update({
+            where: { id: (prod as any).id },
+            data: { costPrice: avgCost, costPriceMode: 'calculated' },
+          });
+        }
+      }
+    }
+  }
+
   await tx.productionBatch.update({
     where: { id },
     data: {

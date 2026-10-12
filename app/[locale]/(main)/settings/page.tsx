@@ -5,7 +5,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store, Plus, Tag, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { Bell, Shield, BellRing, Smartphone, Clock, Save, Loader2, CheckCircle, CreditCard, AlertTriangle, X, Sparkles, Zap, MonitorSmartphone, LogOut, Store, Plus, Tag, ChevronRight as ChevronRightIcon, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { cn, fmtDate } from '@/lib/utils';
@@ -15,6 +15,7 @@ import { ExportButton } from '@/lib/hooks/useExport';
 import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
 import { getBaseAmount, getGstAmount, getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
 import { useLocale } from 'next-intl';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 
 // Inner component uses useSearchParams — must be wrapped in Suspense
 function SettingsPageInner() {
@@ -196,6 +197,30 @@ function SettingsPageInner() {
       .then(res => setPaymentHistory(res.data))
       .catch(err => console.error('Failed to fetch payment history:', err));
   }, []);
+
+  // Reset app state (Bada Udyog only)
+  const isMill = isMillBillingPackage(profile?.packageType);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetting, setResetting] = useState(false);
+
+  const handleReset = async () => {
+    if (resetConfirm !== 'RESET') return;
+    setResetting(true);
+    try {
+      await api.post('/shop/reset', { confirmText: 'RESET' });
+      setStatus({ type: 'success', message: t('resetSuccess') });
+      setShowResetModal(false);
+      setResetConfirm('');
+      // Reload the page so all cached data is cleared
+      window.location.href = `/${locale}/dashboard`;
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.response?.data?.error || t('resetFailed') });
+      setShowResetModal(false);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   // Cancel subscription state
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -901,6 +926,27 @@ function SettingsPageInner() {
 
       </div>
 
+      {/* ── Reset All Data (Bada Udyog only) ── */}
+      {isMill && (
+        <Card className="bg-white dark:bg-slate-900 border-red-200 dark:border-red-900/40 shadow-sm">
+          <CardHeader>
+            <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 dark:text-red-400 mb-4">
+              <Trash2 size={24} />
+            </div>
+            <CardTitle className="text-slate-900 dark:text-white">{t('resetTitle')}</CardTitle>
+            <CardDescription className="text-slate-500">{t('resetDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <button
+              onClick={() => { setResetConfirm(''); setShowResetModal(true); }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-400 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 font-bold text-sm transition-all"
+            >
+              <Trash2 size={16} /> {t('resetBtn')}
+            </button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Subscription Management ── */}
       {profile.subscriptionPlan && (
         <Card className={cn(
@@ -1031,7 +1077,7 @@ function SettingsPageInner() {
         const currentPlan = profile.subscriptionPlan || 'shop';
         const isPaid = profile.subscriptionStatus === 'active';
         const isTrial = profile.subscriptionStatus === 'trial';
-        const PLAN_RANK: Record<string, number> = { starter: 0, shop: 0, vyapar: 1, wholesale: 2 };
+        const PLAN_RANK: Record<string, number> = { starter: 0, shop: 0, vyapar: 1, wholesale: 2, badaudyog: 3 };
         const plans = [
           {
             key: 'shop', name: 'Dukaan', color: 'sky',
@@ -1084,11 +1130,30 @@ function SettingsPageInner() {
               'Priority support',
             ],
           },
+          {
+            key: 'badaudyog', name: 'Bada Udyog', color: 'amber',
+            tagline: 'For mills, grain processing & agri industries',
+            features: [
+              'Everything in Udyog',
+              'Mill & grain processing module',
+              'Production batch tracking',
+              'Raw material & WIP lot management',
+              'Quality testing & reports',
+              'Weighbridge & gate entry',
+              'Job work management',
+              'Milling commission tracking',
+              'Freight & dispatch management',
+              'CA report packs (PDF)',
+              'By-product & rejection tracking',
+              'Dedicated support',
+            ],
+          },
         ];
         const colorMap: Record<string, { bg: string; border: string; badge: string; btn: string; text: string }> = {
           sky:    { bg: 'bg-sky-500/5',    border: 'border-sky-500/30',    badge: 'bg-sky-500 text-white',    btn: 'bg-sky-500 hover:bg-sky-400 text-white',    text: 'text-sky-400' },
           indigo: { bg: 'bg-indigo-500/5', border: 'border-indigo-500/40', badge: 'bg-indigo-500 text-white', btn: 'bg-indigo-500 hover:bg-indigo-400 text-white', text: 'text-indigo-400' },
           purple: { bg: 'bg-purple-500/5', border: 'border-purple-500/30', badge: 'bg-purple-500 text-white', btn: 'bg-purple-500 hover:bg-purple-400 text-white', text: 'text-purple-400' },
+          amber:  { bg: 'bg-amber-500/5',  border: 'border-amber-500/30',  badge: 'bg-amber-500 text-white',  btn: 'bg-amber-500 hover:bg-amber-400 text-white',  text: 'text-amber-500' },
         };
         return (
           <div className="space-y-3">
@@ -1132,7 +1197,7 @@ function SettingsPageInner() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               {plans.map(plan => {
                 const c = colorMap[plan.color];
                 const isCurrent = currentPlan === plan.key || (plan.key === 'shop' && (currentPlan === 'starter' || !currentPlan));
@@ -1279,6 +1344,60 @@ function SettingsPageInner() {
               >
                 {cancelling ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />}
                 {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reset All Data Modal ── */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-red-500/40 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+                <Trash2 size={22} className="text-red-500 dark:text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('resetModalTitle')}</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('resetModalWarning')}</p>
+              </div>
+            </div>
+
+            <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900/40 rounded-xl p-4 space-y-1.5 text-xs text-red-700 dark:text-red-400 font-medium">
+              <p>• Bills, invoices &amp; challans</p>
+              <p>• Products &amp; stock</p>
+              <p>• Customers &amp; parties</p>
+              <p>• Purchases &amp; suppliers</p>
+              <p>• Production &amp; milling batches</p>
+              <p>• All staff &amp; expense records</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('resetConfirmPlaceholder')}</label>
+              <input
+                type="text"
+                value={resetConfirm}
+                onChange={e => setResetConfirm(e.target.value.toUpperCase())}
+                placeholder="RESET"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 font-mono tracking-widest text-center"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => { setShowResetModal(false); setResetConfirm(''); }}
+                className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={resetConfirm !== 'RESET' || resetting}
+                className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-500 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+                {resetting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {resetting ? t('resetting') : t('resetConfirmBtn')}
               </button>
             </div>
           </div>

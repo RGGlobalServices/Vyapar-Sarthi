@@ -35,7 +35,7 @@ export const POST = handle(async (req) => {
     (tx) =>
       sendToNotPacked(tx, shop.id, {
         productId, productName: product.name, quantity, unit: body.unit || product.baseUnit || 'kg',
-        batchLabel: `${sourceLabel}-BP`, sourceNote: `By-product from Run ${sourceLabel}`,
+        batchLabel: `${sourceLabel}-BP`, sourceNote: `By-product from Run ${sourceLabel}`, kind: 'by_product',
       }),
     { timeout: 15000 },
   );

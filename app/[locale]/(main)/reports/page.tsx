@@ -373,23 +373,27 @@ function SalesTab({ filters }: { filters: any }) {
 
 // ── FINANCIALS TAB ─────────────────────────────────────────────────────────
 function FinancialsTab({ filters }: { filters: any }) {
-  const { activeShopId } = useBusinessStore();
+  const { activeShopId, packageType } = useBusinessStore();
   const t = useTranslations('Reports');
+  const isMill = isMillBillingPackage(packageType);
   const [pnl, setPnl] = useState<any>(null);
   const [daybook, setDaybook] = useState<any>(null);
+  const [balanceSheet, setBalanceSheet] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<'pnl' | 'daybook' | 'cashflow'>('pnl');
+  const [subTab, setSubTab] = useState<'pnl' | 'daybook' | 'balance_sheet'>('pnl');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const qs = `start_date=${filters.startDate}&end_date=${filters.endDate}`;
-      const [pnlRes, dbRes] = await Promise.all([
+      const [pnlRes, dbRes, bsRes] = await Promise.all([
         api.get(`/reports/engine?module=financials&report_type=pnl&${qs}`),
         api.get(`/reports/engine?module=financials&report_type=daybook&${qs}`),
+        api.get(`/reports/engine?module=ca&report_type=balance_sheet&${qs}`),
       ]);
       setPnl(pnlRes.data);
       setDaybook(dbRes.data);
+      setBalanceSheet(bsRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [filters, activeShopId]);
@@ -411,10 +415,16 @@ function FinancialsTab({ filters }: { filters: any }) {
     { label: t('pnl.netProfitLoss'), value: pnl.net_profit, bold: true, indent: false, positive: pnl.net_profit >= 0, highlight: true },
   ] : [];
 
+  const bs = balanceSheet;
+
   return (
     <div className="space-y-6">
-      <div className="flex gap-2">
-        {[{ id: 'pnl', label: t('subTabs.pnl') }, { id: 'daybook', label: t('subTabs.daybook') }].map(tab => (
+      <div className="flex gap-2 flex-wrap">
+        {[
+          { id: 'pnl', label: t('subTabs.pnl') },
+          { id: 'balance_sheet', label: t('subTabs.balanceSheet') },
+          { id: 'daybook', label: t('subTabs.daybook') },
+        ].map(tab => (
           <button key={tab.id} onClick={() => setSubTab(tab.id as any)}
             className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${subTab === tab.id ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
             {tab.label}
@@ -424,14 +434,20 @@ function FinancialsTab({ filters }: { filters: any }) {
 
       {subTab === 'pnl' && pnl && (
         <>
+          {/* KPI tiles */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KPICard label={t('kpi.grossRevenue')} value={fmt(pnl.revenue)} icon={IndianRupee} color="emerald" />
             <KPICard label={t('kpi.grossProfit')} value={fmt(pnl.gross_profit)} icon={TrendingUp} color="blue" sub={t('kpi.marginPct', { value: (pnl.gross_margin || 0).toFixed(1) })} />
-            <KPICard label={t('kpi.totalOverhead')} value={fmt(pnl.total_overhead)} icon={Wallet} color="rose" sub={`₹${(pnl.expenses || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} + ₹${(pnl.salaries || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} />
+            {isMill && pnl.total_purchases > 0
+              ? <KPICard label={t('kpi.rawMaterialPurchased')} value={fmt(pnl.total_purchases)} icon={ShoppingCart} color="amber" sub={`${pnl.purchase_count || 0} invoices`} />
+              : <KPICard label={t('kpi.totalOverhead')} value={fmt(pnl.total_overhead)} icon={Wallet} color="rose" sub={`₹${(pnl.expenses || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} + ₹${(pnl.salaries || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} />
+            }
             <KPICard label={t('kpi.netProfit')} value={fmt(pnl.net_profit)} icon={BarChart3}
               color={pnl.net_profit >= 0 ? 'emerald' : 'rose'}
               sub={t('kpi.netMargin', { value: (pnl.net_margin || 0).toFixed(1) })} />
           </div>
+
+          {/* P&L Statement */}
           <SectionCard
             title={t('section.pnl')}
             actions={<ExportButton
@@ -450,6 +466,162 @@ function FinancialsTab({ filters }: { filters: any }) {
                   <span className={`font-black tabular-nums ${row.highlight ? (row.positive ? 'text-emerald-600' : 'text-rose-500') : row.bold ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
                     {row.positive ? '+' : '-'}{fmt(Math.abs(row.value || 0))}
                   </span>
+                </div>
+              ))}
+            </div>
+            {/* Raw material purchase spend — shown separately so it's not confused with COGS */}
+            {isMill && pnl.total_purchases > 0 && (
+              <div className="mt-3 pt-3 border-t border-dashed border-amber-200 dark:border-amber-800 px-2">
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">{t('pnl.purchaseSpend')}</p>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">{t('pnl.rawMaterialPurchased')} ({pnl.purchase_count} {t('pnl.invoices')})</span>
+                  <span className="font-black text-amber-700 dark:text-amber-400 tabular-nums">-{fmt(pnl.total_purchases)}</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">{t('pnl.purchaseNote')}</p>
+              </div>
+            )}
+          </SectionCard>
+
+          {/* Mill Efficiency — Bada Udyog only */}
+          {isMill && pnl.mill_metrics && pnl.mill_metrics.batches_run > 0 && (
+            <SectionCard title={t('section.millEfficiency')}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-2">
+                {[
+                  { label: t('mill.batchesRun'), value: `${pnl.mill_metrics.batches_run}`, unit: '' },
+                  { label: t('mill.inputGrain'), value: `${Number(pnl.mill_metrics.input_kg).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, unit: 'kg' },
+                  { label: t('mill.outputFinished'), value: `${Number(pnl.mill_metrics.output_kg).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, unit: 'kg' },
+                  { label: t('mill.avgRecovery'), value: `${Number(pnl.mill_metrics.avg_recovery_pct).toFixed(1)}`, unit: '%' },
+                ].map((m, i) => (
+                  <div key={i} className="bg-amber-50 dark:bg-amber-950/30 rounded-xl p-3 text-center border border-amber-100 dark:border-amber-900/40">
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 font-bold uppercase tracking-wide mb-1">{m.label}</p>
+                    <p className="text-xl font-black text-amber-900 dark:text-amber-200">{m.value}<span className="text-sm font-bold ml-0.5">{m.unit}</span></p>
+                  </div>
+                ))}
+              </div>
+              {pnl.mill_metrics.cost_per_input_kg > 0 && (
+                <div className="mx-2 mb-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-sm flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">{t('mill.avgRawMaterialCost')}</span>
+                  <span className="font-black text-slate-900 dark:text-white">₹{pnl.mill_metrics.cost_per_input_kg.toFixed(2)} / kg</span>
+                </div>
+              )}
+            </SectionCard>
+          )}
+        </>
+      )}
+
+      {subTab === 'balance_sheet' && bs && (
+        <>
+          {/* KPI bar */}
+          <div className="grid grid-cols-3 gap-4">
+            <KPICard label={t('kpi.totalAssets')} value={fmt(bs.assets?.total || 0)} icon={Box} color="emerald" />
+            <KPICard label={t('kpi.totalLiabilities')} value={fmt(bs.liabilities?.total || 0)} icon={Wallet} color="rose" />
+            <KPICard label={t('kpi.netWorth')} value={fmt(bs.equity?.total || 0)} icon={Scale} color={bs.equity?.total >= 0 ? 'blue' : 'rose'} />
+          </div>
+
+          {/* T-account layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* ASSETS */}
+            <SectionCard title={t('section.assets')}>
+              <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                <div className="flex justify-between py-3 px-2">
+                  <span className="text-slate-600 dark:text-slate-400">{t('bs.cash')}</span>
+                  <span className="font-bold text-slate-900 dark:text-white tabular-nums">{fmt(bs.assets?.cash || 0)}</span>
+                </div>
+                <div className="flex justify-between py-3 px-2">
+                  <span className="text-slate-600 dark:text-slate-400">{t('bs.debtors')}</span>
+                  <span className="font-bold text-slate-900 dark:text-white tabular-nums">{fmt(bs.assets?.debtors || 0)}</span>
+                </div>
+                <div className="py-2 px-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 dark:text-slate-400">{t('bs.closingStock')}</span>
+                    <span className="font-bold text-slate-900 dark:text-white tabular-nums">{fmt(bs.assets?.closingStock || 0)}</span>
+                  </div>
+                  {/* Stock by category breakdown */}
+                  {bs.assets?.stockByCategory && Object.keys(bs.assets.stockByCategory).length > 0 && (
+                    <div className="mt-2 space-y-1 pl-4">
+                      {Object.entries(bs.assets.stockByCategory as Record<string, number>).map(([cat, val]) => (
+                        <div key={cat} className="flex justify-between text-xs text-slate-500 dark:text-slate-500">
+                          <span>{cat}</span>
+                          <span className="tabular-nums">{fmt(val)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {bs.assets?.uncostedProducts > 0 && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 pl-4">
+                      {t('bs.uncostedNote', { count: bs.assets.uncostedProducts })}
+                    </p>
+                  )}
+                </div>
+                <div className="flex justify-between py-3 px-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-b-xl">
+                  <span className="font-black text-slate-900 dark:text-white">{t('bs.totalAssets')}</span>
+                  <span className="font-black text-emerald-600 tabular-nums">{fmt(bs.assets?.total || 0)}</span>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* LIABILITIES + EQUITY */}
+            <div className="space-y-4">
+              <SectionCard title={t('section.liabilities')}>
+                <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                  <div className="py-2 px-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">{t('bs.creditors')}</span>
+                      <span className="font-bold text-slate-900 dark:text-white tabular-nums">{fmt(bs.liabilities?.creditors || 0)}</span>
+                    </div>
+                    {bs.liabilities?.creditorList?.length > 0 && (
+                      <div className="mt-2 space-y-1 pl-4">
+                        {bs.liabilities.creditorList.slice(0, 5).map((c: any) => (
+                          <div key={c.name} className="flex justify-between text-xs text-slate-500 dark:text-slate-500">
+                            <span className="truncate max-w-[160px]">{c.name}</span>
+                            <span className="tabular-nums">{fmt(c.amount)}</span>
+                          </div>
+                        ))}
+                        {bs.liabilities.creditorList.length > 5 && (
+                          <p className="text-xs text-slate-400">+{bs.liabilities.creditorList.length - 5} more</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-between py-3 px-2 bg-rose-50 dark:bg-rose-900/20 rounded-b-xl">
+                    <span className="font-black text-slate-900 dark:text-white">{t('bs.totalLiabilities')}</span>
+                    <span className="font-black text-rose-600 tabular-nums">{fmt(bs.liabilities?.total || 0)}</span>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard title={t('section.equity')}>
+                <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                  <div className="flex justify-between py-3 px-2">
+                    <span className="text-slate-600 dark:text-slate-400">{t('bs.periodNetProfit')}</span>
+                    <span className={`font-bold tabular-nums ${bs.equity?.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{fmt(bs.equity?.netProfit || 0)}</span>
+                  </div>
+                  <div className="flex justify-between py-3 px-2 bg-blue-50 dark:bg-blue-900/20 rounded-b-xl">
+                    <span className="font-black text-slate-900 dark:text-white">{t('bs.ownersEquity')}</span>
+                    <span className={`font-black tabular-nums ${bs.equity?.total >= 0 ? 'text-blue-600' : 'text-rose-500'}`}>{fmt(bs.equity?.total || 0)}</span>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+          </div>
+
+          {/* Balance check */}
+          <div className={`rounded-2xl p-4 text-center text-sm font-bold border-2 ${Math.abs((bs.assets?.total || 0) - (bs.liabilities?.total || 0) - (bs.equity?.total || 0)) < 1 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400'}`}>
+            {t('bs.equation')}: {fmt(bs.assets?.total || 0)} = {fmt(bs.liabilities?.total || 0)} + {fmt(bs.equity?.total || 0)}
+          </div>
+
+          {/* P&L Summary supporting the balance sheet */}
+          <SectionCard title={t('section.pnlSummary')}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              {[
+                { label: t('kpi.grossRevenue'), value: fmt(bs.pnlSummary?.revenue || 0), color: 'text-emerald-600' },
+                { label: t('kpi.grossProfit'), value: fmt(bs.pnlSummary?.grossProfit || 0), color: 'text-blue-600' },
+                { label: t('kpi.totalExpenses'), value: fmt(bs.pnlSummary?.expenses || 0), color: 'text-rose-600' },
+                { label: t('kpi.netProfit'), value: fmt(bs.pnlSummary?.netProfit || 0), color: bs.pnlSummary?.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-500' },
+              ].map((item, i) => (
+                <div key={i} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3 text-center">
+                  <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-1">{item.label}</p>
+                  <p className={`font-black ${item.color}`}>{item.value}</p>
                 </div>
               ))}
             </div>
@@ -554,34 +726,77 @@ function StockTab({ filters }: { filters: any }) {
         </>
       )}
 
-      {subTab === 'valuation' && valuation?.rows && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SectionCard title={t('section.stockValueByCategory')}>
-            <DrillDownChart type="bar" data={valuation.rows} xKey="category"
-              yKeys={[{ key: 'stock_value', label: 'Value', color: '#10b981' }]} height={300} />
-          </SectionCard>
+      {subTab === 'valuation' && valuation && (
+        <>
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard label={t('kpi.inventoryAtCost')} value={fmt(valuation.summary?.totalAtCost || 0)} icon={IndianRupee} color="emerald" />
+            <KPICard label={t('kpi.inventoryAtMrp')} value={fmt(valuation.summary?.totalAtMrp || 0)} icon={TrendingUp} color="blue" />
+            <KPICard label={t('kpi.totalProducts')} value={(valuation.rows?.length || 0).toLocaleString()} icon={Package} color="indigo" />
+            {valuation.summary?.uncostedProducts > 0 && (
+              <KPICard label={t('kpi.uncostedProducts')} value={valuation.summary.uncostedProducts.toLocaleString()} icon={AlertTriangle} color="amber" />
+            )}
+          </div>
+
+          {/* Category chart + summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SectionCard title={t('section.stockValueByCategory')}>
+              <DrillDownChart type="bar" data={valuation.rows || []} xKey="category"
+                yKeys={[{ key: 'stock_value', label: t('invVal.valueAtCost'), color: '#10b981' }, { key: 'mrp_value', label: t('invVal.valueAtMrp'), color: '#6366f1' }]} height={300} />
+            </SectionCard>
+            <SectionCard
+              title={t('section.valuationBreakdown')}
+              actions={<ExportButton
+                columns={[
+                  { key: 'category', label: 'Category' },
+                  { key: 'product_count', label: 'Products', type: 'number' },
+                  { key: 'total_qty', label: 'Qty', type: 'number' },
+                  { key: 'stock_value', label: 'Value at Cost', type: 'currency' },
+                  { key: 'mrp_value', label: 'Value at MRP', type: 'currency' },
+                ]}
+                data={valuation.rows || []}
+                filename="stock_valuation_by_category"
+                title={t('section.valuationBreakdown')}
+              />}
+            >
+              <ReportTable columns={[
+                { key: 'category', label: 'Category', sortable: true },
+                { key: 'product_count', label: 'Products', type: 'number', sortable: true, align: 'right' },
+                { key: 'total_qty', label: 'Qty', type: 'number', sortable: true, align: 'right' },
+                { key: 'stock_value', label: t('invVal.valueAtCost'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'mrp_value', label: t('invVal.valueAtMrp'), type: 'currency', sortable: true, align: 'right' },
+              ]} rows={valuation.rows || []} maxHeight="300px" />
+            </SectionCard>
+          </div>
+
+          {/* Product-level detail */}
           <SectionCard
-            title={t('section.valuationBreakdown')}
+            title={t('section.inventoryValuation')}
             actions={<ExportButton
               columns={[
+                { key: 'name', label: 'Product' },
                 { key: 'category', label: 'Category' },
-                { key: 'product_count', label: 'Products', type: 'number' },
-                { key: 'total_qty', label: 'Qty', type: 'number' },
-                { key: 'stock_value', label: 'Value', type: 'currency' },
+                { key: 'current_stock', label: 'Stock', type: 'number' },
+                { key: 'cost_per_unit', label: 'Cost/Unit', type: 'currency' },
+                { key: 'value_at_cost', label: 'Value at Cost', type: 'currency' },
+                { key: 'selling_price', label: 'MRP/Unit', type: 'currency' },
+                { key: 'value_at_mrp', label: 'Value at MRP', type: 'currency' },
               ]}
-              data={valuation.rows}
-              filename="stock_valuation"
-              title="Stock Valuation"
+              data={valuation.detail || []}
+              filename="inventory_valuation_detail"
+              title={t('section.inventoryValuation')}
             />}
           >
             <ReportTable columns={[
-              { key: 'category', label: 'Category', sortable: true },
-              { key: 'product_count', label: 'Products', type: 'number', sortable: true, align: 'right' },
-              { key: 'total_qty', label: 'Qty', type: 'number', sortable: true, align: 'right' },
-              { key: 'stock_value', label: 'Value', type: 'currency', sortable: true, align: 'right' },
-            ]} rows={valuation.rows} maxHeight="300px" />
+              { key: 'name', label: 'Product', sortable: true },
+              { key: 'category', label: 'Category', type: 'badge', sortable: true },
+              { key: 'current_stock', label: 'Stock', type: 'number', sortable: true, align: 'right' },
+              { key: 'cost_per_unit', label: t('invVal.costPerUnit'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'value_at_cost', label: t('invVal.valueAtCost'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'value_at_mrp', label: t('invVal.valueAtMrp'), type: 'currency', sortable: true, align: 'right' },
+            ]} rows={valuation.detail || []} maxHeight="480px" />
           </SectionCard>
-        </div>
+        </>
       )}
 
       {subTab === 'dead' && deadStock?.rows && (

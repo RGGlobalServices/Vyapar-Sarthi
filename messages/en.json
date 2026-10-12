@@ -304,7 +304,18 @@
     "cancelDesc": "After cancellation your account stays active until the billing period ends. Cancel within 30 days of payment for a full refund under our money-back guarantee.",
     "billingHistory": "Billing History",
     "billingHistoryDesc": "View past payments and download receipts",
-    "availablePlans": "Available Plans"
+    "availablePlans": "Available Plans",
+    "resetTitle": "Reset All Data",
+    "resetDesc": "Permanently delete all bills, products, customers, parties, purchases, production and stock data. Your shop profile and subscription will remain intact.",
+    "resetBtn": "Reset App",
+    "resetModalTitle": "Reset All Data?",
+    "resetModalWarning": "This will permanently delete ALL business data — bills, products, parties, purchases, production records and stock. This cannot be undone.",
+    "resetConfirmPlaceholder": "Type RESET to confirm",
+    "resetConfirmWord": "RESET",
+    "resetConfirmBtn": "Yes, Delete Everything",
+    "resetting": "Deleting...",
+    "resetSuccess": "All data cleared. App is now fresh.",
+    "resetFailed": "Reset failed. Please try again."
   },
   "Calendar": {
     "title": "Calendar",
@@ -982,7 +993,6 @@
     "nColours": "{count} colour | {count} colours",
     "nSizes": "{count} size | {count} sizes",
     "productLocation": "Location",
-    "colBrand": "Brand",
     "colMillCategory": "Product Type",
     "colGrade": "Grade",
     "colVariety": "Variety",
@@ -991,7 +1001,6 @@
     "colWeight": "Weight",
     "colModel": "Model",
     "colWarranty": "Warranty",
-    "colMinLevel": "Min. Level",
     "mrpLabel": "MRP",
     "allGrades": "All Grades",
     "allMillCategories": "All Product Types",
@@ -1433,10 +1442,22 @@
     },
     "printType": {
       "title": "Print type",
-      "a4Sheet": { "label": "A4 Label Sheet", "hint": "Many labels on pre-cut A4 sheets" },
-      "a4Plain": { "label": "A4 Plain Paper", "hint": "Grid on plain A4 with cut guides" },
-      "thermalSticker": { "label": "Thermal Sticker", "hint": "One die-cut sticker per label" },
-      "thermalRoll": { "label": "Thermal Continuous", "hint": "Continuous roll, auto height" }
+      "a4Sheet": {
+        "label": "A4 Label Sheet",
+        "hint": "Many labels on pre-cut A4 sheets"
+      },
+      "a4Plain": {
+        "label": "A4 Plain Paper",
+        "hint": "Grid on plain A4 with cut guides"
+      },
+      "thermalSticker": {
+        "label": "Thermal Sticker",
+        "hint": "One die-cut sticker per label"
+      },
+      "thermalRoll": {
+        "label": "Thermal Continuous",
+        "hint": "Continuous roll, auto height"
+      }
     },
     "paper": {
       "pageOrientation": "Page orientation",
@@ -1891,7 +1912,17 @@
     "bankTransferMode": "Bank Transfer",
     "chequeMode": "Cheque",
     "sendWhatsApp": "Send WhatsApp",
-    "done": "Done"
+    "done": "Done",
+    "discountLabel": "Discount / Write-off",
+    "optionalTag": "optional",
+    "discountHint": "Reduces balance without cash — goodwill, write-off, or trade discount.",
+    "settleAll": "Settle All (₹{amount} off)",
+    "settleFull": "Settle Full",
+    "outstandingWord": "Outstanding",
+    "paymentReceivedWord": "Payment received",
+    "discountWord": "Discount",
+    "remainingBalance": "Remaining balance",
+    "recordWithDiscount": "Record ₹{amount} + Write off ₹{discount}"
   },
   "Common": {
     "kg": "Kg",
@@ -1984,7 +2015,8 @@
       "current": "Current Stock",
       "valuation": "Valuation",
       "dead": "Dead Stock",
-      "batches": "Batch Profit"
+      "batches": "Batch Profit",
+      "balanceSheet": "Balance Sheet"
     },
     "kpi": {
       "totalRevenue": "Total Revenue",
@@ -2023,7 +2055,14 @@
       "suppliersCount": "{count} suppliers",
       "outstandingAmount": "₹{amount} outstanding",
       "netMargin": "{value}% net margin",
-      "marginPct": "{value}% margin"
+      "marginPct": "{value}% margin",
+      "rawMaterialPurchased": "Raw Material Purchased",
+      "inventoryAtCost": "Inventory at Cost",
+      "inventoryAtMrp": "Inventory at MRP",
+      "uncostedProducts": "Uncosted Products",
+      "totalAssets": "Total Assets",
+      "totalLiabilities": "Total Liabilities",
+      "netWorth": "Net Worth / Equity"
     },
     "section": {
       "revenueProfitTrend": "Revenue & Profit Trend",
@@ -2040,6 +2079,7 @@
       "gstSummary": "GST Summary (rate-wise)",
       "gstRegister": "GST Register (Invoice-wise)",
       "pnl": "Profit & Loss Statement",
+      "millEfficiency": "Milling Efficiency",
       "cashBook": "Cash Book Entries",
       "dailyExpenseTrend": "Daily Expense Trend",
       "expensesByCategory": "By Category",
@@ -2054,7 +2094,30 @@
       "purchaseTrend": "Purchase Trend",
       "bySupplier": "By Supplier",
       "salaryPayroll": "Salary Payroll",
-      "attendanceLog": "Attendance Log"
+      "attendanceLog": "Attendance Log",
+      "inventoryValuation": "Inventory Valuation (Product-wise)",
+      "balanceSheet": "Balance Sheet",
+      "assets": "Assets",
+      "liabilities": "Liabilities",
+      "equity": "Equity",
+      "pnlSummary": "Period P&L Summary"
+    },
+    "bs": {
+      "cash": "Cash & Bank",
+      "debtors": "Accounts Receivable (Debtors)",
+      "closingStock": "Closing Stock (at cost)",
+      "totalAssets": "Total Assets",
+      "creditors": "Accounts Payable (Creditors)",
+      "totalLiabilities": "Total Liabilities",
+      "periodNetProfit": "Net Profit (This Period)",
+      "ownersEquity": "Owner's Equity / Net Worth",
+      "equation": "Assets = Liabilities + Equity",
+      "uncostedNote": "{count} product(s) with stock have no cost price set — excluded from stock value."
+    },
+    "invVal": {
+      "valueAtCost": "Value at Cost",
+      "valueAtMrp": "Value at MRP",
+      "costPerUnit": "Cost / Unit"
     },
     "col": {
       "date": "Date",
@@ -2121,7 +2184,18 @@
       "operatingExpenses": "Operating Expenses",
       "staffSalaries": "Staff Salaries",
       "totalOverheads": "Total Overheads",
-      "netProfitLoss": "Net Profit / Loss"
+      "netProfitLoss": "Net Profit / Loss",
+      "purchaseSpend": "Raw Material Purchase Spending",
+      "rawMaterialPurchased": "Raw Material Purchased",
+      "invoices": "invoices",
+      "purchaseNote": "This is cash outflow for purchases — it may differ from COGS if stock is held at period-end."
+    },
+    "mill": {
+      "batchesRun": "Batches Run",
+      "inputGrain": "Grain Input",
+      "outputFinished": "Finished Output",
+      "avgRecovery": "Avg Recovery",
+      "avgRawMaterialCost": "Avg Raw Material Cost"
     },
     "empty": {
       "noGstBreakdown": "{count} GST invoice(s) this period, but none of the products sold have a GST% set — so there's no rate to break down by. See the GST Register below for the invoice-wise total, or add GST% to your products for a full rate-wise summary.",
@@ -2153,9 +2227,22 @@
         "nonGst": "Non-GST",
         "gstInfoMissing": "GST Information Missing"
       },
-      "paymentStatus": { "paid": "Paid", "partial": "Partial", "unpaid": "Unpaid" },
-      "cashDirection": { "in": "In", "out": "Out" },
-      "ageBuckets": { "0-30": "0-30 days", "31-60": "31-60 days", "61-90": "61-90 days", "91-180": "91-180 days", "180+": "180+ days" },
+      "paymentStatus": {
+        "paid": "Paid",
+        "partial": "Partial",
+        "unpaid": "Unpaid"
+      },
+      "cashDirection": {
+        "in": "In",
+        "out": "Out"
+      },
+      "ageBuckets": {
+        "0-30": "0-30 days",
+        "31-60": "31-60 days",
+        "61-90": "61-90 days",
+        "91-180": "91-180 days",
+        "180+": "180+ days"
+      },
       "dataQuality": {
         "types": {
           "product_missing_hsn": "Missing HSN Code",
@@ -2194,35 +2281,116 @@
       },
       "reports": {
         "sales_register": {
-          "columns": { "date": "Date", "invoiceNumber": "Invoice No.", "customerName": "Customer", "customerGstin": "GSTIN", "product": "Product", "hsn": "HSN", "quantity": "Qty", "unit": "Unit", "taxableValue": "Taxable Value", "gstRate": "GST Rate", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "invoiceTotal": "Invoice Total", "paymentStatus": "Payment Status", "paymentMode": "Payment Mode" },
-          "summary": { "lines": "Lines", "invoiceTotal": "Invoice Total" }
+          "columns": {
+            "date": "Date",
+            "invoiceNumber": "Invoice No.",
+            "customerName": "Customer",
+            "customerGstin": "GSTIN",
+            "product": "Product",
+            "hsn": "HSN",
+            "quantity": "Qty",
+            "unit": "Unit",
+            "taxableValue": "Taxable Value",
+            "gstRate": "GST Rate",
+            "cgst": "CGST",
+            "sgst": "SGST",
+            "igst": "IGST",
+            "invoiceTotal": "Invoice Total",
+            "paymentStatus": "Payment Status",
+            "paymentMode": "Payment Mode"
+          },
+          "summary": {
+            "lines": "Lines",
+            "invoiceTotal": "Invoice Total"
+          }
         },
         "purchase_register": {
-          "columns": { "date": "Date", "billNumber": "Bill No.", "supplierName": "Supplier", "supplierGstin": "GSTIN", "product": "Product", "hsn": "HSN", "quantity": "Qty", "taxableValue": "Taxable Value", "gstAmount": "GST Amount", "total": "Total", "gstClass": "GST / Non-GST" },
-          "summary": { "lines": "Lines", "total": "Total" }
+          "columns": {
+            "date": "Date",
+            "billNumber": "Bill No.",
+            "supplierName": "Supplier",
+            "supplierGstin": "GSTIN",
+            "product": "Product",
+            "hsn": "HSN",
+            "quantity": "Qty",
+            "taxableValue": "Taxable Value",
+            "gstAmount": "GST Amount",
+            "total": "Total",
+            "gstClass": "GST / Non-GST"
+          },
+          "summary": {
+            "lines": "Lines",
+            "total": "Total"
+          }
         },
         "gst_summary": {
-          "columns": { "rate": "Rate %", "taxable": "Taxable", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "total": "Total GST" },
-          "summary": { "outputGst": "Output GST", "inputGst": "Input GST (as recorded)", "netGst": "Net GST Difference" }
+          "columns": {
+            "rate": "Rate %",
+            "taxable": "Taxable",
+            "cgst": "CGST",
+            "sgst": "SGST",
+            "igst": "IGST",
+            "total": "Total GST"
+          },
+          "summary": {
+            "outputGst": "Output GST",
+            "inputGst": "Input GST (as recorded)",
+            "netGst": "Net GST Difference"
+          }
         },
         "gst_monthly": {
-          "columns": { "label": "Month", "outputTaxable": "Output Taxable", "outputGst": "Output GST", "inputTaxable": "Input Taxable", "inputGst": "Input GST", "netGst": "Net GST" }
+          "columns": {
+            "label": "Month",
+            "outputTaxable": "Output Taxable",
+            "outputGst": "Output GST",
+            "inputTaxable": "Input Taxable",
+            "inputGst": "Input GST",
+            "netGst": "Net GST"
+          }
         },
         "non_gst": {
-          "columns": { "date": "Date", "docNumber": "Invoice/Bill No.", "party": "Party", "product": "Product", "hsn": "HSN", "amount": "Amount", "classification": "Classification" },
-          "summary": { "transactions": "Transactions", "total": "Total" }
+          "columns": {
+            "date": "Date",
+            "docNumber": "Invoice/Bill No.",
+            "party": "Party",
+            "product": "Product",
+            "hsn": "HSN",
+            "amount": "Amount",
+            "classification": "Classification"
+          },
+          "summary": {
+            "transactions": "Transactions",
+            "total": "Total"
+          }
         },
         "data_quality": {
-          "columns": { "type": "Type", "message": "Warning" },
-          "summary": { "warnings": "Warnings" }
+          "columns": {
+            "type": "Type",
+            "message": "Warning"
+          },
+          "summary": {
+            "warnings": "Warnings"
+          }
         },
         "profit_loss": {
-          "columns": { "category": "Category", "amount": "Amount" },
-          "summary": { "revenue": "Revenue", "grossProfit": "Gross Profit", "netProfit": "Net Profit / Loss" }
+          "columns": {
+            "category": "Category",
+            "amount": "Amount"
+          },
+          "summary": {
+            "revenue": "Revenue",
+            "grossProfit": "Gross Profit",
+            "netProfit": "Net Profit / Loss"
+          }
         },
         "trading_account": {
-          "columns": { "lineItem": "Line Item", "amount": "Amount" },
-          "summary": { "grossProfitLoss": "Gross Profit / Loss" },
+          "columns": {
+            "lineItem": "Line Item",
+            "amount": "Amount"
+          },
+          "summary": {
+            "grossProfitLoss": "Gross Profit / Loss"
+          },
           "lineItems": {
             "openingStock": "Opening Stock",
             "purchases": "(+) Purchases",
@@ -2236,30 +2404,100 @@
           }
         },
         "stock_summary": {
-          "columns": { "product": "Product", "category": "Category", "openingQty": "Opening Qty", "purchasedQty": "Purchased", "soldQty": "Sold", "purchaseReturnQty": "Purchase Returns", "salesReturnQty": "Sales Returns", "closingQty": "Closing Qty", "closingValue": "Closing Value" },
-          "summary": { "closingStockValue": "Closing Stock Value" }
+          "columns": {
+            "product": "Product",
+            "category": "Category",
+            "openingQty": "Opening Qty",
+            "purchasedQty": "Purchased",
+            "soldQty": "Sold",
+            "purchaseReturnQty": "Purchase Returns",
+            "salesReturnQty": "Sales Returns",
+            "closingQty": "Closing Qty",
+            "closingValue": "Closing Value"
+          },
+          "summary": {
+            "closingStockValue": "Closing Stock Value"
+          }
         },
         "receivables_ageing": {
-          "columns": { "party": "Party", "billNumber": "Bill No.", "date": "Bill Date", "originalAmount": "Original Amount", "remaining": "Outstanding", "ageBucket": "Age Bucket" }
+          "columns": {
+            "party": "Party",
+            "billNumber": "Bill No.",
+            "date": "Bill Date",
+            "originalAmount": "Original Amount",
+            "remaining": "Outstanding",
+            "ageBucket": "Age Bucket"
+          }
         },
         "payables_ageing": {
-          "columns": { "party": "Supplier", "billNumber": "Bill No.", "date": "Bill Date", "originalAmount": "Original Amount", "remaining": "Outstanding", "ageBucket": "Age Bucket" }
+          "columns": {
+            "party": "Supplier",
+            "billNumber": "Bill No.",
+            "date": "Bill Date",
+            "originalAmount": "Original Amount",
+            "remaining": "Outstanding",
+            "ageBucket": "Age Bucket"
+          }
         },
         "cash_bank_summary": {
-          "columns": { "type": "Type", "direction": "In / Out", "amount": "Amount" },
-          "summary": { "cashIn": "Cash In", "cashOut": "Cash Out", "netCashFlow": "Net Cash Flow" }
+          "columns": {
+            "type": "Type",
+            "direction": "In / Out",
+            "amount": "Amount"
+          },
+          "summary": {
+            "cashIn": "Cash In",
+            "cashOut": "Cash Out",
+            "netCashFlow": "Net Cash Flow"
+          }
         },
         "mill_raw_material": {
-          "columns": { "lotNumber": "Lot No.", "farmerName": "Farmer / Vendor", "purchaseDate": "Date", "weightKg": "Weight (Kg)", "moisturePct": "Moisture %", "ratePerKg": "Rate / Kg", "totalAmount": "Total Amount", "remainingKg": "Remaining (Kg)" },
-          "summary": { "totalWeight": "Total Weight", "totalAmount": "Total Amount" }
+          "columns": {
+            "lotNumber": "Lot No.",
+            "farmerName": "Farmer / Vendor",
+            "purchaseDate": "Date",
+            "weightKg": "Weight (Kg)",
+            "moisturePct": "Moisture %",
+            "ratePerKg": "Rate / Kg",
+            "totalAmount": "Total Amount",
+            "remainingKg": "Remaining (Kg)"
+          },
+          "summary": {
+            "totalWeight": "Total Weight",
+            "totalAmount": "Total Amount"
+          }
         },
         "mill_production": {
-          "columns": { "batchNumber": "Batch No.", "startedAt": "Started", "status": "Status", "currentStage": "Stage", "inputKg": "Input (Kg)", "outputKg": "Output (Kg)", "wastageKg": "Wastage (Kg)", "brokenKg": "Broken (Kg)", "branKg": "Bran (Kg)", "huskKg": "Husk (Kg)", "recoveryPct": "Recovery %" },
-          "summary": { "batches": "Batches", "avgRecovery": "Avg Recovery %" }
+          "columns": {
+            "batchNumber": "Batch No.",
+            "startedAt": "Started",
+            "status": "Status",
+            "currentStage": "Stage",
+            "inputKg": "Input (Kg)",
+            "outputKg": "Output (Kg)",
+            "wastageKg": "Wastage (Kg)",
+            "brokenKg": "Broken (Kg)",
+            "branKg": "Bran (Kg)",
+            "huskKg": "Husk (Kg)",
+            "recoveryPct": "Recovery %"
+          },
+          "summary": {
+            "batches": "Batches",
+            "avgRecovery": "Avg Recovery %"
+          }
         },
         "mill_byproducts": {
-          "columns": { "name": "By-Product", "quantityKg": "Produced (Kg)", "soldKg": "Sold (Kg)", "remainingKg": "Remaining (Kg)", "ratePerKg": "Rate / Kg", "soldValue": "Sold Value" },
-          "summary": { "totalSoldValue": "Total Sold Value" }
+          "columns": {
+            "name": "By-Product",
+            "quantityKg": "Produced (Kg)",
+            "soldKg": "Sold (Kg)",
+            "remainingKg": "Remaining (Kg)",
+            "ratePerKg": "Rate / Kg",
+            "soldValue": "Sold Value"
+          },
+          "summary": {
+            "totalSoldValue": "Total Sold Value"
+          }
         }
       },
       "pack": {
@@ -2789,7 +3027,25 @@
     "onLeave": "On Leave",
     "payrollDue": "Payroll Due",
     "payrollPaid": "Payroll Paid",
-    "totalMonthlyPayroll": "Monthly Payroll"
+    "totalMonthlyPayroll": "Monthly Payroll",
+    "shiftTracking": "Shift Tracking",
+    "shiftSection": "Shift Details",
+    "choosePaali": "Choose Shift",
+    "shiftMorning": "Morning",
+    "shiftAfternoon": "Afternoon",
+    "shiftNight": "Night",
+    "shiftCustom": "Custom",
+    "inTimeLabel": "In Time",
+    "outTimeLabel": "Out Time",
+    "shiftDuration": "Duration",
+    "hrs8": "8 Hours",
+    "hrs12": "12 Hours",
+    "customHoursLabel": "Other",
+    "hoursShort": "hrs",
+    "hoursPlaceholder": "e.g. 6",
+    "shiftBadaUdyogBadge": "Bada Udyog Feature",
+    "shiftBadaUdyogHint": "Shift & time tracking is available in the Bada Udyog plan",
+    "autoCalcHint": "Auto calculated from in/out time"
   },
   "Purchases": {
     "title": "Purchases",
@@ -2905,7 +3161,8 @@
     "millDestinationLabel": "Send to",
     "millDestStock": "Stock",
     "millDestRawMaterial": "Raw Material",
-    "millDestNotPacked": "Not Packed"
+    "millDestNotPacked": "Not Packed",
+    "millDestByProductNotPacked": "By-Products Not Packed"
   },
   "Profile": {
     "title": "Business Profile",
@@ -4041,6 +4298,7 @@
     "pk_bag": "Bag",
     "pk_goni": "Goni",
     "pk_other": "Other",
+    "pk_each": "each",
     "pk_kgEach": "kg each",
     "pk_count": "How many",
     "pk_summary": "Packed {packed} kg · loose / not packed {loose} kg",
@@ -4070,6 +4328,10 @@
     "pk_tabTitle": "Not packed yet",
     "pk_intro": "Ready products from your production runs that are not packed (or only partly). Add the packing here: how many bags or gonis, and of how many kg.",
     "pk_none": "Everything is packed.",
+    "pk_byp_tab": "By-Products Not Packed",
+    "pk_byp_tabTitle": "By-products not packed yet",
+    "pk_byp_intro": "By-products from your production runs or purchased ready-made that need to be weighed into bags before sale. Add the packing here.",
+    "pk_byp_none": "All by-products are packed.",
     "pk_pack": "Add packing",
     "pk_packTitle": "Pack {name}",
     "pk_left": "Still to pack: {left} kg of {kg} kg",
@@ -4708,7 +4970,19 @@
     "bulkDeleteSuccess": "Bills deleted.",
     "bulkDeleteFailed": "Some bills could not be deleted.",
     "originalAmount": "Original Amount",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "writeOffHint": "₹{amount} will be written off to fully close this bill",
+    "historyTab": "History",
+    "noHistory": "No settlement history found.",
+    "settledOn": "Settled",
+    "paidLabel": "Paid",
+    "writeOffLabel": "Write-off",
+    "reverseSettlement": "Reverse",
+    "reverseConfirmTitle": "Reverse Settlement?",
+    "reverseConfirmText": "Reversing will restore ₹{amount} as pending for {name}.",
+    "reverseSuccess": "Settlement reversed successfully.",
+    "failedToReverse": "Failed to reverse settlement.",
+    "historySubtitle": "Past settlements — click Reverse to undo one."
   },
   "GateEntry": {
     "title": "Gate Entry",
@@ -4929,7 +5203,16 @@
     "actionsBlockedMill": "Mill invoices cannot be edited, returned, or exchanged after saving. If a correction is required, please contact an administrator/support.",
     "openInvoice": "View / Print / PDF / WhatsApp",
     "printAfterSync": "This bill is saved on this device and will sync shortly. Print, PDF and WhatsApp become available once it has synced.",
-    "dupFailed": "Could not load this invoice for duplication."
+    "dupFailed": "Could not load this invoice for duplication.",
+    "sendToChallan": "Send to Challan",
+    "close": "Close",
+    "selectPaymentMethod": "Please select a payment method before saving."
+  },
+  "Challan": {
+    "pendingBills": "Bills Pending Challan",
+    "pendingBillsDesc": "Mill bills without a delivery challan (last 90 days)",
+    "noPendingBills": "All bills have challans — nothing pending",
+    "createChallan": "Create Challan"
   },
   "MachineHub": {
     "title": "Machines & Repairs",
@@ -5040,5 +5323,64 @@
       "exchangeCash": "Exchange: {invoice}",
       "saleHamali": "Hamali: {text}"
     }
+  },
+  "Bank": {
+    "title": "Bank Accounts",
+    "subtitle": "Track all your bank accounts, transactions and payments",
+    "addAccount": "Add Account",
+    "noAccounts": "No bank accounts added yet",
+    "noAccountsHint": "Add your first bank account to start tracking",
+    "balance": "Balance",
+    "totalBalance": "Total Balance",
+    "totalIn": "Total In",
+    "totalOut": "Total Out",
+    "allAccounts": "All Accounts",
+    "transactions": "Transactions",
+    "noTransactions": "No transactions yet",
+    "addCredit": "+ Received (Credit)",
+    "addDebit": "- Paid (Debit)",
+    "paySupplier": "Pay Supplier",
+    "openingBalance": "Opening Balance",
+    "accountName": "Account Name",
+    "bankName": "Bank Name",
+    "accountNumber": "Account Number",
+    "ifsc": "IFSC Code",
+    "accountNamePlaceholder": "e.g. SBI Current Account",
+    "bankNamePlaceholder": "e.g. State Bank of India",
+    "accountNumberPlaceholder": "e.g. 12345678901",
+    "ifscPlaceholder": "e.g. SBIN0001234",
+    "saveAccount": "Save Account",
+    "editAccount": "Edit",
+    "deleteAccount": "Delete Account",
+    "confirmDelete": "Delete this bank account and all its transactions?",
+    "description": "Description",
+    "descriptionPlaceholder": "What is this for?",
+    "amountLabel": "Amount",
+    "dateLabel": "Date",
+    "addEntry": "Save Entry",
+    "creditTitle": "Money Received (Credit)",
+    "debitTitle": "Money Paid (Debit)",
+    "paySupplierTitle": "Pay Supplier from Bank",
+    "selectSupplier": "Select Supplier",
+    "chooseSupplier": "Choose Supplier...",
+    "noteOptional": "Note (Optional)",
+    "confirmPay": "Confirm Payment",
+    "paymentSuccess": "Payment recorded successfully",
+    "entryAdded": "Entry added",
+    "accountSaved": "Account saved",
+    "accountDeleted": "Account deleted",
+    "failedToSave": "Failed to save",
+    "failedToDelete": "Failed to delete",
+    "failedToLoad": "Failed to load",
+    "credit": "Credit",
+    "debit": "Debit",
+    "opening": "Opening Balance",
+    "supplier_payment": "Supplier Payment",
+    "manual": "Manual Entry",
+    "accountNameRequired": "Account name is required",
+    "sidebarLabel": "Bank"
+  },
+  "Sidebar": {
+    "bank": "Bank"
   }
 }

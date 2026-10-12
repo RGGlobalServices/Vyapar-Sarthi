@@ -172,6 +172,7 @@ model Shop {
   units               Unit[]
   expenseCategories   ExpenseCategory[]
   cashBooks           CashBook[]
+  bankAccounts        BankAccount[]
   dailyClosings       DailyClosing[]
   activityLogs        ActivityLog[]
   importLogs          ImportLog[]
@@ -1084,11 +1085,15 @@ model SalaryRevision {
 }
 
 model Attendance {
-  id      String   @id @default(uuid()) @db.Uuid
-  staffId String   @map("staff_id") @db.Uuid
-  date    DateTime @db.Date
-  status  String   @db.VarChar
-  reason  String?  @db.VarChar
+  id         String   @id @default(uuid()) @db.Uuid
+  staffId    String   @map("staff_id") @db.Uuid
+  date       DateTime @db.Date
+  status     String   @db.VarChar
+  reason     String?  @db.VarChar
+  shift      String?  @db.VarChar
+  inTime     String?  @map("in_time") @db.VarChar
+  outTime    String?  @map("out_time") @db.VarChar
+  shiftHours Float?   @map("shift_hours")
 
   staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
@@ -1320,6 +1325,8 @@ model PurchaseInvoice {
   grossWeightKg    Float?    @map("gross_weight_kg")
   // Offline reference number assigned while offline
   offlineRefNumber String?   @map("offline_ref_number") @db.VarChar
+  // Uploaded bill photo URLs (stored in Supabase invoices bucket): ["https://...jpg", ...]
+  billImages       Json?     @default("[]") @map("bill_images")
   createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -1641,6 +1648,40 @@ model AdvanceSalary {
 
   @@index([staffId])
   @@map("advance_salaries")
+}
+
+model BankAccount {
+  id             String   @id @default(uuid()) @db.Uuid
+  shopId         String   @map("shop_id") @db.Uuid
+  name           String   @db.VarChar
+  bankName       String?  @map("bank_name") @db.VarChar
+  accountNumber  String?  @map("account_number") @db.VarChar
+  ifsc           String?  @db.VarChar
+  openingBalance Float    @default(0) @map("opening_balance")
+  balance        Float    @default(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shop         Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  transactions BankTransaction[]
+
+  @@map("bank_accounts")
+}
+
+model BankTransaction {
+  id            String   @id @default(uuid()) @db.Uuid
+  bankAccountId String   @map("bank_account_id") @db.Uuid
+  type          String   @db.VarChar
+  amount        Float
+  description   String?  @db.VarChar
+  source        String?  @db.VarChar
+  referenceId   String?  @map("reference_id") @db.Uuid
+  date          DateTime @default(now()) @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([bankAccountId, date(sort: Desc)])
+  @@map("bank_transactions")
 }
 
 model CashBook {

@@ -19,7 +19,10 @@ import {
   Building2,
   Share2,
   PackageCheck,
-  Pencil
+  Pencil,
+  ShoppingCart,
+  History,
+  Image as ImageIcon,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -39,8 +42,9 @@ type MillParty360Props = {
 };
 
 export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit }: MillParty360Props) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'grain' | 'production' | 'ledger'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'grain' | 'production' | 'ledger' | 'purchases'>('overview');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const { data, isLoading, mutate } = useSWR(
     partyId ? `/crm/customers/${partyId}` : null,
@@ -54,6 +58,9 @@ export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit 
   const rawLots: any[] = data?.rawLots || [];
   const flow = data?.materialFlow;
   const finance = data?.finance || { totalDue: 0, totalCharged: 0, totalPaid: 0, status: 'clear' };
+  const purchaseInvoices: any[] = data?.purchaseInvoices || [];
+  const supplierTransactions: any[] = data?.supplierTransactions || [];
+  const linkedSupplier = data?.linkedSupplier || null;
 
   // Material Stats
   const totalJwInputKg = jobWorkOrders.reduce((s, j) => s + (Number(j.inputWeightKg) || 0), 0);
@@ -202,6 +209,17 @@ export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit 
             >
               <FileText size={14} /> Khata & Statement ({customer?.customer_transactions?.length || 0})
             </button>
+            <button
+              onClick={() => setActiveTab('purchases')}
+              className={cn(
+                "pb-3 px-3 text-xs font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5",
+                activeTab === 'purchases'
+                  ? "border-indigo-500 text-indigo-600 dark:text-indigo-400"
+                  : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              )}
+            >
+              <ShoppingCart size={14} /> खरेदी इतिहास ({purchaseInvoices.length})
+            </button>
           </div>
         </div>
 
@@ -266,6 +284,46 @@ export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit 
               {activeTab === 'overview' && (
                 <div className="space-y-4">
                   <MaterialFlowCard flow={flow} />
+
+                  {/* Purchase summary card (only if purchases exist) */}
+                  {purchaseInvoices.length > 0 && (
+                    <div
+                      className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/40 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors"
+                      onClick={() => setActiveTab('purchases')}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ShoppingCart size={16} className="text-indigo-500" />
+                          <h3 className="font-bold text-sm text-slate-900 dark:text-white">खरेदी इतिहास (Purchase History)</h3>
+                        </div>
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">View All →</span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <span className="text-slate-400">Total Invoices</span>
+                          <p className="font-black text-lg text-slate-900 dark:text-white mt-0.5">{purchaseInvoices.length}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Total Purchased</span>
+                          <p className="font-black text-lg text-indigo-600 dark:text-indigo-400 mt-0.5">
+                            {rupee(purchaseInvoices.reduce((s, inv) => s + (inv.totalCost || 0), 0))}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Balance Due</span>
+                          <p className={cn("font-black text-lg mt-0.5", (linkedSupplier?.balance || 0) > 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400")}>
+                            {rupee(Math.abs(linkedSupplier?.balance || 0))}
+                          </p>
+                        </div>
+                      </div>
+                      {purchaseInvoices[0] && (
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+                          <span>Latest: {purchaseInvoices[0].invoiceNumber || `INV-${purchaseInvoices[0].id.slice(-6).toUpperCase()}`}</span>
+                          <span>{purchaseInvoices[0].date ? new Date(purchaseInvoices[0].date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* Active Production Pipeline for this Customer */}
                   <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
                     <div className="flex items-center justify-between">
@@ -499,6 +557,170 @@ export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit 
                 </div>
               )}
 
+              {/* PURCHASE HISTORY TAB */}
+              {activeTab === 'purchases' && (
+                <div className="space-y-4">
+                  {/* Supplier balance summary */}
+                  {linkedSupplier && (
+                    <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-900/30 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">शेतकरी खरेदी खाते (Supplier Account)</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                          {purchaseInvoices.length} invoice{purchaseInvoices.length !== 1 ? 's' : ''} · {purchaseInvoices.reduce((s, inv) => s + (inv.purchaseItems?.reduce((ps: number, it: any) => ps + (Number(it.quantity) || 0), 0) || 0), 0).toLocaleString('en-IN')} kg total purchased
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[10px] text-slate-500 uppercase">Balance Due to Farmer</p>
+                        <p className={cn(
+                          "text-lg font-black",
+                          (linkedSupplier.balance || 0) > 0 ? "text-red-600 dark:text-red-400" : (linkedSupplier.balance || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500"
+                        )}>
+                          {rupee(Math.abs(linkedSupplier.balance || 0))}
+                          {(linkedSupplier.balance || 0) > 0 && <span className="text-[10px] font-bold ml-1 text-red-500">बाकी</span>}
+                          {(linkedSupplier.balance || 0) < 0 && <span className="text-[10px] font-bold ml-1 text-emerald-500">Advance</span>}
+                          {(linkedSupplier.balance || 0) === 0 && <span className="text-[10px] font-bold ml-1 text-slate-400">Clear</span>}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {purchaseInvoices.length === 0 ? (
+                    <div className="p-8 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+                      <ShoppingCart size={28} className="mx-auto mb-3 text-slate-300 dark:text-slate-700" />
+                      <p className="text-sm font-bold text-slate-500">या शेतकऱ्याकडून अजून कोणतीही खरेदी नाही</p>
+                      <p className="text-xs text-slate-400 mt-1">No purchase invoices recorded yet for this farmer.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {purchaseInvoices.map((inv: any) => {
+                        const totalKg = inv.purchaseItems?.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0) || 0;
+                        const invDate = inv.date ? new Date(inv.date) : null;
+                        return (
+                          <div key={inv.id} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                                    {inv.invoiceNumber || `INV-${inv.id.slice(-6).toUpperCase()}`}
+                                  </span>
+                                  <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 px-2 py-0.5 rounded-full uppercase">
+                                    Purchase
+                                  </span>
+                                </div>
+                                {invDate && (
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    {invDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-black text-lg text-slate-900 dark:text-white">{rupee(inv.totalCost || 0)}</p>
+                                <p className="text-[11px] text-slate-400">{totalKg.toLocaleString('en-IN')} kg</p>
+                              </div>
+                            </div>
+                            {inv.purchaseItems && inv.purchaseItems.length > 0 && (
+                              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                                {inv.purchaseItems.map((item: any, idx: number) => (
+                                  <div key={idx} className="flex items-center justify-between text-xs">
+                                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                                      {item.product?.name || 'Product'}
+                                    </span>
+                                    <div className="flex items-center gap-3 text-slate-500">
+                                      <span className="font-mono">{Number(item.quantity).toLocaleString('en-IN')} {item.product?.baseUnit || 'kg'}</span>
+                                      <span className="font-mono">@ ₹{Number(item.cost).toLocaleString('en-IN')}</span>
+                                      <span className="font-bold text-slate-700 dark:text-slate-200">{rupee(item.quantity * item.cost)}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Bill photo thumbnails */}
+                            {Array.isArray(inv.billImages) && inv.billImages.length > 0 && (
+                              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                                  <ImageIcon size={11} /> Bill Photos ({inv.billImages.length})
+                                </p>
+                                <div className="flex gap-2 flex-wrap">
+                                  {inv.billImages.map((url: string, i: number) => (
+                                    <button
+                                      key={i}
+                                      onClick={() => setLightboxUrl(url)}
+                                      className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-indigo-400 transition-colors"
+                                    >
+                                      {url.toLowerCase().endsWith('.pdf') ? (
+                                        <div className="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                                          <FileText size={16} className="text-slate-400" />
+                                        </div>
+                                      ) : (
+                                        <img src={url} alt={`Bill ${i + 1}`} className="w-full h-full object-cover" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Supplier transaction ledger */}
+                  {supplierTransactions.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                        <History size={15} className="text-indigo-500" /> खरेदी खाते व्यवहार (Supplier Ledger)
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800">
+                              <th className="pb-2">Date</th>
+                              <th className="pb-2">Type</th>
+                              <th className="pb-2">Note</th>
+                              <th className="pb-2 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {supplierTransactions.map((tx: any) => {
+                              const isPurchase = tx.type === 'purchase';
+                              const isPayment = tx.type === 'payment';
+                              const txDate = tx.created_at ? new Date(tx.created_at) : null;
+                              return (
+                                <tr key={tx.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                                  <td className="py-2 text-slate-500 whitespace-nowrap">
+                                    {txDate ? txDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+                                  </td>
+                                  <td className="py-2">
+                                    <span className={cn(
+                                      "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded",
+                                      isPurchase ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+                                        : isPayment ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                    )}>
+                                      {isPurchase ? 'खरेदी' : isPayment ? 'Payment' : tx.type}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 text-slate-600 dark:text-slate-400 max-w-[180px] truncate">
+                                    {tx.note || (isPurchase ? 'Grain Purchase' : isPayment ? 'Payment Made' : '—')}
+                                  </td>
+                                  <td className={cn(
+                                    "py-2 text-right font-mono font-bold",
+                                    isPurchase ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"
+                                  )}>
+                                    {rupee(tx.amount)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* KHATA LEDGER & STATEMENT TAB */}
               {activeTab === 'ledger' && (
                 <div className="space-y-4">
@@ -559,6 +781,27 @@ export default function MillParty360Modal({ partyId, onClose, onUpdated, onEdit 
           )}
         </div>
       </div>
+
+      {/* Lightbox for bill photos */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <img
+            src={lightboxUrl}
+            alt="Bill photo"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
 
       {/* Payment / Advance Modal */}
       {showPaymentModal && customer && (

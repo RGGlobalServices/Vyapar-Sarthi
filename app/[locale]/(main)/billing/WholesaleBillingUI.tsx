@@ -48,6 +48,7 @@ import BillPartyDetailsField, { EMPTY_BILL_PARTY, billPartyFrom, type BillPartyI
 import DispatchDetailsField, { EMPTY_DISPATCH_INPUT, type DispatchInput } from '@/components/mill/DispatchDetailsField';
 import MillTotalsSummary from '@/components/billing/MillTotalsSummary';
 import MillBillSavedModal from '@/components/billing/MillBillSavedModal';
+import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
 
 // Same key a variant row is stored/matched under everywhere else (Products'
 // Variant Builder, the Purchases item picker, the server-side stock helper)
@@ -620,7 +621,9 @@ export default function WholesaleBillingUI() {
   // Credit collects nothing up front. Mixed reveals the Cash/UPI/Bank grid so
   // a distributor can split one invoice across methods, same as before.
   type WholesalePaymentMethod = 'cash' | 'upi' | 'bank' | 'cheque' | 'credit' | 'mixed';
-  const [paymentMethod, setPaymentMethod] = useState<WholesalePaymentMethod>('cash');
+  // Mill (Bada Udyog): cashier must explicitly pick a method — no auto-selection.
+  // Non-mill Udyog: default Cash for speed.
+  const [paymentMethod, setPaymentMethod] = useState<WholesalePaymentMethod | null>(() => isMill ? null : 'cash');
   const [upiApp, setUpiApp] = useState('');
   const [upiTxnId, setUpiTxnId] = useState('');
   const [bankName, setBankName] = useState('');
@@ -659,6 +662,7 @@ export default function WholesaleBillingUI() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [millCharges]);
   const [millSaved, setMillSaved] = useState<any>(null);
+  const [millPreviewId, setMillPreviewId] = useState<string | null>(null);
   // "Duplicate invoice" hand-off: a copy of a legacy NON-GST invoice stays non-GST until its copied rates are re-entered.
   const [dupFrom, setDupFrom] = useState<string | null>(null);
   const [dupForceNonGst, setDupForceNonGst] = useState(false);
@@ -824,7 +828,7 @@ export default function WholesaleBillingUI() {
   // they take over the Cash/UPI/Bank fields directly instead.
   useEffect(() => {
     if (paymentMethod === 'mixed') return;
-    if (paymentMethod === 'credit') {
+    if (paymentMethod === null || paymentMethod === 'credit') {
       setSplitPayments({ cash: 0, upi: 0, card: 0, bank: 0 });
       return;
     }
@@ -1388,6 +1392,7 @@ export default function WholesaleBillingUI() {
       alert(t('nameRequiredForUdhar') || 'Please enter a customer name — this sale has an outstanding balance to track.');
       return;
     }
+    if (paymentMethod === null) { alert(tMill('selectPaymentMethod') || 'Please select a payment method.'); return; }
     if (Math.round(collectedAmount * 100) > Math.round(grandTotal * 100)) { alert(t('collectedExceedsTotal')); return; }
 
     setIsGenerating(true);
@@ -1428,7 +1433,7 @@ export default function WholesaleBillingUI() {
         bill_type: billType,
         gst_inter_state: gstInterState,
         total_amount: grandTotal, // informational only — the server ignores it and flags any mismatch
-        payment_type: paymentTypeWire[paymentMethod],
+        payment_type: paymentMethod ? paymentTypeWire[paymentMethod] : 'Cash',
         amount_paid: collectedAmount,
         payment_details: { ...splitPayments, udhar: grandRemaining, ...paymentDetailsExtra },
         ...(dupRestrictionActive && dupFrom ? { duplicated_from: dupFrom } : {}),
@@ -1463,7 +1468,7 @@ export default function WholesaleBillingUI() {
       setSelectedParty(null);
       setCustomerName('');
       setCustomerAddress('');
-      setPaymentMethod('cash');
+      setPaymentMethod(null); // mill: back to unselected for next bill
       setUpiApp(''); setUpiTxnId('');
       setBankName(''); setBankRefNo('');
       setChequeNo(''); setChequeDate(''); setChequeBank('');
@@ -1475,7 +1480,13 @@ export default function WholesaleBillingUI() {
       fetchParties();
       fetchUdharCustomers();
       setShowCheckout(false);
-      setMillSaved(saved);
+      // Online: skip summary card, go straight to the invoice preview.
+      // Offline: show the summary card (invoice won't load until synced).
+      if (!saved?.offline && saved?.id) {
+        setMillPreviewId(saved.id);
+      } else {
+        setMillSaved(saved);
+      }
     } catch (err: any) {
       console.error('Failed to save mill bill', err);
       // The server is authoritative: a rejected Mill request (internal platform flag off, wrong package) is shown as such —
@@ -1593,7 +1604,7 @@ export default function WholesaleBillingUI() {
         items: saleItems,
         discount: discount,
         total_amount: grandTotal,
-        payment_type: paymentTypeWire[paymentMethod],
+        payment_type: paymentMethod ? paymentTypeWire[paymentMethod] : 'Cash',
         amount_paid: collectedAmount,
         payment_details: { ...splitPayments, udhar: grandRemaining, ...paymentDetailsExtra },
         bill_type: billType,
@@ -1652,7 +1663,7 @@ export default function WholesaleBillingUI() {
         discount,
         amountPaid: collectedAmount,
         remainingAmount: grandRemaining,
-        paymentMethod: paymentTypeWire[paymentMethod],
+        paymentMethod: paymentMethod ? paymentTypeWire[paymentMethod] : 'Cash',
         splitPayments: { ...splitPayments, udhar: grandRemaining },
         billNumber,
         date: fmtDate(new Date()),
@@ -3219,6 +3230,9 @@ export default function WholesaleBillingUI() {
       )}
       {millSaved && (
         <MillBillSavedModal bill={millSaved} customerName={millSaved._customerName} onClose={() => setMillSaved(null)} />
+      )}
+      {millPreviewId && (
+        <MillInvoicePreviewModal invoiceId={millPreviewId} onClose={() => setMillPreviewId(null)} />
       )}
 
       {showBillModal && lastBill && (() => {

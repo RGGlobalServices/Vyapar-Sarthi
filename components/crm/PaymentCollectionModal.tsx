@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
+import { cn, fmtDate } from '@/lib/utils';
 import { IndianRupee, X, CheckCircle2, CreditCard, Landmark, Wallet, Phone, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
-import { fmtDate } from '@/lib/utils';
 import { useBusinessStore } from '@/lib/businessStore';
 import { generateUdharWhatsAppText } from '@/components/UdharSlip';
 
@@ -31,6 +31,8 @@ export default function PaymentCollectionModal({
   const { profile } = useBusinessStore();
   const [amount, setAmount] = useState(outstanding.toString());
   const [discount, setDiscount] = useState('');
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
+  const [percentInput, setPercentInput] = useState('');
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,6 +46,15 @@ export default function PaymentCollectionModal({
   // exact message to a supplier would say the wrong thing.
   const [paidResult, setPaidResult] = useState<{ amount: number; newTotalDue: number; mobile: string | null } | null>(null);
 
+  // Sync percent input → discount state (₹) whenever pct or outstanding changes
+  useEffect(() => {
+    if (discountMode !== 'percent') return;
+    const pct = Math.max(0, Math.min(100, parseFloat(percentInput) || 0));
+    const computed = Math.round(outstanding * pct) / 100;
+    setDiscount(computed === 0 ? '' : computed.toFixed(2));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discountMode, percentInput, outstanding]);
+
   const discountVal = Math.max(0, parseFloat(discount) || 0);
   const amountVal = parseFloat(amount) || 0;
   const effectiveMax = Math.max(0, outstanding - discountVal);
@@ -53,7 +64,7 @@ export default function PaymentCollectionModal({
     const val = amountVal;
     if (val <= 0 && discountVal <= 0) return toast.error(t('enterValidAmount'));
     if (val < 0) return toast.error(t('enterValidAmount'));
-    if (val + discountVal > outstanding + 0.005) return toast.error('Amount + Discount cannot exceed outstanding balance');
+    if (val + discountVal > outstanding + 0.005) return toast.error(t('enterValidAmount'));
 
     setLoading(true);
     try {
@@ -91,6 +102,15 @@ export default function PaymentCollectionModal({
     const waNum = phone.length === 10 ? `91${phone}` : phone.length > 10 ? phone : '';
     const encoded = encodeURIComponent(text);
     window.open(waNum ? `https://api.whatsapp.com/send?phone=${waNum}&text=${encoded}` : `https://wa.me/?text=${encoded}`, '_blank');
+  }
+
+  function switchDiscountMode(next: 'amount' | 'percent') {
+    if (next === discountMode) return;
+    if (next === 'percent') {
+      const pct = outstanding > 0 ? ((parseFloat(discount) || 0) / outstanding) * 100 : 0;
+      setPercentInput(pct === 0 ? '' : String(Math.round(pct * 100) / 100));
+    }
+    setDiscountMode(next);
   }
 
   const modes = [
@@ -175,10 +195,19 @@ export default function PaymentCollectionModal({
                 className="w-full h-12 px-4 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               />
               <div className="flex gap-2 mt-2 flex-wrap">
-                <button type="button" onClick={() => { setDiscount(''); setAmount(outstanding.toString()); }} className="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1 rounded-full font-medium transition-colors">{t('fullPayment')}</button>
+                <button type="button" onClick={() => { setDiscount(''); setPercentInput(''); setAmount(outstanding.toString()); }} className="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1 rounded-full font-medium transition-colors">{t('fullPayment')}</button>
                 <button type="button" onClick={() => setAmount((Math.max(0, outstanding - discountVal) / 2).toFixed(2))} className="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1 rounded-full font-medium transition-colors">{t('partial50')}</button>
                 {discountVal > 0 && (
-                  <button type="button" onClick={() => setAmount(effectiveMax.toFixed(2))} className="text-xs bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-800/40 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-full font-medium transition-colors">Settle Full</button>
+                  <button type="button" onClick={() => setAmount(effectiveMax.toFixed(2))} className="text-xs bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-800/40 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-full font-medium transition-colors">{t('settleFull')}</button>
+                )}
+                {amountVal > 0 && amountVal < outstanding && discountVal === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setDiscount((outstanding - amountVal).toFixed(2)); setDiscountMode('amount'); setPercentInput(''); }}
+                    className="text-xs bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-800/40 text-amber-700 dark:text-amber-400 px-3 py-1 rounded-full font-medium transition-colors"
+                  >
+                    {t('settleAll', { amount: (outstanding - amountVal).toLocaleString('en-IN', { maximumFractionDigits: 2 }) })}
+                  </button>
                 )}
               </div>
             </div>
@@ -186,36 +215,66 @@ export default function PaymentCollectionModal({
             {/* Discount field */}
             {(entityType === 'customer' || entityType === 'party') && (
               <div className="space-y-1">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Discount / Write-off (₹) <span className="font-normal text-slate-400 text-xs">(optional)</span></label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  max={outstanding}
-                  value={discount}
-                  onChange={(e) => {
-                    setDiscount(e.target.value);
-                    const d = Math.max(0, parseFloat(e.target.value) || 0);
-                    const newMax = Math.max(0, outstanding - d);
-                    if ((parseFloat(amount) || 0) > newMax) setAmount(newMax.toFixed(2));
-                  }}
-                  placeholder="0"
-                  className="w-full h-10 px-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                />
-                <p className="text-[11px] text-slate-400">Reduces balance without recording cash received — e.g. goodwill, write-off, or trade discount.</p>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    {t('discountLabel')} <span className="font-normal text-slate-400 text-xs">({t('optionalTag')})</span>
+                  </label>
+                  {/* ₹ / % toggle */}
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-0.5 text-[10px] font-bold shrink-0">
+                    <button type="button" onClick={() => switchDiscountMode('amount')} className={cn('px-2 py-1 rounded transition-colors', discountMode === 'amount' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>₹</button>
+                    <button type="button" onClick={() => switchDiscountMode('percent')} className={cn('px-2 py-1 rounded transition-colors', discountMode === 'percent' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-400')}>%</button>
+                  </div>
+                </div>
+                {discountMode === 'amount' ? (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    max={outstanding}
+                    value={discount}
+                    onChange={(e) => {
+                      setDiscount(e.target.value);
+                      const d = Math.max(0, parseFloat(e.target.value) || 0);
+                      const newMax = Math.max(0, outstanding - d);
+                      if ((parseFloat(amount) || 0) > newMax) setAmount(newMax.toFixed(2));
+                    }}
+                    placeholder="0"
+                    className="w-full h-10 px-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-1 h-10 px-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={percentInput}
+                        onChange={(e) => setPercentInput(e.target.value)}
+                        placeholder="0"
+                        className="flex-1 bg-transparent text-sm outline-none"
+                      />
+                      <span className="text-emerald-500 font-bold">%</span>
+                    </div>
+                    {discountVal > 0 && (
+                      <span className="text-xs text-slate-400 whitespace-nowrap">= ₹{discountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                    )}
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-400">{t('discountHint')}</p>
                 {discountVal > 0 && amountVal >= 0 && (
                   <div className="mt-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-sm flex flex-col gap-1">
                     <div className="flex justify-between text-slate-500">
-                      <span>Outstanding</span><span className="tabular-nums">₹{outstanding.toLocaleString('en-IN')}</span>
+                      <span>{t('outstandingWord')}</span><span className="tabular-nums">₹{outstanding.toLocaleString('en-IN')}</span>
                     </div>
                     {amountVal > 0 && <div className="flex justify-between text-slate-500">
-                      <span>Payment received</span><span className="tabular-nums">−₹{amountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      <span>{t('paymentReceivedWord')}</span><span className="tabular-nums">−₹{amountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                     </div>}
                     <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
-                      <span>Discount</span><span className="tabular-nums">−₹{discountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      <span>{t('discountWord')}</span><span className="tabular-nums">−₹{discountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className={`flex justify-between font-bold border-t border-slate-200 dark:border-slate-600 pt-1 mt-0.5 ${Math.max(0, outstanding - amountVal - discountVal) > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                      <span>Remaining balance</span>
+                      <span>{t('remainingBalance')}</span>
                       <span className="tabular-nums">₹{Math.max(0, outstanding - amountVal - discountVal).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
@@ -262,7 +321,7 @@ export default function PaymentCollectionModal({
             >
               {loading ? <span className="animate-spin text-xl">◌</span> : <CheckCircle2 size={20} />}
               {loading ? t('recording') : discountVal > 0
-                ? `Record ₹${amountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + Discount ₹${discountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+                ? t('recordWithDiscount', { amount: amountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 }), discount: discountVal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) })
                 : t('recordPaymentOf', { amount: amountVal })}
             </button>
           </form>

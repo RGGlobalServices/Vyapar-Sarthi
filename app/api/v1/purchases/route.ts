@@ -327,6 +327,13 @@ export async function POST(req: Request) {
               });
             }
             await tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid AND shop_id = ${auth.shop.id}::uuid`;
+            // Keep Product.costPrice in sync with latest purchase price (used for inventory valuation & P&L)
+            if (item.baseCost > 0) {
+              await tx.product.updateMany({
+                where: { id: item.productId, shopId: auth.shop.id },
+                data: { costPrice: item.baseCost },
+              });
+            }
           }
 
           // 6. Mill Raw Material Lot if applicable
@@ -462,6 +469,23 @@ export async function POST(req: Request) {
             }
           }, { timeout: 15000 });
         } catch (e) { console.error('Send to Not Packed failed:', e); }
+      }
+
+      const byProductNotPackedItems = processedItems.filter((item: any) => item.sendToByProductNotPacked);
+      if (byProductNotPackedItems.length) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            for (const item of byProductNotPackedItems) {
+              const p = purchaseProductById.get(item.productId);
+              if (!p) continue;
+              await sendToNotPacked(tx, auth.shop.id, {
+                productId: item.productId, productName: p.name || item.name || 'Product', quantity: item.baseQuantity,
+                unit: p.baseUnit || 'kg', batchLabel: invoiceNumber || invoiceId,
+                sourceNote: `By-product Purchased — Invoice ${invoiceNumber || invoiceId}`, kind: 'by_product',
+              });
+            }
+          }, { timeout: 15000 });
+        } catch (e) { console.error('Send to By-Product Not Packed failed:', e); }
       }
     }
 

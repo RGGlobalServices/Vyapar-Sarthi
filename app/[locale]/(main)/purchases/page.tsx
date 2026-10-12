@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
-import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer, Wheat } from 'lucide-react';
+import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer, Wheat, Camera, Image as ImageIcon } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
 import { cn, fmtDate } from '@/lib/utils';
@@ -13,6 +13,7 @@ import { makeVariantKey } from '@/components/ColorSizeVariantGrid';
 import { canUseGodowns } from '@/lib/planGates';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import PurchaseReturnModal from '@/components/purchases/PurchaseReturnModal';
+import BillImageModal from '@/components/purchases/BillImageModal';
 import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
 import DiscountInput from '@/components/DiscountInput';
 import { printLabelSheet } from '@/lib/printLabels';
@@ -24,10 +25,10 @@ const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res
 const emptyItem = () => ({
   productId: '', quantity: 1, cost: 0, batchNumber: '', expiryDate: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '',
   // Where this line should land beyond the ordinary stock credit every purchased item already gets:
-  // 'raw_material' queues it for milling, 'not_packed' makes it show in Milling -> Not Packed so it can
-  // be weighed into bags before sale (for by-products bought ready-made and resold as-is). undefined =
-  // let the product's own millCategory decide (raw_material products default to 'raw_material').
-  dest: undefined as 'stock' | 'raw_material' | 'not_packed' | undefined,
+  // 'raw_material' queues it for milling, 'not_packed' makes it show in Milling -> Not Packed (finished goods)
+  // so it can be weighed into bags, 'by_product_not_packed' makes it show in Milling -> By-Products Not Packed
+  // for by-products bought ready-made and resold as-is. undefined = let the product's own millCategory decide.
+  dest: undefined as 'stock' | 'raw_material' | 'not_packed' | 'by_product_not_packed' | undefined,
   // One qty per colour/size, keyed the same way as everywhere else — only
   // used when the selected product has variant rows; `quantity` above is
   // still what's used for a plain (non-variant) product.
@@ -41,10 +42,10 @@ const emptyItem = () => ({
 });
 
 // A row's destination when nothing was explicitly clicked — raw-material products default to Raw
-// Material, by-products default to Not Packed (ready to weigh into bags and sell), everything else to
-// plain Stock. Shared by the item row's UI highlight and the save payload so they can never disagree.
-const defaultDest = (product: any): 'stock' | 'raw_material' | 'not_packed' =>
-  product?.millCategory === 'raw_material' ? 'raw_material' : product?.millCategory === 'by_product' ? 'not_packed' : 'stock';
+// Material, by-products default to By-Products Not Packed (ready to weigh into bags and sell),
+// everything else to plain Stock. Shared by the item row's UI highlight and the save payload.
+const defaultDest = (product: any): 'stock' | 'raw_material' | 'not_packed' | 'by_product_not_packed' =>
+  product?.millCategory === 'raw_material' ? 'raw_material' : product?.millCategory === 'by_product' ? 'by_product_not_packed' : 'stock';
 
 // Shared by every item row — 'manual' just returns the typed cost; 'mrp_based'
 // derives it from that row's own mrp/discountPercent.
@@ -128,6 +129,7 @@ export default function PurchasesPage() {
   const [showReturnsHistory, setShowReturnsHistory] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [billImageInvoice, setBillImageInvoice] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
   const [convertingRaw, setConvertingRaw] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
@@ -420,7 +422,8 @@ export default function PurchasesPage() {
     const dest = item.dest ?? defaultDest(product);
     const addToRawMaterial = isMill ? dest === 'raw_material' : undefined;
     const sendToNotPacked = isMill ? dest === 'not_packed' : undefined;
-    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice, ...(isMill ? { addToRawMaterial, sendToNotPacked } : {}) }] : [];
+    const sendToByProductNotPacked = isMill ? dest === 'by_product_not_packed' : undefined;
+    return item.productId && item.quantity > 0 ? [{ ...item, cost, mrp, discountPercent, sellingPrice, ...(isMill ? { addToRawMaterial, sendToNotPacked, sendToByProductNotPacked } : {}) }] : [];
   });
 
   const setItemUnit = (index: number, unitKey: string) => {
@@ -1020,14 +1023,21 @@ export default function PurchasesPage() {
                       <div data-testid="item-destination">
                         <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('millDestinationLabel') || 'Send to'}</span>
                         <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden text-xs font-bold">
-                          {([
-                            { key: 'stock', label: t('millDestStock') || 'Stock' },
-                            { key: 'raw_material', label: t('millDestRawMaterial') || 'Raw Material' },
-                            { key: 'not_packed', label: t('millDestNotPacked') || 'Not Packed' },
-                          ] as const).map(({ key, label }) => {
+                          {(selectedProduct?.millCategory === 'by_product'
+                            ? [
+                                { key: 'stock' as const, label: t('millDestStock') || 'Stock' },
+                                { key: 'raw_material' as const, label: t('millDestRawMaterial') || 'Raw Material' },
+                                { key: 'by_product_not_packed' as const, label: t('millDestByProductNotPacked') || 'By-Products Not Packed' },
+                              ]
+                            : [
+                                { key: 'stock' as const, label: t('millDestStock') || 'Stock' },
+                                { key: 'raw_material' as const, label: t('millDestRawMaterial') || 'Raw Material' },
+                                { key: 'not_packed' as const, label: t('millDestNotPacked') || 'Not Packed' },
+                              ]
+                          ).map(({ key, label }) => {
                             const active = (item.dest ?? defaultDest(selectedProduct)) === key;
                             return (
-                              <button key={label} type="button" onClick={() => { const n = [...items]; n[index].dest = key; setItems(n); }}
+                              <button key={key} type="button" onClick={() => { const n = [...items]; n[index].dest = key; setItems(n); }}
                                 className={cn('px-2.5 py-1.5 transition-colors', active ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800')}>
                                 {label}
                               </button>
@@ -1287,6 +1297,26 @@ export default function PurchasesPage() {
                     <td className="px-5 py-4 text-right font-bold font-mono text-slate-900 dark:text-white">₹{(inv.totalCost || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                        {/* Bill photo button — shows filled image icon if photos exist */}
+                        <button
+                          onClick={() => setBillImageInvoice(inv)}
+                          title="View / Upload Bill Photos"
+                          className={cn(
+                            "relative p-2 rounded-lg transition-colors",
+                            (Array.isArray(inv.billImages) && inv.billImages.length > 0)
+                              ? "text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+                              : "text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+                          )}
+                        >
+                          {(Array.isArray(inv.billImages) && inv.billImages.length > 0)
+                            ? <ImageIcon size={15} />
+                            : <Camera size={15} />}
+                          {(Array.isArray(inv.billImages) && inv.billImages.length > 1) && (
+                            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-indigo-500 text-white text-[8px] font-black flex items-center justify-center leading-none">
+                              {inv.billImages.length}
+                            </span>
+                          )}
+                        </button>
                         <button onClick={() => openEdit(inv)} disabled={editLoadingId === inv.id} title={t('edit') || 'Edit'}
                           className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-colors disabled:opacity-50">
                           {editLoadingId === inv.id ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />}
@@ -1560,6 +1590,20 @@ export default function PurchasesPage() {
           invoice={selectedInvoice}
           onClose={() => setShowReturnModal(false)}
           onSaved={() => refreshSelectedInvoice(selectedInvoice.id)}
+        />
+      )}
+
+      {/* Bill Image Modal */}
+      {billImageInvoice && (
+        <BillImageModal
+          invoiceId={billImageInvoice.id}
+          invoiceNumber={billImageInvoice.invoiceNumber}
+          initialImages={Array.isArray(billImageInvoice.billImages) ? billImageInvoice.billImages : []}
+          onClose={() => setBillImageInvoice(null)}
+          onUpdated={(imgs) => {
+            setBillImageInvoice((prev: any) => prev ? { ...prev, billImages: imgs } : null);
+            mutateInvoices();
+          }}
         />
       )}
 

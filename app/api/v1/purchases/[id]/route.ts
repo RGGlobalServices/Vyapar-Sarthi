@@ -274,6 +274,28 @@ export async function PATCH(req: Request, { params }: Ctx) {
       } catch (e) { console.error('Send to Not Packed failed:', e); }
     }
 
+    const byProductNotPackedItems = processedItems.filter((item: any) => item.sendToByProductNotPacked);
+    if (byProductNotPackedItems.length) {
+      try {
+        const productInfo = await prisma.product.findMany({
+          where: { id: { in: byProductNotPackedItems.map((i: any) => i.productId) }, shopId: auth!.shop.id },
+          select: { id: true, name: true, baseUnit: true },
+        });
+        const byId = new Map(productInfo.map((p) => [p.id, p]));
+        const label = invoiceNumber || id;
+        await prisma.$transaction(async (tx) => {
+          for (const item of byProductNotPackedItems) {
+            const p = byId.get(item.productId);
+            if (!p) continue;
+            await sendToNotPacked(tx, auth!.shop.id, {
+              productId: item.productId, productName: p.name || item.name || 'Product', quantity: item.baseQuantity,
+              unit: p.baseUnit || 'kg', batchLabel: label, sourceNote: `By-product Purchased — Invoice ${label}`, kind: 'by_product',
+            });
+          }
+        }, { timeout: 15000 });
+      } catch (e) { console.error('Send to By-Product Not Packed failed:', e); }
+    }
+
     // Per-variant stock breakdown: undo what the old line items added, then
     // (re)apply the new ones — same best-effort, after-commit treatment as
     // POST. oldInvoice.purchaseItems already carries variantKey, so this

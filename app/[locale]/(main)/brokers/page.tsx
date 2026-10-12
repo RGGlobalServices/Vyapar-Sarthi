@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { Plus, X, Loader2, Handshake, IndianRupee, FileText, TrendingUp, Pencil, Trash2, CheckSquare, Square, AlertCircle, Phone, User, Receipt, Wallet, ArrowUpRight, ArrowDownRight, ChevronRight, Calendar, ShoppingBag } from 'lucide-react';
-import { useExport } from '@/lib/hooks/useExport';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
@@ -55,7 +54,6 @@ const STATEMENT_COLUMNS = [
 export default function BrokersPage() {
   const t = useTranslations('Brokers');
   const activeShopId = useBusinessStore(s => s.activeShopId);
-  const { exportToPDF } = useExport();
   const { profile } = useBusinessStore();
   const [selectedBrokerId, setSelectedBrokerId] = useState<string | null>(null);
   const [entryModal, setEntryModal] = useState<{ brokerId: string; type: 'charge' | 'payment' } | null>(null);
@@ -83,22 +81,156 @@ export default function BrokersPage() {
 
   const downloadBrokerStatement = async (b: Broker) => {
     const brokerEntries = entries.filter(e => e.brokerId === b.id);
-    const orderCount = brokerEntries.filter(e => e.type === 'charge').length;
-    const paid = brokerEntries.filter(e => e.type === 'payment').reduce((a, e) => a + e.amount, 0);
-    await exportToPDF({
-      title: `Commission Statement — ${b.name}`,
-      filename: `broker-statement-${b.name.replace(/\s+/g, '-').toLowerCase()}`,
-      columns: STATEMENT_COLUMNS,
-      data: brokerEntries,
-      summary: [
-        { label: 'Broker', value: b.name },
-        ...(b.mobile ? [{ label: 'Mobile', value: b.mobile }] : []),
-        { label: 'Total Orders/Deals', value: String(orderCount) },
-        { label: 'Total Commission Earned', value: `₹${brokerEntries.filter(e => e.type === 'charge').reduce((a, e) => a + e.amount, 0).toLocaleString('en-IN')}` },
-        { label: 'Total Paid', value: `₹${paid.toLocaleString('en-IN')}` },
-        { label: 'Pending Balance', value: `₹${Math.max(0, b.balance).toLocaleString('en-IN')}` },
-      ],
-    });
+
+    // Fetch tagged bills (purchases + sales this broker was involved in)
+    let bills: BrokerBill[] = [];
+    try {
+      const res = await api.get(`/management/commission/bills?brokerId=${b.id}`);
+      bills = res.data?.bills || [];
+    } catch {}
+
+    const purchaseBills = bills.filter((bill) => bill.type === 'purchase');
+    const saleBills = bills.filter((bill) => bill.type === 'sale');
+    const totalCommission = brokerEntries.filter(e => e.type === 'charge').reduce((a, e) => a + e.amount, 0);
+    const totalPaid = brokerEntries.filter(e => e.type === 'payment').reduce((a, e) => a + e.amount, 0);
+    const totalPurchaseValue = purchaseBills.reduce((a, bill) => a + bill.amount, 0);
+    const totalSaleValue = saleBills.reduce((a, bill) => a + bill.amount, 0);
+
+    const [{ default: jsPDF }, { default: autoTable }, tpl, { saveOrShareBlob }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+      import('@/lib/pdf/professionalTemplate'),
+      import('@/lib/nativeSave'),
+    ]);
+
+    const doc = new (jsPDF as any)() as any;
+    await tpl.embedDevanagariFont(doc);
+
+    const shop = {
+      name: profile.shopName || 'Vyapar Sarthi',
+      address: profile.address || null,
+      mobile: profile.mobile || null,
+      gst: profile.gst || null,
+      pan: profile.pan || null,
+    };
+
+    const reportTitle = `Commission Statement — ${b.name}`;
+    const dateRange = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    let y = tpl.renderProfessionalHeader(doc, shop, reportTitle, dateRange);
+
+    // Summary KPI strip
+    const kpis: { label: string; value: string; tone?: 'default' | 'positive' | 'negative' }[] = [
+      { label: 'Purchase Deals', value: String(purchaseBills.length) },
+      { label: 'Sale Deals', value: String(saleBills.length) },
+      { label: 'Commission Earned', value: `Rs ${totalCommission.toLocaleString('en-IN')}` },
+      { label: 'Total Paid', value: `Rs ${totalPaid.toLocaleString('en-IN')}` },
+      { label: 'Balance Due', value: `Rs ${Math.max(0, b.balance).toLocaleString('en-IN')}`, tone: b.balance > 0 ? 'negative' : 'default' },
+    ];
+    if (b.mobile) kpis.unshift({ label: 'Mobile', value: b.mobile });
+    y = tpl.renderSummaryBox(doc, y, kpis);
+
+    const tableStyles = tpl.getProfessionalTableStyles(true);
+
+    const fmtBillDate = (v: string) => {
+      const ist = new Date(new Date(v).getTime() + 5.5 * 60 * 60 * 1000);
+      return `${String(ist.getUTCDate()).padStart(2, '0')}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${ist.getUTCFullYear()}`;
+    };
+
+    // ── Purchase Bills section ────────────────────────────────────────────
+    if (purchaseBills.length > 0) {
+      y = tpl.ensureRoom(doc, y, 20);
+      y = tpl.renderSectionTitle(doc, y, `Purchase Bills  (${purchaseBills.length})`);
+      autoTable(doc, {
+        startY: y,
+        head: [['Date', 'Invoice #', 'Supplier / Party', 'Bill Amount']],
+        body: purchaseBills.map((bill) => [
+          fmtBillDate(bill.date),
+          bill.invoiceNumber || '—',
+          bill.party || '—',
+          { content: tpl.fmtInr(bill.amount), styles: { halign: 'right' as const } },
+        ]),
+        ...tableStyles,
+        columnStyles: { 3: { halign: 'right' as const } },
+      });
+      y = (doc.lastAutoTable?.finalY ?? y) + 4;
+      const W = doc.internal.pageSize.getWidth();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...tpl.PDF_LAYOUT.ink);
+      doc.text(`Total Purchase Value: ${tpl.fmtInr(totalPurchaseValue)}`, W - tpl.PDF_LAYOUT.marginX, y, { align: 'right' });
+      y += 10;
+    }
+
+    // ── Sale Bills section ────────────────────────────────────────────────
+    if (saleBills.length > 0) {
+      y = tpl.ensureRoom(doc, y, 20);
+      y = tpl.renderSectionTitle(doc, y, `Sale Bills  (${saleBills.length})`);
+      autoTable(doc, {
+        startY: y,
+        head: [['Date', 'Invoice #', 'Customer / Party', 'Bill Amount']],
+        body: saleBills.map((bill) => [
+          fmtBillDate(bill.date),
+          bill.invoiceNumber || '—',
+          bill.party || '—',
+          { content: tpl.fmtInr(bill.amount), styles: { halign: 'right' as const } },
+        ]),
+        ...tableStyles,
+        columnStyles: { 3: { halign: 'right' as const } },
+      });
+      y = (doc.lastAutoTable?.finalY ?? y) + 4;
+      const W = doc.internal.pageSize.getWidth();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...tpl.PDF_LAYOUT.ink);
+      doc.text(`Total Sale Value: ${tpl.fmtInr(totalSaleValue)}`, W - tpl.PDF_LAYOUT.marginX, y, { align: 'right' });
+      y += 10;
+    }
+
+    // ── Commission Ledger section ─────────────────────────────────────────
+    y = tpl.ensureRoom(doc, y, 20);
+    y = tpl.renderSectionTitle(doc, y, 'Commission Ledger');
+    if (brokerEntries.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.text('No commission entries recorded.', tpl.PDF_LAYOUT.marginX + 4, y + 8);
+      y += 20;
+    } else {
+      autoTable(doc, {
+        startY: y,
+        head: [['Date', 'Type', 'For', 'Bill #', 'Amount', 'Mode', 'Note']],
+        body: brokerEntries.map((row) => [
+          fmtBillDate(row.date),
+          row.type === 'charge' ? 'Commission Earned' : 'Payment Made',
+          row.direction === 'purchase' ? 'Purchase' : row.direction === 'sale' ? 'Sale' : '—',
+          row.billNumber || '—',
+          { content: tpl.fmtInr(row.amount), styles: { halign: 'right' as const } },
+          row.paymentMethod || '—',
+          fmtNote(row.note),
+        ]),
+        ...tableStyles,
+        columnStyles: {
+          0: { cellWidth: 25 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 26, halign: 'right' as const },
+          5: { cellWidth: 18 },
+          6: { cellWidth: 'auto' as const },
+        },
+      });
+      y = (doc.lastAutoTable?.finalY ?? y) + 12;
+    }
+
+    y = tpl.ensureRoom(doc, y, 28);
+    tpl.renderSignatureBlock(doc, y);
+    tpl.renderProfessionalFooter(doc);
+
+    const filename = `broker-statement-${b.name.replace(/\s+/g, '-').toLowerCase()}_${new Date().toISOString().split('T')[0]}.pdf`;
+    const blob: Blob = doc.output('blob');
+    if (await saveOrShareBlob(blob, filename)) return;
+    doc.save(filename);
   };
 
   const toggleSelect = (id: string) => setSelectedIds(prev => {

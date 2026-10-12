@@ -20,6 +20,7 @@ import DeleteButton from '@/components/mill/DeleteButton';
 import ProductionSources from '@/components/mill/ProductionSources';
 import ProductionRuns from '@/components/mill/ProductionRuns';
 import PackingPending, { usePendingPackingCount } from '@/components/mill/PackingPending';
+import ByProductsPackingPending, { useByProductsPackingCount } from '@/components/mill/ByProductsPackingPending';
 import type { QuickSource } from '@/lib/quickEntry';
 
 type Lot = {
@@ -83,8 +84,9 @@ export default function RawMaterialPage() {
   const tm = useTranslations('Mill');
   const searchParams = useSearchParams();
   // Where production starts: raw material lots here, the customer's grain (Job Work), and WIP / rejected material to reprocess.
-  const [view, setView] = useState<'raw' | 'job_work' | 'reprocess' | 'batches' | 'packing'>(searchParams?.get('view') === 'batches' ? 'batches' : searchParams?.get('view') === 'packing' ? 'packing' : 'raw');
+  const [view, setView] = useState<'raw' | 'job_work' | 'reprocess' | 'batches' | 'packing' | 'by_packing'>(searchParams?.get('view') === 'batches' ? 'batches' : searchParams?.get('view') === 'packing' ? 'packing' : searchParams?.get('view') === 'by_packing' ? 'by_packing' : 'raw');
   const notPackedCount = usePendingPackingCount();
+  const byProductsPackingCount = useByProductsPackingCount();
   const [startFor, setStartFor] = useState<{ type: QuickSource; id?: string } | null>(null);
   const [showRegister, setShowRegister] = useState(false); // the full lot register is folded away by default
   const activeShopId = useBusinessStore(s => s.activeShopId);
@@ -299,15 +301,20 @@ export default function RawMaterialPage() {
 
       {/* Where production starts from */}
       <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 overflow-x-auto" data-testid="rm-views">
-        {([['raw', tm('rm_viewRaw')], ['job_work', tm('rm_viewJob')], ['reprocess', tm('rm_viewReprocess')], ['batches', tm('bt_title')], ['packing', tm('pk_tab')]] as const).map(([id, label]) => (
+        {([['raw', tm('rm_viewRaw')], ['job_work', tm('rm_viewJob')], ['reprocess', tm('rm_viewReprocess')], ['batches', tm('bt_title')], ['packing', tm('pk_tab')], ['by_packing', tm('pk_byp_tab')]] as const).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setView(id)}
-            className={cn('px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors', view === id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300')}>{label}{id === 'packing' && notPackedCount > 0 && <span className={cn('ml-1.5 text-[10px] rounded-full px-1.5 py-0.5', view === id ? 'bg-white/25 text-white' : 'bg-amber-500 text-white')}>{notPackedCount}</span>}</button>
+            className={cn('px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors', view === id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300')}>
+            {label}
+            {id === 'packing' && notPackedCount > 0 && <span className={cn('ml-1.5 text-[10px] rounded-full px-1.5 py-0.5', view === id ? 'bg-white/25 text-white' : 'bg-amber-500 text-white')}>{notPackedCount}</span>}
+            {id === 'by_packing' && byProductsPackingCount > 0 && <span className={cn('ml-1.5 text-[10px] rounded-full px-1.5 py-0.5', view === id ? 'bg-white/25 text-white' : 'bg-blue-500 text-white')}>{byProductsPackingCount}</span>}
+          </button>
         ))}
       </div>
 
       {(view === 'job_work' || view === 'reprocess') && <ProductionSources view={view} onStart={(type, id) => setStartFor({ type, id })} />}
       {view === 'batches' && <ProductionRuns />}
       {view === 'packing' && <PackingPending />}
+      {view === 'by_packing' && <ByProductsPackingPending />}
 
       {view === 'raw' && (<>
       {/* Per material: what is in storage, how much of it is reserved by open batches, how much can go straight into production */}

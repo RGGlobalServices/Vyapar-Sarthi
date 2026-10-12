@@ -37,8 +37,11 @@ export function usePendingPackingCount() {
   return data?.enabled ? (data.pending?.length ?? 0) : 0;
 }
 
-const lineText = (l: { packKg: number; packs: number; packType: string }, t: (k: string) => string) =>
-  `${l.packs} × ${fmt(l.packKg)} kg ${l.packType === 'goni' ? t('pk_goni') : l.packType === 'other' ? t('pk_other') : t('pk_bag')}`;
+const lineText = (l: { packKg: number; packs: number; packType: string }, t: (k: string) => string) => {
+  const typeLabel = l.packType === 'goni' ? t('pk_goni') : l.packType === 'other' ? t('pk_other') : t('pk_bag');
+  const totalKg = l.packs * l.packKg;
+  return `${l.packs} ${typeLabel} · ${fmt(l.packKg)} kg ${t('pk_each')} = ${fmt(totalKg)} kg`;
+};
 
 export default function PackingPending() {
   const t = useTranslations('Mill');

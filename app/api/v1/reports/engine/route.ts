@@ -5,7 +5,7 @@ import { getDateRange, formatDate, startOfDay, endOfDay } from '@/lib/server/dat
 import { normalizeAttendanceStatus, summarizeAttendance } from '@/lib/attendance';
 import { classifySaleLine, classifyPurchaseLine } from '@/lib/gstClassification';
 import { isSupplierCredit, isCustomerCredit } from '@/lib/server/ledgerClassification';
-import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { isWholesaleTierPackage, isMillBillingPackage } from '@/lib/config/packageConfig';
 import { getSalesMetrics } from '@/lib/server/salesMetrics';
 
 
@@ -436,17 +436,47 @@ async function handleStock(shop: any, startDate: Date, endDate: Date, q: Record<
   }
 
   if (reportType === 'valuation') {
-    const rows = await prisma.$queryRaw<any[]>`
-      SELECT category, 
-        COUNT(*)::int as product_count,
-        SUM(current_stock)::float as total_qty,
-        SUM(current_stock * selling_price)::float as stock_value
-      FROM products
-      WHERE shop_id = ${shop.id}::uuid AND current_stock > 0
-      GROUP BY category
-      ORDER BY stock_value DESC
-    `;
-    return json({ rows: rows.map(r => ({ ...r, total_qty: Number(r.total_qty), stock_value: Number(r.stock_value) })) });
+    // Category-level summary: value at COST (not MRP) — the right basis for inventory valuation
+    const [catRows, detailRows] = await Promise.all([
+      prisma.$queryRaw<any[]>`
+        SELECT category,
+          COUNT(*)::int as product_count,
+          SUM(current_stock)::float as total_qty,
+          SUM(current_stock * COALESCE(cost_price, wholesale_cost, 0))::float as stock_value,
+          SUM(current_stock * selling_price)::float as mrp_value,
+          COUNT(CASE WHEN cost_price IS NULL AND wholesale_cost IS NULL THEN 1 END)::int as uncosted_count
+        FROM products
+        WHERE shop_id = ${shop.id}::uuid AND current_stock > 0
+        GROUP BY category
+        ORDER BY stock_value DESC
+      `,
+      prisma.$queryRaw<any[]>`
+        SELECT id, name, category,
+          current_stock::float,
+          COALESCE(cost_price, wholesale_cost) as cost_per_unit,
+          selling_price::float,
+          (current_stock * COALESCE(cost_price, wholesale_cost, 0))::float as value_at_cost,
+          (current_stock * selling_price)::float as value_at_mrp
+        FROM products
+        WHERE shop_id = ${shop.id}::uuid AND current_stock > 0
+        ORDER BY value_at_cost DESC
+      `,
+    ]);
+    const totalAtCost = catRows.reduce((s, r) => s + Number(r.stock_value || 0), 0);
+    const totalAtMrp = catRows.reduce((s, r) => s + Number(r.mrp_value || 0), 0);
+    const uncostedTotal = catRows.reduce((s, r) => s + Number(r.uncosted_count || 0), 0);
+    return json({
+      rows: catRows.map(r => ({ ...r, total_qty: Number(r.total_qty), stock_value: Number(r.stock_value), mrp_value: Number(r.mrp_value) })),
+      detail: detailRows.map(r => ({
+        ...r,
+        current_stock: Number(r.current_stock),
+        cost_per_unit: r.cost_per_unit != null ? Number(r.cost_per_unit) : null,
+        selling_price: Number(r.selling_price || 0),
+        value_at_cost: Number(r.value_at_cost || 0),
+        value_at_mrp: Number(r.value_at_mrp || 0),
+      })),
+      summary: { totalAtCost: Math.round(totalAtCost * 100) / 100, totalAtMrp: Math.round(totalAtMrp * 100) / 100, uncostedProducts: uncostedTotal },
+    });
   }
 
   if (reportType === 'movement') {
@@ -574,7 +604,9 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
   if (reportType === 'pnl') {
     // Sales figures come from the shared metrics layer (lib/server/salesMetrics.ts) so P&L and the Dashboard use the
     // same definitions. Existing fields keep their meaning; Net Goods Sales / GST / charges are additive.
-    const [salesM, expensesAgg, salariesAgg] = await Promise.all([
+    const isMill = isMillBillingPackage(shop.packageType);
+
+    const [salesM, expensesAgg, salariesAgg, purchasesAgg, millBatches] = await Promise.all([
       getSalesMetrics([shop.id], startDate, endDate),
       prisma.expense.aggregate({
         where: { shopId: shop.id, createdAt: { gte: startDate, lte: endDate } },
@@ -583,7 +615,20 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
       prisma.salaryPayment.aggregate({
         where: { staff: { shopId: shop.id }, paidAt: { gte: startDate, lte: endDate } },
         _sum: { netAmount: true }
-      })
+      }),
+      // Total raw material purchase spending in the period (cash outflow, not COGS)
+      prisma.purchaseInvoice.aggregate({
+        where: { shopId: shop.id, date: { gte: startDate, lte: endDate } },
+        _sum: { totalCost: true },
+        _count: { id: true },
+      }),
+      // Mill-specific: production batch metrics for the period
+      isMill ? prisma.productionBatch.aggregate({
+        where: { shopId: shop.id, closedAt: { gte: startDate, lte: endDate }, status: 'closed' },
+        _sum: { inputKg: true, outputKg: true, wastageKg: true },
+        _avg: { recoveryPct: true },
+        _count: { id: true },
+      }) : Promise.resolve(null),
     ]);
 
     const grossRevenue = salesM.billedValue;
@@ -592,6 +637,18 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
     const totalSalaries = salariesAgg._sum.netAmount || 0;
     const netProfit = grossProfit - totalExpenses - totalSalaries;
     const margin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
+    const totalPurchases = purchasesAgg._sum.totalCost || 0;
+
+    const mill_metrics = millBatches ? {
+      batches_run: millBatches._count.id,
+      input_kg: Number(millBatches._sum.inputKg || 0),
+      output_kg: Number(millBatches._sum.outputKg || 0),
+      wastage_kg: Number(millBatches._sum.wastageKg || 0),
+      avg_recovery_pct: Number(millBatches._avg.recoveryPct || 0),
+      cost_per_input_kg: millBatches._count.id > 0 && Number(millBatches._sum.inputKg || 0) > 0
+        ? Math.round((totalPurchases / Number(millBatches._sum.inputKg)) * 100) / 100
+        : 0,
+    } : null;
 
     return json({
       revenue: grossRevenue,
@@ -603,6 +660,11 @@ async function handleFinancials(shop: any, startDate: Date, endDate: Date, q: Re
       net_profit: netProfit,
       net_margin: margin,
       outstanding_collected: salesM.amountReceived,
+      // Purchase spending (cash outflow in the period — different from COGS)
+      total_purchases: totalPurchases,
+      purchase_count: purchasesAgg._count.id,
+      // Mill-specific metrics (null for non-mill shops)
+      mill_metrics,
       // additive — reporting contract
       net_goods_sales: salesM.netGoodsSales,
       gst_collected: salesM.gstCollected,

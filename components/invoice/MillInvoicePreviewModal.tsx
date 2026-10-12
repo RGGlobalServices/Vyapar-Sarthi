@@ -2,11 +2,14 @@
 
 import { pickCaptureScale } from '@/lib/pdfCapture';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
 import { printBill } from '@/lib/printBill';
 import { createPortal } from 'react-dom';
-import { Download, Loader2, MessageCircle, Printer, X, AlertTriangle } from 'lucide-react';
+import { Download, Loader2, MessageCircle, Printer, X, AlertTriangle, Truck } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { waitForImages } from '@/lib/waitForImages';
 import { buildMillInvoiceData, isMillInvoice, millWhatsAppText, type MillInvoiceShop } from '@/lib/millInvoice';
 import MillInvoice from '@/components/invoice/MillInvoice';
@@ -66,7 +69,11 @@ function FitToWidth({ baseWidth, children }: { baseWidth: number; children: Reac
  * Used for the "bill saved" screen, the invoice-history preview and the invoice detail page.
  */
 export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoiceId: string; onClose: () => void }) {
+  const t = useTranslations('MillBilling');
+  const router = useRouter();
+  const locale = useLocale();
   const { profile } = useBusinessStore();
+  const isMill = isMillBillingPackage(profile?.packageType);
   const [sale, setSale] = useState<any>(null);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -165,15 +172,44 @@ export default function MillInvoicePreviewModal({ invoiceId, onClose }: { invoic
         </div>
 
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 gap-2 shrink-0">
-          <button onClick={handlePrint} disabled={!data} data-testid="mill-inv-print" className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-50"><Printer size={16} />Print</button>
-          <button onClick={handlePdf} disabled={!data || downloading} data-testid="mill-inv-pdf" className="flex flex-col items-center gap-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50">
-            {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}PDF
-          </button>
-          <button onClick={handleWhatsApp} disabled={!data || noMobile || !data.consistent} data-testid="mill-inv-wa"
-            title={noMobile ? 'No customer mobile number on this invoice' : undefined}
-            className="flex flex-col items-center gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50"><MessageCircle size={16} />WhatsApp</button>
-          <button onClick={onClose} className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300"><X size={16} />Close</button>
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 space-y-2">
+          {/* Utility buttons row */}
+          <div className="grid grid-cols-3 gap-2">
+            <button onClick={handlePrint} disabled={!data} data-testid="mill-inv-print"
+              className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-50 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <Printer size={16} />{t('printButton')}
+            </button>
+            <button onClick={handlePdf} disabled={!data || downloading} data-testid="mill-inv-pdf"
+              className="flex flex-col items-center gap-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50 hover:bg-blue-500/20 transition-colors">
+              {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}{t('pdfButton')}
+            </button>
+            <button onClick={handleWhatsApp} disabled={!data || noMobile || !data.consistent} data-testid="mill-inv-wa"
+              title={noMobile ? 'No customer mobile number on this invoice' : undefined}
+              className="flex flex-col items-center gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50 hover:bg-emerald-500/20 transition-colors">
+              <MessageCircle size={16} />{t('whatsappButton')}
+            </button>
+          </div>
+          {/* Action buttons row */}
+          <div className="flex gap-2">
+            {isMill && (
+              <button
+                data-testid="mill-inv-send-challan"
+                onClick={() => {
+                  sessionStorage.setItem('pendingChallanFromBill', invoiceId);
+                  router.push(`/${locale}/challans`);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold transition-colors active:scale-95"
+              >
+                <Truck size={16} /> {t('sendToChallan')}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              <X size={15} /> {t('close')}
+            </button>
+          </div>
         </div>
       </div>
       {/* Print copy: the global print stylesheet shows only #print-area. Portalled to <body> so a long invoice is not

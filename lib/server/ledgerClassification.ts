@@ -13,10 +13,10 @@
 
 /** SupplierTransaction types that reduce what the shop owes a supplier. */
 export function isSupplierCredit(type: string | null | undefined): boolean {
-  return type === 'payment' || type === 'purchase_return';
+  return type === 'payment' || type === 'purchase_return' || type === 'discount';
 }
 
 /** customer_transactions types that reduce what a customer/party owes the shop. */
 export function isCustomerCredit(type: string | null | undefined): boolean {
-  return type === 'payment' || type === 'refund';
+  return type === 'payment' || type === 'refund' || type === 'discount';
 }

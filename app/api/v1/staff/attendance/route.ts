@@ -48,23 +48,17 @@ export const POST = handle(async (req) => {
     const status = normalizeAttendanceStatus(record.status);
     if (!status) continue;
 
+    const shiftData = {
+      shift: record.shift || null,
+      inTime: record.inTime || null,
+      outTime: record.outTime || null,
+      shiftHours: record.shiftHours != null ? parseFloat(record.shiftHours) : null,
+    };
+
     const att = await prisma.attendance.upsert({
-      where: {
-        staffId_date: {
-          staffId: record.staffId,
-          date: date,
-        },
-      },
-      update: {
-        status,
-        reason: record.reason || null,
-      },
-      create: {
-        staffId: record.staffId,
-        date: date,
-        status,
-        reason: record.reason || null,
-      },
+      where: { staffId_date: { staffId: record.staffId, date } },
+      update: { status, reason: record.reason || null, ...shiftData },
+      create: { staffId: record.staffId, date, status, reason: record.reason || null, ...shiftData },
     });
     results.push(att);
   }

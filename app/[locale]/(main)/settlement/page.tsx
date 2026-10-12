@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Wallet, X, Loader2, CheckCircle2, Search, Pencil, Trash2 } from 'lucide-react';
+import { Wallet, X, Loader2, CheckCircle2, Search, Pencil, Trash2, History, RotateCcw } from 'lucide-react';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn, fmtDate } from '@/lib/utils';
@@ -16,13 +16,25 @@ type Bill = {
   entityId?: string; entityName?: string;
 };
 
+type HistoryItem = {
+  txId: string;
+  discountTxId?: string;
+  kind: 'payable' | 'receivable';
+  entityId: string;
+  entityName: string;
+  billNumber: string;
+  settledAt: string | null;
+  paidAmount: number;
+  writeOffAmount: number;
+};
+
 const fetcher = (u: string) => api.get(u).then(r => r.data);
 const rupee = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 export default function SettlementPage() {
   const t = useTranslations('Settlement');
   const activeShopId = useBusinessStore(s => s.activeShopId);
-  const [tab, setTab] = useState<'payable' | 'receivable'>('payable');
+  const [tab, setTab] = useState<'payable' | 'receivable' | 'history'>('payable');
   const [search, setSearch] = useState('');
   const [settlingBill, setSettlingBill] = useState<{ bill: Bill; kind: 'payable' | 'receivable' } | null>(null);
   const [editingBill, setEditingBill] = useState<{ bill: Bill; kind: 'payable' | 'receivable' } | null>(null);
@@ -38,6 +50,10 @@ export default function SettlementPage() {
     activeShopId ? ['/crm/pending-bills?entityType=party', activeShopId] : null,
     ([u]) => fetcher(u),
   );
+  const { data: historyData, mutate: refetchHistory, isLoading: loadingHistory } = useSWR<{ items: HistoryItem[] }>(
+    activeShopId ? ['/settlement/history', activeShopId] : null,
+    ([u]) => fetcher(u),
+  );
 
   const payable = payableData?.bills || [];
   const receivable = receivableData?.bills || [];
@@ -45,10 +61,10 @@ export default function SettlementPage() {
   const filteredPayable = needle ? payable.filter(b => (b.supplierName || '').toLowerCase().includes(needle) || (b.billNumber || '').toLowerCase().includes(needle)) : payable;
   const filteredReceivable = needle ? receivable.filter(b => (b.entityName || '').toLowerCase().includes(needle) || (b.billNumber || '').toLowerCase().includes(needle)) : receivable;
 
-  const loading = tab === 'payable' ? loadingPayable : loadingReceivable;
+  const loading = tab === 'payable' ? loadingPayable : tab === 'receivable' ? loadingReceivable : loadingHistory;
   const rows = tab === 'payable' ? filteredPayable : filteredReceivable;
 
-  const refetchBoth = () => { refetchPayable(); refetchReceivable(); };
+  const refetchBoth = () => { refetchPayable(); refetchReceivable(); refetchHistory(); };
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -114,12 +130,15 @@ export default function SettlementPage() {
         <p className="text-sm text-slate-500 mt-1">{t('subtitle')}</p>
       </div>
 
-      <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit">
+      <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit flex-wrap">
         <button onClick={() => { setTab('payable'); setSelectedIds(new Set()); }} className={cn('px-4 py-2 rounded-lg text-sm font-bold transition-colors', tab === 'payable' ? 'bg-white dark:bg-slate-700 shadow-sm text-rose-600' : 'text-slate-500')}>
           {t('payableTab')} ({payable.length})
         </button>
         <button onClick={() => { setTab('receivable'); setSelectedIds(new Set()); }} className={cn('px-4 py-2 rounded-lg text-sm font-bold transition-colors', tab === 'receivable' ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500')}>
           {t('receivableTab')} ({receivable.length})
+        </button>
+        <button onClick={() => { setTab('history'); setSelectedIds(new Set()); }} className={cn('px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-1.5', tab === 'history' ? 'bg-white dark:bg-slate-700 shadow-sm text-purple-600' : 'text-slate-500')}>
+          <History size={14} /> {t('historyTab')}
         </button>
       </div>
 
@@ -148,7 +167,9 @@ export default function SettlementPage() {
         </div>
       )}
 
-      {loading ? (
+      {tab === 'history' ? (
+        <HistoryTab items={historyData?.items || []} loading={loadingHistory} onRestored={refetchBoth} />
+      ) : loading ? (
         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
       ) : rows.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
@@ -250,6 +271,9 @@ function SettleModal({ bill, kind, onClose, onSettled }: {
   const name = kind === 'payable' ? bill.supplierName : bill.entityName;
   const entityId = kind === 'payable' ? bill.supplierId : bill.entityId;
 
+  const amountVal = Math.max(0, parseFloat(amount) || 0);
+  const writeOff = amountVal > 0 && amountVal < bill.remaining ? Math.round((bill.remaining - amountVal) * 100) / 100 : 0;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true); setError('');
@@ -257,7 +281,8 @@ function SettleModal({ bill, kind, onClose, onSettled }: {
       await api.post('/crm/payments', {
         entityType: kind === 'payable' ? 'supplier' : 'party',
         entityId,
-        amount: Number(amount),
+        amount: amountVal,
+        ...(writeOff > 0 ? { discount: writeOff } : {}),
         paymentMode,
         note: `Settled bill #${bill.billNumber}`,
       });
@@ -284,6 +309,14 @@ function SettleModal({ bill, kind, onClose, onSettled }: {
             <input type="number" min="0" step="0.01" max={bill.remaining} autoFocus value={amount} onChange={e => setAmount(e.target.value)}
               className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 text-sm" required />
           </label>
+          {writeOff > 0 && (
+            <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-3 py-2">
+              <CheckCircle2 size={14} className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {t('writeOffHint', { amount: rupee(writeOff).replace('₹', '') })}
+              </p>
+            </div>
+          )}
           <label className="block">
             <span className="block text-xs font-bold uppercase text-slate-500 mb-1">{t('paymentMode')}</span>
             <div className="grid grid-cols-3 gap-2">
@@ -297,7 +330,7 @@ function SettleModal({ bill, kind, onClose, onSettled }: {
             </div>
           </label>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <button type="submit" disabled={saving || !amount}
+          <button type="submit" disabled={saving || !amount || amountVal <= 0}
             className="w-full h-11 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
             {t('confirmSettle')}
@@ -379,6 +412,131 @@ function EditModal({ bill, kind, onClose, onSaved }: {
         </form>
       </div>
     </div>
+  );
+}
+
+function HistoryTab({ items, loading, onRestored }: {
+  items: HistoryItem[]; loading: boolean; onRestored: () => void;
+}) {
+  const t = useTranslations('Settlement');
+  const [reversing, setReversing] = useState<string | null>(null);
+  const [confirmItem, setConfirmItem] = useState<HistoryItem | null>(null);
+
+  const handleReverse = async (item: HistoryItem) => {
+    setReversing(item.txId);
+    try {
+      if (item.kind === 'payable') {
+        await api.delete(`/suppliers/${item.entityId}/transactions/${item.txId}`);
+        if (item.discountTxId) {
+          await api.delete(`/suppliers/${item.entityId}/transactions/${item.discountTxId}`).catch(() => {});
+        }
+      } else {
+        await api.delete(`/customers/${item.entityId}/transactions/${item.txId}`);
+        if (item.discountTxId) {
+          await api.delete(`/customers/${item.entityId}/transactions/${item.discountTxId}`).catch(() => {});
+        }
+      }
+      toast.success(t('reverseSuccess'));
+      setConfirmItem(null);
+      onRestored();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || t('failedToReverse'));
+    } finally { setReversing(null); }
+  };
+
+  if (loading) return (
+    <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
+  );
+
+  if (items.length === 0) return (
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
+      <History size={40} className="mx-auto text-slate-300 dark:text-slate-700" />
+      <p className="mt-3 text-sm text-slate-500">{t('noHistory')}</p>
+      <p className="text-xs text-slate-400 mt-1">{t('historySubtitle')}</p>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+          <p className="text-xs text-slate-400 font-medium">{t('historySubtitle')}</p>
+        </div>
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          {items.map((item) => (
+            <li key={item.txId} className="p-4 flex items-center gap-3 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-slate-900 dark:text-white">{item.entityName}</p>
+                  <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium',
+                    item.kind === 'payable'
+                      ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400'
+                      : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                  )}>
+                    {item.kind === 'payable' ? '↑' : '↓'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {item.billNumber && `#${item.billNumber} · `}
+                  {fmtDate(item.settledAt)}
+                </p>
+                <div className="flex items-center gap-3 mt-1.5">
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    {t('paidLabel')}: <span className="font-bold">{rupee(item.paidAmount)}</span>
+                  </span>
+                  {item.writeOffAmount > 0 && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      {t('writeOffLabel')}: <span className="font-bold">{rupee(item.writeOffAmount)}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setConfirmItem(item)}
+                disabled={reversing === item.txId}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors shrink-0"
+              >
+                {reversing === item.txId ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                {t('reverseSettlement')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {confirmItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+              <h2 className="text-lg font-black">{t('reverseConfirmTitle')}</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3">
+                <p className="font-bold text-slate-900 dark:text-white">{confirmItem.entityName}</p>
+                <p className="text-xs text-slate-500">#{confirmItem.billNumber}</p>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                {t('reverseConfirmText', {
+                  amount: rupee(confirmItem.paidAmount + confirmItem.writeOffAmount).replace('₹', ''),
+                  name: confirmItem.entityName,
+                })}
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmItem(null)}
+                  className="flex-1 h-10 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                  {t('cancel')}
+                </button>
+                <button onClick={() => handleReverse(confirmItem)} disabled={reversing === confirmItem.txId}
+                  className="flex-1 h-10 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                  {reversing === confirmItem.txId ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                  {t('reverseSettlement')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

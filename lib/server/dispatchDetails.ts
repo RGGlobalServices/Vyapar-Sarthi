@@ -18,7 +18,12 @@ export async function dispatchColumn(): Promise<boolean> {
   if (Date.now() - checkedAt < 60_000) return false;
   checkedAt = Date.now();
   try {
-    const r = await prisma.$queryRaw<Array<{ n: number }>>`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'sales' AND column_name = 'dispatch_details'`;
+    // pg_attribute is orders of magnitude faster than information_schema.columns on large DBs
+    const r = await prisma.$queryRaw<Array<{ n: number }>>`
+      SELECT COUNT(*)::int AS n FROM pg_attribute
+      WHERE attrelid = 'sales'::regclass
+        AND attname = 'dispatch_details'
+        AND attnum > 0 AND NOT attisdropped`;
     ready = (r[0]?.n ?? 0) > 0;
   } catch { ready = false; }
   return ready;

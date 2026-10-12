@@ -166,6 +166,7 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
       'outstanding',
       'ledger',
       'cashbook',
+      'bank',
       'settlement',
       // Management
       'brokers',

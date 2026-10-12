@@ -10,7 +10,7 @@ import {
   Warehouse, ChevronDown, ChevronRight, Plus, Check, CalendarDays, Sun, Moon, ShoppingCart, Briefcase, ArrowLeftRight, ClipboardList, BookOpen, Loader2, Trash2, Receipt, AlertTriangle,
   // Bada Udyog / Mills icons
   Truck, Scale, Factory, FlaskConical, ClipboardCheck, Handshake, HardHat, Wrench, Cog, Cpu, FileText,
-  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3, Layers, Sprout, PanelLeftClose, AlertOctagon
+  Wallet, ArrowDownToLine, ArrowUpFromLine, Hourglass, NotebookText, Boxes, Wheat, Grid3x3, Layers, Sprout, PanelLeftClose, AlertOctagon, Landmark
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORT_URL } from '@/lib/config';
@@ -55,7 +55,7 @@ const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'mill-ops',    label: 'Mill Operations',   emoji: '⚙️', keys: ['purchases', 'raw-material', 'gate-entry', 'weighbridge', 'finished-goods', 'by-products', 'wip', 'rejections', 'job-work'] },
   { id: 'quality',     label: 'Quality',           emoji: '🧪', keys: ['quality-lab'] },
   { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali', 'freight'] },
-  { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'cashbook', 'settlement', 'expenses'] },
+  { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'cashbook', 'bank', 'settlement', 'expenses'] },
   { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers'], defaultCollapsed: true },
   { id: 'maintenance', label: 'Machines & Maintenance', emoji: '🔧', keys: ['machines'], defaultCollapsed: false },
   { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
@@ -322,6 +322,7 @@ export default function Sidebar({
     { key: 'outstanding',     icon: Hourglass,       href: '/outstanding' },
     { key: 'ledger',          icon: NotebookText,    href: '/ledger' },
     { key: 'cashbook',        icon: BookOpen,        href: '/cashbook' },
+    { key: 'bank',            icon: Landmark,        href: '/bank' },
     { key: 'settlement',      icon: Wallet,          href: '/settlement' },
     { key: 'documents',       icon: FileText,        href: '/documents' },
     { key: 'support',   icon: HelpCircle,      href: SUPPORT_URL, external: true },

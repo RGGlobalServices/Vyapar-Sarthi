@@ -907,7 +907,6 @@
     "nColours": "{count} रंग | {count} रंग",
     "nSizes": "{count} साइज | {count} साइज",
     "productLocation": "ठिकाण",
-    "colBrand": "ब्रँड",
     "colMillCategory": "उत्पादन प्रकार",
     "colGrade": "ग्रेड",
     "colVariety": "प्रकार/जात",
@@ -916,7 +915,6 @@
     "colWeight": "वजन",
     "colModel": "मॉडेल",
     "colWarranty": "वॉरंटी",
-    "colMinLevel": "किमान पातळी",
     "mrpLabel": "MRP",
     "allGrades": "सर्व ग्रेड",
     "allMillCategories": "सर्व उत्पादन प्रकार",
@@ -1032,7 +1030,18 @@
     "cancelDesc": "रद्द केल्यानंतरही तुमचे खाते बिलिंग कालावधी संपेपर्यंत सक्रिय राहते. मनी-बॅक हमीअंतर्गत पूर्ण परताव्यासाठी पेमेंटच्या 30 दिवसांच्या आत रद्द करा.",
     "billingHistory": "बिलिंग इतिहास",
     "billingHistoryDesc": "मागील पेमेंट्स पहा आणि पावत्या डाउनलोड करा",
-    "availablePlans": "उपलब्ध योजना"
+    "availablePlans": "उपलब्ध योजना",
+    "resetTitle": "सर्व डेटा रीसेट करा",
+    "resetDesc": "सर्व बिल, उत्पादने, ग्राहक, पार्टी, खरेदी, उत्पादन आणि स्टॉक डेटा कायमचा हटवा. दुकान प्रोफाइल आणि सदस्यता कायम राहील.",
+    "resetBtn": "App रीसेट करा",
+    "resetModalTitle": "सर्व डेटा रीसेट करायचा?",
+    "resetModalWarning": "हे सर्व व्यावसायिक डेटा — बिल, उत्पादने, पार्टी, खरेदी, उत्पादन नोंदी आणि स्टॉक — कायमचे हटवेल. हे पूर्ववत होणार नाही.",
+    "resetConfirmPlaceholder": "पुष्टीसाठी RESET टाइप करा",
+    "resetConfirmWord": "RESET",
+    "resetConfirmBtn": "होय, सर्व हटवा",
+    "resetting": "हटवत आहे...",
+    "resetSuccess": "सर्व डेटा हटवला. App आता नवीन आहे.",
+    "resetFailed": "रीसेट अयशस्वी. पुन्हा प्रयत्न करा."
   },
   "Calendar": {
     "title": "कॅलेंडर",
@@ -1122,7 +1131,8 @@
       "current": "सद्य साठा",
       "valuation": "मूल्यांकन",
       "dead": "मृत साठा",
-      "batches": "बॅच नफा"
+      "batches": "बॅच नफा",
+      "balanceSheet": "ताळेबंद"
     },
     "kpi": {
       "totalRevenue": "एकूण महसूल",
@@ -1161,7 +1171,14 @@
       "suppliersCount": "{count} पुरवठादार",
       "outstandingAmount": "₹{amount} थकबाकी",
       "netMargin": "{value}% निव्वळ मार्जिन",
-      "marginPct": "{value}% मार्जिन"
+      "marginPct": "{value}% मार्जिन",
+      "rawMaterialPurchased": "कच्चा माल खरेदी केला",
+      "inventoryAtCost": "इन्व्हेंटरी खर्च किंमतीवर",
+      "inventoryAtMrp": "इन्व्हेंटरी MRP वर",
+      "uncostedProducts": "खर्च किंमत नसलेली उत्पादने",
+      "totalAssets": "एकूण मालमत्ता",
+      "totalLiabilities": "एकूण दायित्वे",
+      "netWorth": "निव्वळ मालमत्ता / समभाग"
     },
     "section": {
       "revenueProfitTrend": "महसूल आणि नफा कल",
@@ -1178,6 +1195,7 @@
       "gstSummary": "जीएसटी सारांश (दरानुसार)",
       "gstRegister": "जीएसटी रजिस्टर (बिलानुसार)",
       "pnl": "नफा आणि तोटा विवरण",
+      "millEfficiency": "मिलिंग कार्यक्षमता",
       "cashBook": "रोख बही नोंदी",
       "dailyExpenseTrend": "दैनिक खर्च कल",
       "expensesByCategory": "श्रेणीनुसार",
@@ -1192,7 +1210,30 @@
       "purchaseTrend": "खरेदी कल",
       "bySupplier": "पुरवठादारानुसार",
       "salaryPayroll": "पगार पेरोल",
-      "attendanceLog": "उपस्थिती लॉग"
+      "attendanceLog": "उपस्थिती लॉग",
+      "inventoryValuation": "इन्व्हेंटरी मूल्यांकन (उत्पादनानुसार)",
+      "balanceSheet": "ताळेबंद",
+      "assets": "मालमत्ता",
+      "liabilities": "दायित्वे",
+      "equity": "समभाग",
+      "pnlSummary": "कालावधी नफा-तोटा सारांश"
+    },
+    "bs": {
+      "cash": "रोख व बँक",
+      "debtors": "प्राप्ती (देणेकरी)",
+      "closingStock": "अंतिम साठा (खर्च किंमतीवर)",
+      "totalAssets": "एकूण मालमत्ता",
+      "creditors": "देय (धनकोरी)",
+      "totalLiabilities": "एकूण दायित्वे",
+      "periodNetProfit": "निव्वळ नफा (हा कालावधी)",
+      "ownersEquity": "मालकाचा समभाग / निव्वळ मालमत्ता",
+      "equation": "मालमत्ता = दायित्वे + समभाग",
+      "uncostedNote": "{count} उत्पादन(ांना) साठा आहे पण खर्च किंमत नाही — साठा मूल्यातून वगळले."
+    },
+    "invVal": {
+      "valueAtCost": "खर्च किंमतीवर मूल्य",
+      "valueAtMrp": "MRP वर मूल्य",
+      "costPerUnit": "खर्च / युनिट"
     },
     "col": {
       "date": "तारीख",
@@ -1259,7 +1300,18 @@
       "operatingExpenses": "परिचालन खर्च",
       "staffSalaries": "कर्मचारी पगार",
       "totalOverheads": "एकूण ओव्हरहेड",
-      "netProfitLoss": "निव्वळ नफा / तोटा"
+      "netProfitLoss": "निव्वळ नफा / तोटा",
+      "purchaseSpend": "कच्चा माल खरेदी खर्च",
+      "rawMaterialPurchased": "कच्चा माल खरेदी केला",
+      "invoices": "बिले",
+      "purchaseNote": "हा खरेदीसाठी रोख बहिर्प्रवाह आहे — कालावधी-अंती साठा असल्यास हे COGS पेक्षा वेगळे असू शकते."
+    },
+    "mill": {
+      "batchesRun": "बॅच चालवले",
+      "inputGrain": "धान्य इनपुट",
+      "outputFinished": "तयार उत्पादन",
+      "avgRecovery": "सरासरी रिकव्हरी",
+      "avgRawMaterialCost": "सरासरी कच्चा माल खर्च"
     },
     "empty": {
       "noGstBreakdown": "या कालावधीत {count} जीएसटी बिले आहेत, परंतु विकलेल्या कोणत्याही उत्पादनावर जीएसटी% सेट केलेला नाही — म्हणून विभागणीसाठी दर नाही. बिलानुसार एकूणासाठी खालील जीएसटी रजिस्टर पहा, किंवा पूर्ण दर-निहाय सारांशासाठी आपल्या उत्पादनांना जीएसटी% जोडा.",
@@ -1291,9 +1343,22 @@
         "nonGst": "बिगर-जीएसटी",
         "gstInfoMissing": "जीएसटी माहिती उपलब्ध नाही"
       },
-      "paymentStatus": { "paid": "भरणा झाला", "partial": "अंशतः", "unpaid": "थकीत" },
-      "cashDirection": { "in": "इन", "out": "आउट" },
-      "ageBuckets": { "0-30": "0-30 दिवस", "31-60": "31-60 दिवस", "61-90": "61-90 दिवस", "91-180": "91-180 दिवस", "180+": "180+ दिवस" },
+      "paymentStatus": {
+        "paid": "भरणा झाला",
+        "partial": "अंशतः",
+        "unpaid": "थकीत"
+      },
+      "cashDirection": {
+        "in": "इन",
+        "out": "आउट"
+      },
+      "ageBuckets": {
+        "0-30": "0-30 दिवस",
+        "31-60": "31-60 दिवस",
+        "61-90": "61-90 दिवस",
+        "91-180": "91-180 दिवस",
+        "180+": "180+ दिवस"
+      },
       "dataQuality": {
         "types": {
           "product_missing_hsn": "HSN कोड गहाळ",
@@ -1332,35 +1397,116 @@
       },
       "reports": {
         "sales_register": {
-          "columns": { "date": "तारीख", "invoiceNumber": "बिल क्र.", "customerName": "ग्राहक", "customerGstin": "GSTIN", "product": "उत्पादन", "hsn": "HSN", "quantity": "प्रमाण", "unit": "एकक", "taxableValue": "करपात्र मूल्य", "gstRate": "जीएसटी दर", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "invoiceTotal": "बिल एकूण", "paymentStatus": "पेमेंट स्थिती", "paymentMode": "पेमेंट पद्धत" },
-          "summary": { "lines": "ओळी", "invoiceTotal": "बिल एकूण" }
+          "columns": {
+            "date": "तारीख",
+            "invoiceNumber": "बिल क्र.",
+            "customerName": "ग्राहक",
+            "customerGstin": "GSTIN",
+            "product": "उत्पादन",
+            "hsn": "HSN",
+            "quantity": "प्रमाण",
+            "unit": "एकक",
+            "taxableValue": "करपात्र मूल्य",
+            "gstRate": "जीएसटी दर",
+            "cgst": "CGST",
+            "sgst": "SGST",
+            "igst": "IGST",
+            "invoiceTotal": "बिल एकूण",
+            "paymentStatus": "पेमेंट स्थिती",
+            "paymentMode": "पेमेंट पद्धत"
+          },
+          "summary": {
+            "lines": "ओळी",
+            "invoiceTotal": "बिल एकूण"
+          }
         },
         "purchase_register": {
-          "columns": { "date": "तारीख", "billNumber": "बिल क्र.", "supplierName": "पुरवठादार", "supplierGstin": "GSTIN", "product": "उत्पादन", "hsn": "HSN", "quantity": "प्रमाण", "taxableValue": "करपात्र मूल्य", "gstAmount": "जीएसटी रक्कम", "total": "एकूण", "gstClass": "जीएसटी / बिगर-जीएसटी" },
-          "summary": { "lines": "ओळी", "total": "एकूण" }
+          "columns": {
+            "date": "तारीख",
+            "billNumber": "बिल क्र.",
+            "supplierName": "पुरवठादार",
+            "supplierGstin": "GSTIN",
+            "product": "उत्पादन",
+            "hsn": "HSN",
+            "quantity": "प्रमाण",
+            "taxableValue": "करपात्र मूल्य",
+            "gstAmount": "जीएसटी रक्कम",
+            "total": "एकूण",
+            "gstClass": "जीएसटी / बिगर-जीएसटी"
+          },
+          "summary": {
+            "lines": "ओळी",
+            "total": "एकूण"
+          }
         },
         "gst_summary": {
-          "columns": { "rate": "दर %", "taxable": "करपात्र", "cgst": "CGST", "sgst": "SGST", "igst": "IGST", "total": "एकूण जीएसटी" },
-          "summary": { "outputGst": "आउटपुट जीएसटी", "inputGst": "इनपुट जीएसटी (नोंदवल्याप्रमाणे)", "netGst": "निव्वळ जीएसटी फरक" }
+          "columns": {
+            "rate": "दर %",
+            "taxable": "करपात्र",
+            "cgst": "CGST",
+            "sgst": "SGST",
+            "igst": "IGST",
+            "total": "एकूण जीएसटी"
+          },
+          "summary": {
+            "outputGst": "आउटपुट जीएसटी",
+            "inputGst": "इनपुट जीएसटी (नोंदवल्याप्रमाणे)",
+            "netGst": "निव्वळ जीएसटी फरक"
+          }
         },
         "gst_monthly": {
-          "columns": { "label": "महिना", "outputTaxable": "आउटपुट करपात्र", "outputGst": "आउटपुट जीएसटी", "inputTaxable": "इनपुट करपात्र", "inputGst": "इनपुट जीएसटी", "netGst": "निव्वळ जीएसटी" }
+          "columns": {
+            "label": "महिना",
+            "outputTaxable": "आउटपुट करपात्र",
+            "outputGst": "आउटपुट जीएसटी",
+            "inputTaxable": "इनपुट करपात्र",
+            "inputGst": "इनपुट जीएसटी",
+            "netGst": "निव्वळ जीएसटी"
+          }
         },
         "non_gst": {
-          "columns": { "date": "तारीख", "docNumber": "बिल/इनव्हॉइस क्र.", "party": "पार्टी", "product": "उत्पादन", "hsn": "HSN", "amount": "रक्कम", "classification": "वर्गीकरण" },
-          "summary": { "transactions": "व्यवहार", "total": "एकूण" }
+          "columns": {
+            "date": "तारीख",
+            "docNumber": "बिल/इनव्हॉइस क्र.",
+            "party": "पार्टी",
+            "product": "उत्पादन",
+            "hsn": "HSN",
+            "amount": "रक्कम",
+            "classification": "वर्गीकरण"
+          },
+          "summary": {
+            "transactions": "व्यवहार",
+            "total": "एकूण"
+          }
         },
         "data_quality": {
-          "columns": { "type": "प्रकार", "message": "इशारा" },
-          "summary": { "warnings": "इशारे" }
+          "columns": {
+            "type": "प्रकार",
+            "message": "इशारा"
+          },
+          "summary": {
+            "warnings": "इशारे"
+          }
         },
         "profit_loss": {
-          "columns": { "category": "श्रेणी", "amount": "रक्कम" },
-          "summary": { "revenue": "महसूल", "grossProfit": "एकूण नफा", "netProfit": "निव्वळ नफा / तोटा" }
+          "columns": {
+            "category": "श्रेणी",
+            "amount": "रक्कम"
+          },
+          "summary": {
+            "revenue": "महसूल",
+            "grossProfit": "एकूण नफा",
+            "netProfit": "निव्वळ नफा / तोटा"
+          }
         },
         "trading_account": {
-          "columns": { "lineItem": "तपशील", "amount": "रक्कम" },
-          "summary": { "grossProfitLoss": "एकूण नफा / तोटा" },
+          "columns": {
+            "lineItem": "तपशील",
+            "amount": "रक्कम"
+          },
+          "summary": {
+            "grossProfitLoss": "एकूण नफा / तोटा"
+          },
           "lineItems": {
             "openingStock": "सुरुवातीचा साठा",
             "purchases": "(+) खरेदी",
@@ -1374,30 +1520,100 @@
           }
         },
         "stock_summary": {
-          "columns": { "product": "उत्पादन", "category": "श्रेणी", "openingQty": "सुरुवातीचे प्रमाण", "purchasedQty": "खरेदी केलेले", "soldQty": "विकलेले", "purchaseReturnQty": "खरेदी परतावा", "salesReturnQty": "विक्री परतावा", "closingQty": "अंतिम प्रमाण", "closingValue": "अंतिम मूल्य" },
-          "summary": { "closingStockValue": "अंतिम साठा मूल्य" }
+          "columns": {
+            "product": "उत्पादन",
+            "category": "श्रेणी",
+            "openingQty": "सुरुवातीचे प्रमाण",
+            "purchasedQty": "खरेदी केलेले",
+            "soldQty": "विकलेले",
+            "purchaseReturnQty": "खरेदी परतावा",
+            "salesReturnQty": "विक्री परतावा",
+            "closingQty": "अंतिम प्रमाण",
+            "closingValue": "अंतिम मूल्य"
+          },
+          "summary": {
+            "closingStockValue": "अंतिम साठा मूल्य"
+          }
         },
         "receivables_ageing": {
-          "columns": { "party": "पार्टी", "billNumber": "बिल क्र.", "date": "बिल तारीख", "originalAmount": "मूळ रक्कम", "remaining": "थकीत", "ageBucket": "वयोगट" }
+          "columns": {
+            "party": "पार्टी",
+            "billNumber": "बिल क्र.",
+            "date": "बिल तारीख",
+            "originalAmount": "मूळ रक्कम",
+            "remaining": "थकीत",
+            "ageBucket": "वयोगट"
+          }
         },
         "payables_ageing": {
-          "columns": { "party": "पुरवठादार", "billNumber": "बिल क्र.", "date": "बिल तारीख", "originalAmount": "मूळ रक्कम", "remaining": "थकीत", "ageBucket": "वयोगट" }
+          "columns": {
+            "party": "पुरवठादार",
+            "billNumber": "बिल क्र.",
+            "date": "बिल तारीख",
+            "originalAmount": "मूळ रक्कम",
+            "remaining": "थकीत",
+            "ageBucket": "वयोगट"
+          }
         },
         "cash_bank_summary": {
-          "columns": { "type": "प्रकार", "direction": "इन / आउट", "amount": "रक्कम" },
-          "summary": { "cashIn": "रोख इन", "cashOut": "रोख आउट", "netCashFlow": "निव्वळ रोख प्रवाह" }
+          "columns": {
+            "type": "प्रकार",
+            "direction": "इन / आउट",
+            "amount": "रक्कम"
+          },
+          "summary": {
+            "cashIn": "रोख इन",
+            "cashOut": "रोख आउट",
+            "netCashFlow": "निव्वळ रोख प्रवाह"
+          }
         },
         "mill_raw_material": {
-          "columns": { "lotNumber": "लॉट क्र.", "farmerName": "शेतकरी / विक्रेता", "purchaseDate": "तारीख", "weightKg": "वजन (किलो)", "moisturePct": "ओलावा %", "ratePerKg": "दर / किलो", "totalAmount": "एकूण रक्कम", "remainingKg": "शिल्लक (किलो)" },
-          "summary": { "totalWeight": "एकूण वजन", "totalAmount": "एकूण रक्कम" }
+          "columns": {
+            "lotNumber": "लॉट क्र.",
+            "farmerName": "शेतकरी / विक्रेता",
+            "purchaseDate": "तारीख",
+            "weightKg": "वजन (किलो)",
+            "moisturePct": "ओलावा %",
+            "ratePerKg": "दर / किलो",
+            "totalAmount": "एकूण रक्कम",
+            "remainingKg": "शिल्लक (किलो)"
+          },
+          "summary": {
+            "totalWeight": "एकूण वजन",
+            "totalAmount": "एकूण रक्कम"
+          }
         },
         "mill_production": {
-          "columns": { "batchNumber": "बॅच क्र.", "startedAt": "सुरुवात", "status": "स्थिती", "currentStage": "टप्पा", "inputKg": "इनपुट (किलो)", "outputKg": "आउटपुट (किलो)", "wastageKg": "वाया गेलेले (किलो)", "brokenKg": "तुटलेले (किलो)", "branKg": "कोंडा (किलो)", "huskKg": "भुसा (किलो)", "recoveryPct": "रिकव्हरी %" },
-          "summary": { "batches": "बॅचेस", "avgRecovery": "सरासरी रिकव्हरी %" }
+          "columns": {
+            "batchNumber": "बॅच क्र.",
+            "startedAt": "सुरुवात",
+            "status": "स्थिती",
+            "currentStage": "टप्पा",
+            "inputKg": "इनपुट (किलो)",
+            "outputKg": "आउटपुट (किलो)",
+            "wastageKg": "वाया गेलेले (किलो)",
+            "brokenKg": "तुटलेले (किलो)",
+            "branKg": "कोंडा (किलो)",
+            "huskKg": "भुसा (किलो)",
+            "recoveryPct": "रिकव्हरी %"
+          },
+          "summary": {
+            "batches": "बॅचेस",
+            "avgRecovery": "सरासरी रिकव्हरी %"
+          }
         },
         "mill_byproducts": {
-          "columns": { "name": "उप-उत्पादन", "quantityKg": "उत्पादित (किलो)", "soldKg": "विकलेले (किलो)", "remainingKg": "शिल्लक (किलो)", "ratePerKg": "दर / किलो", "soldValue": "विक्री मूल्य" },
-          "summary": { "totalSoldValue": "एकूण विक्री मूल्य" }
+          "columns": {
+            "name": "उप-उत्पादन",
+            "quantityKg": "उत्पादित (किलो)",
+            "soldKg": "विकलेले (किलो)",
+            "remainingKg": "शिल्लक (किलो)",
+            "ratePerKg": "दर / किलो",
+            "soldValue": "विक्री मूल्य"
+          },
+          "summary": {
+            "totalSoldValue": "एकूण विक्री मूल्य"
+          }
         }
       },
       "pack": {
@@ -2018,10 +2234,22 @@
     },
     "printType": {
       "title": "प्रिंट प्रकार",
-      "a4Sheet": { "label": "A4 लेबल शीट", "hint": "आधीच कापलेल्या A4 शीटवर अनेक लेबल्स" },
-      "a4Plain": { "label": "A4 प्लेन पेपर", "hint": "कट-गाइडसह प्लेन A4 वर ग्रिड" },
-      "thermalSticker": { "label": "थर्मल स्टिकर", "hint": "प्रति लेबल एक डाय-कट स्टिकर" },
-      "thermalRoll": { "label": "थर्मल कंटिन्युअस", "hint": "सलग रोल, ऑटो उंची" }
+      "a4Sheet": {
+        "label": "A4 लेबल शीट",
+        "hint": "आधीच कापलेल्या A4 शीटवर अनेक लेबल्स"
+      },
+      "a4Plain": {
+        "label": "A4 प्लेन पेपर",
+        "hint": "कट-गाइडसह प्लेन A4 वर ग्रिड"
+      },
+      "thermalSticker": {
+        "label": "थर्मल स्टिकर",
+        "hint": "प्रति लेबल एक डाय-कट स्टिकर"
+      },
+      "thermalRoll": {
+        "label": "थर्मल कंटिन्युअस",
+        "hint": "सलग रोल, ऑटो उंची"
+      }
     },
     "paper": {
       "pageOrientation": "पेज ओरिएंटेशन",
@@ -2476,7 +2704,17 @@
     "bankTransferMode": "बँक ट्रान्सफर",
     "chequeMode": "चेक",
     "sendWhatsApp": "WhatsApp पाठवा",
-    "done": "झाले"
+    "done": "झाले",
+    "discountLabel": "सूट / राइट-ऑफ",
+    "optionalTag": "ऐच्छिक",
+    "discountHint": "रोख न घेता शिल्लक कमी करा — सद्भावना, माफी, किंवा व्यापार सूट.",
+    "settleAll": "सगळे क्लियर करा (₹{amount} माफ करा)",
+    "settleFull": "पूर्ण क्लियर करा",
+    "outstandingWord": "थकबाकी",
+    "paymentReceivedWord": "मिळालेले पेमेंट",
+    "discountWord": "सूट",
+    "remainingBalance": "उर्वरित शिल्लक",
+    "recordWithDiscount": "₹{amount} नोंदवा + ₹{discount} माफ करा"
   },
   "Common": {
     "kg": "किलो",
@@ -2793,7 +3031,25 @@
     "onLeave": "रजेवर",
     "payrollDue": "पगार थकबाकी",
     "payrollPaid": "पगार भरणा",
-    "totalMonthlyPayroll": "मासिक पगार"
+    "totalMonthlyPayroll": "मासिक पगार",
+    "shiftTracking": "पाळी ट्रॅकिंग",
+    "shiftSection": "पाळी तपशील",
+    "choosePaali": "पाळी निवडा",
+    "shiftMorning": "सकाळ",
+    "shiftAfternoon": "दुपार",
+    "shiftNight": "रात्र",
+    "shiftCustom": "सानुकूल",
+    "inTimeLabel": "आल्याची वेळ",
+    "outTimeLabel": "गेल्याची वेळ",
+    "shiftDuration": "तास",
+    "hrs8": "8 तास",
+    "hrs12": "12 तास",
+    "customHoursLabel": "इतर",
+    "hoursShort": "तास",
+    "hoursPlaceholder": "उदा. 6",
+    "shiftBadaUdyogBadge": "बडा उद्योग वैशिष्ट्य",
+    "shiftBadaUdyogHint": "पाळी व वेळ ट्रॅकिंग बडा उद्योग आवृत्तीत उपलब्ध आहे",
+    "autoCalcHint": "आल्याच्या / गेल्याच्या वेळेवरून आपोआप"
   },
   "Purchases": {
     "title": "Purchases",
@@ -2908,7 +3164,8 @@
     "millDestinationLabel": "पाठवा",
     "millDestStock": "स्टॉक",
     "millDestRawMaterial": "कच्चा माल",
-    "millDestNotPacked": "पॅक न केलेले"
+    "millDestNotPacked": "पॅक न केलेले",
+    "millDestByProductNotPacked": "उप-उत्पाद पॅक न केलेले"
   },
   "Profile": {
     "title": "व्यवसाय प्रोफाइल",
@@ -4044,6 +4301,7 @@
     "pk_bag": "बॅग",
     "pk_goni": "गोणी",
     "pk_other": "इतर",
+    "pk_each": "प्रत्येक",
     "pk_kgEach": "किलो प्रत्येकी",
     "pk_count": "किती",
     "pk_summary": "पॅक {packed} किलो · सुटे / पॅक नाही {loose} किलो",
@@ -4073,6 +4331,10 @@
     "pk_tabTitle": "अजून पॅक न केलेले",
     "pk_intro": "उत्पादनातील तयार माल जो पॅक झालेला नाही (किंवा अर्धा झाला). इथे पॅकिंग जोडा: किती बॅग किंवा गोणी, आणि किती किलोच्या.",
     "pk_none": "सगळे पॅक झाले आहे.",
+    "pk_byp_tab": "उप-उत्पाद पॅक न केलेले",
+    "pk_byp_tabTitle": "उप-उत्पाद अजून पॅक न केलेले",
+    "pk_byp_intro": "उत्पादन किंवा खरेदीतून आलेले उप-उत्पाद (भुसा, कोंडा इ.) जे विकण्याआधी पोत्यात तोलायचे आहेत. इथे पॅकिंग जोडा.",
+    "pk_byp_none": "सगळे उप-उत्पाद पॅक झाले आहेत.",
     "pk_pack": "पॅकिंग जोडा",
     "pk_packTitle": "{name} पॅक करा",
     "pk_left": "पॅक करायचे बाकी: {left} किलो ({kg} किलोपैकी)",
@@ -4711,7 +4973,19 @@
     "bulkDeleteSuccess": "बिले हटवली.",
     "bulkDeleteFailed": "काही बिले हटवता आली नाहीत.",
     "originalAmount": "मूळ रक्कम",
-    "cancel": "रद्द करा"
+    "cancel": "रद्द करा",
+    "writeOffHint": "₹{amount} पूर्णपणे माफ केले जाईल",
+    "historyTab": "इतिहास",
+    "noHistory": "सेटलमेंट इतिहास सापडला नाही.",
+    "settledOn": "सेटल झाले",
+    "paidLabel": "भरले",
+    "writeOffLabel": "माफ",
+    "reverseSettlement": "परत करा",
+    "reverseConfirmTitle": "सेटलमेंट परत करायची?",
+    "reverseConfirmText": "{name} चे ₹{amount} पुन्हा थकबाकी होईल.",
+    "reverseSuccess": "सेटलमेंट यशस्वीपणे परत केली.",
+    "failedToReverse": "सेटलमेंट परत करण्यात अयशस्वी.",
+    "historySubtitle": "मागील सेटलमेंट — परत करण्यासाठी Reverse दाबा."
   },
   "GateEntry": {
     "title": "गेट एंट्री",
@@ -4932,7 +5206,16 @@
     "actionsBlockedMill": "सेव्ह केल्यानंतर मिल इनव्हॉइस एडिट, रिटर्न किंवा एक्सचेंज करता येत नाही. दुरुस्ती आवश्यक असल्यास कृपया अ‍ॅडमिनिस्ट्रेटर/सपोर्टशी संपर्क साधा.",
     "openInvoice": "पहा / प्रिंट / PDF / WhatsApp",
     "printAfterSync": "हे बिल या डिव्हाइसवर सेव्ह आहे आणि लवकरच सिंक होईल. सिंक झाल्यानंतर प्रिंट, PDF आणि WhatsApp उपलब्ध होतील.",
-    "dupFailed": "डुप्लिकेटसाठी हे इनव्हॉइस लोड करता आले नाही."
+    "dupFailed": "डुप्लिकेटसाठी हे इनव्हॉइस लोड करता आले नाही.",
+    "sendToChallan": "चालान पाठवा",
+    "close": "बंद करा",
+    "selectPaymentMethod": "बिल सेव्ह करण्यापूर्वी पेमेंट पद्धत निवडा."
+  },
+  "Challan": {
+    "pendingBills": "चालान नसलेले बिल",
+    "pendingBillsDesc": "ज्या मिल बिलांचा डिलीव्हरी चालान अजून बनवला नाही (मागील ९० दिवस)",
+    "noPendingBills": "सर्व बिलांचे चालान तयार झाले आहेत",
+    "createChallan": "चालान तयार करा"
   },
   "MachineHub": {
     "title": "मशीन आणि दुरुस्ती",
@@ -5043,5 +5326,64 @@
       "exchangeCash": "एक्सचेंज: {invoice}",
       "saleHamali": "हमाली: {text}"
     }
+  },
+  "Bank": {
+    "title": "बँक खाती",
+    "subtitle": "सर्व बँक खाती, व्यवहार आणि देयके ट्रॅक करा",
+    "addAccount": "खाते जोडा",
+    "noAccounts": "अद्याप कोणतेही बँक खाते जोडले नाही",
+    "noAccountsHint": "ट्रॅकिंग सुरू करण्यासाठी पहिले बँक खाते जोडा",
+    "balance": "शिल्लक",
+    "totalBalance": "एकूण शिल्लक",
+    "totalIn": "एकूण जमा",
+    "totalOut": "एकूण खर्च",
+    "allAccounts": "सर्व खाती",
+    "transactions": "व्यवहार",
+    "noTransactions": "अद्याप कोणताही व्यवहार नाही",
+    "addCredit": "+ पैसे आले (जमा)",
+    "addDebit": "- पैसे गेले (खर्च)",
+    "paySupplier": "पुरवठादाराला द्या",
+    "openingBalance": "सुरुवातीची शिल्लक",
+    "accountName": "खात्याचे नाव",
+    "bankName": "बँकेचे नाव",
+    "accountNumber": "खाते क्रमांक",
+    "ifsc": "IFSC कोड",
+    "accountNamePlaceholder": "उदा. SBI चालू खाते",
+    "bankNamePlaceholder": "उदा. स्टेट बँक ऑफ इंडिया",
+    "accountNumberPlaceholder": "उदा. 12345678901",
+    "ifscPlaceholder": "उदा. SBIN0001234",
+    "saveAccount": "खाते सेव्ह करा",
+    "editAccount": "बदला",
+    "deleteAccount": "खाते हटवा",
+    "confirmDelete": "हे बँक खाते आणि सर्व व्यवहार हटवायचे?",
+    "description": "वर्णन",
+    "descriptionPlaceholder": "हे कशासाठी आहे?",
+    "amountLabel": "रक्कम",
+    "dateLabel": "तारीख",
+    "addEntry": "एंट्री जतन करा",
+    "creditTitle": "पैसे आले (जमा)",
+    "debitTitle": "पैसे गेले (खर्च)",
+    "paySupplierTitle": "बँकेतून पुरवठादाराला पैसे द्या",
+    "selectSupplier": "पुरवठादार निवडा",
+    "chooseSupplier": "पुरवठादार निवडा...",
+    "noteOptional": "नोंद (ऐच्छिक)",
+    "confirmPay": "पेमेंट करा",
+    "paymentSuccess": "पेमेंट नोंदवले गेले",
+    "entryAdded": "एंट्री जोडली",
+    "accountSaved": "खाते सेव्ह झाले",
+    "accountDeleted": "खाते हटवले",
+    "failedToSave": "सेव्ह झाले नाही",
+    "failedToDelete": "हटवले नाही",
+    "failedToLoad": "लोड झाले नाही",
+    "credit": "जमा",
+    "debit": "खर्च",
+    "opening": "सुरुवातीची शिल्लक",
+    "supplier_payment": "पुरवठादार पेमेंट",
+    "manual": "मॅन्युअल एंट्री",
+    "accountNameRequired": "खात्याचे नाव आवश्यक आहे",
+    "sidebarLabel": "बँक"
+  },
+  "Sidebar": {
+    "bank": "बँक"
   }
 }

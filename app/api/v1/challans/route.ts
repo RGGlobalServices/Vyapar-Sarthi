@@ -23,6 +23,34 @@ export async function GET(req: Request) {
     const status = url.searchParams.get('status') || '';
     const customerId = url.searchParams.get('customerId') || '';
     const q = url.searchParams.get('q') || '';
+    const pendingBills = url.searchParams.get('pendingBills') === '1';
+
+    // Return Mill bills that have no active challan (for "Bills Pending Challan" panel)
+    if (pendingBills) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const sales = await (prisma as any).sale.findMany({
+        where: {
+          shopId: shop.id,
+          pricingModel: 'mill_v2',
+          createdAt: { gte: cutoff },
+          OR: [
+            { deliveryChallans: { none: {} } },
+            { deliveryChallans: { every: { status: { in: ['cancelled', 'returned'] } } } },
+          ],
+        },
+        select: {
+          id: true,
+          invoice_number: true,
+          customer_name: true,
+          totalAmount: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+      return NextResponse.json(sales);
+    }
 
     const where: any = { shopId: shop.id };
     if (status) where.status = status;

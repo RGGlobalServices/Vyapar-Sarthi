@@ -45,6 +45,34 @@ export const GET = handle(async (req, { params }: any) => {
     take: 50,
   });
 
+  // Find linked Supplier entity (auto-created in pickSupplier when a purchase is made from this party)
+  const linkedSupplier = await prisma.supplier.findFirst({
+    where: {
+      shopId: shop.id,
+      name: customer.name,
+      ...(customer.mobile ? { mobile: customer.mobile } : {}),
+    },
+  });
+
+  // Purchase invoices (grain bought by the mill FROM this farmer)
+  const purchaseInvoices = linkedSupplier ? await prisma.purchaseInvoice.findMany({
+    where: { supplierId: linkedSupplier.id, shopId: shop.id },
+    include: {
+      purchaseItems: {
+        include: { product: { select: { id: true, name: true, baseUnit: true } } },
+      },
+    },
+    orderBy: { date: 'desc' },
+    take: 50,
+  }) : [];
+
+  // Supplier ledger (purchase charges + payments made to the farmer)
+  const supplierTransactions = linkedSupplier ? await prisma.supplierTransaction.findMany({
+    where: { supplierId: linkedSupplier.id },
+    orderBy: { created_at: 'desc' },
+    take: 100,
+  }) : [];
+
   // Calculate financial statistics
   const txs = customer.customer_transactions || [];
   const totalCharged = txs.filter((t: any) => t.type === 'charge' || t.type === 'debit').reduce((s: number, t: any) => s + (Number(t.amount) || 0), 0);
@@ -65,6 +93,9 @@ export const GET = handle(async (req, { params }: any) => {
       totalPaid,
       status: netDue > 0 ? 'due' : netDue < 0 ? 'advance' : 'clear',
     },
+    linkedSupplier: linkedSupplier ? { id: linkedSupplier.id, name: linkedSupplier.name, balance: linkedSupplier.balance } : null,
+    purchaseInvoices,
+    supplierTransactions,
   });
 });
 

@@ -15,7 +15,7 @@ import { unitToKg } from '@/lib/quickEntry';
 export async function sendToNotPacked(
   tx: any,
   shopId: string,
-  o: { productId: string; productName: string; quantity: number; unit: string; batchLabel: string; sourceNote: string },
+  o: { productId: string; productName: string; quantity: number; unit: string; batchLabel: string; sourceNote: string; kind?: 'finished_good' | 'by_product' },
 ): Promise<{ batchId: string; outputId: string; lotId: string } | null> {
   const quantity = Number(o.quantity) || 0;
   if (quantity <= 0) return null;
@@ -36,9 +36,10 @@ export async function sendToNotPacked(
       startedAt: now, closedAt: now, outputKg: quantityKg, notes: o.sourceNote.slice(0, 250),
     },
   });
+  const outputType = o.kind === 'by_product' ? 'by_product' : 'finished_good';
   const output = await tx.productionOutput.create({
     data: {
-      shopId, batchId: batch.id, productId: o.productId, name: o.productName.slice(0, 200), outputType: 'finished_good',
+      shopId, batchId: batch.id, productId: o.productId, name: o.productName.slice(0, 200), outputType,
       quantity, unit: o.unit || 'kg', quantityKg, notes: o.sourceNote.slice(0, 250),
     },
   });

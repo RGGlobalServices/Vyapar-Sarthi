@@ -395,8 +395,8 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
 
   const sale: any = outcome.result;
   if (!outcome.isDuplicate) {
-    // transport / vehicle / station / E-Way bill / GR-RR printed on the invoice (best-effort: the bill is already saved)
-    try { await setDispatch(prisma, sale.id, parseDispatch(body.dispatch)); } catch (e) { console.error('dispatch details not saved', e); }
+    // best-effort, fire-and-forget — bill is already committed, don't hold up the response
+    setDispatch(prisma, sale.id, parseDispatch(body.dispatch)).catch((e) => console.error('dispatch details not saved', e));
     (async () => {
       try {
         await checkLargeTransactionAlert(prisma, shopId, sale.totalAmount, 'sale', sale.invoice_number || invoice_number);

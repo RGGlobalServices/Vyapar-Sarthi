@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   Truck, Plus, Search, X, Printer, Receipt, Ban, Loader2,
   Package, User, ChevronDown, ChevronUp, MapPin, Navigation,
@@ -145,18 +145,23 @@ function challanTotal(c: Challan) {
 export default function ChallansPage() {
   const router  = useRouter();
   const locale  = useLocale();
+  const tc = useTranslations('Challan');
   const { profile } = useBusinessStore();
+  const isMill = isMillBillingPackage(profile?.packageType);
   const [confirmAsync, confirmDialog] = useConfirm();
   const [challans, setChallans]         = useState<Challan[]>([]);
   const [loading, setLoading]           = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'invoiced' | 'cancelled' | 'returned'>('all');
   const [search, setSearch]             = useState('');
   const [showNew, setShowNew]           = useState(false);
+  const [preloadSaleId, setPreloadSaleId] = useState<string | undefined>(undefined);
   const [printChallan, setPrintChallan] = useState<Challan | null>(null);
   const [busyId, setBusyId]             = useState<string | null>(null);
   const [dateFilter, setDateFilter]     = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [customFrom, setCustomFrom]     = useState('');
   const [customTo, setCustomTo]         = useState('');
+  const [pendingBills, setPendingBills] = useState<any[]>([]);
+  const [pendingBillsLoading, setPendingBillsLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,6 +176,29 @@ export default function ChallansPage() {
   }, [statusFilter, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-open new challan form pre-filled from a bill (set by MillBillSavedModal)
+  useEffect(() => {
+    const saleId = sessionStorage.getItem('pendingChallanFromBill');
+    if (saleId) {
+      sessionStorage.removeItem('pendingChallanFromBill');
+      setPreloadSaleId(saleId);
+      setShowNew(true);
+    }
+  }, []);
+
+  // Load bills without a challan for Mill shops
+  const loadPendingBills = useCallback(async () => {
+    if (!isMill) return;
+    setPendingBillsLoading(true);
+    try {
+      const res = await api.get('/challans?pendingBills=1');
+      setPendingBills(Array.isArray(res.data) ? res.data : []);
+    } catch { setPendingBills([]); }
+    finally { setPendingBillsLoading(false); }
+  }, [isMill]);
+
+  useEffect(() => { loadPendingBills(); }, [loadPendingBills]);
 
   const filteredChallans = useMemo(() => {
     if (dateFilter === 'all') return challans;
@@ -264,6 +292,40 @@ export default function ChallansPage() {
           <Plus size={18} /> New Challan
         </button>
       </div>
+
+      {/* Pending Bills (Mill only) */}
+      {isMill && (
+        <div className="bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-2xl p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-sm font-bold text-amber-800 dark:text-amber-400">{tc('pendingBills')}</p>
+              <p className="text-xs text-amber-600 dark:text-amber-500">{tc('pendingBillsDesc')}</p>
+            </div>
+            {pendingBillsLoading && <Loader2 size={16} className="animate-spin text-amber-500 shrink-0" />}
+          </div>
+          {!pendingBillsLoading && pendingBills.length === 0 ? (
+            <p className="text-xs text-amber-600 dark:text-amber-500">{tc('noPendingBills')}</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingBills.map((bill) => (
+                <div key={bill.id} className="flex items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-500/20 rounded-xl px-3 py-2">
+                  <div>
+                    <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{bill.invoice_number || '—'}</span>
+                    {bill.customer_name && <span className="text-xs text-slate-500 ml-2">{bill.customer_name}</span>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setPreloadSaleId(bill.id); setShowNew(true); }}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white text-xs font-bold transition-colors"
+                  >
+                    <Truck size={12} /> {tc('createChallan')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Date filter */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -456,7 +518,11 @@ export default function ChallansPage() {
       )}
 
       {showNew && (
-        <NewChallanModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); load(); }} />
+        <NewChallanModal
+          onClose={() => { setShowNew(false); setPreloadSaleId(undefined); }}
+          onCreated={() => { setShowNew(false); setPreloadSaleId(undefined); load(); loadPendingBills(); }}
+          preloadSaleId={preloadSaleId}
+        />
       )}
       {printChallan && (
         <PrintChallanModal
@@ -511,7 +577,7 @@ const selectCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border-sla
 
 // ── New Challan Modal ─────────────────────────────────────────────────────────
 
-function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () => void; onCreated: () => void; preloadSaleId?: string }) {
   type Party = { id: string; name: string; mobile?: string; address?: string };
   const isMill = isMillBillingPackage(useBusinessStore().profile?.packageType);
   // Bada Udyog only: this challan is a SALE, so its hamali and broker are saved as Sale hamali / Sale broker
@@ -704,6 +770,12 @@ function NewChallanModal({ onClose, onCreated }: { onClose: () => void; onCreate
   };
 
   const clearFromInvoice = () => { setFromInv(null); setCartItems([]); setSelectedParty(null); setInvNo(''); };
+
+  // Auto-load from a bill passed via props (from "Send to Challan" button)
+  useEffect(() => {
+    if (preloadSaleId) loadFromInvoiceById(preloadSaleId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // run only once on mount
 
   const removeItem = (idx: number) => setCartItems(prev => prev.filter((_, i) => i !== idx));
 

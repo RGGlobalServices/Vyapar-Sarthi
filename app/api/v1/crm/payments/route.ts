@@ -37,44 +37,61 @@ export const POST = handle(async (req) => {
       });
       if (!supplier) throw new ApiError(404, 'Supplier not found');
 
-      // Reduce Balance
+      // Reduce Balance by payment + any write-off discount
       const updated = await tx.supplier.update({
         where: { id: entityId },
-        data: { balance: { decrement: amount } }
+        data: { balance: { decrement: (amount || 0) + discountAmount } }
       });
 
-      // Insert Ledger Entry
-      const transaction = await tx.supplierTransaction.create({
-        data: {
-          supplierId: entityId,
-          type: 'payment',
-          amount: amount,
-          note: `Payment via ${paymentMode || 'Cash'} - ${note || ''}`.trim(),
-        }
-      });
-
-      if ((paymentMode || 'Cash').toLowerCase() === 'cash') {
-        await tx.cashBook.create({
+      // Payment ledger entry
+      let transactionId = '';
+      if ((amount || 0) > 0) {
+        const transaction = await tx.supplierTransaction.create({
           data: {
-            shopId: shop.id,
-            type: 'withdrawal',
+            supplierId: entityId,
+            type: 'payment',
             amount: amount,
-            referenceId: transaction.id,
-            description: `Payment to Supplier: ${supplier.name}`
+            note: `Payment via ${paymentMode || 'Cash'} - ${note || ''}`.trim(),
           }
         });
+        transactionId = transaction.id;
+
+        if ((paymentMode || 'Cash').toLowerCase() === 'cash') {
+          await tx.cashBook.create({
+            data: {
+              shopId: shop.id,
+              type: 'withdrawal',
+              amount: amount,
+              referenceId: transaction.id,
+              description: `Payment to Supplier: ${supplier.name}`
+            }
+          });
+        }
+      }
+
+      // Discount / write-off ledger entry
+      if (discountAmount > 0) {
+        const discountTxn = await tx.supplierTransaction.create({
+          data: {
+            supplierId: entityId,
+            type: 'discount',
+            amount: discountAmount,
+            note: `Discount/Write-off${note ? ` - ${note}` : ''}`.trim(),
+          }
+        });
+        if (!transactionId) transactionId = discountTxn.id;
       }
 
       await tx.activityLog.create({
         data: {
           shopId: shop.id,
           action: 'payment_given',
-          entityId: transaction.id,
-          details: { entityType: 'supplier', name: supplier.name, amount }
+          entityId: transactionId,
+          details: { entityType: 'supplier', name: supplier.name, amount, ...(discountAmount > 0 ? { discount: discountAmount } : {}) }
         }
       });
 
-      return { updated, transaction };
+      return { updated, transaction: { id: transactionId } };
     } else {
       throw new ApiError(400, 'Invalid entityType');
     }
