@@ -5398,5 +5398,28 @@
   },
   "Sidebar": {
     "bank": "बँक"
+  },
+  "QuickAddParty": {
+    "title": "नवीन पार्टी जोडा",
+    "partyTypeLabel": "पार्टीचा प्रकार",
+    "farmerTitle": "शेतकरी / पुरवठादार",
+    "farmerSubtext": "धान्य विकतो / देतो",
+    "customerTitle": "ग्राहक / व्यापारी",
+    "customerSubtext": "माल विकत घेतो",
+    "errorSelectType": "आधी पार्टीचा प्रकार निवडा",
+    "errorNameRequired": "पार्टीचे नाव आवश्यक आहे",
+    "errorSaveFailed": "पार्टी जोडता आली नाही",
+    "nameLabel": "पार्टीचे नाव",
+    "mobileLabel": "मोबाइल",
+    "creditDaysLabel": "क्रेडिट दिवस",
+    "gstLabel": "GSTIN (बिलावर छापले जाते)",
+    "addressLabel": "बिलिंग पत्ता",
+    "addressPlaceholder": "रस्ता, गाव / शहर",
+    "stateLabel": "राज्य",
+    "pincodeLabel": "पिनकोड",
+    "sameShippingLabel": "शिपिंग पत्ता बिलिंग सारखाच आहे",
+    "shippingPlaceholder": "माल कुठे पाठवायचा आहे",
+    "cancelBtn": "रद्द करा",
+    "saveBtn": "जतन करा आणि निवडा"
   }
 }

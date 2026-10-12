@@ -5395,5 +5395,28 @@
   },
   "Sidebar": {
     "bank": "Bank"
+  },
+  "QuickAddParty": {
+    "title": "Add new party",
+    "partyTypeLabel": "Party type",
+    "farmerTitle": "Farmer / Supplier",
+    "farmerSubtext": "Sells / supplies grain",
+    "customerTitle": "Customer / Trader",
+    "customerSubtext": "Buys goods",
+    "errorSelectType": "Please select party type first",
+    "errorNameRequired": "Party name is required",
+    "errorSaveFailed": "Could not add the party",
+    "nameLabel": "Party name",
+    "mobileLabel": "Mobile",
+    "creditDaysLabel": "Credit days",
+    "gstLabel": "GSTIN (printed on the bill)",
+    "addressLabel": "Billing address",
+    "addressPlaceholder": "Road, village / city",
+    "stateLabel": "State",
+    "pincodeLabel": "Pincode",
+    "sameShippingLabel": "Shipping address same as billing",
+    "shippingPlaceholder": "Where the goods are sent",
+    "cancelBtn": "Cancel",
+    "saveBtn": "Save & select"
   }
 }
