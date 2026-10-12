@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
         WHERE purchase_id IN (SELECT id FROM purchase_invoices WHERE shop_id = ${shopId}::uuid)`;
       // purchase_items cascade from purchase_invoices (Cascade FK)
       await tx.purchaseInvoice.deleteMany({ where: { shopId } });
-      await tx.supplierTransaction.deleteMany({ where: { shopId } });
+      await tx.$executeRaw`DELETE FROM supplier_transactions WHERE supplier_id IN (SELECT id FROM suppliers WHERE shop_id = ${shopId}::uuid)`;
       await tx.supplier.deleteMany({ where: { shopId } });
 
       // ── Customers / parties & udhar ────────────────────────────────────────
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
         DELETE FROM attendance WHERE staff_id IN (SELECT id FROM staff WHERE shop_id = ${shopId}::uuid)`;
       await tx.$executeRaw`
         DELETE FROM salary_payments WHERE staff_id IN (SELECT id FROM staff WHERE shop_id = ${shopId}::uuid)`;
-      await tx.advanceSalary.deleteMany({ where: { shopId } });
+      await tx.$executeRaw`DELETE FROM advance_salaries WHERE staff_id IN (SELECT id FROM staff WHERE shop_id = ${shopId}::uuid)`;
       await tx.staff.deleteMany({ where: { shopId } });
 
       // ── Financials & logs ─────────────────────────────────────────────────

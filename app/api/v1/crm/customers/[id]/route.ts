@@ -69,7 +69,7 @@ export const GET = handle(async (req, { params }: any) => {
   // Supplier ledger (purchase charges + payments made to the farmer)
   const supplierTransactions = linkedSupplier ? await prisma.supplierTransaction.findMany({
     where: { supplierId: linkedSupplier.id },
-    orderBy: { created_at: 'desc' },
+    orderBy: { createdAt: 'desc' },
     take: 100,
   }) : [];
 

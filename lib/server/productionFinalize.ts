@@ -138,7 +138,7 @@ export async function finalizeBatchTx(tx: any, p: FinalizeParams) {
       select: { id: true, ratePerUnit: true },
     });
     const rateById = new Map(rawLots.map((l: any) => [l.id, Number(l.ratePerUnit) || 0]));
-    const totalRawCost = consumedLots.reduce((s, l) => s + l.qtyKg * (rateById.get(l.lotId) || 0), 0);
+    const totalRawCost = consumedLots.reduce((s, l) => s + l.qtyKg * Number(rateById.get(l.lotId) || 0), 0);
     // Productive kg = finished + by-products (rejections/waste excluded — no resale value)
     const productiveKg = credits
       .filter((o) => o.outputType !== 'rejection')

@@ -34,7 +34,7 @@ export const POST = handle(async (req) => {
   const result = await prisma.$transaction(
     (tx) =>
       sendToNotPacked(tx, shop.id, {
-        productId, productName: product.name, quantity, unit: body.unit || product.baseUnit || 'kg',
+        productId, productName: product.name ?? '', quantity, unit: (body.unit || product.baseUnit || 'kg') as string,
         batchLabel: `${sourceLabel}-BP`, sourceNote: `By-product from Run ${sourceLabel}`, kind: 'by_product',
       }),
     { timeout: 15000 },

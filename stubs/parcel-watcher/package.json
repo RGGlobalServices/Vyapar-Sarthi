@@ -1,6 +1,1 @@
-{
-  "name": "@parcel/watcher",
-  "version": "2.5.6",
-  "description": "No-op stub for build environments where native bindings are unavailable",
-  "main": "index.js"
-}
+{"name":"@parcel/watcher","version":"2.5.6","main":"index.js"}
