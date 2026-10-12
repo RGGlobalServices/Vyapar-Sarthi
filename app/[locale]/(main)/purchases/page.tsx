@@ -870,9 +870,9 @@ export default function PurchasesPage() {
                     ? (Array.isArray(selectedProduct.metadata?.colors) ? selectedProduct.metadata.colors[0] : (selectedProduct.metadata?.color || ''))
                     : '';
                   return (
-                  <div key={index} className="flex flex-col gap-3 p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/30">
-                    <div className="flex flex-wrap md:flex-nowrap gap-3 items-end">
-                    <div className="flex-1 min-w-[200px]">
+                  <div key={index} className="flex flex-col gap-3 p-3 sm:p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/30">
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap md:flex-nowrap gap-2 sm:gap-3 items-end">
+                    <div className="col-span-2 sm:col-span-1 flex-1 min-w-[200px]">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('productLabel') || 'Product'}</label>
                       <select required value={item.productId} onChange={e => {
                         const newItems = [...items];
@@ -932,11 +932,13 @@ export default function PurchasesPage() {
                     {!hasVariants && (
                       <div className="w-32">
                         <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('qty') || 'Qty'}</label>
-                        <input type="number" required min={isMill ? '0.001' : '1'} step={isMill ? 'any' : undefined} value={item.quantity} onChange={e => {
-                          const newItems = [...items];
-                          newItems[index].quantity = isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1);
-                          setItems(newItems);
-                        }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-right font-mono text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
+                        <input type="number" required min={isMill ? '0.001' : '1'} step={isMill ? 'any' : undefined} value={item.quantity}
+                          onFocus={e => e.target.select()}
+                          onChange={e => {
+                            const newItems = [...items];
+                            newItems[index].quantity = isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1);
+                            setItems(newItems);
+                          }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-right font-mono text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                       </div>
                     )}
                     {isMill ? (
@@ -1029,7 +1031,7 @@ export default function PurchasesPage() {
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="0" />
                     </div>
                     <button type="button" onClick={() => setItems(items.filter((_, i) => i !== index))}
-                      className="w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
+                      className="col-span-2 sm:col-span-1 w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors ml-auto sm:ml-0">
                       <X size={16} />
                     </button>
                     </div>
@@ -1090,9 +1092,9 @@ export default function PurchasesPage() {
                       const unitLabel = item.unitLabel || selectedProduct?.baseUnit || 'kg';
                       return (
                         <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5 overflow-hidden">
-                          <div className="grid grid-cols-4 divide-x divide-amber-200 dark:divide-amber-500/30">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-amber-200 dark:bg-amber-500/25">
                             {/* Col 1 — bag count */}
-                            <div className="px-3 py-2.5">
+                            <div className="px-3 py-2.5 bg-amber-50/60 dark:bg-slate-900">
                               <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('goniLabel')}</label>
                               <div className="flex items-center gap-1">
                                 <button type="button"
@@ -1107,21 +1109,21 @@ export default function PurchasesPage() {
                               </div>
                             </div>
                             {/* Col 2 — wt per bag */}
-                            <div className="px-3 py-2.5">
+                            <div className="px-3 py-2.5 bg-amber-50/60 dark:bg-slate-900">
                               <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('wtPerBag', { unit: unitLabel })}</label>
                               <input type="number" min="0" step="0.001" value={item.bagWeightKg ?? '0.5'}
                                 onChange={e => { const n = [...items]; n[index].bagWeightKg = e.target.value; setItems(n); }}
                                 className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-500/40 rounded text-sm font-mono text-right text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
                             </div>
                             {/* Col 3 — bag deduction */}
-                            <div className="px-3 py-2.5">
+                            <div className="px-3 py-2.5 bg-amber-50/60 dark:bg-slate-900">
                               <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-2">{t('bagWtDeduction')}</label>
                               <p className={cn('text-sm font-bold font-mono text-right', bDeduction > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400')}>
                                 {bDeduction > 0 ? `−${bDeduction.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unitLabel}` : '—'}
                               </p>
                             </div>
                             {/* Col 4 — inhand maal */}
-                            <div className={cn('px-3 py-2.5', inHand !== null ? 'bg-emerald-50 dark:bg-emerald-500/10' : '')}>
+                            <div className={cn('px-3 py-2.5', inHand !== null ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'bg-amber-50/60 dark:bg-slate-900')}>
                               <label className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide mb-2">{t('inhandMaal')}</label>
                               <p className={cn('text-sm font-bold font-mono text-right', inHand !== null ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400')}>
                                 {inHand !== null ? `${inHand.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unitLabel}` : '—'}
