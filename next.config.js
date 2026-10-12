@@ -1,7 +1,44 @@
-// Plain JS config (not .ts) on purpose: Next.js compiles a TypeScript config
-// via @parcel/watcher, whose native binary is omitted in some managed build
-// environments (Hostinger), causing "Failed to load next.config.ts". A JS
-// config skips that compile step entirely.
+// Stub @parcel/watcher and @swc/core before next-intl/plugin loads them.
+// Both packages require native binaries that are unavailable on some Linux
+// build servers. They are only used for i18n file-watching in development;
+// production builds work correctly without them.
+(function stubNativeDevModules() {
+  const Module = require('module');
+  const noop = () => {};
+
+  function stubModule(name, exports) {
+    const fakeId = '\0stub:' + name;
+    Module._cache[fakeId] = { id: fakeId, filename: fakeId, loaded: true, exports: exports, children: [] };
+    const orig = Module._resolveFilename;
+    Module._resolveFilename = function(request, parent, isMain, options) {
+      if (request === name) return fakeId;
+      return orig.call(this, request, parent, isMain, options);
+    };
+  }
+
+  try { require('@parcel/watcher'); } catch (_e) {
+    stubModule('@parcel/watcher', {
+      subscribe: async () => ({ unsubscribe: noop }),
+      unsubscribe: noop,
+      getEventsSince: async () => [],
+      writeSnapshot: async () => '',
+    });
+  }
+
+  try { require('@swc/core'); } catch (_e) {
+    stubModule('@swc/core', {
+      transform: async (src) => ({ code: src }),
+      transformSync: (src) => ({ code: src }),
+      parse: async () => ({}),
+      parseSync: () => ({}),
+      print: async () => ({ code: '' }),
+      printSync: () => ({ code: '' }),
+      minify: async (src) => ({ code: src }),
+      minifySync: (src) => ({ code: src }),
+    });
+  }
+})();
+
 const createNextIntlPlugin = require('next-intl/plugin');
 
 const withSerwist = require('@serwist/next').default({
