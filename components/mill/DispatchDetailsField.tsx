@@ -8,19 +8,9 @@ import { useTranslations } from 'next-intl';
  * Dispatch details printed on a Bada Udyog invoice (Transport, Vehicle No., Station, E-Way Bill No., GR/RR No., Salesman, Reverse charge).
  * A small collapsible card in the billing side panel; every field is optional and an empty card prints blank lines.
  */
-export type DispatchInput = {
-  transport: string;
-  vehicleNo: string;
-  station: string;
-  eWayBill: string;
-  grRrNo: string;
-  salesman: string;
-  reverseCharge: 'Y' | 'N';
-};
-
-export const EMPTY_DISPATCH_INPUT: DispatchInput = {
-  transport: '', vehicleNo: '', station: '', eWayBill: '', grRrNo: '', salesman: '', reverseCharge: 'N',
-};
+import type { DispatchInput } from '@/lib/mill/billingDefaults';
+export type { DispatchInput } from '@/lib/mill/billingDefaults';
+export { EMPTY_DISPATCH_INPUT } from '@/lib/mill/billingDefaults';
 
 type TextFieldKey = Exclude<keyof DispatchInput, 'reverseCharge'>;
 

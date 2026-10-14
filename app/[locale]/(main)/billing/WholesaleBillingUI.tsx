@@ -46,15 +46,21 @@ import { extractMlToken } from '@/lib/liquorMatrix';
 import { useMillMode, millCartKey } from '@/lib/hooks/useMillMode';
 import { calculateMillInvoice, normalizeMillCharges, type MillChargeKey, type MillResult } from '@/lib/millBilling';
 import { takeMillDuplicate } from '@/lib/millDuplicateHandoff';
-import MillRateInput from '@/components/billing/MillRateInput';
-import MillCommercialCharges, { EMPTY_MILL_CHARGES, type MillChargeInputs } from '@/components/billing/MillCommercialCharges';
-import BrokerField, { EMPTY_BROKER } from '@/components/mill/BrokerField';
-import QuickAddPartyModal from '@/components/mill/QuickAddPartyModal';
-import BillPartyDetailsField, { EMPTY_BILL_PARTY, billPartyFrom, type BillPartyInput } from '@/components/mill/BillPartyDetailsField';
-import DispatchDetailsField, { EMPTY_DISPATCH_INPUT, type DispatchInput } from '@/components/mill/DispatchDetailsField';
-import MillTotalsSummary from '@/components/billing/MillTotalsSummary';
-import MillBillSavedModal from '@/components/billing/MillBillSavedModal';
-import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
+// Mill billing state defaults — tiny constants, always needed when isMill state is initialised
+import {
+  EMPTY_MILL_CHARGES, EMPTY_BROKER, EMPTY_BILL_PARTY, billPartyFrom, EMPTY_DISPATCH_INPUT,
+  type MillChargeInputs, type BrokerValue, type BillPartyInput, type DispatchInput,
+} from '@/lib/mill/billingDefaults';
+// Mill-specific components — lazy-loaded so Dukan/Vyapar/Wholesale users never download mill code
+const MillRateInput = nextDynamic(() => import('@/components/billing/MillRateInput'));
+const MillCommercialCharges = nextDynamic(() => import('@/components/billing/MillCommercialCharges'));
+const MillTotalsSummary = nextDynamic(() => import('@/components/billing/MillTotalsSummary'));
+const MillBillSavedModal = nextDynamic(() => import('@/components/billing/MillBillSavedModal'));
+const MillInvoicePreviewModal = nextDynamic(() => import('@/components/invoice/MillInvoicePreviewModal'));
+const BrokerField = nextDynamic(() => import('@/components/mill/BrokerField'));
+const QuickAddPartyModal = nextDynamic(() => import('@/components/mill/QuickAddPartyModal'));
+const BillPartyDetailsField = nextDynamic(() => import('@/components/mill/BillPartyDetailsField'));
+const DispatchDetailsField = nextDynamic(() => import('@/components/mill/DispatchDetailsField'));
 
 // Same key a variant row is stored/matched under everywhere else (Products'
 // Variant Builder, the Purchases item picker, the server-side stock helper)

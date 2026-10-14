@@ -4,26 +4,9 @@ import { useState } from 'react';
 import { ChevronDown, UserRound } from 'lucide-react';
 import { stateFromGstin, GST_STATES } from '@/lib/indiaStates';
 
-/**
- * "Customer details on this bill" (Bada Udyog billing): the party's name, billing address, GSTIN, state and shipping address as they will be
- * PRINTED on this invoice. They start from the party's saved details and every one can be changed for this bill alone — the party record is not
- * touched, and the bill keeps what was printed even if the party is edited later. Empty shipping address = same as billing.
- */
-export type BillPartyInput = { name: string; address: string; gst: string; state: string; shipping: string };
-export const EMPTY_BILL_PARTY: BillPartyInput = { name: '', address: '', gst: '', state: '', shipping: '' };
-
-/** The starting values for a selected party (its saved details; state from its GSTIN when none is saved). */
-export function billPartyFrom(p: any): BillPartyInput {
-  if (!p) return EMPTY_BILL_PARTY;
-  const docs = p.documents && typeof p.documents === 'object' ? p.documents : {};
-  return {
-    name: p.name || '',
-    address: p.address || '',
-    gst: p.gst || '',
-    state: docs.state || stateFromGstin(p.gst) || '',
-    shipping: docs.shippingAddress || '',
-  };
-}
+import type { BillPartyInput } from '@/lib/mill/billingDefaults';
+export type { BillPartyInput } from '@/lib/mill/billingDefaults';
+export { EMPTY_BILL_PARTY, billPartyFrom } from '@/lib/mill/billingDefaults';
 
 const inp = 'w-full h-9 px-2.5 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900';
 

@@ -7,8 +7,9 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { ChevronDown, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-export type BrokerValue = { name: string; commission: string };
-export const EMPTY_BROKER: BrokerValue = { name: '', commission: '' };
+import type { BrokerValue } from '@/lib/mill/billingDefaults';
+export type { BrokerValue } from '@/lib/mill/billingDefaults';
+export { EMPTY_BROKER } from '@/lib/mill/billingDefaults';
 
 /**
  * Optional broker name for a bill (Bada Udyog) — existing brokers are suggested via a custom

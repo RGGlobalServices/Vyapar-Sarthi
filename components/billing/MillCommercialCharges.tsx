@@ -3,12 +3,9 @@
 import { useTranslations } from 'next-intl';
 import { Truck } from 'lucide-react';
 import { MILL_CHARGE_KEYS, type MillChargeKey } from '@/lib/millBilling';
-
-// Mill Billing commercial charges card (shown below the cart). These are CHARGES, not products: they are never cart
-// lines, never counted in the item count, never discounted, carry no GST, and never count as profit. The values are
-// kept as strings so a blank / half-typed number stays editable; validation is the engine's own (normalizeMillCharges).
-export type MillChargeInputs = Record<MillChargeKey, string>;
-export const EMPTY_MILL_CHARGES: MillChargeInputs = { freight: '', hamali: '', loading: '', unloading: '', other: '' };
+import type { MillChargeInputs } from '@/lib/mill/billingDefaults';
+export type { MillChargeInputs } from '@/lib/mill/billingDefaults';
+export { EMPTY_MILL_CHARGES } from '@/lib/mill/billingDefaults';
 
 export default function MillCommercialCharges({
   values, onChange, error, disabled,
