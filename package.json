@@ -27,12 +27,13 @@
     "desktop:build:mac": "electron-builder --mac",
     "desktop:build:linux": "electron-builder --linux",
     "mobile:open:android": "npx cap open android",
-    "mobile:open:ios": "npx cap open ios"
+    "mobile:open:ios": "npx cap open ios",
+    "check-boundaries": "node scripts/check-boundaries.js"
   },
   "dependencies": {
-    "@parcel/watcher": "file:./stubs/parcel-watcher",
     "@google/genai": "^1.17.0",
     "@opentelemetry/api": "^1.6.0",
+    "@parcel/watcher": "file:./stubs/parcel-watcher",
     "@prisma/client": "^6.5.0",
     "@serwist/next": "^9.5.11",
     "@supabase/supabase-js": "^2.108.2",
@@ -78,6 +79,7 @@
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",
     "@capacitor/android": "^8.3.3",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/camera": "^8.2.1",
     "@capacitor/cli": "^8.3.3",
     "@capacitor/core": "^8.3.3",
@@ -88,8 +90,6 @@
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@capgo/capacitor-social-login": "^8.3.36",
-    "capacitor-native-settings": "^8.1.0",
-    "@capacitor/assets": "^3.0.5",
     "@playwright/test": "^1.61.1",
     "@swc/core": "^1.15.30",
     "@tailwindcss/postcss": "4.1.11",
@@ -104,6 +104,7 @@
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.21",
+    "capacitor-native-settings": "^8.1.0",
     "cross-env": "^10.1.0",
     "dotenv-cli": "^8.0.0",
     "electron": "^42.0.1",
@@ -111,6 +112,7 @@
     "electron-is-dev": "^3.0.1",
     "eslint": "9.39.1",
     "eslint-config-next": "^15.5.15",
+    "eslint-plugin-boundaries": "^7.2.0",
     "husky": "^9.1.7",
     "postcss": "^8.5.6",
     "prisma": "^6.5.0",
@@ -147,10 +149,10 @@
     }
   },
   "optionalDependencies": {
-    "@parcel/watcher-linux-x64-glibc": "2.5.6",
-    "@parcel/watcher-linux-x64-musl": "2.5.6",
     "@parcel/watcher-linux-arm64-glibc": "2.5.6",
-    "@parcel/watcher-linux-arm64-musl": "2.5.6"
+    "@parcel/watcher-linux-arm64-musl": "2.5.6",
+    "@parcel/watcher-linux-x64-glibc": "2.5.6",
+    "@parcel/watcher-linux-x64-musl": "2.5.6"
   },
   "overrides": {
     "@parcel/watcher": "file:./stubs/parcel-watcher"
