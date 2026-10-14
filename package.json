@@ -28,7 +28,8 @@
     "desktop:build:linux": "electron-builder --linux",
     "mobile:open:android": "npx cap open android",
     "mobile:open:ios": "npx cap open ios",
-    "check-boundaries": "node scripts/check-boundaries.js"
+    "check-boundaries": "node scripts/check-boundaries.js",
+    "test:unit": "node --experimental-strip-types --test tests/unit/*.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
