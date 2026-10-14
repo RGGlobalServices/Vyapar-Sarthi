@@ -748,16 +748,18 @@ function StatCard({ label, value, subtitle, icon, tone, onClick }: {
     amber: 'border-b-amber-500/40',
   };
   const Wrapper = onClick ? 'button' : 'div';
+  const len = value.length;
+  const sizeClass = len > 14 ? 'text-sm md:text-lg' : len > 11 ? 'text-base md:text-xl' : len > 8 ? 'text-lg md:text-2xl' : 'text-xl md:text-2xl';
   return (
     <Wrapper
       onClick={onClick}
-      className={`w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 ${ring[tone]} rounded-2xl p-4 ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all' : ''}`}
+      className={`w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-b-4 ${ring[tone]} rounded-2xl p-4 min-w-0 ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all' : ''}`}
     >
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-tight">{label}</p>
         {icon}
       </div>
-      <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{value}</p>
+      <p className={`font-black text-slate-900 dark:text-white tracking-tighter break-words [overflow-wrap:anywhere] ${sizeClass}`}>{value}</p>
       {subtitle && <p className="text-[11px] font-bold text-slate-400 mt-0.5">{subtitle}</p>}
     </Wrapper>
   );
@@ -831,7 +833,9 @@ function AddSupplierModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
       }
       onSaved();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || t('failedToSaveSupplier'));
+      const raw = err?.response?.data?.detail || err?.message || '';
+      const isTechnical = /prisma|invocation|transaction.*not found|disconnecting|pooler|supabase\.com/i.test(raw);
+      setError(isTechnical ? (t('failedToSaveSupplier') || 'Something went wrong. Please try again.') : (raw || t('failedToSaveSupplier')));
     } finally {
       setSaving(false);
     }
@@ -1279,7 +1283,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   }
 
   const s = data?.supplier;
-  const totals = data?.totals || { totalPurchased: 0, totalPaid: 0, remaining: 0, dueInvoicesCount: 0, overdueAmount: 0 };
+  const totals = data?.totals || { totalPurchased: 0, totalPaid: 0, totalCashPaid: 0, totalDiscount: 0, remaining: 0, dueInvoicesCount: 0, overdueAmount: 0 };
   // transactionId, when present, ties a bill photo to one specific purchase
   // row instead of leaving it as a general, unlinked supplier document.
   const documents: { id: string; url: string; uploadedAt: string; name?: string; transactionId?: string }[] = s?.documents || [];
@@ -1479,7 +1483,12 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
         {/* Totals + actions */}
         <div className="p-4 grid grid-cols-3 gap-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shrink-0">
           <MiniStat label={t('purchasedHeader')} value={rupee(totals.totalPurchased)} tone="slate" />
-          <MiniStat label={t('paidHeader')} value={rupee(totals.totalPaid)} tone="emerald" />
+          <MiniStat
+            label={t('paidHeader')}
+            value={rupee(totals.totalPaid)}
+            tone="emerald"
+            sub={(totals.totalDiscount || 0) > 0 ? `(+${rupee(totals.totalDiscount)} settlement)` : undefined}
+          />
           <MiniStat label={t('remainingHeader')} value={rupee(totals.remaining)} tone="red" />
         </div>
 
@@ -2449,7 +2458,7 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
   const [date, setDate] = useState(toInputDate(new Date()));
   const [billNumber, setBillNumber] = useState('');
   const [note, setNote] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Bank Transfer' | 'Check' | 'DD' | 'Mix' | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -2506,7 +2515,9 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
       });
       onDone();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || t('failedToSave'));
+      const raw = err?.response?.data?.detail || err?.response?.data?.error || err?.message || '';
+      const isTechnical = /prisma|invocation|transaction.*not found|disconnecting|pooler|supabase\.com/i.test(raw);
+      setError(isTechnical ? (t('failedToSave') || 'Something went wrong. Please try again.') : (raw || t('failedToSave')));
     } finally {
       setSaving(false);
     }
@@ -2611,26 +2622,32 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
         <Field label={t('dateLabel')}>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
         </Field>
-        <Field label={t('billNoLabel')} required>
-          <input required value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className={inputCls} placeholder={t('billNoPlaceholder')} />
+        <Field label={t('billNoLabel')}>
+          <input value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className={inputCls} placeholder={t('billNoPlaceholder')} />
         </Field>
       </div>
 
       {(mode === 'payment' || paidNum > 0) && (
         <Field label={t('paymentMethodLabel') || 'Payment Method'}>
           <div className="flex gap-1.5 flex-wrap">
-            {(['Cash', 'UPI', 'Card'] as const).map((m) => (
+            {(['Cash', 'UPI', 'Card', 'Bank Transfer', 'Check', 'DD', 'Mix'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
-                onClick={() => setPaymentMethod(m)}
+                onClick={() => setPaymentMethod(paymentMethod === m ? null : m)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
                   paymentMethod === m
                     ? 'bg-emerald-600 border-emerald-600 text-white'
                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                 }`}
               >
-                {m === 'Cash' ? (t('paymentMethodCash') || 'Cash') : m === 'UPI' ? (t('paymentMethodUpi') || 'UPI') : (t('paymentMethodCard') || 'Card')}
+                {m === 'Cash' ? (t('paymentMethodCash') || 'Cash')
+                  : m === 'UPI' ? (t('paymentMethodUpi') || 'UPI')
+                  : m === 'Card' ? (t('paymentMethodCard') || 'Card')
+                  : m === 'Bank Transfer' ? (t('paymentMethodBankTransfer') || 'Bank Transfer')
+                  : m === 'Check' ? (t('paymentMethodCheck') || 'Check')
+                  : m === 'DD' ? (t('paymentMethodDD') || 'DD')
+                  : (t('paymentMethodMix') || 'Mix')}
               </button>
             ))}
           </div>
@@ -2689,7 +2706,7 @@ function TransactionForm({ supplierId, mode, remaining, creditLimit, dueBills, o
   );
 }
 
-function MiniStat({ label, value, tone }: { label: string; value: string; tone: 'slate' | 'emerald' | 'red' | 'amber' }) {
+function MiniStat({ label, value, tone, sub }: { label: string; value: string; tone: 'slate' | 'emerald' | 'red' | 'amber'; sub?: string }) {
   const color = {
     slate: 'text-slate-900 dark:text-white',
     emerald: 'text-emerald-600 dark:text-emerald-400',
@@ -2700,6 +2717,7 @@ function MiniStat({ label, value, tone }: { label: string; value: string; tone: 
     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700">
       <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{label}</p>
       <p className={`text-lg font-black tracking-tight ${color[tone]}`}>{value}</p>
+      {sub && <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
 }

@@ -84,9 +84,13 @@ export const GET = handle(async (req, ctx: any) => {
   const totalPurchased = transactions
     .filter((t) => !isSupplierCredit(t.type))
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-  const totalPaid = transactions
-    .filter((t) => isSupplierCredit(t.type))
+  const totalCashPaid = transactions
+    .filter((t) => t.type === 'payment' || t.type === 'purchase_return')
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalDiscount = transactions
+    .filter((t) => t.type === 'discount')
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalPaid = totalCashPaid + totalDiscount;
 
   // Due Invoices / Overdue Amount: the ledger only tracks an aggregate
   // balance, not which payment paid off which purchase, so we derive both by
@@ -185,6 +189,8 @@ export const GET = handle(async (req, ctx: any) => {
     totals: {
       totalPurchased,
       totalPaid,
+      totalCashPaid,
+      totalDiscount,
       remaining: Number(supplier.balance) || 0,
       dueInvoicesCount,
       overdueAmount,
@@ -251,9 +257,9 @@ export const POST = handle(async (req, ctx: any) => {
 
   // Only meaningful for an actual payment event (standalone payment, or the
   // part-payment leg of a purchase) — a plain purchase row isn't a payment.
-  const paymentMethod = ['Cash', 'UPI', 'Card'].includes(String(body.paymentMethod))
+  const paymentMethod = ['Cash', 'UPI', 'Card', 'Bank Transfer', 'Check', 'DD', 'Mix'].includes(String(body.paymentMethod))
     ? String(body.paymentMethod)
-    : 'Cash';
+    : null;
 
   // Backdate when a valid date is given, else record as now.
   let when: Date | undefined;

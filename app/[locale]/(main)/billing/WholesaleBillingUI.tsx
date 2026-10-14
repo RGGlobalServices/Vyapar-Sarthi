@@ -294,6 +294,161 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
   );
 };
 
+// Pack-level picker for a Finished Goods Lot — lets the user choose how many
+// of each pack size (e.g. 3 × 5kg Bags and 1 × 10kg Bag) to bill before
+// the line lands in the cart.
+function FgLotPackPickerModal({
+  product,
+  lot,
+  onClose,
+  onConfirm,
+}: {
+  product: any;
+  lot: any;
+  onClose: () => void;
+  onConfirm: (totalKg: number, breakdown: Array<{ packType: string; packKg: number; count: number }>) => void;
+}) {
+  const hasPacks = Array.isArray(lot.packs) && lot.packs.length > 0;
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [directKg, setDirectKg] = useState('');
+
+  const packKey = (pk: any) => `${pk.packType}:${pk.packKg}`;
+
+  const totalKg = hasPacks
+    ? lot.packs.reduce((sum: number, pk: any) => sum + (counts[packKey(pk)] || 0) * Number(pk.packKg), 0)
+    : Number(directKg) || 0;
+
+  const available = Number(lot.availableQuantity);
+  const canAdd = totalKg > 0 && totalKg <= available + 0.005;
+
+  const handleConfirm = () => {
+    if (!canAdd) return;
+    if (hasPacks) {
+      const breakdown = lot.packs
+        .filter((pk: any) => (counts[packKey(pk)] || 0) > 0)
+        .map((pk: any) => ({ packType: pk.packType, packKg: Number(pk.packKg), count: counts[packKey(pk)] }));
+      onConfirm(parseFloat(totalKg.toFixed(3)), breakdown);
+    } else {
+      onConfirm(parseFloat(Number(directKg).toFixed(3)), []);
+    }
+  };
+
+  const typeLabel = (pt: string) => pt === 'goni' ? 'Goni' : pt === 'other' ? 'Pack' : 'Bag';
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl w-full max-w-sm shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 pt-4 pb-3 border-b border-slate-100 dark:border-slate-700">
+          <p className="font-bold text-slate-900 dark:text-white">{product.name}</p>
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">{lot.lotNumber}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {lot.batchNumber && <span className="font-mono">{lot.batchNumber} · </span>}
+            {lot.godownName && <span>{lot.godownName} · </span>}
+            <span className="font-semibold text-slate-600 dark:text-slate-300">{available} {lot.unit} available</span>
+          </p>
+        </div>
+
+        {/* Pack rows */}
+        <div className="px-5 py-4 space-y-4">
+          {hasPacks ? (
+            lot.packs.map((pk: any) => {
+              const key = packKey(pk);
+              const maxCount = Number(pk.packs);
+              const val = counts[key] || 0;
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      {typeLabel(pk.packType)} · {pk.packKg} kg each
+                    </p>
+                    <p className="text-[11px] text-slate-400">Max {maxCount} available</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCounts(prev => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }))}
+                      className="h-8 w-8 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-lg leading-none"
+                    >−</button>
+                    <input
+                      type="number"
+                      min={0}
+                      max={maxCount}
+                      value={val === 0 ? '' : val}
+                      placeholder="0"
+                      onChange={(e) => {
+                        const n = Math.min(maxCount, Math.max(0, Math.round(Number(e.target.value) || 0)));
+                        setCounts(prev => ({ ...prev, [key]: n }));
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      className="w-16 text-center border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCounts(prev => ({ ...prev, [key]: Math.min(maxCount, (prev[key] || 0) + 1) }))}
+                      className="h-8 w-8 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-lg leading-none"
+                    >+</button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">
+                No packs recorded — enter quantity (kg)
+              </p>
+              <input
+                type="number"
+                min={0}
+                max={available}
+                value={directKg}
+                placeholder="0"
+                onChange={(e) => setDirectKg(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                className="w-full border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-2.5 text-base font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 flex items-center justify-between gap-3">
+          <div>
+            {totalKg > 0 && (
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                Total: <span className="text-emerald-600 dark:text-emerald-400">{totalKg.toFixed(2)} kg</span>
+              </p>
+            )}
+            {totalKg > available + 0.005 && (
+              <p className="text-xs text-rose-600 font-semibold">Exceeds available ({available} {lot.unit})</p>
+            )}
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!canAdd}
+              onClick={handleConfirm}
+              className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Add to Bill
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WholesaleBillingUI() {
   const t = useTranslations('Billing');
   const tBill = useTranslations('BillSlip');
@@ -749,6 +904,8 @@ export default function WholesaleBillingUI() {
   // Per-axis selections inside the dynamic variant picker (Phase 3).
   // Reset whenever variantSelectionProduct changes.
   const [variantPickerSelections, setVariantPickerSelections] = useState<Record<string, string>>({});
+  // FG Lot pack picker — opened when user clicks a lot with packs in mill billing.
+  const [fgLotPackPicker, setFgLotPackPicker] = useState<{ product: any; lot: any } | null>(null);
   // Lot/batch picker — see addToCart's comment for when this fires.
   const [batchSelectionProduct, setBatchSelectionProduct] = useState<any>(null);
   const [batchSelectionVariant, setBatchSelectionVariant] = useState<string | undefined>(undefined);
@@ -779,6 +936,18 @@ export default function WholesaleBillingUI() {
     window.addEventListener('focus', refreshLots);
     return () => window.removeEventListener('focus', refreshLots);
   }, [refreshLots]);
+
+  // Mill (Bada Udyog) finished-goods lots — available packed lots per product, loaded only in mill mode.
+  const [fgLotsByProduct, setFgLotsByProduct] = useState<Record<string, any[]>>({});
+  const refreshFgLots = useCallback(() => {
+    if (!isMill) return;
+    api.get('/mill/finished-goods/for-billing').then((r) => setFgLotsByProduct(r.data || {})).catch(() => {});
+  }, [isMill]);
+  useEffect(() => {
+    refreshFgLots();
+    window.addEventListener('focus', refreshFgLots);
+    return () => window.removeEventListener('focus', refreshFgLots);
+  }, [refreshFgLots]);
 
   // Set when arriving here via a Delivery Challan's "Convert to Invoice"
   // button (app/[locale]/(main)/challans/page.tsx) — after the sale is
@@ -939,7 +1108,7 @@ export default function WholesaleBillingUI() {
     }
   }, [isWholesale, products, getPrice, items, updatePrice]);
 
-  const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null) => {
+  const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null, fgLotInfo?: { fgLotId: string; fgLotNumber: string; packBreakdown?: Array<{ packType: string; packKg: number; count: number }>; initialQty?: number } | null) => {
     // Instant feedback the moment ANY add is triggered — closes the search
     // dropdown and clears the box right away, before the (possibly slow,
     // see the batch lookup below) async work even starts. Without this the
@@ -1008,7 +1177,7 @@ export default function WholesaleBillingUI() {
       }
     }
 
-    const existingItem = items.find(i => i.id === product.id && i.variant === variant);
+    const existingItem = items.find(i => i.id === product.id && i.variant === variant && (i as any).fgLotId === (fgLotInfo?.fgLotId || undefined));
     if (existingItem) {
       const lineStock = resolveStockForItem(existingItem, products);
       if (lineStock.known && existingItem.quantity + 1 > lineStock.qty) {
@@ -1021,7 +1190,7 @@ export default function WholesaleBillingUI() {
       // own forceAdd re-entry, and not a scan that already pinned a batch) —
       // decides both whether to debounce a rapid double-fire below AND
       // whether to kick off the background lot lookup further down.
-      const isOriginalClick = !batchInfo && !forceAdd && !!product?.id;
+      const isOriginalClick = !batchInfo && !fgLotInfo && !forceAdd && !!product?.id;
       if (isOriginalClick) {
         // Debounce: a second click on the same product+variant landing
         // within the cooldown (a real double-tap, or a stale dropdown
@@ -1029,7 +1198,7 @@ export default function WholesaleBillingUI() {
         // is ignored — without this, the immediate addItem() below would
         // run twice and double the quantity exactly like the old
         // network-latency race did.
-        const addKey = `${product.id}::${variant || ''}`;
+        const addKey = `${product.id}::${variant || ''}::`;
         const now = Date.now();
         const lastAdd = pendingAddKeysRef.current.get(addKey);
         if (lastAdd && now - lastAdd < DUPLICATE_ADD_COOLDOWN_MS) return;
@@ -1049,6 +1218,7 @@ export default function WholesaleBillingUI() {
       if (batchInfo && Number(batchInfo.costPrice) > 0) cost = Number(batchInfo.costPrice);
       const { color, size } = variant ? splitVariantKey(variant) : { color: '', size: '' };
 
+      const itemQty = fgLotInfo?.initialQty ?? defaultQty;
       addItem({
         id: product.id || Math.random().toString(),
         name: product.name,
@@ -1057,11 +1227,11 @@ export default function WholesaleBillingUI() {
         color: color || undefined,
         size: size || undefined,
         gender: product.gender || undefined,
-        quantity: defaultQty,
+        quantity: itemQty,
         price,
         cost: cost || 0,
         profit: (price / (1 + (Number(product.gstPercent ?? product.gst_percent ?? 0) || 0) / 100)) - cost,
-        total: Math.round(price * defaultQty),
+        total: Math.round(price * itemQty),
         is_loose: !!product.is_loose,
         // Which physical lot this line is pinned to — sent to the backend as
         // batch_id so it draws stock/cost from THIS lot instead of
@@ -1069,6 +1239,10 @@ export default function WholesaleBillingUI() {
         // zero) live lots, which keeps working exactly as before.
         batchId: batchInfo?.id,
         batchNumber: batchInfo?.batchNumber || undefined,
+        // Finished Goods lot (mill mode): which FG lot this line is drawn from.
+        fgLotId: fgLotInfo?.fgLotId || undefined,
+        fgLotNumber: fgLotInfo?.fgLotNumber || undefined,
+        fgPackBreakdown: fgLotInfo?.packBreakdown?.length ? fgLotInfo.packBreakdown : undefined,
         // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
         gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
         hsnCode: product.hsnCode ?? product.hsn_code ?? '',
@@ -1418,6 +1592,7 @@ export default function WholesaleBillingUI() {
         ...(billType === 'gst' ? { gst_percent: item.gstPercent } : {}),
         hsn_code: item.hsnCode,
         batch_id: (item as any).batchId || undefined,
+        fg_lot_id: (item as any).fgLotId || undefined,
       }));
       const payload: any = {
         billing_model: 'mill_v2',
@@ -1693,6 +1868,7 @@ export default function WholesaleBillingUI() {
       setLastBill(billData);
       batchCacheRef.current.clear();
       refreshLots();
+      refreshFgLots();
 
       if (!isOfflineBill) {
         // Revalidate products so the Products & Stock pages reflect the sale's
@@ -1916,68 +2092,122 @@ export default function WholesaleBillingUI() {
             {/* Live Suggestions Dropdown */}
             {search.length > 1 && searchResults.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 max-h-[300px] overflow-y-auto">
-                {searchResults.map((p, i) => (lotsByProduct[String(p.id)]?.length > 1) ? (
-                  <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
-                    <div className="px-4 pt-2.5 pb-1">
-                      <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
-                        {p.name}
-                        {isMill && millCategoryOf(p) && (
-                          <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
-                            {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-[11px] text-slate-500">{lotsByProduct[String(p.id)].length} lots in stock — pick the lot to sell</p>
-                    </div>
-                    {lotsByProduct[String(p.id)].map((lot: any, idx: number) => (
-                      <button
-                        key={lot.id}
-                        onClick={() => addToCart(p, undefined, false, { id: lot.id, batchNumber: lot.batchNumber || makeLotLabel(lot).replace(/^Lot /, ''), costPrice: lot.costPrice, sellingPrice: lot.sellingPrice })}
-                        className="w-full text-left px-4 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex justify-between items-center gap-3"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
-                            {makeLotLabel(lot)}
-                            {idx === 0 && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">Old · sell first</span>}
+                {searchResults.map((p, i) => {
+                  // Mill mode: show Finished Goods Lots for this product if any exist
+                  const fgLots = isMill ? (fgLotsByProduct[String(p.id)] || []) : [];
+                  if (fgLots.length > 0) {
+                    return (
+                      <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                        <div className="px-4 pt-2.5 pb-1">
+                          <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                            {p.name}
+                            {millCategoryOf(p) && (
+                              <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
+                                {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
+                              </span>
+                            )}
                           </p>
-                          <p className="text-[11px] text-slate-500">
-                            cost ₹{Number(lot.costPrice || 0).toLocaleString('en-IN')}
-                            {lot.purchaseDate ? ` · bought ${new Date(lot.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
-                            {lot.expiryDate ? ` · exp ${new Date(lot.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : ''}
-                          </p>
+                          <p className="text-[11px] text-slate-500">{fgLots.length} {fgLots.length === 1 ? 'lot' : 'lots'} ready — pick the lot to bill</p>
                         </div>
-                        <p className="text-[10px] font-bold text-slate-500 shrink-0">{lot.quantity} left</p>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <button
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    className={cn(
-                      "w-full text-left px-4 py-3 border-b border-slate-100 dark:border-slate-700/50 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex justify-between items-center",
-                      i === 0 && "bg-slate-50 dark:bg-slate-800/80" // Highlight first item
-                    )}
-                  >
-                    <div>
-                      <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
-                        {p.name}
-                        {p.barcode && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">B: {p.barcode}</span>}
-                        {isMill && millCategoryOf(p) && (
-                          <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
-                            {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
-                          </span>
-                        )}
+                        {fgLots.map((lot: any) => {
+                          const packSummary = (lot.packs || []).map((pk: any) => {
+                            const typeLabel = pk.packType === 'goni' ? 'Goni' : pk.packType === 'other' ? 'Pack' : 'Bag';
+                            return `${pk.packs} ${typeLabel} (${pk.packKg}kg)`;
+                          }).join(' + ');
+                          return (
+                            <button
+                              key={lot.id}
+                              onClick={() => {
+                                setSearch('');
+                                setSearchResults([]);
+                                setFgLotPackPicker({ product: p, lot });
+                              }}
+                              className="w-full text-left px-4 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex justify-between items-center gap-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                  {lot.lotNumber}
+                                  {lot.batchNumber && <span className="ml-2 text-[10px] font-mono text-slate-400">{lot.batchNumber}</span>}
+                                  {lot.godownName && <span className="ml-2 text-[10px] text-slate-400">· {lot.godownName}</span>}
+                                </p>
+                                {packSummary ? (
+                                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">{packSummary}</p>
+                                ) : null}
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 shrink-0">{lot.availableQuantity} {lot.unit}</p>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Stock: {Math.max(0, p.currentStock || 0)} {p.baseUnit} • Retail: ₹{p.sellingPrice} • Wholesale: ₹{p.wholesaleCost}
-                        {bizConfig.hasGender && p.gender && ` • ${p.gender}`}
-                        {bizConfig.hasBatch && p.batch_number && ` • Batch: ${p.batch_number}`}
+                    );
+                  }
+                  // Regular lots (non-mill or products without FG lots)
+                  if (lotsByProduct[String(p.id)]?.length > 1) {
+                    return (
+                      <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                        <div className="px-4 pt-2.5 pb-1">
+                          <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                            {p.name}
+                            {isMill && millCategoryOf(p) && (
+                              <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
+                                {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-slate-500">{lotsByProduct[String(p.id)].length} lots in stock — pick the lot to sell</p>
+                        </div>
+                        {lotsByProduct[String(p.id)].map((lot: any, idx: number) => (
+                          <button
+                            key={lot.id}
+                            onClick={() => addToCart(p, undefined, false, { id: lot.id, batchNumber: lot.batchNumber || makeLotLabel(lot).replace(/^Lot /, ''), costPrice: lot.costPrice, sellingPrice: lot.sellingPrice })}
+                            className="w-full text-left px-4 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex justify-between items-center gap-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+                                {makeLotLabel(lot)}
+                                {idx === 0 && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">Old · sell first</span>}
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                cost ₹{Number(lot.costPrice || 0).toLocaleString('en-IN')}
+                                {lot.purchaseDate ? ` · bought ${new Date(lot.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                                {lot.expiryDate ? ` · exp ${new Date(lot.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : ''}
+                              </p>
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-500 shrink-0">{lot.quantity} left</p>
+                          </button>
+                        ))}
                       </div>
-                    </div>
-                    <Plus size={16} className="text-emerald-500" />
-                  </button>
-                ))}
+                    );
+                  }
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addToCart(p)}
+                      className={cn(
+                        "w-full text-left px-4 py-3 border-b border-slate-100 dark:border-slate-700/50 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex justify-between items-center",
+                        i === 0 && "bg-slate-50 dark:bg-slate-800/80"
+                      )}
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                          {p.name}
+                          {p.barcode && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">B: {p.barcode}</span>}
+                          {isMill && millCategoryOf(p) && (
+                            <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0', MILL_CAT_ACCENT[millCategoryOf(p)!.accent])}>
+                              {millCategoryOf(p)!.emoji} {millCatLabel(millCategoryOf(p)!)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Stock: {Math.max(0, p.currentStock || 0)} {p.baseUnit} • Retail: ₹{p.sellingPrice} • Wholesale: ₹{p.wholesaleCost}
+                          {bizConfig.hasGender && p.gender && ` • ${p.gender}`}
+                          {bizConfig.hasBatch && p.batch_number && ` • Batch: ${p.batch_number}`}
+                        </div>
+                      </div>
+                      <Plus size={16} className="text-emerald-500" />
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2065,7 +2295,7 @@ export default function WholesaleBillingUI() {
                       isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit ? (packLabel ? `${item.unit} (${packLabel})` : item.unit) : null),
                     ].filter(Boolean);
                     return (
-                    <tr key={`${item.id}-${item.variant}-${(item as any).batchId || ''}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
+                    <tr key={`${item.id}-${item.variant}-${(item as any).batchId || ''}-${(item as any).fgLotId || ''}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
                       <td className="px-4 py-3 text-slate-400 align-top">{idx + 1}</td>
                       <td className="px-4 py-3 align-top">
                         <p className="font-bold text-slate-900 dark:text-white leading-snug">
@@ -2143,6 +2373,27 @@ export default function WholesaleBillingUI() {
                             </div>
                           );
                         })()}
+                        {/* FG Lot badge (mill mode) */}
+                        {isMill && (item as any).fgLotId && (
+                          <div className="mt-2 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50/60 dark:bg-emerald-900/20 px-2.5 py-1.5">
+                            <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                              🏷 {(item as any).fgLotNumber || 'FG Lot'}
+                            </p>
+                            {Array.isArray((item as any).fgPackBreakdown) && (item as any).fgPackBreakdown.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {(item as any).fgPackBreakdown.map((b: any, bi: number) => {
+                                  const tl = b.packType === 'goni' ? 'Goni' : b.packType === 'other' ? 'Pack' : 'Bag';
+                                  return (
+                                    <span key={bi} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-slate-700 border border-emerald-200 dark:border-emerald-700 rounded-full text-[10px] font-semibold text-slate-700 dark:text-slate-200">
+                                      <span className="text-emerald-600 dark:text-emerald-400">{b.count}</span>
+                                      {' '}{tl} · {b.packKg} kg
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {(showExpiry || showSerial || showWarranty) && (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
                             {showExpiry && (
@@ -2347,6 +2598,27 @@ export default function WholesaleBillingUI() {
                             </div>
                           );
                         })()}
+                        {/* FG Lot badge (mill mode, mobile card view) */}
+                        {isMill && (item as any).fgLotId && (
+                          <div className="mt-2 mb-1 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50/60 dark:bg-emerald-900/20 px-2.5 py-1.5">
+                            <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                              🏷 {(item as any).fgLotNumber || 'FG Lot'}
+                            </p>
+                            {Array.isArray((item as any).fgPackBreakdown) && (item as any).fgPackBreakdown.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {(item as any).fgPackBreakdown.map((b: any, bi: number) => {
+                                  const tl = b.packType === 'goni' ? 'Goni' : b.packType === 'other' ? 'Pack' : 'Bag';
+                                  return (
+                                    <span key={bi} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-slate-700 border border-emerald-200 dark:border-emerald-700 rounded-full text-[10px] font-semibold text-slate-700 dark:text-slate-200">
+                                      <span className="text-emerald-600 dark:text-emerald-400">{b.count}</span>
+                                      {' '}{tl} · {b.packKg} kg
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {/* Inline editable fields: Expiry / Serial / Warranty */}
                         {(showExpiry || showSerial || showWarranty) && (
                           <div className="flex flex-wrap gap-1.5">
@@ -3698,6 +3970,25 @@ export default function WholesaleBillingUI() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* FG Lot Pack Picker — opens when user selects a finished goods lot;
+          lets them specify how many bags/goni of each size to bill. */}
+      {fgLotPackPicker && (
+        <FgLotPackPickerModal
+          product={fgLotPackPicker.product}
+          lot={fgLotPackPicker.lot}
+          onClose={() => setFgLotPackPicker(null)}
+          onConfirm={(totalKg, breakdown) => {
+            setFgLotPackPicker(null);
+            addToCart(fgLotPackPicker.product, undefined, false, null, {
+              fgLotId: fgLotPackPicker.lot.id,
+              fgLotNumber: fgLotPackPicker.lot.lotNumber,
+              packBreakdown: breakdown,
+              initialQty: totalKg,
+            });
+          }}
+        />
       )}
 
       {/* Camera scanner overlay — continuous, since billing is a rapid run of
