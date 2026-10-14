@@ -1,4 +1,10 @@
 'use client';
+// PHASE 3 SPLIT TARGET — @mill-team + @core-team
+// This file handles all 4 packages. When mill team is ready:
+//   if (isMill) → <MillBillingUI />     (features/mill/billing/MillBillingUI.tsx)
+//   else        → <StandardBillingUI /> (components/core/billing/StandardBillingUI.tsx)
+// Mill-specific sections are marked with: // ─── Mill Billing (mill_v2) ───
+// Do NOT add new isMill checks here — add to features/mill/ instead.
 import { pickCaptureScale } from '@/lib/pdfCapture';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslations, useLocale } from 'next-intl';

@@ -1,0 +1,46 @@
+# CODEOWNERS — Package ownership boundaries
+# Format: <pattern> <owner(s)>
+# Each team touches only their own section. Cross-package changes need review from both teams.
+
+# ── Core (shared by all packages) ──────────────────────────────────────────
+/components/core/           @core-team
+/lib/config/packageConfig.ts @core-team
+/middleware.ts              @core-team
+/prisma/                    @core-team
+/app/api/v1/auth/           @core-team
+/app/api/v1/products/       @core-team
+/app/api/v1/stock/          @core-team
+/app/api/v1/settings/       @core-team
+/messages/                  @core-team
+
+# ── Dukan package ───────────────────────────────────────────────────────────
+/features/dukan/            @dukan-team
+
+# ── Vyapar package ──────────────────────────────────────────────────────────
+/features/vyapar/           @vyapar-team
+
+# ── Udyog (wholesale) package ───────────────────────────────────────────────
+/features/wholesale/        @wholesale-team
+/app/api/v1/challans/       @wholesale-team
+/app/api/v1/orders/         @wholesale-team
+/app/api/v1/warehouses/     @wholesale-team
+/app/api/v1/transfers/      @wholesale-team
+/components/wholesale/      @wholesale-team
+
+# ── Bada Udyog (mill) package ───────────────────────────────────────────────
+/features/mill/             @mill-team
+/app/api/v1/mill/           @mill-team
+/app/api/v1/logistics/      @mill-team
+/app/api/v1/management/     @mill-team
+/components/mill/           @mill-team
+/app/[locale]/(main)/gate-entry/    @mill-team
+/app/[locale]/(main)/weighbridge/   @mill-team
+/app/[locale]/(main)/job-work/      @mill-team
+/app/[locale]/(main)/ledger/        @mill-team
+/app/[locale]/(main)/outstanding/   @mill-team
+/app/[locale]/(main)/challans/      @mill-team @wholesale-team
+
+# ── Shared billing (needs review from all affected teams) ───────────────────
+/app/[locale]/(main)/billing/       @core-team @mill-team
+/app/[locale]/(main)/suppliers/     @core-team
+/app/[locale]/(main)/purchases/     @core-team
