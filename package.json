@@ -156,6 +156,9 @@
     "@parcel/watcher-linux-x64-musl": "2.5.6"
   },
   "overrides": {
-    "@parcel/watcher": "file:./stubs/parcel-watcher"
+    "@parcel/watcher": "file:./stubs/parcel-watcher",
+    "braces": "^3.0.3",
+    "handlebars": "^4.7.10",
+    "deepmerge-ts": "^8.0.0"
   }
 }
