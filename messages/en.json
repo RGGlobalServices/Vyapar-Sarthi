@@ -184,6 +184,7 @@
     "enterInvoiceId": "Enter Invoice ID to start return",
     "searchInvoice": "Search Invoice",
     "searching": "Searching...",
+    "invoiceNotFound": "Invoice not found. Check the invoice number and try again.",
     "invoiceSummary": "Invoice Summary",
     "customer": "Customer",
     "guest": "Guest",
@@ -1095,6 +1096,9 @@
     "scanQR": "Scan QR",
     "createBill": "Create Bill",
     "subtotal": "Subtotal",
+    "offerRate": "Offer Rate",
+    "mrp": "MRP",
+    "offerSavings": "Offer Savings",
     "discount": "Discount",
     "total": "Total",
     "paymentMethod": "Payment Method",
@@ -1244,6 +1248,9 @@
     "qty": "QTY",
     "amt": "AMT",
     "subtotal": "Subtotal:",
+    "offerRate": "Offer Rate:",
+    "mrp": "MRP:",
+    "offerSavings": "Offer Savings:",
     "discount": "Discount:",
     "total": "TOTAL",
     "emiDetails": "── EMI DETAILS ──",
@@ -1284,7 +1291,9 @@
     "totalGst": "Total GST",
     "hsn": "HSN",
     "taxableValue": "Taxable Value",
-    "gstInvoice": "GST Invoice"
+    "gstInvoice": "GST Invoice",
+    "cgstSgst": "CGST+SGST",
+    "igst": "IGST"
   },
   "Invoices": {
     "selectAtLeastOneItem": "Select at least one item to return.",

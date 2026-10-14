@@ -78,6 +78,8 @@ export interface BaseInvoiceProps {
   // (driven by CategoryConfig.attributeSchema.billingDisplayFields).
   billingDisplayFields?: string[];
   dualUnitConfig?: DualUnitConfig;
+  // Custom label for the subtotal row — shop owner can set "Selling Price", "Offer Rate", etc.
+  subtotalLabel?: string;
   // Scan-to-pay UPI QR + bank transfer box — set once in Profile, shown on
   // every bill (GST and Non-GST, every package tier) once a shop has a UPI ID.
   upiId?: string;
@@ -134,6 +136,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
   gstBreakdown,
   billingDisplayFields,
   dualUnitConfig,
+  subtotalLabel,
   upiId,
   qrSvg,
   qrDataUrl: qrDataUrlProp,
@@ -197,7 +200,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
       style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: devaFont }}
       className={`${is58mm ? 'p-0' : 'p-3'} w-full mx-auto ${widthClass} ${textClass} leading-snug`}
     >
-      <div style={is58mm ? {} : boxBorder}>
+      <div style={boxBorder}>
         {/* Header */}
         <div className={`text-center ${is58mm ? 'px-1 pt-2 pb-1' : 'px-2 pt-3 pb-2'}`} style={{ borderBottom: '2px solid #000' }}>
           {/* No logo on thermal receipts: a thermal head prints a photo/logo as a solid black box and wastes paper. */}
@@ -313,170 +316,169 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
           })}
         </div>
 
-        <div className={is58mm ? 'px-0.5' : 'px-2'}>
-          {/* Totals */}
-          <div className="space-y-0.5 pt-2">
-            <div className={`flex justify-between ${smallTextClass}`}>
-              <span>{t('subtotal')}</span>
-              <span>₹{inr(subtotal)}</span>
-            </div>
-            {discount > 0 && (
-              <div className={`flex justify-between ${smallTextClass}`}>
-                <span>{t('discount')}</span>
-                <span>- ₹{inr(discount)}</span>
-              </div>
-            )}
-            {chargeItems.map((item, idx) => (
-              <div key={idx} className={`flex justify-between ${smallTextClass}`}>
-                <span>{item.name}</span>
-                <span>₹{inr(item.total)}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ borderTop: '1px solid #000', borderBottom: '1px dashed #000', marginTop: '4px', paddingBottom: '4px' }} />
+        {/* ════ Separator: items → bill summary ════ */}
+        <div style={{ borderTop: '2px solid #000', borderBottom: '1px dashed #000', marginTop: '4px' }} />
 
-          {/* GST tax summary (rate-wise). Prices are GST-inclusive, so this is the
-              tax embedded in the total above — the total does not change.
-              Shown whenever this is a GST bill, even if every line happens to
-              be 0%/exempt — a "GST Invoice" should always carry the proper tax
-              invoice structure (GSTIN + rate-wise breakdown), not silently
-              look identical to a Non-GST invoice just because a shop hasn't
-              set per-product GST rates yet. */}
-          {isGstBill && gstBreakdown && (
-            <div className="mt-2 pt-2 pb-1" style={rule}>
-              <div className={`${smallTextClass} font-bold text-center mb-1 uppercase tracking-wide`}>{t('gstSummary') || 'GST Tax Summary'}</div>
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className={smallTextClass} style={{ borderBottom: '1px solid #000' }}>
-                    <th className="text-left py-0.5">{t('rate') || 'Rate'}</th>
-                    <th className="text-right py-0.5">{t('taxable') || 'Taxable'}</th>
-                    {gstBreakdown.interState
-                      ? <th className="text-right py-0.5">IGST</th>
-                      : <><th className="text-right py-0.5">CGST</th><th className="text-right py-0.5">SGST</th></>}
-                  </tr>
-                </thead>
+        <div className={is58mm ? 'px-0.5' : 'px-2'}>
+
+          {/* ── Bill Summary — table layout for reliable PDF rendering ── */}
+          {(() => {
+            const mrpTotal = goodsItems.reduce((s, i) => s + (Number((i as any).mrp) || i.price) * i.quantity, 0);
+            const offerSavings = Math.round((mrpTotal - subtotal) * 100) / 100;
+            const hasMrpSavings = offerSavings >= 0.5;
+            const hasGstCharge = isGstBill && gstBreakdown && gstBreakdown.totalGst > 0;
+            const showSubtotalRow = hasMrpSavings || discount > 0 || chargeItems.length > 0 || hasGstCharge;
+            const tdL: React.CSSProperties = { textAlign: 'left', paddingTop: '2px', paddingBottom: '1px' };
+            const tdR: React.CSSProperties = { textAlign: 'right', paddingTop: '2px', paddingBottom: '1px', whiteSpace: 'nowrap' };
+            return (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '4px' }} className={smallTextClass}>
                 <tbody>
-                  {gstBreakdown.groups.map(g => (
-                    <tr key={g.rate} className={smallTextClass}>
-                      <td className="text-left py-0.5">{g.rate}%</td>
-                      <td className="text-right py-0.5">₹{inr(g.taxable)}</td>
-                      {gstBreakdown.interState
-                        ? <td className="text-right py-0.5">₹{inr(g.igst)}</td>
-                        : <><td className="text-right py-0.5">₹{inr(g.cgst)}</td><td className="text-right py-0.5">₹{inr(g.sgst)}</td></>}
+                  {/* MRP row */}
+                  {hasMrpSavings && (
+                    <tr style={{ color: '#666' }}>
+                      <td style={tdL}>{t('mrp') || 'MRP'}</td>
+                      <td style={tdR}><del>₹{inr(mrpTotal)}</del></td>
+                    </tr>
+                  )}
+                  {/* Offer Savings */}
+                  {hasMrpSavings && (
+                    <tr style={{ color: '#16a34a', fontWeight: 600 }}>
+                      <td style={tdL}>{t('offerSavings') || 'Offer Savings'}</td>
+                      <td style={tdR}>- ₹{inr(offerSavings)}</td>
+                    </tr>
+                  )}
+                  {/* Offer Rate / Subtotal — only when bill has adjustments */}
+                  {showSubtotalRow && (
+                    <tr>
+                      <td style={tdL}>{subtotalLabel || t('offerRate') || 'Offer Rate'}</td>
+                      <td style={tdR}>₹{inr(subtotal)}</td>
+                    </tr>
+                  )}
+                  {/* Billing discount */}
+                  {discount > 0 && (
+                    <tr>
+                      <td style={tdL}>{t('discount') || 'Discount'}</td>
+                      <td style={tdR}>- ₹{inr(discount)}</td>
+                    </tr>
+                  )}
+                  {/* Charge items */}
+                  {chargeItems.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={tdL}>{item.name}</td>
+                      <td style={tdR}>₹{inr(item.total)}</td>
                     </tr>
                   ))}
+                  {/* GST lines — one row per rate group, SleekBill style */}
+                  {isGstBill && gstBreakdown && gstBreakdown.groups.map(g => (
+                    <tr key={g.rate}>
+                      <td style={tdL}>
+                        {gstBreakdown.interState ? (t('igst') || 'IGST') : (t('cgstSgst') || 'CGST+SGST')} @ {g.rate}%
+                      </td>
+                      <td style={tdR}>
+                        ₹{inr(gstBreakdown.interState ? g.igst : (g.cgst + g.sgst))}
+                      </td>
+                    </tr>
+                  ))}
+                  {/* TOTAL row — bold, large, with top border */}
+                  <tr style={{ borderTop: '2px solid #000', fontWeight: 900, fontSize: is58mm ? '14px' : '16px' }}>
+                    <td style={{ ...tdL, paddingTop: '5px', paddingBottom: '5px' }}>{t('total') || 'TOTAL'}</td>
+                    <td style={{ ...tdR, paddingTop: '5px', paddingBottom: '5px' }}>₹{inr(total)}</td>
+                  </tr>
                 </tbody>
               </table>
-              <div className={`flex justify-between font-bold mt-1 ${smallTextClass}`} style={{ borderTop: '1px solid #000', paddingTop: '2px' }}>
-                <span>{t('totalGst') || 'Total GST'}</span>
-                <span>₹{inr(gstBreakdown.totalGst)}</span>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
-          {/* Payment Summary */}
+          {/* ── Payment Section — table layout ── */}
           {isEmi && emiMonths && emiMonthlyAmount !== undefined ? (
-            <div className="mt-2 pt-2 pb-2 space-y-0.5" style={rule}>
-              <div className={`${smallTextClass} font-bold text-center mb-1 uppercase tracking-wide`}>{t('emiDetails')}</div>
-              <div className={`flex justify-between ${smallTextClass}`}>
-                <span>{t('downPayment')}</span>
-                <span className="font-bold">₹{inr((emiDownPayment ?? 0))}</span>
-              </div>
-              <div className={`flex justify-between ${smallTextClass}`}>
-                <span>{t('monthlyEmi')} &times; {emiMonths}:</span>
-                <span className="font-bold">₹{inr(emiMonthlyAmount)}{t('mo')}</span>
-              </div>
-              {emiInterestRate !== undefined && (
-                <div className={`flex justify-between ${smallTextClass}`}>
-                  <span>{t('interestRate')}</span>
-                  <span>{emiInterestRate === 0 ? t('noCostEmi') : `${emiInterestRate}% ${t('pa')}`}</span>
-                </div>
-              )}
-              <div className={`flex justify-between ${smallTextClass} font-bold`} style={{ borderTop: '1px solid #000', paddingTop: '2px' }}>
-                <span>{t('totalPayable')}</span>
-                <span>₹{inr((emiTotalAmount ?? 0))}</span>
-              </div>
-            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', borderTop: '1px solid #000', marginTop: '4px' }} className={smallTextClass}>
+              <tbody>
+                <tr><td colSpan={2} style={{ textAlign: 'center', fontWeight: 700, paddingTop: '3px', paddingBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('emiDetails')}</td></tr>
+                <tr>
+                  <td style={{ paddingBottom: '1px' }}>{t('downPayment')}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 700, paddingBottom: '1px' }}>₹{inr((emiDownPayment ?? 0))}</td>
+                </tr>
+                <tr>
+                  <td style={{ paddingBottom: '1px' }}>{t('monthlyEmi')} × {emiMonths}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 700, paddingBottom: '1px' }}>₹{inr(emiMonthlyAmount)}{t('mo')}</td>
+                </tr>
+                {emiInterestRate !== undefined && (
+                  <tr>
+                    <td style={{ paddingBottom: '1px' }}>{t('interestRate')}</td>
+                    <td style={{ textAlign: 'right', paddingBottom: '1px' }}>{emiInterestRate === 0 ? t('noCostEmi') : `${emiInterestRate}% ${t('pa')}`}</td>
+                  </tr>
+                )}
+                <tr style={{ borderTop: '1px solid #000', fontWeight: 700 }}>
+                  <td style={{ paddingTop: '2px' }}>{t('totalPayable')}</td>
+                  <td style={{ textAlign: 'right', paddingTop: '2px' }}>₹{inr((emiTotalAmount ?? 0))}</td>
+                </tr>
+              </tbody>
+            </table>
           ) : (() => {
-            // Compute payment status
             const udharAmount = splitPayments?.udhar ?? remainingAmount;
             const cashAmt = splitPayments?.cash ?? 0;
             const upiAmt = splitPayments?.upi ?? 0;
             const cardAmt = splitPayments?.card ?? 0;
             const isSplitMode = paymentMethod === 'Split';
-            const paymentStatus = remainingAmount <= 0
-              ? t('paid')
-              : paid > 0
-                ? t('partiallyPaid')
-                : t('creditUdhar');
+            const paymentLabel = paymentMethod === 'Cash' ? t('cash') : paymentMethod === 'UPI' ? t('upi') : paymentMethod === 'Card' ? t('card') : paymentMethod === 'Udhar' ? t('udhar') : paymentMethod;
+            const paymentStatus = remainingAmount <= 0 ? t('paid') : paid > 0 ? t('partiallyPaid') : t('creditUdhar');
 
             return (
-              <div className="mt-2 pt-2 pb-2 space-y-0.5" style={rule}>
-                <div className={`${smallTextClass} font-bold mb-1 uppercase tracking-wide`}>{t('paymentMode')}</div>
-
-                {isSplitMode ? (
-                  <>
-                    {cashAmt > 0 && (
-                      <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('cash')}</span><span>₹{inr(cashAmt)}</span>
-                      </div>
-                    )}
-                    {upiAmt > 0 && (
-                      <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('upi')}</span><span>₹{inr(upiAmt)}</span>
-                      </div>
-                    )}
-                    {cardAmt > 0 && (
-                      <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('card')}</span><span>₹{inr(cardAmt)}</span>
-                      </div>
-                    )}
-                    {udharAmount > 0 && (
-                      <div className={`flex justify-between ${smallTextClass}`}>
-                        <span>{t('udhar')}</span><span>₹{inr(udharAmount)}</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className={`flex justify-between ${smallTextClass}`}>
-                    <span>{paymentMethod === 'Cash' ? t('cash') : paymentMethod === 'UPI' ? t('upi') : paymentMethod === 'Card' ? t('card') : paymentMethod === 'Udhar' ? t('udhar') : paymentMethod}</span>
-                    <span>₹{paymentMethod === 'Udhar' ? '0' : inr(paid)}</span>
-                  </div>
-                )}
-
-                {/* Divider */}
-                <div style={{ borderTop: '1px dashed #000', paddingTop: '2px' }} className="mt-1">
-                  <div className={`flex justify-between ${smallTextClass} font-bold`}>
-                    <span>{t('collected')}</span>
-                    <span>₹{inr(paid)}</span>
-                  </div>
-                  <div className={`flex justify-between ${smallTextClass} font-bold`}>
-                    <span>{t('remainingDue')}</span>
-                    <span>₹{inr((remainingAmount > 0 ? remainingAmount : 0))}</span>
-                  </div>
-                  {paid > total && (
-                    <div className={`flex justify-between ${smallTextClass}`}>
-                      <span>{t('changeReturn')}</span>
-                      <span>₹{inr((paid - total))}</span>
-                    </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', borderTop: '1px solid #000', marginTop: '4px' }} className={smallTextClass}>
+                <tbody>
+                  {/* Payment mode header */}
+                  <tr>
+                    <td colSpan={2} style={{ fontWeight: 700, paddingTop: '3px', paddingBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('paymentMode')}</td>
+                  </tr>
+                  {/* Payment amounts */}
+                  {isSplitMode ? (
+                    <>
+                      {cashAmt > 0 && <tr><td style={{ paddingBottom: '1px' }}>{t('cash')}</td><td style={{ textAlign: 'right', paddingBottom: '1px' }}>₹{inr(cashAmt)}</td></tr>}
+                      {upiAmt > 0 && <tr><td style={{ paddingBottom: '1px' }}>{t('upi')}</td><td style={{ textAlign: 'right', paddingBottom: '1px' }}>₹{inr(upiAmt)}</td></tr>}
+                      {cardAmt > 0 && <tr><td style={{ paddingBottom: '1px' }}>{t('card')}</td><td style={{ textAlign: 'right', paddingBottom: '1px' }}>₹{inr(cardAmt)}</td></tr>}
+                      {udharAmount > 0 && <tr><td style={{ paddingBottom: '1px' }}>{t('udhar')}</td><td style={{ textAlign: 'right', paddingBottom: '1px' }}>₹{inr(udharAmount)}</td></tr>}
+                    </>
+                  ) : (
+                    <tr>
+                      <td style={{ paddingBottom: '1px' }}>{paymentLabel}</td>
+                      <td style={{ textAlign: 'right', paddingBottom: '1px' }}>₹{paymentMethod === 'Udhar' ? '0' : inr(paid)}</td>
+                    </tr>
                   )}
-                  <div className={`flex justify-between font-black text-[15px] mt-1 pt-1.5 px-2 -mx-2`} style={{ borderTop: '2px solid #000', backgroundColor: '#f5f5f5', paddingTop: '6px', paddingBottom: '6px' }}>
-                    <span>{t('total')}</span>
-                    <span>₹{inr(total)}</span>
-                  </div>
-                </div>
-
-                {/* Status */}
-                <div className={`${smallTextClass} font-bold mt-1.5 py-1 px-2 -mx-2 text-center`} style={{ backgroundColor: '#f5f5f5', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
-                  <span>{t('paymentStatus')} </span><strong className="uppercase">{paymentStatus}</strong>
-                </div>
-
-                {remainingAmount > 0 && customerName && (
-                  <div className="text-[8px] text-center mt-1 italic">
-                    {t('savedToUdharKhata')}
-                  </div>
-                )}
-              </div>
+                  {/* Dashed divider before collected/remaining */}
+                  <tr><td colSpan={2} style={{ borderTop: '1px dashed #000', paddingTop: '0' }}></td></tr>
+                  {/* Collected */}
+                  <tr style={{ fontWeight: 700 }}>
+                    <td style={{ paddingTop: '2px', paddingBottom: '1px' }}>{t('collected')}</td>
+                    <td style={{ textAlign: 'right', paddingTop: '2px', paddingBottom: '1px' }}>₹{inr(paid)}</td>
+                  </tr>
+                  {/* Remaining Due */}
+                  <tr style={{ fontWeight: 700 }}>
+                    <td style={{ paddingBottom: '2px' }}>{t('remainingDue')}</td>
+                    <td style={{ textAlign: 'right', paddingBottom: '2px' }}>₹{inr(remainingAmount > 0 ? remainingAmount : 0)}</td>
+                  </tr>
+                  {/* Change Return */}
+                  {paid > total && (
+                    <tr>
+                      <td style={{ paddingBottom: '1px' }}>{t('changeReturn')}</td>
+                      <td style={{ textAlign: 'right', paddingBottom: '1px' }}>₹{inr(paid - total)}</td>
+                    </tr>
+                  )}
+                  {/* Payment Status */}
+                  <tr style={{ borderTop: '1px solid #000', backgroundColor: '#f0f0f0', fontWeight: 700 }}>
+                    <td colSpan={2} style={{ textAlign: 'center', paddingTop: '4px', paddingBottom: '4px' }}>
+                      {t('paymentStatus')} <span style={{ textTransform: 'uppercase' }}>{paymentStatus}</span>
+                    </td>
+                  </tr>
+                  {/* Udhar note */}
+                  {remainingAmount > 0 && customerName && (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: 'center', fontSize: '8px', fontStyle: 'italic', paddingTop: '2px' }}>
+                        {t('savedToUdharKhata')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             );
           })()}
 

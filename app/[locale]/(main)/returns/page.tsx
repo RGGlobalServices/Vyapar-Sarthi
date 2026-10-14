@@ -104,6 +104,7 @@ export default function ReturnsPage() {
   const locale = useLocale();
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [bill, setBill] = useState<any>(null);
   const [returnItems, setReturnItems] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -256,10 +257,12 @@ export default function ReturnsPage() {
   const fetchBill = async () => {
     if (!searchQuery.trim()) return;
     setLoading(true);
+    setSearchError(null);
+    setBill(null);
     try {
       // URL encode to handle special characters like #
       const res = await api.get(`/billing/${encodeURIComponent(searchQuery.trim())}`);
-      
+
       if (!res.data || Array.isArray(res.data)) {
         throw new Error('Invoice not found or invalid response');
       }
@@ -286,16 +289,9 @@ export default function ReturnsPage() {
         setReturnItems([]);
       }
     } catch (err: any) {
-      console.error('Failed to fetch bill detail:', err);
-      // Better error detail logging
-      const errorDetail = {
-        status: err.response?.status || err.status,
-        data: err.response?.data || err.data,
-        message: err.message || (typeof err === 'string' ? err : JSON.stringify(err))
-      };
-      console.error('Failed to fetch bill detail error detail:', errorDetail);
-      alert(`Error: ${errorDetail.data?.detail || errorDetail.message || 'Bill not found or error fetching data'}`);
-      setBill(null);
+      const status = err.response?.status || err.status;
+      const msg = err.message || 'Bill not found or error fetching data';
+      setSearchError(status === 404 ? (t('invoiceNotFound') || 'Invoice not found. Check the invoice number and try again.') : msg);
     } finally {
       setLoading(false);
     }
@@ -361,9 +357,9 @@ export default function ReturnsPage() {
   const willClearUdhar = Math.min(totalRefund, billUdharAmt);
   const willRefundCash = totalRefund - willClearUdhar;
   const actualCashRefund = cashRefundOverride !== null
-    ? Math.max(0, Math.min(Math.round(cashRefundOverride), willRefundCash))
+    ? Math.max(0, cashRefundOverride)
     : willRefundCash;
-  const creditToAdd = willRefundCash - actualCashRefund;
+  const creditToAdd = Math.max(0, willRefundCash - actualCashRefund);
 
   // Exchange: return credit = only the portion the customer actually PAID
   // (udhar debt is cleared separately but must not count as exchange credit —
@@ -469,17 +465,23 @@ export default function ReturnsPage() {
                   placeholder="INV-XXXXXX"
                   className="bg-transparent border-none text-slate-900 dark:text-white text-sm outline-none w-full"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }}
                   onKeyDown={(e) => e.key === 'Enter' && fetchBill()}
                 />
               </div>
-              <button 
+              <button
                 onClick={fetchBill}
                 disabled={loading || !searchQuery.trim()}
                 className="w-full bg-emerald-500 text-white dark:text-slate-900 py-2.5 rounded-xl font-bold hover:bg-emerald-400 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
                 {loading ? t('searching') || 'Searching...' : t('searchInvoice') || 'Search Invoice'}
               </button>
+              {searchError && (
+                <div className="flex items-center gap-2 text-red-500 dark:text-red-400 text-xs bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg px-3 py-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{searchError}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -557,30 +559,9 @@ export default function ReturnsPage() {
                         </div>
                       )}
                       {willRefundCash > 0 && (
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-emerald-800 dark:text-emerald-300 shrink-0">{t('refundCashOut') || '💵 Cash refund to customer'}</span>
-                            <div className="flex items-center gap-0.5 ml-auto min-w-0">
-                              <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xs shrink-0">₹</span>
-                              <input
-                                type="number"
-                                min={0}
-                                max={willRefundCash}
-                                value={actualCashRefund}
-                                onChange={e => {
-                                  const v = Math.round(Math.max(0, Math.min(parseFloat(e.target.value) || 0, willRefundCash)));
-                                  setCashRefundOverride(v);
-                                }}
-                                className="w-28 min-w-0 text-right text-xs font-black text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                              />
-                            </div>
-                          </div>
-                          {creditToAdd > 0 && (
-                            <div className="flex justify-between text-xs">
-                              <span className="text-indigo-600 dark:text-indigo-400 shrink-0">💳 {t('addToCustomerCredit') || 'Add to customer credit (udhar)'}</span>
-                              <span className="font-black text-indigo-600 dark:text-indigo-400 ml-2">₹{creditToAdd.toLocaleString('en-IN')}</span>
-                            </div>
-                          )}
+                        <div className="flex justify-between text-xs">
+                          <span className="text-emerald-800 dark:text-emerald-300">💵 {t('refundCashOut') || 'Refund to customer (cash out)'}</span>
+                          <span className="font-black text-emerald-700 dark:text-emerald-400">₹{actualCashRefund.toLocaleString('en-IN')}</span>
                         </div>
                       )}
                     </div>
@@ -912,6 +893,25 @@ export default function ReturnsPage() {
                   </div>
                 )}
 
+                {!exchangeMode && willRefundCash > 0 && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-slate-600 dark:text-slate-400 text-xs shrink-0">{t('refundCashOut') || '💵 Refund to customer (cash out)'}</span>
+                    <div className="flex items-center gap-1 ml-auto">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-black text-sm shrink-0">₹</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={actualCashRefund}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value);
+                          setCashRefundOverride(isNaN(v) ? 0 : Math.max(0, v));
+                        }}
+                        className="w-28 text-right text-sm font-black text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-emerald-400 dark:border-emerald-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   {!exchangeMode && (
                     <div>
@@ -935,8 +935,20 @@ export default function ReturnsPage() {
                         <>
                           <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{t('totalRefundAmount') || 'Total Refund Amount'}</p>
                           <p className="text-2xl font-black text-slate-900 dark:text-white">
-                            ₹{actualCashRefund.toLocaleString('en-IN')}
+                            ₹{willRefundCash.toLocaleString('en-IN')}
                           </p>
+                          {creditToAdd > 0 && (
+                            <div className="mt-1 space-y-0.5">
+                              <div className="flex justify-between text-xs text-slate-500">
+                                <span>💵 {t('cashOut') || 'Cash out'}</span>
+                                <span>₹{actualCashRefund.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="flex justify-between text-xs text-indigo-600 dark:text-indigo-400">
+                                <span>💳 {t('addToCustomerCredit') || 'Add to credit'}</span>
+                                <span>₹{creditToAdd.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>

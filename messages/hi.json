@@ -184,6 +184,7 @@
     "enterInvoiceId": "रिटर्न शुरू करने के लिए इनवॉइस आईडी दर्ज करें",
     "searchInvoice": "इनवॉइस खोजें",
     "searching": "खोज रहा है...",
+    "invoiceNotFound": "इनवॉइस नहीं मिला। इनवॉइस नंबर जांचें और फिर कोशिश करें।",
     "invoiceSummary": "इनवॉइस सारांश",
     "customer": "ग्राहक",
     "guest": "अतिथि",
@@ -1887,6 +1888,9 @@
     "scanQR": "QR कोड स्कैन करें",
     "createBill": "बिल बनाएं",
     "subtotal": "कुल",
+    "offerRate": "ऑफर रेट",
+    "mrp": "एमआरपी",
+    "offerSavings": "ऑफर बचत",
     "discount": "छूट",
     "total": "अंतिम कुल",
     "paymentMethod": "भुगतान विधि",
@@ -2036,6 +2040,9 @@
     "qty": "मात्रा",
     "amt": "रकम",
     "subtotal": "उप-कुल:",
+    "offerRate": "ऑफर रेट:",
+    "mrp": "एमआरपी:",
+    "offerSavings": "ऑफर बचत:",
     "discount": "छूट:",
     "total": "कुल",
     "emiDetails": "── ईएमआई विवरण ──",
@@ -2076,7 +2083,9 @@
     "totalGst": "कुल GST",
     "hsn": "HSN",
     "taxableValue": "कर योग्य मूल्य",
-    "gstInvoice": "GST इनवॉइस"
+    "gstInvoice": "GST इनवॉइस",
+    "cgstSgst": "CGST+SGST",
+    "igst": "IGST"
   },
   "Invoices": {
     "selectAtLeastOneItem": "वापसी के लिए कम से कम एक वस्तु चुनें।",

@@ -42,6 +42,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
   gstBreakdown,
   billingDisplayFields,
   dualUnitConfig,
+  subtotalLabel,
   upiId,
   qrSvg,
   qrDataUrl: qrDataUrlProp,
@@ -406,8 +407,25 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
           <div className="w-1/2 max-w-[340px]">
             <div style={{ borderColor: isMinimal ? hairline : accent }} className="border">
               <div className="p-4 space-y-1.5 text-xs">
+                {(() => {
+                  const mrpTotal = goodsItems.reduce((s, i) => s + (Number((i as any).mrp) || i.price) * i.quantity, 0);
+                  const offerSavings = Math.round((mrpTotal - goodsSubtotal) * 100) / 100;
+                  if (offerSavings < 0.5) return null;
+                  return (
+                    <>
+                      <div className="flex justify-between text-slate-400">
+                        <span>{t('mrp') || 'MRP'}</span>
+                        <span className="font-semibold line-through">₹{inr(mrpTotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-700">
+                        <span>{t('offerSavings') || 'Offer Savings'}</span>
+                        <span className="font-semibold">-₹{inr(offerSavings)}</span>
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="flex justify-between">
-                  <span className="text-slate-500">{t('subtotal')}</span>
+                  <span className="text-slate-500">{subtotalLabel || t('offerRate') || 'Offer Rate'}</span>
                   <span className="font-semibold">₹{inr(goodsSubtotal)}</span>
                 </div>
                 {discount > 0 && (

@@ -202,6 +202,16 @@ export const POST = handle(async (req) => {
       : Math.max(0, maxCash - cashRefunded);
 
     // 3. materialReturn records
+    // Pre-fetch all saleItemBatch rows in ONE query to avoid N sequential
+    // queries inside the loop (was the root cause of the 60s tx timeout).
+    const allDrawSaleItemIds = prepared.filter(p => p.saleItem.productId).map(p => p.saleItem.id);
+    const allDraws = await tx.saleItemBatch.findMany({ where: { saleItemId: { in: allDrawSaleItemIds } } });
+    const drawsBySaleItemId = new Map<string, typeof allDraws>();
+    for (const d of allDraws) {
+      if (!drawsBySaleItemId.has(d.saleItemId)) drawsBySaleItemId.set(d.saleItemId, []);
+      drawsBySaleItemId.get(d.saleItemId)!.push(d);
+    }
+
     const created = [] as string[];
     for (const p of prepared) {
       const row = await tx.materialReturn.create({
@@ -236,7 +246,7 @@ export const POST = handle(async (req) => {
       // Sales made before lots were recorded have no draw rows and keep the old wholesale-only convention below.
       let restoredToDrawnLots = false;
       if (p.saleItem.productId) {
-        const draws = await tx.saleItemBatch.findMany({ where: { saleItemId: p.saleItem.id } });
+        const draws = drawsBySaleItemId.get(p.saleItem.id) ?? [];
         const parts = splitAcrossDraws(draws.map((d) => ({ batchId: d.batchId, quantity: d.quantity })), p.qty);
         for (const part of parts) {
           await tx.batch.updateMany({ where: { id: part.batchId, shopId: shop.id }, data: { quantity: { increment: part.quantity } } });
@@ -339,7 +349,7 @@ export const POST = handle(async (req) => {
     return { createdReturnIds: created, totalRefund, udharCleared, cashRefunded, creditToAdd, totalProfitRefunded };
   }, {
     maxWait: 30000,
-    timeout: 60000,
+    timeout: 120000,
   });
 
   return json({

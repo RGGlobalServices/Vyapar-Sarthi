@@ -1965,7 +1965,7 @@ export default function WholesaleBillingUI() {
 
 
   return (
-    <div className={cn("min-h-[calc(100vh-80px)] gap-3 overflow-y-auto", isMill ? "flex flex-col" : "md:h-[calc(100vh-80px)] flex flex-col md:flex-row md:overflow-hidden")}>
+    <div className={cn("min-h-[calc(100vh-80px)] gap-3 overflow-y-auto", isMill ? "flex flex-col" : "lg:h-[calc(100vh-80px)] flex flex-col lg:flex-row lg:overflow-hidden")}>
 
       {/* MILL TOP HEADER: shop info + Bill To party + invoice type */}
       {isMill && (
@@ -2072,7 +2072,7 @@ export default function WholesaleBillingUI() {
       )}
 
       {/* LEFT / MAIN PANEL: Search & Cart Table */}
-      <div className={cn("flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800", isMill ? "" : "flex-1 md:overflow-hidden")}>
+      <div className={cn("flex flex-col min-w-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800", isMill ? "" : "flex-1 lg:overflow-hidden")}>
         
         {/* Top Bar: Search & Scanner */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap gap-3 items-center">
@@ -2238,7 +2238,7 @@ export default function WholesaleBillingUI() {
         </div>
 
         {/* Cart Table */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto pb-20 lg:pb-0">
           {liquorCartLines.length > 0 && (
             <LiquorCartMatrix
               catalogRows={products.map((p: any) => ({ id: p.id, name: p.name, stock: p.currentStock || 0, price: p.sellingPrice, variants: p.variants }))}
@@ -2264,12 +2264,12 @@ export default function WholesaleBillingUI() {
               <table className="w-full text-left text-sm border-collapse">
                 <thead className="sticky top-0 bg-slate-800 dark:bg-slate-900 text-white shadow-sm z-10">
                   <tr className="divide-x divide-slate-600">
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-10">#</th>
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
-                    {bizConfig.hasLiquorSpecs && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-16">{t('ml') || 'ML'}</th>}
-                    {isMill && isGstBill && <th className="px-4 py-3 font-black uppercase text-xs tracking-wider w-24">{tMill('hsn') || 'HSN'}</th>}
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-28">{t('qty') || 'Qty'}</th>
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? (
+                    <th className="px-2 py-3 font-black uppercase text-xs tracking-wider w-10">#</th>
+                    <th className="px-3 py-3 font-black uppercase text-xs tracking-wider">{t('product') || 'Product'}</th>
+                    {bizConfig.hasLiquorSpecs && <th className="px-3 py-3 font-black uppercase text-xs tracking-wider w-16">{t('ml') || 'ML'}</th>}
+                    {isMill && isGstBill && <th className="px-3 py-3 font-black uppercase text-xs tracking-wider w-20">{tMill('hsn') || 'HSN'}</th>}
+                    <th className="px-3 py-3 font-black uppercase text-xs tracking-wider text-center w-24">{t('qty') || 'Qty'}</th>
+                    <th className="px-3 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? (
                       <div className="flex flex-col items-end gap-1">
                         <span>{isGstBill && rateBasis === 'incl' ? 'Rate (Incl. GST)' : tMill('rateExclGst')}</span>
                         {isGstBill && (
@@ -2280,8 +2280,8 @@ export default function WholesaleBillingUI() {
                         )}
                       </div>
                     ) : (t('price') || 'Price')}</th>
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-right w-24">{t('totalUpper') || 'Total'}</th>
-                    <th className="px-4 py-3 font-black uppercase text-xs tracking-wider text-center w-12">{t('act') || 'Act'}</th>
+                    <th className="px-3 py-3 font-black uppercase text-xs tracking-wider text-right w-20">{t('totalUpper') || 'Total'}</th>
+                    <th className="px-2 py-3 font-black uppercase text-xs tracking-wider text-center w-10">{t('act') || 'Act'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
@@ -2308,8 +2308,8 @@ export default function WholesaleBillingUI() {
                     ].filter(Boolean);
                     return (
                     <tr key={`${item.id}-${item.variant}-${(item as any).batchId || ''}-${(item as any).fgLotId || ''}`} className={cn('divide-x divide-slate-200 dark:divide-slate-800 hover:bg-emerald-50/50 dark:hover:bg-slate-800/40 transition-colors group', idx % 2 === 1 && 'bg-slate-50 dark:bg-slate-800/40')}>
-                      <td className="px-4 py-3 text-slate-400 align-top">{idx + 1}</td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-2 py-3 text-slate-400 align-top">{idx + 1}</td>
+                      <td className="px-3 py-3 align-top">
                         <p className="font-bold text-slate-900 dark:text-white leading-snug">
                           {item.name}
                           {(() => {
@@ -2449,16 +2449,16 @@ export default function WholesaleBillingUI() {
                         )}
                       </td>
                       {bizConfig.hasLiquorSpecs && (
-                        <td className="px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400 align-top">
+                        <td className="px-3 py-3 text-sm font-bold text-rose-600 dark:text-rose-400 align-top">
                           {item.color || (item.variant ? splitVariantKey(item.variant).color : '') || '-'}
                         </td>
                       )}
                       {isMill && isGstBill && (
-                        <td className="px-4 py-3 align-top">
+                        <td className="px-3 py-3 align-top">
                           <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{item.hsnCode || '—'}</span>
                         </td>
                       )}
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-2 py-3 align-top">
                         <div className="flex flex-col items-center gap-0.5">
                           <div className="flex items-center justify-center gap-2">
                             <button onClick={() => {
@@ -2489,15 +2489,15 @@ export default function WholesaleBillingUI() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right align-top">
+                      <td className="px-2 py-3 text-right align-top">
                         {isMill
                           ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} basis={rateBasis} />
                           : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono align-top">
+                      <td className="px-2 py-3 text-right font-bold text-slate-900 dark:text-emerald-400 font-mono align-top">
                         ₹{(isMill && isGstBill && rateBasis === 'incl' ? Math.round(item.total * (1 + (Number(item.gstPercent) || 0) / 100) * 100) / 100 : item.total).toLocaleString()}
                       </td>
-                      <td className="px-4 py-3 text-center align-top">
+                      <td className="px-1 py-3 text-center align-top">
                         <button onClick={() => removeItem(item.id as any, lineRef(item))} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors opacity-100">
                           <Trash2 size={16} />
                         </button>
@@ -2768,9 +2768,27 @@ export default function WholesaleBillingUI() {
         </div>
       )}
 
+      {/* Sticky bottom bar — mobile + tablet only (lg:hidden), replaces scrolling to right panel */}
+      {!isMill && (
+        <div className="lg:hidden fixed bottom-0 left-0 md:left-64 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center gap-3 shadow-lg">
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-none mb-0.5">{t('itemsCount', { count: items.length })}</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white tabular-nums leading-tight">₹{total.toLocaleString()}</p>
+          </div>
+          <button
+            disabled={items.length === 0}
+            onClick={() => setShowCheckout(true)}
+            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 disabled:opacity-40 text-white rounded-xl font-semibold text-sm transition-colors flex items-center gap-2 shrink-0"
+          >
+            {t('checkout') || 'Checkout'}
+            <span className="text-[10px] bg-white/20 dark:bg-slate-900/20 px-1.5 py-0.5 rounded font-mono">F2</span>
+          </button>
+        </div>
+      )}
+
       {/* RIGHT PANEL: Unified Summary Card (non-mill only) */}
-      {!isMill ? (<div className="w-full md:w-72 lg:w-80 flex flex-col md:min-h-0 shrink-0">
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col flex-1 md:min-h-0 md:overflow-hidden">
+      {!isMill ? (<div className="hidden lg:flex lg:flex-col lg:w-72 xl:w-80 lg:min-h-0 shrink-0">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
 
           {/* Pricing Mode */}
           <div className="px-4 pt-3 pb-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
@@ -2823,7 +2841,7 @@ export default function WholesaleBillingUI() {
 
           {/* Scrollable totals area */}
           {isMill ? (
-            <div className="flex-1 md:overflow-y-auto md:min-h-0 px-4 py-3 space-y-3">
+            <div className="flex-1 lg:overflow-y-auto lg:min-h-0 px-4 py-3 space-y-3">
               <p className="text-[11px] text-slate-500 dark:text-slate-400">{tMill('gstAddedOnTop')}</p>
               {dupRestrictionActive && (
                 <p data-testid="mill-dup-note" className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-2 py-1.5">{tMill('duplicateLocked')}</p>
@@ -2847,7 +2865,7 @@ export default function WholesaleBillingUI() {
               />
             </div>
           ) : (
-          <div className="flex-1 md:overflow-y-auto md:min-h-0 px-4 py-3 space-y-0">
+          <div className="flex-1 lg:overflow-y-auto lg:min-h-0 px-4 py-3 space-y-0">
 
             {/* Line items */}
             <div className="flex justify-between items-center py-1.5 text-sm text-slate-600 dark:text-slate-400">

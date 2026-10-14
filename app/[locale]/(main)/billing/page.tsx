@@ -323,6 +323,7 @@ function StandardBillingUI() {
   const {customers: udharCustomers, fetchCustomers, addUdharFromBill} = useUdharStore();
   const {user} = useAuthStore();
   
+  const [subtotalLabel, setSubtotalLabel] = useState('');
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -1648,7 +1649,7 @@ function StandardBillingUI() {
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 overflow-y-auto p-0">
+          <CardContent className="flex-1 overflow-y-auto p-0 pb-20 lg:pb-0">
             {liquorCartLines.length > 0 && (
               <LiquorCartMatrix
                 catalogRows={products.map((p: any) => ({ id: p.id, name: p.name, stock: p.currentStock || 0, price: p.sellingPrice, variants: p.variants }))}
@@ -2006,6 +2007,23 @@ function StandardBillingUI() {
         </Card>
       </div>
 
+      {/* Sticky bottom bar — mobile + tablet only (lg:hidden) so checkout is reachable without scrolling */}
+      <div className="lg:hidden fixed bottom-0 left-0 md:left-64 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center gap-3 shadow-lg">
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-none mb-0.5">{t('itemsCount', { count: items.length })}</p>
+          <p className="text-lg font-bold text-slate-900 dark:text-white tabular-nums leading-tight">₹{total.toLocaleString()}</p>
+        </div>
+        <button
+          disabled={items.length === 0}
+          onClick={handleCreateBillClick}
+          className="px-5 py-2.5 bg-slate-900 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 disabled:opacity-40 text-white rounded-xl font-semibold text-sm transition-colors flex items-center gap-2 shrink-0"
+        >
+          <CheckCircle size={16} />
+          {t('checkout') || 'Confirm Sale'}
+          <span className="text-[10px] bg-white/20 dark:bg-slate-900/20 px-1.5 py-0.5 rounded font-mono">F2</span>
+        </button>
+      </div>
+
       {/* Right: Summary & Payment */}
       <div className="space-y-6 lg:overflow-y-auto lg:max-h-[calc(100vh-100px)] lg:pb-8 custom-scrollbar">
         <div className="flex justify-end relative">
@@ -2071,8 +2089,33 @@ function StandardBillingUI() {
               )}
             </div>
 
-            <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>{t('subtotal')}</span>
+            {(() => {
+              const mrpTotal = items.reduce((s, i) => s + (Number((i as any).mrp) || i.price) * i.quantity, 0);
+              const offerSavings = Math.round((mrpTotal - subtotal) * 100) / 100;
+              if (offerSavings < 0.5) return null;
+              return (
+                <>
+                  <div className="flex justify-between items-center text-slate-400 dark:text-slate-500 text-xs">
+                    <span>{t('mrp') || 'MRP'}</span>
+                    <span className="line-through tabular-nums">₹{mrpTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                    <span>{t('offerSavings') || 'Offer Savings'}</span>
+                    <span className="tabular-nums">-₹{offerSavings.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                </>
+              );
+            })()}
+            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+              <input
+                type="text"
+                value={subtotalLabel}
+                onChange={e => setSubtotalLabel(e.target.value)}
+                placeholder={t('offerRate') || 'Offer Rate'}
+                maxLength={30}
+                className="bg-transparent outline-none border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-indigo-400 dark:focus:border-indigo-500 text-sm text-slate-500 dark:text-slate-400 focus:text-slate-700 dark:focus:text-slate-200 w-36 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500 cursor-pointer"
+                title="Click to edit label"
+              />
               <span>₹{subtotal.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
@@ -2904,6 +2947,7 @@ function StandardBillingUI() {
                 bankAccountName={profile.bankAccountName || undefined}
                 bankAccountNumber={profile.bankAccountNumber || undefined}
                 bankIfsc={profile.bankIfsc || undefined}
+                subtotalLabel={subtotalLabel || undefined}
               />
             </div>
 
