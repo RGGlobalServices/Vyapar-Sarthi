@@ -40,15 +40,17 @@ function StatCard({
   value: number;
   color: string;
 }) {
+  const len = String(value).length;
+  const sizeClass = len > 12 ? 'text-base' : len > 9 ? 'text-lg' : len > 6 ? 'text-xl' : 'text-2xl';
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-2xl p-4 gap-1',
+        'flex flex-col items-center justify-center rounded-2xl p-4 gap-1 min-w-0',
         color
       )}
     >
       <div className="mb-1">{icon}</div>
-      <span className="text-2xl font-extrabold leading-none">{value}</span>
+      <span className={cn('font-extrabold leading-tight break-words [overflow-wrap:anywhere] text-center', sizeClass)}>{value}</span>
       <span className="text-xs font-semibold uppercase tracking-wide opacity-80 text-center">
         {label}
       </span>

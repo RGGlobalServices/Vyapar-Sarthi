@@ -57,7 +57,7 @@ const BADAUDYOG_SECTIONS: SidebarSection[] = [
   { id: 'logistics',   label: 'Stock & Logistics', emoji: '🚚', keys: ['stock', 'warehouses', 'dispatch', 'transport', 'hamali', 'freight'] },
   { id: 'finance',     label: 'Finance',           emoji: '💰', keys: ['payments', 'receipts', 'outstanding', 'ledger', 'cashbook', 'bank', 'settlement', 'expenses'] },
   { id: 'management',  label: 'Management',        emoji: '🧑‍💼', keys: ['brokers', 'suppliers'], defaultCollapsed: true },
-  { id: 'maintenance', label: 'Machines & Maintenance', emoji: '🔧', keys: ['machines'], defaultCollapsed: false },
+  { id: 'maintenance', label: 'Machines', emoji: '🔧', keys: ['machines'], defaultCollapsed: false },
   { id: 'reports',     label: 'Reports & Docs',    emoji: '📊', keys: ['reports', 'documents'], defaultCollapsed: true },
   { id: 'admin',       label: 'Setup',             emoji: '⚙️', keys: ['staff', 'import', 'referral', 'calendar', 'returns', 'settings', 'profile', 'trash'], defaultCollapsed: true },
 ];
@@ -595,8 +595,8 @@ export default function Sidebar({
             if (item.external) {
               return (
                 <a key={item.key} href={item.href} target="_blank" rel="noopener noreferrer" className={itemClass}>
-                  <Icon size={isBadaUdyog ? 18 : 20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors" />
-                  <span className="text-sm">{label}</span>
+                  <Icon size={isBadaUdyog ? 18 : 20} className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors flex-shrink-0" />
+                  <span className="text-sm leading-snug">{label}</span>
                 </a>
               );
             }
@@ -609,9 +609,9 @@ export default function Sidebar({
                 onMouseEnter={() => prefetchForSection(item.key, activeShopId)}
                 onTouchStart={() => prefetchForSection(item.key, activeShopId)}
               >
-                <div className="flex items-center gap-3 flex-1">
-                  <Icon size={isBadaUdyog ? 18 : 20} className={cn('transition-colors', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
-                  <span className="text-sm">{label}</span>
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <Icon size={isBadaUdyog ? 18 : 20} className={cn('transition-colors flex-shrink-0', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-300')} />
+                  <span className="text-sm leading-snug truncate">{label}</span>
                   {isBadaUdyog && OPTIONAL_KEYS.has(item.key) && (
                     <span className="ml-auto text-[9px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-600">{t('optionalTag')}</span>
                   )}
@@ -714,69 +714,79 @@ export default function Sidebar({
         })()}
       </div>
 
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50 dark:bg-slate-900/50">
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-2 text-slate-500">
-            {isDark ? <Moon size={14} className="text-emerald-400" /> : <Sun size={14} className="text-amber-500" />}
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('theme') || 'Theme'}</span>
+      <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+        <div className="px-3 py-3 space-y-1">
+          {/* Theme toggle */}
+          <div className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors">
+            <div className="flex items-center gap-2">
+              {isDark ? <Moon size={13} className="text-emerald-400 flex-shrink-0" /> : <Sun size={13} className="text-amber-500 flex-shrink-0" />}
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('theme') || 'Theme'}</span>
+            </div>
+            <button
+              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+              className="w-10 h-5 rounded-full bg-slate-300 dark:bg-emerald-500 transition-colors relative flex items-center px-0.5 flex-shrink-0"
+            >
+              <div
+                className="w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-300"
+                style={{ transform: isDark ? 'translateX(20px)' : 'translateX(0px)' }}
+              />
+            </button>
           </div>
+
+          {/* Language picker */}
+          <div className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors">
+            <div className="flex items-center gap-2">
+              <Languages size={13} className="text-slate-500 dark:text-slate-400 flex-shrink-0" />
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('language') || 'Language'}</span>
+            </div>
+            <div className="flex gap-1">
+              {['en', 'hi', 'mr'].map((l) => (
+                <Link
+                  key={l}
+                  href={pathname}
+                  locale={l}
+                  className={cn(
+                    'text-[10px] font-bold w-7 h-6 flex items-center justify-center rounded-lg border transition-all',
+                    locale === l
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white dark:hover:bg-slate-800'
+                  )}
+                >
+                  {l.toUpperCase()}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Access role */}
+          <div className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors">
+            <div className="flex items-center gap-2">
+              <User size={13} className="text-slate-500 dark:text-slate-400 flex-shrink-0" />
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('accessRole') || 'Access Role'}</span>
+            </div>
+            <button
+              onClick={handleRoleToggle}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors border",
+                role === 'admin'
+                  ? "bg-purple-500/10 border-purple-300 dark:border-purple-500/30 text-purple-600 dark:text-purple-400"
+                  : "bg-sky-500/10 border-sky-300 dark:border-sky-500/30 text-sky-600 dark:text-sky-400"
+              )}
+            >
+              {role}
+            </button>
+          </div>
+        </div>
+
+        <div className="px-3 pb-3">
           <button
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            className="w-12 h-6 rounded-full bg-slate-300 dark:bg-emerald-500 transition-colors relative flex items-center p-1"
+            onClick={() => { countPendingOfflineBills().then(setPendingOfflineBills); setShowLogoutConfirm(true); }}
+            className="flex items-center gap-2.5 px-3 py-2.5 w-full text-slate-600 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
           >
-            <div 
-              className="w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-300"
-              style={{ transform: isDark ? 'translateX(24px)' : 'translateX(0px)' }}
-            />
+            <LogOut size={16} className="flex-shrink-0" />
+            <span className="text-sm font-semibold">{t('logout') || 'Logout'}</span>
           </button>
         </div>
-
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-2 text-slate-500">
-            <Languages size={14} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('language') || 'Language'}</span>
-          </div>
-          <div className="flex gap-2">
-            {['en', 'hi', 'mr'].map((l) => (
-              <Link
-                key={l}
-                href={pathname}
-                locale={l}
-                className={cn(
-                  'text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-md border transition-all',
-                  locale === l 
-                    ? 'bg-emerald-500 border-emerald-500 text-white dark:text-slate-950' 
-                    : 'border-slate-300 dark:border-slate-800 text-slate-500 hover:border-slate-400 dark:hover:border-slate-600'
-                )}
-              >
-                {l.toUpperCase()}
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-2 text-slate-500">
-            <User size={14} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{t('accessRole') || 'Access Role'}</span>
-          </div>
-          <button
-            onClick={handleRoleToggle}
-            className={cn("px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors", 
-              role === 'admin' ? "bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-sky-500/20 text-sky-600 dark:text-sky-400"
-            )}
-          >
-            {role}
-          </button>
-        </div>
-
-        <button
-          onClick={() => { countPendingOfflineBills().then(setPendingOfflineBills); setShowLogoutConfirm(true); }}
-          className="flex items-center gap-3 px-4 py-3 w-full text-slate-600 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all border border-transparent hover:border-red-500/20"
-        >
-          <LogOut size={18} />
-          <span className="text-sm font-semibold">{t('logout') || 'Logout'}</span>
-        </button>
       </div>
       </aside>
 

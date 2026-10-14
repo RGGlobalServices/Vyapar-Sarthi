@@ -34,29 +34,40 @@ export function StatCard({ title, value, icon, href, subtitle, accent = 'slate',
 }) {
   const shownBreakdown = (breakdown || []).filter(b => Math.round(b.amount) > 0);
 
+  // A card is only ~150-200px wide in the grid, but a crore-level rupee value ("₹1,44,05,572")
+  // is one unbreakable token with no spaces to wrap at. At a fixed font size that overflows the
+  // card and visually overlaps the next one, so the font shrinks as the value gets longer instead.
+  const valueLen = value.length;
+  const valueSizeClass =
+    valueLen > 14 ? 'text-sm md:text-base' :
+    valueLen > 11 ? 'text-base md:text-lg' :
+    valueLen > 8  ? 'text-lg md:text-xl' :
+                    'text-xl md:text-2xl';
+
   const card = (
     <div className={cn(
       'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800',
-      'border-l-4 rounded-xl shadow-sm transition-all duration-200 h-full min-w-0 flex flex-col',
+      'border-l-4 rounded-xl shadow-sm transition-all duration-200 h-full min-w-0 flex flex-col min-h-[108px]',
       href && 'hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer',
       ACCENT_LEFT[accent],
       highlight && 'ring-1 ring-indigo-500/20',
     )}>
       {/* Header */}
-      <div className="flex items-start justify-between gap-2 px-4 pt-4 pb-2 md:px-5 md:pt-5">
-        <p className="text-[10px] md:text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide leading-tight">{title}</p>
-        <div className="opacity-70 shrink-0 scale-90 md:scale-100 origin-right mt-0.5">{icon}</div>
+      <div className="flex items-start justify-between gap-2 px-3 pt-3 pb-1.5 md:px-4 md:pt-4">
+        <p className="text-[11px] md:text-xs font-semibold text-slate-500 dark:text-slate-400 leading-snug">{title}</p>
+        <div className="opacity-60 shrink-0 scale-90 md:scale-100 origin-right mt-0.5">{icon}</div>
       </div>
 
       {/* Value */}
-      <div className="px-4 pb-4 md:px-5 md:pb-5 flex flex-col gap-1 flex-1 justify-end">
+      <div className="px-3 pb-3 md:px-4 md:pb-4 flex flex-col gap-1 flex-1 justify-end">
         <p className={cn(
-          'text-xl md:text-2xl font-bold tabular-nums tracking-tight leading-none',
+          'font-bold tabular-nums tracking-tight leading-tight break-words [overflow-wrap:anywhere]',
+          valueSizeClass,
           VALUE_COLOR[accent],
         )}>{value}</p>
 
         {subtitle && (
-          <p className="text-[10px] md:text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5 break-words">{subtitle}</p>
+          <p className="text-[10px] md:text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 break-words leading-snug">{subtitle}</p>
         )}
 
         {shownBreakdown.length > 0 && (

@@ -191,14 +191,17 @@ function StatCard({ title, value, icon, accent }: { title: string; value: any; i
     blue: 'hover:border-blue-500/50',
   }[accent] || 'hover:border-indigo-500/50';
 
+  const shown = typeof value === 'number' ? value.toLocaleString('en-IN') : String(value);
+  const len = shown.length;
+  const sizeClass = len > 14 ? 'text-base' : len > 11 ? 'text-lg' : len > 8 ? 'text-xl' : 'text-2xl';
   return (
-    <Card className={`bg-slate-900 border-slate-800 rounded-2xl border-b-4 border-slate-800 ${borderColor} transition-all duration-300`}>
+    <Card className={`bg-slate-900 border-slate-800 rounded-2xl border-b-4 border-slate-800 ${borderColor} transition-all duration-300 min-w-0`}>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{title}</CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-black text-slate-50 tracking-tighter">{typeof value === 'number' ? value.toLocaleString('en-IN') : value}</div>
+        <div className={`font-black text-slate-50 tracking-tighter break-words [overflow-wrap:anywhere] ${sizeClass}`}>{shown}</div>
       </CardContent>
     </Card>
   );

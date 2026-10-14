@@ -139,10 +139,12 @@ export default function LedgerPage() {
 
 function StatCard({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: 'emerald' | 'rose' }) {
   const map = { emerald: 'text-emerald-500', rose: 'text-rose-500' };
+  const len = value.length;
+  const sizeClass = len > 14 ? 'text-sm' : len > 11 ? 'text-base' : len > 8 ? 'text-lg' : 'text-xl';
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 min-w-0">
       <Icon size={18} className={map[tone]} />
-      <p className="mt-2 text-xl font-black text-slate-900 dark:text-white">{value}</p>
+      <p className={cn('mt-2 font-black text-slate-900 dark:text-white break-words [overflow-wrap:anywhere]', sizeClass)}>{value}</p>
       <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
     </div>
   );

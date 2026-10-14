@@ -315,10 +315,12 @@ export default function BatchesModule({ mode }: { mode: 'batches' | 'production'
 
 function StatCard({ icon: Icon, label, value, tone }: { icon: any; label: string; value: any; tone: 'amber' | 'emerald' | 'blue' }) {
   const map = { amber: 'text-amber-500', emerald: 'text-emerald-500', blue: 'text-blue-500' };
+  const len = String(value).length;
+  const sizeClass = len > 12 ? 'text-base' : len > 9 ? 'text-lg' : len > 6 ? 'text-xl' : 'text-2xl';
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 min-w-0">
       <Icon size={18} className={map[tone]} />
-      <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{value}</p>
+      <p className={cn('mt-2 font-black text-slate-900 dark:text-white break-words [overflow-wrap:anywhere]', sizeClass)}>{value}</p>
       <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
     </div>
   );

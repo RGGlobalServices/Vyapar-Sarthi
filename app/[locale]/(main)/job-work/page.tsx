@@ -203,9 +203,11 @@ export default function JobWorkPage() {
 
 function StatCard({ label, value, tone }: { label: string; value: number; tone: 'slate' | 'amber' | 'emerald' | 'blue' }) {
   const map = { slate: 'text-slate-400', amber: 'text-amber-500', emerald: 'text-emerald-500', blue: 'text-blue-500' };
+  const len = String(value).length;
+  const sizeClass = len > 12 ? 'text-base' : len > 9 ? 'text-lg' : len > 6 ? 'text-xl' : 'text-2xl';
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <p className={cn('text-2xl font-black', map[tone])}>{value}</p>
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 min-w-0">
+      <p className={cn('font-black break-words [overflow-wrap:anywhere]', sizeClass, map[tone])}>{value}</p>
       <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
     </div>
   );

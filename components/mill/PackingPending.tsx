@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
-import { Loader2, PackageCheck, X } from 'lucide-react';
+import { Loader2, PackageCheck, X, Pencil, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
@@ -49,6 +49,7 @@ export default function PackingPending() {
   const { mutate } = useSWRConfig();
   const [packing, setPacking] = useState<Item | null>(null);
   const [detail, setDetail] = useState<Item | null>(null);
+  const [editLine, setEditLine] = useState<Line | null>(null);
   const { data, mutate: reload, isLoading } = useSWR<any>(shopId ? ['/mill/packing', shopId] : null, ([u]) => fetcher(u), { revalidateOnFocus: true });
   const pending: Item[] = data?.pending || [];
   const packed: Item[] = data?.packed || [];
@@ -108,7 +109,10 @@ export default function PackingPending() {
                     <span key={l.id} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                       {lineText(l, t)}
                       {l.createdAt && <span className="font-normal opacity-70">· {fmtFull(l.createdAt)}</span>}
-                      <DeleteButton url={`/mill/packing/${l.id}`} name={lineText(l, t)} onDone={refresh} className="h-5 w-5 inline-flex items-center justify-center rounded text-rose-500 hover:bg-rose-100" />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditLine(l); }} className="h-5 w-5 inline-flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit">
+                        <Pencil size={11} />
+                      </button>
+                      <DeleteButton url={`/mill/packing/${l.id}`} name={lineText(l, t)} onDone={refresh} className="h-5 w-5 inline-flex items-center justify-center rounded text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/30" />
                     </span>
                   ))}
                 </div>
@@ -121,6 +125,7 @@ export default function PackingPending() {
 
       {packing && <PackModal item={packing} onClose={() => setPacking(null)} onSaved={() => { setPacking(null); refresh(); }} />}
       {detail && <PackedDetailModal item={detail} onClose={() => setDetail(null)} />}
+      {editLine && <EditPackLineModal line={editLine} onClose={() => setEditLine(null)} onSaved={() => { setEditLine(null); refresh(); }} />}
     </div>
   );
 }
@@ -256,6 +261,62 @@ function PackedDetailModal({ item, onClose }: { item: Item; onClose: () => void 
             <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-500">{t('pe_cancel')}</button>
             <button onClick={() => printPackingSlip(item, shopName, t)} className="px-5 py-2 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-2">
               {t('pk_print')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
+  );
+}
+
+function EditPackLineModal({ line, onClose, onSaved }: { line: Line; onClose: () => void; onSaved: () => void }) {
+  const t = useTranslations('Mill');
+  const [kg, setKg] = useState(String(line.packKg));
+  const [n, setN] = useState(String(line.packs));
+  const [type, setType] = useState<'bag' | 'goni' | 'other'>(line.packType as any);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    const packKg = Number(kg);
+    const packs = Math.round(Number(n));
+    if (!packKg || !packs) { setError(t('pk_errMore') || 'Invalid values'); return; }
+    setSaving(true); setError('');
+    try {
+      await api.patch(`/mill/packing/${line.id}`, { packKg, packs, packType: type });
+      toast.success(t('pk_saved'));
+      onSaved();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || e?.response?.data?.error || e?.message || t('pe_failed'));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-slate-900 w-full max-w-xs rounded-2xl shadow-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-black text-slate-900 dark:text-white">{t('pk_editLine')}</h2>
+            <button onClick={onClose} aria-label={t('pe_cancel')}><X size={18} className="text-slate-400" /></button>
+          </div>
+          <div className="grid grid-cols-[5.2rem_1fr_1fr] gap-2 items-end">
+            <select value={type} onChange={(e) => setType(e.target.value as any)} className={cn(inputCls, 'px-1.5')}>
+              <option value="bag">{t('pk_bag')}</option>
+              <option value="goni">{t('pk_goni')}</option>
+              <option value="other">{t('pk_other')}</option>
+            </select>
+            <label className="block text-[10px] font-bold uppercase text-slate-500">{t('pk_kgEach')}
+              <input type="number" inputMode="decimal" min="0" value={kg} autoFocus onChange={(e) => setKg(e.target.value)} className={inputCls + ' mt-1'} />
+            </label>
+            <label className="block text-[10px] font-bold uppercase text-slate-500">{t('pk_count')}
+              <input type="number" inputMode="numeric" min="0" value={n} onChange={(e) => setN(e.target.value)} className={inputCls + ' mt-1'} />
+            </label>
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={onClose} className="px-3 py-2 text-sm font-bold text-slate-500">{t('pe_cancel')}</button>
+            <button onClick={save} disabled={saving} className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {t('pk_save')}
             </button>
           </div>
         </div>

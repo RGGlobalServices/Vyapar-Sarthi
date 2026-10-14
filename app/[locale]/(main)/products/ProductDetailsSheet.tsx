@@ -1018,13 +1018,15 @@ function StatCard({
   value: string;
   valueClass?: string;
 }) {
+  const len = value.length;
+  const sizeClass = len > 14 ? 'text-sm' : len > 11 ? 'text-base' : len > 8 ? 'text-lg' : 'text-xl';
   return (
-    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 flex flex-col gap-2 shadow-sm min-w-0">
       <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-500 text-xs font-medium uppercase tracking-wider">
         {icon}
         {label}
       </div>
-      <p className={cn('text-xl font-bold leading-tight truncate', valueClass)}>
+      <p className={cn('font-bold leading-tight break-words [overflow-wrap:anywhere]', sizeClass, valueClass)}>
         {value}
       </p>
     </div>

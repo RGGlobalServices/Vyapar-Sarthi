@@ -42,14 +42,20 @@ export async function GET(req: Request) {
         select: {
           id: true,
           invoice_number: true,
-          customer_name: true,
           totalAmount: true,
           createdAt: true,
+          customer: { select: { name: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: 50,
       });
-      return NextResponse.json(sales);
+      return NextResponse.json(
+        sales.map((s: any) => ({
+          ...s,
+          customer_name: s.customer?.name ?? null,
+          customer: undefined,
+        }))
+      );
     }
 
     const where: any = { shopId: shop.id };

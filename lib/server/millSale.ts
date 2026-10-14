@@ -348,6 +348,20 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
           }
         }
 
+        // (f2) Decrement FinishedGoodsLot.availableQuantity for items linked to a FG lot
+        const fgLotDraws = new Map<string, number>();
+        for (const p of parsed) {
+          const fgLotId = p.raw.fg_lot_id || p.raw.fgLotId || null;
+          if (!fgLotId) continue;
+          fgLotDraws.set(String(fgLotId), (fgLotDraws.get(String(fgLotId)) || 0) + p.qty);
+        }
+        for (const [fgLotId, qty] of fgLotDraws.entries()) {
+          await tx.$executeRaw`
+            UPDATE finished_goods_lots
+            SET available_quantity = GREATEST(0, available_quantity - ${qty})
+            WHERE id = ${fgLotId}::uuid AND shop_id = ${shopId}::uuid`;
+        }
+
         // (g) customer udhar + credit limit, cash book
         if (outstandingPaise > 0 && finalCustomerId) {
           const cust = await tx.customer.findFirst({ where: { id: finalCustomerId, shopId } });

@@ -23,7 +23,7 @@ export default function WholesaleWidgets({ data }: { data: any }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('totalPartyCreditCollection')}</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">₹{Math.round(partyCreditCollectionTotal || 0).toLocaleString('en-IN')}</p>
+                <p className="text-lg font-black text-slate-900 dark:text-white tabular-nums tracking-tight break-words [overflow-wrap:anywhere]">₹{Math.round(partyCreditCollectionTotal || 0).toLocaleString('en-IN')}</p>
               </div>
             </CardContent>
           </Card>
@@ -36,7 +36,7 @@ export default function WholesaleWidgets({ data }: { data: any }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('todaysPartyCreditCollection')}</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">₹{Math.round(partyCreditCollectionToday || 0).toLocaleString('en-IN')}</p>
+                <p className="text-lg font-black text-slate-900 dark:text-white tabular-nums tracking-tight break-words [overflow-wrap:anywhere]">₹{Math.round(partyCreditCollectionToday || 0).toLocaleString('en-IN')}</p>
               </div>
             </CardContent>
           </Card>
@@ -55,9 +55,11 @@ export default function WholesaleWidgets({ data }: { data: any }) {
               <p className="text-xs text-slate-500">{t('inventoryValueNote')}</p>
             </div>
           </div>
-          <p className="text-3xl font-black text-slate-900 dark:text-white">
-            ₹{Math.round(inventoryValue || 0).toLocaleString('en-IN')}
-          </p>
+          {(() => {
+            const val = `₹${Math.round(inventoryValue || 0).toLocaleString('en-IN')}`;
+            const sz = val.length > 14 ? 'text-lg' : val.length > 11 ? 'text-xl' : val.length > 8 ? 'text-2xl' : 'text-3xl';
+            return <p className={`${sz} font-black text-slate-900 dark:text-white tabular-nums tracking-tight break-words [overflow-wrap:anywhere]`}>{val}</p>;
+          })()}
         </CardContent>
       </Card>
 

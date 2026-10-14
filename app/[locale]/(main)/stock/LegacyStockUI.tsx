@@ -1655,11 +1655,13 @@ export default function LegacyStockUI() {
 }
 
 function StatCard({ title, value, color }: { title: string; value: number; color: string }) {
+  const len = String(value).length;
+  const sizeClass = len > 14 ? 'text-lg' : len > 11 ? 'text-xl' : len > 8 ? 'text-2xl' : 'text-3xl';
   return (
-    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 min-w-0">
       <CardContent className="p-6">
         <p className="text-sm text-slate-400 font-medium">{title}</p>
-        <p className={cn('text-3xl font-black mt-1', color)}>{value}</p>
+        <p className={cn('font-black mt-1 break-words [overflow-wrap:anywhere]', sizeClass, color)}>{value}</p>
       </CardContent>
     </Card>
   );

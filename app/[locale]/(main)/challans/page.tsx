@@ -75,8 +75,6 @@ type Lot = {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 // ── Unit system ──────────────────────────────────────────────────────────────
-// Single source of truth for dispatch units — add/remove here and everything
-// (UI fields, conversions, print view) updates automatically.
 type UnitKind = 'weight' | 'pack' | 'volume' | 'count';
 type UnitDef = { label: string; kind: UnitKind; toKg?: number };
 
@@ -96,7 +94,6 @@ function unitDef(u: string): UnitDef {
   return UNIT_DEFS[u] || { label: u, kind: 'count' };
 }
 
-// For a cart item compute the canonical quantity (in dispatch unit) and totalWeight
 function computeItemTotals(it: ChallanItem): { quantity: number; totalWeight: number | null } {
   const def = unitDef(it.unit);
   if (def.kind === 'pack') {
@@ -111,14 +108,7 @@ function computeItemTotals(it: ChallanItem): { quantity: number; totalWeight: nu
   return { quantity: Number(it.quantity) || 0, totalWeight: null };
 }
 
-const DISPATCH_TYPES = [
-  { value: 'sale',       label: 'Sale' },
-  { value: 'job_work',   label: 'Job Work' },
-  { value: 'sample',     label: 'Sample' },
-  { value: 'transfer',   label: 'Transfer' },
-  { value: 'return',     label: 'Return' },
-  { value: 'other',      label: 'Other' },
-];
+const DISPATCH_TYPE_VALUES = ['sale', 'job_work', 'sample', 'transfer', 'return', 'other'] as const;
 
 const STATUS_STYLE: Record<string, string> = {
   open:      'bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400',
@@ -163,6 +153,29 @@ export default function ChallansPage() {
   const [pendingBills, setPendingBills] = useState<any[]>([]);
   const [pendingBillsLoading, setPendingBillsLoading] = useState(false);
 
+  const dispatchTypeLabel = useCallback((value: string) => {
+    const map: Record<string, string> = {
+      sale:     tc('dispatchTypeSale'),
+      job_work: tc('dispatchTypeJobWork'),
+      sample:   tc('dispatchTypeSample'),
+      transfer: tc('dispatchTypeTransfer'),
+      return:   tc('dispatchTypeReturn'),
+      other:    tc('dispatchTypeOther'),
+    };
+    return map[value] || value;
+  }, [tc]);
+
+  const statusLabel = useCallback((s: string) => {
+    const map: Record<string, string> = {
+      all:       tc('statusLabelAll'),
+      open:      tc('statusLabelOpen'),
+      invoiced:  tc('statusLabelInvoiced'),
+      returned:  tc('statusLabelReturned'),
+      cancelled: tc('statusLabelCancelled'),
+    };
+    return map[s] || s;
+  }, [tc]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -177,7 +190,6 @@ export default function ChallansPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-open new challan form pre-filled from a bill (set by MillBillSavedModal)
   useEffect(() => {
     const saleId = sessionStorage.getItem('pendingChallanFromBill');
     if (saleId) {
@@ -187,7 +199,6 @@ export default function ChallansPage() {
     }
   }, []);
 
-  // Load bills without a challan for Mill shops
   const loadPendingBills = useCallback(async () => {
     if (!isMill) return;
     setPendingBillsLoading(true);
@@ -228,25 +239,25 @@ export default function ChallansPage() {
   );
 
   const handleCancel = async (c: Challan) => {
-    if (!(await confirmAsync(`Cancel challan ${c.challanNumber}? Stock will be restored.`, { okLabel: 'Cancel challan', cancelLabel: 'Keep it' }))) return;
+    if (!(await confirmAsync(tc('cancelConfirm', { number: c.challanNumber }), { okLabel: tc('cancelOkLabel'), cancelLabel: tc('cancelKeepLabel') }))) return;
     setBusyId(c.id);
     try {
       await api.patch(`/challans/${c.id}`, { action: 'cancel' });
       load();
-    } catch { alert('Failed to cancel challan.'); }
+    } catch { alert(tc('failedToCancel')); }
     finally { setBusyId(null); }
   };
 
   const handleReturn = async (c: Challan) => {
     const msg = c.status === 'invoiced'
-      ? `Return challan ${c.challanNumber}? This challan was already invoiced — stock will be added back to inventory. The linked invoice is NOT automatically reversed.`
-      : `Return challan ${c.challanNumber}? All dispatched stock will be added back to inventory.`;
+      ? tc('returnConfirmInvoiced', { number: c.challanNumber })
+      : tc('returnConfirmOpen', { number: c.challanNumber });
     if (!confirm(msg)) return;
     setBusyId(c.id);
     try {
       await api.patch(`/challans/${c.id}`, { action: 'return' });
       load();
-    } catch { alert('Failed to process return.'); }
+    } catch { alert(tc('failedToReturn')); }
     finally { setBusyId(null); }
   };
 
@@ -256,12 +267,12 @@ export default function ChallansPage() {
       const res = await api.patch(`/challans/${c.id}`, { action: 'dispatch' });
       const dispatchNumber = res.data?.dispatch?.dispatchNumber;
       if (dispatchNumber) {
-        if (confirm(`Dispatch entry created: ${dispatchNumber}\n\nOpen the Dispatch log to view it?`)) {
+        if (confirm(tc('dispatchCreated', { number: dispatchNumber }))) {
           router.push(`/${locale}/dispatch`);
         }
       }
     } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to create dispatch entry.');
+      alert(err?.response?.data?.error || tc('failedToDispatch'));
     } finally {
       setBusyId(null);
     }
@@ -279,17 +290,17 @@ export default function ChallansPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Truck className="text-emerald-500" size={28} /> Delivery Challans
+            <Truck className="text-emerald-500" size={28} /> {tc('pageTitle')}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm">
-            Dispatch goods now, raise the GST invoice later — stock moves the moment a challan is created.
+            {tc('pageSubtitle')}
           </p>
         </div>
         <button
           onClick={() => setShowNew(true)}
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95"
         >
-          <Plus size={18} /> New Challan
+          <Plus size={18} /> {tc('newChallan')}
         </button>
       </div>
 
@@ -338,7 +349,7 @@ export default function ChallansPage() {
               dateFilter === d ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700',
             )}
           >
-            {d === 'all' ? 'All Time' : d === 'today' ? 'Today' : d === 'week' ? 'This Week' : 'This Month'}
+            {d === 'all' ? tc('dateAll') : d === 'today' ? tc('dateToday') : d === 'week' ? tc('dateWeek') : tc('dateMonth')}
           </button>
         ))}
         <input
@@ -359,15 +370,15 @@ export default function ChallansPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Challans</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tc('totalChallans')}</p>
           <p className="text-2xl font-black text-slate-900 dark:text-white">{filteredChallans.length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Open</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tc('openCount')}</p>
           <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{filteredChallans.filter(c => c.status === 'open').length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Open Value</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tc('openValue')}</p>
           <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">₹{openTotal.toLocaleString('en-IN')}</p>
         </div>
       </div>
@@ -380,11 +391,11 @@ export default function ChallansPage() {
               key={s}
               onClick={() => setStatusFilter(s)}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-colors',
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
                 statusFilter === s ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500',
               )}
             >
-              {s}
+              {statusLabel(s)}
             </button>
           ))}
         </div>
@@ -393,7 +404,7 @@ export default function ChallansPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search challan # or party"
+            placeholder={tc('searchPlaceholder')}
             className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
@@ -405,8 +416,8 @@ export default function ChallansPage() {
       ) : filteredChallans.length === 0 ? (
         <div className="p-16 text-center text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
           <Truck size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="font-bold">{challans.length === 0 ? 'No delivery challans yet' : 'No challans match the selected filters'}</p>
-          {challans.length === 0 && <p className="text-sm mt-1">Create one when goods go out before the formal invoice.</p>}
+          <p className="font-bold">{challans.length === 0 ? tc('noChallansYet') : tc('noChallansMatch')}</p>
+          {challans.length === 0 && <p className="text-sm mt-1">{tc('createWhenGoodsGoOut')}</p>}
         </div>
       ) : (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
@@ -414,14 +425,14 @@ export default function ChallansPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
                 <tr>
-                  <th className="px-4 py-3">Challan #</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Party</th>
-                  <th className="px-4 py-3">Purpose</th>
-                  <th className="px-4 py-3 text-center">Items</th>
-                  <th className="px-4 py-3 text-right">Value</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3">{tc('colChallanNo')}</th>
+                  <th className="px-4 py-3">{tc('colDate')}</th>
+                  <th className="px-4 py-3">{tc('colParty')}</th>
+                  <th className="px-4 py-3">{tc('colPurpose')}</th>
+                  <th className="px-4 py-3 text-center">{tc('colItems')}</th>
+                  <th className="px-4 py-3 text-right">{tc('colValue')}</th>
+                  <th className="px-4 py-3">{tc('colStatus')}</th>
+                  <th className="px-4 py-3 text-right">{tc('colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -442,8 +453,8 @@ export default function ChallansPage() {
                     </td>
                     <td className="px-4 py-3">
                       {c.dispatchType && (
-                        <span className={cn('text-xs font-bold capitalize', DISPATCH_COLOR[c.dispatchType] || 'text-slate-500')}>
-                          {DISPATCH_TYPES.find(d => d.value === c.dispatchType)?.label || c.dispatchType}
+                        <span className={cn('text-xs font-bold', DISPATCH_COLOR[c.dispatchType] || 'text-slate-500')}>
+                          {dispatchTypeLabel(c.dispatchType)}
                         </span>
                       )}
                     </td>
@@ -452,18 +463,18 @@ export default function ChallansPage() {
                       ₹{challanTotal(c).toLocaleString('en-IN')}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase', STATUS_STYLE[c.status])}>{c.status}</span>
+                      <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase', STATUS_STYLE[c.status])}>{statusLabel(c.status)}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button onClick={() => setPrintChallan(c)} title="Print" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+                        <button onClick={() => setPrintChallan(c)} title={tc('printTitle')} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
                           <Printer size={15} />
                         </button>
                         {(c.status === 'open' || c.status === 'invoiced') && (
                           <button
                             onClick={() => handleDispatch(c)}
                             disabled={busyId === c.id}
-                            title="Log to Dispatch"
+                            title={tc('logToDispatch')}
                             className="p-2 rounded-lg hover:bg-violet-100 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400"
                           >
                             {busyId === c.id ? <Loader2 size={15} className="animate-spin" /> : <ArrowUpRight size={15} />}
@@ -474,7 +485,7 @@ export default function ChallansPage() {
                             <button
                               onClick={() => handleConvertToInvoice(c)}
                               disabled={busyId === c.id}
-                              title="Convert to Invoice"
+                              title={tc('convertToInvoice')}
                               className="p-2 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                             >
                               <Receipt size={15} />
@@ -482,7 +493,7 @@ export default function ChallansPage() {
                             <button
                               onClick={() => handleReturn(c)}
                               disabled={busyId === c.id}
-                              title="Return Stock"
+                              title={tc('returnStock')}
                               className="p-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/10 text-blue-600 dark:text-blue-400"
                             >
                               {busyId === c.id ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
@@ -490,7 +501,7 @@ export default function ChallansPage() {
                             <button
                               onClick={() => handleCancel(c)}
                               disabled={busyId === c.id}
-                              title="Cancel"
+                              title={tc('cancelAction')}
                               className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/10 text-red-500"
                             >
                               <Ban size={15} />
@@ -501,7 +512,7 @@ export default function ChallansPage() {
                           <button
                             onClick={() => handleReturn(c)}
                             disabled={busyId === c.id}
-                            title="Return Stock (reverse dispatch)"
+                            title={tc('returnStockReverse')}
                             className="p-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/10 text-blue-600 dark:text-blue-400"
                           >
                             {busyId === c.id ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
@@ -528,6 +539,9 @@ export default function ChallansPage() {
         <PrintChallanModal
           challan={printChallan}
           shopName={profile?.shopName || 'Your Shop'}
+          shopAddress={profile?.address || ''}
+          shopMobile={profile?.mobile || ''}
+          shopGst={profile?.gst || ''}
           onClose={() => setPrintChallan(null)}
         />
       )}
@@ -579,12 +593,11 @@ const selectCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border-sla
 
 function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () => void; onCreated: () => void; preloadSaleId?: string }) {
   type Party = { id: string; name: string; mobile?: string; address?: string };
+  const tc = useTranslations('Challan');
   const isMill = isMillBillingPackage(useBusinessStore().profile?.packageType);
-  // Bada Udyog only: this challan is a SALE, so its hamali and broker are saved as Sale hamali / Sale broker
   const [hamaliAmount, setHamaliAmount] = useState('');
   const [brokerName, setBrokerName] = useState('');
   const [brokerCommission, setBrokerCommission] = useState('');
-  // Bada Udyog: start from a bill that is already made — its stock is already out, so this challan takes none and is limited to what is left to deliver
   const [fromInv, setFromInv] = useState<{ saleId: string; invoiceNumber: string; lines: any[] } | null>(null);
   const [invNo, setInvNo] = useState('');
   const [invBusy, setInvBusy] = useState(false);
@@ -593,18 +606,15 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
   const [showInvDrop, setShowInvDrop] = useState(false);
   const invInputRef = useRef<HTMLInputElement>(null);
 
-  // Basic
   const [challanDate, setChallanDate]     = useState(new Date().toISOString().slice(0, 10));
   const [dispatchType, setDispatchType]   = useState('sale');
 
-  // Party
   const [parties, setParties]             = useState<Party[]>([]);
   const [partySearch, setPartySearch]     = useState('');
   const [showPartyDrop, setShowPartyDrop] = useState(false);
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const partyInputRef = useRef<HTMLInputElement>(null);
 
-  // Items
   const [products, setProducts]           = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [showProductDrop, setShowProdDrop]= useState(false);
@@ -612,7 +622,6 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
   const [lotsByProduct, setLotsByProduct] = useState<Record<string, Lot[]>>({});
   const prodInputRef = useRef<HTMLInputElement>(null);
 
-  // Transport
   const [transporters, setTransporters]   = useState<Party[]>([]);
   const [transporterId, setTransporterId] = useState('');
   const [freightAmount, setFreightAmount] = useState('');
@@ -621,18 +630,24 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
   const [driverMobile, setDriverMobile]   = useState('');
   const [lrNumber, setLrNumber]           = useState('');
 
-  // Dispatch
   const [dispatchFrom, setDispatchFrom]   = useState('');
 
-  // Reference
   const [jobWorkOrderRef, setJobWorkOrderRef]           = useState('');
   const [eWayBillNo, setEWayBillNo]                     = useState('');
   const [expectedInvoiceDate, setExpectedInvoiceDate]   = useState('');
 
-  // Notes / form
   const [notes, setNotes]     = useState('');
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
+
+  const dispatchTypes = [
+    { value: 'sale',     label: tc('dispatchTypeSale') },
+    { value: 'job_work', label: tc('dispatchTypeJobWork') },
+    { value: 'sample',   label: tc('dispatchTypeSample') },
+    { value: 'transfer', label: tc('dispatchTypeTransfer') },
+    { value: 'return',   label: tc('dispatchTypeReturn') },
+    { value: 'other',    label: tc('dispatchTypeOther') },
+  ];
 
   useEffect(() => {
     api.get('/crm/customers?type=all').then(r => setParties(Array.isArray(r.data) ? r.data : [])).catch(() => {});
@@ -640,7 +655,6 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
     api.get('/crm/customers?type=transporter').then(r => setTransporters(Array.isArray(r.data) ? r.data : [])).catch(() => {});
   }, []);
 
-  // Fetch lots for a product if not already loaded
   const fetchLots = useCallback(async (productId: string) => {
     if (lotsByProduct[productId] !== undefined) return;
     try {
@@ -685,7 +699,6 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
     setCartItems(prev => prev.map((it, i) => {
       if (i !== idx) return it;
       const updated = { ...it, ...patch };
-      // Auto-fill lot details when lot selected
       if (patch.lotId) {
         const lots = lotsByProduct[it.productId] || [];
         const lot = lots.find(l => l.id === patch.lotId);
@@ -695,11 +708,9 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
         }
       }
       if (patch.lotId === '') { updated.lotId = null; updated.lotNumber = null; }
-      // When unit changes, reset pack fields
       if (patch.unit && patch.unit !== it.unit) {
         updated.packSize = null; updated.noOfPacks = null; updated.totalWeight = null;
       }
-      // Auto-calc totalWeight for pack units
       const def = unitDef(updated.unit);
       if (def.kind === 'pack') {
         const bags = Number(updated.noOfPacks) || 0;
@@ -713,7 +724,6 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
     }));
   };
 
-  // Debounced invoice search: fetch suggestions as user types (min 2 chars)
   useEffect(() => {
     if (!isMill || invNo.trim().length < 2) { setInvSuggestions([]); return; }
     const t = setTimeout(async () => {
@@ -731,7 +741,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
       const res = await api.get(`/challans/from-invoice/${saleId}`);
       const d = res.data;
       const lines = (d.items || []).filter((l: any) => l.remainingQty > 0);
-      if (lines.length === 0) { setInvErr('Everything on this invoice is already on challans.'); return; }
+      if (lines.length === 0) { setInvErr(tc('allOnChallans')); return; }
       setFromInv({ saleId: d.saleId, invoiceNumber: d.invoiceNumber, lines: d.items });
       if (d.customer) setSelectedParty({ id: d.customer.id, name: d.customer.name, mobile: d.customer.mobile, address: d.customer.address });
       setCartItems(lines.map((l: any) => {
@@ -748,7 +758,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
         };
       }));
     } catch (err: any) {
-      setInvErr(err?.response?.data?.error || err?.message || 'Could not load the invoice.');
+      setInvErr(err?.response?.data?.error || err?.message || tc('couldNotLoadInvoice'));
     } finally {
       setInvBusy(false);
     }
@@ -761,21 +771,20 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
     try {
       const bill = await api.get(`/billing/${encodeURIComponent(no)}`);
       const id = bill.data?.id;
-      if (!id) throw new Error('Invoice not found');
+      if (!id) throw new Error(tc('invoiceNotFound'));
       await loadFromInvoiceById(id);
     } catch (err: any) {
-      setInvErr(err?.response?.data?.error || err?.message || 'Could not load the invoice.');
+      setInvErr(err?.response?.data?.error || err?.message || tc('couldNotLoadInvoice'));
       setInvBusy(false);
     }
   };
 
   const clearFromInvoice = () => { setFromInv(null); setCartItems([]); setSelectedParty(null); setInvNo(''); };
 
-  // Auto-load from a bill passed via props (from "Send to Challan" button)
   useEffect(() => {
     if (preloadSaleId) loadFromInvoiceById(preloadSaleId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);  // run only once on mount
+  }, []);
 
   const removeItem = (idx: number) => setCartItems(prev => prev.filter((_, i) => i !== idx));
 
@@ -786,8 +795,8 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
   }, 0);
 
   const handleSave = async () => {
-    if (!selectedParty) { setError('Please select a party.'); return; }
-    if (cartItems.length === 0) { setError('Add at least one item.'); return; }
+    if (!selectedParty) { setError(tc('errorSelectParty')); return; }
+    if (cartItems.length === 0) { setError(tc('errorAddItem')); return; }
     setSaving(true);
     setError('');
     try {
@@ -833,14 +842,13 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
       try {
         await api.post('/challans', payload);
       } catch (e: any) {
-        // not enough stock: tell the user and let them go ahead on purpose
         if (e?.response?.data?.code !== 'INSUFFICIENT_STOCK') throw e;
-        if (!window.confirm(`${e.response.data.error}\n\nCreate this challan anyway? Stock will go below zero.`)) { setSaving(false); return; }
+        if (!window.confirm(tc('insufficientStockConfirm', { error: e.response.data.error }))) { setSaving(false); return; }
         await api.post('/challans', { ...payload, force: true });
       }
       onCreated();
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to save challan.');
+      setError(err?.response?.data?.error || tc('failedToSave'));
     } finally {
       setSaving(false);
     }
@@ -852,7 +860,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <h2 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-2">
-            <Truck size={18} className="text-emerald-500" /> New Delivery Challan
+            <Truck size={18} className="text-emerald-500" /> {tc('modalTitle')}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={20} /></button>
         </div>
@@ -860,12 +868,12 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
         <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
 
           {isMill && (
-            <Section icon={<FileText size={13} />} title="Start from an invoice (optional)">
+            <Section icon={<FileText size={13} />} title={tc('sectionFromInvoice')}>
               {fromInv ? (
                 <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-sm">
                   <span className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <Receipt size={14} className="text-amber-500 shrink-0" />
-                    Invoice {fromInv.invoiceNumber} — stock already out; delivery only (Quantity limited to what's left).
+                    {tc('invoiceLoaded', { number: fromInv.invoiceNumber })}
                   </span>
                   <button onClick={clearFromInvoice} className="text-slate-400 hover:text-red-500 ml-2 shrink-0"><X size={16} /></button>
                 </div>
@@ -881,15 +889,14 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                         onFocus={() => { if (invNo.trim().length >= 2) setShowInvDrop(true); }}
                         onBlur={() => setTimeout(() => setShowInvDrop(false), 200)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setShowInvDrop(false); loadFromInvoice(); } }}
-                        placeholder="Search invoice number, e.g. INV-0012"
+                        placeholder={tc('searchInvoicePlaceholder')}
                         className={cn(inputCls, 'pl-9')}
                       />
                     </div>
                     <button type="button" onClick={() => { setShowInvDrop(false); loadFromInvoice(); }} disabled={invBusy || !invNo.trim()} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 shrink-0">
-                      {invBusy ? <Loader2 size={15} className="animate-spin" /> : 'Load'}
+                      {invBusy ? <Loader2 size={15} className="animate-spin" /> : tc('loadButton')}
                     </button>
                   </div>
-                  {/* Autocomplete dropdown */}
                   {showInvDrop && invSuggestions.length > 0 && (() => {
                     const r = invInputRef.current?.getBoundingClientRect();
                     if (!r) return null;
@@ -916,21 +923,21 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
           )}
 
           {/* ─ Basic Info ─ */}
-          <Section icon={<FileText size={13} />} title="Basic Info">
+          <Section icon={<FileText size={13} />} title={tc('sectionBasicInfo')}>
             <div className="flex gap-3 flex-wrap">
-              <Field label="Challan Date" half>
+              <Field label={tc('fieldChallanDate')} half>
                 <input type="date" value={challanDate} onChange={e => setChallanDate(e.target.value)} className={inputCls} />
               </Field>
-              <Field label="Dispatch Purpose" half>
+              <Field label={tc('fieldDispatchPurpose')} half>
                 <select value={dispatchType} onChange={e => setDispatchType(e.target.value)} className={selectCls}>
-                  {DISPATCH_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  {dispatchTypes.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
               </Field>
             </div>
           </Section>
 
           {/* ─ Party ─ */}
-          <Section icon={<User size={13} />} title="Party">
+          <Section icon={<User size={13} />} title={tc('sectionParty')}>
             <div className="relative">
               {selectedParty ? (
                 <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl">
@@ -950,7 +957,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                     onChange={e => { setPartySearch(e.target.value); setShowPartyDrop(true); }}
                     onFocus={() => setShowPartyDrop(true)}
                     onBlur={() => setTimeout(() => setShowPartyDrop(false), 200)}
-                    placeholder="Search party by name or mobile"
+                    placeholder={tc('partySearchPlaceholder')}
                     className={inputCls}
                   />
                   {showPartyDrop && partySearch.trim() && (() => {
@@ -967,7 +974,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                             className="w-full text-left px-3 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0"
                           >
                             <div className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</div>
-                            <div className="text-xs text-slate-500">{p.mobile || 'No mobile'}{p.address ? ` · ${p.address}` : ''}</div>
+                            <div className="text-xs text-slate-500">{p.mobile || tc('noMobile')}{p.address ? ` · ${p.address}` : ''}</div>
                           </button>
                         ))}
                       </div>
@@ -979,8 +986,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
           </Section>
 
           {/* ─ Items ─ */}
-          <Section icon={<Package size={13} />} title="Items">
-            {/* Product search */}
+          <Section icon={<Package size={13} />} title={tc('sectionItems')}>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
               <input
@@ -989,7 +995,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                 onChange={e => { setProductSearch(e.target.value); setShowProdDrop(true); }}
                 onFocus={() => setShowProdDrop(true)}
                 onBlur={() => setTimeout(() => setShowProdDrop(false), 200)}
-                placeholder="Search product to dispatch…"
+                placeholder={tc('productSearchPlaceholder')}
                 className={cn(inputCls, 'pl-9')}
               />
               {showProductDrop && productResults.length > 0 && (() => {
@@ -1005,7 +1011,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                         className="w-full text-left px-3 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 flex justify-between items-center"
                       >
                         <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
-                        <span className="text-xs text-slate-500">Stock: {p.currentStock ?? p.current_stock ?? '—'}</span>
+                        <span className="text-xs text-slate-500">{tc('stockLabel', { count: p.currentStock ?? p.current_stock ?? '—' })}</span>
                       </button>
                     ))}
                   </div>
@@ -1013,7 +1019,6 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
               })()}
             </div>
 
-            {/* Cart — unit-aware item cards */}
             {cartItems.length > 0 && (
               <div className="space-y-2 mt-2">
                 {cartItems.map((it, idx) => {
@@ -1031,7 +1036,6 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
 
                   return (
                     <div key={idx} className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-2.5 bg-slate-50/50 dark:bg-slate-800/30">
-                      {/* Row 1 — product name + remove */}
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
                           <Package size={13} className="text-emerald-500 shrink-0" />{it.name}
@@ -1041,52 +1045,48 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                         </button>
                       </div>
 
-                      {/* Row 2 — Lot + Godown */}
                       <div className="flex gap-2">
                         <div className="flex-1">
-                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Lot / Batch</label>
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('lotBatch')}</label>
                           {lots.length > 0 ? (
                             <select value={it.lotId || ''} onChange={e => updateItem(idx, { lotId: e.target.value || null })} className={cellCls}>
-                              <option value="">— No Lot —</option>
+                              <option value="">{tc('noLot')}</option>
                               {lots.map(l => <option key={l.id} value={l.id}>{l.lotNumber} (Avl: {l.availableQuantity} {l.unit}){l.packs && l.packs.length > 0 ? ` · ${l.packs.map(k => `${k.packs}×${k.packKg}kg`).join(" + ")}` : ""}</option>)}
                             </select>
                           ) : (
-                            <input value={it.lotNumber || ''} onChange={e => updateItem(idx, { lotNumber: e.target.value })} placeholder="Lot / Batch #" className={cellCls} />
+                            <input value={it.lotNumber || ''} onChange={e => updateItem(idx, { lotNumber: e.target.value })} placeholder={tc('lotBatch')} className={cellCls} />
                           )}
                         </div>
                         <div className="flex-1">
-                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Godown</label>
-                          <input value={it.godown || ''} onChange={e => updateItem(idx, { godown: e.target.value })} placeholder="Godown / Location" className={cellCls} />
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('godownLabel')}</label>
+                          <input value={it.godown || ''} onChange={e => updateItem(idx, { godown: e.target.value })} placeholder={tc('godownLabel')} className={cellCls} />
                         </div>
                       </div>
 
-                      {/* Row 3 — Unit selector */}
                       <div className="flex gap-2 items-end">
                         <div className="w-28 shrink-0">
-                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Dispatch Unit</label>
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('dispatchUnit')}</label>
                           <select value={it.unit} onChange={e => updateItem(idx, { unit: e.target.value })} className={cellCls}>
                             {ALL_UNITS.map(u => <option key={u} value={u}>{UNIT_DEFS[u].label}</option>)}
                           </select>
                         </div>
-                        {/* hint: product base unit */}
                         {it.unit !== it.baseUnit && (
-                          <span className="text-[10px] text-slate-400 pb-1.5">base: {it.baseUnit}</span>
+                          <span className="text-[10px] text-slate-400 pb-1.5">{tc('baseUnit', { unit: it.baseUnit })}</span>
                         )}
                       </div>
 
-                      {/* Row 4 — dynamic quantity fields */}
                       {isPack ? (
                         <div className="flex gap-2">
                           <div className="flex-1">
-                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">No. of {it.unit}s</label>
+                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('noOfPacks', { unit: it.unit })}</label>
                             <input type="number" min="0" value={it.noOfPacks ?? ''} onChange={e => updateItem(idx, { noOfPacks: e.target.value === '' ? null : Number(e.target.value) })} placeholder="e.g. 20" className={cellCls} />
                           </div>
                           <div className="flex-1">
-                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{it.unit} Size (Kg)</label>
+                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('packSize', { unit: it.unit })}</label>
                             <input type="number" min="0" value={it.packSize ?? ''} onChange={e => updateItem(idx, { packSize: e.target.value === '' ? null : Number(e.target.value) })} placeholder="e.g. 50" className={cellCls} />
                           </div>
                           <div className="flex-1">
-                            <label className="block text-[9px] font-black uppercase text-emerald-600 mb-0.5">Total Weight</label>
+                            <label className="block text-[9px] font-black uppercase text-emerald-600 mb-0.5">{tc('totalWeight')}</label>
                             <div className="px-2 py-1.5 text-xs bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg font-bold text-emerald-700 dark:text-emerald-400">
                               {bags && packSz ? `${(bags * packSz).toLocaleString('en-IN')} Kg` : '— Kg'}
                             </div>
@@ -1095,12 +1095,12 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                       ) : (
                         <div className="flex gap-2">
                           <div className="flex-1">
-                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Quantity ({it.unit})</label>
+                            <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('quantityUnit', { unit: it.unit })}</label>
                             <input type="number" min="0" value={it.quantity || ''} onChange={e => updateItem(idx, { quantity: Number(e.target.value) || 0 })} className={cellCls} />
                           </div>
                           {isWeight && (
                             <div className="flex-1">
-                              <label className="block text-[9px] font-black uppercase text-emerald-600 mb-0.5">≈ Kg Equivalent</label>
+                              <label className="block text-[9px] font-black uppercase text-emerald-600 mb-0.5">{tc('kgEquivalent')}</label>
                               <div className="px-2 py-1.5 text-xs bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg font-bold text-emerald-700 dark:text-emerald-400">
                                 {it.quantity ? `${((it.quantity) * (def.toKg || 1)).toLocaleString('en-IN')} Kg` : '— Kg'}
                               </div>
@@ -1109,14 +1109,13 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                         </div>
                       )}
 
-                      {/* Row 5 — Rate + Total */}
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
-                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Rate (₹ per {it.unit})</label>
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('ratePerUnit', { unit: it.unit })}</label>
                           <input type="number" min="0" value={it.price || ''} onChange={e => updateItem(idx, { price: Number(e.target.value) || 0 })} className={cellCls} />
                         </div>
                         <div className="flex-1 text-right">
-                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">Item Total</label>
+                          <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('itemTotal')}</label>
                           <div className="px-2 py-1.5 text-sm font-black text-slate-900 dark:text-white bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
                             ₹{itemTotal.toLocaleString('en-IN')}
                           </div>
@@ -1126,9 +1125,8 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                   );
                 })}
 
-                {/* Grand total */}
                 <div className="flex justify-between items-center px-3 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-sm">
-                  <span className="text-slate-600 dark:text-slate-400">Grand Total</span>
+                  <span className="text-slate-600 dark:text-slate-400">{tc('grandTotal')}</span>
                   <span className="text-slate-900 dark:text-white text-base">₹{total.toLocaleString('en-IN')}</span>
                 </div>
               </div>
@@ -1136,16 +1134,16 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
           </Section>
 
           {/* ─ Dispatch Details ─ */}
-          <Section icon={<MapPin size={13} />} title="Dispatch Details" collapsible defaultOpen>
+          <Section icon={<MapPin size={13} />} title={tc('sectionDispatch')} collapsible defaultOpen>
             <div className="flex gap-3 flex-wrap">
-              <Field label="Dispatch From (Godown / Location)" half>
+              <Field label={tc('fieldDispatchFrom')} half>
                 <input value={dispatchFrom} onChange={e => setDispatchFrom(e.target.value)} placeholder="e.g. Main Godown, Warehouse B" className={inputCls} />
               </Field>
-              <Field label="Delivery Address" half>
+              <Field label={tc('fieldDeliveryAddress')} half>
                 <input
                   value={selectedParty?.address || ''}
                   readOnly
-                  placeholder="Auto-filled from party"
+                  placeholder={tc('autoFilledFromParty')}
                   className={cn(inputCls, 'bg-slate-50 dark:bg-slate-800/50 text-slate-500')}
                 />
               </Field>
@@ -1153,77 +1151,77 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
           </Section>
 
           {/* ─ Transport ─ */}
-          <Section icon={<Truck size={13} />} title="Transport" collapsible defaultOpen={dispatchType !== 'sample'}>
+          <Section icon={<Truck size={13} />} title={tc('sectionTransport')} collapsible defaultOpen={dispatchType !== 'sample'}>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Transporter">
+              <Field label={tc('fieldTransporter')}>
                 <select value={transporterId} onChange={e => setTransporterId(e.target.value)} className={selectCls}>
-                  <option value="">— Select Transporter —</option>
+                  <option value="">{tc('selectTransporter')}</option>
                   {transporters.map(t => <option key={t.id} value={t.id}>{t.name}{t.mobile ? ` (${t.mobile})` : ''}</option>)}
                 </select>
                 {transporters.length === 0 && (
-                  <p className="text-[10px] text-slate-400 mt-1">Add transporters in CRM → Parties (type: Transporter)</p>
+                  <p className="text-[10px] text-slate-400 mt-1">{tc('addTransporterHint')}</p>
                 )}
               </Field>
-              <Field label="Freight paid to transporter (₹)">
+              <Field label={tc('fieldFreight')}>
                 <input
                   type="number" min="0" step="0.01"
                   value={freightAmount}
                   onChange={e => setFreightAmount(e.target.value)}
-                  placeholder="Bhade amount"
+                  placeholder={tc('freightPlaceholder')}
                   disabled={!transporterId}
                   className={inputCls}
                 />
                 {transporterId && freightAmount && Number(freightAmount) > 0 && (
-                  <p className="text-[10px] text-emerald-600 mt-1">Auto FreightEntry create होईल</p>
+                  <p className="text-[10px] text-emerald-600 mt-1">{tc('autoFreightHint')}</p>
                 )}
               </Field>
-              <Field label="Vehicle Number">
+              <Field label={tc('fieldVehicleNumber')}>
                 <input value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="e.g. MH 12 AB 1234" className={inputCls} />
               </Field>
-              <Field label="Driver Name">
-                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Driver name" className={inputCls} />
+              <Field label={tc('fieldDriverName')}>
+                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder={tc('fieldDriverName')} className={inputCls} />
               </Field>
               {isMill && (
                 <>
-                  <Field label="Hamali paid by you (₹)">
-                    <input type="number" min="0" step="0.01" value={hamaliAmount} onChange={e => setHamaliAmount(e.target.value)} placeholder="Loading hamali for this sale" className={inputCls} />
-                    <p className="text-[10px] text-slate-400 mt-1">Saved as Sale hamali</p>
+                  <Field label={tc('fieldHamali')}>
+                    <input type="number" min="0" step="0.01" value={hamaliAmount} onChange={e => setHamaliAmount(e.target.value)} placeholder={tc('hamaliPlaceholder')} className={inputCls} />
+                    <p className="text-[10px] text-slate-400 mt-1">{tc('hamaliHint')}</p>
                   </Field>
-                  <Field label="Sale Broker">
-                    <input value={brokerName} onChange={e => setBrokerName(e.target.value)} placeholder="Broker name" className={inputCls} />
+                  <Field label={tc('fieldSaleBroker')}>
+                    <input value={brokerName} onChange={e => setBrokerName(e.target.value)} placeholder={tc('brokerPlaceholder')} className={inputCls} />
                   </Field>
-                  <Field label="Broker Commission (₹)">
-                    <input type="number" min="0" step="0.01" value={brokerCommission} onChange={e => setBrokerCommission(e.target.value)} placeholder="Commission" disabled={!brokerName.trim()} className={inputCls} />
-                    <p className="text-[10px] text-slate-400 mt-1">Saved as Sale (customer) broker</p>
+                  <Field label={tc('fieldBrokerCommission')}>
+                    <input type="number" min="0" step="0.01" value={brokerCommission} onChange={e => setBrokerCommission(e.target.value)} disabled={!brokerName.trim()} className={inputCls} />
+                    <p className="text-[10px] text-slate-400 mt-1">{tc('brokerCommissionHint')}</p>
                   </Field>
                 </>
               )}
-              <Field label="Driver Mobile">
-                <input value={driverMobile} onChange={e => setDriverMobile(e.target.value)} placeholder="Mobile number" className={inputCls} />
+              <Field label={tc('fieldDriverMobile')}>
+                <input value={driverMobile} onChange={e => setDriverMobile(e.target.value)} placeholder={tc('fieldDriverMobile')} className={inputCls} />
               </Field>
-              <Field label="LR / Transport Receipt No." half>
-                <input value={lrNumber} onChange={e => setLrNumber(e.target.value)} placeholder="LR Number" className={inputCls} />
+              <Field label={tc('fieldLRNumber')} half>
+                <input value={lrNumber} onChange={e => setLrNumber(e.target.value)} placeholder={tc('fieldLRNumber')} className={inputCls} />
               </Field>
             </div>
           </Section>
 
           {/* ─ Reference ─ */}
-          <Section icon={<Hash size={13} />} title="Reference / Compliance" collapsible defaultOpen={false}>
+          <Section icon={<Hash size={13} />} title={tc('sectionReference')} collapsible defaultOpen={false}>
             <div className="grid grid-cols-2 gap-3">
               {dispatchType === 'job_work' && (
-                <Field label="Job Work Order Ref">
+                <Field label={tc('fieldJobWorkRef')}>
                   <input value={jobWorkOrderRef} onChange={e => setJobWorkOrderRef(e.target.value)} placeholder="JW Order / Ref no." className={inputCls} />
                 </Field>
               )}
-              <Field label="E-Way Bill No.">
-                <input value={eWayBillNo} onChange={e => setEWayBillNo(e.target.value)} placeholder="If applicable" className={inputCls} />
+              <Field label={tc('fieldEWayBill')}>
+                <input value={eWayBillNo} onChange={e => setEWayBillNo(e.target.value)} placeholder={tc('ewayPlaceholder')} className={inputCls} />
               </Field>
-              <Field label="Expected Invoice Date">
+              <Field label={tc('fieldExpectedInvoiceDate')}>
                 <input type="date" value={expectedInvoiceDate} onChange={e => setExpectedInvoiceDate(e.target.value)} className={inputCls} />
               </Field>
               <div className="col-span-2">
-                <Field label="Notes">
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Any remarks…" className={inputCls} />
+                <Field label={tc('fieldNotes')}>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder={tc('notesPlaceholder')} className={inputCls} />
                 </Field>
               </div>
             </div>
@@ -1240,7 +1238,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
             className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-900 py-3 rounded-xl font-black flex items-center justify-center gap-2 transition-all active:scale-95"
           >
             {saving ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
-            {saving ? 'Saving…' : 'Create Challan & Dispatch Stock'}
+            {saving ? tc('savingLabel') : tc('createChallanSubmit')}
           </button>
         </div>
       </div>
@@ -1250,8 +1248,19 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
 
 // ── Print View ────────────────────────────────────────────────────────────────
 
-function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; shopName: string; onClose: () => void }) {
-  const dispatchLabel = DISPATCH_TYPES.find(d => d.value === challan.dispatchType)?.label || challan.dispatchType || 'Sale';
+function PrintChallanModal({ challan, shopName, shopAddress, shopMobile, shopGst, onClose }: {
+  challan: Challan; shopName: string; shopAddress: string; shopMobile: string; shopGst: string; onClose: () => void;
+}) {
+  const tc = useTranslations('Challan');
+  const dispatchTypeLabels: Record<string, string> = {
+    sale:     tc('dispatchTypeSale'),
+    job_work: tc('dispatchTypeJobWork'),
+    sample:   tc('dispatchTypeSample'),
+    transfer: tc('dispatchTypeTransfer'),
+    return:   tc('dispatchTypeReturn'),
+    other:    tc('dispatchTypeOther'),
+  };
+  const dispatchLabel = challan.dispatchType ? (dispatchTypeLabels[challan.dispatchType] || challan.dispatchType) : tc('dispatchTypeSale');
   const hasTransport  = challan.transporterCustomer || challan.transporter || challan.vehicleNumber || challan.driverName || challan.lrNumber;
   const hasRef        = challan.eWayBillNo || challan.jobWorkOrderRef || challan.expectedInvoiceDate;
   const contentRef    = useRef<HTMLDivElement>(null);
@@ -1280,10 +1289,10 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
     <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <h2 className="font-black text-lg text-slate-900">Delivery Challan</h2>
+          <h2 className="font-black text-lg text-slate-900">{tc('printModalTitle')}</h2>
           <div className="flex items-center gap-2">
             <button onClick={handleDownloadPdf} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-slate-900 rounded-lg text-sm font-bold">
-              <Printer size={14} /> Download PDF
+              <Printer size={14} /> {tc('downloadPdf')}
             </button>
             <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={20} /></button>
           </div>
@@ -1294,14 +1303,14 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
           <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-4">
             <div>
               <h1 className="text-xl font-black">{shopName}</h1>
-              <p className="text-xs text-slate-500 mt-0.5">DELIVERY CHALLAN — Not a Tax Invoice</p>
+              <p className="text-xs text-slate-500 mt-0.5">{tc('deliveryChallanHeader')}</p>
               <span className="inline-block mt-1 text-[10px] font-bold uppercase px-2 py-0.5 bg-slate-100 rounded text-slate-600">
                 {dispatchLabel}
               </span>
             </div>
             <div className="text-right text-sm">
-              <p><span className="text-slate-500">Challan #:</span> <span className="font-bold">{challan.challanNumber}</span></p>
-              <p><span className="text-slate-500">Date:</span>{' '}
+              <p><span className="text-slate-500">{tc('printChallanNo')}</span> <span className="font-bold">{challan.challanNumber}</span></p>
+              <p><span className="text-slate-500">{tc('printDate')}</span>{' '}
                 {fmtDate(challan.challanDate || challan.createdAt)}
               </p>
               <p className="mt-1">
@@ -1315,14 +1324,20 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
           {/* Party + Dispatch */}
           <div className="grid grid-cols-2 gap-6 mb-4">
             <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Dispatched To</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">{tc('dispatchedTo')}</p>
               <p className="font-bold">{challan.customerName || '—'}</p>
               {challan.customerMobile && <p className="text-sm text-slate-600">{challan.customerMobile}</p>}
               {challan.customerAddress && <p className="text-sm text-slate-600">{challan.customerAddress}</p>}
             </div>
             <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Dispatch From</p>
-              <p className="font-semibold text-sm">{challan.dispatchFrom || '—'}</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">{tc('dispatchFromLabel')}</p>
+              <p className="font-bold text-sm">{shopName}</p>
+              {shopAddress && <p className="text-xs text-slate-600 mt-0.5">{shopAddress}</p>}
+              {shopMobile && <p className="text-xs text-slate-600">{shopMobile}</p>}
+              {shopGst && <p className="text-xs text-slate-500">{tc('gstLabel')}{shopGst}</p>}
+              {challan.dispatchFrom && (
+                <p className="text-xs text-slate-500 mt-0.5 italic">{challan.dispatchFrom}</p>
+              )}
             </div>
           </div>
 
@@ -1330,22 +1345,23 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
           <table className="w-full text-sm border border-slate-200 mb-4">
             <thead className="bg-slate-100">
               <tr>
-                <th className="px-3 py-2 text-left">#</th>
-                <th className="px-3 py-2 text-left">Item</th>
-                <th className="px-3 py-2 text-left">Lot / Batch</th>
-                <th className="px-3 py-2 text-left">Godown</th>
-                <th className="px-3 py-2 text-center">Qty / Packs</th>
-                <th className="px-3 py-2 text-center">Wt. (Kg)</th>
-                <th className="px-3 py-2 text-right">Rate</th>
-                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2 text-left">{tc('printColNo')}</th>
+                <th className="px-3 py-2 text-left">{tc('printColItem')}</th>
+                <th className="px-3 py-2 text-left">{tc('printColLot')}</th>
+                <th className="px-3 py-2 text-left">{tc('printColGodown')}</th>
+                <th className="px-3 py-2 text-center">{tc('printColQty')}</th>
+                <th className="px-3 py-2 text-center">{tc('printColWt')}</th>
+                <th className="px-3 py-2 text-right">{tc('printColRate')}</th>
+                <th className="px-3 py-2 text-right">{tc('printColAmount')}</th>
               </tr>
             </thead>
             <tbody>
               {challan.items.map((it, i) => {
                 const def = unitDef(it.unit);
                 const isPack = def.kind === 'pack';
+                const packs = it.noOfPacks ?? it.quantity;
                 const qtyDisplay = isPack
-                  ? `${it.noOfPacks ?? it.quantity} ${it.unit}${(it.noOfPacks ?? 1) !== 1 ? 's' : ''} × ${it.packSize ?? '?'} Kg`
+                  ? `${packs} ${it.unit}${Number(packs) !== 1 ? 's' : ''}`
                   : `${it.quantity} ${it.unit}`;
                 const wt = it.totalWeight
                   ? it.totalWeight.toLocaleString('en-IN')
@@ -1371,7 +1387,7 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
 
           <div className="flex justify-end mb-4">
             <div className="text-right">
-              <p className="text-sm text-slate-500">Total Value</p>
+              <p className="text-sm text-slate-500">{tc('totalValue')}</p>
               <p className="text-xl font-black">₹{challanTotal(challan).toLocaleString('en-IN')}</p>
             </div>
           </div>
@@ -1379,27 +1395,27 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
           {/* Transport */}
           {hasTransport && (
             <div className="border border-slate-200 rounded-lg p-3 mb-4 text-xs grid grid-cols-2 gap-2">
-              <p className="col-span-2 font-bold text-slate-700 mb-1">Transport Details</p>
+              <p className="col-span-2 font-bold text-slate-700 mb-1">{tc('transportDetails')}</p>
               {(challan.transporterCustomer?.name || challan.transporter) && (
-                <p><span className="text-slate-500">Transporter: </span>{challan.transporterCustomer?.name || challan.transporter}</p>
+                <p><span className="text-slate-500">{tc('transporterLabel')}</span>{challan.transporterCustomer?.name || challan.transporter}</p>
               )}
               {challan.freightAmount != null && challan.freightAmount > 0 && (
-                <p><span className="text-slate-500">Freight: </span>₹{challan.freightAmount.toLocaleString('en-IN')}</p>
+                <p><span className="text-slate-500">{tc('freightLabel')}</span>₹{challan.freightAmount.toLocaleString('en-IN')}</p>
               )}
-              {challan.vehicleNumber && <p><span className="text-slate-500">Vehicle: </span>{challan.vehicleNumber}</p>}
-              {challan.driverName && <p><span className="text-slate-500">Driver: </span>{challan.driverName}{challan.driverMobile ? ` (${challan.driverMobile})` : ''}</p>}
-              {challan.lrNumber && <p><span className="text-slate-500">LR No.: </span>{challan.lrNumber}</p>}
+              {challan.vehicleNumber && <p><span className="text-slate-500">{tc('vehicleLabel')}</span>{challan.vehicleNumber}</p>}
+              {challan.driverName && <p><span className="text-slate-500">{tc('driverLabel')}</span>{challan.driverName}{challan.driverMobile ? ` (${challan.driverMobile})` : ''}</p>}
+              {challan.lrNumber && <p><span className="text-slate-500">{tc('lrLabel')}</span>{challan.lrNumber}</p>}
             </div>
           )}
 
           {/* Reference */}
           {hasRef && (
             <div className="border border-slate-200 rounded-lg p-3 mb-4 text-xs grid grid-cols-2 gap-2">
-              <p className="col-span-2 font-bold text-slate-700 mb-1">Reference</p>
-              {challan.eWayBillNo && <p><span className="text-slate-500">E-Way Bill: </span>{challan.eWayBillNo}</p>}
-              {challan.jobWorkOrderRef && <p><span className="text-slate-500">JW Order Ref: </span>{challan.jobWorkOrderRef}</p>}
+              <p className="col-span-2 font-bold text-slate-700 mb-1">{tc('referenceSection')}</p>
+              {challan.eWayBillNo && <p><span className="text-slate-500">{tc('ewayLabel')}</span>{challan.eWayBillNo}</p>}
+              {challan.jobWorkOrderRef && <p><span className="text-slate-500">{tc('jwRefLabel')}</span>{challan.jobWorkOrderRef}</p>}
               {challan.expectedInvoiceDate && (
-                <p><span className="text-slate-500">Expected Invoice Date: </span>
+                <p><span className="text-slate-500">{tc('expectedInvDateLabel')}</span>
                   {fmtDate(challan.expectedInvoiceDate)}
                 </p>
               )}
@@ -1408,20 +1424,20 @@ function PrintChallanModal({ challan, shopName, onClose }: { challan: Challan; s
 
           {challan.notes && (
             <div className="text-xs text-slate-500 mb-4">
-              <p className="font-bold text-slate-700">Notes</p>
+              <p className="font-bold text-slate-700">{tc('notesLabel')}</p>
               <p>{challan.notes}</p>
             </div>
           )}
 
           {/* Signatures */}
           <div className="grid grid-cols-3 gap-6 mt-8 pt-4 border-t border-slate-200 text-xs text-center text-slate-500">
-            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>Prepared By</p></div>
-            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>Authorised Signatory</p></div>
-            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>Receiver Signature</p></div>
+            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>{tc('preparedBy')}</p></div>
+            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>{tc('authorisedSignatory')}</p></div>
+            <div><div className="h-12 border-b border-slate-300 mb-1" /><p>{tc('receiverSignature')}</p></div>
           </div>
 
           <p className="mt-6 text-[10px] text-slate-400 text-center">
-            Goods dispatched against this challan — a formal GST invoice follows separately.
+            {tc('footerNote')}
           </p>
         </div>
       </div>
