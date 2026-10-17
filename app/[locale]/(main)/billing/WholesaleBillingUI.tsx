@@ -435,7 +435,7 @@ function FgLotPackPickerModal({
               </p>
             )}
             {totalKg > available + 0.005 && (
-              <p className="text-xs text-rose-600 font-semibold">Exceeds available ({available} {lot.unit})</p>
+              <p className="text-xs text-rose-600 font-semibold">{t('exceedsAvailable', { available, unit: lot.unit })}</p>
             )}
           </div>
           <div className="flex gap-2 shrink-0">
@@ -2051,7 +2051,7 @@ export default function WholesaleBillingUI() {
                             <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
                             {!!(p.totalDue || 0) && <span className="text-[10px] text-orange-500 font-semibold">₹{(p.totalDue || 0).toLocaleString()} due</span>}
                           </div>
-                          <div className="text-xs text-slate-500">{p.mobile || 'No mobile'}{p.gst ? ` • ${p.gst}` : ''}</div>
+                          <div className="text-xs text-slate-500">{p.mobile || t('noMobile') || 'No mobile'}{p.gst ? ` • ${p.gst}` : ''}</div>
                         </button>
                       ))}
                     {parties.filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase())).length === 0 && (
@@ -2982,42 +2982,42 @@ export default function WholesaleBillingUI() {
           <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
               <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Plus size={18} className="text-emerald-500" /> Manual Quick Add
+                <Plus size={18} className="text-emerald-500" /> {t('manualQuickAdd') || 'Manual Quick Add'}
               </h3>
               <button onClick={() => setShowManualAdd(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={18} /></button>
             </div>
             <form onSubmit={handleManualAddSubmit} className="p-5 space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">Item Name</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">{t('itemName') || 'Item Name'}</label>
                 <input required autoFocus className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
                   value={manualProduct.name} onChange={e => setManualProduct({...manualProduct, name: e.target.value})} />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">
-                  Barcode {manualProduct.barcode ? <span className="text-emerald-500 normal-case font-medium">— registers this as a real product</span> : <span className="normal-case font-medium">(optional — leave blank for a one-off cart item)</span>}
+                  {t('barcode') || 'Barcode'} {manualProduct.barcode ? <span className="text-emerald-500 normal-case font-medium">— {t('barcodeHintRegisters') || 'registers this as a real product'}</span> : <span className="normal-case font-medium">({t('barcodeHintOptional') || 'optional — leave blank for a one-off cart item'})</span>}
                 </label>
                 <input className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white font-mono"
                   value={manualProduct.barcode} onChange={e => setManualProduct({...manualProduct, barcode: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">Cost Price (₹)</label>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">{t('costPrice') || 'Cost Price'} (₹)</label>
                   <input type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
                     value={manualProduct.costPrice} onChange={e => setManualProduct({...manualProduct, costPrice: e.target.value})} />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">MRP (₹)</label>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">{t('mrp') || 'MRP'} (₹)</label>
                   <input type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
                     value={manualProduct.mrp} onChange={e => setManualProduct({...manualProduct, mrp: e.target.value})} />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">{isMill ? `${tMill('rateExclGst')} (₹)` : 'Selling Price (₹)'}</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">{isMill ? `${tMill('rateExclGst')} (₹)` : `${t('sellingPrice') || 'Selling Price'} (₹)`}</label>
                 <input required type="number" step="any" className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-emerald-600 dark:text-emerald-400"
                   value={manualProduct.price} onChange={e => setManualProduct({...manualProduct, price: e.target.value})} />
               </div>
               <button type="submit" className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-colors text-sm shadow-sm">
-                {manualProduct.barcode ? 'Create Product & Add' : 'Add to Cart'}
+                {manualProduct.barcode ? (t('createProductAdd') || 'Create Product & Add') : (t('addToCart') || 'Add to Cart')}
               </button>
             </form>
           </div>
@@ -3031,19 +3031,19 @@ export default function WholesaleBillingUI() {
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <Scan size={32} />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Product Not Found</h3>
-            <p className="text-slate-500 mb-6">No product found for barcode <strong className="text-slate-700 dark:text-slate-300">{unknownBarcode}</strong></p>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t('productNotFound') || 'Product Not Found'}</h3>
+            <p className="text-slate-500 mb-6">{t('noProductFoundBarcode') || 'No product found for barcode '}<strong className="text-slate-700 dark:text-slate-300">{unknownBarcode}</strong></p>
             <div className="flex gap-3">
               <button onClick={() => setUnknownBarcode(null)}
                 className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700">
-                Cancel
+                {t('cancel') || 'Cancel'}
               </button>
               <button onClick={() => {
                 setManualProduct(p => ({ ...p, barcode: unknownBarcode }));
                 setUnknownBarcode(null);
                 setShowManualAdd(true);
               }} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold">
-                Create Product
+                {t('createProduct') || 'Create Product'}
               </button>
             </div>
           </div>
@@ -3057,7 +3057,7 @@ export default function WholesaleBillingUI() {
             <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
               <AlertCircle size={24} className="text-orange-500" />
             </div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white text-center mb-1">Overdue Balance</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white text-center mb-1">{t('overdueBalance') || 'Overdue Balance'}</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 text-center mb-4">
               <strong>{selectedParty.name}</strong> has{' '}
               {partyCreditHealth.overdueInvoicesCount} overdue bill{partyCreditHealth.overdueInvoicesCount > 1 ? 's' : ''}{' '}
@@ -3067,11 +3067,11 @@ export default function WholesaleBillingUI() {
             <div className="flex gap-3">
               <button onClick={() => { setOverdueConfirmPending(false); overdueConfirmResolveRef.current?.(false); }}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                Cancel
+                {t('cancel') || 'Cancel'}
               </button>
               <button onClick={() => { setOverdueConfirmPending(false); overdueConfirmResolveRef.current?.(true); }}
                 className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold">
-                Bill Anyway
+                {t('billAnyway') || 'Bill Anyway'}
               </button>
             </div>
           </div>
@@ -3236,7 +3236,7 @@ export default function WholesaleBillingUI() {
                         bill" visibility, plus the new creditDays/overdue
                         signal that had no equivalent anywhere before. */}
                     {loadingPartyCredit && (
-                      <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Checking credit status…</div>
+                      <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> {t('checkingCreditStatus') || 'Checking credit limit…'}</div>
                     )}
                     {!loadingPartyCredit && partyCreditHealth && (partyCreditHealth.overLimitBy > 0 || partyCreditHealth.overdueAmount > 0) && (
                       <div className="mt-2 space-y-1">
@@ -3286,7 +3286,7 @@ export default function WholesaleBillingUI() {
                                 <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
                                 {!!(p.totalDue || 0) && <span className="text-[10px] text-orange-500 font-semibold">₹{(p.totalDue || 0).toLocaleString()} due</span>}
                               </div>
-                              <div className="text-xs text-slate-500">{p.mobile || 'No mobile'}{p.gst ? ` • ${p.gst}` : ''}</div>
+                              <div className="text-xs text-slate-500">{p.mobile || t('noMobile') || 'No mobile'}{p.gst ? ` • ${p.gst}` : ''}</div>
                             </button>
                           ))}
                         {parties.filter(p => p.name.toLowerCase().includes(partySearch.toLowerCase())).length === 0 && (
@@ -3377,7 +3377,7 @@ export default function WholesaleBillingUI() {
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('transactionId') || 'Transaction ID'}</label>
                           <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
-                            value={upiTxnId} onChange={e => setUpiTxnId(e.target.value)} placeholder="UTR / Ref no." />
+                            value={upiTxnId} onChange={e => setUpiTxnId(e.target.value)} placeholder={t('upiRefPlaceholder') || 'UTR / Ref no.'} />
                         </div>
                       </div>
                     )}
@@ -3391,7 +3391,7 @@ export default function WholesaleBillingUI() {
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">{t('referenceNo') || 'Reference No.'}</label>
                           <input className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
-                            value={bankRefNo} onChange={e => setBankRefNo(e.target.value)} placeholder="UTR" />
+                            value={bankRefNo} onChange={e => setBankRefNo(e.target.value)} placeholder={t('bankRefPlaceholder') || 'UTR'} />
                         </div>
                       </div>
                     )}
@@ -3545,7 +3545,7 @@ export default function WholesaleBillingUI() {
           <div className={`relative w-full ${isA4Bill ? 'max-w-3xl' : 'max-w-sm'} bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
               <span className="text-emerald-500 font-black text-lg flex items-center gap-2">
-                <CheckCircle size={22} /> Bill Generated!
+                <CheckCircle size={22} /> {t('billGenerated') || 'Bill Generated!'}
               </span>
               <button onClick={() => { setShowBillModal(false); setWaWebFallbackUrl(null); setSendStatus(null); }} className="text-slate-500 hover:text-slate-900 transition-colors">
                 <X size={24} />
@@ -3588,7 +3588,7 @@ export default function WholesaleBillingUI() {
                   className="block text-center text-[11px] font-semibold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 underline underline-offset-2"
                   onClick={() => setWaWebFallbackUrl(null)}
                 >
-                  App not opening? Send via WhatsApp Web instead
+                  {t('waAppNotOpening') || 'App not opening? Send via WhatsApp Web instead'}
                 </a>
               )}
 
@@ -3596,11 +3596,11 @@ export default function WholesaleBillingUI() {
               {sendStatus?.email !== undefined && sendStatus.email !== undefined && (
                 <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-sm transition-colors">
                   {sendStatus.email === null ? (
-                    <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Sending email...</span>
+                    <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> {t('sendingEmail') || 'Sending email...'}</span>
                   ) : sendStatus.email ? (
-                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ Email sent successfully</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ {t('emailSentSuccess') || 'Email sent successfully'}</span>
                   ) : (
-                    <span className="text-red-500 dark:text-red-400">Failed to send email</span>
+                    <span className="text-red-500 dark:text-red-400">{t('failedToSendEmail') || 'Failed to send email'}</span>
                   )}
                 </div>
               )}
@@ -3617,7 +3617,7 @@ export default function WholesaleBillingUI() {
                   }}
                   className="flex flex-col items-center justify-center gap-1 bg-emerald-500 text-white dark:text-slate-900 py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-sm"
                 >
-                  <Printer size={20} /> Print
+                  <Printer size={20} /> {t('printButton') || 'Print'}
                 </button>
                 <button
                   onClick={handleDownloadPDF}
@@ -3631,7 +3631,7 @@ export default function WholesaleBillingUI() {
                   className="flex flex-col items-center justify-center gap-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 py-3 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors disabled:opacity-70 shadow-sm"
                 >
                   {isSharing ? <Loader2 size={20} className="animate-spin" /> : <MessageCircle size={20} />}
-                  {isSharing ? 'Sharing...' : 'Share'}
+                  {isSharing ? (t('sharing') || 'Sharing...') : (t('shareButton') || 'Share')}
                 </button>
               </div>
 
@@ -3639,7 +3639,7 @@ export default function WholesaleBillingUI() {
                 onClick={() => { setShowBillModal(false); clearCart(); }}
                 className="w-full mt-2 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold transition-colors"
               >
-                New Bill
+                {t('newBill') || 'New Bill'}
               </button>
             </div>
           </div>
@@ -3654,7 +3654,7 @@ export default function WholesaleBillingUI() {
           <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-5 py-4 border-b border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-900/20">
               <span className="text-rose-600 dark:text-rose-400 font-black text-lg flex items-center gap-2">
-                <AlertCircle size={22} /> Out of Stock!
+                <AlertCircle size={22} /> {t('outOfStock') || 'Out of Stock!'}
               </span>
               <button onClick={() => setOutOfStockItem(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
                 <X size={24} />
@@ -3664,20 +3664,20 @@ export default function WholesaleBillingUI() {
             <div className="p-5 flex-1 overflow-y-auto">
               <div className="mb-6 text-center">
                 <p className="text-slate-700 dark:text-slate-300 font-medium">
-                  Sorry, <span className="font-bold">{outOfStockItem.name}</span> is currently out of stock.
+                  {t('outOfStockMessage', { name: outOfStockItem.name })}
                 </p>
-                <p className="text-sm text-slate-500 mt-1">You cannot add it to the bill. However, you can add one of these recommended alternatives:</p>
+                <p className="text-sm text-slate-500 mt-1">{t('outOfStockAltHint') || 'You cannot add it to the bill. However, you can add one of these recommended alternatives:'}</p>
               </div>
 
               {recommendedProducts.length > 0 ? (
                 <div className="space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Recommended Alternatives</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">{t('recommendedAlternatives') || 'Recommended Alternatives'}</h3>
                   {recommendedProducts.map(rec => (
                     <div key={rec.id} className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                       <div>
                         <div className="font-bold text-sm text-slate-900 dark:text-white">{rec.name}</div>
                         <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
-                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">{Math.max(0, rec.currentStock || 0)} In Stock</span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">{Math.max(0, rec.currentStock || 0)} {t('inStock') || 'In Stock'}</span>
                           <span>•</span>
                           <span>₹{isWholesale ? rec.wholesaleCost : rec.sellingPrice}</span>
                         </div>
@@ -3689,14 +3689,14 @@ export default function WholesaleBillingUI() {
                         }}
                         className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-500/20 dark:hover:bg-emerald-500/30 dark:text-emerald-400 rounded-lg text-xs font-bold transition-colors shadow-sm"
                       >
-                        Add to Bill
+                        {t('addToBill') || 'Add to Bill'}
                       </button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-8 text-slate-500">
-                  No similar products found in stock.
+                  {t('noSimilarProducts') || 'No similar products found in stock.'}
                 </div>
               )}
             </div>
@@ -3706,7 +3706,7 @@ export default function WholesaleBillingUI() {
                {/* <button onClick={() => { addToCart(outOfStockItem, undefined, true); setOutOfStockItem(null); }} className="px-4 py-2 text-rose-600 font-bold hover:bg-rose-50 rounded-xl transition-colors">Force Add</button> */}
                <div className="flex-1"></div>
                <button onClick={() => setOutOfStockItem(null)} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors">
-                 Close
+                 {t('close') || 'Close'}
                </button>
             </div>
           </div>
@@ -3907,7 +3907,7 @@ export default function WholesaleBillingUI() {
                             {[v.color, v.size].filter(Boolean).join(' / ') || `#${i + 1}`}
                           </div>
                           <div className={cn('text-xs mt-1', out ? 'text-rose-500 font-bold' : 'text-slate-500')}>
-                            {out ? 'Out of stock' : `${stock} in stock`}
+                            {out ? (t('outOfStockVariant') || 'Out of stock') : (t('inStockCount', { count: stock }) || `${stock} in stock`)}
                           </div>
                         </button>
                       );
@@ -3922,7 +3922,7 @@ export default function WholesaleBillingUI() {
                     <div className="space-y-3">
                       {onBill.length > 0 && (
                         <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-900/20 p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1.5">Already on this bill</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1.5">{t('alreadyOnBill') || 'Already on this bill'}</p>
                           <div className="flex flex-wrap gap-1.5">
                             {onBill.map((i: any) => (
                               <span key={`${i.variant}-${i.batchId || ''}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -3933,7 +3933,7 @@ export default function WholesaleBillingUI() {
                         </div>
                       )}
                       <button type="button" onClick={closePicker} className="w-full py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-sm">
-                        Done{total > 0 ? ` — ${total} added to bill` : ''}
+                        {total > 0 ? t('doneAddedToBill', { count: total }) : (t('done') || 'Done')}
                       </button>
                     </div>
                   );
@@ -3953,7 +3953,7 @@ export default function WholesaleBillingUI() {
           <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-xl shadow-xl flex flex-col max-h-[85vh] overflow-hidden border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <div>
-                <span className="font-semibold text-slate-900 dark:text-white text-sm block">Change Lot</span>
+                <span className="font-semibold text-slate-900 dark:text-white text-sm block">{t('changeLot') || 'Change Lot'}</span>
                 <span className="text-[11px] text-slate-500">
                   {batchSelectionProduct.name}
                   {batchSelectionVariant?.split('')[0] && ` · ${batchSelectionVariant.split('')[0]}`}
@@ -3964,7 +3964,7 @@ export default function WholesaleBillingUI() {
               </button>
             </div>
             <div className="p-3 overflow-y-auto space-y-1.5">
-              <p className="text-[11px] text-slate-400 mb-2">Oldest lot is recommended — sell it first so older stock doesn't sit. Profit is calculated from each lot's purchase cost.</p>
+              <p className="text-[11px] text-slate-400 mb-2">{t('lotPickerHint') || 'Oldest lot is recommended — sell it first so older stock doesn\'t sit. Profit is calculated from each lot\'s purchase cost.'}</p>
               {batchSelectionOptions.map((b, idx) => (
                 <button
                   key={b.id}
