@@ -512,7 +512,7 @@ export default function LegacyStockUI() {
       return (
         <tr key={item.id} className={cn('group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200', item.archived && 'opacity-60')}>
           {selectable && (
-            <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+            <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
               <input
                 type="checkbox"
                 checked={selectedStockIds.has(item.id)}
@@ -521,16 +521,16 @@ export default function LegacyStockUI() {
               />
             </td>
           )}
-          <td className="px-6 py-4 font-medium"><SmartTranslator text={item.name} locale={locale} /></td>
-          <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
-          <td className="px-6 py-4">
+          <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-slate-100"><SmartTranslator text={item.name} locale={locale} /></td>
+          <td className="px-3 py-2.5 text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
+          <td className="px-3 py-2.5">
             {rowsBizConfig.hasSizes ? (
               <div>
-                <button onClick={() => openEditModal(item)} className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer">
+                <button onClick={() => openEditModal(item)} className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-500 transition-colors underline-offset-2 hover:underline cursor-pointer">
                   {Math.max(0, item.current)}
                 </button>
                 {(item.recentlyAdded ?? 0) > 0 && (
-                  <span className="ml-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title={t('recentlyAddedStock')}>
+                  <span className="ml-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title={t('recentlyAddedStock')}>
                     +{item.recentlyAdded}
                   </span>
                 )}
@@ -540,10 +540,10 @@ export default function LegacyStockUI() {
                 />
               </div>
             ) : (
-              <span className="inline-flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1">
                 <button
                   onClick={() => openEditModal(item)}
-                  className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-400 transition-colors underline-offset-2 hover:underline cursor-pointer"
+                  className="font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-500 transition-colors underline-offset-2 hover:underline cursor-pointer"
                   title={t('clickToAdjustStock')}
                 >
                   {Math.max(0, item.current)}
@@ -556,12 +556,12 @@ export default function LegacyStockUI() {
               </span>
             )}
           </td>
-          <td className="px-6 py-4 text-slate-400">{item.min}</td>
-          <td className="px-6 py-4 text-sm text-slate-400"><SmartTranslator text={item.unit} locale={locale} /></td>
-          <td className="px-6 py-4 text-sm text-slate-400">{item.location || '—'}</td>
-          <td className="px-6 py-4 text-sm text-right text-slate-400">{item.mrp ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
-          <td className="px-6 py-4 text-sm text-right text-slate-400">{item.cost ? `₹${item.cost.toLocaleString('en-IN')}` : '—'}</td>
-          <td className="px-6 py-4 text-sm text-right text-slate-400">
+          <td className="px-3 py-2.5 text-slate-400">{item.min}</td>
+          <td className="px-3 py-2.5 text-slate-400"><SmartTranslator text={item.unit} locale={locale} /></td>
+          <td className="px-3 py-2.5 text-slate-400">{item.location || '—'}</td>
+          <td className="px-3 py-2.5 text-right text-slate-400">{item.mrp ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
+          <td className="px-3 py-2.5 text-right text-slate-400">{item.cost ? `₹${item.cost.toLocaleString('en-IN')}` : '—'}</td>
+          <td className="px-3 py-2.5 text-right text-slate-400">
             {(() => {
               const mrp = Number(item.mrp) || 0;
               const sp = Number(item.sellingPrice) || 0;
@@ -571,49 +571,49 @@ export default function LegacyStockUI() {
               return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − SP ₹${sp}`}>{pct.toFixed(1)}%</span>;
             })()}
           </td>
-          <td className="px-6 py-4">
+          <td className="px-3 py-2.5">
             {!item.archived ? (
-              <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit', statusCls(status))}>
-                {status === 'low' && <AlertTriangle size={10} />}
+              <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-flex items-center gap-0.5', statusCls(status))}>
+                {status === 'low' && <AlertTriangle size={9} />}
                 {statusLabel(status)}
               </span>
             ) : (
-              <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase bg-slate-700 text-slate-400">{t('archived')}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">{t('archived')}</span>
             )}
           </td>
-          <td className="px-6 py-4">
-            <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity">
+          <td className="px-3 py-2.5">
+            <div className="flex items-center justify-end gap-1">
               <button
                 onClick={() => openEditModal(item)}
                 title={t('editRow')}
-                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50">
-                <Pencil size={14} />
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-500 transition-all active:scale-90">
+                <Pencil size={13} />
               </button>
 
               <button
                 onClick={() => setQrItem(item)}
                 title="Barcode / QR"
-                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-indigo-500/20 hover:text-indigo-400 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50">
-                <BarcodeIcon size={14} />
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-500 transition-all active:scale-90">
+                <BarcodeIcon size={13} />
               </button>
 
               <button
                 onClick={() => toggleArchive(item.id)}
                 title={item.archived ? t('unarchive') : t('archive')}
                 className={cn(
-                  "p-2 rounded-lg bg-slate-50 dark:bg-slate-800 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50",
+                  "p-1.5 rounded-lg transition-all active:scale-90",
                   item.archived
-                    ? "text-blue-400 hover:bg-blue-500/20 hover:text-blue-300"
-                    : "text-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+                    ? "text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10"
+                    : "text-slate-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-500"
                 )}>
-                {item.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                {item.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
               </button>
 
-              <button 
+              <button
                 onClick={() => permanentDelete(item)}
                 title={t('deletePermanently')}
-                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-500 hover:bg-red-500/20 hover:text-red-400 transition-all active:scale-90 border border-slate-300 dark:border-slate-700/50">
-                <Trash2 size={14} />
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90">
+                <Trash2 size={13} />
               </button>
             </div>
           </td>
@@ -686,29 +686,29 @@ export default function LegacyStockUI() {
   return (
     <div className="space-y-6" onClick={() => setMenuId(null)}>
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold text-emerald-500">{t('title')}</h1>
-        <div className="flex gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl md:text-3xl font-bold text-emerald-500">{t('title')}</h1>
+        <div className="flex gap-2">
           <button onClick={() => openModal('in')}
-            className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-500/20 transition-colors font-medium">
-            <ArrowDownLeft size={18} />{t('stockIn')}
+            className="bg-emerald-500 text-slate-900 px-3 md:px-4 py-2 rounded-xl flex items-center gap-1.5 hover:bg-emerald-400 transition-colors font-bold text-sm shadow-sm shadow-emerald-500/20">
+            <ArrowDownLeft size={16} /><span className="hidden sm:inline">{t('stockIn')}</span><span className="sm:hidden">In</span>
           </button>
           <button onClick={() => openModal('out')}
-            className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-500/20 transition-colors font-medium">
-            <ArrowUpRight size={18} />{t('stockOut')}
+            className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-red-500 dark:text-red-400 px-3 md:px-4 py-2 rounded-xl flex items-center gap-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-bold text-sm">
+            <ArrowUpRight size={16} /><span className="hidden sm:inline">{t('stockOut')}</span><span className="sm:hidden">Out</span>
           </button>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard title={t('totalItems')}  value={stats.total}      color="text-blue-400" />
-        <StatCard title={t('lowStock')}    value={stats.lowStock}   color="text-orange-400" />
-        <StatCard title={t('outOfStock')}  value={stats.outOfStock} color="text-red-400" />
+      <div className="grid grid-cols-3 gap-2 md:gap-4">
+        <StatCard title={t('totalItems')}  value={stats.total}      color="text-blue-500 dark:text-blue-400"     accent="blue" />
+        <StatCard title={t('lowStock')}    value={stats.lowStock}   color="text-orange-500 dark:text-orange-400" accent="orange" />
+        <StatCard title={t('outOfStock')}  value={stats.outOfStock} color="text-red-500 dark:text-red-400"       accent="red" />
       </div>
 
       {/* View mode tabs */}
-      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
+      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 overflow-x-auto scrollbar-hide">
         {[
           { key: 'all', label: 'All Stock', icon: Package },
           ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
@@ -718,9 +718,9 @@ export default function LegacyStockUI() {
           ...(bizConfig.hasLiquorSpecs ? [{ key: 'mlmatrix', label: 'ML Matrix', icon: Wine }] : []),
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
-            className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
-              viewMode === key ? 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-300')}>
-            <Icon size={15} />{label}
+            className={cn('flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all whitespace-nowrap',
+              viewMode === key ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300')}>
+            <Icon size={13} />{label}
           </button>
         ))}
       </div>
@@ -882,25 +882,35 @@ export default function LegacyStockUI() {
       {viewMode === 'all' && (<>
 
       {/* Search + Category Filter + Archive toggle */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="relative flex-[2]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input type="text" placeholder={t('searchPlaceholder')}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-12 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            value={search} onChange={e => setSearch(e.target.value)} />
-          <button
-            type="button"
-            title="Scan Barcode to Find"
-            onClick={() => setShowScanner(true)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 p-1.5 rounded-lg hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
-          >
-            <BarcodeIcon size={18} />
+      <div className="flex flex-col gap-2 md:flex-row md:gap-3">
+        <div className="flex gap-2 flex-[2]">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input type="text" placeholder={t('searchPlaceholder')}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-2 md:py-2.5 pl-9 pr-10 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              value={search} onChange={e => setSearch(e.target.value)} />
+            <button
+              type="button"
+              title="Scan Barcode to Find"
+              onClick={() => setShowScanner(true)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 p-1 rounded hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+            >
+              <BarcodeIcon size={16} />
+            </button>
+          </div>
+          <button onClick={() => setShowArchived(v => !v)}
+            className={cn('md:hidden px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap flex-shrink-0',
+              showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400')}>
+            <Archive size={14} />
+            {items.filter(i => i.archived).length > 0 && (
+              <span className="bg-amber-500/20 text-amber-400 text-[10px] px-1 rounded-full">{items.filter(i => i.archived).length}</span>
+            )}
           </button>
         </div>
-        
-        <div className="relative flex-1">
-          <select 
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none cursor-pointer"
+
+        <div className="flex gap-2 flex-1">
+          <select
+            className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-2 md:py-2.5 px-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none cursor-pointer"
             value={selectedCategory}
             onChange={e => setSelectedCategory(e.target.value)}
           >
@@ -909,20 +919,17 @@ export default function LegacyStockUI() {
               <option key={cat} value={cat}>{translateData(cat, locale) || cat}</option>
             ))}
           </select>
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
-            <ArrowDownLeft size={16} className="rotate-[-45deg]" />
-          </div>
-        </div>
 
-        <button onClick={() => setShowArchived(v => !v)}
-          className={cn('px-6 py-2 rounded-xl border text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap',
-            showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
-          <Archive size={16} />
-          {showArchived ? t('hideArchived') : t('archive')}
-          {items.filter(i => i.archived).length > 0 && (
-            <span className="bg-amber-500/20 text-amber-400 text-xs px-1.5 rounded-full">{items.filter(i => i.archived).length}</span>
-          )}
-        </button>
+          <button onClick={() => setShowArchived(v => !v)}
+            className={cn('hidden md:flex px-4 py-2 rounded-xl border text-sm font-medium items-center gap-2 transition-colors whitespace-nowrap',
+              showArchived ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}>
+            <Archive size={15} />
+            {showArchived ? t('hideArchived') : t('archive')}
+            {items.filter(i => i.archived).length > 0 && (
+              <span className="bg-amber-500/20 text-amber-400 text-xs px-1.5 rounded-full">{items.filter(i => i.archived).length}</span>
+            )}
+          </button>
+        </div>
       </div>
 
       <SelectionActionBar
@@ -947,90 +954,130 @@ export default function LegacyStockUI() {
             <span className="text-xs text-slate-500">({group.items.length})</span>
           </div>
         )}
-        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
-                  <tr>
-                    <th className="px-6 py-4 w-10">
-                      <input
-                        type="checkbox"
-                        checked={group.items.length > 0 && group.items.every(i => selectedStockIds.has(i.id))}
-                        onChange={() => {
-                          setSelectedStockIds(prev => {
-                            const allSelected = group.items.every(i => prev.has(i.id));
-                            const next = new Set(prev);
-                            group.items.forEach(i => allSelected ? next.delete(i.id) : next.add(i.id));
-                            return next;
-                          });
-                        }}
-                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
-                      />
-                    </th>
-                    <th className="px-6 py-4">{t('colProduct')}</th>
-                    <th className="px-6 py-4">{t('colCategory')}</th>
-                    <th className="px-6 py-4">{t('colCurrentStock')}</th>
-                    <th className="px-6 py-4">{t('colMinLevel')}</th>
-                    <th className="px-6 py-4">{t('colUnit')}</th>
-                    <th className="px-6 py-4">{t('productLocation') || 'Location'}</th>
-                    <th className="px-6 py-4 text-right">MRP</th>
-                    <th className="px-6 py-4 text-right">Cost Price</th>
-                    <th className="px-6 py-4 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc %</th>
-                    <th className="px-6 py-4">{t('colStatus')}</th>
-                    <th className="px-6 py-4 text-center">{t('colActions')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
-                  {renderRows(group.items, groupBizConfig, true)}
-                  {loading ? (
-                    <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /> Loading...</td></tr>
-                  ) : group.items.length === 0 && (
-                    <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-500">{t('noItems')}</td></tr>
+        {/* Mobile card list */}
+        <div className="md:hidden space-y-2">
+          {loading ? (
+            <div className="py-10 text-center text-slate-500"><Loader2 className="animate-spin inline-block" size={20} /></div>
+          ) : group.items.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-10 text-center text-slate-500 text-sm">{t('noItems')}</div>
+          ) : group.items.map(item => {
+            const status = getStatus(item);
+            return (
+              <div key={item.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-3 flex items-start gap-3">
+                <input type="checkbox" checked={selectedStockIds.has(item.id)} onChange={() => toggleStockSelect(item.id)} onClick={e => e.stopPropagation()} className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-tight">{item.name}</p>
+                    <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase flex-shrink-0 flex items-center gap-0.5', statusCls(status))}>
+                      {status === 'low' && <AlertTriangle size={9} />}{statusLabel(status)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+                    {item.category && <span className="text-[11px] text-slate-400">{item.category}</span>}
+                    <span className={cn('text-sm font-bold', status === 'out' ? 'text-red-500' : status === 'low' ? 'text-orange-500' : 'text-emerald-600 dark:text-emerald-400')}>
+                      {Math.max(0, item.current)} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
+                    </span>
+                    {item.mrp ? <span className="text-[11px] text-slate-400">MRP ₹{item.mrp.toLocaleString('en-IN')}</span> : null}
+                    {item.min > 0 && <span className="text-[11px] text-slate-400">Min: {item.min}</span>}
+                  </div>
+                  {(item.recentlyAdded ?? 0) > 0 && (
+                    <span className="mt-1 inline-block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full">+{item.recentlyAdded} recently</span>
                   )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => openEditModal(item)} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all border border-slate-200 dark:border-slate-700">
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => setQrItem(item)} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-indigo-500/20 hover:text-indigo-400 transition-all border border-slate-200 dark:border-slate-700">
+                    <BarcodeIcon size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden md:block border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wide border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-3 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={group.items.length > 0 && group.items.every(i => selectedStockIds.has(i.id))}
+                      onChange={() => {
+                        setSelectedStockIds(prev => {
+                          const allSelected = group.items.every(i => prev.has(i.id));
+                          const next = new Set(prev);
+                          group.items.forEach(i => allSelected ? next.delete(i.id) : next.add(i.id));
+                          return next;
+                        });
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-3 py-3">{t('colProduct')}</th>
+                  <th className="px-3 py-3">{t('colCategory')}</th>
+                  <th className="px-3 py-3">{t('colCurrentStock')}</th>
+                  <th className="px-3 py-3">{t('colMinLevel')}</th>
+                  <th className="px-3 py-3">{t('colUnit')}</th>
+                  <th className="px-3 py-3">{t('productLocation') || 'Location'}</th>
+                  <th className="px-3 py-3 text-right">MRP</th>
+                  <th className="px-3 py-3 text-right">Cost</th>
+                  <th className="px-3 py-3 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc%</th>
+                  <th className="px-3 py-3">{t('colStatus')}</th>
+                  <th className="px-3 py-3 text-center">{t('colActions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900" onClick={e => e.stopPropagation()}>
+                {renderRows(group.items, groupBizConfig, true)}
+                {loading ? (
+                  <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-400"><Loader2 className="animate-spin inline-block" size={18} /></td></tr>
+                ) : group.items.length === 0 && (
+                  <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-400 text-sm">{t('noItems')}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
       );
       })}
 
       {/* Archived Table */}
       {showArchived && (
-        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
-          <CardContent className="p-0">
-            <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 text-amber-400 text-sm font-semibold">
-              <Archive size={15} />{t('archivedProducts')}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
-                  <tr>
-                    <th className="px-6 py-4">{t('colProduct')}</th>
-                    <th className="px-6 py-4">{t('colCategory')}</th>
-                    <th className="px-6 py-4">{t('colCurrentStock')}</th>
-                    <th className="px-6 py-4">{t('colMinLevel')}</th>
-                    <th className="px-6 py-4">{t('colUnit')}</th>
-                    <th className="px-6 py-4">{t('productLocation') || 'Location'}</th>
-                    <th className="px-6 py-4 text-right">MRP</th>
-                    <th className="px-6 py-4 text-right">Cost Price</th>
-                    <th className="px-6 py-4 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc %</th>
-                    <th className="px-6 py-4">{t('colStatus')}</th>
-                    <th className="px-6 py-4 text-center">{t('colActions')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
-                  {renderRows(archivedItems)}
-                  {archivedItems.length === 0 && (
-                    <tr><td colSpan={11} className="px-6 py-10 text-center text-slate-500">{t('noArchived')}</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="border border-amber-200 dark:border-amber-500/20 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/5 flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm font-semibold">
+            <Archive size={14} />{t('archivedProducts')}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm bg-white dark:bg-slate-900">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wide border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-3 py-3">{t('colProduct')}</th>
+                  <th className="px-3 py-3">{t('colCategory')}</th>
+                  <th className="px-3 py-3">{t('colCurrentStock')}</th>
+                  <th className="px-3 py-3">{t('colMinLevel')}</th>
+                  <th className="px-3 py-3">{t('colUnit')}</th>
+                  <th className="px-3 py-3">{t('productLocation') || 'Location'}</th>
+                  <th className="px-3 py-3 text-right">MRP</th>
+                  <th className="px-3 py-3 text-right">Cost</th>
+                  <th className="px-3 py-3 text-right">Disc%</th>
+                  <th className="px-3 py-3">{t('colStatus')}</th>
+                  <th className="px-3 py-3 text-center">{t('colActions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800" onClick={e => e.stopPropagation()}>
+                {renderRows(archivedItems)}
+                {archivedItems.length === 0 && (
+                  <tr><td colSpan={11} className="px-4 py-8 text-center text-slate-400 text-sm">{t('noArchived')}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* Activity Log */}
@@ -1654,15 +1701,14 @@ export default function LegacyStockUI() {
   );
 }
 
-function StatCard({ title, value, color }: { title: string; value: number; color: string }) {
+function StatCard({ title, value, color, accent = 'slate' }: { title: string; value: number; color: string; accent?: 'blue' | 'orange' | 'red' | 'slate' }) {
   const len = String(value).length;
-  const sizeClass = len > 14 ? 'text-lg' : len > 11 ? 'text-xl' : len > 8 ? 'text-2xl' : 'text-3xl';
+  const sizeClass = len > 8 ? 'text-lg md:text-2xl' : 'text-xl md:text-3xl';
+  const borderMap = { blue: 'border-l-blue-400', orange: 'border-l-orange-400', red: 'border-l-red-400', slate: 'border-l-slate-400' };
   return (
-    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 min-w-0">
-      <CardContent className="p-6">
-        <p className="text-sm text-slate-400 font-medium">{title}</p>
-        <p className={cn('font-black mt-1 break-words [overflow-wrap:anywhere]', sizeClass, color)}>{value}</p>
-      </CardContent>
-    </Card>
+    <div className={cn('bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-l-4 rounded-xl p-3 md:p-5 min-w-0', borderMap[accent])}>
+      <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide leading-tight">{title}</p>
+      <p className={cn('font-black mt-1 break-words [overflow-wrap:anywhere]', sizeClass, color)}>{value}</p>
+    </div>
   );
 }
