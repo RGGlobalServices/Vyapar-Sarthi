@@ -710,12 +710,12 @@ export default function LegacyStockUI() {
       {/* View mode tabs */}
       <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 overflow-x-auto scrollbar-hide">
         {[
-          { key: 'all', label: 'All Stock', icon: Package },
-          ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
-          ...(allShops.length > 1 ? [{ key: 'shop', label: 'By Shop', icon: Store }] : []),
+          { key: 'all', label: t('allStock'), icon: Package },
+          ...(isWholesale ? [{ key: 'godown', label: t('byGodown'), icon: Warehouse }] : []),
+          ...(allShops.length > 1 ? [{ key: 'shop', label: t('byShop'), icon: Store }] : []),
           { key: 'daily', label: t('dailyRegister'), icon: CalendarDays },
-          { key: 'stocktake', label: 'Stock Take', icon: ListChecks },
-          ...(bizConfig.hasLiquorSpecs ? [{ key: 'mlmatrix', label: 'ML Matrix', icon: Wine }] : []),
+          { key: 'stocktake', label: t('stockTake'), icon: ListChecks },
+          ...(bizConfig.hasLiquorSpecs ? [{ key: 'mlmatrix', label: t('mlMatrix'), icon: Wine }] : []),
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
             className={cn('flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all whitespace-nowrap',
@@ -732,7 +732,7 @@ export default function LegacyStockUI() {
             <select
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-w-[220px]"
               value={selectedGodownId} onChange={e => setSelectedGodownId(e.target.value)}>
-              <option value="">— Select Godown —</option>
+              <option value="">— {t('selectGodown') || 'Select Godown'} —</option>
               {godowns.map((g: any) => (
                 <option key={g.id} value={g.id}>{g.name} ({g.godownCode || g.godown_code})</option>
               ))}
@@ -745,14 +745,14 @@ export default function LegacyStockUI() {
           {!selectedGodownId ? (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center">
               <Warehouse className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-slate-400 text-sm">Select a godown to view stock levels</p>
+              <p className="text-slate-400 text-sm">{t('selectGodownHint') || 'Select a godown to view stock levels'}</p>
             </div>
           ) : loadingGodown ? (
             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-emerald-400" size={28} /></div>
           ) : !godownData || (godownData.inventory || []).length === 0 ? (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center">
               <Package className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-slate-400 text-sm">No products in this godown yet</p>
+              <p className="text-slate-400 text-sm">{t('noProductsGodown') || 'No products in this godown yet'}</p>
             </div>
           ) : (
             <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -761,19 +761,19 @@ export default function LegacyStockUI() {
                   <Warehouse size={15} className="text-emerald-400" />
                   <span className="text-sm font-semibold text-slate-900 dark:text-slate-200">{godownData.name}</span>
                   <span className="ml-auto text-xs font-mono text-slate-500">{godownData.godownCode || godownData.godown_code}</span>
-                  <span className="text-xs text-slate-500">{(godownData.inventory || []).length} products</span>
+                  <span className="text-xs text-slate-500">{(godownData.inventory || []).length} {t('productsCount') || 'products'}</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-400 text-xs uppercase">
                       <tr>
-                        <th className="px-5 py-3">Product</th>
-                        <th className="px-5 py-3">Category</th>
-                        <th className="px-5 py-3">Godown Qty</th>
-                        <th className="px-5 py-3">Shop Stock</th>
-                        <th className="px-5 py-3">Min Level</th>
-                        <th className="px-5 py-3">Status</th>
-                        <th className="px-5 py-3">Unit</th>
+                        <th className="px-5 py-3">{t('colProduct')}</th>
+                        <th className="px-5 py-3">{t('colCategory')}</th>
+                        <th className="px-5 py-3">{t('colGodownQty') || 'Godown Qty'}</th>
+                        <th className="px-5 py-3">{t('colShopStock') || 'Shop Stock'}</th>
+                        <th className="px-5 py-3">{t('colMinLevel')}</th>
+                        <th className="px-5 py-3">{t('colStatus')}</th>
+                        <th className="px-5 py-3">{t('colUnit')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -832,12 +832,12 @@ export default function LegacyStockUI() {
                   <Store size={14} />
                   <span>{shop.name}</span>
                   {shop.shopCode && <span className="text-[10px] font-mono text-slate-500">{shop.shopCode}</span>}
-                  {isActive && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">Active</span>}
+                  {isActive && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">{t('activeBadge') || 'Active'}</span>}
                 </button>
               );
             })}
           </div>
-          <p className="text-xs text-slate-500">Showing stock for: <strong className="text-slate-300">{profile.shopName}</strong></p>
+          <p className="text-xs text-slate-500">{t('showingStockFor') || 'Showing stock for:'} <strong className="text-slate-300">{profile.shopName}</strong></p>
         </div>
       )}
 
@@ -977,11 +977,11 @@ export default function LegacyStockUI() {
                     <span className={cn('text-sm font-bold', status === 'out' ? 'text-red-500' : status === 'low' ? 'text-orange-500' : 'text-emerald-600 dark:text-emerald-400')}>
                       {Math.max(0, item.current)} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
                     </span>
-                    {item.mrp ? <span className="text-[11px] text-slate-400">MRP ₹{item.mrp.toLocaleString('en-IN')}</span> : null}
-                    {item.min > 0 && <span className="text-[11px] text-slate-400">Min: {item.min}</span>}
+                    {item.mrp ? <span className="text-[11px] text-slate-400">{t('mrpLabel') || 'MRP'} ₹{item.mrp.toLocaleString('en-IN')}</span> : null}
+                    {item.min > 0 && <span className="text-[11px] text-slate-400">{t('minLabel') || 'Min:'} {item.min}</span>}
                   </div>
                   {(item.recentlyAdded ?? 0) > 0 && (
-                    <span className="mt-1 inline-block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full">+{item.recentlyAdded} recently</span>
+                    <span className="mt-1 inline-block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full">+{item.recentlyAdded} {t('recentlyBadge') || 'recently'}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -1024,9 +1024,9 @@ export default function LegacyStockUI() {
                   <th className="px-3 py-3">{t('colMinLevel')}</th>
                   <th className="px-3 py-3">{t('colUnit')}</th>
                   <th className="px-3 py-3">{t('productLocation') || 'Location'}</th>
-                  <th className="px-3 py-3 text-right">MRP</th>
-                  <th className="px-3 py-3 text-right">Cost</th>
-                  <th className="px-3 py-3 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc%</th>
+                  <th className="px-3 py-3 text-right">{t('mrpLabel')}</th>
+                  <th className="px-3 py-3 text-right">{t('costLabel') || 'Cost'}</th>
+                  <th className="px-3 py-3 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">{t('colDisc') || 'Disc%'}</th>
                   <th className="px-3 py-3">{t('colStatus')}</th>
                   <th className="px-3 py-3 text-center">{t('colActions')}</th>
                 </tr>
@@ -1062,9 +1062,9 @@ export default function LegacyStockUI() {
                   <th className="px-3 py-3">{t('colMinLevel')}</th>
                   <th className="px-3 py-3">{t('colUnit')}</th>
                   <th className="px-3 py-3">{t('productLocation') || 'Location'}</th>
-                  <th className="px-3 py-3 text-right">MRP</th>
-                  <th className="px-3 py-3 text-right">Cost</th>
-                  <th className="px-3 py-3 text-right">Disc%</th>
+                  <th className="px-3 py-3 text-right">{t('mrpLabel')}</th>
+                  <th className="px-3 py-3 text-right">{t('costLabel') || 'Cost'}</th>
+                  <th className="px-3 py-3 text-right">{t('colDisc') || 'Disc%'}</th>
                   <th className="px-3 py-3">{t('colStatus')}</th>
                   <th className="px-3 py-3 text-center">{t('colActions')}</th>
                 </tr>
@@ -1140,13 +1140,13 @@ export default function LegacyStockUI() {
               {/* Current stock display */}
               <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-xl px-5 py-4">
                 <div>
-                  <p className="text-xs text-slate-400 mb-0.5">Current Stock</p>
+                  <p className="text-xs text-slate-400 mb-0.5">{t('colCurrentStock') || 'Current Stock'}</p>
                   <p className="text-3xl font-black text-emerald-400">{editModal.hasSizes ? Math.max(0, totalFromSizes(editModal.sizes)) : Math.max(0, editModal.item.current)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-slate-500">Unit</p>
+                  <p className="text-xs text-slate-500">{t('colUnit') || 'Unit'}</p>
                   <p className="text-sm font-semibold text-slate-300">{editModal.item.unit}</p>
-                  <p className="text-xs text-slate-500 mt-1">Min: {editModal.item.min}</p>
+                  <p className="text-xs text-slate-500 mt-1">{t('minLabel') || 'Min:'} {editModal.item.min}</p>
                 </div>
               </div>
 
@@ -1182,16 +1182,16 @@ export default function LegacyStockUI() {
                 </div>
               ) : (
               <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Adjust Stock</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{t('adjustStockTitle') || 'Adjust Stock'}</p>
                 <div className="flex gap-2 mb-3">
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjType: 'in' } : m)}
                     className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'in' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}
-                  >+ Add Stock</button>
+                  >{t('addStockLabel') || '+ Add Stock'}</button>
                   <button
                     onClick={() => setEditModal(m => m ? { ...m, adjType: 'out' } : m)}
                     className={cn('flex-1 py-2 rounded-xl text-sm font-bold transition-all', editModal.adjType === 'out' ? 'bg-red-500 text-slate-900 dark:text-white' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white')}
-                  >− Remove</button>
+                  >{t('removeLabel') || '− Remove'}</button>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -1211,7 +1211,7 @@ export default function LegacyStockUI() {
                 </div>
                 {Number(editModal.adjQty) > 0 && (
                   <div className="mt-2.5 text-center text-sm">
-                    <span className="text-slate-400">New stock → </span>
+                    <span className="text-slate-400">{t('newStockWill') || 'New stock'} → </span>
                     <span className={cn('font-bold text-lg', editModal.adjType === 'in' ? 'text-emerald-400' : 'text-red-400')}>
                       {editModal.adjType === 'in'
                         ? editModal.item.current + Number(editModal.adjQty)
@@ -1225,14 +1225,14 @@ export default function LegacyStockUI() {
 
               {/* Details */}
               <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Product Details</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{t('productDetails') || 'Product Details'}</p>
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="text-[11px] text-slate-500 mb-1 block">Name</label>
+                    <label className="text-[11px] text-slate-500 mb-1 block">{t('nameLabel') || 'Name'}</label>
                     <input className={inp} value={editModal.name} onChange={e => setEditModal(m => m ? { ...m, name: e.target.value } : m)} />
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-500 mb-1 block">Category</label>
+                    <label className="text-[11px] text-slate-500 mb-1 block">{t('category') || 'Category'}</label>
                     <input className={inp} list="stock-edit-cat-list" placeholder={t('selectOrTypeNew')}
                       value={editModal.category} onChange={e => setEditModal(m => m ? { ...m, category: e.target.value } : m)} />
                     <datalist id="stock-edit-cat-list">
@@ -1240,11 +1240,11 @@ export default function LegacyStockUI() {
                     </datalist>
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-500 mb-1 block">Unit</label>
+                    <label className="text-[11px] text-slate-500 mb-1 block">{t('colUnit') || 'Unit'}</label>
                     <input className={inp} value={editModal.unit} onChange={e => setEditModal(m => m ? { ...m, unit: e.target.value } : m)} />
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-500 mb-1 block">Min Level</label>
+                    <label className="text-[11px] text-slate-500 mb-1 block">{t('colMinLevel') || 'Min Level'}</label>
                     <input type="number" min="0" className={inp} value={editModal.min} onChange={e => setEditModal(m => m ? { ...m, min: e.target.value } : m)} />
                   </div>
                 </div>
@@ -1253,13 +1253,13 @@ export default function LegacyStockUI() {
 
             {/* Footer */}
             <div className="px-5 py-4 flex gap-3 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
-              <button onClick={() => setEditModal(null)} className="flex-1 py-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-300 text-sm font-semibold hover:bg-slate-700 transition-colors">Cancel</button>
+              <button onClick={() => setEditModal(null)} className="flex-1 py-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-300 text-sm font-semibold hover:bg-slate-700 transition-colors">{t('cancel') || 'Cancel'}</button>
               <button
                 onClick={saveEditModal}
                 disabled={editModal.submitting}
                 className="flex-1 py-2.5 bg-emerald-500 text-slate-900 rounded-xl text-sm font-bold hover:bg-emerald-400 transition-colors active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                {editModal.submitting ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Save Changes'}
+                {editModal.submitting ? <><Loader2 size={14} className="animate-spin" /> {t('saving') || 'Saving…'}</> : t('saveChanges') || 'Save Changes'}
               </button>
             </div>
           </div>
