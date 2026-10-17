@@ -1032,7 +1032,9 @@
     "changeProduct": "Change",
     "stockDetails": "Stock Details",
     "sellingPriceLabel": "Selling",
-    "updatingStock": "Updating…"
+    "updatingStock": "Updating…",
+    "fillAll": "All sizes",
+    "fillAllApply": "Fill"
   },
   "Udhar": {
     "title": "Udhar Khata (Ledger)",

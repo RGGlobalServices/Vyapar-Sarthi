@@ -946,7 +946,9 @@
     "changeProduct": "बदला",
     "stockDetails": "स्टॉक तपशील",
     "sellingPriceLabel": "विक्री",
-    "updatingStock": "अपडेट होत आहे…"
+    "updatingStock": "अपडेट होत आहे…",
+    "fillAll": "सर्व आकार",
+    "fillAllApply": "भरा"
   },
   "Udhar": {
     "title": "उधार खाते (वही)",

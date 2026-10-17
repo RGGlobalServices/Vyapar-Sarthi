@@ -172,6 +172,7 @@ export default function LegacyStockUI() {
   const [detailItem, setDetailItem] = useState<StockItem | null>(null);
   const [stockPerSizePricing, setStockPerSizePricing] = useState(false);
   const [stockSizePrices, setStockSizePrices] = useState<Record<string, SizePriceEntry>>({});
+  const [fillAllQty, setFillAllQty] = useState('');
   const [newColors, setNewColors] = useState<string[]>([]);  // colour × size (clothes/shoes) for New Product
 
   // ── Godown / shop view ───────────────────────────────────────────────────
@@ -303,7 +304,7 @@ export default function LegacyStockUI() {
 
   function openModal(type: 'in' | 'out', preselect?: StockItem) {
     setModal(type); setIsNew(false); setSelId(preselect?.id ?? ''); setQty('');
-    setNote(''); setProductSearch(''); setAddSizes({});
+    setNote(''); setProductSearch(''); setAddSizes({}); setFillAllQty('');
     setStockPerSizePricing(!!bizConfig.hasColors); setStockSizePrices({}); setNewColors([]);
     setNewForm({
       name: '', category: '', unit: bizConfig.defaultUnits[0] || '', min: '', mrp: '', selling: '', cost: '',
@@ -656,7 +657,7 @@ export default function LegacyStockUI() {
                 key={i.id}
                 type="button"
                 onClick={() => {
-                  setSelId(i.id); setError(''); setQty(''); setAddSizes({});
+                  setSelId(i.id); setError(''); setQty(''); setAddSizes({}); setFillAllQty('');
                   // Preload any existing per-net-weight prices for this product.
                   const sp = parseSizePrices((i as any).metadata);
                   setStockSizePrices(sp);
@@ -1597,22 +1598,43 @@ export default function LegacyStockUI() {
               {selectedIsSizedProduct && (
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">{t('quantityAdd')} — {isColorSizeVariants(selectedExistingSizes) ? tv('byVariant') : tv('byWeight')}</label>
-                  <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => setStockPerSizePricing(prev => !prev)}
-                        className={cn(
-                          'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
-                          stockPerSizePricing
-                            ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300'
-                        )}
-                      >
-                        <IndianRupee size={10} />
-                        {stockPerSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
-                      </button>
-                    </div>
+                  <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-3 space-y-3">
+                    {/* Quick Fill All — type one qty, press भरा to fill every size at once */}
+                    {(() => {
+                      const isCsv = isColorSizeVariants(selectedExistingSizes);
+                      const allKeys = isCsv
+                        ? Object.keys(selectedExistingSizes)
+                        : Array.from(new Set([...(bizConfig.sizeChart || []), ...Object.keys(selectedExistingSizes)]));
+                      function applyFill() {
+                        const v = parseInt(fillAllQty) || 0;
+                        if (v <= 0) return;
+                        const filled: Record<string, number> = {};
+                        allKeys.forEach(k => { filled[k] = v; });
+                        setAddSizes(filled);
+                      }
+                      return (
+                        <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2">
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex-shrink-0">{t('fillAll') || 'सर्वांना'}</span>
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-20 bg-transparent border-b border-slate-300 dark:border-slate-600 px-1 py-0.5 text-center text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+                            placeholder="0"
+                            value={fillAllQty}
+                            onChange={e => setFillAllQty(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyFill(); } }}
+                          />
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">{selectedItem?.unit || 'pcs'}</span>
+                          <button
+                            type="button"
+                            onClick={applyFill}
+                            className="ml-auto px-3 py-1 rounded-lg bg-emerald-500 text-white text-[11px] font-bold hover:bg-emerald-600 active:scale-95 transition-all flex-shrink-0"
+                          >
+                            {t('fillAllApply') || 'भरा'}
+                          </button>
+                        </div>
+                      );
+                    })()}
                     {isColorSizeVariants(selectedExistingSizes) ? (
                       <ColorSizeVariantGrid
                         colors={colorsFromVariants(selectedExistingSizes)}
@@ -1623,7 +1645,7 @@ export default function LegacyStockUI() {
                         value={addSizes}
                         onChange={setAddSizes}
                         unitLabel={selectedItem?.unit?.toLowerCase() || 'units'}
-                        perSizePricing={stockPerSizePricing}
+                        perSizePricing={false}
                         sizePrices={stockSizePrices}
                         onSizePricesChange={setStockSizePrices}
                         showSwatch={bizConfig.hasColors}
@@ -1635,7 +1657,7 @@ export default function LegacyStockUI() {
                       value={addSizes}
                       onChange={setAddSizes}
                       unitLabel={selectedItem?.unit?.toLowerCase() || 'units'}
-                      perSizePricing={stockPerSizePricing}
+                      perSizePricing={false}
                       sizePrices={stockSizePrices}
                       onSizePricesChange={setStockSizePrices}
                       baseValue={selectedExistingSizes}
