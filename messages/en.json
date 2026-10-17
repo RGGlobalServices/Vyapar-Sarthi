@@ -1034,7 +1034,9 @@
     "sellingPriceLabel": "Selling",
     "updatingStock": "Updating…",
     "fillAll": "All sizes",
-    "fillAllApply": "Fill"
+    "fillAllApply": "Fill",
+    "nameRequired": "Product name is required",
+    "validAmount": "Enter a valid quantity"
   },
   "Udhar": {
     "title": "Udhar Khata (Ledger)",

@@ -948,7 +948,9 @@
     "sellingPriceLabel": "बिक्री",
     "updatingStock": "अपडेट हो रहा है…",
     "fillAll": "सभी आकार",
-    "fillAllApply": "भरें"
+    "fillAllApply": "भरें",
+    "nameRequired": "उत्पाद का नाम आवश्यक है",
+    "validAmount": "वैध मात्रा दर्ज करें"
   },
   "Udhar": {
     "title": "उधार खाता (बही)",

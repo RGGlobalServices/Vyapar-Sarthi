@@ -948,7 +948,9 @@
     "sellingPriceLabel": "विक्री",
     "updatingStock": "अपडेट होत आहे…",
     "fillAll": "सर्व आकार",
-    "fillAllApply": "भरा"
+    "fillAllApply": "भरा",
+    "nameRequired": "उत्पादाचे नाव आवश्यक आहे",
+    "validAmount": "वैध प्रमाण प्रविष्ट करा"
   },
   "Udhar": {
     "title": "उधार खाते (वही)",
