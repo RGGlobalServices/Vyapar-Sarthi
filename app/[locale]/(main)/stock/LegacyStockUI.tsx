@@ -375,7 +375,9 @@ export default function LegacyStockUI() {
         cost: pricing.cost ? Number(pricing.cost) : undefined,
       };
       // Per net-weight stock-in: add the entered amounts onto each existing size.
-      if (selectedHasSizes) {
+      // Use selectedIsSizedProduct (not selectedHasSizes) so a sized product at 0 stock
+      // also routes through the size grid path — server rejects a plain qty for sized products.
+      if (selectedIsSizedProduct) {
         const delta = totalFromSizes(addSizes);
         if (!delta || delta <= 0) { setError(t('validAmount') ?? 'Enter a valid quantity.'); setSubmitting(false); return; }
         const merged: Record<string, number> = { ...selectedExistingSizes };
@@ -453,7 +455,11 @@ export default function LegacyStockUI() {
   // product actually has weights.
   const selectedExistingSizes = (!isNew && selectedItem)
     ? parseSizeVariants(selectedItem.size_variants) : {};
+  // selectedHasSizes: sizes with stock > 0 — used for Stock Out (can only remove stock that exists)
   const selectedHasSizes = Object.values(selectedExistingSizes).some(v => Number(v) > 0);
+  // selectedIsSizedProduct: product is tracked per size/colour at all (even if currently 0 stock)
+  // used for Stock In — server requires the size grid even when a sized product is at 0
+  const selectedIsSizedProduct = Object.keys(selectedExistingSizes).length > 0;
 
   // New-product variant model. Apparel = Colour × Size (always on); electricals/electronics =
   // a Type × Spec matrix resolved from the chosen CATEGORY (bulb → Type × Watt, battery →
@@ -1585,8 +1591,10 @@ export default function LegacyStockUI() {
                   )}
                 </div>
               )}
-              {/* Existing product with net-weight / size variants → add stock per size */}
-              {selectedHasSizes && (
+              {/* Existing product with net-weight / size variants → add stock per size.
+                  Use selectedIsSizedProduct (not selectedHasSizes) so the grid still shows
+                  when all sizes are currently at 0 (server still requires per-size amounts). */}
+              {selectedIsSizedProduct && (
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">{t('quantityAdd')} — {isColorSizeVariants(selectedExistingSizes) ? tv('byVariant') : tv('byWeight')}</label>
                   <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-3 space-y-2">
@@ -1639,7 +1647,7 @@ export default function LegacyStockUI() {
                   </p>
                 </div>
               )}
-              {selId !== '' && !selectedHasSizes && (
+              {selId !== '' && !selectedIsSizedProduct && (
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">{t('quantityAdd')}</label>
                   <input type="number" min="1" autoFocus className={inp} placeholder="0" value={qty} onChange={e => { setQty(e.target.value); setError(''); }} />
