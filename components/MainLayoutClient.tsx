@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { usePathname } from '@/i18n/routing';
+import { usePathname, Link } from '@/i18n/routing';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useAuthStore } from '@/lib/store';
 import { useUIStore } from '@/lib/uiStore';
@@ -125,9 +125,9 @@ function PaymentReminderBanner({ profile, locale }: { profile: any, locale: stri
             {t('subscriptionExpiredBanner')}
           </span>
         </div>
-        <a href={paymentLink} className="bg-white text-red-600 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-red-50 transition-colors shadow-sm">
+        <Link href={paymentLink as any} className="bg-white text-red-600 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-red-50 transition-colors shadow-sm">
           {t('payNowToUnlock')}
-        </a>
+        </Link>
       </div>
     );
   }
@@ -144,9 +144,9 @@ function PaymentReminderBanner({ profile, locale }: { profile: any, locale: stri
             {isToday ? t('endsTodayMsg', { plan }) : t('endsInDaysMsg', { plan, days: daysLeft })}
           </span>
         </div>
-        <a href={earlyPaymentLink} className="bg-slate-900 text-amber-500 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-slate-800 transition-colors shadow-sm">
+        <Link href={earlyPaymentLink as any} className="bg-slate-900 text-amber-500 px-4 py-1.5 rounded-lg text-sm font-black whitespace-nowrap hover:bg-slate-800 transition-colors shadow-sm">
           {t('payNow')}
-        </a>
+        </Link>
       </div>
     );
   }
@@ -487,12 +487,12 @@ export default function MainLayoutClient({
               <p className="text-slate-600 dark:text-slate-400 text-lg mb-8 leading-relaxed">
                 {t('subscriptionEndedBody')}
               </p>
-              <a
-                href={`/${locale}/payment?plan=shop`}
+              <Link
+                href={`/${locale}/payment?plan=shop` as any}
                 className="inline-flex items-center gap-2 bg-emerald-500 text-slate-900 font-bold px-8 py-4 rounded-xl hover:bg-emerald-400 hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl shadow-emerald-500/20"
               >
                 {t('renewSubscription')}
-              </a>
+              </Link>
             </div>
           )}
         </main>
