@@ -379,16 +379,19 @@ export default function LegacyStockUI() {
       // Use selectedIsSizedProduct (not selectedHasSizes) so a sized product at 0 stock
       // also routes through the size grid path — server rejects a plain qty for sized products.
       if (selectedIsSizedProduct) {
-        const delta = totalFromSizes(addSizes);
+        // The server /adjust endpoint requires a variantKey for sized products — it adjusts
+        // one variant at a time. Filter to keys that exist in the product's current size_variants
+        // so the server doesn't reject unknown keys.
+        const addEntries = Object.entries(addSizes)
+          .filter(([key, v]) => v > 0 && Object.prototype.hasOwnProperty.call(selectedExistingSizes, key));
+        const delta = addEntries.reduce((s, [, v]) => s + v, 0);
         if (!delta || delta <= 0) { setError(t('validAmount') ?? 'Enter a valid quantity.'); setSubmitting(false); return; }
-        const merged: Record<string, number> = { ...selectedExistingSizes };
-        for (const [sz, add] of Object.entries(addSizes)) {
-          if (add > 0) merged[sz] = (merged[sz] || 0) + add;
-        }
-        const sizeMeta = mergeSizePricesIntoMetadata(selectedItem?.metadata, stockSizePrices, stockPerSizePricing);
         try {
-          await adjustStock(selId, delta, note, pricingPayload);
-          await updateItem(selId, { size_variants: serializeSizeVariants(merged), metadata: sizeMeta });
+          for (let i = 0; i < addEntries.length; i++) {
+            const [variantKey, qty] = addEntries[i];
+            // Pass pricing only on the first call to avoid redundant PUT requests.
+            await adjustStock(selId, qty, note, i === 0 ? pricingPayload : undefined, variantKey);
+          }
           closeModal();
         } catch (err: any) {
           const msg = err?.response?.data?.detail || err?.response?.data?.message || 'Failed to adjust stock. Please try again.';

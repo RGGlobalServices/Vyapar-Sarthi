@@ -614,7 +614,7 @@ interface StockStore {
   updateItem: (id: number | string, updates: Partial<Omit<StockItem, 'id'>>) => Promise<void>;
   removeItem: (id: number | string) => Promise<void>;
   toggleArchive: (id: number | string) => Promise<void>;
-  adjustStock: (id: number | string, delta: number, note: string, pricing?: any) => Promise<void>;
+  adjustStock: (id: number | string, delta: number, note: string, pricing?: any, variantKey?: string) => Promise<void>;
   mergeFromImport: (items: any[], date: string) => Promise<void>;
   mergePurchaseBill: (items: any[], date: string, vendorName: string) => Promise<void>;
   clearLog: () => void;
@@ -835,7 +835,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
 
   // Optimistic: stock number changes instantly (current ± delta), pricing updates
   // apply immediately, and a log row appears — then the server confirms.
-  adjustStock: async (id, delta, note, pricing?: any) => {
+  adjustStock: async (id, delta, note, pricing?: any, variantKey?: string) => {
     const prevItems = get().items;
     const prevLog = get().log;
     const item = get().items.find((i) => i.id === id);
@@ -869,7 +869,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
     }));
 
     try {
-      await api.post(`/products/${id}/adjust`, { quantity: delta, type: delta > 0 ? 'in' : 'out', note });
+      await api.post(`/products/${id}/adjust`, { quantity: delta, type: delta > 0 ? 'in' : 'out', note, ...(variantKey !== undefined ? { variantKey } : {}) });
       if (pricing && Object.keys(pricing).length > 0) {
         const updates: any = {};
         if (pricing.mrp !== undefined) updates.mrp = pricing.mrp;
