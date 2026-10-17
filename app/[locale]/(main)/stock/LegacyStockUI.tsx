@@ -169,6 +169,7 @@ export default function LegacyStockUI() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmClearLog, setConfirmClearLog] = useState(false);
+  const [detailItem, setDetailItem] = useState<StockItem | null>(null);
   const [stockPerSizePricing, setStockPerSizePricing] = useState(false);
   const [stockSizePrices, setStockSizePrices] = useState<Record<string, SizePriceEntry>>({});
   const [newColors, setNewColors] = useState<string[]>([]);  // colour × size (clothes/shoes) for New Product
@@ -300,8 +301,8 @@ export default function LegacyStockUI() {
     }
   }
 
-  function openModal(type: 'in' | 'out') {
-    setModal(type); setIsNew(false); setSelId(''); setQty('');
+  function openModal(type: 'in' | 'out', preselect?: StockItem) {
+    setModal(type); setIsNew(false); setSelId(preselect?.id ?? ''); setQty('');
     setNote(''); setProductSearch(''); setAddSizes({});
     setStockPerSizePricing(!!bizConfig.hasColors); setStockSizePrices({}); setNewColors([]);
     setNewForm({
@@ -521,7 +522,7 @@ export default function LegacyStockUI() {
               />
             </td>
           )}
-          <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-slate-100"><SmartTranslator text={item.name} locale={locale} /></td>
+          <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-slate-100 cursor-pointer hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors" onClick={() => setDetailItem(item)}><SmartTranslator text={item.name} locale={locale} /></td>
           <td className="px-3 py-2.5 text-slate-400"><SmartTranslator text={item.category} locale={locale} /></td>
           <td className="px-3 py-2.5">
             {rowsBizConfig.hasSizes ? (
@@ -963,7 +964,7 @@ export default function LegacyStockUI() {
           ) : group.items.map(item => {
             const status = getStatus(item);
             return (
-              <div key={item.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-3 flex items-start gap-3">
+              <div key={item.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-3 flex items-start gap-3 cursor-pointer active:bg-slate-50 dark:active:bg-slate-800/60 transition-colors" onClick={() => setDetailItem(item)}>
                 <input type="checkbox" checked={selectedStockIds.has(item.id)} onChange={() => toggleStockSelect(item.id)} onClick={e => e.stopPropagation()} className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
@@ -985,10 +986,10 @@ export default function LegacyStockUI() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => openEditModal(item)} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all border border-slate-200 dark:border-slate-700">
+                  <button onClick={e => { e.stopPropagation(); openEditModal(item); }} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all border border-slate-200 dark:border-slate-700">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => setQrItem(item)} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-indigo-500/20 hover:text-indigo-400 transition-all border border-slate-200 dark:border-slate-700">
+                  <button onClick={e => { e.stopPropagation(); setQrItem(item); }} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-indigo-500/20 hover:text-indigo-400 transition-all border border-slate-200 dark:border-slate-700">
                     <BarcodeIcon size={13} />
                   </button>
                 </div>
@@ -1266,6 +1267,131 @@ export default function LegacyStockUI() {
         </div>
       )}
 
+      {/* ── Product Detail Modal ── */}
+      {detailItem && (() => {
+        const di = detailItem;
+        const diStatus = getStatus(di);
+        const diSizes = Object.entries(parseSizeVariants(di.size_variants)).filter(([, q]) => Number(q) > 0);
+        const mrp = Number(di.mrp) || 0;
+        const sp = Number(di.sellingPrice) || 0;
+        const disc = (mrp > 0 && sp > 0 && sp <= mrp) ? ((mrp - sp) / mrp * 100).toFixed(1) : null;
+        const recentLog = log.filter(e => e.itemName === di.name).slice(0, 5);
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setDetailItem(null)}>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[88vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+              {/* Drag handle (mobile) */}
+              <div className="sm:hidden flex justify-center pt-3 pb-1 flex-shrink-0">
+                <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+              </div>
+              {/* Header */}
+              <div className="flex items-start justify-between px-5 pt-3 pb-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+                <div className="min-w-0 pr-3">
+                  <h2 className="text-base font-black text-slate-900 dark:text-slate-100 leading-tight">{di.name}</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    {di.category && <span className="text-xs text-slate-400">{di.category}</span>}
+                    {di.unit && <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">{di.unit}</span>}
+                    {di.location && <span className="text-xs flex items-center gap-0.5 text-slate-400"><MapPin size={10} />{di.location}</span>}
+                  </div>
+                </div>
+                <button onClick={() => setDetailItem(null)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0 p-1"><X size={20} /></button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 p-5 space-y-4">
+                {/* Stock numbers */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">{t('colCurrentStock')}</p>
+                    <p className={cn('text-2xl font-black', diStatus === 'out' ? 'text-red-400' : diStatus === 'low' ? 'text-orange-400' : 'text-emerald-400')}>{Math.max(0, di.current)}</p>
+                    <p className="text-[10px] text-slate-400">{di.unit}</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">{t('colMinLevel')}</p>
+                    <p className="text-2xl font-black text-slate-500 dark:text-slate-400">{di.min || 0}</p>
+                    <p className="text-[10px] text-slate-400">{di.unit}</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 flex items-center justify-center">
+                    <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold uppercase', statusCls(diStatus))}>{statusLabel(diStatus)}</span>
+                  </div>
+                </div>
+
+                {/* Pricing */}
+                {(di.mrp || di.sellingPrice || di.cost) ? (
+                  <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{t('pricingInfo') || 'Pricing'}</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                      {di.mrp ? <div className="flex justify-between"><span className="text-xs text-slate-400">{t('mrpLabel')}</span><span className="text-xs font-bold text-slate-900 dark:text-slate-100">₹{di.mrp.toLocaleString('en-IN')}</span></div> : null}
+                      {di.sellingPrice ? <div className="flex justify-between"><span className="text-xs text-slate-400">{t('sellingPriceLabel') || 'Selling'}</span><span className="text-xs font-bold text-emerald-500">₹{di.sellingPrice.toLocaleString('en-IN')}</span></div> : null}
+                      {di.cost ? <div className="flex justify-between"><span className="text-xs text-slate-400">{t('costLabel') || 'Cost'}</span><span className="text-xs font-bold text-slate-700 dark:text-slate-300">₹{di.cost.toLocaleString('en-IN')}</span></div> : null}
+                      {disc ? <div className="flex justify-between"><span className="text-xs text-slate-400">{t('colDisc') || 'Disc%'}</span><span className="text-xs font-bold text-blue-500">{disc}%</span></div> : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Size variants */}
+                {diSizes.length > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">{t('colCurrentStock')}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {diSizes.map(([sz, q]) => (
+                        <span key={sz} className="text-xs bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 px-2 py-1 rounded-lg font-medium">
+                          {sz}: <span className="font-black text-emerald-500">{String(q)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent activity */}
+                {recentLog.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">{t('recentActivity') || 'Recent Activity'}</p>
+                    <div className="space-y-1.5">
+                      {recentLog.map(entry => (
+                        <div key={entry.id} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className={cn('w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0',
+                              entry.type === 'in' ? 'bg-emerald-500/15 text-emerald-400' : entry.type === 'out' ? 'bg-red-500/15 text-red-400' : 'bg-blue-500/15 text-blue-400')}>
+                              {entry.type === 'in' ? <ArrowDownLeft size={10} /> : entry.type === 'out' ? <ArrowUpRight size={10} /> : <Pencil size={9} />}
+                            </span>
+                            <span className="text-slate-500 dark:text-slate-400">{entry.note || (entry.type === 'in' ? t('stockIn') : t('stockOut'))}</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={cn('font-bold', entry.type === 'in' ? 'text-emerald-400' : entry.type === 'out' ? 'text-red-400' : 'text-blue-400')}>
+                              {entry.type === 'in' ? '+' : entry.type === 'out' ? '−' : '±'}{entry.qty}
+                            </span>
+                            <span className="text-slate-500 text-[10px]">{entry.time}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex-shrink-0 grid grid-cols-2 gap-2">
+                <button onClick={() => { setDetailItem(null); openEditModal(di); }}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                  <Pencil size={14} />{t('editRow') || 'Edit'}
+                </button>
+                <button onClick={() => { setDetailItem(null); openModal('in', di); }}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-500 text-slate-900 text-sm font-bold hover:bg-emerald-400 transition-colors">
+                  <ArrowDownLeft size={14} />{t('stockIn')}
+                </button>
+                <button onClick={() => { setDetailItem(null); openModal('out', di); }}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400 text-sm font-semibold hover:bg-red-500/20 transition-colors">
+                  <ArrowUpRight size={14} />{t('stockOut')}
+                </button>
+                <button onClick={() => { setDetailItem(null); setQrItem(di); }}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-500 dark:text-indigo-400 text-sm font-semibold hover:bg-indigo-500/20 transition-colors">
+                  <BarcodeIcon size={14} />QR / Barcode
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Stock In Modal */}
       {modal === 'in' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1289,7 +1415,22 @@ export default function LegacyStockUI() {
                 <Plus size={14} />
                 {t('addNewProductCta')}
               </button>
-              {renderProductPicker()}
+              {/* Product picker — collapses to compact card once a product is chosen */}
+              {selId !== '' && selectedItem ? (
+                <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{selectedItem.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {selectedItem.category ? `${selectedItem.category} · ` : ''}
+                      {t('available')}: <span className="font-semibold text-emerald-400">{Math.max(0, selectedItem.current)} {selectedItem.unit}</span>
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => { setSelId(''); setQty(''); setAddSizes({}); setError(''); }}
+                    className="text-xs font-bold text-emerald-500 hover:text-emerald-400 flex-shrink-0 px-2 py-1 rounded-lg hover:bg-emerald-500/10 transition-colors">
+                    {t('changeProduct') || 'Change'}
+                  </button>
+                </div>
+              ) : renderProductPicker()}
               {false && (
                 <div className="space-y-3">
                   {/* Basic Info */}
@@ -1498,11 +1639,11 @@ export default function LegacyStockUI() {
                   </p>
                 </div>
               )}
-              {!(isNew && newVariantActive) && !selectedHasSizes && (
+              {selId !== '' && !selectedHasSizes && (
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">{t('quantityAdd')}</label>
-                  <input type="number" min="1" required={!isNew || !newVariantActive} className={inp} placeholder="0" value={qty} onChange={e => { setQty(e.target.value); setError(''); }} />
-                  {!isNew && selectedItem && qty && (
+                  <input type="number" min="1" autoFocus className={inp} placeholder="0" value={qty} onChange={e => { setQty(e.target.value); setError(''); }} />
+                  {selectedItem && qty && (
                     <p className="text-xs text-slate-500 mt-1">{t('newStockWill')}: <span className="text-emerald-400 font-semibold">{selectedItem.current + Number(qty)} {selectedItem.unit}</span></p>
                   )}
                 </div>
@@ -1566,7 +1707,7 @@ export default function LegacyStockUI() {
               <button type="submit" disabled={submitting}
                 className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 text-slate-900 py-3 rounded-xl font-black hover:from-emerald-500 hover:to-emerald-400 shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-60 disabled:active:scale-100 flex items-center justify-center gap-2">
                 {submitting ? <Loader2 className="animate-spin" size={18} /> : null}
-                {submitting ? 'Updating...' : t('addStock')}
+                {submitting ? (t('updatingStock') || 'Updating…') : t('addStock')}
               </button>
             </div>
             </form>

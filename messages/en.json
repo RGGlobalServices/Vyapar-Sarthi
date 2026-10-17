@@ -1028,7 +1028,11 @@
     "nameLabel": "Name",
     "minLabel": "Min:",
     "saving": "Saving…",
-    "saveChanges": "Save Changes"
+    "saveChanges": "Save Changes",
+    "changeProduct": "Change",
+    "stockDetails": "Stock Details",
+    "sellingPriceLabel": "Selling",
+    "updatingStock": "Updating…"
   },
   "Udhar": {
     "title": "Udhar Khata (Ledger)",

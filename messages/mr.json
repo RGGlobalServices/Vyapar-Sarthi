@@ -942,7 +942,11 @@
     "nameLabel": "नाव",
     "minLabel": "किमान:",
     "saving": "जतन करत आहे…",
-    "saveChanges": "बदल जतन करा"
+    "saveChanges": "बदल जतन करा",
+    "changeProduct": "बदला",
+    "stockDetails": "स्टॉक तपशील",
+    "sellingPriceLabel": "विक्री",
+    "updatingStock": "अपडेट होत आहे…"
   },
   "Udhar": {
     "title": "उधार खाते (वही)",
