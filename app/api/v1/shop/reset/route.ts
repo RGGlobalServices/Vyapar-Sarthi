@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
-import { isMillBillingPackage } from '@/lib/config/packageConfig';
-
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/v1/shop/reset
- * Deletes ALL business data for the current shop (Bada Udyog / mill pack only).
+ * Deletes ALL business data for the current shop.
  * Shop profile, subscription and user account are untouched.
  * Body: { confirmText: "RESET" }
  */
@@ -18,9 +16,6 @@ export async function POST(req: NextRequest) {
     ({ shop } = await requireShop(req));
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  if (!isMillBillingPackage(shop.packageType)) {
-    return NextResponse.json({ error: 'Feature not available for this package' }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
