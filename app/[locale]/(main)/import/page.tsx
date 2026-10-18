@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useLocale } from 'next-intl';
 import RetailImport from './components/RetailImport';
@@ -7,6 +8,7 @@ import WholesaleImport from './components/WholesaleImport';
 import { isSubscriptionEnded } from '@/lib/subscriptionAccess';
 
 export default function ImportPageWrapper() {
+  const t = useTranslations('Import');
   const { profile, fetchProfile } = useBusinessStore();
   const locale = useLocale();
 
@@ -29,7 +31,7 @@ export default function ImportPageWrapper() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mb-4"></div>
-        <p className="text-slate-500">Loading Import Module...</p>
+        <p className="text-slate-500">{t('loadingModule')}</p>
       </div>
     );
   }

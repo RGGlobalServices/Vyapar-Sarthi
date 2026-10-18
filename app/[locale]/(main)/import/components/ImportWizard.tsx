@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { parseVariantTitle, baseKey } from '@/lib/variantTitleParser';
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useTranslations } from 'next-intl';
@@ -1104,7 +1104,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     title="Splits names like 'JAANZARA TG0968CD 36X40 PLAIN' into name + Size + Colour so one model becomes ONE product with variants"
                     className="flex items-center gap-1.5 px-3 py-2 border border-violet-400 bg-violet-50 dark:bg-violet-500/10 rounded-lg text-violet-700 dark:text-violet-300 font-semibold hover:bg-violet-100 dark:hover:bg-violet-500/20 text-sm"
                   >
-                    Split size &amp; colour from name ({splittableCount})
+                    {t('splitSizeColour', { n: splittableCount })}
                   </button>
                 )}
                 {canSplitTitles && splitDoneCount > 0 && (
@@ -1115,7 +1115,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     title={`${splitDoneCount} rows split — ${productCountAfterSplit} products after grouping. Click to restore the original names.`}
                     className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-amber-500 text-sm"
                   >
-                    Undo split · {productCountAfterSplit} products
+                    {t('undoSplit', { n: productCountAfterSplit })}
                   </button>
                 )}
                 <button
@@ -1135,15 +1135,13 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                     title="Add a product field as a new column"
                     className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-50 text-sm font-bold bg-white dark:bg-slate-900 cursor-pointer outline-none"
                   >
-                    <option value="">+ Column</option>
+                    <option value="">{t('addColumn')}</option>
                     {addableColumns.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
                   </select>
                 )}
                 <button onClick={() => {
                   if (previewData.length > 0) {
-                    const ok = window.confirm(
-                      `Are you sure you want to cancel?\n\nThe scanned data (${previewData.length} rows) will be lost and you'll need to scan the file again.`
-                    );
+                    const ok = window.confirm(t('cancelConfirm', { n: previewData.length }));
                     if (!ok) return;
                   }
                   setStep('upload');
@@ -1261,7 +1259,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                         ₹{Math.round(supplierMatch.balance).toLocaleString('en-IN')}
                       </div>
                       {supplierMatch.creditLimit > 0 && (
-                        <div className="text-slate-400 mt-0.5">Limit ₹{Math.round(supplierMatch.creditLimit).toLocaleString('en-IN')}</div>
+                        <div className="text-slate-400 mt-0.5">{t('creditLimitShort', { amount: Math.round(supplierMatch.creditLimit).toLocaleString('en-IN') })}</div>
                       )}
                     </div>
                   )}
@@ -1723,23 +1721,23 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               <CheckCircle size={64} className="text-emerald-500 mx-auto mb-6" />
             )}
             <h2 className={(summary.rowErrors?.length > 0) ? 'text-2xl font-bold text-amber-500 mb-2' : 'text-2xl font-bold text-emerald-500 mb-2'}>
-              {(summary.rowErrors?.length > 0) ? 'Import Completed with Some Issues' : 'Import Successful!'}
+              {(summary.rowErrors?.length > 0) ? t('importPartialTitle') : t('importSuccessTitle')}
             </h2>
             <p className="text-slate-700 dark:text-slate-300 mb-8">
-              Processed {summary.totalProcessed || previewData.length} records.
+              {t('importProcessed', { n: summary.totalProcessed || previewData.length })}
             </p>
             <div className="flex flex-wrap justify-center gap-4 text-left max-w-lg mx-auto">
               <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-w-[120px]">
-                <p className="text-sm text-slate-500">Created</p>
+                <p className="text-sm text-slate-500">{t('summaryCreated')}</p>
                 <p className="text-2xl font-bold text-emerald-500">{summary.created || 0}</p>
               </div>
               <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-w-[120px]">
-                <p className="text-sm text-slate-500">Updated</p>
+                <p className="text-sm text-slate-500">{t('summaryUpdated')}</p>
                 <p className="text-2xl font-bold text-blue-500">{summary.updated || 0}</p>
               </div>
               {summary.skipped > 0 && (
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-w-[120px]">
-                  <p className="text-sm text-slate-500">Skipped</p>
+                  <p className="text-sm text-slate-500">{t('summarySkipped')}</p>
                   <p className="text-2xl font-bold text-amber-500">{summary.skipped}</p>
                 </div>
               )}
@@ -1754,43 +1752,43 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               return (
                 <div className="mt-6 max-w-sm mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm">
                   <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-3 flex items-center gap-1.5">
-                    <IndianRupee size={12} /> {f.supplierName ? `Bill Summary — ${f.supplierName}` : 'Bill Summary'}
+                    <IndianRupee size={12} /> {f.supplierName ? t('billSummaryFor', { name: f.supplierName }) : t('billSummaryTitle')}
                   </h4>
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Goods Total</span>
+                      <span className="text-slate-500">{t('goodsTotal')}</span>
                       <span className="font-semibold tabular-nums">{fmt(f.goodsTotal)}</span>
                     </div>
                     {f.discountAmt > 0 && (
                       <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
-                        <span>Less: Discount</span>
+                        <span>{t('lessDiscount')}</span>
                         <span className="tabular-nums">−{fmt(f.discountAmt)}</span>
                       </div>
                     )}
                     {f.freightDeductAmt > 0 && (
                       <div className="flex justify-between text-blue-700 dark:text-blue-400">
-                        <span>Less: Freight (deducted)</span>
+                        <span>{t('lessFreightDeducted')}</span>
                         <span className="tabular-nums">−{fmt(f.freightDeductAmt)}</span>
                       </div>
                     )}
                     {f.chargesTotal > 0 && (
                       <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                        <span>Plus: Charges</span>
+                        <span>{t('plusCharges')}</span>
                         <span className="tabular-nums">+{fmt(f.chargesTotal)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold border-t border-slate-200 dark:border-slate-700 pt-1.5 mt-0.5">
-                      <span>Bill Total</span>
+                      <span>{t('billTotal')}</span>
                       <span className="tabular-nums">{fmt(billTotal)}</span>
                     </div>
                     {f.paidNow > 0 && (
                       <div className="flex justify-between text-slate-500">
-                        <span>Less: Paid Now</span>
+                        <span>{t('lessPaidNow')}</span>
                         <span className="tabular-nums">−{fmt(f.paidNow)}</span>
                       </div>
                     )}
                     <div className={`flex justify-between font-black border-t border-slate-200 dark:border-slate-700 pt-1.5 mt-0.5 text-base ${balanceDue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                      <span>Balance Due</span>
+                      <span>{t('balanceDueShort')}</span>
                       <span className="tabular-nums">{fmt(balanceDue)}</span>
                     </div>
                   </div>
@@ -1801,7 +1799,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             {summary.rowErrors?.length > 0 && (
               <div className="mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-amber-500/30 rounded-xl">
                 <h4 className="font-bold flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-2">
-                  <AlertCircle size={16} /> {summary.rowErrors.length} row{summary.rowErrors.length > 1 ? 's' : ''} could not be imported
+                  <AlertCircle size={16} /> {t('rowsNotImported', { n: summary.rowErrors.length })}
                 </h4>
                 <ul className="list-disc pl-6 text-sm text-slate-600 dark:text-slate-400 max-h-48 overflow-y-auto space-y-1">
                   {summary.rowErrors.map((e: string, i: number) => <li key={i}>{e}</li>)}
@@ -1813,18 +1811,18 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               <div className={'mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border rounded-xl ' + (summary.millExtras.ok ? 'border-emerald-500/30' : 'border-red-500/30')} data-testid="import-mill-result">
                 {summary.millExtras.ok ? (
                   <>
-                    <h4 className="font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2"><CheckCircle size={16} /> Mill records created</h4>
+                    <h4 className="font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2"><CheckCircle size={16} /> {t('millRecordsCreated')}</h4>
                     <ul className="text-sm text-slate-600 dark:text-slate-300 list-disc pl-5 space-y-0.5">
-                      {summary.millExtras.gateEntry && <li>Gate Entry {summary.millExtras.gateEntry.entryNumber} — {summary.millExtras.gateEntry.vehicleNumber}</li>}
-                      {summary.millExtras.freight && !summary.millExtras.freight.alreadyRecorded && <li>Freight ₹{Number(summary.millExtras.freight.total).toLocaleString('en-IN')} to {summary.millExtras.freight.transporter}{summary.millExtras.freight.advance > 0 ? ` (advance ₹${Number(summary.millExtras.freight.advance).toLocaleString('en-IN')}, balance ₹${Number(summary.millExtras.freight.balance).toLocaleString('en-IN')})` : ''}</li>}
-                      {(summary.millExtras.lots || []).map((l: any) => <li key={l.id}>Raw material lot {l.lotNumber} — {l.product}, {Number(l.quantity).toLocaleString('en-IN')} {l.unit}</li>)}
+                      {summary.millExtras.gateEntry && <li>{t('millGateEntry', { num: summary.millExtras.gateEntry.entryNumber, vehicle: summary.millExtras.gateEntry.vehicleNumber })}</li>}
+                      {summary.millExtras.freight && !summary.millExtras.freight.alreadyRecorded && <li>{t('millFreightEntry', { total: Number(summary.millExtras.freight.total).toLocaleString('en-IN'), transporter: summary.millExtras.freight.transporter })}{summary.millExtras.freight.advance > 0 ? ' ' + t('millFreightEntryAdv', { advance: Number(summary.millExtras.freight.advance).toLocaleString('en-IN'), balance: Number(summary.millExtras.freight.balance).toLocaleString('en-IN') }) : ''}</li>}
+                      {(summary.millExtras.lots || []).map((l: any) => <li key={l.id}>{t('millLotEntry', { num: l.lotNumber, product: l.product, qty: Number(l.quantity).toLocaleString('en-IN'), unit: l.unit })}</li>)}
                     </ul>
-                    {(summary.millExtras.skipped || []).length > 0 && <p className="text-xs text-amber-600 mt-2">Skipped: {summary.millExtras.skipped.join(' ')}</p>}
+                    {(summary.millExtras.skipped || []).length > 0 && <p className="text-xs text-amber-600 mt-2">{t('millSkipped', { items: summary.millExtras.skipped.join(' ') })}</p>}
                   </>
                 ) : (
                   <>
-                    <h4 className="font-bold flex items-center gap-2 text-red-600 mb-2"><AlertCircle size={16} /> Truck / freight details not saved</h4>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">The purchase itself saved correctly, but the mill records (gate entry, freight, lot) could not be created: {summary.millExtras.error}. Add them from Gate Entry / Freight / Raw Material.</p>
+                    <h4 className="font-bold flex items-center gap-2 text-red-600 mb-2"><AlertCircle size={16} /> {t('millRecordsFailed')}</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">{t('millRecordsFailedDesc', { error: summary.millExtras.error })}</p>
                   </>
                 )}
               </div>
@@ -1833,10 +1831,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
             {summary.billPhotoAttachFailed && (
               <div className="mt-6 max-w-lg mx-auto text-left p-4 bg-white dark:bg-slate-900 border border-amber-500/30 rounded-xl">
                 <h4 className="font-bold flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-2">
-                  <AlertCircle size={16} /> Bill photo not attached
+                  <AlertCircle size={16} /> {t('billPhotoFailed')}
                 </h4>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  The purchase, supplier and stock all saved correctly, but the scanned bill photo couldn't be attached to the supplier (a temporary connection issue). Open the supplier's page and upload it there.
+                  {t('billPhotoFailedDesc')}
                 </p>
               </div>
             )}
@@ -1849,11 +1847,11 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                   className="flex items-center gap-2 px-6 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg font-bold"
                 >
                   {printingLabels ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                  Print Barcode Labels ({summary.productIds.length})
+                  {t('printBarcodeLabels', { n: summary.productIds.length })}
                 </button>
               )}
               <button onClick={onBack} className="px-6 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                Start Another Import
+                {t('startAnotherImport')}
               </button>
             </div>
           </CardContent>
