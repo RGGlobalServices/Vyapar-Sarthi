@@ -15,7 +15,6 @@ import { ExportButton } from '@/lib/hooks/useExport';
 import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
 import { getBaseAmount, getGstAmount, getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
 import { useLocale } from 'next-intl';
-import { isMillBillingPackage } from '@/lib/config/packageConfig';
 
 // Inner component uses useSearchParams — must be wrapped in Suspense
 function SettingsPageInner() {
@@ -45,13 +44,11 @@ function SettingsPageInner() {
       await setAllShopAccess(checked);
       setStatus({
         type: 'success',
-        message: checked
-          ? 'All Shop Access enabled — Products, Stock and Reports now show every shop you own.'
-          : 'All Shop Access disabled — back to single-shop view.',
+        message: checked ? t('allShopEnabled') : t('allShopDisabled'),
       });
       setTimeout(() => setStatus(null), 3000);
     } catch {
-      setStatus({ type: 'error', message: 'Failed to save All Shop Access preference.' });
+      setStatus({ type: 'error', message: t('allShopSaveFailed') });
     } finally {
       setSavingAllShopAccess(false);
     }
@@ -92,7 +89,7 @@ function SettingsPageInner() {
       await setSelectedShopIds(Array.from(effectiveSelected));
       setPendingSelected(null);
       setShowAddShop(false);
-      setStatus({ type: 'success', message: 'Selected shops saved.' });
+      setStatus({ type: 'success', message: t('selectionSaved') });
       setTimeout(() => setStatus(null), 3000);
       // setSelectedShopIds updates the store optimistically, before its PATCH
       // actually lands — the effect below reacts to that optimistic change
@@ -106,7 +103,7 @@ function SettingsPageInner() {
         .catch(() => {})
         .finally(() => setLoadingAllShopsSummary(false));
     } catch {
-      setStatus({ type: 'error', message: 'Failed to save selected shops.' });
+      setStatus({ type: 'error', message: t('selectionSaveFailed') });
     } finally {
       setSavingSelection(false);
     }
@@ -116,10 +113,10 @@ function SettingsPageInner() {
     setSavingGstProfit(true);
     try {
       await updateProfile({ gstInclusiveProfit: checked });
-      setStatus({ type: 'success', message: 'Profit calculation preference saved.' });
+      setStatus({ type: 'success', message: t('profitSaved') });
       setTimeout(() => setStatus(null), 3000);
     } catch {
-      setStatus({ type: 'error', message: 'Failed to save profit calculation preference.' });
+      setStatus({ type: 'error', message: t('profitSaveFailed') });
     } finally {
       setSavingGstProfit(false);
     }
@@ -129,10 +126,10 @@ function SettingsPageInner() {
     setSavingDefaultLandingPage(true);
     try {
       await updateProfile({ defaultLandingPage: value || null });
-      setStatus({ type: 'success', message: value ? `App will now open on ${value[0].toUpperCase()}${value.slice(1)} instead of Dashboard.` : 'App will open on Dashboard as usual.' });
+      setStatus({ type: 'success', message: value ? t('startupOn', { page: `${value[0].toUpperCase()}${value.slice(1)}` }) : t('startupOff') });
       setTimeout(() => setStatus(null), 3000);
     } catch {
-      setStatus({ type: 'error', message: 'Failed to save startup screen preference.' });
+      setStatus({ type: 'error', message: t('startupSaveFailed') });
     } finally {
       setSavingDefaultLandingPage(false);
     }
@@ -198,8 +195,7 @@ function SettingsPageInner() {
       .catch(err => console.error('Failed to fetch payment history:', err));
   }, []);
 
-  // Reset app state (Bada Udyog only)
-  const isMill = isMillBillingPackage(profile?.packageType);
+  // Reset app state
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetting, setResetting] = useState(false);
@@ -365,10 +361,10 @@ function SettingsPageInner() {
     setSavingPin(true);
     try {
       await api.patch('/notifications/settings', settings);
-      setStatus({ type: 'success', message: 'Settings saved successfully' });
+      setStatus({ type: 'success', message: t('settingsSaved') });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ type: 'error', message: 'Failed to save settings' });
+      setStatus({ type: 'error', message: t('settingsSaveFailed') });
     } finally {
       setSavingPin(false);
     }
@@ -395,21 +391,21 @@ function SettingsPageInner() {
   };
 
   const handleRevokeSession = async (id: string) => {
-    if (!confirm('Are you sure you want to log out this device?')) return;
+    if (!confirm(t('logOutDeviceConfirm'))) return;
     setRevokingId(id);
     try {
       await api.delete(`/auth/sessions/${id}`);
       setSessions(prev => prev.filter(s => s.id !== id));
-      setStatus({ type: 'success', message: 'Device logged out successfully.' });
+      setStatus({ type: 'success', message: t('deviceLoggedOut') });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ type: 'error', message: 'Failed to log out device.' });
+      setStatus({ type: 'error', message: t('deviceLogoutFailed') });
     } finally {
       setRevokingId(null);
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-slate-500">Loading settings...</div>;
+  if (loading) return <div className="p-10 text-center text-slate-500">{t('loadingSettings')}</div>;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
@@ -431,7 +427,7 @@ function SettingsPageInner() {
       {activatingPlan && (
         <div className="p-4 rounded-xl flex items-center gap-3 bg-purple-500/10 text-purple-300 border border-purple-500/20 animate-in slide-in-from-top-2">
           <Loader2 size={18} className="animate-spin" />
-          <span className="font-medium">Activating your subscription…</span>
+          <span className="font-medium">{t('activatingSubscription')}</span>
         </div>
       )}
 
@@ -452,9 +448,9 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400 mb-4">
               <Tag size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Category Attribute Config</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">{t('categoryConfigTitle')}</CardTitle>
             <CardDescription className="text-slate-500">
-              Configure which product attributes (Color, Size, Batch, Serial…) and billing columns are used for each industry category.
+              {t('categoryConfigDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -462,7 +458,7 @@ function SettingsPageInner() {
               href={`/${locale}/settings/category-config`}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
             >
-              Open Category Config <ChevronRightIcon size={16} />
+              {t('openCategoryConfig')} <ChevronRightIcon size={16} />
             </Link>
           </CardContent>
         </Card>
@@ -473,14 +469,14 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 dark:text-red-400 mb-4">
               <Shield size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Security & Access</CardTitle>
-            <CardDescription className="text-slate-500">Protect access to sensitive features and roles</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('securityTitle')}</CardTitle>
+            <CardDescription className="text-slate-500">{t('securityDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="space-y-1">
-                <p className="font-bold text-slate-800 dark:text-slate-200">Admin Access PIN</p>
-                <p className="text-xs text-slate-500">Require a PIN to switch from Staff to Admin role in the sidebar.</p>
+                <p className="font-bold text-slate-800 dark:text-slate-200">{t('adminPinLabel')}</p>
+                <p className="text-xs text-slate-500">{t('adminPinHint')}</p>
               </div>
               <button
                 onClick={() => {
@@ -495,7 +491,7 @@ function SettingsPageInner() {
                     : "bg-emerald-500 text-slate-900 hover:bg-emerald-400"
                 )}
               >
-                {userProfile?.hasAdminPin ? 'Change PIN' : 'Set PIN'}
+                {userProfile?.hasAdminPin ? t('changePin') : t('setPin')}
               </button>
             </div>
 
@@ -503,7 +499,7 @@ function SettingsPageInner() {
             <div className="mt-6 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-950">
               <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2">
                 <MonitorSmartphone size={18} className="text-slate-500" />
-                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Active Devices & Sessions</h3>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">{t('activeDevicesTitle')}</h3>
               </div>
               <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {sessions.map(s => (
@@ -517,12 +513,12 @@ function SettingsPageInner() {
                           <p className="font-bold text-slate-900 dark:text-slate-200 text-sm">{s.device}</p>
                           {s.isCurrent && (
                             <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-wider">
-                              This Device
+                              {t('thisDevice')}
                             </span>
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {s.ip} &middot; Active {fmtDate(s.lastSeen)}
+                          {s.ip} &middot; {t('activeAt', { date: fmtDate(s.lastSeen) })}
                         </p>
                       </div>
                     </div>
@@ -531,7 +527,7 @@ function SettingsPageInner() {
                         onClick={() => handleRevokeSession(s.id)}
                         disabled={revokingId === s.id}
                         className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl transition-colors disabled:opacity-50"
-                        title="Log out this device"
+                        title={t('logOutDeviceTitle')}
                       >
                         {revokingId === s.id ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
                       </button>
@@ -539,7 +535,7 @@ function SettingsPageInner() {
                   </div>
                 ))}
                 {sessions.length === 0 && (
-                  <div className="p-4 text-center text-sm text-slate-500">No active sessions found.</div>
+                  <div className="p-4 text-center text-sm text-slate-500">{t('noActiveSessions')}</div>
                 )}
               </div>
             </div>
@@ -552,17 +548,15 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-500 dark:text-amber-400 mb-4">
               <Zap size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Pricing & Profit</CardTitle>
-            <CardDescription className="text-slate-500">Choose how the product catalog calculates profit margin</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('pricingTitle')}</CardTitle>
+            <CardDescription className="text-slate-500">{t('pricingDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="space-y-1 pr-4">
-                <p className="font-bold text-slate-800 dark:text-slate-200">GST Inclusive Profit Calculation</p>
+                <p className="font-bold text-slate-800 dark:text-slate-200">{t('gstProfitTitle')}</p>
                 <p className="text-xs text-slate-500">
-                  {profile.gstInclusiveProfit
-                    ? 'On — GST is removed from the selling price before comparing to cost (e.g. ₹266 selling, 5% GST → ₹253.33 base, minus cost).'
-                    : 'Off (default) — Profit = Selling Price − Cost Price, GST left untouched. Matches simple shopkeeper markup.'}
+                  {profile.gstInclusiveProfit ? t('gstProfitOnDesc') : t('gstProfitOffDesc')}
                 </p>
               </div>
               <button
@@ -593,17 +587,17 @@ function SettingsPageInner() {
             <div className="w-12 h-12 bg-sky-500/10 rounded-2xl flex items-center justify-center text-sky-500 dark:text-sky-400 mb-4">
               <MonitorSmartphone size={24} />
             </div>
-            <CardTitle className="text-slate-900 dark:text-white">Startup Screen</CardTitle>
-            <CardDescription className="text-slate-500">Choose which section opens automatically when the app loads — useful if your work always starts in the same place</CardDescription>
+            <CardTitle className="text-slate-900 dark:text-white">{t('startupTitle')}</CardTitle>
+            <CardDescription className="text-slate-500">{t('startupDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="space-y-1 pr-4">
-                <p className="font-bold text-slate-800 dark:text-slate-200">Open this page first</p>
+                <p className="font-bold text-slate-800 dark:text-slate-200">{t('openPageFirst')}</p>
                 <p className="text-xs text-slate-500">
                   {profile.defaultLandingPage
-                    ? `App opens directly on ${profile.defaultLandingPage[0].toUpperCase()}${profile.defaultLandingPage.slice(1)}.`
-                    : 'Off (default) — app opens on Dashboard, same as always.'}
+                    ? t('startupOn', { page: `${profile.defaultLandingPage[0].toUpperCase()}${profile.defaultLandingPage.slice(1)}` })
+                    : t('startupOff')}
                 </p>
               </div>
               <select
@@ -612,7 +606,7 @@ function SettingsPageInner() {
                 disabled={savingDefaultLandingPage}
                 className="shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
               >
-                <option value="">Off — Dashboard (default)</option>
+                <option value="">{t('startupOffOption')}</option>
                 <option value="billing">Billing</option>
                 <option value="stock">Stock</option>
                 <option value="products">Products</option>
@@ -630,13 +624,13 @@ function SettingsPageInner() {
               <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400 mb-4">
                 <Store size={24} />
               </div>
-              <CardTitle className="text-slate-900 dark:text-white">All Shop Access</CardTitle>
-              <CardDescription className="text-slate-500">See every shop you own in one place, or keep them separate</CardDescription>
+              <CardTitle className="text-slate-900 dark:text-white">{t('allShopTitle')}</CardTitle>
+              <CardDescription className="text-slate-500">{t('allShopDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
                 <div className="space-y-1 pr-4">
-                  <p className="font-bold text-slate-800 dark:text-slate-200">Show all {allShops.length} shops together</p>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">{t('showAllShops', { n: allShops.length })}</p>
                   <p className="text-xs text-slate-500">
                     {allShopAccess
                       ? `On — Products, Stock, Dashboard and Reports pool ${selectedShopIds.length > 0 ? `the ${selectedShopIds.length} shop${selectedShopIds.length === 1 ? '' : 's'} selected below` : 'every shop you own'}, each row labeled with its shop. Billing and Import still work on only your currently open shop.`
@@ -661,7 +655,7 @@ function SettingsPageInner() {
               {allShopAccess && (
                 <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Selected shops</p>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('selectedShopsLabel')}</p>
                     {hasPendingChanges && (
                       <button
                         onClick={handleSaveSelection}
@@ -669,13 +663,13 @@ function SettingsPageInner() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50 transition-colors"
                       >
                         {savingSelection ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                        Save Selection
+                        {t('saveSelection')}
                       </button>
                     )}
                   </div>
 
                   {effectiveSelected.size === 0 && (
-                    <p className="text-xs text-orange-600 dark:text-orange-400 mb-2">Select at least one shop.</p>
+                    <p className="text-xs text-orange-600 dark:text-orange-400 mb-2">{t('selectAtLeastOne')}</p>
                   )}
 
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -694,7 +688,7 @@ function SettingsPageInner() {
                         onClick={() => setShowAddShop(true)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-dashed border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-500 hover:border-emerald-500 hover:text-emerald-600 transition-colors"
                       >
-                        <Plus size={12} /> Add Shop
+                        <Plus size={12} /> {t('addShop')}
                       </button>
                     )}
                   </div>
@@ -702,13 +696,13 @@ function SettingsPageInner() {
                   {showAddShop && (
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 mb-3">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Remaining shops</p>
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{t('remainingShopsLabel')}</p>
                         <button type="button" onClick={() => setShowAddShop(false)} className="text-slate-400 hover:text-slate-600">
                           <X size={14} />
                         </button>
                       </div>
                       {remainingShops.length === 0 ? (
-                        <p className="text-xs text-slate-500 py-2">All shops are already selected.</p>
+                        <p className="text-xs text-slate-500 py-2">{t('allShopsAlreadySelected')}</p>
                       ) : (
                         <div className="space-y-1">
                           {remainingShops.map((s) => (
@@ -732,7 +726,7 @@ function SettingsPageInner() {
 
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Shop-wise summary</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('shopWiseSummary')}</p>
                   {allShopsSummary && allShopsSummary.shops.length > 0 && (
                     <ExportButton
                       filename="all_shops_summary"
@@ -801,7 +795,7 @@ function SettingsPageInner() {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500 text-center py-6">No shop data yet.</p>
+                  <p className="text-xs text-slate-500 text-center py-6">{t('noShopData')}</p>
                 )}
               </div>
             </CardContent>
@@ -822,7 +816,7 @@ function SettingsPageInner() {
               <div className="space-y-1">
                 <p className="font-bold text-slate-800 dark:text-slate-200">{t('pushNotif') || 'Push Notifications'}</p>
                 <p className="text-xs text-slate-500">
-                  {permission === 'denied' ? 'Blocked in browser' : isSubscribed ? (t('subscribed') || 'Subscribed') : 'Off'}
+                  {permission === 'denied' ? t('blockedInBrowser') : isSubscribed ? t('subscribed') : t('off')}
                 </p>
               </div>
               <button
@@ -919,33 +913,31 @@ function SettingsPageInner() {
                 value={settings.alert_time}
                 onChange={e => setSettings({...settings, alert_time: e.target.value})}
               />
-              <p className="text-[10px] text-slate-500 italic">Notifications will arrive daily at this time.</p>
+              <p className="text-[10px] text-slate-500 italic">{t('notifTimeHint')}</p>
             </div>
           </CardContent>
         </Card>
 
       </div>
 
-      {/* ── Reset All Data (Bada Udyog only) ── */}
-      {isMill && (
-        <Card className="bg-white dark:bg-slate-900 border-red-200 dark:border-red-900/40 shadow-sm">
-          <CardHeader>
-            <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 dark:text-red-400 mb-4">
-              <Trash2 size={24} />
-            </div>
-            <CardTitle className="text-slate-900 dark:text-white">{t('resetTitle')}</CardTitle>
-            <CardDescription className="text-slate-500">{t('resetDesc')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <button
-              onClick={() => { setResetConfirm(''); setShowResetModal(true); }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-400 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 font-bold text-sm transition-all"
-            >
-              <Trash2 size={16} /> {t('resetBtn')}
-            </button>
-          </CardContent>
-        </Card>
-      )}
+      {/* ── Reset All Data ── */}
+      <Card className="bg-white dark:bg-slate-900 border-red-200 dark:border-red-900/40 shadow-sm">
+        <CardHeader>
+          <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 dark:text-red-400 mb-4">
+            <Trash2 size={24} />
+          </div>
+          <CardTitle className="text-slate-900 dark:text-white">{t('resetTitle')}</CardTitle>
+          <CardDescription className="text-slate-500">{t('resetDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <button
+            onClick={() => { setResetConfirm(''); setShowResetModal(true); }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-400 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 font-bold text-sm transition-all"
+          >
+            <Trash2 size={16} /> {t('resetBtn')}
+          </button>
+        </CardContent>
+      </Card>
 
       {/* ── Subscription Management ── */}
       {profile.subscriptionPlan && (
@@ -976,10 +968,10 @@ function SettingsPageInner() {
                     profile.subscriptionStatus === 'active'     ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
                     'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                   )}>
-                    {profile.subscriptionStatus === 'trial'     ? 'Free Trial' :
-                     profile.subscriptionStatus === 'cancelled' ? 'Cancelled' :
-                     profile.subscriptionStatus === 'expired'   ? 'Expired' :
-                     profile.subscriptionStatus === 'active'    ? 'Active' :
+                    {profile.subscriptionStatus === 'trial'     ? t('planTrial') :
+                     profile.subscriptionStatus === 'cancelled' ? t('planCancelled') :
+                     profile.subscriptionStatus === 'expired'   ? t('planExpired') :
+                     profile.subscriptionStatus === 'active'    ? t('planActive') :
                      profile.subscriptionStatus}
                   </span>
                 </p>
@@ -1059,9 +1051,9 @@ function SettingsPageInner() {
                       {tx.status}
                     </span>
                     {tx.status === 'success' && (
-                      <a href={`/${locale}/receipt/${tx.txnid}`} target="_blank" rel="noopener noreferrer" 
+                      <a href={`/${locale}/receipt/${tx.txnid}`} target="_blank" rel="noopener noreferrer"
                         className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 flex items-center gap-1">
-                        View Receipt
+                        {t('viewReceipt')}
                       </a>
                     )}
                   </div>
@@ -1168,31 +1160,31 @@ function SettingsPageInner() {
                     onClick={() => setBillingCycle('monthly')}
                     className={cn('px-3 py-1.5 rounded-lg transition-colors', billingCycle === 'monthly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
                   >
-                    Monthly
+                    {t('monthly')}
                   </button>
                   <button
                     onClick={() => setBillingCycle('yearly')}
                     className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === 'yearly' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
                   >
-                    Yearly
+                    {t('yearly')}
                     <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
                   </button>
                   <button
                     onClick={() => setBillingCycle('5_years')}
                     className={cn('px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5', billingCycle === '5_years' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}
                   >
-                    5 Years
+                    {t('fiveYears')}
                     <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{YEARLY_DISCOUNT_PERCENT}% OFF</span>
                   </button>
                 </div>
                 {billingCycle === 'yearly' && (
                   <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mr-2 animate-in fade-in slide-in-from-top-1">
-                    Pay for 11 months, get 1 month FREE
+                    {t('payFor11Months')}
                   </span>
                 )}
                 {billingCycle === '5_years' && (
                   <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mr-2 animate-in fade-in slide-in-from-top-1">
-                    Pay for 4 years, get 1 year FREE
+                    {t('payFor4Years')}
                   </span>
                 )}
               </div>
@@ -1211,7 +1203,7 @@ function SettingsPageInner() {
                   <div key={plan.key} className={cn('relative rounded-2xl border p-5 flex flex-col gap-4', c.bg, isCurrent ? (isPaid ? 'border-emerald-500/50' : 'border-amber-500/50') : c.border)}>
                     {plan.popular && !isCurrent && (
                       <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <span className="bg-indigo-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg">Most Popular</span>
+                        <span className="bg-indigo-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg">{t('mostPopular')}</span>
                       </div>
                     )}
                     {isCurrent && (
@@ -1220,7 +1212,7 @@ function SettingsPageInner() {
                           'text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg',
                           isPaid ? 'bg-emerald-500 text-slate-900' : 'bg-amber-500 text-slate-900',
                         )}>
-                          {isPaid ? 'Current Plan' : 'Current — On Trial'}
+                          {isPaid ? t('currentPlan') : t('currentOnTrial')}
                         </span>
                       </div>
                     )}
@@ -1282,17 +1274,16 @@ function SettingsPageInner() {
                 <AlertTriangle size={22} className="text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Cancel Subscription?</h2>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('cancelModalTitle')}</h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  You keep full access until your billing period ends, then move to limited
-                  (read-only) access. Cancel within 30 days of payment for a full refund.
+                  {t('cancelModalBody')}
                 </p>
               </div>
             </div>
 
             {/* What they will lose */}
             <div className="bg-slate-50 dark:bg-slate-950 rounded-xl p-4 space-y-2 border border-slate-200 dark:border-slate-800">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">You will lose access to</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t('loseAccessTo')}</p>
               {profile.subscriptionPlan === 'business' && (
                 <>
                   <p className="text-xs text-slate-600 dark:text-slate-400">• Bulk invoicing &amp; party ledger</p>
@@ -1313,20 +1304,20 @@ function SettingsPageInner() {
             {/* Reason */}
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                Reason (optional — helps us improve)
+                {t('cancelReasonLabel')}
               </label>
               <select
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500"
                 value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)}
               >
-                <option value="">Select a reason…</option>
-                <option value="too_expensive">Too expensive</option>
-                <option value="not_using">Not using enough features</option>
-                <option value="switching_tool">Switching to another tool</option>
-                <option value="business_closed">Business closed / paused</option>
-                <option value="missing_feature">Missing feature I need</option>
-                <option value="other">Other</option>
+                <option value="">{t('cancelReasonPlaceholder')}</option>
+                <option value="too_expensive">{t('cancelReasonExpensive')}</option>
+                <option value="not_using">{t('cancelReasonNotUsing')}</option>
+                <option value="switching_tool">{t('cancelReasonSwitching')}</option>
+                <option value="business_closed">{t('cancelReasonClosed')}</option>
+                <option value="missing_feature">{t('cancelReasonMissing')}</option>
+                <option value="other">{t('cancelReasonOther')}</option>
               </select>
             </div>
 
@@ -1335,7 +1326,7 @@ function SettingsPageInner() {
                 onClick={() => setShowCancelModal(false)}
                 className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
               >
-                Keep Subscription
+                {t('keepSubscription')}
               </button>
               <button
                 onClick={handleCancelSubscription}
@@ -1343,7 +1334,7 @@ function SettingsPageInner() {
                 className="flex-1 bg-red-500 text-white py-3 rounded-xl font-bold hover:bg-red-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {cancelling ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />}
-                {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
+                {cancelling ? t('cancellingBtn') : t('yesCancelBtn')}
               </button>
             </div>
           </div>
@@ -1408,9 +1399,9 @@ function SettingsPageInner() {
       {showAdminPinModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm shadow-2xl p-6">
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Admin Access PIN</h2>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">{t('adminPinModalTitle')}</h2>
             <p className="text-sm text-slate-500 mb-6">
-              {userProfile?.hasAdminPin ? 'Update or remove your Admin PIN.' : 'Set a PIN to protect the Admin role switch.'}
+              {userProfile?.hasAdminPin ? t('adminPinModalUpdateDesc') : t('adminPinModalSetDesc')}
             </p>
             
             {pinStatus && (
@@ -1426,7 +1417,7 @@ function SettingsPageInner() {
             <form onSubmit={handleSaveAdminPin}>
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Login Password</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('currentPasswordLabel')}</label>
                   <input
                     type="password"
                     required
@@ -1437,14 +1428,14 @@ function SettingsPageInner() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    New Admin PIN <span className="text-[10px] font-normal lowercase">(leave blank to remove)</span>
+                    {t('newAdminPinLabel')} <span className="text-[10px] font-normal lowercase">({t('leaveBlankToRemove')})</span>
                   </label>
                   <input
                     type="password"
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     value={adminPinForm.newPin}
                     onChange={e => setAdminPinForm(f => ({...f, newPin: e.target.value}))}
-                    placeholder="At least 4 characters"
+                    placeholder={t('pinPlaceholder')}
                   />
                 </div>
               </div>
@@ -1455,7 +1446,7 @@ function SettingsPageInner() {
                   onClick={() => setShowAdminPinModal(false)}
                   className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
                 >
-                  Cancel
+                  {t('cancelBtn')}
                 </button>
                 <button
                   type="submit"
@@ -1463,7 +1454,7 @@ function SettingsPageInner() {
                   className="flex-1 bg-emerald-500 text-slate-900 py-2.5 rounded-xl font-black hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {savingPin ? <Loader2 size={16} className="animate-spin" /> : null}
-                  {savingPin ? 'Saving...' : 'Save PIN'}
+                  {savingPin ? t('savingPinBtn') : t('savePinBtn')}
                 </button>
               </div>
             </form>
@@ -1481,3 +1472,4 @@ export default function SettingsPage() {
     </Suspense>
   );
 }
+
